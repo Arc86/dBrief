@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>VoiceRecorder</string>
+    <key>CFBundleDisplayName</key>
+    <string>Voice Recorder</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.voicerecorder.app</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleExecutable</key>
+    <string>VoiceRecorder</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VoiceRecorder needs microphone access to record audio from your microphone during calls and voice recordings.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>VoiceRecorder needs screen recording permission to capture system audio during calls.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>VoiceRecorder uses speech recognition to transcribe your recordings on-device.</string>
+</dict>
+</plist>
