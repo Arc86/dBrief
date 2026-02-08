@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>VoiceRecorder</string>
+    <string>DeBrief</string>
     <key>CFBundleDisplayName</key>
-    <string>Voice Recorder</string>
+    <string>DeBrief</string>
     <key>CFBundleIdentifier</key>
     <string>com.voicerecorder.app</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>1.1.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleExecutable</key>
     <string>VoiceRecorder</string>
     <key>CFBundlePackageType</key>
@@ -19,10 +19,10 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>VoiceRecorder needs microphone access to record audio from your microphone during calls and voice recordings.</string>
+    <string>DeBrief needs microphone access to record audio from your microphone during calls and voice recordings.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>VoiceRecorder needs screen recording permission to capture system audio during calls.</string>
+    <string>DeBrief needs screen recording permission to capture system audio during calls.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>VoiceRecorder uses speech recognition to transcribe your recordings on-device.</string>
+    <string>DeBrief uses speech recognition to transcribe your recordings on-device.</string>
 </dict>
 </plist>

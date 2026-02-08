@@ -1,4 +1,5 @@
-APP_NAME = VoiceRecorder
+APP_NAME = DeBrief
+EXECUTABLE_NAME = VoiceRecorder
 BUILD_DIR = .build/release
 APP_BUNDLE = $(APP_NAME).app
 CONTENTS = $(APP_BUNDLE)/Contents
@@ -13,7 +14,7 @@ build:
 app: build
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(MACOS) $(RESOURCES)
-	cp $(BUILD_DIR)/$(APP_NAME) $(MACOS)/$(APP_NAME)
+	cp $(BUILD_DIR)/$(EXECUTABLE_NAME) $(MACOS)/$(EXECUTABLE_NAME)
 	cp Sources/VoiceRecorder/Resources/Info.plist $(CONTENTS)/Info.plist
 	@echo "Built $(APP_BUNDLE)"
 

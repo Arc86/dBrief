@@ -1,6 +1,7 @@
+import AppKit
 import CoreGraphics
-import SwiftUI
 import Speech
+import SwiftUI
 
 struct OnboardingView: View {
     @Environment(AppSettings.self) private var appSettings
@@ -31,11 +32,19 @@ struct OnboardingView: View {
 
     private var welcomeStep: some View {
         VStack(spacing: 12) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.blue)
+            if let appIcon = NSImage(named: "AppIcon") {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 72, height: 72)
+            } else {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.blue)
+            }
 
-            Text("Welcome to Voice Recorder")
+            Text("Welcome to DeBrief")
                 .font(.headline)
 
             Text("Record, transcribe, and analyze voice recordings right from your menu bar.")

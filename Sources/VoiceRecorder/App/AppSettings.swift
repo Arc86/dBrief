@@ -337,14 +337,14 @@ final class AppSettings {
 
     private static func defaultRecordingFolder() -> URL {
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VoiceRecorder/Recordings", isDirectory: true)
+            .appendingPathComponent("DeBrief/Recordings", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
     private static func defaultTranscriptionFolder() -> URL {
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VoiceRecorder/Transcriptions", isDirectory: true)
+            .appendingPathComponent("DeBrief/Transcriptions", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

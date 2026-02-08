@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -65,19 +66,37 @@ private struct AboutTab: View {
         VStack(spacing: 12) {
             Spacer()
 
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue)
+            if let appIcon = NSImage(named: "AppIcon") {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 96, height: 96)
+            } else {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.blue)
+            }
 
-            Text("Voice Recorder")
-                .font(.title)
+            Text("DeBrief Version 1.1.0")
+                .font(.title3)
+                .fontWeight(.semibold)
 
-            Text("Version 1.0.0")
-                .foregroundStyle(.secondary)
-
-            Text("A macOS menu bar app for recording,\ntranscribing, and analyzing voice recordings.")
+            Text("Automated meeting intelligence for sales teams. Capture discovery calls, generate AI summaries, and sync action items directly to your Obsidian vault.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Text("[Check for Updates]")
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text("[Support]")
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text("[Documentation]")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
 
             Spacer()
         }

@@ -48,7 +48,7 @@ struct RecordingControlsView: View {
                             } catch {
                                 let msg = error.localizedDescription
                                 log.error("Record failed: \(msg, privacy: .public)")
-                                fputs("[VoiceRecorder] Record failed: \(msg)\n", stderr)
+                                fputs("[DeBrief] Record failed: \(msg)\n", stderr)
                                 appState.lastError = msg
                             }
                         }

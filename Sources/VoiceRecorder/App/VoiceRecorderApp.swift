@@ -157,7 +157,7 @@ struct MenuBarView: View {
                 }
                 .keyboardShortcut(",", modifiers: .command)
 
-                Button("Quit Voice Recorder") {
+                Button("Quit DeBrief") {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q", modifiers: .command)
