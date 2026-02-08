@@ -132,7 +132,11 @@ struct MarkdownGenerator {
 
     @MainActor
     private func generatedTitle(for recording: Recording) -> String {
-        let fallback = "Recording"
+        // Prefer AI-generated title
+        if let aiTitle = recording.generatedTitle, !aiTitle.isEmpty {
+            return sanitizeFileNameComponent(aiTitle)
+        }
+        // Fallback to extracting from summary/transcription text
         if let summary = recording.summary {
             if let title = titleFromText(summary) {
                 return title
@@ -143,7 +147,7 @@ struct MarkdownGenerator {
                 return title
             }
         }
-        return fallback
+        return "Recording"
     }
 
     private func titleFromText(_ text: String) -> String? {

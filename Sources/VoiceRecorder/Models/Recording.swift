@@ -13,6 +13,7 @@ final class Recording: Identifiable {
     var actionItems: [String]?
     var tags: [String]?
     var sentiment: String?
+    var generatedTitle: String?
     var associatedApp: String?
     var obsidianFolderRelativePath: String?
 

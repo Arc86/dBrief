@@ -5,9 +5,9 @@ struct SettingsView: View {
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
-        case integrations = "Integrations"
         case transcription = "Transcription"
         case ai = "AI"
+        case integrations = "Integrations"
         case about = "About"
 
         var id: String { rawValue }

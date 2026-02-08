@@ -47,6 +47,18 @@ actor AIService {
         return TagsResult(tags: tags, sentiment: sentiment)
     }
 
+    func generateTitle(transcription: String, language: String?, endpoint: Endpoint) async throws -> String {
+        let langHint = language.map { " The content is in language code '\($0)'." } ?? ""
+        let response = try await chatCompletion(
+            systemPrompt: "Generate a short, descriptive title (3-8 words) for the following transcription. Respond with ONLY the title, no quotes, no punctuation at the end, no explanation. The title should be in the same language as the content.\(langHint)",
+            userMessage: transcription,
+            endpoint: endpoint
+        )
+        return response
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
+    }
+
     func testConnection(endpoint: Endpoint) async throws -> Bool {
         guard let baseURL = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/v1/models") else {
             throw AIServiceError.invalidEndpoint

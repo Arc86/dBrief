@@ -44,6 +44,15 @@ actor LocalAIService {
         return TagsResult(tags: tags, sentiment: sentiment)
     }
 
+    func generateTitle(transcription: String, language: String?) async throws -> String {
+        let langHint = language.map { " The content is in language code '\($0)'." } ?? ""
+        let session = LanguageModelSession(instructions: "Generate a short, descriptive title (3-8 words) for the following transcription. Respond with ONLY the title, no quotes, no punctuation at the end, no explanation. The title should be in the same language as the content.\(langHint)")
+        let response = try await session.respond(to: transcription)
+        return response.content
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
+    }
+
     static var isAvailable: Bool {
         SystemLanguageModel.default.isAvailable
     }

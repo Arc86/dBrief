@@ -259,8 +259,43 @@ final class RecordingManager {
             }
         }
 
-        // Step 3: Generate Markdown
+        // Step 3: Generate title & write Markdown
         if transcribe || summary || actionItems || tags {
+            // Generate AI title from transcription
+            if let transcriptionText = recording.transcription?.text, !transcriptionText.isEmpty {
+                let language = recording.transcription?.language
+                let titleStepIndex = appState.processingSteps.count
+                appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
+                do {
+                    #if canImport(FoundationModels)
+                    if appSettings.useBuiltInAI, #available(macOS 26, *) {
+                        recording.generatedTitle = try await LocalAIService().generateTitle(
+                            transcription: String(transcriptionText.prefix(500)),
+                            language: language
+                        )
+                    } else if let endpoint = appSettings.defaultAIEndpoint {
+                        recording.generatedTitle = try await aiService.generateTitle(
+                            transcription: String(transcriptionText.prefix(500)),
+                            language: language,
+                            endpoint: endpoint
+                        )
+                    }
+                    #else
+                    if let endpoint = appSettings.defaultAIEndpoint {
+                        recording.generatedTitle = try await aiService.generateTitle(
+                            transcription: String(transcriptionText.prefix(500)),
+                            language: language,
+                            endpoint: endpoint
+                        )
+                    }
+                    #endif
+                    appState.processingSteps[titleStepIndex].status = .completed
+                } catch {
+                    // Title generation is non-critical — fall back to text extraction
+                    appState.processingSteps[titleStepIndex].status = .completed
+                }
+            }
+
             let stepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
 
