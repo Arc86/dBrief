@@ -36,6 +36,7 @@ struct SettingsPermissionsTab: View {
                     action: requestSpeechRecognition
                 )
             }
+            .listRowBackground(Color.clear)
 
             Section("Manage Access") {
                 HStack {
@@ -64,9 +65,14 @@ struct SettingsPermissionsTab: View {
                     .buttonStyle(.bordered)
                 }
             }
+            .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .toggleStyle(.switch)
+        .controlSize(.regular)
+        .padding(.top, -20)
         .onAppear {
             refreshStatuses()
         }

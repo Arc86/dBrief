@@ -24,8 +24,6 @@ struct SettingsGeneralTab: View {
                     }
                 }
 
-                Divider()
-
                 LabeledContent("Transcriptions:") {
                     HStack {
                         Text(appSettings.transcriptionFolderURL.path(percentEncoded: false))
@@ -42,6 +40,7 @@ struct SettingsGeneralTab: View {
                     }
                 }
             }
+            .listRowBackground(Color.clear)
 
             Section("Audio Quality") {
                 HStack {
@@ -57,9 +56,6 @@ struct SettingsGeneralTab: View {
                     .pickerStyle(.menu)
                     .frame(width: 160, alignment: .trailing)
                 }
-
-                Divider()
-
                 HStack {
                     Text("Bit rate (AAC):")
                     Spacer()
@@ -75,6 +71,7 @@ struct SettingsGeneralTab: View {
                     .frame(width: 160, alignment: .trailing)
                 }
             }
+            .listRowBackground(Color.clear)
 
             Section("Audio Input") {
                 let selectedUID = settings.audioInputDeviceUID
@@ -97,9 +94,6 @@ struct SettingsGeneralTab: View {
                     .pickerStyle(.menu)
                     .frame(width: 220, alignment: .trailing)
                 }
-
-                Divider()
-
                 HStack {
                     Text("Refresh device list")
                     Spacer()
@@ -109,18 +103,20 @@ struct SettingsGeneralTab: View {
                     .buttonStyle(.bordered)
                 }
             }
+            .listRowBackground(Color.clear)
 
             Section("Call Detection") {
                 Toggle("Enable call detection", isOn: $settings.callDetectionEnabled)
 
                 if appSettings.callDetectionEnabled {
                     Toggle("Auto-start recording when call detected", isOn: $settings.autoRecordCalls)
+                }
+            }
+            .listRowBackground(Color.clear)
 
-                    Text("Call platforms")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(CallDetectionService.knownCallApps.enumerated()), id: \.element.bundleId) { index, app in
+            if appSettings.callDetectionEnabled {
+                Section("Call Platforms") {
+                    ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
                         let isEnabled = !appSettings.disabledCallApps.contains(app.bundleId)
                         Toggle(
                             app.name,
@@ -135,14 +131,17 @@ struct SettingsGeneralTab: View {
                                 }
                             )
                         )
-                        .toggleStyle(.switch)
-                        .controlSize(.regular)
                     }
                 }
+                .listRowBackground(Color.clear)
             }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .toggleStyle(.switch)
+        .controlSize(.regular)
+        .padding(.top, -20)
         .onAppear {
             inputDevices = AudioInputDeviceManager.availableInputDevices()
         }

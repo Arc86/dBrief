@@ -1,8 +1,20 @@
 import AppKit
 import SwiftUI
 
+// 1. HELPER: Grabs the window immediately to fix the "Opening Glitch"
+struct WindowAccessor: NSViewRepresentable {
+    var callback: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { self.callback(view.window) }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct SettingsView: View {
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab? = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -11,16 +23,14 @@ struct SettingsView: View {
         case ai = "AI"
         case integrations = "Integrations"
         case about = "About"
-
         var id: String { rawValue }
-
         var icon: String {
             switch self {
             case .general: "gear"
             case .permissions: "lock.shield"
-            case .integrations: "puzzlepiece.extension"
             case .transcription: "waveform"
             case .ai: "brain"
+            case .integrations: "puzzlepiece.extension"
             case .about: "info.circle"
             }
         }
@@ -29,139 +39,57 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(SettingsTab.allCases, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
-                    .tag(tab)
+                Label(tab.rawValue, systemImage: tab.icon).tag(tab)
             }
             .listStyle(.sidebar)
-            .listRowSeparator(.hidden)
-            .listRowInsets(.init(top: 6, leading: 12, bottom: 6, trailing: 12))
             .scrollContentBackground(.hidden)
-            .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
-            .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 260)
-            .toolbar(removing: .sidebarToggle)
+            .background(
+                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    .ignoresSafeArea()
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(selectedTab.rawValue)
-                    .font(.title2.weight(.semibold))
+            ZStack {
+                // Glass Background
+                VisualEffectView(material: .windowBackground, blendingMode: .behindWindow)
+                    .ignoresSafeArea()
 
-                Group {
-                    switch selectedTab {
-                    case .general:
-                        SettingsGeneralTab()
-                    case .permissions:
-                        SettingsPermissionsTab()
-                    case .integrations:
-                        SettingsIntegrationsTab()
-                    case .transcription:
-                        SettingsTranscriptionTab()
-                    case .ai:
-                        SettingsAITab()
-                    case .about:
-                        AboutTab()
+                // Content
+                if let tab = selectedTab {
+                    Group {
+                        switch tab {
+                        case .general: SettingsGeneralTab()
+                        case .permissions: SettingsPermissionsTab()
+                        case .transcription: SettingsTranscriptionTab()
+                        case .ai: SettingsAITab()
+                        case .integrations: SettingsIntegrationsTab()
+                        case .about: AboutTab()
+                        }
                     }
+                } else {
+                    SettingsGeneralTab()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .toggleStyle(.switch)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("")
-            .toolbarTitleDisplayMode(.inline)
-            .environment(\.controlSize, .regular)
-            .background(VisualEffectView(material: .windowBackground, blendingMode: .behindWindow))
         }
-        .ignoresSafeArea()
+        .navigationSplitViewStyle(.balanced)
+        .background(WindowAccessor { window in
+            configureWindow(window)
+        })
         .onAppear {
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            DispatchQueue.main.async {
-                guard let window = NSApp.keyWindow ?? NSApp.windows.first else { return }
-                window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
-                if #available(macOS 11.0, *) {
-                    window.titlebarSeparatorStyle = .none
-                }
-                window.isOpaque = false
-                window.backgroundColor = .clear
+            if selectedTab == nil {
+                selectedTab = .general
             }
-        }
-        .onDisappear {
-            NSApp.setActivationPolicy(.accessory)
+            configureWindow(NSApp.keyWindow ?? NSApp.windows.first)
         }
     }
-}
 
-private struct AboutTab: View {
-    var body: some View {
-        Form {
-            Section {
-                VStack(spacing: 16) {
-                    if let appIcon = appIconImage() {
-                        Image(nsImage: appIcon)
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                            .frame(width: 96, height: 96)
-                            .clipShape(RoundedRectangle(cornerRadius: 20))
-                    } else {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.blue)
-                    }
-
-                    Text("dBrief Version 1.1.0")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    Text("Automated meeting intelligence for sales teams.\nCapture discovery calls, generate AI summaries, and sync action items directly to your Obsidian vault.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: 380)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 8) {
-                        Text("[Check for Updates]")
-                            .fontWeight(.semibold)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text("[Support]")
-                            .fontWeight(.semibold)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text("[Documentation]")
-                            .fontWeight(.semibold)
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                    HStack(spacing: 6) {
-                        Text("Author: Jesper Mol")
-                        Text("•")
-                        Text("© \(currentYear)")
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 360)
-                .padding(32)
-            }
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-    }
-
-    private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-        return NSImage(named: "AppIcon")
-    }
-
-    private var currentYear: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: Date())
+    private func configureWindow(_ window: NSWindow?) {
+        guard let window else { return }
+        window.styleMask.insert([.fullSizeContentView, .titled, .closable, .miniaturizable, .resizable])
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.toolbar = nil
     }
 }
