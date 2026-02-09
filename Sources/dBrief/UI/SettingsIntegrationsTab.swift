@@ -51,9 +51,14 @@ struct SettingsIntegrationsTab: View {
                     }
                 }
             }
+            .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .toggleStyle(.switch)
+        .controlSize(.regular)
+        .padding(.top, -20)
     }
 
     private var vaultPathText: String {
