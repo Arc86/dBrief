@@ -20,6 +20,11 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings)
+        CallDetectedOverlayController.shared.configure(
+            appState: appState,
+            appSettings: appSettings,
+            recordingManager: recordingManager
+        )
         Task { await self.ensureReady() }
     }
 
@@ -176,15 +181,6 @@ struct MenuBarView: View {
         .padding(12)
         .frame(width: 320)
         .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: Binding(
-            get: { appState.showCallDetectedPopup },
-            set: { appState.showCallDetectedPopup = $0 }
-        )) {
-            CallDetectedPopup()
-                .environment(appState)
-                .environment(appSettings)
-                .environment(recordingManager)
-        }
     }
 
     private var header: some View {

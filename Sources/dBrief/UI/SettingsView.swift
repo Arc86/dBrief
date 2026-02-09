@@ -3,7 +3,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
-    @State private var searchText = ""
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -34,35 +33,58 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .listStyle(.sidebar)
-            .searchable(text: $searchText, placement: .sidebar)
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .listRowSeparator(.hidden)
+            .listRowInsets(.init(top: 6, leading: 12, bottom: 6, trailing: 12))
+            .scrollContentBackground(.hidden)
+            .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+            .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 260)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            Group {
-                switch selectedTab {
-                case .general:
-                    SettingsGeneralTab()
-                case .permissions:
-                    SettingsPermissionsTab()
-                case .integrations:
-                    SettingsIntegrationsTab()
-                case .transcription:
-                    SettingsTranscriptionTab()
-                case .ai:
-                    SettingsAITab()
-                case .about:
-                    AboutTab()
+            VStack(alignment: .leading, spacing: 12) {
+                Text(selectedTab.rawValue)
+                    .font(.title2.weight(.semibold))
+
+                Group {
+                    switch selectedTab {
+                    case .general:
+                        SettingsGeneralTab()
+                    case .permissions:
+                        SettingsPermissionsTab()
+                    case .integrations:
+                        SettingsIntegrationsTab()
+                    case .transcription:
+                        SettingsTranscriptionTab()
+                    case .ai:
+                        SettingsAITab()
+                    case .about:
+                        AboutTab()
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .toggleStyle(.switch)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 8)
-            .navigationTitle(selectedTab.rawValue)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
+            .environment(\.controlSize, .regular)
+            .background(VisualEffectView(material: .windowBackground, blendingMode: .behindWindow))
         }
-        .frame(width: 820, height: 560)
+        .ignoresSafeArea()
         .onAppear {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                guard let window = NSApp.keyWindow ?? NSApp.windows.first else { return }
+                window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
+                window.titleVisibility = .hidden
+                window.titlebarAppearsTransparent = true
+                window.styleMask.insert(.fullSizeContentView)
+                if #available(macOS 11.0, *) {
+                    window.titlebarSeparatorStyle = .none
+                }
+                window.isOpaque = false
+                window.backgroundColor = .clear
+            }
         }
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
@@ -72,86 +94,61 @@ struct SettingsView: View {
 
 private struct AboutTab: View {
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.88, green: 0.95, blue: 0.96),
-                        Color(red: 0.78, green: 0.90, blue: 0.92),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                VStack {
-                    Spacer()
-
-                    VStack(spacing: 16) {
-                        if let appIcon = appIconImage() {
-                            Image(nsImage: appIcon)
-                                .resizable()
-                                .interpolation(.high)
-                                .scaledToFit()
-                                .frame(width: 96, height: 96)
-                                .clipShape(RoundedRectangle(cornerRadius: 20))
-                                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
-                        } else {
-                            Image(systemName: "waveform.circle.fill")
-                                .font(.system(size: 64))
-                                .foregroundStyle(.blue)
-                        }
-
-                        Text("dBrief Version 1.1.0")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-
-                        Text("Automated meeting intelligence for sales teams.\nCapture discovery calls, generate AI summaries, and sync action items directly to your Obsidian vault.")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: 380)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        HStack(spacing: 8) {
-                            Text("[Check for Updates]")
-                                .fontWeight(.semibold)
-                            Text("•")
-                                .foregroundStyle(.secondary)
-                            Text("[Support]")
-                                .fontWeight(.semibold)
-                            Text("•")
-                                .foregroundStyle(.secondary)
-                            Text("[Documentation]")
-                                .fontWeight(.semibold)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-
-                        HStack(spacing: 6) {
-                            Text("Author: Jesper Mol")
-                            Text("•")
-                            Text("© \(currentYear)")
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+        Form {
+            Section {
+                VStack(spacing: 16) {
+                    if let appIcon = appIconImage() {
+                        Image(nsImage: appIcon)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 96, height: 96)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                    } else {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.blue)
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 28)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24)
-                            .stroke(.white.opacity(0.5), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
 
-                    Spacer()
+                    Text("dBrief Version 1.1.0")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Automated meeting intelligence for sales teams.\nCapture discovery calls, generate AI summaries, and sync action items directly to your Obsidian vault.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 380)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        Text("[Check for Updates]")
+                            .fontWeight(.semibold)
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text("[Support]")
+                            .fontWeight(.semibold)
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text("[Documentation]")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Text("Author: Jesper Mol")
+                        Text("•")
+                        Text("© \(currentYear)")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 360)
                 .padding(32)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private func appIconImage() -> NSImage? {

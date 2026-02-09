@@ -13,23 +13,22 @@ struct SettingsAITab: View {
         if isEditing {
             endpointEditor
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    engineSection
-                    defaultsSection
-                    promptsSection
-                    if !appSettings.useBuiltInAI {
-                        endpointsSection
-                    }
+            Form {
+                Section("Engine") { engineSection }
+                Section("Post-Recording Defaults") { defaultsSection }
+                Section("Prompts") { promptsSection }
+                if !appSettings.useBuiltInAI {
+                    Section("Endpoints") { endpointsSection }
                 }
-                .padding()
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
     }
 
     private var engineSection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Engine") {
+        return VStack(alignment: .leading, spacing: 8) {
             Toggle("Use built-in Apple Intelligence", isOn: $settings.useBuiltInAI)
             Text("On-device AI processing. Requires macOS 26+ with Apple Silicon.")
                 .font(.caption)
@@ -39,24 +38,19 @@ struct SettingsAITab: View {
 
     private var defaultsSection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Post-Recording Defaults") {
+        return VStack(alignment: .leading, spacing: 8) {
             Toggle("Auto-transcribe after recording", isOn: $settings.autoTranscribe)
-            Divider()
             Toggle("Generate summary", isOn: $settings.autoSummary)
-            Divider()
             Toggle("Extract action items", isOn: $settings.autoActionItems)
-            Divider()
             Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
         }
     }
 
     private var promptsSection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Prompts") {
+        return VStack(alignment: .leading, spacing: 8) {
             promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
-            Divider()
             promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
-            Divider()
             promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
         }
     }
@@ -98,22 +92,17 @@ struct SettingsAITab: View {
     }
 
     private var endpointsSection: some View {
-        SettingsSection(title: "Endpoints") {
+        VStack(alignment: .leading, spacing: 8) {
             if appSettings.aiEndpoints.isEmpty {
                 Text("No endpoints configured. Click + to add one.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
             } else {
-                ForEach(Array(appSettings.aiEndpoints.enumerated()), id: \.element.id) { index, endpoint in
+                ForEach(appSettings.aiEndpoints) { endpoint in
                     endpointRow(endpoint)
-                    if index < appSettings.aiEndpoints.count - 1 {
-                        Divider()
-                    }
                 }
             }
-
-            Divider()
 
             HStack {
                 Button {
@@ -124,6 +113,7 @@ struct SettingsAITab: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .buttonStyle(.bordered)
 
                 Button {
                     if let id = selectedEndpointId {
@@ -134,6 +124,7 @@ struct SettingsAITab: View {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedEndpointId == nil)
+                .buttonStyle(.bordered)
 
                 Spacer()
 
@@ -141,6 +132,7 @@ struct SettingsAITab: View {
                     appSettings.defaultAIEndpointId = selectedEndpointId
                 }
                 .disabled(selectedEndpointId == nil)
+                .buttonStyle(.bordered)
             }
         }
     }

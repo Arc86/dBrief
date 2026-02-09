@@ -22,6 +22,7 @@ final class CallDetectionService {
     private weak var appSettings: AppSettings?
     private weak var recordingManager: RecordingManager?
     private var micMonitor: MicActivityMonitor?
+    private var micActive = false
 
     var detectedApps: Set<String> = []
 
@@ -86,6 +87,7 @@ final class CallDetectionService {
     }
 
     private func handleMicActivityChange(isActive: Bool) {
+        micActive = isActive
         guard isActive else { return }
         guard let appState, let appSettings else { return }
         guard appSettings.callDetectionEnabled else { return }
@@ -96,13 +98,13 @@ final class CallDetectionService {
 
         log.info("Microphone activity detected — possible call in progress")
 
-        // Try to identify which app is using the mic by checking known call apps
-        let matchedApp = identifyActiveCallApp()
+        // Only prompt when a known call app (or frontmost browser) is active.
+        guard let matchedApp = identifyActiveCallApp() else { return }
 
-        let appName = matchedApp?.name ?? "An app"
-        let bundleId = matchedApp?.bundleId ?? "unknown.mic.activity"
+        let appName = matchedApp.name
+        let bundleId = matchedApp.bundleId
 
-        if let bundleId = matchedApp?.bundleId, appSettings.disabledCallApps.contains(bundleId) {
+        if appSettings.disabledCallApps.contains(bundleId) {
             return
         }
 
@@ -112,39 +114,32 @@ final class CallDetectionService {
                 try? await recordingManager?.startRecording(associatedApp: appName)
             }
         } else {
-            appState.detectedCallApp = matchedApp != nil ? appName : "Microphone active"
+            appState.detectedCallApp = appName
             appState.detectedCallAppBundleId = bundleId
             appState.showCallDetectedPopup = true
         }
     }
 
-    /// Try to identify which running app is likely using the mic by checking known call app bundle IDs
-    /// and common browser bundle IDs (for web-based calls).
+    /// Identify the frontmost call app (or browser) when the mic becomes active.
     private func identifyActiveCallApp() -> (name: String, bundleId: String)? {
-        let running = NSWorkspace.shared.runningApplications.filter { $0.isActive || !$0.isHidden }
+        guard let frontmost = NSWorkspace.shared.frontmostApplication,
+              let bundleId = frontmost.bundleIdentifier
+        else { return nil }
 
-        // First check native call apps
-        for app in running {
-            guard let bundleId = app.bundleIdentifier else { continue }
-            if let match = Self.knownCallApps.first(where: { $0.bundleId == bundleId }) {
-                return (match.name, match.bundleId)
-            }
+        if let match = Self.knownCallApps.first(where: { $0.bundleId == bundleId }) {
+            return (match.name, match.bundleId)
         }
 
-        // Check if a browser is the frontmost app (likely a web call)
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           let bundleId = frontmost.bundleIdentifier {
-            let browserBundles: [(id: String, name: String)] = [
-                ("com.google.Chrome", "Chrome"),
-                ("com.apple.Safari", "Safari"),
-                ("company.thebrowser.Browser", "Arc"),
-                ("com.microsoft.edgemac", "Edge"),
-                ("org.mozilla.firefox", "Firefox"),
-                ("com.brave.Browser", "Brave"),
-            ]
-            if let browser = browserBundles.first(where: { $0.id == bundleId }) {
-                return ("Web call (\(browser.name))", bundleId)
-            }
+        let browserBundles: [(id: String, name: String)] = [
+            ("com.google.Chrome", "Chrome"),
+            ("com.apple.Safari", "Safari"),
+            ("company.thebrowser.Browser", "Arc"),
+            ("com.microsoft.edgemac", "Edge"),
+            ("org.mozilla.firefox", "Firefox"),
+            ("com.brave.Browser", "Brave"),
+        ]
+        if let browser = browserBundles.first(where: { $0.id == bundleId }) {
+            return ("Web call (\(browser.name))", bundleId)
         }
 
         return nil
@@ -156,7 +151,6 @@ final class CallDetectionService {
             guard let bundleId = app.bundleIdentifier else { continue }
             if let match = Self.knownCallApps.first(where: { $0.bundleId == bundleId }) {
                 detectedApps.insert(match.name)
-                promptIfNeeded(appName: match.name, bundleId: bundleId, pid: app.processIdentifier)
             }
         }
     }
@@ -168,7 +162,9 @@ final class CallDetectionService {
 
         if launched {
             detectedApps.insert(match.name)
-            promptIfNeeded(appName: match.name, bundleId: bundleId, pid: pid)
+            if micActive {
+                promptIfNeeded(appName: match.name, bundleId: bundleId, pid: pid)
+            }
         } else {
             detectedApps.remove(match.name)
         }
@@ -180,6 +176,8 @@ final class CallDetectionService {
         guard !appSettings.disabledCallApps.contains(bundleId) else { return }
         guard !appSettings.dismissedCallAppPIDs.contains(pid) else { return }
         guard appState.isIdle else { return }
+        guard !appState.showCallDetectedPopup else { return }
+        guard micActive else { return }
 
         if appSettings.autoRecordCalls {
             log.info("Auto-starting recording for \(appName, privacy: .public)")

@@ -17,12 +17,10 @@ struct SettingsSection<Content: View>: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
+            .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.white.opacity(0.35), lineWidth: 1)
+                    .fill(Color(nsColor: .secondarySystemFill))
             )
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
