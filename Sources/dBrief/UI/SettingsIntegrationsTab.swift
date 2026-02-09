@@ -6,57 +6,54 @@ struct SettingsIntegrationsTab: View {
     var body: some View {
         @Bindable var settings = appSettings
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SettingsSection(title: "Integrations") {
-                    Toggle("Enable Obsidian", isOn: $settings.obsidianEnabled)
+        Form {
+            Section("Integrations") {
+                Toggle("Enable Obsidian", isOn: $settings.obsidianEnabled)
 
-                    if appSettings.obsidianEnabled {
-                        Divider()
-
-                        LabeledContent("Vault:") {
-                            HStack {
-                                Text(vaultPathText)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
-                                Button("Choose...") {
-                                    chooseVault { url in
-                                        appSettings.obsidianVaultURL = url
-                                    }
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        LabeledContent("Default output:") {
-                            HStack {
-                                Text(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
-                                Button("Choose...") {
-                                    chooseFolderInVault { relativePath in
-                                        appSettings.obsidianDefaultFolderRelativePath = relativePath
-                                    }
-                                }
-                                .disabled(appSettings.obsidianVaultURL == nil)
-                            }
-                        }
-
-                        if appSettings.obsidianVaultURL == nil {
-                            Text("Select an Obsidian vault to enable folder selection.")
-                                .font(.caption)
+                if appSettings.obsidianEnabled {
+                    LabeledContent("Vault:") {
+                        HStack {
+                            Text(vaultPathText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                                 .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            Button("Choose...") {
+                                chooseVault { url in
+                                    appSettings.obsidianVaultURL = url
+                                }
+                            }
+                            .buttonStyle(.bordered)
                         }
+                    }
+
+                    LabeledContent("Default output:") {
+                        HStack {
+                            Text(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            Button("Choose...") {
+                                chooseFolderInVault { relativePath in
+                                    appSettings.obsidianDefaultFolderRelativePath = relativePath
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(appSettings.obsidianVaultURL == nil)
+                        }
+                    }
+
+                    if appSettings.obsidianVaultURL == nil {
+                        Text("Select an Obsidian vault to enable folder selection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
-            .padding()
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var vaultPathText: String {

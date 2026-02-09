@@ -4,7 +4,6 @@ struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,7 +21,6 @@ struct CallDetectedPopup: View {
             HStack(spacing: 12) {
                 Button("Not Now") {
                     appState.showCallDetectedPopup = false
-                    dismiss()
                 }
                 .buttonStyle(.bordered)
 
@@ -31,14 +29,12 @@ struct CallDetectedPopup: View {
                         appSettings.disabledCallApps.insert(bundleId)
                     }
                     appState.showCallDetectedPopup = false
-                    dismiss()
                 }
                 .buttonStyle(.bordered)
                 .foregroundStyle(.secondary)
 
                 Button("Start Recording") {
                     appState.showCallDetectedPopup = false
-                    dismiss()
                     Task {
                         try? await recordingManager.startRecording(
                             associatedApp: appState.detectedCallApp

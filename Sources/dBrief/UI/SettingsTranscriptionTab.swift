@@ -18,23 +18,22 @@ struct SettingsTranscriptionTab: View {
         if isEditing {
             endpointEditor
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    engineSection
-                    languageSection
-                    if appSettings.transcriptionEngine == .remoteEndpoint {
-                        vocabularySection
-                        endpointsSection
-                    }
+            Form {
+                Section("Engine") { engineSection }
+                Section("Language") { languageSection }
+                if appSettings.transcriptionEngine == .remoteEndpoint {
+                    Section("Custom Vocabulary") { vocabularySection }
+                    Section("Endpoints") { endpointsSection }
                 }
-                .padding()
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
     }
 
     private var engineSection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Engine") {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Transcription engine:")
                 Spacer()
@@ -44,6 +43,7 @@ struct SettingsTranscriptionTab: View {
                     }
                 }
                 .labelsHidden()
+                .pickerStyle(.menu)
                 .frame(width: 200)
             }
 
@@ -66,7 +66,7 @@ struct SettingsTranscriptionTab: View {
 
     private var languageSection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Language") {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Audio language:")
                 Spacer()
@@ -94,6 +94,7 @@ struct SettingsTranscriptionTab: View {
                     Text("Norwegian").tag("no")
                 }
                 .labelsHidden()
+                .pickerStyle(.menu)
                 .frame(width: 160)
                 .disabled(settings.transcriptionEngine == .localWhisper)
             }
@@ -111,7 +112,7 @@ struct SettingsTranscriptionTab: View {
 
     private var vocabularySection: some View {
         @Bindable var settings = appSettings
-        return SettingsSection(title: "Custom Vocabulary") {
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Helps Whisper recognize proper nouns, acronyms, and domain-specific terms.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -121,7 +122,7 @@ struct SettingsTranscriptionTab: View {
     }
 
     private var endpointsSection: some View {
-        SettingsSection(title: "Endpoints") {
+        VStack(alignment: .leading, spacing: 8) {
             if appSettings.transcriptionEndpoints.isEmpty {
                 Text("No endpoints configured. Click + to add one.")
                     .foregroundStyle(.secondary)
@@ -147,6 +148,7 @@ struct SettingsTranscriptionTab: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .buttonStyle(.bordered)
 
                 Button {
                     if let id = selectedEndpointId {
@@ -157,6 +159,7 @@ struct SettingsTranscriptionTab: View {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedEndpointId == nil)
+                .buttonStyle(.bordered)
 
                 Spacer()
 
@@ -164,6 +167,7 @@ struct SettingsTranscriptionTab: View {
                     appSettings.defaultTranscriptionEndpointId = selectedEndpointId
                 }
                 .disabled(selectedEndpointId == nil)
+                .buttonStyle(.bordered)
             }
         }
     }

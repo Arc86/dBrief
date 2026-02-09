@@ -175,14 +175,18 @@ enum AudioInputDeviceManager {
 
         var size = UInt32(MemoryLayout<CFString?>.size)
         var result: CFString?
-        let status = AudioObjectGetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            &size,
-            &result
-        )
+        let status = withUnsafeMutablePointer(to: &result) { resultPtr in
+            resultPtr.withMemoryRebound(to: UInt8.self, capacity: Int(size)) { rawPtr in
+                AudioObjectGetPropertyData(
+                    deviceID,
+                    &address,
+                    0,
+                    nil,
+                    &size,
+                    rawPtr
+                )
+            }
+        }
         guard status == noErr else { return nil }
         return result as String?
     }

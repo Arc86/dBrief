@@ -10,66 +10,63 @@ struct SettingsPermissionsTab: View {
     @State private var speechStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SettingsSection(title: "Permissions Check") {
-                    PermissionRow(
-                        title: "Microphone",
-                        statusText: micStatusText,
-                        statusStyle: micStatusStyle,
-                        actionTitle: micActionTitle,
-                        action: requestMicrophone
-                    )
+        Form {
+            Section("Permissions Check") {
+                PermissionRow(
+                    title: "Microphone",
+                    statusText: micStatusText,
+                    statusStyle: micStatusStyle,
+                    actionTitle: micActionTitle,
+                    action: requestMicrophone
+                )
 
-                    Divider()
+                PermissionRow(
+                    title: "Screen Recording (System Audio)",
+                    statusText: screenStatusText,
+                    statusStyle: screenStatusStyle,
+                    actionTitle: screenActionTitle,
+                    action: requestScreenRecording
+                )
 
-                    PermissionRow(
-                        title: "Screen Recording (System Audio)",
-                        statusText: screenStatusText,
-                        statusStyle: screenStatusStyle,
-                        actionTitle: screenActionTitle,
-                        action: requestScreenRecording
-                    )
+                PermissionRow(
+                    title: "Speech Recognition",
+                    statusText: speechStatusText,
+                    statusStyle: speechStatusStyle,
+                    actionTitle: speechActionTitle,
+                    action: requestSpeechRecognition
+                )
+            }
 
-                    Divider()
-
-                    PermissionRow(
-                        title: "Speech Recognition",
-                        statusText: speechStatusText,
-                        statusStyle: speechStatusStyle,
-                        actionTitle: speechActionTitle,
-                        action: requestSpeechRecognition
-                    )
+            Section("Manage Access") {
+                HStack {
+                    Text("Open System Settings")
+                    Spacer()
+                    Button("Microphone") {
+                        openSystemSettingsPane("Privacy_Microphone")
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Screen Recording") {
+                        openSystemSettingsPane("Privacy_ScreenCapture")
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Speech") {
+                        openSystemSettingsPane("Privacy_SpeechRecognition")
+                    }
+                    .buttonStyle(.bordered)
                 }
 
-                SettingsSection(title: "Manage Access") {
-                    HStack {
-                        Text("Open System Settings")
-                        Spacer()
-                        Button("Microphone") {
-                            openSystemSettingsPane("Privacy_Microphone")
-                        }
-                        Button("Screen Recording") {
-                            openSystemSettingsPane("Privacy_ScreenCapture")
-                        }
-                        Button("Speech") {
-                            openSystemSettingsPane("Privacy_SpeechRecognition")
-                        }
+                HStack {
+                    Text("Refresh permission status")
+                    Spacer()
+                    Button("Refresh") {
+                        refreshStatuses()
                     }
-
-                    Divider()
-
-                    HStack {
-                        Text("Refresh permission status")
-                        Spacer()
-                        Button("Refresh") {
-                            refreshStatuses()
-                        }
-                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .padding()
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onAppear {
             refreshStatuses()
         }
@@ -179,6 +176,7 @@ private struct PermissionRow: View {
                 action()
             }
             .disabled(actionTitle == "Granted")
+            .buttonStyle(.bordered)
         }
     }
 }

@@ -16,7 +16,11 @@ final class AppState {
     var currentRecording: Recording?
 
     var showPostRecordingSheet = false
-    var showCallDetectedPopup = false
+    var showCallDetectedPopup = false {
+        didSet {
+            NotificationCenter.default.post(name: .callDetectedPopupChanged, object: showCallDetectedPopup)
+        }
+    }
     var detectedCallApp: String?
     var detectedCallAppBundleId: String?
 
