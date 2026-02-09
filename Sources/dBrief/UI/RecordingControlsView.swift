@@ -1,7 +1,7 @@
 import SwiftUI
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "recording")
+private let log = Logger(subsystem: "com.dbrief.app", category: "recording")
 
 struct RecordingControlsView: View {
     @Environment(AppState.self) private var appState
@@ -48,7 +48,7 @@ struct RecordingControlsView: View {
                             } catch {
                                 let msg = error.localizedDescription
                                 log.error("Record failed: \(msg, privacy: .public)")
-                                fputs("[DeBrief] Record failed: \(msg)\n", stderr)
+                                fputs("[dBrief] Record failed: \(msg)\n", stderr)
                                 appState.lastError = msg
                             }
                         }

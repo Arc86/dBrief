@@ -1,6 +1,6 @@
-# DeBrief
+# dBrief
 
-DeBrief is a macOS menu bar app for recording microphone and system audio, then automatically transcribing and analyzing recordings. It can generate summaries, action items, tags, and sentiment, and export Markdown directly into your Obsidian vault.
+dBrief is a macOS menu bar app for recording microphone and system audio, then automatically transcribing and analyzing recordings. It can generate summaries, action items, tags, and sentiment, and export Markdown directly into your Obsidian vault.
 
 ## Features
 - Menu bar recorder with pause/resume and a floating mini-player
@@ -17,7 +17,7 @@ DeBrief is a macOS menu bar app for recording microphone and system audio, then 
 - Apple Intelligence features require macOS 26+ on Apple Silicon
 
 ## Permissions
-DeBrief will request:
+dBrief will request:
 - Microphone access (required for recording)
 - Screen recording access (required for capturing system audio)
 - Notifications (optional, used for completion notifications)
@@ -34,12 +34,12 @@ swift build -c release
 ### Build an app bundle
 ```bash
 make app
-open DeBrief.app
+open dBrief.app
 ```
 
 ### Run the binary directly
 ```bash
-.build/release/VoiceRecorder
+.build/release/dBrief
 ```
 
 ## Usage
@@ -79,8 +79,8 @@ External AI endpoints must support OpenAI-compatible `/v1/chat/completions`.
 - Default output folder inside the vault
 
 ## Outputs
-- Recordings: `~/Documents/DeBrief/Recordings` by default
-- Transcriptions/notes: `~/Documents/DeBrief/Transcriptions` by default
+- Recordings: `~/Documents/dBrief/Recordings` by default
+- Transcriptions/notes: `~/Documents/dBrief/Transcriptions` by default
 - Obsidian: Markdown saved into the selected vault folder
 
 Markdown notes include:

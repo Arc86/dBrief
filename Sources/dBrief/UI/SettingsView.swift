@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
+    @State private var searchText = ""
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -32,7 +33,9 @@ struct SettingsView: View {
                 Label(tab.rawValue, systemImage: tab.icon)
                     .tag(tab)
             }
-            .navigationSplitViewColumnWidth(min: 140, ideal: 160, max: 200)
+            .listStyle(.sidebar)
+            .searchable(text: $searchText, placement: .sidebar)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
@@ -52,9 +55,11 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.regularMaterial)
+            .padding(.horizontal, 8)
+            .navigationTitle(selectedTab.rawValue)
+            .toolbarTitleDisplayMode(.inline)
         }
-        .frame(width: 600, height: 420)
+        .frame(width: 820, height: 560)
         .onAppear {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
@@ -96,7 +101,7 @@ private struct AboutTab: View {
                                 .foregroundStyle(.blue)
                         }
 
-                        Text("DeBrief Version 1.1.0")
+                        Text("dBrief Version 1.1.0")
                             .font(.title2)
                             .fontWeight(.semibold)
 
@@ -150,7 +155,7 @@ private struct AboutTab: View {
     }
 
     private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "DeBrief-Icon", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             return image
         }

@@ -1,7 +1,7 @@
 import Carbon
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "hotkey")
+private let log = Logger(subsystem: "com.dbrief.app", category: "hotkey")
 
 /// Registers a global keyboard shortcut (⌘⇧R) to toggle recording.
 @MainActor

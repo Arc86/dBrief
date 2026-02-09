@@ -44,7 +44,7 @@ struct OnboardingView: View {
                     .foregroundStyle(.blue)
             }
 
-            Text("Welcome to DeBrief")
+            Text("Welcome to dBrief")
                 .font(.headline)
 
             Text("Record, transcribe, and analyze voice recordings right from your menu bar.")
@@ -65,7 +65,7 @@ struct OnboardingView: View {
     }
 
     private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "DeBrief-Icon", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             return image
         }

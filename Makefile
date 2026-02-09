@@ -1,5 +1,5 @@
-APP_NAME = DeBrief
-EXECUTABLE_NAME = VoiceRecorder
+APP_NAME = dBrief
+EXECUTABLE_NAME = dBrief
 BUILD_DIR = .build/release
 APP_BUNDLE = $(APP_NAME).app
 CONTENTS = $(APP_BUNDLE)/Contents
@@ -15,9 +15,9 @@ app: build
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(MACOS) $(RESOURCES)
 	cp $(BUILD_DIR)/$(EXECUTABLE_NAME) $(MACOS)/$(EXECUTABLE_NAME)
-	cp Sources/VoiceRecorder/Resources/Info.plist $(CONTENTS)/Info.plist
-	cp Sources/VoiceRecorder/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
-	cp Sources/VoiceRecorder/Resources/DeBrief-Icon.png $(RESOURCES)/DeBrief-Icon.png
+	cp Sources/dBrief/Resources/Info.plist $(CONTENTS)/Info.plist
+	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
+	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	@echo "Built $(APP_BUNDLE)"
 
 clean:

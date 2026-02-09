@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "audio")
+private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
 
 final class AudioFileWriter: @unchecked Sendable {
     private let fileURL: URL

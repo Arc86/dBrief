@@ -24,7 +24,7 @@ final class AudioMixer: @unchecked Sendable {
     }
 
     /// Set up for mixed mode (mic + system audio)
-    func setUp(systemAudioFormat: AVAudioFormat? = nil) throws {
+    func setUp(systemAudioFormat: AVAudioFormat? = nil, micFormat: AVAudioFormat? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         guard !isSetUp else { return }
@@ -36,8 +36,8 @@ final class AudioMixer: @unchecked Sendable {
         engine.attach(micPlayer)
         // Allow AVAudioEngine to perform format conversion if needed.
         // Let the engine handle format conversion for mixed sources.
-        engine.connect(systemAudioPlayer, to: captureMixer, format: nil)
-        engine.connect(micPlayer, to: captureMixer, format: nil)
+        engine.connect(systemAudioPlayer, to: captureMixer, format: systemAudioFormat)
+        engine.connect(micPlayer, to: captureMixer, format: micFormat)
         engine.connect(captureMixer, to: engine.mainMixerNode, format: nil)
         hasSystemAudio = true
 
