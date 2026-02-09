@@ -13,45 +13,41 @@ struct SettingsAITab: View {
         if isEditing {
             endpointEditor
         } else {
+            @Bindable var settings = appSettings
             Form {
-                Section("Engine") { engineSection }
-                Section("Post-Recording Defaults") { defaultsSection }
-                Section("Prompts") { promptsSection }
+                Section("Engine") {
+                    Toggle("Use built-in Apple Intelligence", isOn: $settings.useBuiltInAI)
+                    Text("On-device AI processing. Requires macOS 26+ with Apple Silicon.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                    .listRowBackground(Color.clear)
+                Section("Post-Recording Defaults") {
+                    Toggle("Auto-transcribe after recording", isOn: $settings.autoTranscribe)
+                    Toggle("Generate summary", isOn: $settings.autoSummary)
+                    Toggle("Extract action items", isOn: $settings.autoActionItems)
+                    Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
+                }
+                    .listRowBackground(Color.clear)
+                Section("Prompts") {
+                    promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
+                    promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
+                    promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                }
+                    .listRowBackground(Color.clear)
                 if !appSettings.useBuiltInAI {
-                    Section("Endpoints") { endpointsSection }
+                    Section("Endpoints") {
+                        endpointsSection
+                    }
+                        .listRowBackground(Color.clear)
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-        }
-    }
-
-    private var engineSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            Toggle("Use built-in Apple Intelligence", isOn: $settings.useBuiltInAI)
-            Text("On-device AI processing. Requires macOS 26+ with Apple Silicon.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var defaultsSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            Toggle("Auto-transcribe after recording", isOn: $settings.autoTranscribe)
-            Toggle("Generate summary", isOn: $settings.autoSummary)
-            Toggle("Extract action items", isOn: $settings.autoActionItems)
-            Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
-        }
-    }
-
-    private var promptsSection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
-            promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
-            promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+            .scrollBounceBehavior(.basedOnSize)
+            .toggleStyle(.switch)
+            .controlSize(.regular)
+            .padding(.top, -20)
         }
     }
 

@@ -97,10 +97,15 @@ struct DBriefApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
+        // REPLACED: Changed 'Settings' to 'WindowGroup' to allow full custom transparency
+        WindowGroup(id: "settings") {
             SettingsView()
                 .environment(context.appSettings)
+                .frame(minWidth: 800, minHeight: 550)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 950, height: 650)
     }
 }
 
@@ -116,6 +121,9 @@ private func formatMenuBarDuration(_ duration: TimeInterval) -> String {
 }
 
 struct MenuBarView: View {
+    // ADDED: Environment hook to open the specific window ID
+    @Environment(\.openWindow) var openWindow
+    
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
@@ -164,7 +172,12 @@ struct MenuBarView: View {
                 }
 
                 HStack(spacing: 10) {
-                    SettingsLink {
+                    // UPDATED: Button now opens the specific "settings" WindowGroup
+                    Button {
+                        closeMenuBarExtraWindow()
+                        openWindow(id: "settings")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
                         Text("Settings...")
                     }
                     .keyboardShortcut(",", modifiers: .command)
@@ -264,5 +277,11 @@ struct MenuBarView: View {
             return image
         }
         return NSImage(named: "AppIcon")
+    }
+
+    private func closeMenuBarExtraWindow() {
+        for window in NSApp.windows where window.level == .statusBar {
+            window.orderOut(nil)
+        }
     }
 }

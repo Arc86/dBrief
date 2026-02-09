@@ -20,14 +20,22 @@ struct SettingsTranscriptionTab: View {
         } else {
             Form {
                 Section("Engine") { engineSection }
+                    .listRowBackground(Color.clear)
                 Section("Language") { languageSection }
+                    .listRowBackground(Color.clear)
                 if appSettings.transcriptionEngine == .remoteEndpoint {
                     Section("Custom Vocabulary") { vocabularySection }
+                        .listRowBackground(Color.clear)
                     Section("Endpoints") { endpointsSection }
+                        .listRowBackground(Color.clear)
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .toggleStyle(.switch)
+            .controlSize(.regular)
+            .padding(.top, -20)
         }
     }
 
@@ -44,7 +52,7 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 200)
+                .frame(width: 200, alignment: .trailing)
             }
 
             switch settings.transcriptionEngine {
@@ -95,7 +103,7 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 160)
+                .frame(width: 200, alignment: .trailing)
                 .disabled(settings.transcriptionEngine == .localWhisper)
             }
             if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {

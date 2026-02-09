@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:VoiceRecorder}",
+            "name": "Debug dBrief",
+            "target": "dBrief",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug dBrief"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:VoiceRecorder}",
+            "name": "Release dBrief",
+            "target": "dBrief",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release dBrief"
+        }
+    ]
+}
