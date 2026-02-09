@@ -45,7 +45,7 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(.orange)
             }
 
-            if !appSettings.useBuiltInTranscription,
+            if appSettings.transcriptionEngine == .remoteEndpoint,
                appSettings.defaultTranscriptionEndpoint == nil,
                transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
@@ -88,7 +88,7 @@ struct PostRecordingSheet: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(
                     transcribe
-                        && !appSettings.useBuiltInTranscription
+                        && appSettings.transcriptionEngine == .remoteEndpoint
                         && appSettings.defaultTranscriptionEndpoint == nil
                 )
             }

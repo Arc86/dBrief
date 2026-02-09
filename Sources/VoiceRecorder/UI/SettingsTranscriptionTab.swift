@@ -22,7 +22,7 @@ struct SettingsTranscriptionTab: View {
                 VStack(alignment: .leading, spacing: 16) {
                     engineSection
                     languageSection
-                    if !appSettings.useBuiltInTranscription {
+                    if appSettings.transcriptionEngine == .remoteEndpoint {
                         vocabularySection
                         endpointsSection
                     }
@@ -35,10 +35,28 @@ struct SettingsTranscriptionTab: View {
     private var engineSection: some View {
         @Bindable var settings = appSettings
         return SettingsSection(title: "Engine") {
-            Toggle("Use built-in Apple Speech Recognition", isOn: $settings.useBuiltInTranscription)
-            Text("On-device, no server needed. Quality may be lower than Whisper.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Picker("Engine", selection: $settings.transcriptionEngine) {
+                ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 240)
+
+            switch settings.transcriptionEngine {
+            case .appleSpeech:
+                Text("On-device, no server needed. Quality may be lower than Whisper.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .localWhisper:
+                Text("On-device Whisper with downloadable model. Best privacy, strong accuracy.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .remoteEndpoint:
+                Text("Use a remote Whisper API or server. Requires an endpoint.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -49,7 +67,7 @@ struct SettingsTranscriptionTab: View {
                 Text("Audio language:")
                 Spacer()
                 Picker("", selection: $settings.transcriptionLanguage) {
-                    Text(settings.useBuiltInTranscription ? "Auto (System language)" : "Auto-detect").tag("")
+                    Text(settings.transcriptionEngine == .appleSpeech ? "Auto (System language)" : "Auto-detect").tag("")
                     Divider()
                     Text("English").tag("en")
                     Text("Dutch").tag("nl")
@@ -73,9 +91,14 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .frame(width: 160)
+                .disabled(settings.transcriptionEngine == .localWhisper)
             }
-            if settings.useBuiltInTranscription && settings.transcriptionLanguage.isEmpty {
+            if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
                 Text("Apple Speech uses the system language when set to Auto.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if settings.transcriptionEngine == .localWhisper {
+                Text("Local Whisper always auto-detects language.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

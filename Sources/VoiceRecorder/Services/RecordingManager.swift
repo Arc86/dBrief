@@ -11,6 +11,7 @@ final class RecordingManager {
     private let audioCaptureManager = AudioCaptureManager()
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
+    private let localWhisperService = LocalWhisperService()
     var miniPlayer: FloatingMiniPlayerController?
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
@@ -111,10 +112,17 @@ final class RecordingManager {
         // Step 1: Transcription
         if transcribe {
             let stepIndex = appState.processingSteps.count
-            let stepName = appSettings.useBuiltInTranscription ? "Transcribing (Apple Speech)" : "Transcribing audio"
+            let stepName: String = {
+                switch appSettings.transcriptionEngine {
+                case .appleSpeech: "Transcribing (Apple Speech)"
+                case .localWhisper: "Transcribing (Local Whisper)"
+                case .remoteEndpoint: "Transcribing audio"
+                }
+            }()
             appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
 
-            if appSettings.useBuiltInTranscription {
+            switch appSettings.transcriptionEngine {
+            case .appleSpeech:
                 do {
                     let result = try await localTranscriptionService.transcribe(
                         fileURL: recording.fileURL,
@@ -125,21 +133,31 @@ final class RecordingManager {
                 } catch {
                     appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                 }
-            } else if let endpoint = appSettings.defaultTranscriptionEndpoint {
+            case .localWhisper:
                 do {
-                    let result = try await transcriptionService.transcribe(
-                        fileURL: recording.fileURL,
-                        endpoint: endpoint,
-                        language: appSettings.transcriptionLanguage,
-                        initialPrompt: appSettings.whisperPrompt
-                    )
+                    let result = try await localWhisperService.transcribe(fileURL: recording.fileURL)
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
                     appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                 }
-            } else {
-                appState.processingSteps[stepIndex].status = .failed("No transcription endpoint configured")
+            case .remoteEndpoint:
+                if let endpoint = appSettings.defaultTranscriptionEndpoint {
+                    do {
+                        let result = try await transcriptionService.transcribe(
+                            fileURL: recording.fileURL,
+                            endpoint: endpoint,
+                            language: appSettings.transcriptionLanguage,
+                            initialPrompt: appSettings.whisperPrompt
+                        )
+                        recording.transcription = result
+                        appState.processingSteps[stepIndex].status = .completed
+                    } catch {
+                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    }
+                } else {
+                    appState.processingSteps[stepIndex].status = .failed("No transcription endpoint configured")
+                }
             }
         }
 

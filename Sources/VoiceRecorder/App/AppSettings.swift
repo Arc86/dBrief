@@ -20,6 +20,7 @@ final class AppSettings {
         static let disabledCallApps = "disabledCallApps"
         static let transcriptionLanguage = "transcriptionLanguage"
         static let useBuiltInTranscription = "useBuiltInTranscription"
+        static let transcriptionEngine = "transcriptionEngine"
         static let useBuiltInAI = "useBuiltInAI"
         static let audioSampleRate = "audioSampleRate"
         static let audioBitRate = "audioBitRate"
@@ -87,9 +88,23 @@ final class AppSettings {
 
     // MARK: - Transcription Language
 
-    /// Use built-in Apple Speech Recognition instead of an external endpoint
-    var useBuiltInTranscription: Bool {
-        didSet { UserDefaults.standard.set(useBuiltInTranscription, forKey: Keys.useBuiltInTranscription) }
+    enum TranscriptionEngine: String, CaseIterable, Sendable {
+        case appleSpeech
+        case localWhisper
+        case remoteEndpoint
+
+        var displayName: String {
+            switch self {
+            case .appleSpeech: "Apple Speech"
+            case .localWhisper: "Local Whisper"
+            case .remoteEndpoint: "Remote Endpoint"
+            }
+        }
+    }
+
+    /// Preferred transcription engine (Apple Speech, Local Whisper, or remote endpoint).
+    var transcriptionEngine: TranscriptionEngine {
+        didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: Keys.transcriptionEngine) }
     }
 
     /// Use built-in Apple Intelligence instead of an external endpoint (macOS 26+)
@@ -249,7 +264,6 @@ final class AppSettings {
 
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
 
-        self.useBuiltInTranscription = defaults.bool(forKey: Keys.useBuiltInTranscription)
         self.useBuiltInAI = defaults.bool(forKey: Keys.useBuiltInAI)
 
         self.audioSampleRate = defaults.object(forKey: Keys.audioSampleRate) as? Int ?? 16000
@@ -280,6 +294,15 @@ final class AppSettings {
             self.defaultAIEndpointId = UUID(uuidString: idString)
         } else {
             self.defaultAIEndpointId = nil
+        }
+
+        if let rawValue = defaults.string(forKey: Keys.transcriptionEngine),
+           let engine = TranscriptionEngine(rawValue: rawValue)
+        {
+            self.transcriptionEngine = engine
+        } else {
+            let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInTranscription)
+            self.transcriptionEngine = legacyBuiltIn ? .appleSpeech : .remoteEndpoint
         }
     }
 

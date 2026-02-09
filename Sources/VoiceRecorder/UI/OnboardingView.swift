@@ -175,14 +175,20 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
 
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Built-in transcription (Apple Speech)", isOn: $settings.useBuiltInTranscription)
-                    .font(.callout)
+                Picker("Transcription engine", selection: $settings.transcriptionEngine) {
+                    ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
+                }
+                .labelsHidden()
+                .font(.callout)
+
                 Toggle("Built-in AI (Apple Intelligence)", isOn: $settings.useBuiltInAI)
                     .font(.callout)
             }
             .padding(.horizontal, 4)
 
-            if !appSettings.useBuiltInTranscription || !appSettings.useBuiltInAI {
+            if appSettings.transcriptionEngine == .remoteEndpoint || !appSettings.useBuiltInAI {
                 Text("Configure external endpoints in Settings for Whisper / LLM services.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
