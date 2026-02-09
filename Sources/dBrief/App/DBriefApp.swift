@@ -19,6 +19,7 @@ final class AppContext {
 
     init() {
         log.info("AppContext init")
+        registerFontAwesomeBrands()
         self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings)
         CallDetectedOverlayController.shared.configure(
             appState: appState,
@@ -38,6 +39,11 @@ final class AppContext {
         recordingManager.requestNotificationPermission()
         miniPlayer.setUp(appState: appState, recordingManager: recordingManager)
         recordingManager.miniPlayer = miniPlayer
+
+        // Apply dock icon preference
+        if appSettings.showDockIcon {
+            NSApp.setActivationPolicy(.regular)
+        }
 
         // Register global hotkey ⌘⇧R
         hotkeyService.register { [weak self] in
@@ -103,7 +109,6 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .frame(minWidth: 800, minHeight: 550)
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
     }
@@ -121,58 +126,61 @@ private func formatMenuBarDuration(_ duration: TimeInterval) -> String {
 }
 
 struct MenuBarView: View {
-    // ADDED: Environment hook to open the specific window ID
     @Environment(\.openWindow) var openWindow
-    
+
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
     @State private var showHistory = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             if !appSettings.hasCompletedOnboarding {
                 OnboardingView()
             } else {
                 header
 
-                card {
-                    RecordingControlsView()
-                }
+                Divider()
+
+                RecordingControlsView()
 
                 if appState.showPostRecordingSheet {
-                    card { PostRecordingSheet() }
+                    Divider()
+                    PostRecordingSheet()
                 } else if appState.isProcessing || appState.hasProcessingResults {
-                    card { TranscriptionProgressView() }
+                    Divider()
+                    TranscriptionProgressView()
                 } else if showHistory {
-                    card { RecordingHistoryView() }
+                    Divider()
+                    RecordingHistoryView()
                 }
 
-                card {
-                    HStack {
-                        Button {
-                            showHistory.toggle()
-                        } label: {
-                            Label(showHistory ? "Hide History" : "History", systemImage: "clock.arrow.circlepath")
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
+                Divider()
 
-                        Spacer()
-
-                        Button {
-                            recordingManager.pickFileForTranscription()
-                        } label: {
-                            Label("Transcribe File...", systemImage: "doc.badge.plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .disabled(!appState.isIdle)
+                HStack {
+                    Button {
+                        showHistory.toggle()
+                    } label: {
+                        Label(showHistory ? "Hide History" : "History", systemImage: "clock.arrow.circlepath")
                     }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+
+                    Spacer()
+
+                    Button {
+                        recordingManager.pickFileForTranscription()
+                    } label: {
+                        Label("Transcribe File...", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .disabled(!appState.isIdle)
                 }
+
+                Divider()
 
                 HStack(spacing: 10) {
-                    // UPDATED: Button now opens the specific "settings" WindowGroup
                     Button {
                         closeMenuBarExtraWindow()
                         openWindow(id: "settings")
@@ -181,19 +189,22 @@ struct MenuBarView: View {
                         Text("Settings...")
                     }
                     .keyboardShortcut(",", modifiers: .command)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+
+                    Spacer()
 
                     Button("Quit dBrief") {
                         NSApplication.shared.terminate(nil)
                     }
                     .keyboardShortcut("q", modifiers: .command)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
                 }
             }
         }
         .padding(12)
-        .frame(width: 320)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: 300)
     }
 
     private var header: some View {
@@ -211,46 +222,31 @@ struct MenuBarView: View {
                     .foregroundStyle(.blue)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("dBrief")
-                    .font(.headline)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("dBrief")
+                .font(.headline)
 
             Spacer()
 
             statusPill
         }
-        .padding(.horizontal, 4)
-    }
-
-    private var statusText: String {
-        if appState.isRecording { return "Recording in progress" }
-        if appState.isPaused { return "Paused" }
-        if appState.isProcessing { return "Processing" }
-        return "Ready"
     }
 
     private var statusPill: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(statusColor)
                 .frame(width: 6, height: 6)
             Text(statusLabel)
-                .font(.caption2.weight(.semibold))
+                .font(.caption2.weight(.medium))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
+        .foregroundStyle(.secondary)
     }
 
     private var statusLabel: String {
-        if appState.isRecording { return "REC" }
-        if appState.isPaused { return "PAUSED" }
-        if appState.isProcessing { return "PROCESSING" }
-        return "READY"
+        if appState.isRecording { return "Recording" }
+        if appState.isPaused { return "Paused" }
+        if appState.isProcessing { return "Processing" }
+        return "Ready"
     }
 
     private var statusColor: Color {
@@ -258,17 +254,6 @@ struct MenuBarView: View {
         if appState.isPaused { return .orange }
         if appState.isProcessing { return .blue }
         return .green
-    }
-
-    @ViewBuilder
-    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
     }
 
     private func appIconImage() -> NSImage? {

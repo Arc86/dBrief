@@ -1,19 +1,8 @@
 import AppKit
 import SwiftUI
 
-// 1. HELPER: Grabs the window immediately to fix the "Opening Glitch"
-struct WindowAccessor: NSViewRepresentable {
-    var callback: (NSWindow?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { self.callback(view.window) }
-        return view
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 struct SettingsView: View {
+    @Environment(AppSettings.self) private var appSettings
     @State private var selectedTab: SettingsTab? = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
@@ -39,57 +28,40 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(SettingsTab.allCases, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                Label {
+                    Text(tab.rawValue)
+                } icon: {
+                    Image(systemName: tab.icon)
+                        .imageScale(.large)
+                }
+                .tag(tab)
             }
             .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(
-                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    .ignoresSafeArea()
-            )
             .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
-            ZStack {
-                // Glass Background
-                VisualEffectView(material: .windowBackground, blendingMode: .behindWindow)
-                    .ignoresSafeArea()
-
-                // Content
-                if let tab = selectedTab {
-                    Group {
-                        switch tab {
-                        case .general: SettingsGeneralTab()
-                        case .permissions: SettingsPermissionsTab()
-                        case .transcription: SettingsTranscriptionTab()
-                        case .ai: SettingsAITab()
-                        case .integrations: SettingsIntegrationsTab()
-                        case .about: AboutTab()
-                        }
-                    }
-                } else {
-                    SettingsGeneralTab()
+            if let tab = selectedTab {
+                switch tab {
+                case .general: SettingsGeneralTab()
+                case .permissions: SettingsPermissionsTab()
+                case .transcription: SettingsTranscriptionTab()
+                case .ai: SettingsAITab()
+                case .integrations: SettingsIntegrationsTab()
+                case .about: AboutTab()
                 }
+            } else {
+                SettingsGeneralTab()
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .background(WindowAccessor { window in
-            configureWindow(window)
-        })
         .onAppear {
-            if selectedTab == nil {
-                selectedTab = .general
+            if !appSettings.showDockIcon {
+                NSApp.setActivationPolicy(.regular)
             }
-            configureWindow(NSApp.keyWindow ?? NSApp.windows.first)
         }
-    }
-
-    private func configureWindow(_ window: NSWindow?) {
-        guard let window else { return }
-        window.styleMask.insert([.fullSizeContentView, .titled, .closable, .miniaturizable, .resizable])
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.toolbar = nil
+        .onDisappear {
+            if !appSettings.showDockIcon {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 }

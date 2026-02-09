@@ -36,6 +36,7 @@ final class AppSettings {
         static let tagsPrompt = "tagsPrompt"
         static let obsidianEnabled = "obsidianEnabled"
         static let obsidianDefaultFolderRelativePath = "obsidianDefaultFolderRelativePath"
+        static let showDockIcon = "showDockIcon"
     }
 
     // MARK: - Recording
@@ -125,6 +126,14 @@ final class AppSettings {
     /// Audio input device UID (empty string = system default)
     var audioInputDeviceUID: String {
         didSet { UserDefaults.standard.set(audioInputDeviceUID, forKey: Keys.audioInputDeviceUID) }
+    }
+
+    /// Show the app icon in the Dock
+    var showDockIcon: Bool {
+        didSet {
+            UserDefaults.standard.set(showDockIcon, forKey: Keys.showDockIcon)
+            NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+        }
     }
 
     /// Empty string means auto-detect, otherwise an ISO 639-1 language code (e.g. "en", "nl", "de")
@@ -269,6 +278,7 @@ final class AppSettings {
         self.audioSampleRate = defaults.object(forKey: Keys.audioSampleRate) as? Int ?? 16000
         self.audioBitRate = defaults.object(forKey: Keys.audioBitRate) as? Int ?? 128000
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
+        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
