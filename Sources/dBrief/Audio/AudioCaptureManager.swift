@@ -3,7 +3,7 @@ import CoreGraphics
 @preconcurrency import ScreenCaptureKit
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "audio")
+private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
 
 @MainActor
 @Observable
@@ -44,6 +44,12 @@ final class AudioCaptureManager {
         inputDeviceUID: String? = nil
     ) async throws {
         guard !isCapturing else { return }
+
+        if !hasMicrophonePermission {
+            hasMicrophonePermission = await MicrophoneCapture.requestAccess()
+        }
+
+        hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
 
         guard hasMicrophonePermission || hasSystemAudioPermission else {
             throw AudioCaptureError.noMicrophoneAccess
@@ -143,9 +149,8 @@ final class AudioCaptureManager {
             mixer?.scheduleSystemAudio(sampleBuffer)
         }
         self.systemCapture = capture
-        try mixer.setUp(systemAudioFormat: nil)
 
-        // Set up mic through the mixer's engine
+        var micFormat: AVAudioFormat?
         if hasMicrophonePermission {
             do {
                 try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: mixer.engine)
@@ -155,11 +160,19 @@ final class AudioCaptureManager {
             let inputNode = mixer.engine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
-                // Tap mic input and feed it into the mix via the mic player node.
-                let micHandler = Self.makeMicTapHandler(mixer: mixer)
-                inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: micHandler)
-                log.info("Mic tap installed on mixer engine")
+                micFormat = inputFormat
             }
+        }
+
+        try mixer.setUp(systemAudioFormat: nil, micFormat: micFormat)
+
+        // Set up mic through the mixer's engine
+        if hasMicrophonePermission, let micFormat {
+            let inputNode = mixer.engine.inputNode
+            // Tap mic input and feed it into the mix via the mic player node.
+            let micHandler = Self.makeMicTapHandler(mixer: mixer)
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat, block: micHandler)
+            log.info("Mic tap installed on mixer engine")
         }
 
         // Tap mixed output — handler created in nonisolated context

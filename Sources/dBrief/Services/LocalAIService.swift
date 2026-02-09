@@ -3,7 +3,7 @@ import Foundation
 import FoundationModels
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "localai")
+private let log = Logger(subsystem: "com.dbrief.app", category: "localai")
 
 /// On-device AI using Apple Foundation Models (macOS 26+).
 @available(macOS 26, *)

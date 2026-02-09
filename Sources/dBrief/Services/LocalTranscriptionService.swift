@@ -2,7 +2,7 @@ import Foundation
 import Speech
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "localtranscription")
+private let log = Logger(subsystem: "com.dbrief.app", category: "localtranscription")
 
 /// On-device transcription using Apple's SFSpeechRecognizer.
 actor LocalTranscriptionService {

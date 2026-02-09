@@ -3,7 +3,7 @@ import Foundation
 import SwiftWhisper
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "localwhisper")
+private let log = Logger(subsystem: "com.dbrief.app", category: "localwhisper")
 
 struct LocalWhisperModelSource: Sendable {
     let name: String
@@ -215,7 +215,7 @@ actor LocalWhisperService {
 
     private func modelDirectory() throws -> URL {
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let appFolder = Bundle.main.bundleIdentifier ?? "VoiceRecorder"
+        let appFolder = Bundle.main.bundleIdentifier ?? "dBrief"
         let modelDir = base
             .appendingPathComponent(appFolder, isDirectory: true)
             .appendingPathComponent("WhisperModels", isDirectory: true)

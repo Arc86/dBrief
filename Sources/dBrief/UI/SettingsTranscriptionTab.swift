@@ -35,13 +35,17 @@ struct SettingsTranscriptionTab: View {
     private var engineSection: some View {
         @Bindable var settings = appSettings
         return SettingsSection(title: "Engine") {
-            Picker("Engine", selection: $settings.transcriptionEngine) {
-                ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                    Text(engine.displayName).tag(engine)
+            HStack {
+                Text("Transcription engine:")
+                Spacer()
+                Picker("", selection: $settings.transcriptionEngine) {
+                    ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
                 }
+                .labelsHidden()
+                .frame(width: 200)
             }
-            .labelsHidden()
-            .frame(maxWidth: 240)
 
             switch settings.transcriptionEngine {
             case .appleSpeech:

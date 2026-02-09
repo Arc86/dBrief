@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import os
 
-private let log = Logger(subsystem: "com.voicerecorder.app", category: "app")
+private let log = Logger(subsystem: "com.dbrief.app", category: "app")
 
 /// Holds all shared app state. Created once at launch, passed via environment.
 @MainActor
@@ -59,7 +59,7 @@ final class AppContext {
 }
 
 @main
-struct VoiceRecorderApp: App {
+struct DBriefApp: App {
     @State private var context = AppContext()
 
     var body: some Scene {
@@ -165,7 +165,7 @@ struct MenuBarView: View {
                     .keyboardShortcut(",", modifiers: .command)
                     .buttonStyle(.bordered)
 
-                    Button("Quit DeBrief") {
+                    Button("Quit dBrief") {
                         NSApplication.shared.terminate(nil)
                     }
                     .keyboardShortcut("q", modifiers: .command)
@@ -203,7 +203,7 @@ struct MenuBarView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("DeBrief")
+                Text("dBrief")
                     .font(.headline)
                 Text(statusText)
                     .font(.caption)
@@ -263,7 +263,7 @@ struct MenuBarView: View {
     }
 
     private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "DeBrief-Icon", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             return image
         }
