@@ -1,99 +1,111 @@
 # dBrief
 
-dBrief is a macOS menu bar app for recording microphone and system audio, then automatically transcribing and analyzing recordings. It can generate summaries, action items, tags, and sentiment, and export Markdown directly into your Obsidian vault.
+dBrief is a macOS menu bar app for recording microphone and system audio, then automatically transcribing and analyzing recordings with AI. It generates summaries, action items, tags, and sentiment, and can export Markdown notes directly into your Obsidian vault.
 
 ## Features
-- Menu bar recorder with pause/resume and a floating mini-player
-- Global hotkey: `⌘⇧R` toggles recording
-- Records microphone + system audio (falls back to mic-only if screen recording permission is denied)
-- Post-recording pipeline: transcription, summary, action items, tags & sentiment
-- Export Markdown notes with YAML frontmatter
-- Call detection with optional auto-record for common meeting apps
-- Obsidian integration for saving notes into a vault folder
+
+- **Menu bar app** — lives in the menu bar, no dock icon clutter
+- **Floating mini player** — compact translucent overlay showing recording status, waveform, and controls
+- **Global hotkey** — `⌘⇧R` to start/stop recording from anywhere
+- **Microphone + system audio** — captures both via ScreenCaptureKit (falls back to mic-only if screen recording permission is denied)
+- **Three transcription engines** — Apple Speech (on-device), Local Whisper (on-device, downloads once), or a remote Whisper API
+- **Two AI backends** — Apple Intelligence (on-device, macOS 26+) or any OpenAI-compatible endpoint
+- **Post-recording pipeline** — transcription, summary, action items, tags & sentiment
+- **Custom vocabulary** — guide Whisper with proper nouns and domain terms (works with both Local Whisper and remote endpoints)
+- **Call detection** — detects meeting apps (Zoom, Teams, Slack, etc.) and can auto-start recording
+- **Obsidian integration** — export Markdown notes with YAML frontmatter into your vault
+- **Configurable audio** — sample rate, bit rate, and input device selection
 
 ## Requirements
-- macOS 14+ (built with Swift 6.2)
-- Xcode 16+ (or Swift toolchain that supports `swift-tools-version: 6.2`)
+
+- macOS 14+
+- Swift 6.2 toolchain (Xcode 16+)
 - Apple Intelligence features require macOS 26+ on Apple Silicon
 
 ## Permissions
-dBrief will request:
-- Microphone access (required for recording)
-- Screen recording access (required for capturing system audio)
-- Notifications (optional, used for completion notifications)
 
-If screen recording permission is not granted, recording continues in mic-only mode.
+dBrief will request the following (managed in Settings > Permissions):
+
+- **Microphone** — required for recording
+- **Screen Recording** — required for capturing system audio; recording works in mic-only mode without it
+- **Speech Recognition** — required for Apple Speech transcription engine
+- **Notifications** — optional, used for completion alerts
 
 ## Build & Run
 
-### Build (CLI)
 ```bash
+# Build release binary
 swift build -c release
-```
 
-### Build an app bundle
-```bash
+# Build app bundle and launch
 make app
 open dBrief.app
-```
 
-### Run the binary directly
-```bash
+# Or run the binary directly
 .build/release/dBrief
 ```
 
 ## Usage
+
 1. Click the menu bar icon to open the controls.
-1. Click Record (or press `⌘⇧R`) to start.
-1. Stop the recording to open the post-processing sheet.
-1. Choose which steps to run, then click Process.
-1. Use the History view to revisit past recordings.
-1. Use “Transcribe File...” to process an existing audio file.
+2. Click **Record** (or press `⌘⇧R`) to start recording.
+3. A floating mini player appears showing duration, waveform, and pause/stop controls.
+4. Stop the recording to open the post-processing sheet.
+5. Choose which steps to run (transcription, summary, action items, tags), then click **Process**.
+6. Use the **History** view to revisit past recordings and their results.
+7. Use **Transcribe File...** to process an existing audio file without recording.
 
 ## Settings
 
 ### General
 - Recording and transcription output folders
-- Audio quality (sample rate and AAC bit rate)
-- Call detection and per-app enable/disable list
+- Audio quality (sample rate: 16–48 kHz, AAC bit rate: 64–256 kbps)
+- Input device selection
+- Call detection with per-app enable/disable (Zoom, Teams, Slack, Meet, FaceTime, Discord, WebEx, etc.)
+
+### Permissions
+- View and request microphone, screen recording, and speech recognition permissions
+- Quick links to the relevant System Settings panes
 
 ### Transcription
-- Engine: built-in Apple Speech Recognition or external endpoint
-- Language selection and Whisper prompt for custom vocabulary
-- Endpoint list with default selection and connection testing
+Three engines to choose from:
 
-External transcription endpoints support:
+| Engine | Privacy | Accuracy | Requirements |
+|--------|---------|----------|-------------|
+| **Apple Speech** | On-device | Good | Speech Recognition permission |
+| **Local Whisper** | On-device | Strong | Downloads Whisper Base model (~148 MB) on first use |
+| **Remote Endpoint** | Network | Best | A Whisper API server |
+
+- Language selection (auto-detect or 15+ languages)
+- Custom vocabulary prompt for proper nouns and domain terms (Local Whisper and remote endpoints)
+- Remote endpoint management with connection testing
+
+Remote transcription endpoints support:
 - OpenAI-compatible `/v1/audio/transcriptions`
-- `whisper-asr-webservice` (`/asr`) servers
+- `whisper-asr-webservice` `/asr` servers
 
 ### AI
-- Engine: built-in Apple Intelligence or external endpoint
-- Default post-processing toggles
-- Custom prompts for summary, action items, and tags
-- Endpoint list with default selection and connection testing
-
-External AI endpoints must support OpenAI-compatible `/v1/chat/completions`.
+- **Apple Intelligence** — on-device processing (macOS 26+, Apple Silicon)
+- **Remote endpoint** — any OpenAI-compatible `/v1/chat/completions` server
+- Post-recording defaults (auto-transcribe, summary, action items, tags)
+- Customizable prompts for each AI task
+- Endpoint management with connection testing
 
 ### Integrations
-- Obsidian vault selection
-- Default output folder inside the vault
+- **Obsidian** — select a vault and default output folder; notes are saved as Markdown with YAML frontmatter
 
 ## Outputs
-- Recordings: `~/Documents/dBrief/Recordings` by default
-- Transcriptions/notes: `~/Documents/dBrief/Transcriptions` by default
-- Obsidian: Markdown saved into the selected vault folder
 
-Markdown notes include:
-- YAML frontmatter (title, date, tags, duration, audio file link, model info)
-- Sections for transcription, summary, action items, and tags/sentiment
+- **Recordings**: `~/Documents/dBrief/Recordings` (M4A, falls back to WAV if AAC fails)
+- **Transcriptions**: `~/Documents/dBrief/Transcriptions` (Markdown)
+- **Obsidian**: Markdown saved into the selected vault folder
+
+Markdown notes include YAML frontmatter (title, date, tags, duration, audio link, model info) and sections for transcription (with timestamps), summary, action items, and tags/sentiment.
 
 ## Troubleshooting
-- No system audio: grant Screen Recording permission in System Settings.
-- Transcription fails: verify endpoint URL, model name, and API key.
-- AI steps fail: ensure AI endpoint is reachable and supports chat completions.
-- No endpoint configured: add one under Settings > Transcription or Settings > AI.
 
-## Development Notes
-- The app is a SwiftUI `MenuBarExtra`.
-- Call detection is based on mic activity and known app bundle IDs.
-- Recording filenames use `VoiceRecording_yyyy-MM-dd_HHmmss.m4a` (falls back to WAV if AAC fails).
+- **No system audio**: grant Screen Recording permission in System Settings > Privacy & Security.
+- **Transcription fails**: verify the endpoint URL, model name, and API key in Settings > Transcription.
+- **Local Whisper slow on first run**: the model (~148 MB) downloads from Hugging Face on first use. Subsequent runs use the cached model.
+- **AI steps fail**: ensure the AI endpoint is reachable and supports chat completions.
+- **No endpoint configured**: add one under Settings > Transcription or Settings > AI.

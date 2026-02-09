@@ -135,7 +135,7 @@ final class RecordingManager {
                 }
             case .localWhisper:
                 do {
-                    let result = try await localWhisperService.transcribe(fileURL: recording.fileURL)
+                    let result = try await localWhisperService.transcribe(fileURL: recording.fileURL, initialPrompt: appSettings.whisperPrompt)
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
@@ -379,7 +379,9 @@ final class RecordingManager {
 
     func pickFileForTranscription() {
         // Become a regular app so the open panel can take focus properly
-        NSApp.setActivationPolicy(.regular)
+        if !appSettings.showDockIcon {
+            NSApp.setActivationPolicy(.regular)
+        }
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
@@ -397,7 +399,9 @@ final class RecordingManager {
         panel.message = "Choose an audio file to transcribe"
 
         let response = panel.runModal()
-        NSApp.setActivationPolicy(.accessory)
+        if !appSettings.showDockIcon {
+            NSApp.setActivationPolicy(.accessory)
+        }
 
         guard response == .OK, let url = panel.url else { return }
 

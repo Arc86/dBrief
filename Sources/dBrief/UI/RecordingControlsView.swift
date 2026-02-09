@@ -10,16 +10,6 @@ struct RecordingControlsView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Status
-            HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(statusText)
-                    .font(.headline)
-                Spacer()
-            }
-
             // Timer and level
             if appState.isRecording || appState.isPaused {
                 HStack {
@@ -117,24 +107,6 @@ struct RecordingControlsView: View {
                     .foregroundStyle(.red)
                     .lineLimit(3)
             }
-        }
-    }
-
-    private var statusColor: Color {
-        switch appState.recordingState {
-        case .idle: .secondary
-        case .recording: .red
-        case .paused: .orange
-        case .processing: .blue
-        }
-    }
-
-    private var statusText: String {
-        switch appState.recordingState {
-        case .idle: "Ready"
-        case .recording: "Recording"
-        case .paused: "Paused"
-        case .processing: "Processing"
         }
     }
 

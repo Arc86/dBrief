@@ -8,7 +8,15 @@ struct SettingsIntegrationsTab: View {
 
         Form {
             Section("Integrations") {
-                Toggle("Enable Obsidian", isOn: $settings.obsidianEnabled)
+                Toggle(isOn: $settings.obsidianEnabled) {
+                    Label {
+                        Text("Enable Obsidian")
+                    } icon: {
+                        Image(systemName: "diamond.fill")
+                            .foregroundStyle(.purple)
+                            .frame(width: 16)
+                    }
+                }
 
                 if appSettings.obsidianEnabled {
                     LabeledContent("Vault:") {
@@ -56,8 +64,7 @@ struct SettingsIntegrationsTab: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.switch)
-        .controlSize(.regular)
+        .toggleStyle(.smallSwitch)
         .padding(.top, -20)
     }
 

@@ -23,9 +23,11 @@ struct SettingsTranscriptionTab: View {
                     .listRowBackground(Color.clear)
                 Section("Language") { languageSection }
                     .listRowBackground(Color.clear)
-                if appSettings.transcriptionEngine == .remoteEndpoint {
+                if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
                     Section("Custom Vocabulary") { vocabularySection }
                         .listRowBackground(Color.clear)
+                }
+                if appSettings.transcriptionEngine == .remoteEndpoint {
                     Section("Endpoints") { endpointsSection }
                         .listRowBackground(Color.clear)
                 }
@@ -33,8 +35,7 @@ struct SettingsTranscriptionTab: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.switch)
-            .controlSize(.regular)
+            .toggleStyle(.smallSwitch)
             .padding(.top, -20)
         }
     }
@@ -42,9 +43,7 @@ struct SettingsTranscriptionTab: View {
     private var engineSection: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Transcription engine:")
-                Spacer()
+            LabeledContent("Transcription engine:") {
                 Picker("", selection: $settings.transcriptionEngine) {
                     ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
                         Text(engine.displayName).tag(engine)
@@ -61,9 +60,14 @@ struct SettingsTranscriptionTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .localWhisper:
-                Text("On-device Whisper with downloadable model. Best privacy, strong accuracy.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("On-device transcription using Whisper Base (ggml-base.bin, ~148 MB). Best privacy — audio never leaves your Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("The model is downloaded once from Hugging Face on first use and stored locally in Application Support.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             case .remoteEndpoint:
                 Text("Use a remote Whisper API or server. Requires an endpoint.")
                     .font(.caption)
@@ -75,9 +79,7 @@ struct SettingsTranscriptionTab: View {
     private var languageSection: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Audio language:")
-                Spacer()
+            LabeledContent("Audio language:") {
                 Picker("", selection: $settings.transcriptionLanguage) {
                     Text(settings.transcriptionEngine == .appleSpeech ? "Auto (System language)" : "Auto-detect").tag("")
                     Divider()

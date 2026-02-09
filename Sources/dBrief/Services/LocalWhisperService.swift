@@ -59,12 +59,17 @@ actor LocalWhisperService {
         self.session = session
     }
 
-    func transcribe(fileURL: URL) async throws -> TranscriptionResult {
+    func transcribe(fileURL: URL, initialPrompt: String? = nil) async throws -> TranscriptionResult {
         let modelPaths = try await ensureModelAvailable()
         let audioFrames = try convertToWhisperFormat(url: fileURL)
 
         let whisper = Whisper(fromFileURL: modelPaths.binURL)
         whisper.params.language = .auto
+
+        if let prompt = initialPrompt, !prompt.isEmpty {
+            let cPrompt = strdup(prompt)
+            whisper.params.initial_prompt = UnsafePointer(cPrompt)
+        }
 
         let segments = try await whisper.transcribe(audioFrames: audioFrames)
         let text = segments.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)

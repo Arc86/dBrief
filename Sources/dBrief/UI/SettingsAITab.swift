@@ -45,8 +45,7 @@ struct SettingsAITab: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.switch)
-            .controlSize(.regular)
+            .toggleStyle(.smallSwitch)
             .padding(.top, -20)
         }
     }
