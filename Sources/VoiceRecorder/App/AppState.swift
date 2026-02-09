@@ -27,6 +27,7 @@ final class AppState {
     var isPaused: Bool { recordingState == .paused }
     var isProcessing: Bool { recordingState == .processing }
     var isIdle: Bool { recordingState == .idle }
+    var hasProcessingResults: Bool { !processingSteps.isEmpty }
 }
 
 struct ProcessingStep: Identifiable {

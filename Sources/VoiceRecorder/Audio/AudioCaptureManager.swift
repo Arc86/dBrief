@@ -37,7 +37,12 @@ final class AudioCaptureManager {
         }
     }
 
-    func startRecording(to fileURL: URL, sampleRate: Int = 16000, bitRate: Int = 128000) async throws {
+    func startRecording(
+        to fileURL: URL,
+        sampleRate: Int = 16000,
+        bitRate: Int = 128000,
+        inputDeviceUID: String? = nil
+    ) async throws {
         guard !isCapturing else { return }
 
         guard hasMicrophonePermission || hasSystemAudioPermission else {
@@ -58,10 +63,10 @@ final class AudioCaptureManager {
 
         if hasSystemAudioPermission {
             // Full mode: system audio + mic through AudioMixer
-            try await startMixedMode(writer: writer)
+            try await startMixedMode(writer: writer, inputDeviceUID: inputDeviceUID)
         } else {
             // Mic-only mode: simple AVAudioEngine input tap
-            try startMicOnlyMode(writer: writer)
+            try startMicOnlyMode(writer: writer, inputDeviceUID: inputDeviceUID)
         }
 
         isCapturing = true
@@ -127,7 +132,7 @@ final class AudioCaptureManager {
 
     // MARK: - Mixed Mode (system audio + mic)
 
-    private func startMixedMode(writer: AudioFileWriter) async throws {
+    private func startMixedMode(writer: AudioFileWriter, inputDeviceUID: String?) async throws {
         let mixer = AudioMixer()
         self.mixer = mixer
 
@@ -138,21 +143,21 @@ final class AudioCaptureManager {
             mixer?.scheduleSystemAudio(sampleBuffer)
         }
         self.systemCapture = capture
-
-        let systemFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 48000,
-            channels: 2,
-            interleaved: false
-        )!
-        try mixer.setUp(systemAudioFormat: systemFormat)
+        try mixer.setUp(systemAudioFormat: nil)
 
         // Set up mic through the mixer's engine
         if hasMicrophonePermission {
+            do {
+                try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: mixer.engine)
+            } catch {
+                log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
+            }
             let inputNode = mixer.engine.inputNode
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
-                inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: Self.noopTapHandler)
+                // Tap mic input and feed it into the mix via the mic player node.
+                let micHandler = Self.makeMicTapHandler(mixer: mixer)
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: micHandler)
                 log.info("Mic tap installed on mixer engine")
             }
         }
@@ -167,9 +172,15 @@ final class AudioCaptureManager {
 
     // MARK: - Mic-Only Mode
 
-    private func startMicOnlyMode(writer: AudioFileWriter) throws {
+    private func startMicOnlyMode(writer: AudioFileWriter, inputDeviceUID: String?) throws {
         let engine = AVAudioEngine()
         self.micOnlyEngine = engine
+
+        do {
+            try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: engine)
+        } catch {
+            log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
+        }
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -205,6 +216,46 @@ final class AudioCaptureManager {
 
     /// No-op tap handler (nonisolated to avoid inheriting @MainActor).
     private nonisolated static let noopTapHandler: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void = { _, _ in }
+
+    /// Tap handler for mic input in mixed mode (nonisolated to avoid @MainActor assertions).
+    private nonisolated static func makeMicTapHandler(
+        mixer: AudioMixer
+    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        return { buffer, _ in
+            if let copy = Self.copyBuffer(buffer) {
+                mixer.scheduleMicBuffer(copy)
+            }
+        }
+    }
+
+    private nonisolated static func copyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let format = buffer.format
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameCapacity) else {
+            return nil
+        }
+        copy.frameLength = buffer.frameLength
+
+        let channels = Int(format.channelCount)
+        let frames = Int(buffer.frameLength)
+
+        if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
+            let bytes = frames * MemoryLayout<Float>.size
+            for channel in 0..<channels {
+                memcpy(dst[channel], src[channel], bytes)
+            }
+            return copy
+        }
+
+        if let src = buffer.int16ChannelData, let dst = copy.int16ChannelData {
+            let bytes = frames * MemoryLayout<Int16>.size
+            for channel in 0..<channels {
+                memcpy(dst[channel], src[channel], bytes)
+            }
+            return copy
+        }
+
+        return nil
+    }
 
     // MARK: - Private
 

@@ -49,7 +49,7 @@ struct SettingsTranscriptionTab: View {
                 Text("Audio language:")
                 Spacer()
                 Picker("", selection: $settings.transcriptionLanguage) {
-                    Text("Auto-detect").tag("")
+                    Text(settings.useBuiltInTranscription ? "Auto (System language)" : "Auto-detect").tag("")
                     Divider()
                     Text("English").tag("en")
                     Text("Dutch").tag("nl")
@@ -73,6 +73,11 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .frame(width: 160)
+            }
+            if settings.useBuiltInTranscription && settings.transcriptionLanguage.isEmpty {
+                Text("Apple Speech uses the system language when set to Auto.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

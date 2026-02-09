@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
+    @State private var inputDevices: [AudioInputDevice] = []
 
     var body: some View {
         @Bindable var settings = appSettings
@@ -77,6 +78,40 @@ struct SettingsGeneralTab: View {
                     }
                 }
 
+                // Audio Input
+                SettingsSection(title: "Audio Input") {
+                    let selectedUID = settings.audioInputDeviceUID
+                    let knownUIDs = Set(inputDevices.map { $0.uid })
+                    let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
+
+                    HStack {
+                        Text("Input device:")
+                        Spacer()
+                        Picker("", selection: $settings.audioInputDeviceUID) {
+                            Text("System Default").tag("")
+                            ForEach(inputDevices) { device in
+                                Text(device.displayName).tag(device.uid)
+                            }
+                            if isMissingSelection {
+                                Text("Unavailable device (reconnect)").tag(selectedUID)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .frame(width: 220, alignment: .trailing)
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Text("Refresh device list")
+                        Spacer()
+                        Button("Refresh") {
+                            inputDevices = AudioInputDeviceManager.availableInputDevices()
+                        }
+                    }
+                }
+
                 // Call Detection
                 SettingsSection(title: "Call Detection") {
                     Toggle("Enable call detection", isOn: $settings.callDetectionEnabled)
@@ -106,6 +141,9 @@ struct SettingsGeneralTab: View {
             }
             .padding()
         }
+        .onAppear {
+            inputDevices = AudioInputDeviceManager.availableInputDevices()
+        }
     }
 
     private func chooseFolder(completion: @escaping (URL) -> Void) {
@@ -116,29 +154,6 @@ struct SettingsGeneralTab: View {
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
             completion(url)
-        }
-    }
-}
-
-/// Rounded glass section for settings, matching modern macOS style.
-struct SettingsSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 4)
-
-            VStack(alignment: .leading, spacing: 8) {
-                content
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
     }
 }

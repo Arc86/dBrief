@@ -23,6 +23,7 @@ final class AppSettings {
         static let useBuiltInAI = "useBuiltInAI"
         static let audioSampleRate = "audioSampleRate"
         static let audioBitRate = "audioBitRate"
+        static let audioInputDeviceUID = "audioInputDeviceUID"
         static let whisperPrompt = "whisperPrompt"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
@@ -104,6 +105,11 @@ final class AppSettings {
     /// AAC bit rate (default 128000 bps)
     var audioBitRate: Int {
         didSet { UserDefaults.standard.set(audioBitRate, forKey: Keys.audioBitRate) }
+    }
+
+    /// Audio input device UID (empty string = system default)
+    var audioInputDeviceUID: String {
+        didSet { UserDefaults.standard.set(audioInputDeviceUID, forKey: Keys.audioInputDeviceUID) }
     }
 
     /// Empty string means auto-detect, otherwise an ISO 639-1 language code (e.g. "en", "nl", "de")
@@ -248,6 +254,7 @@ final class AppSettings {
 
         self.audioSampleRate = defaults.object(forKey: Keys.audioSampleRate) as? Int ?? 16000
         self.audioBitRate = defaults.object(forKey: Keys.audioBitRate) as? Int ?? 128000
+        self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""

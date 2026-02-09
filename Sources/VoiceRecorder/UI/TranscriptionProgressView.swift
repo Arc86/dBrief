@@ -48,6 +48,12 @@ struct TranscriptionProgressView: View {
                     .controlSize(.small)
 
                     Spacer()
+
+                    Button("Close") {
+                        appState.processingSteps.removeAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
         }

@@ -16,6 +16,8 @@ app: build
 	mkdir -p $(MACOS) $(RESOURCES)
 	cp $(BUILD_DIR)/$(EXECUTABLE_NAME) $(MACOS)/$(EXECUTABLE_NAME)
 	cp Sources/VoiceRecorder/Resources/Info.plist $(CONTENTS)/Info.plist
+	cp Sources/VoiceRecorder/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
+	cp Sources/VoiceRecorder/Resources/DeBrief-Icon.png $(RESOURCES)/DeBrief-Icon.png
 	@echo "Built $(APP_BUNDLE)"
 
 clean:

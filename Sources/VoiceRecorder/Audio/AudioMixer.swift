@@ -4,6 +4,8 @@ import CoreMedia
 final class AudioMixer: @unchecked Sendable {
     let engine: AVAudioEngine
     private let systemAudioPlayer: AVAudioPlayerNode
+    private let captureMixer: AVAudioMixerNode
+    private let micPlayer: AVAudioPlayerNode
     private let lock = NSLock()
     private var isSetUp = false
     private var hasSystemAudio = false
@@ -17,16 +19,26 @@ final class AudioMixer: @unchecked Sendable {
     init() {
         self.engine = AVAudioEngine()
         self.systemAudioPlayer = AVAudioPlayerNode()
+        self.captureMixer = AVAudioMixerNode()
+        self.micPlayer = AVAudioPlayerNode()
     }
 
     /// Set up for mixed mode (mic + system audio)
-    func setUp(systemAudioFormat: AVAudioFormat) throws {
+    func setUp(systemAudioFormat: AVAudioFormat? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         guard !isSetUp else { return }
 
+        // Avoid feedback loops: we don't need to play audio to the speakers.
+        engine.mainMixerNode.outputVolume = 0
+        engine.attach(captureMixer)
         engine.attach(systemAudioPlayer)
-        engine.connect(systemAudioPlayer, to: engine.mainMixerNode, format: systemAudioFormat)
+        engine.attach(micPlayer)
+        // Allow AVAudioEngine to perform format conversion if needed.
+        // Let the engine handle format conversion for mixed sources.
+        engine.connect(systemAudioPlayer, to: captureMixer, format: nil)
+        engine.connect(micPlayer, to: captureMixer, format: nil)
+        engine.connect(captureMixer, to: engine.mainMixerNode, format: nil)
         hasSystemAudio = true
 
         installMixerTap()
@@ -40,6 +52,11 @@ final class AudioMixer: @unchecked Sendable {
         guard !isSetUp else { return }
 
         hasSystemAudio = false
+        engine.mainMixerNode.outputVolume = 0
+        engine.attach(captureMixer)
+        engine.attach(micPlayer)
+        engine.connect(micPlayer, to: captureMixer, format: nil)
+        engine.connect(captureMixer, to: engine.mainMixerNode, format: nil)
         installMixerTap()
         isSetUp = true
     }
@@ -49,14 +66,16 @@ final class AudioMixer: @unchecked Sendable {
         if hasSystemAudio {
             systemAudioPlayer.play()
         }
+        micPlayer.play()
     }
 
     func stop() {
         if hasSystemAudio {
             systemAudioPlayer.stop()
         }
+        micPlayer.stop()
         engine.stop()
-        engine.mainMixerNode.removeTap(onBus: 0)
+        captureMixer.removeTap(onBus: 0)
         lock.withLock {
             isSetUp = false
             hasSystemAudio = false
@@ -75,6 +94,7 @@ final class AudioMixer: @unchecked Sendable {
         if hasSystemAudio {
             systemAudioPlayer.play()
         }
+        micPlayer.play()
     }
 
     /// Feed system audio CMSampleBuffer into the mixer via the player node
@@ -84,9 +104,13 @@ final class AudioMixer: @unchecked Sendable {
         systemAudioPlayer.scheduleBuffer(pcmBuffer)
     }
 
+    func scheduleMicBuffer(_ buffer: AVAudioPCMBuffer) {
+        micPlayer.scheduleBuffer(buffer)
+    }
+
     private func installMixerTap() {
-        let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 4096, format: mixerFormat) { [weak self] buffer, time in
+        let mixerFormat = captureMixer.outputFormat(forBus: 0)
+        captureMixer.installTap(onBus: 0, bufferSize: 4096, format: mixerFormat) { [weak self] buffer, time in
             guard let self else { return }
             self.mixedBufferHandler?(buffer, time)
         }
@@ -103,27 +127,44 @@ extension CMSampleBuffer {
 
         guard let audioFormat = AVAudioFormat(streamDescription: &asbd) else { return nil }
 
-        guard let blockBuffer = dataBuffer else { return nil }
-
         let frameCount = CMSampleBufferGetNumSamples(self)
         guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
             return nil
         }
         pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 
-        let dataLength = blockBuffer.dataLength
-        guard dataLength > 0 else { return nil }
+        let channelCount = Int(asbd.mChannelsPerFrame)
+        let bufferListSize = MemoryLayout<AudioBufferList>.size
+            + max(0, channelCount - 1) * MemoryLayout<AudioBuffer>.size
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferListSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawPointer.deallocate() }
+        let bufferListPointer = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
 
-        try? blockBuffer.withUnsafeMutableBytes { rawBufferPointer in
-            guard let baseAddress = rawBufferPointer.baseAddress else { return }
-            let audioBufferList = pcmBuffer.mutableAudioBufferList
-            let bufferCount = Int(audioBufferList.pointee.mNumberBuffers)
-            for i in 0..<bufferCount {
-                let audioBuffer = audioBufferList.pointee.mBuffers
-                if i == 0 {
-                    memcpy(audioBuffer.mData, baseAddress, min(Int(audioBuffer.mDataByteSize), dataLength))
-                }
-            }
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            self,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: bufferListPointer,
+            bufferListSize: bufferListSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr else { return nil }
+
+        let sourceList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
+        let destList = UnsafeMutableAudioBufferListPointer(pcmBuffer.mutableAudioBufferList)
+
+        let bufferCount = min(sourceList.count, destList.count)
+        for index in 0..<bufferCount {
+            let src = sourceList[index]
+            let dst = destList[index]
+            guard let srcData = src.mData, let dstData = dst.mData else { continue }
+            memcpy(dstData, srcData, min(Int(src.mDataByteSize), Int(dst.mDataByteSize)))
         }
 
         return pcmBuffer

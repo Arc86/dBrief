@@ -32,7 +32,7 @@ struct OnboardingView: View {
 
     private var welcomeStep: some View {
         VStack(spacing: 12) {
-            if let appIcon = NSImage(named: "AppIcon") {
+            if let appIcon = appIconImage() {
                 Image(nsImage: appIcon)
                     .resizable()
                     .interpolation(.high)
@@ -62,6 +62,14 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
         }
+    }
+
+    private func appIconImage() -> NSImage? {
+        if let url = Bundle.main.url(forResource: "DeBrief-Icon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+        return NSImage(named: "AppIcon")
     }
 
     private var permissionsStep: some View {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import os
 
@@ -79,6 +80,11 @@ struct VoiceRecorderApp: App {
                         .monospacedDigit()
                         .font(.caption)
                 }
+            } else if context.appState.isProcessing {
+                Image(systemName: "circle.dotted")
+                    .symbolRenderingMode(.hierarchical)
+                    .symbolEffect(.pulse, options: .repeating)
+                    .foregroundStyle(.blue)
             } else {
                 Image(systemName: "waveform")
                     .symbolRenderingMode(.hierarchical)
@@ -115,56 +121,61 @@ struct MenuBarView: View {
             if !appSettings.hasCompletedOnboarding {
                 OnboardingView()
             } else {
-                RecordingControlsView()
+                header
 
-                Divider()
+                card {
+                    RecordingControlsView()
+                }
 
                 if appState.showPostRecordingSheet {
-                    PostRecordingSheet()
-                } else if appState.isProcessing {
-                    TranscriptionProgressView()
+                    card { PostRecordingSheet() }
+                } else if appState.isProcessing || appState.hasProcessingResults {
+                    card { TranscriptionProgressView() }
                 } else if showHistory {
-                    RecordingHistoryView()
+                    card { RecordingHistoryView() }
                 }
 
-                Divider()
+                card {
+                    HStack {
+                        Button {
+                            showHistory.toggle()
+                        } label: {
+                            Label(showHistory ? "Hide History" : "History", systemImage: "clock.arrow.circlepath")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
 
-                HStack {
-                    Button {
-                        showHistory.toggle()
-                    } label: {
-                        Label(showHistory ? "Hide History" : "History", systemImage: "clock.arrow.circlepath")
+                        Spacer()
+
+                        Button {
+                            recordingManager.pickFileForTranscription()
+                        } label: {
+                            Label("Transcribe File...", systemImage: "doc.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .disabled(!appState.isIdle)
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
+                }
 
-                    Spacer()
-
-                    Button {
-                        recordingManager.pickFileForTranscription()
-                    } label: {
-                        Label("Transcribe File...", systemImage: "doc.badge.plus")
+                HStack(spacing: 10) {
+                    SettingsLink {
+                        Text("Settings...")
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .disabled(!appState.isIdle)
-                }
+                    .keyboardShortcut(",", modifiers: .command)
+                    .buttonStyle(.bordered)
 
-                Divider()
-
-                SettingsLink {
-                    Text("Settings...")
+                    Button("Quit DeBrief") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                    .keyboardShortcut("q", modifiers: .command)
+                    .buttonStyle(.bordered)
                 }
-                .keyboardShortcut(",", modifiers: .command)
-
-                Button("Quit DeBrief") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .keyboardShortcut("q", modifiers: .command)
             }
         }
-        .padding()
-        .frame(width: 300)
+        .padding(12)
+        .frame(width: 320)
+        .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: Binding(
             get: { appState.showCallDetectedPopup },
             set: { appState.showCallDetectedPopup = $0 }
@@ -174,5 +185,88 @@ struct MenuBarView: View {
                 .environment(appSettings)
                 .environment(recordingManager)
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            if let icon = appIconImage() {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DeBrief")
+                    .font(.headline)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            statusPill
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var statusText: String {
+        if appState.isRecording { return "Recording in progress" }
+        if appState.isPaused { return "Paused" }
+        if appState.isProcessing { return "Processing" }
+        return "Ready"
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 6, height: 6)
+            Text(statusLabel)
+                .font(.caption2.weight(.semibold))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    private var statusLabel: String {
+        if appState.isRecording { return "REC" }
+        if appState.isPaused { return "PAUSED" }
+        if appState.isProcessing { return "PROCESSING" }
+        return "READY"
+    }
+
+    private var statusColor: Color {
+        if appState.isRecording { return .red }
+        if appState.isPaused { return .orange }
+        if appState.isProcessing { return .blue }
+        return .green
+    }
+
+    @ViewBuilder
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+    }
+
+    private func appIconImage() -> NSImage? {
+        if let url = Bundle.main.url(forResource: "DeBrief-Icon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+        return NSImage(named: "AppIcon")
     }
 }

@@ -7,7 +7,16 @@ actor TranscriptionService {
         }
 
         let audioData = try Data(contentsOf: fileURL)
-        let contentType = fileURL.pathExtension == "wav" ? "audio/wav" : "audio/m4a"
+        let fileExtension = fileURL.pathExtension.lowercased()
+        let contentType: String
+        switch fileExtension {
+        case "wav":
+            contentType = "audio/wav"
+        case "ogg", "opus":
+            contentType = "audio/ogg"
+        default:
+            contentType = "audio/m4a"
+        }
 
         var form = MultipartFormData()
         form.addFile(

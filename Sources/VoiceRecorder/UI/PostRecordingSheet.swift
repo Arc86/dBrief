@@ -45,7 +45,9 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(.orange)
             }
 
-            if appSettings.defaultTranscriptionEndpoint == nil && transcribe {
+            if !appSettings.useBuiltInTranscription,
+               appSettings.defaultTranscriptionEndpoint == nil,
+               transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -84,7 +86,11 @@ struct PostRecordingSheet: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(transcribe && appSettings.defaultTranscriptionEndpoint == nil)
+                .disabled(
+                    transcribe
+                        && !appSettings.useBuiltInTranscription
+                        && appSettings.defaultTranscriptionEndpoint == nil
+                )
             }
         }
         .padding(.vertical, 4)

@@ -45,7 +45,8 @@ final class RecordingManager {
         try await audioCaptureManager.startRecording(
             to: fileURL,
             sampleRate: appSettings.audioSampleRate,
-            bitRate: appSettings.audioBitRate
+            bitRate: appSettings.audioBitRate,
+            inputDeviceUID: appSettings.audioInputDeviceUID
         )
         appState.recordingState = .recording
         miniPlayer?.show()
@@ -93,6 +94,16 @@ final class RecordingManager {
         tags: Bool
     ) async {
         guard let recording = appState.currentRecording else { return }
+        let localAIAvailable: Bool = {
+            #if canImport(FoundationModels)
+            if #available(macOS 26, *) {
+                return LocalAIService.isAvailable
+            }
+            return false
+            #else
+            return false
+            #endif
+        }()
         appState.recordingState = .processing
         appState.showPostRecordingSheet = false
         appState.processingSteps = []
@@ -136,6 +147,7 @@ final class RecordingManager {
         if let transcription = recording.transcription {
             let useLocal = appSettings.useBuiltInAI
             let endpoint = appSettings.defaultAIEndpoint
+            let localAvailable = localAIAvailable
 
             if summary {
                 let stepIndex = appState.processingSteps.count
@@ -145,6 +157,9 @@ final class RecordingManager {
                     let result: String
                     #if canImport(FoundationModels)
                     if useLocal, #available(macOS 26, *) {
+                        guard localAvailable else {
+                            throw AIServiceError.invalidResponse
+                        }
                         result = try await LocalAIService().generateSummary(
                             transcription: transcription.text,
                             systemPrompt: appSettings.summaryPrompt
@@ -172,7 +187,11 @@ final class RecordingManager {
                     recording.summary = result
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    if useLocal && !localAvailable {
+                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
+                    } else {
+                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    }
                 }
             }
 
@@ -184,6 +203,9 @@ final class RecordingManager {
                     let result: [String]
                     #if canImport(FoundationModels)
                     if useLocal, #available(macOS 26, *) {
+                        guard localAvailable else {
+                            throw AIServiceError.invalidResponse
+                        }
                         result = try await LocalAIService().extractActionItems(
                             transcription: transcription.text,
                             systemPrompt: appSettings.actionItemsPrompt
@@ -211,7 +233,11 @@ final class RecordingManager {
                     recording.actionItems = result
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    if useLocal && !localAvailable {
+                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
+                    } else {
+                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    }
                 }
             }
 
@@ -222,6 +248,9 @@ final class RecordingManager {
                 do {
                     #if canImport(FoundationModels)
                     if useLocal, #available(macOS 26, *) {
+                        guard localAvailable else {
+                            throw AIServiceError.invalidResponse
+                        }
                         let result = try await LocalAIService().analyzeTags(
                             transcription: transcription.text,
                             systemPrompt: appSettings.tagsPrompt
@@ -254,7 +283,11 @@ final class RecordingManager {
                     #endif
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    if useLocal && !localAvailable {
+                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
+                    } else {
+                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    }
                 }
             }
         }
@@ -268,7 +301,7 @@ final class RecordingManager {
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
                     #if canImport(FoundationModels)
-                    if appSettings.useBuiltInAI, #available(macOS 26, *) {
+                    if appSettings.useBuiltInAI, #available(macOS 26, *), localAIAvailable {
                         recording.generatedTitle = try await LocalAIService().generateTitle(
                             transcription: String(transcriptionText.prefix(500)),
                             language: language
@@ -335,7 +368,14 @@ final class RecordingManager {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.audio, .mpeg4Audio, .wav, .mp3, .aiff]
+        var contentTypes: [UTType] = [.audio, .mpeg4Audio, .wav, .mp3, .aiff]
+        if let oggType = UTType(filenameExtension: "ogg") {
+            contentTypes.append(oggType)
+        }
+        if let opusType = UTType(filenameExtension: "opus") {
+            contentTypes.append(opusType)
+        }
+        panel.allowedContentTypes = contentTypes
         panel.message = "Choose an audio file to transcribe"
 
         let response = panel.runModal()

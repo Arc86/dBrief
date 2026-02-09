@@ -8,7 +8,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "VoiceRecorder",
-            exclude: ["Resources/Info.plist"],
+            exclude: ["Resources", "Images"],
             linkerSettings: [
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("AVFoundation"),
