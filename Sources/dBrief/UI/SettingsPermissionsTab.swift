@@ -39,26 +39,24 @@ struct SettingsPermissionsTab: View {
             .listRowBackground(Color.clear)
 
             Section("Manage Access") {
-                HStack {
-                    Text("Open System Settings")
-                    Spacer()
-                    Button("Microphone") {
-                        openSystemSettingsPane("Privacy_Microphone")
+                LabeledContent("Open System Settings") {
+                    HStack {
+                        Button("Microphone") {
+                            openSystemSettingsPane("Privacy_Microphone")
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Screen Recording") {
+                            openSystemSettingsPane("Privacy_ScreenCapture")
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Speech") {
+                            openSystemSettingsPane("Privacy_SpeechRecognition")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
-                    Button("Screen Recording") {
-                        openSystemSettingsPane("Privacy_ScreenCapture")
-                    }
-                    .buttonStyle(.bordered)
-                    Button("Speech") {
-                        openSystemSettingsPane("Privacy_SpeechRecognition")
-                    }
-                    .buttonStyle(.bordered)
                 }
 
-                HStack {
-                    Text("Refresh permission status")
-                    Spacer()
+                LabeledContent("Refresh permission status") {
                     Button("Refresh") {
                         refreshStatuses()
                     }
@@ -70,8 +68,7 @@ struct SettingsPermissionsTab: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.switch)
-        .controlSize(.regular)
+        .toggleStyle(.smallSwitch)
         .padding(.top, -20)
         .onAppear {
             refreshStatuses()
@@ -173,16 +170,16 @@ private struct PermissionRow: View {
     let action: () -> Void
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(statusText)
-                .foregroundStyle(statusStyle)
-            Button(actionTitle) {
-                action()
+        LabeledContent(title) {
+            HStack {
+                Text(statusText)
+                    .foregroundStyle(statusStyle)
+                Button(actionTitle) {
+                    action()
+                }
+                .disabled(actionTitle == "Granted")
+                .buttonStyle(.bordered)
             }
-            .disabled(actionTitle == "Granted")
-            .buttonStyle(.bordered)
         }
     }
 }

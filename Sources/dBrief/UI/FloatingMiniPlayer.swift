@@ -18,8 +18,8 @@ final class FloatingMiniPlayerController {
         guard window == nil, let appState, let recordingManager else { return }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 248, height: 60),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .hudWindow],
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 120),
+            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -30,9 +30,9 @@ final class FloatingMiniPlayerController {
         panel.titleVisibility = .hidden
         panel.title = ""
         panel.isMovableByWindowBackground = true
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
         panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
         panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
@@ -42,16 +42,13 @@ final class FloatingMiniPlayerController {
             .environment(recordingManager)
 
         let hosting = NSHostingView(rootView: content)
-        hosting.wantsLayer = true
-        hosting.layer?.cornerRadius = 10
-        hosting.layer?.masksToBounds = true
         panel.contentView = hosting
 
         // Position at top-right of screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let x = screenFrame.maxX - 258
-            let y = screenFrame.maxY - 76
+            let x = screenFrame.maxX - 232
+            let y = screenFrame.maxY - 132
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -74,60 +71,99 @@ private struct MiniPlayerView: View {
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(.red.opacity(0.12))
-                    .frame(width: 30, height: 30)
-                Circle()
-                    .fill(.red)
-                    .frame(width: 11, height: 11)
-                    .opacity(appState.isRecording ? 1 : 0.45)
-                    .animation(
-                        appState.isRecording
-                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                            : .default,
-                        value: appState.isRecording
-                    )
-            }
+        VStack(spacing: 8) {
+            // Top row: status + timer
+            HStack {
+                HStack(spacing: 5) {
+                    appIcon
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 14, height: 14)
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .opacity(0.8)
 
-            VStack(alignment: .leading, spacing: 4) {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 7, height: 7)
+                        .opacity(appState.isRecording ? 1 : 0.5)
+                        .animation(
+                            appState.isRecording
+                                ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                                : .default,
+                            value: appState.isRecording
+                        )
+
+                    Text(appState.isRecording ? "Recording" : "Paused")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
                 Text(formattedDuration)
-                    .font(.system(.headline, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced, weight: .semibold))
                     .monospacedDigit()
-
-                MiniWaveform(level: appState.peakLevel)
-                    .frame(height: 12)
+                    .foregroundStyle(.primary)
             }
 
-            Spacer()
+            // Waveform
+            MiniWaveform(level: appState.peakLevel)
+                .frame(height: 20)
+                .frame(maxWidth: .infinity)
 
-            HStack(spacing: 8) {
+            // Bottom: action buttons
+            HStack(spacing: 6) {
                 if appState.isRecording {
-                    miniButton(icon: "pause.fill") {
+                    Button {
                         recordingManager.pauseRecording()
+                    } label: {
+                        Label("Pause", systemImage: "pause.fill")
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .controlSize(.large)
+                    .buttonStyle(.bordered)
                 } else if appState.isPaused {
-                    miniButton(icon: "play.fill") {
+                    Button {
                         try? recordingManager.resumeRecording()
+                    } label: {
+                        Label("Resume", systemImage: "play.fill")
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .controlSize(.large)
+                    .buttonStyle(.bordered)
                 }
 
-                miniButton(icon: "stop.fill", tint: .red) {
+                Button {
                     Task { await recordingManager.stopRecording() }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                        .font(.caption.weight(.medium))
+                        .frame(maxWidth: .infinity)
                 }
+                .controlSize(.large)
+                .buttonStyle(.borderedProminent)
+                .tint(.red.opacity(0.8))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(width: 248, height: 60)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+        .padding(12)
+        .frame(width: 220)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+    }
+
+    private var appIcon: Image {
+        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
+           let nsImage = NSImage(contentsOf: url) {
+            return Image(nsImage: nsImage)
+        }
+        if let nsImage = NSImage(named: "AppIcon") {
+            return Image(nsImage: nsImage)
+        }
+        return Image(systemName: "waveform.circle.fill")
     }
 
     private var formattedDuration: String {
@@ -140,42 +176,33 @@ private struct MiniPlayerView: View {
         }
         return String(format: "%d:%02d", minutes, seconds)
     }
-
-    private func miniButton(icon: String, tint: Color? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(tint ?? .primary)
-                .frame(width: 26, height: 26)
-                .background(.ultraThinMaterial, in: Circle())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 private struct MiniWaveform: View {
     let level: Float
+    private let barCount = 20
 
     private var heights: [CGFloat] {
-        let base: [CGFloat] = [6, 10, 14, 10, 6]
-        let scale = CGFloat(0.5 + min(max(level, 0), 1) * 1.2)
-        return base.map { $0 * scale }
+        let clamped = CGFloat(min(max(level, 0), 1))
+        return (0..<barCount).map { i in
+            // Create a natural wave pattern that responds to level
+            let position = Double(i) / Double(barCount - 1)
+            let wave = sin(position * .pi) // bell curve shape
+            let base: CGFloat = 2
+            let maxExtra: CGFloat = 16
+            return base + maxExtra * wave * (0.2 + clamped * 0.8)
+        }
     }
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(heights.indices, id: \.self) { idx in
+        HStack(spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { idx in
                 Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.teal.opacity(0.8), Color.blue.opacity(0.9)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: 3, height: heights[idx])
+                    .fill(.tint)
+                    .frame(width: 2.5, height: heights[idx])
             }
         }
+        .tint(.blue.opacity(0.7))
         .animation(.easeOut(duration: 0.12), value: level)
     }
 }

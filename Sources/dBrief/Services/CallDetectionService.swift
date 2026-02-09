@@ -7,14 +7,23 @@ private let log = Logger(subsystem: "com.dbrief.app", category: "calldetection")
 @MainActor
 @Observable
 final class CallDetectionService {
-    static let knownCallApps: [(bundleId: String, name: String)] = [
-        ("us.zoom.xos", "Zoom"),
-        ("com.microsoft.teams", "Microsoft Teams (classic)"),
-        ("com.microsoft.teams2", "Microsoft Teams"),
-        ("com.tinyspeck.slackmacgap", "Slack"),
-        ("com.webex.meetingmanager", "Webex"),
-        ("com.apple.FaceTime", "FaceTime"),
-        ("com.google.Chrome.app.kjgfgldnnfobanfaklcjnmoidpaoolgp", "Google Meet"),
+    struct CallApp {
+        let bundleId: String
+        let name: String
+        /// Font Awesome brand icon, or nil to use an SF Symbol fallback.
+        let brandIcon: FABrandIcon?
+        /// SF Symbol fallback when no brand icon is available.
+        let sfSymbol: String
+    }
+
+    static let knownCallApps: [CallApp] = [
+        CallApp(bundleId: "us.zoom.xos", name: "Zoom", brandIcon: nil, sfSymbol: "video.fill"),
+        CallApp(bundleId: "com.microsoft.teams", name: "Microsoft Teams (classic)", brandIcon: .microsoft, sfSymbol: ""),
+        CallApp(bundleId: "com.microsoft.teams2", name: "Microsoft Teams", brandIcon: .microsoft, sfSymbol: ""),
+        CallApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack", brandIcon: .slack, sfSymbol: ""),
+        CallApp(bundleId: "com.webex.meetingmanager", name: "Webex", brandIcon: nil, sfSymbol: "video.badge.waveform"),
+        CallApp(bundleId: "com.apple.FaceTime", name: "FaceTime", brandIcon: .apple, sfSymbol: ""),
+        CallApp(bundleId: "com.google.Chrome.app.kjgfgldnnfobanfaklcjnmoidpaoolgp", name: "Google Meet", brandIcon: .google, sfSymbol: ""),
     ]
 
     private var workspaceObservers: [NSObjectProtocol] = []

@@ -7,6 +7,11 @@ struct SettingsGeneralTab: View {
     var body: some View {
         @Bindable var settings = appSettings
         Form {
+            Section("Appearance") {
+                Toggle("Show dock icon", isOn: $settings.showDockIcon)
+            }
+            .listRowBackground(Color.clear)
+
             Section("Folders") {
                 LabeledContent("Recordings:") {
                     HStack {
@@ -43,9 +48,7 @@ struct SettingsGeneralTab: View {
             .listRowBackground(Color.clear)
 
             Section("Audio Quality") {
-                HStack {
-                    Text("Sample rate:")
-                    Spacer()
+                LabeledContent("Sample rate:") {
                     Picker("", selection: $settings.audioSampleRate) {
                         Text("16 kHz (speech)").tag(16000)
                         Text("22 kHz").tag(22050)
@@ -56,9 +59,7 @@ struct SettingsGeneralTab: View {
                     .pickerStyle(.menu)
                     .frame(width: 160, alignment: .trailing)
                 }
-                HStack {
-                    Text("Bit rate (AAC):")
-                    Spacer()
+                LabeledContent("Bit rate (AAC):") {
                     Picker("", selection: $settings.audioBitRate) {
                         Text("64 kbps").tag(64000)
                         Text("96 kbps").tag(96000)
@@ -78,9 +79,7 @@ struct SettingsGeneralTab: View {
                 let knownUIDs = Set(inputDevices.map { $0.uid })
                 let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
 
-                HStack {
-                    Text("Input device:")
-                    Spacer()
+                LabeledContent("Input device:") {
                     Picker("", selection: $settings.audioInputDeviceUID) {
                         Text("System Default").tag("")
                         ForEach(inputDevices) { device in
@@ -94,9 +93,7 @@ struct SettingsGeneralTab: View {
                     .pickerStyle(.menu)
                     .frame(width: 220, alignment: .trailing)
                 }
-                HStack {
-                    Text("Refresh device list")
-                    Spacer()
+                LabeledContent("Refresh device list") {
                     Button("Refresh") {
                         inputDevices = AudioInputDeviceManager.availableInputDevices()
                     }
@@ -118,19 +115,28 @@ struct SettingsGeneralTab: View {
                 Section("Call Platforms") {
                     ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
                         let isEnabled = !appSettings.disabledCallApps.contains(app.bundleId)
-                        Toggle(
-                            app.name,
-                            isOn: Binding(
-                                get: { isEnabled },
-                                set: { enabled in
-                                    if enabled {
-                                        appSettings.disabledCallApps.remove(app.bundleId)
-                                    } else {
-                                        appSettings.disabledCallApps.insert(app.bundleId)
-                                    }
+                        Toggle(isOn: Binding(
+                            get: { isEnabled },
+                            set: { enabled in
+                                if enabled {
+                                    appSettings.disabledCallApps.remove(app.bundleId)
+                                } else {
+                                    appSettings.disabledCallApps.insert(app.bundleId)
                                 }
-                            )
-                        )
+                            }
+                        )) {
+                            Label {
+                                Text(app.name)
+                            } icon: {
+                                if let brand = app.brandIcon {
+                                    brand.text(size: 14)
+                                        .frame(width: 16)
+                                } else {
+                                    Image(systemName: app.sfSymbol)
+                                        .frame(width: 16)
+                                }
+                            }
+                        }
                     }
                 }
                 .listRowBackground(Color.clear)
@@ -139,8 +145,7 @@ struct SettingsGeneralTab: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.switch)
-        .controlSize(.regular)
+        .toggleStyle(.smallSwitch)
         .padding(.top, -20)
         .onAppear {
             inputDevices = AudioInputDeviceManager.availableInputDevices()
