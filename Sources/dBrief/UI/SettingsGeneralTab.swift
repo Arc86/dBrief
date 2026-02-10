@@ -125,16 +125,11 @@ struct SettingsGeneralTab: View {
                                 }
                             }
                         )) {
-                            Label {
+                            HStack(spacing: 12) {
+                                callPlatformIcon(for: app)
+                                    .frame(width: 36, height: 36)
+
                                 Text(app.name)
-                            } icon: {
-                                if let brand = app.brandIcon {
-                                    brand.text(size: 14)
-                                        .frame(width: 16)
-                                } else {
-                                    Image(systemName: app.sfSymbol)
-                                        .frame(width: 16)
-                                }
                             }
                         }
                     }
@@ -160,6 +155,79 @@ struct SettingsGeneralTab: View {
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
             completion(url)
+        }
+    }
+
+    private func callPlatformIconImage(for app: CallDetectionService.CallApp) -> NSImage? {
+        let baseNames = switch app.bundleId {
+        case "us.zoom.xos":
+            ["Zoom"]
+        case "com.microsoft.teams":
+            ["Teams Classic", "Teams"]
+        case "com.microsoft.teams2":
+            ["Teams"]
+        case "com.tinyspeck.slackmacgap":
+            ["Slack"]
+        default:
+            [app.name]
+        }
+        let extensions = ["png", "jpg", "jpeg", "pdf", "icns", "webp", ""]
+
+        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        for name in baseNames {
+            for ext in extensions {
+                let fileName = ext.isEmpty ? name : "\(name).\(ext)"
+                let url = resourceURL.appendingPathComponent("3dPartyIcons/\(fileName)")
+                if let image = NSImage(contentsOf: url) {
+                    return image
+                }
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func callPlatformIcon(for app: CallDetectionService.CallApp) -> some View {
+        glassIconTile {
+            if let customIcon = callPlatformIconImage(for: app) {
+                Image(nsImage: customIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .scaleEffect(1.2)
+            } else if let brand = app.brandIcon {
+                brand.text(size: 22)
+                    .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: app.sfSymbol)
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func glassIconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(0.45),
+                                    .white.opacity(0.15),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
+
+            content()
+                .padding(1)
         }
     }
 }
