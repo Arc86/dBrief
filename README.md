@@ -13,7 +13,7 @@ dBrief is a macOS menu bar app for recording microphone and system audio, then a
 - **Post-recording pipeline** — transcription, summary, action items, tags & sentiment
 - **Custom vocabulary** — guide Whisper with proper nouns and domain terms (works with both Local Whisper and remote endpoints)
 - **Call detection** — detects meeting apps (Zoom, Teams, Slack, etc.) and can auto-start recording
-- **Obsidian integration** — export Markdown notes with YAML frontmatter into your vault
+- **Destination integrations** — Obsidian, Apple Notes, Apple Reminders, Notion, Evernote, Google Keep, OneNote, and Webhook
 - **Configurable audio** — sample rate, bit rate, and input device selection
 
 ## Requirements
@@ -93,12 +93,21 @@ Remote transcription endpoints support:
 
 ### Integrations
 - **Obsidian** — select a vault and default output folder; notes are saved as Markdown with YAML frontmatter
+- **Apple Notes** — best-effort local automation via AppleScript; optional account/folder targeting
+- **Apple Reminders** — sends extracted action items into your selected reminders list
+- **Notion** — direct API send using token + parent target (`data_source_id` or `page_id`)
+- **Evernote** — direct API send using token with optional notebook target
+- **Google Keep** — direct API send using token (enterprise/admin setup may be required)
+- **OneNote** — direct Microsoft Graph send using token with optional section target
+- **Webhook** — POST selected fields (`audio`, `transcript`, `summary`, `tags`, `sentiment`, `actionItems`, `markdown`) to external automation (e.g. n8n)
+- Each integration supports connection testing in Settings > Integrations
 
 ## Outputs
 
 - **Recordings**: `~/Documents/dBrief/Recordings` (M4A, falls back to WAV if AAC fails)
 - **Transcriptions**: `~/Documents/dBrief/Transcriptions` (Markdown)
 - **Obsidian**: Markdown saved into the selected vault folder
+- **Integrations**: enabled destinations receive output automatically after processing
 
 Markdown notes include YAML frontmatter (title, date, tags, duration, audio link, model info) and sections for transcription (with timestamps), summary, action items, and tags/sentiment.
 

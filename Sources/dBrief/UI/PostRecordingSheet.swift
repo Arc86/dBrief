@@ -65,6 +65,24 @@ struct PostRecordingSheet: View {
                 }
             }
 
+            if !enabledDestinationNames.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Auto-send destinations")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(enabledDestinationNames.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if appSettings.integrations.webhook.enabled {
+                        Text("Webhook fields: \(webhookFieldsDescription)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             Divider()
 
             HStack {
@@ -100,5 +118,23 @@ struct PostRecordingSheet: View {
             actionItems = appSettings.autoActionItems
             tags = appSettings.autoTags
         }
+    }
+
+    private var enabledDestinationNames: [String] {
+        var values: [String] = []
+        let i = appSettings.integrations
+        if i.appleNotes.enabled { values.append(IntegrationDestination.appleNotes.displayName) }
+        if i.appleReminders.enabled { values.append(IntegrationDestination.appleReminders.displayName) }
+        if i.notion.enabled { values.append(IntegrationDestination.notion.displayName) }
+        if i.evernote.enabled { values.append(IntegrationDestination.evernote.displayName) }
+        if i.googleKeep.enabled { values.append(IntegrationDestination.googleKeep.displayName) }
+        if i.oneNote.enabled { values.append(IntegrationDestination.oneNote.displayName) }
+        if i.webhook.enabled { values.append(IntegrationDestination.webhook.displayName) }
+        return values
+    }
+
+    private var webhookFieldsDescription: String {
+        let labels = appSettings.integrations.webhook.fields.map(\.displayName)
+        return labels.isEmpty ? "None selected" : labels.joined(separator: ", ")
     }
 }

@@ -7,7 +7,7 @@ struct MarkdownGenerator {
         outputFolder: URL,
         transcriptionEndpoint: Endpoint?,
         aiEndpoint: Endpoint?
-    ) throws {
+    ) throws -> URL {
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
         let title = generatedTitle(for: recording)
@@ -22,6 +22,7 @@ struct MarkdownGenerator {
         )
 
         try content.write(to: outputURL, atomically: true, encoding: .utf8)
+        return outputURL
     }
 
     @MainActor
