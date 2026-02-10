@@ -19,6 +19,7 @@ app: build
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
+	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
 	@echo "Built $(APP_BUNDLE)"
 
 clean:

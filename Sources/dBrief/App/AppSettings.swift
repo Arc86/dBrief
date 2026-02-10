@@ -36,6 +36,7 @@ final class AppSettings {
         static let tagsPrompt = "tagsPrompt"
         static let obsidianEnabled = "obsidianEnabled"
         static let obsidianDefaultFolderRelativePath = "obsidianDefaultFolderRelativePath"
+        static let integrationSettings = "integrationSettings"
         static let showDockIcon = "showDockIcon"
     }
 
@@ -67,6 +68,26 @@ final class AppSettings {
                 forKey: Keys.obsidianDefaultFolderRelativePath
             )
         }
+    }
+
+    var integrations: IntegrationSettings {
+        didSet { saveIntegrationSettings(integrations) }
+    }
+
+    var notionToken: String {
+        didSet { KeychainHelper.set(notionToken, for: .notion) }
+    }
+
+    var evernoteToken: String {
+        didSet { KeychainHelper.set(evernoteToken, for: .evernote) }
+    }
+
+    var googleKeepToken: String {
+        didSet { KeychainHelper.set(googleKeepToken, for: .googleKeep) }
+    }
+
+    var oneNoteToken: String {
+        didSet { KeychainHelper.set(oneNoteToken, for: .oneNote) }
     }
 
     // MARK: - Post-Recording Defaults
@@ -265,6 +286,11 @@ final class AppSettings {
         self.obsidianDefaultFolderRelativePath = defaults.string(
             forKey: Keys.obsidianDefaultFolderRelativePath
         ) ?? ""
+        self.integrations = Self.loadIntegrationSettings(forKey: Keys.integrationSettings)
+        self.notionToken = KeychainHelper.get(for: .notion)
+        self.evernoteToken = KeychainHelper.get(for: .evernote)
+        self.googleKeepToken = KeychainHelper.get(for: .googleKeep)
+        self.oneNoteToken = KeychainHelper.get(for: .oneNote)
 
         self.autoTranscribe = defaults.object(forKey: Keys.autoTranscribe) as? Bool ?? true
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true
@@ -402,5 +428,20 @@ final class AppSettings {
               let endpoints = try? JSONDecoder().decode([Endpoint].self, from: data)
         else { return [] }
         return endpoints
+    }
+
+    // MARK: - Integration Settings Persistence
+
+    private func saveIntegrationSettings(_ settings: IntegrationSettings) {
+        if let data = try? JSONEncoder().encode(settings) {
+            UserDefaults.standard.set(data, forKey: Keys.integrationSettings)
+        }
+    }
+
+    private static func loadIntegrationSettings(forKey key: String) -> IntegrationSettings {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let value = try? JSONDecoder().decode(IntegrationSettings.self, from: data)
+        else { return IntegrationSettings() }
+        return value
     }
 }

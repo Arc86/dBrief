@@ -15,6 +15,7 @@ final class RecordingManager {
     var miniPlayer: FloatingMiniPlayerController?
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
+    private let integrationDispatchService = IntegrationDispatchService()
 
     init(appState: AppState, appSettings: AppSettings) {
         self.appState = appState
@@ -310,6 +311,8 @@ final class RecordingManager {
             }
         }
 
+        var generatedMarkdownURL: URL?
+
         // Step 3: Generate title & write Markdown
         if transcribe || summary || actionItems || tags {
             // Generate AI title from transcription
@@ -352,7 +355,7 @@ final class RecordingManager {
 
             do {
                 let outputFolder = resolveMarkdownOutputFolder(for: recording)
-                try markdownGenerator.generate(
+                generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
                     outputFolder: outputFolder,
                     transcriptionEndpoint: appSettings.defaultTranscriptionEndpoint,
@@ -361,6 +364,31 @@ final class RecordingManager {
                 appState.processingSteps[stepIndex].status = .completed
             } catch {
                 appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+            }
+        }
+
+        // Step 4: Integration dispatch
+        if hasEnabledIntegrations {
+            let results = await integrationDispatchService.dispatch(
+                recording: recording,
+                settings: appSettings,
+                generatedMarkdownURL: generatedMarkdownURL
+            )
+
+            for result in results {
+                let stepIndex = appState.processingSteps.count
+                appState.processingSteps.append(
+                    ProcessingStep(
+                        name: "Send: \(result.destination.displayName)",
+                        status: .inProgress
+                    )
+                )
+                switch result.status {
+                case .success, .skipped:
+                    appState.processingSteps[stepIndex].status = .completed
+                case .failed:
+                    appState.processingSteps[stepIndex].status = .failed(result.message)
+                }
             }
         }
 
@@ -468,5 +496,16 @@ final class RecordingManager {
             return obsidianFolder
         }
         return appSettings.transcriptionFolderURL
+    }
+
+    private var hasEnabledIntegrations: Bool {
+        let integrations = appSettings.integrations
+        return integrations.appleNotes.enabled
+            || integrations.appleReminders.enabled
+            || integrations.notion.enabled
+            || integrations.evernote.enabled
+            || integrations.googleKeep.enabled
+            || integrations.oneNote.enabled
+            || integrations.webhook.enabled
     }
 }
