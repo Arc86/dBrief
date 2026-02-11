@@ -9,7 +9,7 @@ dBrief is a macOS menu bar app for recording microphone and system audio, then a
 - **Global hotkey** — `⌘⇧R` to start/stop recording from anywhere
 - **Microphone + system audio** — captures both via ScreenCaptureKit (falls back to mic-only if screen recording permission is denied)
 - **Three transcription engines** — Apple Speech (on-device), Local Whisper (on-device, downloads once), or a remote Whisper API
-- **Two AI backends** — Apple Intelligence (on-device, macOS 26+) or any OpenAI-compatible endpoint
+- **Three AI backends** — Apple Intelligence (on-device, macOS 26+), local Qwen 2.5 (MLX), or any OpenAI-compatible endpoint
 - **Post-recording pipeline** — transcription, summary, action items, tags & sentiment
 - **Custom vocabulary** — guide Whisper with proper nouns and domain terms (works with both Local Whisper and remote endpoints)
 - **Call detection** — detects meeting apps (Zoom, Teams, Slack, etc.) and can auto-start recording
@@ -73,7 +73,7 @@ Three engines to choose from:
 | Engine | Privacy | Accuracy | Requirements |
 |--------|---------|----------|-------------|
 | **Apple Speech** | On-device | Good | Speech Recognition permission |
-| **Local Whisper** | On-device | Strong | Downloads Whisper Base model (~148 MB) on first use |
+| **Local Whisper** | On-device | Strong | Downloads WhisperKit small artifacts (~460 MB class) on first use |
 | **Remote Endpoint** | Network | Best | A Whisper API server |
 
 - Language selection (auto-detect or 15+ languages)
@@ -86,6 +86,7 @@ Remote transcription endpoints support:
 
 ### AI
 - **Apple Intelligence** — on-device processing (macOS 26+, Apple Silicon)
+- **Qwen 2.5 local (MLX)** — on-device insights model downloaded from Hugging Face (`mlx-community/Qwen2.5-3B-Instruct-4bit`)
 - **Remote endpoint** — any OpenAI-compatible `/v1/chat/completions` server
 - Post-recording defaults (auto-transcribe, summary, action items, tags)
 - Customizable prompts for each AI task
@@ -115,6 +116,6 @@ Markdown notes include YAML frontmatter (title, date, tags, duration, audio link
 
 - **No system audio**: grant Screen Recording permission in System Settings > Privacy & Security.
 - **Transcription fails**: verify the endpoint URL, model name, and API key in Settings > Transcription.
-- **Local Whisper slow on first run**: the model (~148 MB) downloads from Hugging Face on first use. Subsequent runs use the cached model.
+- **Local Whisper slow on first run**: WhisperKit turbo assets are downloaded from Hugging Face on first use. Subsequent runs use the cached files.
 - **AI steps fail**: ensure the AI endpoint is reachable and supports chat completions.
 - **No endpoint configured**: add one under Settings > Transcription or Settings > AI.

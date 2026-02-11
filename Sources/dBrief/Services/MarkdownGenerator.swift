@@ -67,9 +67,45 @@ struct MarkdownGenerator {
         lines.append("---")
         lines.append("")
 
-        // Transcription section
+        // Summary first for Obsidian readability
+        if let summary = recording.summary {
+            lines.append("## 📝 Summary")
+            lines.append("")
+            lines.append(summary)
+            lines.append("")
+        }
+
+        // Action Items section
+        if let actionItems = recording.actionItems, !actionItems.isEmpty {
+            lines.append("## ✅ Action Items")
+            lines.append("")
+            for item in actionItems {
+                lines.append("- [ ] \(item)")
+            }
+            lines.append("")
+        }
+
+        // Tags & Sentiment section
+        if recording.tags != nil || recording.sentiment != nil {
+            lines.append("## 🏷️ Tags")
+            lines.append("")
+            if let tags = recording.tags, !tags.isEmpty {
+                let normalized = tags.map {
+                    "#\($0.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression).lowercased())"
+                }
+                lines.append(normalized.joined(separator: " "))
+            }
+            lines.append("")
+            if let sentiment = recording.sentiment {
+                lines.append("**Sentiment:** \(sentiment)")
+                lines.append("")
+            }
+        }
+
+        // Transcript last so notes start with insights
         if let transcription = recording.transcription {
-            lines.append("## Transcription")
+            lines.append("---")
+            lines.append("## 💬 Transcript")
             lines.append("")
 
             if transcription.segments.isEmpty {
@@ -82,38 +118,6 @@ struct MarkdownGenerator {
                 }
             }
             lines.append("")
-        }
-
-        // Summary section
-        if let summary = recording.summary {
-            lines.append("## Summary")
-            lines.append("")
-            lines.append(summary)
-            lines.append("")
-        }
-
-        // Action Items section
-        if let actionItems = recording.actionItems, !actionItems.isEmpty {
-            lines.append("## Action Items")
-            lines.append("")
-            for item in actionItems {
-                lines.append("- [ ] \(item)")
-            }
-            lines.append("")
-        }
-
-        // Tags & Sentiment section
-        if recording.tags != nil || recording.sentiment != nil {
-            lines.append("## Tags & Sentiment")
-            lines.append("")
-            if let tags = recording.tags, !tags.isEmpty {
-                lines.append("**Tags:** \(tags.map { "#\($0)" }.joined(separator: " "))")
-                lines.append("")
-            }
-            if let sentiment = recording.sentiment {
-                lines.append("**Sentiment:** \(sentiment)")
-                lines.append("")
-            }
         }
 
         return lines.joined(separator: "\n")
@@ -157,6 +161,9 @@ struct MarkdownGenerator {
             .replacingOccurrences(of: "\t", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
+        if cleaned.lowercased().contains("detailed summary in the same language as the transcript") {
+            return nil
+        }
 
         let firstLine = cleaned.split(separator: ".").first.map(String.init) ?? cleaned
         let withoutBullets = firstLine.replacingOccurrences(of: #"^\s*[-•]\s+"#, with: "", options: .regularExpression)

@@ -183,12 +183,17 @@ struct OnboardingView: View {
                 .labelsHidden()
                 .font(.callout)
 
-                Toggle("Built-in AI (Apple Intelligence)", isOn: $settings.useBuiltInAI)
-                    .font(.callout)
+                Picker("AI engine", selection: $settings.aiEngine) {
+                    ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
+                        Text(engine.displayName).tag(engine)
+                    }
+                }
+                .labelsHidden()
+                .font(.callout)
             }
             .padding(.horizontal, 4)
 
-            if appSettings.transcriptionEngine == .remoteEndpoint || !appSettings.useBuiltInAI {
+            if appSettings.transcriptionEngine == .remoteEndpoint || appSettings.aiEngine == .remoteEndpoint {
                 Text("Configure external endpoints in Settings for Whisper / LLM services.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

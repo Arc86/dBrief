@@ -11,7 +11,7 @@ final class RecordingManager {
     private let audioCaptureManager = AudioCaptureManager()
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
-    private let localWhisperService = LocalWhisperService()
+    private let localAIPluginService = LocalAIPluginService()
     var miniPlayer: FloatingMiniPlayerController?
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
@@ -136,7 +136,12 @@ final class RecordingManager {
                 }
             case .localWhisper:
                 do {
-                    let result = try await localWhisperService.transcribe(fileURL: recording.fileURL, initialPrompt: appSettings.whisperPrompt)
+                    let result = try await withPluginStepAdapter(stepIndex: stepIndex) {
+                        try await self.localAIPluginService.transcribe(
+                            fileURL: recording.fileURL,
+                            initialPrompt: self.appSettings.whisperPrompt
+                        )
+                    }
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                 } catch {
@@ -164,150 +169,47 @@ final class RecordingManager {
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         if let transcription = recording.transcription {
-            let useLocal = appSettings.useBuiltInAI
+            let aiEngine = appSettings.aiEngine
             let endpoint = appSettings.defaultAIEndpoint
             let localAvailable = localAIAvailable
 
-            if summary {
-                let stepIndex = appState.processingSteps.count
-                let label = useLocal ? "Generating summary (Apple Intelligence)" : "Generating summary"
-                appState.processingSteps.append(ProcessingStep(name: label, status: .inProgress))
-                do {
-                    let result: String
-                    #if canImport(FoundationModels)
-                    if useLocal, #available(macOS 26, *) {
-                        guard localAvailable else {
-                            throw AIServiceError.invalidResponse
-                        }
-                        result = try await LocalAIService().generateSummary(
-                            transcription: transcription.text,
-                            systemPrompt: appSettings.summaryPrompt
-                        )
-                    } else if let endpoint {
-                        result = try await aiService.generateSummary(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.summaryPrompt
-                        )
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #else
-                    if let endpoint {
-                        result = try await aiService.generateSummary(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.summaryPrompt
-                        )
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #endif
-                    recording.summary = result
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    if useLocal && !localAvailable {
-                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
-                    } else {
-                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                    }
-                }
-            }
+            let summaryStepIndex = summary ? appendAIStep(
+                labelForSummary(engine: aiEngine)
+            ) : nil
+            let actionStepIndex = actionItems ? appendAIStep(
+                labelForActionItems(engine: aiEngine)
+            ) : nil
+            let tagsStepIndex = tags ? appendAIStep(
+                labelForTags(engine: aiEngine)
+            ) : nil
 
-            if actionItems {
-                let stepIndex = appState.processingSteps.count
-                let label = useLocal ? "Extracting action items (Apple Intelligence)" : "Extracting action items"
-                appState.processingSteps.append(ProcessingStep(name: label, status: .inProgress))
-                do {
-                    let result: [String]
-                    #if canImport(FoundationModels)
-                    if useLocal, #available(macOS 26, *) {
-                        guard localAvailable else {
-                            throw AIServiceError.invalidResponse
-                        }
-                        result = try await LocalAIService().extractActionItems(
-                            transcription: transcription.text,
-                            systemPrompt: appSettings.actionItemsPrompt
-                        )
-                    } else if let endpoint {
-                        result = try await aiService.extractActionItems(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.actionItemsPrompt
-                        )
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #else
-                    if let endpoint {
-                        result = try await aiService.extractActionItems(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.actionItemsPrompt
-                        )
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #endif
-                    recording.actionItems = result
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    if useLocal && !localAvailable {
-                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
-                    } else {
-                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                    }
-                }
-            }
-
-            if tags {
-                let stepIndex = appState.processingSteps.count
-                let label = useLocal ? "Analyzing tags (Apple Intelligence)" : "Analyzing tags & sentiment"
-                appState.processingSteps.append(ProcessingStep(name: label, status: .inProgress))
-                do {
-                    #if canImport(FoundationModels)
-                    if useLocal, #available(macOS 26, *) {
-                        guard localAvailable else {
-                            throw AIServiceError.invalidResponse
-                        }
-                        let result = try await LocalAIService().analyzeTags(
-                            transcription: transcription.text,
-                            systemPrompt: appSettings.tagsPrompt
-                        )
-                        recording.tags = result.tags
-                        recording.sentiment = result.sentiment
-                    } else if let endpoint {
-                        let result = try await aiService.analyzeTags(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.tagsPrompt
-                        )
-                        recording.tags = result.tags
-                        recording.sentiment = result.sentiment
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #else
-                    if let endpoint {
-                        let result = try await aiService.analyzeTags(
-                            transcription: transcription.text,
-                            endpoint: endpoint,
-                            systemPrompt: appSettings.tagsPrompt
-                        )
-                        recording.tags = result.tags
-                        recording.sentiment = result.sentiment
-                    } else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-                    #endif
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    if useLocal && !localAvailable {
-                        appState.processingSteps[stepIndex].status = .failed("Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match.")
-                    } else {
-                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                    }
-                }
+            switch aiEngine {
+            case .appleIntelligence:
+                await runAppleIntelligenceTasks(
+                    transcription: transcription.text,
+                    localAvailable: localAvailable,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
+            case .qwenLocal:
+                await runLocalQwenTasks(
+                    transcription: transcription.text,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
+            case .remoteEndpoint:
+                await runRemoteAITasks(
+                    transcription: transcription.text,
+                    endpoint: endpoint,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
             }
         }
 
@@ -322,7 +224,7 @@ final class RecordingManager {
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
                     #if canImport(FoundationModels)
-                    if appSettings.useBuiltInAI, #available(macOS 26, *), localAIAvailable {
+                    if appSettings.aiEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
                         recording.generatedTitle = try await LocalAIService().generateTitle(
                             transcription: String(transcriptionText.prefix(500)),
                             language: language
@@ -445,12 +347,272 @@ final class RecordingManager {
         appState.recordingState = .idle
     }
 
+    func purgeLocalWhisperModel() async throws {
+        try await localAIPluginService.purgeWhisperModel()
+    }
+
+    func purgeLocalQwenModel() async throws {
+        try await localAIPluginService.purgeQwenModel()
+    }
+
     func requestNotificationPermission() {
         guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     // MARK: - Private
+
+    private func appendAIStep(_ name: String) -> Int {
+        let index = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: name, status: .inProgress))
+        return index
+    }
+
+    private func labelForSummary(engine: AppSettings.AIEngine) -> String {
+        switch engine {
+        case .appleIntelligence: "Generating summary (Apple Intelligence)"
+        case .qwenLocal: "Generating summary (Qwen 2.5 local)"
+        case .remoteEndpoint: "Generating summary"
+        }
+    }
+
+    private func labelForActionItems(engine: AppSettings.AIEngine) -> String {
+        switch engine {
+        case .appleIntelligence: "Extracting action items (Apple Intelligence)"
+        case .qwenLocal: "Extracting action items (Qwen 2.5 local)"
+        case .remoteEndpoint: "Extracting action items"
+        }
+    }
+
+    private func labelForTags(engine: AppSettings.AIEngine) -> String {
+        switch engine {
+        case .appleIntelligence: "Analyzing tags (Apple Intelligence)"
+        case .qwenLocal: "Analyzing tags & sentiment (Qwen 2.5 local)"
+        case .remoteEndpoint: "Analyzing tags & sentiment"
+        }
+    }
+
+    private func runAppleIntelligenceTasks(
+        transcription: String,
+        localAvailable: Bool,
+        summaryStepIndex: Int?,
+        actionStepIndex: Int?,
+        tagsStepIndex: Int?,
+        recording: Recording
+    ) async {
+        #if canImport(FoundationModels)
+        guard #available(macOS 26, *) else {
+            let message = "Apple Intelligence requires macOS 26+."
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+            return
+        }
+        guard localAvailable else {
+            let message = "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match."
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+            return
+        }
+
+        if let summaryStepIndex {
+            do {
+                recording.summary = try await LocalAIService().generateSummary(
+                    transcription: transcription,
+                    systemPrompt: appSettings.summaryPrompt
+                )
+                markCompleted(summaryStepIndex)
+            } catch {
+                markFailed(summaryStepIndex, error.localizedDescription)
+            }
+        }
+
+        if let actionStepIndex {
+            do {
+                recording.actionItems = try await LocalAIService().extractActionItems(
+                    transcription: transcription,
+                    systemPrompt: appSettings.actionItemsPrompt
+                )
+                markCompleted(actionStepIndex)
+            } catch {
+                markFailed(actionStepIndex, error.localizedDescription)
+            }
+        }
+
+        if let tagsStepIndex {
+            do {
+                let result = try await LocalAIService().analyzeTags(
+                    transcription: transcription,
+                    systemPrompt: appSettings.tagsPrompt
+                )
+                recording.tags = result.tags
+                recording.sentiment = result.sentiment
+                markCompleted(tagsStepIndex)
+            } catch {
+                markFailed(tagsStepIndex, error.localizedDescription)
+            }
+        }
+        #else
+        let message = "Apple Intelligence is unavailable in this build."
+        markFailed(summaryStepIndex, message)
+        markFailed(actionStepIndex, message)
+        markFailed(tagsStepIndex, message)
+        #endif
+    }
+
+    private func runLocalQwenTasks(
+        transcription: String,
+        summaryStepIndex: Int?,
+        actionStepIndex: Int?,
+        tagsStepIndex: Int?,
+        recording: Recording
+    ) async {
+        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
+        do {
+            let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
+                try await self.localAIPluginService.analyzeTranscript(
+                    transcription,
+                    outputLanguage: self.appSettings.outputLanguage
+                )
+            }
+
+            if let summaryStepIndex {
+                recording.summary = insights.summary
+                markCompleted(summaryStepIndex)
+            }
+            if !insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let datePrefix = Self.dateOnlyString(recording.date)
+                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines))"
+            }
+            if let actionStepIndex {
+                recording.actionItems = insights.actionItems
+                markCompleted(actionStepIndex)
+            }
+            if let tagsStepIndex {
+                recording.tags = insights.tags
+                recording.sentiment = insights.sentiment
+                markCompleted(tagsStepIndex)
+            }
+        } catch {
+            let message = error.localizedDescription
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+        }
+    }
+
+    private func runRemoteAITasks(
+        transcription: String,
+        endpoint: Endpoint?,
+        summaryStepIndex: Int?,
+        actionStepIndex: Int?,
+        tagsStepIndex: Int?,
+        recording: Recording
+    ) async {
+        guard let endpoint else {
+            let message = AIServiceError.invalidEndpoint.localizedDescription
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+            return
+        }
+
+        if let summaryStepIndex {
+            do {
+                recording.summary = try await aiService.generateSummary(
+                    transcription: transcription,
+                    endpoint: endpoint,
+                    systemPrompt: appSettings.summaryPrompt
+                )
+                markCompleted(summaryStepIndex)
+            } catch {
+                markFailed(summaryStepIndex, error.localizedDescription)
+            }
+        }
+
+        if let actionStepIndex {
+            do {
+                recording.actionItems = try await aiService.extractActionItems(
+                    transcription: transcription,
+                    endpoint: endpoint,
+                    systemPrompt: appSettings.actionItemsPrompt
+                )
+                markCompleted(actionStepIndex)
+            } catch {
+                markFailed(actionStepIndex, error.localizedDescription)
+            }
+        }
+
+        if let tagsStepIndex {
+            do {
+                let result = try await aiService.analyzeTags(
+                    transcription: transcription,
+                    endpoint: endpoint,
+                    systemPrompt: appSettings.tagsPrompt
+                )
+                recording.tags = result.tags
+                recording.sentiment = result.sentiment
+                markCompleted(tagsStepIndex)
+            } catch {
+                markFailed(tagsStepIndex, error.localizedDescription)
+            }
+        }
+    }
+
+    private func withPluginStepAdapter<T>(
+        stepIndex: Int,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let stateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await state in localAIPluginService.stateStream {
+                if Task.isCancelled { return }
+                applyPluginState(state, toStepIndex: stepIndex)
+            }
+        }
+
+        defer { stateTask.cancel() }
+        return try await operation()
+    }
+
+    private func applyPluginState(_ state: LocalAIPluginState, toStepIndex stepIndex: Int) {
+        guard appState.processingSteps.indices.contains(stepIndex) else { return }
+        switch state {
+        case .idle:
+            break
+        case .transcribing:
+            appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
+        case .analyzing:
+            appState.processingSteps[stepIndex].name = "Analyzing transcript (Qwen 2.5 local)"
+        case .downloading(_, let stage):
+            switch stage {
+            case .whisperModel:
+                appState.processingSteps[stepIndex].name = "Downloading WhisperKit model"
+            case .llmModel:
+                appState.processingSteps[stepIndex].name = "Downloading Qwen model"
+            }
+        }
+    }
+
+    private func firstNonNil(_ values: Int?...) -> Int {
+        for value in values {
+            if let value {
+                return value
+            }
+        }
+        return 0
+    }
+
+    private func markCompleted(_ stepIndex: Int) {
+        guard appState.processingSteps.indices.contains(stepIndex) else { return }
+        appState.processingSteps[stepIndex].status = .completed
+    }
+
+    private func markFailed(_ stepIndex: Int?, _ message: String) {
+        guard let stepIndex, appState.processingSteps.indices.contains(stepIndex) else { return }
+        appState.processingSteps[stepIndex].status = .failed(message)
+    }
 
     private func sendCompletionNotification(fileName: String, failed: Int) {
         guard Bundle.main.bundleIdentifier != nil else { return }
@@ -486,6 +648,12 @@ final class RecordingManager {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HHmmss"
         return "VoiceRecording_\(formatter.string(from: Date())).m4a"
+    }
+
+    private static func dateOnlyString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     private func resolveMarkdownOutputFolder(for recording: Recording) -> URL {
