@@ -33,8 +33,26 @@ struct TranscriptionProgressView: View {
             if isComplete, let recording = appState.currentRecording, recording.transcription != nil {
                 Divider()
                 HStack {
-                    Button(copied ? "Copied!" : "Copy Transcription") {
-                        if let text = recording.transcription?.text {
+                    Button(copied ? "Copied!" : "Copy Notes") {
+                        if
+                            let transcript = recording.transcription?.text,
+                            let summary = recording.summary
+                        {
+                            let insights = LocalInsightsResult(
+                                summary: summary,
+                                actionItems: recording.actionItems ?? [],
+                                tags: recording.tags ?? [],
+                                sentiment: recording.sentiment ?? "Neutral"
+                            )
+                            let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(markdown, forType: .string)
+                            copied = true
+                            Task {
+                                try? await Task.sleep(for: .seconds(2))
+                                copied = false
+                            }
+                        } else if let text = recording.transcription?.text {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(text, forType: .string)
                             copied = true

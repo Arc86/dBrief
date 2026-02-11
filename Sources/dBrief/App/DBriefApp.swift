@@ -107,6 +107,7 @@ struct DBriefApp: App {
         WindowGroup(id: "settings") {
             SettingsView()
                 .environment(context.appSettings)
+                .environment(context.recordingManager)
                 .frame(minWidth: 800, minHeight: 550)
         }
         .windowResizability(.contentSize)

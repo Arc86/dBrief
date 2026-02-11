@@ -18,10 +18,11 @@ struct LocalWhisperModelSource: Sendable {
         self.encoderFolderName = encoderFolderName
     }
 
-    static let base = LocalWhisperModelSource(
-        name: "base",
-        binURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin")!,
-        encoderURL: nil
+    static let largeV2 = LocalWhisperModelSource(
+        name: "large-v2",
+        binURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2.bin")!,
+        encoderURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2-encoder.mlmodelc.zip")!,
+        encoderFolderName: "ggml-large-v2-encoder.mlmodelc"
     )
 }
 
@@ -48,13 +49,15 @@ enum LocalWhisperError: Error, LocalizedError {
 }
 
 actor LocalWhisperService {
+    private static let bilingualPromptPrefix = "This conversation is likely in Dutch and/or English; however, adjust language accordingly."
+
     private let model: LocalWhisperModelSource
     private let session: URLSession
     private let fileManager = FileManager.default
 
     private(set) var downloadProgress: Double = 0
 
-    init(model: LocalWhisperModelSource = .base, session: URLSession = .shared) {
+    init(model: LocalWhisperModelSource = .largeV2, session: URLSession = .shared) {
         self.model = model
         self.session = session
     }
@@ -63,12 +66,24 @@ actor LocalWhisperService {
         let modelPaths = try await ensureModelAvailable()
         let audioFrames = try convertToWhisperFormat(url: fileURL)
 
-        let whisper = Whisper(fromFileURL: modelPaths.binURL)
-        whisper.params.language = .auto
+        let params = WhisperParams(strategy: .beamSearch)
+        params.beam_search.beam_size = 5
+        params.language = .auto
+        params.suppress_non_speech_tokens = true
 
-        if let prompt = initialPrompt, !prompt.isEmpty {
-            let cPrompt = strdup(prompt)
-            whisper.params.initial_prompt = UnsafePointer(cPrompt)
+        let whisper = Whisper(fromFileURL: modelPaths.binURL, withParams: params)
+
+        var promptPointer: UnsafeMutablePointer<CChar>?
+        let composedPrompt = composeInitialPrompt(userPrompt: initialPrompt)
+        if let pointer = strdup(composedPrompt) {
+            promptPointer = pointer
+            params.initial_prompt = UnsafePointer(pointer)
+        }
+        defer {
+            params.initial_prompt = nil
+            if let promptPointer {
+                free(promptPointer)
+            }
         }
 
         let segments = try await whisper.transcribe(audioFrames: audioFrames)
@@ -87,6 +102,11 @@ actor LocalWhisperService {
             segments: mappedSegments,
             language: nil
         )
+    }
+
+    func releaseResources() {
+        // Whisper is scoped to each transcription call, so deallocation happens automatically
+        // once the function exits. This hook exists for lifecycle-triggered cleanup points.
     }
 
     func ensureModelAvailable() async throws -> LocalWhisperModelPaths {
@@ -227,6 +247,14 @@ actor LocalWhisperService {
             .appendingPathComponent(model.name, isDirectory: true)
         try fileManager.createDirectory(at: modelDir, withIntermediateDirectories: true)
         return modelDir
+    }
+
+    private func composeInitialPrompt(userPrompt: String?) -> String {
+        let trimmedUserPrompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmedUserPrompt.isEmpty {
+            return Self.bilingualPromptPrefix
+        }
+        return "\(Self.bilingualPromptPrefix)\n\(trimmedUserPrompt)"
     }
 
     private func downloadWithProgress(

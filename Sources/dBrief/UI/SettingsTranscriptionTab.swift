@@ -2,11 +2,13 @@ import SwiftUI
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(RecordingManager.self) private var recordingManager
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
     @State private var isNew = false
     @State private var testResult: TestResult?
+    @State private var purgeMessage: String?
 
     enum TestResult {
         case testing
@@ -61,12 +63,29 @@ struct SettingsTranscriptionTab: View {
                     .foregroundStyle(.secondary)
             case .localWhisper:
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("On-device transcription using Whisper Base (ggml-base.bin, ~148 MB). Best privacy — audio never leaves your Mac.")
+                    Text("On-device transcription using WhisperKit small (~460 MB class). Best privacy — audio never leaves your Mac.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("The model is downloaded once from Hugging Face on first use and stored locally in Application Support.")
+                    Text("Model artifacts are downloaded once from Hugging Face (argmaxinc/whisperkit-coreml) with auto language detection and bilingual prompt bias for NL/EN code-switching.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                    Button("Purge local WhisperKit model") {
+                        Task {
+                            do {
+                                try await recordingManager.purgeLocalWhisperModel()
+                                purgeMessage = "Local WhisperKit model cache removed."
+                            } catch {
+                                purgeMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    if let purgeMessage {
+                        Text(purgeMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             case .remoteEndpoint:
                 Text("Use a remote Whisper API or server. Requires an endpoint.")

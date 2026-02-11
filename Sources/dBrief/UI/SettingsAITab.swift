@@ -2,12 +2,14 @@ import SwiftUI
 
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(RecordingManager.self) private var recordingManager
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
     @State private var isNew = false
     @State private var testResult: SettingsTranscriptionTab.TestResult?
     @State private var expandedPrompt: String?
+    @State private var purgeMessage: String?
 
     var body: some View {
         if isEditing {
@@ -16,10 +18,59 @@ struct SettingsAITab: View {
             @Bindable var settings = appSettings
             Form {
                 Section("Engine") {
-                    Toggle("Use built-in Apple Intelligence", isOn: $settings.useBuiltInAI)
-                    Text("On-device AI processing. Requires macOS 26+ with Apple Silicon.")
+                    Picker("AI engine", selection: $settings.aiEngine) {
+                        ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
+                            Text(engine.displayName).tag(engine)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text(engineDescription(for: settings.aiEngine))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if settings.aiEngine == .qwenLocal {
+                        Picker("Output language", selection: outputLanguageSelectionBinding) {
+                            Text("Match transcript").tag("matchInput")
+                            Text("English").tag("english")
+                            Text("Dutch").tag("dutch")
+                            Text("Custom").tag("custom")
+                        }
+                        .pickerStyle(.menu)
+
+                        if case .custom(let code) = settings.outputLanguage {
+                            HStack {
+                                Text("ISO code")
+                                Spacer()
+                                TextField(
+                                    "EN",
+                                    text: Binding(
+                                        get: { code },
+                                        set: { settings.outputLanguage = .custom($0.uppercased()) }
+                                    )
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                            }
+                        }
+                    }
+                    if settings.aiEngine == .qwenLocal {
+                        Button("Purge local Qwen model") {
+                            Task {
+                                do {
+                                    try await recordingManager.purgeLocalQwenModel()
+                                    purgeMessage = "Local Qwen model cache removed."
+                                } catch {
+                                    purgeMessage = error.localizedDescription
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        if let purgeMessage {
+                            Text(purgeMessage)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                     .listRowBackground(Color.clear)
                 Section("Post-Recording Defaults") {
@@ -35,7 +86,7 @@ struct SettingsAITab: View {
                     promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
                 }
                     .listRowBackground(Color.clear)
-                if !appSettings.useBuiltInAI {
+                if appSettings.aiEngine == .remoteEndpoint {
                     Section("Endpoints") {
                         endpointsSection
                     }
@@ -48,6 +99,48 @@ struct SettingsAITab: View {
             .toggleStyle(.smallSwitch)
             .padding(.top, -20)
         }
+    }
+
+    private func engineDescription(for engine: AppSettings.AIEngine) -> String {
+        switch engine {
+        case .appleIntelligence:
+            "On-device Foundation Models. Requires macOS 26+ with Apple Silicon."
+        case .qwenLocal:
+            "On-device MLX Qwen 2.5 7B 4-bit model. Downloaded once from Hugging Face."
+        case .remoteEndpoint:
+            "Use a remote LLM endpoint configured below."
+        }
+    }
+
+    private var outputLanguageSelectionBinding: Binding<String> {
+        return Binding<String>(
+            get: {
+                switch appSettings.outputLanguage {
+                case .matchInput: "matchInput"
+                case .english: "english"
+                case .dutch: "dutch"
+                case .custom: "custom"
+                }
+            },
+            set: { value in
+                switch value {
+                case "english":
+                    appSettings.outputLanguage = .english
+                case "dutch":
+                    appSettings.outputLanguage = .dutch
+                case "custom":
+                    let currentCode: String = {
+                        if case .custom(let code) = appSettings.outputLanguage {
+                            return code.isEmpty ? "EN" : code
+                        }
+                        return "EN"
+                    }()
+                    appSettings.outputLanguage = .custom(currentCode)
+                default:
+                    appSettings.outputLanguage = .matchInput
+                }
+            }
+        )
     }
 
     private func promptRow(label: String, key: String, text: Binding<String>, defaultText: String) -> some View {
