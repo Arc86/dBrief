@@ -36,7 +36,7 @@ final class AppState {
 
 struct ProcessingStep: Identifiable {
     let id = UUID()
-    let name: String
+    var name: String
     var status: Status
 
     enum Status {

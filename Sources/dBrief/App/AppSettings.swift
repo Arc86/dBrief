@@ -22,6 +22,9 @@ final class AppSettings {
         static let useBuiltInTranscription = "useBuiltInTranscription"
         static let transcriptionEngine = "transcriptionEngine"
         static let useBuiltInAI = "useBuiltInAI"
+        static let aiEngine = "aiEngine"
+        static let outputLanguageMode = "outputLanguageMode"
+        static let outputLanguageCustomCode = "outputLanguageCustomCode"
         static let audioSampleRate = "audioSampleRate"
         static let audioBitRate = "audioBitRate"
         static let audioInputDeviceUID = "audioInputDeviceUID"
@@ -124,14 +127,74 @@ final class AppSettings {
         }
     }
 
+    enum AIEngine: String, CaseIterable, Sendable {
+        case appleIntelligence
+        case qwenLocal
+        case remoteEndpoint
+
+        var displayName: String {
+            switch self {
+            case .appleIntelligence: "Apple Intelligence"
+            case .qwenLocal: "Qwen 2.5 Local"
+            case .remoteEndpoint: "Remote Endpoint"
+            }
+        }
+    }
+
+    enum OutputLanguage: Sendable, Equatable {
+        case matchInput
+        case english
+        case dutch
+        case custom(String)
+
+        var displayName: String {
+            switch self {
+            case .matchInput: "Match Transcript"
+            case .english: "English"
+            case .dutch: "Dutch"
+            case .custom(let code): "Custom (\(code.uppercased()))"
+            }
+        }
+
+        fileprivate var modeStorageValue: String {
+            switch self {
+            case .matchInput: "matchInput"
+            case .english: "english"
+            case .dutch: "dutch"
+            case .custom: "custom"
+            }
+        }
+    }
+
     /// Preferred transcription engine (Apple Speech, Local Whisper, or remote endpoint).
     var transcriptionEngine: TranscriptionEngine {
         didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: Keys.transcriptionEngine) }
     }
 
-    /// Use built-in Apple Intelligence instead of an external endpoint (macOS 26+)
+    /// Preferred AI engine (Apple Intelligence, local Qwen model, or remote endpoint).
+    var aiEngine: AIEngine {
+        didSet {
+            UserDefaults.standard.set(aiEngine.rawValue, forKey: Keys.aiEngine)
+            UserDefaults.standard.set(aiEngine == .appleIntelligence, forKey: Keys.useBuiltInAI)
+        }
+    }
+
+    /// Preferred language for local Qwen insights output.
+    var outputLanguage: OutputLanguage {
+        didSet {
+            UserDefaults.standard.set(outputLanguage.modeStorageValue, forKey: Keys.outputLanguageMode)
+            if case .custom(let code) = outputLanguage {
+                UserDefaults.standard.set(code, forKey: Keys.outputLanguageCustomCode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.outputLanguageCustomCode)
+            }
+        }
+    }
+
+    /// Backward-compatible bridge for existing views that still use the old boolean key.
     var useBuiltInAI: Bool {
-        didSet { UserDefaults.standard.set(useBuiltInAI, forKey: Keys.useBuiltInAI) }
+        get { aiEngine == .appleIntelligence }
+        set { aiEngine = newValue ? .appleIntelligence : .remoteEndpoint }
     }
 
     /// Sample rate for output audio (default 16000 Hz, good for speech)
@@ -299,7 +362,28 @@ final class AppSettings {
 
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
 
-        self.useBuiltInAI = defaults.bool(forKey: Keys.useBuiltInAI)
+        if let rawValue = defaults.string(forKey: Keys.aiEngine),
+           let engine = AIEngine(rawValue: rawValue)
+        {
+            self.aiEngine = engine
+        } else {
+            let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInAI)
+            self.aiEngine = legacyBuiltIn ? .appleIntelligence : .remoteEndpoint
+        }
+
+        let outputLanguageMode = defaults.string(forKey: Keys.outputLanguageMode) ?? "matchInput"
+        switch outputLanguageMode {
+        case "english":
+            self.outputLanguage = .english
+        case "dutch":
+            self.outputLanguage = .dutch
+        case "custom":
+            let code = (defaults.string(forKey: Keys.outputLanguageCustomCode) ?? "EN")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            self.outputLanguage = .custom(code.isEmpty ? "EN" : code)
+        default:
+            self.outputLanguage = .matchInput
+        }
 
         self.audioSampleRate = defaults.object(forKey: Keys.audioSampleRate) as? Int ?? 16000
         self.audioBitRate = defaults.object(forKey: Keys.audioBitRate) as? Int ?? 128000

@@ -123,11 +123,8 @@ struct SettingsPermissionsTab: View {
         speechStatus == .authorized ? "Granted" : "Request"
     }
 
+    @MainActor
     private func refreshStatuses() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { refreshStatuses() }
-            return
-        }
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         screenRecordingGranted = CGPreflightScreenCaptureAccess()
         speechStatus = SFSpeechRecognizer.authorizationStatus()
@@ -135,8 +132,15 @@ struct SettingsPermissionsTab: View {
 
     private func requestMicrophone() {
         guard micStatus != .authorized else { return }
-        AVCaptureDevice.requestAccess(for: .audio) { _ in
-            DispatchQueue.main.async { refreshStatuses() }
+        Task.detached {
+            _ = await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+            await MainActor.run {
+                refreshStatuses()
+            }
         }
     }
 
@@ -150,8 +154,15 @@ struct SettingsPermissionsTab: View {
 
     private func requestSpeechRecognition() {
         guard speechStatus != .authorized else { return }
-        SFSpeechRecognizer.requestAuthorization { _ in
-            DispatchQueue.main.async { refreshStatuses() }
+        Task.detached {
+            _ = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
+            }
+            await MainActor.run {
+                refreshStatuses()
+            }
         }
     }
 
