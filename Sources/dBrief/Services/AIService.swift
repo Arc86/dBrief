@@ -60,25 +60,90 @@ actor AIService {
     }
 
     func testConnection(endpoint: Endpoint) async throws -> Bool {
-        guard let baseURL = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/v1/models") else {
-            throw AIServiceError.invalidEndpoint
+        _ = try await fetchAvailableModels(endpoint: endpoint)
+        return true
+    }
+
+    func fetchAvailableModels(endpoint: Endpoint) async throws -> [String] {
+        do {
+            let models = try await fetchOpenAICompatibleModels(endpoint: endpoint)
+            if !models.isEmpty {
+                return models
+            }
+        } catch {
+            // Fall back to Ollama-compatible discovery.
         }
 
-        var request = URLRequest(url: baseURL)
+        do {
+            let models = try await fetchOllamaModels(endpoint: endpoint)
+            if !models.isEmpty {
+                return models
+            }
+        } catch {
+            throw error
+        }
+
+        throw AIServiceError.noModelsFound
+    }
+
+    // MARK: - Private
+
+    private func fetchOpenAICompatibleModels(endpoint: Endpoint) async throws -> [String] {
+        guard let url = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/v1/models") else {
+            throw AIServiceError.invalidEndpoint
+        }
+        let data = try await get(url: url, endpoint: endpoint)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataItems = json["data"] as? [[String: Any]]
+        else {
+            throw AIServiceError.invalidResponse
+        }
+
+        let models = dataItems
+            .compactMap { $0["id"] as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return Array(Set(models)).sorted()
+    }
+
+    private func fetchOllamaModels(endpoint: Endpoint) async throws -> [String] {
+        guard let url = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/api/tags") else {
+            throw AIServiceError.invalidEndpoint
+        }
+        let data = try await get(url: url, endpoint: endpoint)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]]
+        else {
+            throw AIServiceError.invalidResponse
+        }
+
+        let modelNames = models
+            .compactMap { ($0["name"] as? String) ?? ($0["model"] as? String) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return Array(Set(modelNames)).sorted()
+    }
+
+    private func get(url: URL, endpoint: Endpoint) async throws -> Data {
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         if !endpoint.apiKey.isEmpty {
             request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.timeoutInterval = 10
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIServiceError.invalidResponse
         }
-        return (200...299).contains(httpResponse.statusCode)
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AIServiceError.serverError(httpResponse.statusCode, responseBody)
+        }
+        return data
     }
-
-    // MARK: - Private
 
     private func chatCompletion(
         systemPrompt: String,
@@ -140,12 +205,14 @@ private extension String {
 enum AIServiceError: Error, LocalizedError {
     case invalidEndpoint
     case invalidResponse
+    case noModelsFound
     case serverError(Int, String)
 
     var errorDescription: String? {
         switch self {
         case .invalidEndpoint: "Invalid AI endpoint URL."
         case .invalidResponse: "Invalid response from AI server."
+        case .noModelsFound: "Connected, but no models were returned by the provider."
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }
     }
