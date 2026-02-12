@@ -8,6 +8,8 @@ struct SettingsAITab: View {
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
     @State private var isNew = false
     @State private var testResult: SettingsTranscriptionTab.TestResult?
+    @State private var availableModels: [String] = []
+    @State private var isLoadingModels = false
     @State private var expandedPrompt: String?
     @State private var purgeMessage: String?
 
@@ -197,6 +199,7 @@ struct SettingsAITab: View {
                     editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
                     isNew = true
                     testResult = nil
+                    availableModels = []
                     isEditing = true
                 } label: {
                     Image(systemName: "plus")
@@ -260,6 +263,7 @@ struct SettingsAITab: View {
             editingEndpoint = endpoint
             isNew = false
             testResult = nil
+            availableModels = []
             isEditing = true
         }
     }
@@ -285,8 +289,19 @@ struct SettingsAITab: View {
                 }
                 GridRow {
                     Text("Model:")
-                    NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName)
+                    if availableModels.isEmpty {
+                        NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName)
+                            .frame(height: 22)
+                    } else {
+                        Picker("", selection: $editingEndpoint.modelName) {
+                            ForEach(availableModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
                         .frame(height: 22)
+                    }
                 }
                 GridRow {
                     Text("API Key (optional):")
@@ -295,6 +310,15 @@ struct SettingsAITab: View {
                 }
             }
             .frame(maxWidth: 350)
+
+            if isLoadingModels {
+                ProgressView("Loading models...")
+                    .controlSize(.small)
+            } else if !availableModels.isEmpty {
+                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let testResult {
                 HStack {
@@ -319,16 +343,7 @@ struct SettingsAITab: View {
 
             HStack {
                 Button("Test Connection") {
-                    testResult = .testing
-                    Task {
-                        do {
-                            let service = AIService()
-                            let success = try await service.testConnection(endpoint: editingEndpoint)
-                            testResult = success ? .success : .failure("Connection failed")
-                        } catch {
-                            testResult = .failure(error.localizedDescription)
-                        }
-                    }
+                    testAndLoadModels()
                 }
                 .buttonStyle(.bordered)
 
@@ -357,5 +372,25 @@ struct SettingsAITab: View {
             Spacer()
         }
         .padding()
+    }
+
+    private func testAndLoadModels() {
+        testResult = .testing
+        isLoadingModels = true
+        Task {
+            do {
+                let service = AIService()
+                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
+                availableModels = models
+                if !models.contains(editingEndpoint.modelName), let firstModel = models.first {
+                    editingEndpoint.modelName = firstModel
+                }
+                testResult = .success
+            } catch {
+                availableModels = []
+                testResult = .failure(error.localizedDescription)
+            }
+            isLoadingModels = false
+        }
     }
 }
