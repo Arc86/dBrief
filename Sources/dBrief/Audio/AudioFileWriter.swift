@@ -3,6 +3,17 @@ import os
 
 private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
 
+enum AudioFileWriterError: Error, LocalizedError {
+    case noCompatibleM4AEncoder
+
+    var errorDescription: String? {
+        switch self {
+        case .noCompatibleM4AEncoder:
+            return "No compatible M4A audio encoder is available on this system."
+        }
+    }
+}
+
 final class AudioFileWriter: @unchecked Sendable {
     private let fileURL: URL
     private var audioFile: AVAudioFile?
@@ -31,46 +42,47 @@ final class AudioFileWriter: @unchecked Sendable {
             interleaved: false
         )!
 
-        // Try AAC first, fall back to WAV if it fails
-        do {
-            // Ensure .m4a extension for AAC container
-            let aacURL = fileURL.pathExtension.lowercased() == "m4a"
-                ? fileURL
-                : fileURL.deletingPathExtension().appendingPathExtension("m4a")
-            let settings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: rate,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderBitRateKey: bitRate,
-            ]
-            self.audioFile = try AVAudioFile(
-                forWriting: aacURL,
-                settings: settings,
-                commonFormat: .pcmFormatFloat32,
-                interleaved: false
-            )
-            log.info("File writer: AAC format at \(aacURL.lastPathComponent, privacy: .public)")
-        } catch {
-            log.warning("AAC not available (\(error.localizedDescription, privacy: .public)), falling back to WAV")
-            // Fall back to uncompressed WAV — always works
-            let wavURL = fileURL.deletingPathExtension().appendingPathExtension("wav")
-            let settings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: rate,
-                AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false,
-            ]
-            self.audioFile = try AVAudioFile(
-                forWriting: wavURL,
-                settings: settings,
-                commonFormat: .pcmFormatFloat32,
-                interleaved: false
-            )
-            log.info("File writer: WAV format at \(wavURL.lastPathComponent, privacy: .public)")
+        let outputURL = fileURL.pathExtension.lowercased() == "m4a"
+            ? fileURL
+            : fileURL.deletingPathExtension().appendingPathExtension("m4a")
+
+        // Keep output strictly in .m4a, trying AAC first, then Apple Lossless.
+        let candidates: [(name: String, settings: [String: Any])] = [
+            (
+                "AAC",
+                [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: rate,
+                    AVNumberOfChannelsKey: 1,
+                    AVEncoderBitRateKey: bitRate,
+                ]
+            ),
+            (
+                "Apple Lossless",
+                [
+                    AVFormatIDKey: kAudioFormatAppleLossless,
+                    AVSampleRateKey: rate,
+                    AVNumberOfChannelsKey: 1,
+                ]
+            ),
+        ]
+
+        for candidate in candidates {
+            do {
+                self.audioFile = try AVAudioFile(
+                    forWriting: outputURL,
+                    settings: candidate.settings,
+                    commonFormat: .pcmFormatFloat32,
+                    interleaved: false
+                )
+                log.info("File writer: \(candidate.name, privacy: .public) in \(outputURL.lastPathComponent, privacy: .public)")
+                return
+            } catch {
+                log.warning("\(candidate.name, privacy: .public) encoder not available (\(error.localizedDescription, privacy: .public))")
+            }
         }
+
+        throw AudioFileWriterError.noCompatibleM4AEncoder
     }
 
     var actualFileURL: URL {

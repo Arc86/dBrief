@@ -41,6 +41,8 @@ final class AppSettings {
         static let obsidianDefaultFolderRelativePath = "obsidianDefaultFolderRelativePath"
         static let integrationSettings = "integrationSettings"
         static let showDockIcon = "showDockIcon"
+        static let profiles = "profiles"
+        static let activeProfileId = "activeProfileId"
     }
 
     // MARK: - Recording
@@ -113,7 +115,7 @@ final class AppSettings {
 
     // MARK: - Transcription Language
 
-    enum TranscriptionEngine: String, CaseIterable, Sendable {
+    enum TranscriptionEngine: String, CaseIterable, Codable, Hashable, Sendable {
         case appleSpeech
         case localWhisper
         case remoteEndpoint
@@ -127,7 +129,7 @@ final class AppSettings {
         }
     }
 
-    enum AIEngine: String, CaseIterable, Sendable {
+    enum AIEngine: String, CaseIterable, Codable, Hashable, Sendable {
         case appleIntelligence
         case qwenLocal
         case remoteEndpoint
@@ -253,6 +255,30 @@ final class AppSettings {
         Only output valid JSON, nothing else.
         """
 
+    static let teamMeetingWhisperPrompt =
+        "Team standup, sprint, backlog, blocker, follow-up, ETA, Jira, PR, release, roadmap, architecture."
+
+    static let teamMeetingSummaryPrompt =
+        "Summarize this internal team meeting in concise bullet points. Include: decisions, progress updates, blockers, and next steps. Keep tone informal and practical."
+
+    static let teamMeetingActionItemsPrompt =
+        "Extract concrete action items from this team meeting. Output bullet lines beginning with '- '. Include owner if mentioned and due date if mentioned. Keep wording short."
+
+    static let teamMeetingTagsPrompt =
+        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should reflect internal collaboration topics (planning, delivery, blockers, risks, dependencies)."
+
+    static let salesMeetingWhisperPrompt =
+        "Customer, contract, pricing, procurement, renewal, objections, competitor, timeline, stakeholder, action item, follow-up."
+
+    static let salesMeetingSummaryPrompt =
+        "Create a formal customer-facing sales meeting summary. Prioritize factual accuracy, commitments, risks, and agreed commercial points. Use clear bullet points."
+
+    static let salesMeetingActionItemsPrompt =
+        "Extract precise action items for sales follow-up. Output bullet lines beginning with '- '. Include owner, expected outcome, and date when available. Be exact and unambiguous."
+
+    static let salesMeetingTagsPrompt =
+        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should focus on deal stage, customer needs, objections, budget, timeline, decision process, and next steps."
+
     var summaryPrompt: String {
         didSet { UserDefaults.standard.set(summaryPrompt, forKey: Keys.summaryPrompt) }
     }
@@ -263,6 +289,16 @@ final class AppSettings {
 
     var tagsPrompt: String {
         didSet { UserDefaults.standard.set(tagsPrompt, forKey: Keys.tagsPrompt) }
+    }
+
+    // MARK: - Meeting Profiles
+
+    var profiles: [MeetingProfile] {
+        didSet { saveProfiles(profiles) }
+    }
+
+    var activeProfileId: UUID {
+        didSet { UserDefaults.standard.set(activeProfileId.uuidString, forKey: Keys.activeProfileId) }
     }
 
     // MARK: - Call Detection
@@ -333,6 +369,233 @@ final class AppSettings {
             return aiEndpoints.first
         }
         return aiEndpoints.first { $0.id == id } ?? aiEndpoints.first
+    }
+
+    var activeProfile: MeetingProfile {
+        if let profile = profiles.first(where: { $0.id == activeProfileId }) {
+            return profile
+        }
+        if let defaultProfile = profiles.first(where: { $0.preset == .default }) {
+            return defaultProfile
+        }
+        return profiles[0]
+    }
+
+    var effectiveTranscriptionLanguage: String {
+        activeProfile.overrides.transcriptionLanguage ?? transcriptionLanguage
+    }
+
+    var effectiveWhisperPrompt: String {
+        activeProfile.overrides.whisperPrompt ?? whisperPrompt
+    }
+
+    var effectiveTranscriptionEngine: TranscriptionEngine {
+        activeProfile.overrides.transcriptionEngine ?? transcriptionEngine
+    }
+
+    var effectiveDefaultTranscriptionEndpoint: Endpoint? {
+        if let overrideID = activeProfile.overrides.transcriptionEndpointId,
+           let endpoint = transcriptionEndpoints.first(where: { $0.id == overrideID })
+        {
+            return endpoint
+        }
+        return defaultTranscriptionEndpoint
+    }
+
+    var effectiveAIEngine: AIEngine {
+        activeProfile.overrides.aiEngine ?? aiEngine
+    }
+
+    var effectiveDefaultAIEndpoint: Endpoint? {
+        if let overrideID = activeProfile.overrides.aiEndpointId,
+           let endpoint = aiEndpoints.first(where: { $0.id == overrideID })
+        {
+            return endpoint
+        }
+        return defaultAIEndpoint
+    }
+
+    var effectiveSummaryPrompt: String {
+        activeProfile.overrides.summaryPrompt ?? summaryPrompt
+    }
+
+    var effectiveActionItemsPrompt: String {
+        activeProfile.overrides.actionItemsPrompt ?? actionItemsPrompt
+    }
+
+    var effectiveTagsPrompt: String {
+        activeProfile.overrides.tagsPrompt ?? tagsPrompt
+    }
+
+    var effectiveAutoTranscribe: Bool {
+        activeProfile.overrides.autoTranscribe ?? autoTranscribe
+    }
+
+    var effectiveAutoSummary: Bool {
+        activeProfile.overrides.autoSummary ?? autoSummary
+    }
+
+    var effectiveAutoActionItems: Bool {
+        activeProfile.overrides.autoActionItems ?? autoActionItems
+    }
+
+    var effectiveAutoTags: Bool {
+        activeProfile.overrides.autoTags ?? autoTags
+    }
+
+    var effectiveRecordingFolderURL: URL {
+        resolvedFolderURL(
+            overridePath: activeProfile.overrides.recordingFolderPath,
+            fallback: recordingFolderURL
+        )
+    }
+
+    var effectiveTranscriptionFolderURL: URL {
+        resolvedFolderURL(
+            overridePath: activeProfile.overrides.transcriptionFolderPath,
+            fallback: transcriptionFolderURL
+        )
+    }
+
+    var effectiveObsidianVaultURL: URL? {
+        guard let path = activeProfile.overrides.obsidianVaultPath,
+              !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return obsidianVaultURL }
+
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return obsidianVaultURL
+        }
+        return url
+    }
+
+    var effectiveObsidianDefaultFolderRelativePath: String {
+        activeProfile.overrides.obsidianDefaultFolderRelativePath ?? obsidianDefaultFolderRelativePath
+    }
+
+    func setActiveProfile(_ id: UUID) {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        activeProfileId = id
+    }
+
+    @discardableResult
+    func createProfile(name: String) -> MeetingProfile {
+        let uniqueName = uniqueProfileName(from: name)
+        let profile = MeetingProfile(name: uniqueName)
+        profiles.append(profile)
+        return profile
+    }
+
+    func deleteProfile(id: UUID) {
+        guard let existing = profiles.first(where: { $0.id == id }) else { return }
+        guard !existing.isProtectedDefault else { return }
+        profiles.removeAll { $0.id == id }
+        if activeProfileId == id, let fallback = profiles.first(where: { $0.preset == .default }) ?? profiles.first {
+            activeProfileId = fallback.id
+        }
+    }
+
+    func resetDefaultProfileToBuiltInDefaults() {
+        guard let index = profiles.firstIndex(where: { $0.preset == .default }) else { return }
+        profiles[index].overrides = .empty
+        profiles[index].name = "Default"
+
+        transcriptionLanguage = ""
+        whisperPrompt = ""
+        summaryPrompt = Self.defaultSummaryPrompt
+        actionItemsPrompt = Self.defaultActionItemsPrompt
+        tagsPrompt = Self.defaultTagsPrompt
+        autoTranscribe = true
+        autoSummary = true
+        autoActionItems = true
+        autoTags = true
+        recordingFolderURL = Self.defaultRecordingFolder()
+        transcriptionFolderURL = Self.defaultTranscriptionFolder()
+        obsidianVaultURL = nil
+        obsidianDefaultFolderRelativePath = ""
+    }
+
+    func importProfiles(from data: Data) throws -> ImportResult {
+        let envelope: ProfilesExportEnvelope
+        do {
+            envelope = try JSONDecoder().decode(ProfilesExportEnvelope.self, from: data)
+        } catch {
+            throw ProfileImportError.invalidFormat
+        }
+
+        guard envelope.version == 1 else {
+            throw ProfileImportError.invalidVersion(envelope.version)
+        }
+        guard !envelope.profiles.isEmpty else {
+            throw ProfileImportError.emptyImport
+        }
+
+        var renamedCount = 0
+        var warnings: [String] = []
+        var workingProfiles = profiles
+
+        for sourceProfile in envelope.profiles {
+            var profile = sourceProfile
+            if profile.preset == .default {
+                profile.preset = .custom
+                warnings.append("Imported default profile was converted to custom.")
+            }
+
+            let newName = uniqueImportedProfileName(from: profile.name, existing: workingProfiles)
+            if newName != profile.name {
+                renamedCount += 1
+                profile.name = newName
+            }
+
+            profile.id = UUID()
+            workingProfiles.append(profile)
+        }
+
+        profiles = workingProfiles
+        return ImportResult(
+            importedCount: envelope.profiles.count,
+            renamedCount: renamedCount,
+            warnings: warnings
+        )
+    }
+
+    func exportProfiles(ids: [UUID]? = nil) throws -> Data {
+        let selectedProfiles: [MeetingProfile]
+        if let ids {
+            let allowed = Set(ids)
+            selectedProfiles = profiles.filter { allowed.contains($0.id) }
+        } else {
+            selectedProfiles = profiles
+        }
+
+        let envelope = ProfilesExportEnvelope(
+            version: 1,
+            exportedAtISO8601: ISO8601DateFormatter().string(from: Date()),
+            profiles: selectedProfiles
+        )
+        return try JSONEncoder().encode(envelope)
+    }
+
+    func warnings(for profile: MeetingProfile) -> [String] {
+        var values: [String] = []
+        if let endpointID = profile.overrides.transcriptionEndpointId,
+           !transcriptionEndpoints.contains(where: { $0.id == endpointID })
+        {
+            values.append("Transcription endpoint override not found; default endpoint will be used.")
+        }
+        if let endpointID = profile.overrides.aiEndpointId,
+           !aiEndpoints.contains(where: { $0.id == endpointID })
+        {
+            values.append("AI endpoint override not found; default endpoint will be used.")
+        }
+        if let path = profile.overrides.obsidianVaultPath,
+           !path.isEmpty,
+           !FileManager.default.fileExists(atPath: path)
+        {
+            values.append("Obsidian vault override path is unavailable; default vault will be used.")
+        }
+        return values
     }
 
     // MARK: - Init
@@ -424,6 +687,28 @@ final class AppSettings {
             let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInTranscription)
             self.transcriptionEngine = legacyBuiltIn ? .appleSpeech : .remoteEndpoint
         }
+
+        var loadedProfiles = Self.loadProfiles(forKey: Keys.profiles)
+        if loadedProfiles.isEmpty {
+            loadedProfiles = Self.builtInProfiles()
+        } else if !loadedProfiles.contains(where: { $0.preset == .default }) {
+            loadedProfiles.insert(Self.defaultProfile(), at: 0)
+        }
+
+        let resolvedActiveProfileId: UUID
+        if let rawID = defaults.string(forKey: Keys.activeProfileId),
+           let parsed = UUID(uuidString: rawID),
+           loadedProfiles.contains(where: { $0.id == parsed })
+        {
+            resolvedActiveProfileId = parsed
+        } else if let defaultID = loadedProfiles.first(where: { $0.preset == .default })?.id {
+            resolvedActiveProfileId = defaultID
+        } else {
+            resolvedActiveProfileId = loadedProfiles[0].id
+        }
+
+        self.profiles = loadedProfiles
+        self.activeProfileId = resolvedActiveProfileId
     }
 
     // MARK: - Bookmark Persistence
@@ -463,7 +748,7 @@ final class AppSettings {
     }
 
     func obsidianRelativePath(for folderURL: URL) -> String? {
-        guard let vaultURL = obsidianVaultURL?.standardizedFileURL else { return nil }
+        guard let vaultURL = effectiveObsidianVaultURL?.standardizedFileURL else { return nil }
         let vaultPath = vaultURL.path
         let folderPath = folderURL.standardizedFileURL.path
 
@@ -473,7 +758,7 @@ final class AppSettings {
     }
 
     func obsidianFolderURL(relativePath: String?) -> URL? {
-        guard let vaultURL = obsidianVaultURL else { return nil }
+        guard let vaultURL = effectiveObsidianVaultURL else { return nil }
         let trimmed = (relativePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return vaultURL }
         let sanitized = trimmed.hasPrefix("/") ? String(trimmed.dropFirst()) : trimmed
@@ -497,6 +782,20 @@ final class AppSettings {
             .appendingPathComponent("dBrief/Transcriptions", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func resolvedFolderURL(overridePath: String?, fallback: URL) -> URL {
+        guard let overridePath else { return fallback }
+        let trimmed = overridePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return fallback }
+
+        let url = URL(fileURLWithPath: trimmed, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        } catch {
+            return fallback
+        }
     }
 
     // MARK: - Endpoint Persistence
@@ -527,5 +826,99 @@ final class AppSettings {
               let value = try? JSONDecoder().decode(IntegrationSettings.self, from: data)
         else { return IntegrationSettings() }
         return value
+    }
+
+    // MARK: - Profiles Persistence
+
+    private func saveProfiles(_ values: [MeetingProfile]) {
+        if let data = try? JSONEncoder().encode(values) {
+            UserDefaults.standard.set(data, forKey: Keys.profiles)
+        }
+    }
+
+    private static func loadProfiles(forKey key: String) -> [MeetingProfile] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let values = try? JSONDecoder().decode([MeetingProfile].self, from: data)
+        else { return [] }
+        return values
+    }
+
+    private static func defaultProfile() -> MeetingProfile {
+        MeetingProfile(name: "Default", preset: .default)
+    }
+
+    private static func teamMeetingProfile() -> MeetingProfile {
+        MeetingProfile(
+            name: "Team meeting",
+            preset: .teamMeeting,
+            overrides: MeetingProfileOverrides(
+                whisperPrompt: teamMeetingWhisperPrompt,
+                summaryPrompt: teamMeetingSummaryPrompt,
+                actionItemsPrompt: teamMeetingActionItemsPrompt,
+                tagsPrompt: teamMeetingTagsPrompt,
+                autoSummary: true,
+                autoActionItems: true,
+                autoTags: true
+            )
+        )
+    }
+
+    private static func salesMeetingProfile() -> MeetingProfile {
+        MeetingProfile(
+            name: "Sales meeting",
+            preset: .salesMeeting,
+            overrides: MeetingProfileOverrides(
+                whisperPrompt: salesMeetingWhisperPrompt,
+                summaryPrompt: salesMeetingSummaryPrompt,
+                actionItemsPrompt: salesMeetingActionItemsPrompt,
+                tagsPrompt: salesMeetingTagsPrompt,
+                autoSummary: true,
+                autoActionItems: true,
+                autoTags: true
+            )
+        )
+    }
+
+    private static func builtInProfiles() -> [MeetingProfile] {
+        [defaultProfile(), teamMeetingProfile(), salesMeetingProfile()]
+    }
+
+    private func uniqueProfileName(from baseName: String, existing: [MeetingProfile]? = nil) -> String {
+        let values = existing ?? profiles
+        let trimmed = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = trimmed.isEmpty ? "Profile" : trimmed
+        let existingNames = Set(values.map { $0.name.lowercased() })
+        if !existingNames.contains(candidate.lowercased()) {
+            return candidate
+        }
+
+        var index = 1
+        while true {
+            let suffix = " \(index + 1)"
+            let nextName = candidate + suffix
+            if !existingNames.contains(nextName.lowercased()) {
+                return nextName
+            }
+            index += 1
+        }
+    }
+
+    private func uniqueImportedProfileName(from baseName: String, existing: [MeetingProfile]) -> String {
+        let trimmed = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = trimmed.isEmpty ? "Profile" : trimmed
+        let existingNames = Set(existing.map { $0.name.lowercased() })
+        if !existingNames.contains(candidate.lowercased()) {
+            return candidate
+        }
+
+        var index = 1
+        while true {
+            let suffix = index == 1 ? " (Imported)" : " (Imported \(index))"
+            let nextName = candidate + suffix
+            if !existingNames.contains(nextName.lowercased()) {
+                return nextName
+            }
+            index += 1
+        }
     }
 }
