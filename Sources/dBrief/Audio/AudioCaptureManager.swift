@@ -24,7 +24,7 @@ final class AudioCaptureManager {
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
 
-    /// The actual file URL being written to (may differ from requested URL if AAC fallback to WAV).
+    /// The actual file URL being written to (always .m4a for recordings started by this app).
     var actualFileURL: URL? { fileWriter?.actualFileURL }
 
     func checkPermissions() async {
@@ -63,7 +63,7 @@ final class AudioCaptureManager {
             log.info("File writer created successfully")
         } catch {
             log.error("File writer creation failed: \(error.localizedDescription, privacy: .public)")
-            throw error
+            throw AudioCaptureError.fileWriterFailed(error)
         }
         self.fileWriter = writer
 

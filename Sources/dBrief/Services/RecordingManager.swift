@@ -31,10 +31,11 @@ final class RecordingManager {
 
     func startRecording(associatedApp: String? = nil) async throws {
         let fileName = Self.generateFileName()
-        let fileURL = appSettings.recordingFolderURL.appendingPathComponent(fileName)
+        let recordingFolder = appSettings.effectiveRecordingFolderURL
+        let fileURL = recordingFolder.appendingPathComponent(fileName)
 
         try FileManager.default.createDirectory(
-            at: appSettings.recordingFolderURL,
+            at: recordingFolder,
             withIntermediateDirectories: true
         )
 
@@ -62,7 +63,7 @@ final class RecordingManager {
         await audioCaptureManager.stopRecording()
 
         if let recording = appState.currentRecording {
-            // Update to actual file URL (may be .wav if AAC failed)
+            // Update to actual file URL from the writer (recordings remain .m4a).
             if let actualURL, actualURL != recording.fileURL {
                 recording.fileURL = actualURL
             }
@@ -114,7 +115,7 @@ final class RecordingManager {
         if transcribe {
             let stepIndex = appState.processingSteps.count
             let stepName: String = {
-                switch appSettings.transcriptionEngine {
+                switch appSettings.effectiveTranscriptionEngine {
                 case .appleSpeech: "Transcribing (Apple Speech)"
                 case .localWhisper: "Transcribing (Local Whisper)"
                 case .remoteEndpoint: "Transcribing audio"
@@ -122,12 +123,12 @@ final class RecordingManager {
             }()
             appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
 
-            switch appSettings.transcriptionEngine {
+            switch appSettings.effectiveTranscriptionEngine {
             case .appleSpeech:
                 do {
                     let result = try await localTranscriptionService.transcribe(
                         fileURL: recording.fileURL,
-                        language: appSettings.transcriptionLanguage
+                        language: appSettings.effectiveTranscriptionLanguage
                     )
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
@@ -139,7 +140,7 @@ final class RecordingManager {
                     let result = try await withPluginStepAdapter(stepIndex: stepIndex) {
                         try await self.localAIPluginService.transcribe(
                             fileURL: recording.fileURL,
-                            initialPrompt: self.appSettings.whisperPrompt
+                            initialPrompt: self.appSettings.effectiveWhisperPrompt
                         )
                     }
                     recording.transcription = result
@@ -148,13 +149,13 @@ final class RecordingManager {
                     appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                 }
             case .remoteEndpoint:
-                if let endpoint = appSettings.defaultTranscriptionEndpoint {
+                if let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint {
                     do {
                         let result = try await transcriptionService.transcribe(
                             fileURL: recording.fileURL,
                             endpoint: endpoint,
-                            language: appSettings.transcriptionLanguage,
-                            initialPrompt: appSettings.whisperPrompt
+                            language: appSettings.effectiveTranscriptionLanguage,
+                            initialPrompt: appSettings.effectiveWhisperPrompt
                         )
                         recording.transcription = result
                         appState.processingSteps[stepIndex].status = .completed
@@ -169,8 +170,8 @@ final class RecordingManager {
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         if let transcription = recording.transcription {
-            let aiEngine = appSettings.aiEngine
-            let endpoint = appSettings.defaultAIEndpoint
+            let aiEngine = appSettings.effectiveAIEngine
+            let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
 
             let summaryStepIndex = summary ? appendAIStep(
@@ -224,12 +225,12 @@ final class RecordingManager {
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
                     #if canImport(FoundationModels)
-                    if appSettings.aiEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
+                    if appSettings.effectiveAIEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
                         recording.generatedTitle = try await LocalAIService().generateTitle(
                             transcription: String(transcriptionText.prefix(500)),
                             language: language
                         )
-                    } else if let endpoint = appSettings.defaultAIEndpoint {
+                    } else if let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         recording.generatedTitle = try await aiService.generateTitle(
                             transcription: String(transcriptionText.prefix(500)),
                             language: language,
@@ -237,7 +238,7 @@ final class RecordingManager {
                         )
                     }
                     #else
-                    if let endpoint = appSettings.defaultAIEndpoint {
+                    if let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         recording.generatedTitle = try await aiService.generateTitle(
                             transcription: String(transcriptionText.prefix(500)),
                             language: language,
@@ -260,8 +261,8 @@ final class RecordingManager {
                 generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
                     outputFolder: outputFolder,
-                    transcriptionEndpoint: appSettings.defaultTranscriptionEndpoint,
-                    aiEndpoint: appSettings.defaultAIEndpoint
+                    transcriptionEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint,
+                    aiEndpoint: appSettings.effectiveDefaultAIEndpoint
                 )
                 appState.processingSteps[stepIndex].status = .completed
             } catch {
@@ -420,7 +421,7 @@ final class RecordingManager {
             do {
                 recording.summary = try await LocalAIService().generateSummary(
                     transcription: transcription,
-                    systemPrompt: appSettings.summaryPrompt
+                    systemPrompt: appSettings.effectiveSummaryPrompt
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -432,7 +433,7 @@ final class RecordingManager {
             do {
                 recording.actionItems = try await LocalAIService().extractActionItems(
                     transcription: transcription,
-                    systemPrompt: appSettings.actionItemsPrompt
+                    systemPrompt: appSettings.effectiveActionItemsPrompt
                 )
                 markCompleted(actionStepIndex)
             } catch {
@@ -444,7 +445,7 @@ final class RecordingManager {
             do {
                 let result = try await LocalAIService().analyzeTags(
                     transcription: transcription,
-                    systemPrompt: appSettings.tagsPrompt
+                    systemPrompt: appSettings.effectiveTagsPrompt
                 )
                 recording.tags = result.tags
                 recording.sentiment = result.sentiment
@@ -523,7 +524,7 @@ final class RecordingManager {
                 recording.summary = try await aiService.generateSummary(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.summaryPrompt
+                    systemPrompt: appSettings.effectiveSummaryPrompt
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -536,7 +537,7 @@ final class RecordingManager {
                 recording.actionItems = try await aiService.extractActionItems(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.actionItemsPrompt
+                    systemPrompt: appSettings.effectiveActionItemsPrompt
                 )
                 markCompleted(actionStepIndex)
             } catch {
@@ -549,7 +550,7 @@ final class RecordingManager {
                 let result = try await aiService.analyzeTags(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.tagsPrompt
+                    systemPrompt: appSettings.effectiveTagsPrompt
                 )
                 recording.tags = result.tags
                 recording.sentiment = result.sentiment
@@ -659,11 +660,11 @@ final class RecordingManager {
     private func resolveMarkdownOutputFolder(for recording: Recording) -> URL {
         if appSettings.obsidianEnabled,
            let obsidianFolder = appSettings.obsidianFolderURL(
-            relativePath: recording.obsidianFolderRelativePath ?? appSettings.obsidianDefaultFolderRelativePath
+            relativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
            ) {
             return obsidianFolder
         }
-        return appSettings.transcriptionFolderURL
+        return appSettings.effectiveTranscriptionFolderURL
     }
 
     private var hasEnabledIntegrations: Bool {

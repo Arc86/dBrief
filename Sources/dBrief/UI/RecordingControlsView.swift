@@ -9,7 +9,29 @@ struct RecordingControlsView: View {
     @Environment(AppSettings.self) private var appSettings
 
     var body: some View {
+        @Bindable var settings = appSettings
         VStack(spacing: 8) {
+            HStack {
+                Text("Profile")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.activeProfileId },
+                        set: { settings.setActiveProfile($0) }
+                    )
+                ) {
+                    ForEach(settings.profiles) { profile in
+                        Text(profile.name).tag(profile.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 170)
+            }
+
             // Timer and level
             if appState.isRecording || appState.isPaused {
                 HStack {
@@ -94,10 +116,12 @@ struct RecordingControlsView: View {
                let recording = appState.currentRecording {
                 ObsidianFolderPicker(
                     title: "Obsidian output folder",
-                    currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.obsidianDefaultFolderRelativePath
+                    currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
                     recording.obsidianFolderRelativePath = relativePath
-                    appSettings.obsidianDefaultFolderRelativePath = relativePath
+                    if appSettings.activeProfile.isProtectedDefault {
+                        appSettings.obsidianDefaultFolderRelativePath = relativePath
+                    }
                 }
             }
 

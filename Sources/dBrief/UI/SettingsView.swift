@@ -10,6 +10,7 @@ struct SettingsView: View {
         case permissions = "Permissions"
         case transcription = "Transcription"
         case ai = "AI"
+        case profiles = "Profiles"
         case integrations = "Integrations"
         case about = "About"
         var id: String { rawValue }
@@ -19,6 +20,7 @@ struct SettingsView: View {
             case .permissions: "lock.shield"
             case .transcription: "waveform"
             case .ai: "brain"
+            case .profiles: "person.3"
             case .integrations: "puzzlepiece.extension"
             case .about: "info.circle"
             }
@@ -45,6 +47,7 @@ struct SettingsView: View {
                 case .permissions: SettingsPermissionsTab()
                 case .transcription: SettingsTranscriptionTab()
                 case .ai: SettingsAITab()
+                case .profiles: SettingsProfilesTab()
                 case .integrations: SettingsIntegrationsTab()
                 case .about: AboutTab()
                 }

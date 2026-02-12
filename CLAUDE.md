@@ -36,7 +36,7 @@ There are no tests in this project currently.
 
 **Important concurrency note**: Audio tap handlers must be created with `nonisolated static` methods to avoid inheriting `@MainActor` isolation, which would crash on the real-time audio thread. See `makeTapHandler()` and `makeMicTapHandler()` in `AudioCaptureManager`.
 
-Output format is M4A (AAC) with WAV fallback if AAC encoding fails. Filenames follow the pattern `VoiceRecording_yyyy-MM-dd_HHmmss.m4a`.
+Output format is M4A only. Recorder tries AAC first, then Apple Lossless in the same `.m4a` container if AAC encoding is unavailable. Filenames follow the pattern `VoiceRecording_yyyy-MM-dd_HHmmss.m4a`.
 
 ### Transcription Engines (`Sources/dBrief/Services/`)
 
