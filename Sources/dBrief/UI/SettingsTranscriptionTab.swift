@@ -8,6 +8,8 @@ struct SettingsTranscriptionTab: View {
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
     @State private var isNew = false
     @State private var testResult: TestResult?
+    @State private var availableModels: [String] = []
+    @State private var isLoadingModels = false
     @State private var purgeMessage: String?
 
     enum TestResult {
@@ -173,6 +175,7 @@ struct SettingsTranscriptionTab: View {
                     editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
                     isNew = true
                     testResult = nil
+                    availableModels = []
                     isEditing = true
                 } label: {
                     Image(systemName: "plus")
@@ -236,6 +239,7 @@ struct SettingsTranscriptionTab: View {
             editingEndpoint = endpoint
             isNew = false
             testResult = nil
+            availableModels = []
             isEditing = true
         }
     }
@@ -261,8 +265,19 @@ struct SettingsTranscriptionTab: View {
                 }
                 GridRow {
                     Text("Model:")
-                    NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName)
+                    if availableModels.isEmpty {
+                        NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName)
+                            .frame(height: 22)
+                    } else {
+                        Picker("", selection: $editingEndpoint.modelName) {
+                            ForEach(availableModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
                         .frame(height: 22)
+                    }
                 }
                 GridRow {
                     Text("API Key (optional):")
@@ -271,6 +286,15 @@ struct SettingsTranscriptionTab: View {
                 }
             }
             .frame(maxWidth: 350)
+
+            if isLoadingModels {
+                ProgressView("Loading models...")
+                    .controlSize(.small)
+            } else if !availableModels.isEmpty {
+                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let testResult {
                 HStack {
@@ -295,16 +319,7 @@ struct SettingsTranscriptionTab: View {
 
             HStack {
                 Button("Test Connection") {
-                    testResult = .testing
-                    Task {
-                        do {
-                            let service = TranscriptionService()
-                            let success = try await service.testConnection(endpoint: editingEndpoint)
-                            testResult = success ? .success : .failure("Connection failed")
-                        } catch {
-                            testResult = .failure(error.localizedDescription)
-                        }
-                    }
+                    testAndLoadModels()
                 }
                 .buttonStyle(.bordered)
 
@@ -333,5 +348,25 @@ struct SettingsTranscriptionTab: View {
             Spacer()
         }
         .padding()
+    }
+
+    private func testAndLoadModels() {
+        testResult = .testing
+        isLoadingModels = true
+        Task {
+            do {
+                let service = TranscriptionService()
+                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
+                availableModels = models
+                if !models.isEmpty, !models.contains(editingEndpoint.modelName), let firstModel = models.first {
+                    editingEndpoint.modelName = firstModel
+                }
+                testResult = .success
+            } catch {
+                availableModels = []
+                testResult = .failure(error.localizedDescription)
+            }
+            isLoadingModels = false
+        }
     }
 }

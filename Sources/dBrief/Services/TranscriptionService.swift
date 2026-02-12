@@ -76,34 +76,103 @@ actor TranscriptionService {
     }
 
     func testConnection(endpoint: Endpoint) async throws -> Bool {
-        let testURL: URL
         if endpoint.isWhisperASR {
-            // whisper-asr-webservice: check /docs endpoint
-            let base = endpoint.baseURL.trimmingSuffix("/")
-            let root = base.hasSuffix("/asr") ? String(base.dropLast(4)) : base
-            guard let url = URL(string: root + "/docs") else {
-                throw TranscriptionError.invalidEndpoint
-            }
-            testURL = url
-        } else {
-            guard let url = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/v1/models") else {
-                throw TranscriptionError.invalidEndpoint
-            }
-            testURL = url
+            _ = try await fetchWhisperASRHealth(endpoint: endpoint)
+            return true
         }
 
-        var request = URLRequest(url: testURL)
+        _ = try await fetchAvailableModels(endpoint: endpoint)
+        return true
+    }
+
+    func fetchAvailableModels(endpoint: Endpoint) async throws -> [String] {
+        if endpoint.isWhisperASR {
+            // whisper-asr-webservice does not expose a model listing endpoint.
+            _ = try await fetchWhisperASRHealth(endpoint: endpoint)
+            return []
+        }
+
+        do {
+            let models = try await fetchOpenAICompatibleModels(endpoint: endpoint)
+            if !models.isEmpty {
+                return models
+            }
+        } catch {
+            // Fall back to Ollama-compatible discovery.
+        }
+
+        let ollamaModels = try await fetchOllamaModels(endpoint: endpoint)
+        if !ollamaModels.isEmpty {
+            return ollamaModels
+        }
+
+        throw TranscriptionError.noModelsFound
+    }
+
+    private func fetchWhisperASRHealth(endpoint: Endpoint) async throws -> Data {
+        let base = endpoint.baseURL.trimmingSuffix("/")
+        let root = base.hasSuffix("/asr") ? String(base.dropLast(4)) : base
+        guard let url = URL(string: root + "/docs") else {
+            throw TranscriptionError.invalidEndpoint
+        }
+        return try await get(url: url, endpoint: endpoint)
+    }
+
+    private func fetchOpenAICompatibleModels(endpoint: Endpoint) async throws -> [String] {
+        guard let url = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/v1/models") else {
+            throw TranscriptionError.invalidEndpoint
+        }
+        let data = try await get(url: url, endpoint: endpoint)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataItems = json["data"] as? [[String: Any]]
+        else {
+            throw TranscriptionError.invalidResponse
+        }
+
+        let models = dataItems
+            .compactMap { $0["id"] as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return Array(Set(models)).sorted()
+    }
+
+    private func fetchOllamaModels(endpoint: Endpoint) async throws -> [String] {
+        guard let url = URL(string: endpoint.baseURL.trimmingSuffix("/") + "/api/tags") else {
+            throw TranscriptionError.invalidEndpoint
+        }
+        let data = try await get(url: url, endpoint: endpoint)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]]
+        else {
+            throw TranscriptionError.invalidResponse
+        }
+
+        let modelNames = models
+            .compactMap { ($0["name"] as? String) ?? ($0["model"] as? String) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return Array(Set(modelNames)).sorted()
+    }
+
+    private func get(url: URL, endpoint: Endpoint) async throws -> Data {
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         if !endpoint.apiKey.isEmpty {
             request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.timeoutInterval = 10
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranscriptionError.invalidResponse
         }
-        return (200...299).contains(httpResponse.statusCode)
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
+        }
+        return data
     }
 
     private func parseResponse(_ data: Data) throws -> TranscriptionResult {
@@ -135,12 +204,14 @@ private extension String {
 enum TranscriptionError: Error, LocalizedError {
     case invalidEndpoint
     case invalidResponse
+    case noModelsFound
     case serverError(Int, String)
 
     var errorDescription: String? {
         switch self {
         case .invalidEndpoint: "Invalid transcription endpoint URL."
         case .invalidResponse: "Invalid response from transcription server."
+        case .noModelsFound: "Connected, but no models were returned by the provider."
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }
     }
