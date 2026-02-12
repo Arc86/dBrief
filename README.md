@@ -105,7 +105,7 @@ Remote transcription endpoints support:
 
 ## Outputs
 
-- **Recordings**: `~/Documents/dBrief/Recordings` (M4A, falls back to WAV if AAC fails)
+- **Recordings**: `~/Documents/dBrief/Recordings` (M4A only; tries AAC first, then Apple Lossless in `.m4a`)
 - **Transcriptions**: `~/Documents/dBrief/Transcriptions` (Markdown)
 - **Obsidian**: Markdown saved into the selected vault folder
 - **Integrations**: enabled destinations receive output automatically after processing

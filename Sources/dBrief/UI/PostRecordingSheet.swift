@@ -14,6 +14,9 @@ struct PostRecordingSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recording Complete")
                 .font(.headline)
+            Text("Profile: \(appSettings.activeProfile.name)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             if let recording = appState.currentRecording {
                 HStack {
@@ -45,8 +48,8 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(.orange)
             }
 
-            if appSettings.transcriptionEngine == .remoteEndpoint,
-               appSettings.defaultTranscriptionEndpoint == nil,
+            if appSettings.effectiveTranscriptionEngine == .remoteEndpoint,
+               appSettings.effectiveDefaultTranscriptionEndpoint == nil,
                transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
                     .font(.caption)
@@ -58,10 +61,12 @@ struct PostRecordingSheet: View {
 
                 ObsidianFolderPicker(
                     title: "Obsidian output folder",
-                    currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.obsidianDefaultFolderRelativePath
+                    currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
                     recording.obsidianFolderRelativePath = relativePath
-                    appSettings.obsidianDefaultFolderRelativePath = relativePath
+                    if appSettings.activeProfile.isProtectedDefault {
+                        appSettings.obsidianDefaultFolderRelativePath = relativePath
+                    }
                 }
             }
 
@@ -106,17 +111,17 @@ struct PostRecordingSheet: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(
                     transcribe
-                        && appSettings.transcriptionEngine == .remoteEndpoint
-                        && appSettings.defaultTranscriptionEndpoint == nil
+                        && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
+                        && appSettings.effectiveDefaultTranscriptionEndpoint == nil
                 )
             }
         }
         .padding(.vertical, 4)
         .onAppear {
-            transcribe = appSettings.autoTranscribe
-            summary = appSettings.autoSummary
-            actionItems = appSettings.autoActionItems
-            tags = appSettings.autoTags
+            transcribe = appSettings.effectiveAutoTranscribe
+            summary = appSettings.effectiveAutoSummary
+            actionItems = appSettings.effectiveAutoActionItems
+            tags = appSettings.effectiveAutoTags
         }
     }
 
