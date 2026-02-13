@@ -545,7 +545,23 @@ actor TranscriptionService {
         initialPrompt: String
     ) async throws -> OpenAIResponseFormat {
         if let cached = cachedResponseFormat(for: endpoint) {
-            return cached
+            let probeData = tinySilentWAV()
+            do {
+                _ = try await sendRequest(
+                    url: url,
+                    endpoint: endpoint,
+                    fileData: probeData,
+                    fileName: "probe.wav",
+                    contentType: "audio/wav",
+                    language: language,
+                    initialPrompt: initialPrompt,
+                    responseFormat: cached.rawValue,
+                    timeout: 12
+                )
+                return cached
+            } catch {
+                invalidateCachedResponseFormat(for: endpoint)
+            }
         }
 
         let probeData = tinySilentWAV()
@@ -651,6 +667,18 @@ actor TranscriptionService {
               let raw = cache.values[cacheLookupKey(for: endpoint)]
         else { return nil }
         return OpenAIResponseFormat(rawValue: raw)
+    }
+
+    private func invalidateCachedResponseFormat(for endpoint: Endpoint) {
+        guard let data = UserDefaults.standard.data(forKey: Self.formatCacheKey),
+              let cache = try? JSONDecoder().decode(FormatCapabilityCache.self, from: data)
+        else { return }
+
+        var values = cache.values
+        values.removeValue(forKey: cacheLookupKey(for: endpoint))
+        if let data = try? JSONEncoder().encode(FormatCapabilityCache(values: values)) {
+            UserDefaults.standard.set(data, forKey: Self.formatCacheKey)
+        }
     }
 
     private func saveCachedResponseFormat(_ format: OpenAIResponseFormat, for endpoint: Endpoint) {
