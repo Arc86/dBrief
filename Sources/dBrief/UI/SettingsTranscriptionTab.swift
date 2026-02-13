@@ -34,6 +34,8 @@ struct SettingsTranscriptionTab: View {
                 if appSettings.transcriptionEngine == .remoteEndpoint {
                     Section("Endpoints") { endpointsSection }
                         .listRowBackground(Color.clear)
+                    Section("Large File Handling") { chunkingSection }
+                        .listRowBackground(Color.clear)
                 }
             }
             .formStyle(.grouped)
@@ -200,6 +202,47 @@ struct SettingsTranscriptionTab: View {
                 }
                 .disabled(selectedEndpointId == nil)
                 .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var chunkingSection: some View {
+        @Bindable var settings = appSettings
+        return VStack(alignment: .leading, spacing: 8) {
+            Toggle("Enable chunking for large files", isOn: $settings.remoteChunkingEnabled)
+
+            if settings.remoteChunkingEnabled {
+                LabeledContent("Max upload size:") {
+                    Stepper(
+                        "\(settings.remoteChunkMaxUploadMB) MB",
+                        value: $settings.remoteChunkMaxUploadMB,
+                        in: 1...100
+                    )
+                    .frame(width: 180, alignment: .trailing)
+                }
+
+                LabeledContent("Overlap:") {
+                    Stepper(
+                        "\(Int(settings.remoteChunkOverlapSeconds)) sec",
+                        value: $settings.remoteChunkOverlapSeconds,
+                        in: 0...15,
+                        step: 1
+                    )
+                    .frame(width: 180, alignment: .trailing)
+                }
+
+                LabeledContent("Retry count:") {
+                    Stepper(
+                        "\(settings.remoteChunkRetryCount)",
+                        value: $settings.remoteChunkRetryCount,
+                        in: 0...5
+                    )
+                    .frame(width: 180, alignment: .trailing)
+                }
+
+                Text("Large files are split into smaller chunks, transcribed sequentially, and merged into a single timeline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

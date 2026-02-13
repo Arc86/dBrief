@@ -37,6 +37,10 @@ final class AppSettings {
         static let summaryPrompt = "summaryPrompt"
         static let actionItemsPrompt = "actionItemsPrompt"
         static let tagsPrompt = "tagsPrompt"
+        static let remoteChunkingEnabled = "remoteChunkingEnabled"
+        static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
+        static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
+        static let remoteChunkRetryCount = "remoteChunkRetryCount"
         static let obsidianEnabled = "obsidianEnabled"
         static let obsidianDefaultFolderRelativePath = "obsidianDefaultFolderRelativePath"
         static let integrationSettings = "integrationSettings"
@@ -291,6 +295,22 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(tagsPrompt, forKey: Keys.tagsPrompt) }
     }
 
+    var remoteChunkingEnabled: Bool {
+        didSet { UserDefaults.standard.set(remoteChunkingEnabled, forKey: Keys.remoteChunkingEnabled) }
+    }
+
+    var remoteChunkMaxUploadMB: Int {
+        didSet { UserDefaults.standard.set(remoteChunkMaxUploadMB, forKey: Keys.remoteChunkMaxUploadMB) }
+    }
+
+    var remoteChunkOverlapSeconds: Double {
+        didSet { UserDefaults.standard.set(remoteChunkOverlapSeconds, forKey: Keys.remoteChunkOverlapSeconds) }
+    }
+
+    var remoteChunkRetryCount: Int {
+        didSet { UserDefaults.standard.set(remoteChunkRetryCount, forKey: Keys.remoteChunkRetryCount) }
+    }
+
     // MARK: - Meeting Profiles
 
     var profiles: [MeetingProfile] {
@@ -500,6 +520,8 @@ final class AppSettings {
         guard let index = profiles.firstIndex(where: { $0.preset == .default }) else { return }
         profiles[index].overrides = .empty
         profiles[index].name = "Default"
+        profiles[index].iconSystemName = MeetingProfile.defaultIcon(for: .default)
+        profiles[index].iconBackgroundColorKey = MeetingProfile.defaultIconBackgroundColor(for: .default)
 
         transcriptionLanguage = ""
         whisperPrompt = ""
@@ -659,6 +681,13 @@ final class AppSettings {
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
+        self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
+        self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
+        self.remoteChunkOverlapSeconds = max(
+            0,
+            defaults.object(forKey: Keys.remoteChunkOverlapSeconds) as? Double ?? 2.0
+        )
+        self.remoteChunkRetryCount = max(0, defaults.object(forKey: Keys.remoteChunkRetryCount) as? Int ?? 2)
 
         self.callDetectionEnabled = defaults.object(forKey: Keys.callDetectionEnabled) as? Bool ?? true
         self.autoRecordCalls = defaults.object(forKey: Keys.autoRecordCalls) as? Bool ?? false
