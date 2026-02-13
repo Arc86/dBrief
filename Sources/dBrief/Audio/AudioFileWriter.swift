@@ -4,12 +4,12 @@ import os
 private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
 
 enum AudioFileWriterError: Error, LocalizedError {
-    case noCompatibleM4AEncoder
+    case noCompatibleFLACEncoder
 
     var errorDescription: String? {
         switch self {
-        case .noCompatibleM4AEncoder:
-            return "No compatible M4A audio encoder is available on this system."
+        case .noCompatibleFLACEncoder:
+            return "No compatible FLAC audio encoder is available on this system."
         }
     }
 }
@@ -29,7 +29,7 @@ final class AudioFileWriter: @unchecked Sendable {
         return _lastPeakLevel
     }
 
-    init(fileURL: URL, sampleRate: Int = 16000, bitRate: Int = 128000) throws {
+    init(fileURL: URL, sampleRate: Int = 16000, bitRate _: Int = 128000) throws {
         self.fileURL = fileURL
 
         let rate = Double(sampleRate)
@@ -42,47 +42,31 @@ final class AudioFileWriter: @unchecked Sendable {
             interleaved: false
         )!
 
-        let outputURL = fileURL.pathExtension.lowercased() == "m4a"
+        let outputURL = fileURL.pathExtension.lowercased() == "flac"
             ? fileURL
-            : fileURL.deletingPathExtension().appendingPathExtension("m4a")
+            : fileURL.deletingPathExtension().appendingPathExtension("flac")
 
-        // Keep output strictly in .m4a, trying AAC first, then Apple Lossless.
-        let candidates: [(name: String, settings: [String: Any])] = [
-            (
-                "AAC",
-                [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: rate,
-                    AVNumberOfChannelsKey: 1,
-                    AVEncoderBitRateKey: bitRate,
-                ]
-            ),
-            (
-                "Apple Lossless",
-                [
-                    AVFormatIDKey: kAudioFormatAppleLossless,
-                    AVSampleRateKey: rate,
-                    AVNumberOfChannelsKey: 1,
-                ]
-            ),
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatFLAC,
+            AVSampleRateKey: rate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitDepthHintKey: 16,
         ]
 
-        for candidate in candidates {
-            do {
-                self.audioFile = try AVAudioFile(
-                    forWriting: outputURL,
-                    settings: candidate.settings,
-                    commonFormat: .pcmFormatFloat32,
-                    interleaved: false
-                )
-                log.info("File writer: \(candidate.name, privacy: .public) in \(outputURL.lastPathComponent, privacy: .public)")
-                return
-            } catch {
-                log.warning("\(candidate.name, privacy: .public) encoder not available (\(error.localizedDescription, privacy: .public))")
-            }
+        do {
+            self.audioFile = try AVAudioFile(
+                forWriting: outputURL,
+                settings: settings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
+            log.info("File writer: FLAC in \(outputURL.lastPathComponent, privacy: .public)")
+            return
+        } catch {
+            log.warning("FLAC encoder not available (\(error.localizedDescription, privacy: .public))")
         }
 
-        throw AudioFileWriterError.noCompatibleM4AEncoder
+        throw AudioFileWriterError.noCompatibleFLACEncoder
     }
 
     var actualFileURL: URL {

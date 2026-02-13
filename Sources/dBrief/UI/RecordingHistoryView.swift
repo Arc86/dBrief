@@ -157,26 +157,14 @@ struct RecordingHistoryView: View {
     }
 
     private func loadRecordings() {
-        let folder = appSettings.recordingFolderURL
-        let fm = FileManager.default
-
-        guard let contents = try? fm.contentsOfDirectory(
-            at: folder,
-            includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        recordings = contents
-            .filter { ["m4a", "wav", "mp3", "aac"].contains($0.pathExtension.lowercased()) }
-            .compactMap { url -> HistoryItem? in
-                let values = try? url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
-                return HistoryItem(
-                    url: url,
-                    name: url.deletingPathExtension().lastPathComponent,
-                    date: values?.creationDate ?? Date.distantPast,
-                    size: Int64(values?.fileSize ?? 0)
-                )
-            }
-            .sorted { $0.date > $1.date }
+        let folder = appSettings.effectiveRecordingFolderURL
+        recordings = RecordingDiscovery.discover(in: folder).map { entry in
+            HistoryItem(
+                url: entry.url,
+                name: entry.url.deletingPathExtension().lastPathComponent,
+                date: entry.createdAt,
+                size: entry.size
+            )
+        }
     }
 }
