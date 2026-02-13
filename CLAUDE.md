@@ -36,7 +36,7 @@ There are no tests in this project currently.
 
 **Important concurrency note**: Audio tap handlers must be created with `nonisolated static` methods to avoid inheriting `@MainActor` isolation, which would crash on the real-time audio thread. See `makeTapHandler()` and `makeMicTapHandler()` in `AudioCaptureManager`.
 
-Output format is M4A only. Recorder tries AAC first, then Apple Lossless in the same `.m4a` container if AAC encoding is unavailable. Filenames follow the pattern `VoiceRecording_yyyy-MM-dd_HHmmss.m4a`.
+Output format is FLAC. Capture is 16 kHz mono, then finalized with Whisper-oriented DSP and naming under `Recordings/YYYY/MM` using `YYYY-MM-DD_HHMM_[meeting-title].flac`.
 
 ### Transcription Engines (`Sources/dBrief/Services/`)
 

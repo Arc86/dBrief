@@ -48,28 +48,16 @@ struct SettingsGeneralTab: View {
             .listRowBackground(Color.clear)
 
             Section("Audio Quality") {
-                LabeledContent("Sample rate:") {
-                    Picker("", selection: $settings.audioSampleRate) {
-                        Text("16 kHz (speech)").tag(16000)
-                        Text("22 kHz").tag(22050)
-                        Text("44.1 kHz (CD)").tag(44100)
-                        Text("48 kHz (studio)").tag(48000)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 160, alignment: .trailing)
+                LabeledContent("Recording profile:") {
+                    Text("Whisper optimized (16 kHz mono FLAC)")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                LabeledContent("Bit rate (AAC):") {
-                    Picker("", selection: $settings.audioBitRate) {
-                        Text("64 kbps").tag(64000)
-                        Text("96 kbps").tag(96000)
-                        Text("128 kbps").tag(128000)
-                        Text("192 kbps").tag(192000)
-                        Text("256 kbps").tag(256000)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 160, alignment: .trailing)
+                LabeledContent("Post-process:") {
+                    Text("80Hz high-pass, light denoise, AGC/echo cancel, -20 LUFS to -3dBTP")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             .listRowBackground(Color.clear)

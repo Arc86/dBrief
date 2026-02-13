@@ -9,6 +9,7 @@ struct PostRecordingSheet: View {
     @State private var summary = true
     @State private var actionItems = true
     @State private var tags = true
+    @State private var meetingTitle = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,6 +28,16 @@ struct PostRecordingSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+
+            LabeledContent("Meeting title:") {
+                TextField("meeting", text: $meetingTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+            }
+
+            Text("Used for FLAC file naming (`YYYY-MM-DD_HHMM_[meeting-title].flac`).")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             Divider()
 
@@ -92,13 +103,20 @@ struct PostRecordingSheet: View {
 
             HStack {
                 Button("Skip") {
-                    recordingManager.skipProcessing()
+                    if let recording = appState.currentRecording {
+                        recording.meetingTitleDraft = sanitizedMeetingTitle
+                    }
+                    Task { await recordingManager.skipProcessing() }
                 }
                 .buttonStyle(.bordered)
+                .disabled(sanitizedMeetingTitle.isEmpty)
 
                 Spacer()
 
                 Button("Process") {
+                    if let recording = appState.currentRecording {
+                        recording.meetingTitleDraft = sanitizedMeetingTitle
+                    }
                     Task {
                         await recordingManager.processRecording(
                             transcribe: transcribe,
@@ -110,9 +128,10 @@ struct PostRecordingSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
-                    transcribe
-                        && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
-                        && appSettings.effectiveDefaultTranscriptionEndpoint == nil
+                    sanitizedMeetingTitle.isEmpty
+                        || (transcribe
+                            && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
+                            && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
                 )
             }
         }
@@ -122,6 +141,12 @@ struct PostRecordingSheet: View {
             summary = appSettings.effectiveAutoSummary
             actionItems = appSettings.effectiveAutoActionItems
             tags = appSettings.effectiveAutoTags
+            if let recording = appState.currentRecording {
+                let existing = recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                meetingTitle = existing.isEmpty ? fallbackMeetingTitle(recording: recording) : existing
+            } else {
+                meetingTitle = "meeting"
+            }
         }
     }
 
@@ -141,5 +166,15 @@ struct PostRecordingSheet: View {
     private var webhookFieldsDescription: String {
         let labels = appSettings.integrations.webhook.fields.map(\.displayName)
         return labels.isEmpty ? "None selected" : labels.joined(separator: ", ")
+    }
+
+    private var sanitizedMeetingTitle: String {
+        let trimmed = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "" : trimmed
+    }
+
+    private func fallbackMeetingTitle(recording: Recording) -> String {
+        let appName = recording.associatedApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return appName.isEmpty ? "meeting" : appName
     }
 }

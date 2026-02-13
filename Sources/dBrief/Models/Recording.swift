@@ -16,6 +16,11 @@ final class Recording: Identifiable {
     var generatedTitle: String?
     var associatedApp: String?
     var obsidianFolderRelativePath: String?
+    var meetingTitleDraft: String
+    var finalizedAudioURL: URL?
+    var segmentAudioURLs: [URL]
+    var metadataURL: URL?
+    var finalizationWarnings: [String]
 
     init(
         id: UUID = UUID(),
@@ -23,7 +28,12 @@ final class Recording: Identifiable {
         fileURL: URL,
         duration: TimeInterval = 0,
         fileSize: Int64 = 0,
-        associatedApp: String? = nil
+        associatedApp: String? = nil,
+        meetingTitleDraft: String = "meeting",
+        finalizedAudioURL: URL? = nil,
+        segmentAudioURLs: [URL] = [],
+        metadataURL: URL? = nil,
+        finalizationWarnings: [String] = []
     ) {
         self.id = id
         self.date = date
@@ -31,6 +41,11 @@ final class Recording: Identifiable {
         self.duration = duration
         self.fileSize = fileSize
         self.associatedApp = associatedApp
+        self.meetingTitleDraft = meetingTitleDraft
+        self.finalizedAudioURL = finalizedAudioURL
+        self.segmentAudioURLs = segmentAudioURLs
+        self.metadataURL = metadataURL
+        self.finalizationWarnings = finalizationWarnings
     }
 
     var formattedDuration: String {

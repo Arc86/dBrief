@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import AVFoundation
 import UserNotifications
 import UniformTypeIdentifiers
 
@@ -16,6 +17,7 @@ final class RecordingManager {
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
+    private let recordingFinalizer = RecordingFinalizer()
 
     init(appState: AppState, appSettings: AppSettings) {
         self.appState = appState
@@ -30,25 +32,19 @@ final class RecordingManager {
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
 
     func startRecording(associatedApp: String? = nil) async throws {
-        let fileName = Self.generateFileName()
-        let recordingFolder = appSettings.effectiveRecordingFolderURL
-        let fileURL = recordingFolder.appendingPathComponent(fileName)
-
-        try FileManager.default.createDirectory(
-            at: recordingFolder,
-            withIntermediateDirectories: true
-        )
+        let rawURL = Self.generateRawCaptureURL()
 
         let recording = Recording(
-            fileURL: fileURL,
-            associatedApp: associatedApp
+            fileURL: rawURL,
+            associatedApp: associatedApp,
+            meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
         )
         appState.currentRecording = recording
 
         try await audioCaptureManager.startRecording(
-            to: fileURL,
-            sampleRate: appSettings.audioSampleRate,
-            bitRate: appSettings.audioBitRate,
+            to: rawURL,
+            sampleRate: 16_000,
+            bitRate: 128_000,
             inputDeviceUID: appSettings.audioInputDeviceUID
         )
         appState.recordingState = .recording
@@ -63,15 +59,22 @@ final class RecordingManager {
         await audioCaptureManager.stopRecording()
 
         if let recording = appState.currentRecording {
-            // Update to actual file URL from the writer (recordings remain .m4a).
+            // Update to actual capture URL from the writer.
             if let actualURL, actualURL != recording.fileURL {
                 recording.fileURL = actualURL
             }
             recording.duration = audioCaptureManager.duration
+            recording.finalizedAudioURL = nil
+            recording.segmentAudioURLs = []
+            recording.metadataURL = nil
+            recording.finalizationWarnings = []
             if let attrs = try? FileManager.default.attributesOfItem(atPath: recording.fileURL.path),
                let size = attrs[.size] as? Int64
             {
                 recording.fileSize = size
+            }
+            if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
         }
 
@@ -112,6 +115,26 @@ final class RecordingManager {
         appState.showPostRecordingSheet = false
         appState.processingSteps = []
 
+        let finalizationStepIndex = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
+        do {
+            try await ensureRecordingFinalized(recording: recording)
+            appState.processingSteps[finalizationStepIndex].status = .completed
+            if !recording.finalizationWarnings.isEmpty {
+                appState.processingSteps.append(
+                    ProcessingStep(
+                        name: "Audio finalization warnings",
+                        status: .failed(recording.finalizationWarnings.joined(separator: "\n"))
+                    )
+                )
+            }
+        } catch {
+            appState.processingSteps[finalizationStepIndex].status = .failed(error.localizedDescription)
+            appState.recordingState = .idle
+            appState.showPostRecordingSheet = true
+            return
+        }
+
         // Step 1: Transcription
         if transcribe {
             let stepIndex = appState.processingSteps.count
@@ -123,71 +146,20 @@ final class RecordingManager {
                 }
             }()
             appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
-
-            switch appSettings.effectiveTranscriptionEngine {
-            case .appleSpeech:
-                do {
-                    let result = try await localTranscriptionService.transcribe(
-                        fileURL: recording.fileURL,
-                        language: appSettings.effectiveTranscriptionLanguage
+            do {
+                let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
+                recording.transcription = result
+                appState.processingSteps[stepIndex].status = .completed
+                if let warnings = result.warnings, !warnings.isEmpty {
+                    appState.processingSteps.append(
+                        ProcessingStep(
+                            name: "Transcription warnings",
+                            status: .failed(warnings.joined(separator: "\n"))
+                        )
                     )
-                    recording.transcription = result
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                 }
-            case .localWhisper:
-                do {
-                    let result = try await withPluginStepAdapter(stepIndex: stepIndex) {
-                        try await self.localAIPluginService.transcribe(
-                            fileURL: recording.fileURL,
-                            initialPrompt: self.appSettings.effectiveWhisperPrompt
-                        )
-                    }
-                    recording.transcription = result
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                }
-            case .remoteEndpoint:
-                if let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint {
-                    do {
-                        let result = try await transcriptionService.transcribe(
-                            fileURL: recording.fileURL,
-                            endpoint: endpoint,
-                            language: appSettings.effectiveTranscriptionLanguage,
-                            initialPrompt: appSettings.effectiveWhisperPrompt,
-                            chunking: .init(
-                                enabled: appSettings.remoteChunkingEnabled,
-                                maxUploadMB: appSettings.remoteChunkMaxUploadMB,
-                                overlapSeconds: appSettings.remoteChunkOverlapSeconds,
-                                retryCount: appSettings.remoteChunkRetryCount
-                            ),
-                            progress: { [weak self] progress in
-                                guard let self else { return }
-                                Task { @MainActor in
-                                    guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
-                                    self.appState.processingSteps[stepIndex].name =
-                                        "Transcribing audio (chunk \(progress.current)/\(progress.total))"
-                                }
-                            }
-                        )
-                        recording.transcription = result
-                        appState.processingSteps[stepIndex].status = .completed
-                        if let warnings = result.warnings, !warnings.isEmpty {
-                            appState.processingSteps.append(
-                                ProcessingStep(
-                                    name: "Transcription warnings",
-                                    status: .failed(warnings.joined(separator: "\n"))
-                                )
-                            )
-                        }
-                    } catch {
-                        appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                    }
-                } else {
-                    appState.processingSteps[stepIndex].status = .failed("No transcription endpoint configured")
-                }
+            } catch {
+                appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
             }
         }
 
@@ -349,6 +321,9 @@ final class RecordingManager {
         if let opusType = UTType(filenameExtension: "opus") {
             contentTypes.append(opusType)
         }
+        if let flacType = UTType(filenameExtension: "flac") {
+            contentTypes.append(flacType)
+        }
         panel.allowedContentTypes = contentTypes
         panel.message = "Choose an audio file to transcribe"
 
@@ -361,12 +336,25 @@ final class RecordingManager {
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs?[.size] as? Int64) ?? 0
-        let recording = Recording(fileURL: url, fileSize: size)
+        let recording = Recording(
+            fileURL: url,
+            fileSize: size,
+            meetingTitleDraft: defaultMeetingTitle(from: nil),
+            finalizedAudioURL: url
+        )
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true
     }
 
-    func skipProcessing() {
+    func skipProcessing() async {
+        if let recording = appState.currentRecording {
+            do {
+                try await ensureRecordingFinalized(recording: recording)
+            } catch {
+                appState.lastError = error.localizedDescription
+                return
+            }
+        }
         appState.showPostRecordingSheet = false
         appState.recordingState = .idle
     }
@@ -638,6 +626,183 @@ final class RecordingManager {
         appState.processingSteps[stepIndex].status = .failed(message)
     }
 
+    private func transcribeRecordingAudio(
+        recording: Recording,
+        stepIndex: Int
+    ) async throws -> TranscriptionResult {
+        if !recording.segmentAudioURLs.isEmpty {
+            return try await transcribeSegmentedAudio(recording: recording, stepIndex: stepIndex)
+        }
+        return try await transcribeSingleAudioFile(
+            recording.fileURL,
+            stepIndex: stepIndex,
+            segmentIndex: nil,
+            segmentCount: nil
+        )
+    }
+
+    private func transcribeSegmentedAudio(
+        recording: Recording,
+        stepIndex: Int
+    ) async throws -> TranscriptionResult {
+        let segments = recording.segmentAudioURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !segments.isEmpty else {
+            return try await transcribeSingleAudioFile(
+                recording.fileURL,
+                stepIndex: stepIndex,
+                segmentIndex: nil,
+                segmentCount: nil
+            )
+        }
+
+        var pieces: [SegmentTranscriptionPiece] = []
+        pieces.reserveCapacity(segments.count)
+        var cumulativeOffset = 0.0
+        var warnings: [String] = []
+        var language: String?
+
+        for (index, segmentURL) in segments.enumerated() {
+            let segmentNumber = index + 1
+            if appState.processingSteps.indices.contains(stepIndex) {
+                appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(segmentNumber)/\(segments.count))"
+            }
+
+            let result = try await transcribeSingleAudioFile(
+                segmentURL,
+                stepIndex: stepIndex,
+                segmentIndex: segmentNumber,
+                segmentCount: segments.count
+            )
+            if language == nil, let detected = result.language, !detected.isEmpty {
+                language = detected
+            }
+            if let segmentWarnings = result.warnings, !segmentWarnings.isEmpty {
+                warnings.append(contentsOf: segmentWarnings.map { "Segment \(segmentNumber): \($0)" })
+            }
+
+            pieces.append(
+                SegmentTranscriptionPiece(
+                    offsetSeconds: cumulativeOffset,
+                    text: result.text,
+                    segments: result.segments
+                )
+            )
+            let segmentDuration = await durationSeconds(for: segmentURL)
+            let fallbackDuration = result.segments.last?.end ?? 1
+            cumulativeOffset += max(segmentDuration, fallbackDuration, 1)
+        }
+
+        let merged = Self.mergeSegmentTranscriptions(pieces)
+        return TranscriptionResult(
+            text: merged.text,
+            segments: merged.segments,
+            language: language,
+            warnings: warnings.isEmpty ? nil : warnings
+        )
+    }
+
+    private func transcribeSingleAudioFile(
+        _ url: URL,
+        stepIndex: Int,
+        segmentIndex: Int?,
+        segmentCount: Int?
+    ) async throws -> TranscriptionResult {
+        switch appSettings.effectiveTranscriptionEngine {
+        case .appleSpeech:
+            return try await localTranscriptionService.transcribe(
+                fileURL: url,
+                language: appSettings.effectiveTranscriptionLanguage
+            )
+        case .localWhisper:
+            return try await withPluginStepAdapter(stepIndex: stepIndex) {
+                try await self.localAIPluginService.transcribe(
+                    fileURL: url,
+                    initialPrompt: self.appSettings.effectiveWhisperPrompt
+                )
+            }
+        case .remoteEndpoint:
+            guard let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint else {
+                throw TranscriptionError.invalidEndpoint
+            }
+
+            let segmentLabel: String
+            if let segmentIndex, let segmentCount {
+                segmentLabel = "segment \(segmentIndex)/\(segmentCount)"
+            } else {
+                segmentLabel = "audio"
+            }
+            return try await transcriptionService.transcribe(
+                fileURL: url,
+                endpoint: endpoint,
+                language: appSettings.effectiveTranscriptionLanguage,
+                initialPrompt: appSettings.effectiveWhisperPrompt,
+                chunking: .init(
+                    enabled: appSettings.remoteChunkingEnabled,
+                    maxUploadMB: appSettings.remoteChunkMaxUploadMB,
+                    overlapSeconds: appSettings.remoteChunkOverlapSeconds,
+                    retryCount: appSettings.remoteChunkRetryCount
+                ),
+                progress: { [weak self] progress in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
+                        self.appState.processingSteps[stepIndex].name =
+                            "Transcribing \(segmentLabel) (chunk \(progress.current)/\(progress.total))"
+                    }
+                }
+            )
+        }
+    }
+
+    private func ensureRecordingFinalized(recording: Recording) async throws {
+        if recording.finalizedAudioURL != nil {
+            return
+        }
+
+        let meetingTitle = recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if meetingTitle.isEmpty {
+            recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
+        }
+
+        let result = try await recordingFinalizer.finalize(
+            rawURL: recording.fileURL,
+            recording: recording,
+            baseFolder: appSettings.effectiveRecordingFolderURL
+        )
+
+        recording.fileURL = result.masterAudioURL
+        recording.finalizedAudioURL = result.masterAudioURL
+        recording.segmentAudioURLs = result.segmentAudioURLs
+        recording.metadataURL = result.metadataURL
+        recording.finalizationWarnings = result.warnings
+
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: result.masterAudioURL.path),
+           let size = attrs[.size] as? Int64
+        {
+            recording.fileSize = size
+        }
+    }
+
+    private func durationSeconds(for fileURL: URL) async -> Double {
+        let asset = AVURLAsset(url: fileURL)
+        do {
+            let duration = try await asset.load(.duration)
+            let seconds = CMTimeGetSeconds(duration)
+            if seconds.isFinite, seconds > 0 {
+                return seconds
+            }
+        } catch {
+            return 0
+        }
+        return 0
+    }
+
+    private func defaultMeetingTitle(from associatedApp: String?) -> String {
+        let candidate = associatedApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if candidate.isEmpty { return "meeting" }
+        return candidate
+    }
+
     private func sendCompletionNotification(fileName: String, failed: Int) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
@@ -668,10 +833,9 @@ final class RecordingManager {
         }
     }
 
-    private static func generateFileName() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmmss"
-        return "VoiceRecording_\(formatter.string(from: Date())).m4a"
+    private static func generateRawCaptureURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbrief-raw-\(UUID().uuidString).flac")
     }
 
     private static func dateOnlyString(_ date: Date) -> String {
@@ -699,5 +863,38 @@ final class RecordingManager {
             || integrations.googleKeep.enabled
             || integrations.oneNote.enabled
             || integrations.webhook.enabled
+    }
+
+    struct SegmentTranscriptionPiece: Sendable {
+        let offsetSeconds: Double
+        let text: String
+        let segments: [TranscriptionResult.Segment]
+    }
+
+    nonisolated static func mergeSegmentTranscriptions(_ pieces: [SegmentTranscriptionPiece]) -> TranscriptionResult {
+        var fullTextParts: [String] = []
+        var mergedSegments: [TranscriptionResult.Segment] = []
+
+        for piece in pieces {
+            let trimmed = piece.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                fullTextParts.append(trimmed)
+            }
+
+            for segment in piece.segments {
+                mergedSegments.append(
+                    .init(
+                        start: segment.start + piece.offsetSeconds,
+                        end: segment.end + piece.offsetSeconds,
+                        text: segment.text
+                    )
+                )
+            }
+        }
+
+        return TranscriptionResult(
+            text: fullTextParts.joined(separator: " "),
+            segments: mergedSegments
+        )
     }
 }

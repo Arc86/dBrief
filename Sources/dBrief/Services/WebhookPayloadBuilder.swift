@@ -82,12 +82,13 @@ struct WebhookPayloadBuilder {
         return payload
     }
 
-    private static func contentType(for url: URL) -> String {
+    static func contentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "wav": "audio/wav"
         case "mp3": "audio/mpeg"
         case "ogg": "audio/ogg"
         case "m4a": "audio/m4a"
+        case "flac": "audio/flac"
         default: "application/octet-stream"
         }
     }
