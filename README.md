@@ -14,7 +14,7 @@ dBrief is a macOS menu bar app for recording microphone and system audio, then a
 - **Custom vocabulary** — guide Whisper with proper nouns and domain terms (works with both Local Whisper and remote endpoints)
 - **Call detection** — detects meeting apps (Zoom, Teams, Slack, etc.) and can auto-start recording
 - **Destination integrations** — Obsidian, Apple Notes, Apple Reminders, Notion, Evernote, Google Keep, OneNote, and Webhook
-- **Configurable audio** — sample rate, bit rate, and input device selection
+- **Whisper-optimized capture** — enforced 16 kHz mono FLAC with post-recording DSP finalization
 
 ## Requirements
 
@@ -59,7 +59,7 @@ open dBrief.app
 
 ### General
 - Recording and transcription output folders
-- Audio quality (sample rate: 16–48 kHz, AAC bit rate: 64–256 kbps)
+- Audio profile is globally enforced for Whisper-ready FLAC output
 - Input device selection
 - Call detection with per-app enable/disable (Zoom, Teams, Slack, Meet, FaceTime, Discord, WebEx, etc.)
 
@@ -105,7 +105,7 @@ Remote transcription endpoints support:
 
 ## Outputs
 
-- **Recordings**: `~/Documents/dBrief/Recordings` (M4A only; tries AAC first, then Apple Lossless in `.m4a`)
+- **Recordings**: `~/Documents/dBrief/Recordings/YYYY/MM` (`YYYY-MM-DD_HHMM_[meeting-title].flac`)
 - **Transcriptions**: `~/Documents/dBrief/Transcriptions` (Markdown)
 - **Obsidian**: Markdown saved into the selected vault folder
 - **Integrations**: enabled destinations receive output automatically after processing

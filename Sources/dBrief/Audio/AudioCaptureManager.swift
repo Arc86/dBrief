@@ -24,7 +24,7 @@ final class AudioCaptureManager {
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
 
-    /// The actual file URL being written to (always .m4a for recordings started by this app).
+    /// The actual file URL being written to.
     var actualFileURL: URL? { fileWriter?.actualFileURL }
 
     func checkPermissions() async {
@@ -158,6 +158,7 @@ final class AudioCaptureManager {
                 log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
             }
             let inputNode = mixer.engine.inputNode
+            enableVoiceProcessingIfAvailable(on: inputNode)
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
                 micFormat = inputFormat
@@ -196,6 +197,7 @@ final class AudioCaptureManager {
         }
 
         let inputNode = engine.inputNode
+        enableVoiceProcessingIfAvailable(on: inputNode)
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         guard inputFormat.sampleRate > 0 else {
@@ -287,4 +289,12 @@ final class AudioCaptureManager {
         timer = nil
     }
 
+    private func enableVoiceProcessingIfAvailable(on inputNode: AVAudioInputNode) {
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+            log.info("Voice processing enabled on input node")
+        } catch {
+            log.warning("Voice processing unavailable: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 }

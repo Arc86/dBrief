@@ -21,9 +21,9 @@ actor TranscriptionService {
     }
 
     private enum OpenAIResponseFormat: String, CaseIterable {
-        case jsonVerbose = "json_verbose"
         case verboseJSON = "verbose_json"
         case json
+        case jsonVerbose = "json_verbose"
     }
 
     private struct FormatCapabilityCache: Codable {
@@ -50,15 +50,7 @@ actor TranscriptionService {
         }
 
         let fileExtension = fileURL.pathExtension.lowercased()
-        let contentType: String
-        switch fileExtension {
-        case "wav":
-            contentType = "audio/wav"
-        case "ogg", "opus":
-            contentType = "audio/ogg"
-        default:
-            contentType = "audio/m4a"
-        }
+        let contentType = Self.contentType(forExtension: fileExtension)
 
         if endpoint.isWhisperASR {
             let audioData = try Data(contentsOf: fileURL)
@@ -262,7 +254,7 @@ actor TranscriptionService {
                     url: url,
                     fileData: data,
                     fileName: chunk.url.lastPathComponent,
-                    contentType: "audio/m4a",
+                    contentType: Self.contentType(forExtension: chunk.url.pathExtension.lowercased()),
                     language: language,
                     initialPrompt: initialPrompt,
                     preferredFormat: resolvedFormat,
@@ -353,8 +345,9 @@ actor TranscriptionService {
         initialPrompt: String,
         preferredFormat: OpenAIResponseFormat
     ) async throws -> TranscriptionResult {
+        let preferredData: Data
         do {
-            let data = try await sendRequest(
+            preferredData = try await sendRequest(
                 url: url,
                 endpoint: endpoint,
                 fileData: fileData,
@@ -365,11 +358,11 @@ actor TranscriptionService {
                 responseFormat: preferredFormat.rawValue,
                 timeout: 300
             )
-            return try parseResponse(data)
         } catch {
-            if shouldSkipFormatFallback(for: error) {
+            if shouldSkipFormatFallback(for: error) || !shouldAttemptFormatFallback(for: error) {
                 throw error
             }
+
             for fallback in OpenAIResponseFormat.allCases where fallback != preferredFormat {
                 do {
                     let data = try await sendRequest(
@@ -386,11 +379,18 @@ actor TranscriptionService {
                     saveCachedResponseFormat(fallback, for: endpoint)
                     return try parseResponse(data)
                 } catch {
+                    if shouldSkipFormatFallback(for: error) || !shouldAttemptFormatFallback(for: error) {
+                        throw error
+                    }
                     continue
                 }
             }
             throw error
         }
+
+        // If the server already completed transcription, never re-upload the full file
+        // just because parsing failed client-side.
+        return try parseResponse(preferredData)
     }
 
     private func shouldSkipFormatFallback(for error: Error) -> Bool {
@@ -401,6 +401,21 @@ actor TranscriptionService {
             return false
         }
         return body.lowercased().contains("response_format")
+    }
+
+    private func shouldAttemptFormatFallback(for error: Error) -> Bool {
+        guard case let TranscriptionError.serverError(statusCode, body) = error else {
+            return false
+        }
+        // Restrict fallback to likely request-format compatibility failures.
+        guard statusCode == 400 || statusCode == 415 || statusCode == 422 else {
+            return false
+        }
+        let lowercasedBody = body.lowercased()
+        return lowercasedBody.contains("response_format")
+            || lowercasedBody.contains("unsupported")
+            || lowercasedBody.contains("not supported")
+            || lowercasedBody.contains("invalid")
     }
 
     private func mergeChunkOutcomes(
@@ -521,7 +536,15 @@ actor TranscriptionService {
             return TranscriptionResult(text: joinedText, segments: parsedSegments, language: nil)
         }
 
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            if let plainText = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !plainText.isEmpty
+            {
+                return TranscriptionResult(text: plainText, segments: [], language: nil)
+            }
+            throw TranscriptionError.invalidResponse
+        }
         let text = json["text"] as? String ?? ""
         let language = json["language"] as? String
 
@@ -627,6 +650,13 @@ actor TranscriptionService {
             form.addField(name: "model", value: endpoint.modelName)
             if let responseFormat {
                 form.addField(name: "response_format", value: responseFormat)
+                if shouldIncludeTimestampGranularities(
+                    endpoint: endpoint,
+                    responseFormat: responseFormat
+                ) {
+                    form.addField(name: "timestamp_granularities[]", value: "segment")
+                    form.addField(name: "timestamp_granularities[]", value: "word")
+                }
             }
             if !language.isEmpty {
                 form.addField(name: "language", value: language)
@@ -659,6 +689,14 @@ actor TranscriptionService {
 
     private func cacheLookupKey(for endpoint: Endpoint) -> String {
         "\(endpoint.baseURL.lowercased())|\(endpoint.modelName.lowercased())"
+    }
+
+    private func shouldIncludeTimestampGranularities(endpoint: Endpoint, responseFormat: String) -> Bool {
+        guard responseFormat == OpenAIResponseFormat.verboseJSON.rawValue else {
+            return false
+        }
+        // Speaches + faster-whisper supports segment/word granularities.
+        return endpoint.modelName.lowercased().contains("systran/faster-whisper")
     }
 
     private func cachedResponseFormat(for endpoint: Endpoint) -> OpenAIResponseFormat? {
@@ -784,6 +822,19 @@ actor TranscriptionService {
                 options: .regularExpression
             )
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func contentType(forExtension fileExtension: String) -> String {
+        switch fileExtension.lowercased() {
+        case "wav":
+            return "audio/wav"
+        case "ogg", "opus":
+            return "audio/ogg"
+        case "flac":
+            return "audio/flac"
+        default:
+            return "audio/m4a"
+        }
     }
 }
 
