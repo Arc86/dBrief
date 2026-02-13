@@ -96,6 +96,7 @@ final class RecordingManager {
         actionItems: Bool,
         tags: Bool
     ) async {
+        guard appState.recordingState != .processing else { return }
         guard let recording = appState.currentRecording else { return }
         let localAIAvailable: Bool = {
             #if canImport(FoundationModels)
@@ -155,10 +156,32 @@ final class RecordingManager {
                             fileURL: recording.fileURL,
                             endpoint: endpoint,
                             language: appSettings.effectiveTranscriptionLanguage,
-                            initialPrompt: appSettings.effectiveWhisperPrompt
+                            initialPrompt: appSettings.effectiveWhisperPrompt,
+                            chunking: .init(
+                                enabled: appSettings.remoteChunkingEnabled,
+                                maxUploadMB: appSettings.remoteChunkMaxUploadMB,
+                                overlapSeconds: appSettings.remoteChunkOverlapSeconds,
+                                retryCount: appSettings.remoteChunkRetryCount
+                            ),
+                            progress: { [weak self] progress in
+                                guard let self else { return }
+                                Task { @MainActor in
+                                    guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
+                                    self.appState.processingSteps[stepIndex].name =
+                                        "Transcribing audio (chunk \(progress.current)/\(progress.total))"
+                                }
+                            }
                         )
                         recording.transcription = result
                         appState.processingSteps[stepIndex].status = .completed
+                        if let warnings = result.warnings, !warnings.isEmpty {
+                            appState.processingSteps.append(
+                                ProcessingStep(
+                                    name: "Transcription warnings",
+                                    status: .failed(warnings.joined(separator: "\n"))
+                                )
+                            )
+                        }
                     } catch {
                         appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                     }

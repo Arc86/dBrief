@@ -6,40 +6,74 @@ struct SettingsProfilesTab: View {
     @Environment(AppSettings.self) private var appSettings
     @State private var selectedProfileId: UUID?
     @State private var statusMessage: String?
+    private let profileIcons: [(label: String, symbol: String)] = [
+        ("General", "slider.horizontal.3"),
+        ("Team", "person.3.fill"),
+        ("Sales", "briefcase.fill"),
+        ("Work", "building.2.fill"),
+        ("Personal", "person.crop.circle.fill"),
+        ("Client", "person.crop.square.fill"),
+        ("Call", "phone.fill"),
+        ("Notes", "note.text")
+    ]
+    private let iconBackgroundColors: [(label: String, key: String, color: Color)] = [
+        ("Blue", "blue", .blue),
+        ("Indigo", "indigo", .indigo),
+        ("Purple", "purple", .purple),
+        ("Pink", "pink", .pink),
+        ("Red", "red", .red),
+        ("Orange", "orange", .orange),
+        ("Green", "green", .green),
+        ("Teal", "teal", .teal),
+        ("Gray", "gray", .gray)
+    ]
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 20) {
             profileListPane
                 .frame(width: 260)
             Divider()
             editorPane
         }
+        .padding(.leading, 14)
         .padding(.top, -10)
         .onAppear {
-            if selectedProfileId == nil {
-                selectedProfileId = appSettings.activeProfileId
-            }
+            ensureSelection()
         }
+        .onChange(of: appSettings.profiles.count) { _, _ in ensureSelection() }
+        .onChange(of: selectedProfileId) { _, _ in ensureSelection() }
     }
 
     private var profileListPane: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            profilesToolbar
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Profiles")
+                .font(.headline)
+                .padding(.leading, 2)
 
             List(selection: $selectedProfileId) {
                 ForEach(appSettings.profiles) { profile in
-                    HStack {
-                        Text(profile.name)
-                        Spacer()
-                        if profile.id == appSettings.activeProfileId {
-                            Text("Active")
-                                .font(.caption2)
-                                .foregroundStyle(.blue)
-                        }
-                    }
+                    profileRow(profile)
                     .tag(profile.id)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .padding(.vertical, 6)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        Color(nsColor: .windowBackgroundColor).opacity(0.55)
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+            )
+
+            bottomControlStrip
 
             if let statusMessage {
                 Text(statusMessage)
@@ -50,14 +84,51 @@ struct SettingsProfilesTab: View {
         }
     }
 
-    private var profilesToolbar: some View {
+    private func profileRow(_ profile: MeetingProfile) -> some View {
+        HStack(spacing: 0) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(iconBackgroundColor(for: profile).opacity(0.28))
+                Image(systemName: profile.iconSystemName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(width: 34, height: 34)
+            .padding(.trailing, 10)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.name)
+                    .font(.system(size: 15.5, weight: .semibold))
+                HStack(spacing: 6) {
+                    if profile.id == appSettings.activeProfileId {
+                        Label("Active", systemImage: "checkmark.seal.fill")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    } else if profile.preset == .custom {
+                        Text("Custom profile")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+    }
+
+    private var bottomControlStrip: some View {
         HStack(spacing: 0) {
             toolbarIconButton(systemImage: "plus", tooltip: "Add profile") {
                 let created = appSettings.createProfile(name: "New profile")
                 selectedProfileId = created.id
             }
 
-            toolbarDivider
+            stripDivider
 
             toolbarIconButton(systemImage: "minus", tooltip: "Delete selected profile") {
                 guard let selected = selectedProfile else { return }
@@ -66,7 +137,7 @@ struct SettingsProfilesTab: View {
             }
             .disabled(selectedProfile?.isProtectedDefault ?? true)
 
-            toolbarDivider
+            stripDivider
 
             Menu {
                 Button("Duplicate Profile", systemImage: "square.on.square") {
@@ -98,46 +169,45 @@ struct SettingsProfilesTab: View {
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                 }
-                .frame(width: 64, height: 34)
-                .contentShape(Rectangle())
+                .frame(width: 52, height: 32)
             }
             .menuStyle(.borderlessButton)
             .buttonStyle(.plain)
 
-            toolbarDivider
+            stripDivider
 
             Text(selectedProfile?.name ?? "No Profile")
                 .font(.headline)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
-
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: 34)
+        .frame(height: 36)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(
+                    Color(nsColor: .windowBackgroundColor).opacity(0.7)
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
+                .strokeBorder(.white.opacity(0.14), lineWidth: 1)
         )
     }
 
-    private var toolbarDivider: some View {
+    private var stripDivider: some View {
         Rectangle()
             .fill(.quaternary)
-            .frame(width: 1, height: 24)
+            .frame(width: 1, height: 22)
     }
 
     private func toolbarIconButton(systemImage: String, tooltip: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.title3)
-                .frame(width: 44, height: 34)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -154,6 +224,32 @@ struct SettingsProfilesTab: View {
                         text: profileBinding(\.name, fallback: selectedProfile.name)
                     )
                     .frame(height: 22)
+
+                    Picker(
+                        "Icon",
+                        selection: profileBinding(\.iconSystemName, fallback: selectedProfile.iconSystemName)
+                    ) {
+                        ForEach(profileIcons, id: \.symbol) { item in
+                            Label(item.label, systemImage: item.symbol).tag(item.symbol)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Picker(
+                        "Icon background",
+                        selection: profileBinding(\.iconBackgroundColorKey, fallback: selectedProfile.iconBackgroundColorKey)
+                    ) {
+                        ForEach(iconBackgroundColors, id: \.key) { option in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(option.color)
+                                    .frame(width: 10, height: 10)
+                                Text(option.label)
+                            }
+                            .tag(option.key)
+                        }
+                    }
+                    .pickerStyle(.menu)
 
                     Toggle(
                         "Active profile",
@@ -447,6 +543,23 @@ struct SettingsProfilesTab: View {
         return appSettings.profiles.first(where: { $0.id == selectedProfileId })
     }
 
+    private func ensureSelection() {
+        if let selectedProfileId,
+           appSettings.profiles.contains(where: { $0.id == selectedProfileId }) {
+            return
+        }
+
+        if appSettings.profiles.contains(where: { $0.id == appSettings.activeProfileId }) {
+            self.selectedProfileId = appSettings.activeProfileId
+        } else {
+            self.selectedProfileId = appSettings.profiles.first?.id
+        }
+    }
+
+    private func iconBackgroundColor(for profile: MeetingProfile) -> Color {
+        iconBackgroundColors.first(where: { $0.key == profile.iconBackgroundColorKey })?.color ?? .gray
+    }
+
     private func profileBinding<T>(_ keyPath: WritableKeyPath<MeetingProfile, T>, fallback: T) -> Binding<T> {
         Binding(
             get: {
@@ -507,6 +620,9 @@ struct SettingsProfilesTab: View {
         let duplicate = appSettings.createProfile(name: selectedProfile.name)
         if let index = appSettings.profiles.firstIndex(where: { $0.id == duplicate.id }) {
             appSettings.profiles[index].overrides = selectedProfile.overrides
+            appSettings.profiles[index].iconSystemName = selectedProfile.iconSystemName
+            appSettings.profiles[index].iconBackgroundColorKey = selectedProfile.iconBackgroundColorKey
+            appSettings.profiles[index].preset = .custom
         }
         selectedProfileId = duplicate.id
     }
