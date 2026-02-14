@@ -3,7 +3,7 @@ import EventKit
 import Foundation
 import os
 
-private let integrationLog = Logger(subsystem: "com.dbrief.app", category: "integrations")
+private let integrationLog = Logger.integrations
 
 actor IntegrationDispatchService {
     private let webhookPayloadBuilder = WebhookPayloadBuilder()
