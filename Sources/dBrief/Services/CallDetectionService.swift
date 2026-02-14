@@ -2,7 +2,7 @@ import AppKit
 import CoreAudio
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "calldetection")
+private let log = Logger.callDetection
 
 @MainActor
 @Observable
