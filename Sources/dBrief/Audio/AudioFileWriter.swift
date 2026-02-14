@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
+private let log = Logger.audio
 
 enum AudioFileWriterError: Error, LocalizedError {
     case noCompatibleFLACEncoder

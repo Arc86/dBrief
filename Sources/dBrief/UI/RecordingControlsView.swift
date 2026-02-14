@@ -1,7 +1,7 @@
 import SwiftUI
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "recording")
+private let log = Logger.recording
 
 struct RecordingControlsView: View {
     @Environment(AppState.self) private var appState

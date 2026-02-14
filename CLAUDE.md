@@ -31,14 +31,14 @@ Tests live in `Tests/dBriefTests/` and use the `swift-testing` framework (v0.6.0
 
 - **AppContext** — root object, creates and wires everything at launch; owns all services below
 - **AppState** (`@Observable`) — recording state machine (`idle → recording → paused → processing`), processing step progress, current recording data, call detection state
-- **AppSettings** (`@Observable`) — all user preferences persisted via `UserDefaults` with `didSet` observers; folder URLs use security-scoped bookmarks; integration tokens stored in Keychain via `KeychainHelper`
+- **AppSettings** (`@Observable`) — all user preferences persisted via `UserDefaults` with `didSet` observers; folder URLs use security-scoped bookmarks; integration tokens stored in Keychain via `KeychainHelper`. Split across extension files: `AppSettings+EffectiveSettings.swift` (profile-resolved computed properties), `AppSettings+Profiles.swift` (profile CRUD, import/export, factories), `AppSettings+Persistence.swift` (bookmark/endpoint/integration/profile persistence helpers)
 - **RecordingManager** — orchestrates the full record → finalize → transcribe → AI → markdown → integration dispatch pipeline
 
 ### Source Layout
 
 ```
 Sources/dBrief/
-├── App/            # Entry point, AppContext, AppState, AppSettings
+├── App/            # Entry point, AppContext, AppState, AppSettings (+ extension files)
 ├── Audio/          # Audio capture, mixing, file writing
 ├── Models/         # Data types: Endpoint, Recording, MeetingProfile, Integrations, etc.
 ├── Services/       # Business logic: transcription, AI, recording, integrations
@@ -80,7 +80,7 @@ Three transcription backends selected via `AppSettings.transcriptionEngine`:
 | Local Whisper | `WhisperKitTranscriptionService` (via `LocalAIPluginService`) | On-device CoreML Whisper (whisper-small) via the `WhisperKit` package. Downloads models to `AppSupport/dBrief/LocalAIPlugin/WhisperKit/`. |
 | Remote Endpoint | `TranscriptionService` | Supports both OpenAI-compatible `/v1/audio/transcriptions` and `whisper-asr-webservice` `/asr` format (auto-detected via `Endpoint.isWhisperASR`). Handles chunked upload for large files via `AudioChunker`. |
 
-Note: `LocalWhisperService` (SwiftWhisper/whisper.cpp) is a legacy implementation still present in the codebase but no longer wired into `RecordingManager`. The active local transcription path uses `WhisperKitTranscriptionService` through `LocalAIPluginService`.
+The legacy `LocalWhisperService` (SwiftWhisper/whisper.cpp) has been removed. The `SwiftWhisper` package dependency has also been removed.
 
 ### AI Processing (`Services/`)
 
@@ -162,7 +162,6 @@ Produces Markdown files with YAML frontmatter (title, date, tags, duration, audi
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| [SwiftWhisper](https://github.com/exPHAT/SwiftWhisper) | 1.2.0+ | Legacy local Whisper via whisper.cpp (still linked, superseded by WhisperKit) |
 | [WhisperKit](https://github.com/argmaxinc/WhisperKit) | 0.9.4+ | CoreML-based on-device Whisper transcription |
 | [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 2.29.1+ | On-device Qwen 2.5 7B LLM via MLX (Apple Silicon) |
 | [swift-testing](https://github.com/apple/swift-testing) | 0.6.0+ | Testing framework |
@@ -174,6 +173,7 @@ Produces Markdown files with YAML frontmatter (title, date, tags, duration, audi
 ## Key Patterns
 
 - All UI and state classes are `@MainActor @Observable`. Services that do async work are `actor`-isolated (`TranscriptionService`, `AIService`, `LocalAIPluginService`, `MLXInsightsService`, `WhisperKitTranscriptionService`, `IntegrationDispatchService`, `RecordingFinalizer`).
+- Logging uses centralized `Logger` extensions defined in `Logger+Extensions.swift` (e.g. `Logger.audio`, `Logger.recording`, `Logger.ai`). New files should use these static loggers rather than creating ad-hoc `Logger(subsystem:category:)` instances.
 - Models are `Sendable` structs/enums for safe cross-isolation passing.
 - Settings persistence uses `UserDefaults` with `didSet` observers on each property. Folder URLs use security-scoped bookmarks. Sensitive tokens use `KeychainHelper`.
 - The app links system frameworks via SPM linker settings (not Xcode build settings).
