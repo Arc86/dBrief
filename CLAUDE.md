@@ -42,7 +42,7 @@ Output format is FLAC. Capture is 16 kHz mono, then finalized with Whisper-orien
 
 Three transcription backends selected via `AppSettings.transcriptionEngine`:
 - **Apple Speech** (`LocalTranscriptionService`) — on-device `SFSpeechRecognizer`. Converts `.ogg`/`.opus` to WAV via ffmpeg before processing.
-- **Local Whisper** (`LocalWhisperService`) — on-device via the `SwiftWhisper` package dependency
+- **Local Whisper** — on-device via `WhisperKit` package, accessed through `LocalAIPluginService` plugin architecture
 - **Remote Endpoint** (`TranscriptionService`) — supports both OpenAI-compatible `/v1/audio/transcriptions` and `whisper-asr-webservice` `/asr` format (auto-detected via `Endpoint.isWhisperASR`)
 
 ### AI Processing (`Sources/dBrief/Services/`)
@@ -70,7 +70,7 @@ AI tasks run sequentially after transcription: summary → action items → tags
 - All UI and state classes are `@MainActor @Observable`. Services that do network/IO work are `actor`-isolated (`TranscriptionService`, `AIService`, `LocalAIService`, `LocalTranscriptionService`).
 - Settings persistence uses `UserDefaults` with `didSet` observers on each property. Folder URLs use security-scoped bookmarks.
 - The app links `ScreenCaptureKit` and `AVFoundation` frameworks via SPM linker settings (not Xcode build settings).
-- The only external dependency is `SwiftWhisper` (v1.2.0+) which bundles whisper.cpp.
+- External dependencies: `WhisperKit` (v0.9.4+) for on-device Whisper transcription, `mlx-swift-lm` (v2.29.1+) for local Qwen LLM inference.
 
 ## Platform Requirements
 
