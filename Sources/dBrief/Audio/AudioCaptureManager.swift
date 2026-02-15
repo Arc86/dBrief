@@ -3,7 +3,7 @@ import CoreGraphics
 @preconcurrency import ScreenCaptureKit
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "audio")
+private let log = Logger.audio
 
 @MainActor
 @Observable

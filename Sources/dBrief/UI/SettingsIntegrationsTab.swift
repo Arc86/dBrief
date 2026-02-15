@@ -126,6 +126,13 @@ struct SettingsIntegrationsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Toggle(isOn: binding({ appSettings.obsidianIncludeTranscript }, { appSettings.obsidianIncludeTranscript = $0 })) {
+                    Text("Include transcript in notes")
+                }
+                Text("When off, notes contain only the summary, action items, and tags. Enable to append the full transcript.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
