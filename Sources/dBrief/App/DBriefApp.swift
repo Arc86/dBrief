@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "app")
+private let log = Logger.app
 
 /// Holds all shared app state. Created once at launch, passed via environment.
 @MainActor
@@ -103,7 +103,6 @@ struct DBriefApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        // REPLACED: Changed 'Settings' to 'WindowGroup' to allow full custom transparency
         WindowGroup(id: "settings") {
             SettingsView()
                 .environment(context.appSettings)

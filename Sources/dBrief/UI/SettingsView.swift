@@ -27,9 +27,16 @@ struct SettingsView: View {
         }
     }
 
+    private var visibleTabs: [SettingsTab] {
+        SettingsTab.allCases.filter { tab in
+            if tab == .profiles { return appSettings.powerUserMode }
+            return true
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(SettingsTab.allCases, selection: $selectedTab) { tab in
+            List(visibleTabs, selection: $selectedTab) { tab in
                 Label {
                     Text(tab.rawValue)
                 } icon: {

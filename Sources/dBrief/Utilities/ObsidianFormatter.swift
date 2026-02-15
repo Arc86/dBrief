@@ -3,12 +3,11 @@ import Foundation
 enum ObsidianFormatter {
     private static let defaultConcept = "Meeting Notes"
 
-    static func format(transcript: String, insights: LocalInsightsResult) -> String {
+    static func format(transcript: String, insights: LocalInsightsResult, includeTranscript: Bool = false) -> String {
         let now = Date()
         let dateString = formatDate(now)
         let concept = insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = "\(dateString) - \((concept.isEmpty ? defaultConcept : concept))"
-        let cleanedTranscript = cleanWhisperTimestamps(in: transcript.trimmingCharacters(in: .whitespacesAndNewlines))
         let summary = insights.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let sentiment = sentimentLabel(for: insights.sentiment)
 
@@ -20,7 +19,7 @@ enum ObsidianFormatter {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .map { tag in
-                let sanitized = tag.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+                let sanitized = tag.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression)
                 return "#\(sanitized.lowercased())"
             }
 
@@ -41,10 +40,15 @@ enum ObsidianFormatter {
         lines.append("")
         lines.append("## 🏷️ Tags")
         lines.append(tags.isEmpty ? "#untagged" : tags.joined(separator: " "))
-        lines.append("")
-        lines.append("---")
-        lines.append("## 💬 Transcript")
-        lines.append(cleanedTranscript.isEmpty ? "No transcript available." : cleanedTranscript)
+
+        if includeTranscript {
+            let cleanedTranscript = cleanWhisperTimestamps(in: transcript.trimmingCharacters(in: .whitespacesAndNewlines))
+            lines.append("")
+            lines.append("---")
+            lines.append("## 💬 Transcript")
+            lines.append(cleanedTranscript.isEmpty ? "No transcript available." : cleanedTranscript)
+        }
+
         return lines.joined(separator: "\n")
     }
 
