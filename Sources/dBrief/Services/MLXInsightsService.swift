@@ -8,9 +8,9 @@ import MLX
 
 actor MLXInsightsService {
     private static let modelID = "mlx-community/Qwen2.5-7B-Instruct-4bit"
-    private static let transcriptCharLimit = 12_000
-    private static let transcriptHeadChars = 6_000
-    private static let transcriptTailChars = 6_000
+    private static let transcriptCharLimit = 32_000
+    private static let transcriptHeadChars = 16_000
+    private static let transcriptTailChars = 16_000
     private static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
 
     private let fileManager = FileManager.default
@@ -83,7 +83,7 @@ actor MLXInsightsService {
                 titleConcept: "",
                 summary: "No transcript content was provided.",
                 actionItems: [],
-                tags: ["tag1", "tag2", "tag3", "tag4", "tag5"],
+                tags: [],
                 sentiment: "Neutral"
             )
         }
@@ -166,7 +166,7 @@ actor MLXInsightsService {
         TRANSCRIPT:
         \(transcript)
 
-        INSTRUCTION: Focus on extracting specific project names, client names (e.g., Erasmus, Zuiderland), and deadlines mentioned in the text.
+        INSTRUCTION: Focus on extracting specific names, projects, tools, and deadlines mentioned in the text. Ensure the summary is thorough and covers all discussion topics.
         """
     }
 
@@ -191,17 +191,19 @@ actor MLXInsightsService {
 
         ### RULES
         1. **NO REPETITION:** If a point is made twice, record it once.
-        2. **DETAIL:** Do not be vague. Use specific names (e.g., "Zuiderland", "Erasmus"), tools ("Dynamics", "CSDM"), and deadlines.
-        3. **ACTION ITEMS:** Must be specific. Format: "[WHO] to [TASK] [CONTEXT]".
-        4. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept (do not include the date).
-        5. **TAGS:** Single words only. No spaces. Max 5 tags.
+        2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
+        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics. Each paragraph should address a distinct topic or theme. Aim for at least 3-5 paragraphs for meetings longer than 10 minutes.
+        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]". Include follow-ups, commitments, and agreed next steps.
+        5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept (do not include the date).
+        6. **TAGS:** Single words only. No spaces. Provide 5-10 relevant, specific tags that capture the key topics discussed.
+        7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
 
         ### OUTPUT FORMAT (Strict JSON Only)
         {
           "title_concept": "Short Descriptive Title",
-          "summary": "A detailed, multi-paragraph summary of the meeting...",
-          "action_items": ["Action 1", "Action 2"],
-          "tags": ["Tag1", "Tag2"],
+          "summary": "A detailed, multi-paragraph summary covering all key topics discussed...",
+          "action_items": ["[Person] to [task] [context]", "..."],
+          "tags": ["Tag1", "Tag2", "Tag3", "..."],
           "sentiment": "Positive" | "Neutral" | "Negative"
         }
         """
@@ -209,11 +211,11 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 700,
-            maxKVSize: 4096,
-            temperature: 0.2,
-            topP: 1.0,
-            prefillStepSize: 256
+            maxTokens: 2048,
+            maxKVSize: 16384,
+            temperature: 0.5,
+            topP: 0.9,
+            prefillStepSize: 512
         )
     }
 
@@ -301,11 +303,7 @@ actor MLXInsightsService {
                 seen.insert(lowered)
                 unique.append(cleaned)
             }
-            if unique.count == 5 { break }
-        }
-
-        while unique.count < 5 {
-            unique.append("tag\(unique.count + 1)")
+            if unique.count == 10 { break }
         }
         return unique
     }
@@ -341,7 +339,7 @@ actor MLXInsightsService {
           "title_concept": "",
           "summary": "No transcript content was provided.",
           "action_items": [],
-          "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+          "tags": [],
           "sentiment": "Neutral"
         }
         """
