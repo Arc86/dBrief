@@ -47,6 +47,8 @@ final class AppSettings {
         static let showDockIcon = "showDockIcon"
         static let profiles = "profiles"
         static let activeProfileId = "activeProfileId"
+        static let powerUserMode = "powerUserMode"
+        static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
     }
 
     // MARK: - Recording
@@ -215,6 +217,16 @@ final class AppSettings {
             UserDefaults.standard.set(showDockIcon, forKey: Keys.showDockIcon)
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
         }
+    }
+
+    /// Reveals advanced settings and features across all tabs
+    var powerUserMode: Bool {
+        didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
+    }
+
+    /// Include full transcript in Obsidian/Markdown output (default off to keep notes concise)
+    var obsidianIncludeTranscript: Bool {
+        didSet { UserDefaults.standard.set(obsidianIncludeTranscript, forKey: Keys.obsidianIncludeTranscript) }
     }
 
     /// Empty string means auto-detect, otherwise an ISO 639-1 language code (e.g. "en", "nl", "de")
@@ -436,6 +448,8 @@ final class AppSettings {
         self.audioBitRate = defaults.object(forKey: Keys.audioBitRate) as? Int ?? 128000
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
+        self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
+        self.obsidianIncludeTranscript = defaults.object(forKey: Keys.obsidianIncludeTranscript) as? Bool ?? false
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""

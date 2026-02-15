@@ -9,6 +9,12 @@ struct SettingsGeneralTab: View {
         Form {
             Section("Appearance") {
                 Toggle("Show dock icon", isOn: $settings.showDockIcon)
+                Toggle("Power user mode", isOn: $settings.powerUserMode)
+                if appSettings.powerUserMode {
+                    Text("Shows advanced settings and features across all tabs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .listRowBackground(Color.clear)
 
@@ -47,48 +53,50 @@ struct SettingsGeneralTab: View {
             }
             .listRowBackground(Color.clear)
 
-            Section("Audio Quality") {
-                LabeledContent("Recording profile:") {
-                    Text("Whisper optimized (16 kHz mono FLAC)")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                LabeledContent("Post-process:") {
-                    Text("80Hz high-pass, light denoise, AGC/echo cancel, -20 LUFS to -3dBTP")
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Audio Input") {
-                let selectedUID = settings.audioInputDeviceUID
-                let knownUIDs = Set(inputDevices.map { $0.uid })
-                let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
-
-                LabeledContent("Input device:") {
-                    Picker("", selection: $settings.audioInputDeviceUID) {
-                        Text("System Default").tag("")
-                        ForEach(inputDevices) { device in
-                            Text(device.displayName).tag(device.uid)
-                        }
-                        if isMissingSelection {
-                            Text("Unavailable device (reconnect)").tag(selectedUID)
-                        }
+            if appSettings.powerUserMode {
+                Section("Audio Quality") {
+                    LabeledContent("Recording profile:") {
+                        Text("Whisper optimized (16 kHz mono FLAC)")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 220, alignment: .trailing)
-                }
-                LabeledContent("Refresh device list") {
-                    Button("Refresh") {
-                        inputDevices = AudioInputDeviceManager.availableInputDevices()
+                    LabeledContent("Post-process:") {
+                        Text("80Hz high-pass, light denoise, AGC/echo cancel, -20 LUFS to -3dBTP")
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .buttonStyle(.bordered)
                 }
+                .listRowBackground(Color.clear)
+
+                Section("Audio Input") {
+                    let selectedUID = settings.audioInputDeviceUID
+                    let knownUIDs = Set(inputDevices.map { $0.uid })
+                    let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
+
+                    LabeledContent("Input device:") {
+                        Picker("", selection: $settings.audioInputDeviceUID) {
+                            Text("System Default").tag("")
+                            ForEach(inputDevices) { device in
+                                Text(device.displayName).tag(device.uid)
+                            }
+                            if isMissingSelection {
+                                Text("Unavailable device (reconnect)").tag(selectedUID)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 220, alignment: .trailing)
+                    }
+                    LabeledContent("Refresh device list") {
+                        Button("Refresh") {
+                            inputDevices = AudioInputDeviceManager.availableInputDevices()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .listRowBackground(Color.clear)
             }
-            .listRowBackground(Color.clear)
 
             Section("Call Detection") {
                 Toggle("Enable call detection", isOn: $settings.callDetectionEnabled)
