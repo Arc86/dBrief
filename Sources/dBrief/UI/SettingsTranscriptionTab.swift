@@ -27,15 +27,19 @@ struct SettingsTranscriptionTab: View {
                     .listRowBackground(Color.clear)
                 Section("Language") { languageSection }
                     .listRowBackground(Color.clear)
-                if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
-                    Section("Custom Vocabulary") { vocabularySection }
-                        .listRowBackground(Color.clear)
+                if appSettings.powerUserMode {
+                    if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
+                        Section("Custom Vocabulary") { vocabularySection }
+                            .listRowBackground(Color.clear)
+                    }
                 }
                 if appSettings.transcriptionEngine == .remoteEndpoint {
                     Section("Endpoints") { endpointsSection }
                         .listRowBackground(Color.clear)
-                    Section("Large File Handling") { chunkingSection }
-                        .listRowBackground(Color.clear)
+                    if appSettings.powerUserMode {
+                        Section("Large File Handling") { chunkingSection }
+                            .listRowBackground(Color.clear)
+                    }
                 }
             }
             .formStyle(.grouped)

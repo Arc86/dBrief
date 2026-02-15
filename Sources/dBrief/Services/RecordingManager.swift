@@ -257,7 +257,8 @@ final class RecordingManager {
                     recording: recording,
                     outputFolder: outputFolder,
                     transcriptionEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint,
-                    aiEndpoint: appSettings.effectiveDefaultAIEndpoint
+                    aiEndpoint: appSettings.effectiveDefaultAIEndpoint,
+                    includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
             } catch {
