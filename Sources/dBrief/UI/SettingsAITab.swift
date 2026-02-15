@@ -29,7 +29,7 @@ struct SettingsAITab: View {
                     Text(engineDescription(for: settings.aiEngine))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if settings.aiEngine == .qwenLocal {
+                    if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
                         Picker("Output language", selection: outputLanguageSelectionBinding) {
                             Text("Match transcript").tag("matchInput")
                             Text("English").tag("english")
@@ -54,7 +54,7 @@ struct SettingsAITab: View {
                             }
                         }
                     }
-                    if settings.aiEngine == .qwenLocal {
+                    if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
                         Button("Purge local Qwen model") {
                             Task {
                                 do {
@@ -82,12 +82,14 @@ struct SettingsAITab: View {
                     Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
                 }
                     .listRowBackground(Color.clear)
-                Section("Prompts") {
-                    promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
-                    promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
-                    promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                if appSettings.powerUserMode {
+                    Section("Prompts") {
+                        promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
+                        promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
+                        promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                    }
+                        .listRowBackground(Color.clear)
                 }
-                    .listRowBackground(Color.clear)
                 if appSettings.aiEngine == .remoteEndpoint {
                     Section("Endpoints") {
                         endpointsSection

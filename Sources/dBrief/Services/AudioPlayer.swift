@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import os
 
-private let log = Logger(subsystem: "com.dbrief.app", category: "player")
+private let log = Logger.player
 
 @MainActor
 @Observable

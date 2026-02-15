@@ -6,7 +6,8 @@ struct MarkdownGenerator {
         recording: Recording,
         outputFolder: URL,
         transcriptionEndpoint: Endpoint?,
-        aiEndpoint: Endpoint?
+        aiEndpoint: Endpoint?,
+        includeTranscript: Bool = false
     ) throws -> URL {
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
@@ -18,7 +19,8 @@ struct MarkdownGenerator {
             recording: recording,
             title: title,
             transcriptionEndpoint: transcriptionEndpoint,
-            aiEndpoint: aiEndpoint
+            aiEndpoint: aiEndpoint,
+            includeTranscript: includeTranscript
         )
 
         try content.write(to: outputURL, atomically: true, encoding: .utf8)
@@ -30,7 +32,8 @@ struct MarkdownGenerator {
         recording: Recording,
         title: String,
         transcriptionEndpoint: Endpoint?,
-        aiEndpoint: Endpoint?
+        aiEndpoint: Endpoint?,
+        includeTranscript: Bool
     ) -> String {
         var lines: [String] = []
 
@@ -42,7 +45,9 @@ struct MarkdownGenerator {
         if let tags = recording.tags, !tags.isEmpty {
             lines.append("tags:")
             for tag in tags {
-                lines.append("  - \(tag)")
+                let sanitized = tag.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression)
+                    .lowercased()
+                lines.append("  - \(sanitized)")
             }
         }
 
@@ -103,7 +108,7 @@ struct MarkdownGenerator {
         }
 
         // Transcript last so notes start with insights
-        if let transcription = recording.transcription {
+        if includeTranscript, let transcription = recording.transcription {
             lines.append("---")
             lines.append("## 💬 Transcript")
             lines.append("")
