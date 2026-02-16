@@ -15,6 +15,7 @@ final class AppContext {
     let hotkeyService = GlobalHotkeyService()
     let audioPlayer = AudioPlayer()
     let miniPlayer = FloatingMiniPlayerController()
+    let memoryMonitor = MemoryPressureMonitor()
     private var permissionsChecked = false
 
     init() {
@@ -26,6 +27,13 @@ final class AppContext {
             appSettings: appSettings,
             recordingManager: recordingManager
         )
+
+        // Start memory pressure monitoring
+        memoryMonitor.startMonitoring()
+        memoryMonitor.registerCleanupHandler { [weak recordingManager] in
+            await recordingManager?.handleMemoryPressure()
+        }
+
         Task { await self.ensureReady() }
     }
 

@@ -368,6 +368,13 @@ final class RecordingManager {
         try await localAIPluginService.purgeQwenModel()
     }
 
+    /// Called by MemoryPressureMonitor when system memory pressure is detected.
+    /// Unloads all local AI models to free memory.
+    func handleMemoryPressure() async {
+        // Unload both Whisper and Qwen models to free GPU/unified memory
+        await localAIPluginService.purgeModelsOnMemoryPressure()
+    }
+
     func requestNotificationPermission() {
         guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
