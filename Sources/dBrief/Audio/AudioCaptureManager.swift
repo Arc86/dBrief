@@ -158,7 +158,8 @@ final class AudioCaptureManager {
                 log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
             }
             let inputNode = mixer.engine.inputNode
-            enableVoiceProcessingIfAvailable(on: inputNode)
+            // Voice processing disabled - causes format mismatch errors (-10875)
+            // enableVoiceProcessingIfAvailable(on: inputNode)
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
                 micFormat = inputFormat
@@ -197,7 +198,8 @@ final class AudioCaptureManager {
         }
 
         let inputNode = engine.inputNode
-        enableVoiceProcessingIfAvailable(on: inputNode)
+        // Voice processing disabled - causes format mismatch errors (-10875)
+        // enableVoiceProcessingIfAvailable(on: inputNode)
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         guard inputFormat.sampleRate > 0 else {
