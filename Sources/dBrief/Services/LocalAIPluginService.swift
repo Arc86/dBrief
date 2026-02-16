@@ -42,7 +42,9 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
             let task = Task {
                 do {
                     try await mutex.withLock {
-                        defer { stateContinuation.yield(.idle) }
+                        defer {
+                            stateContinuation.yield(.idle)
+                        }
                         await whisperService.unload()
                         let upstream = await insightsService.analyzeTranscriptStream(
                             text,
@@ -51,17 +53,27 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
                         for try await chunk in upstream {
                             continuation.yield(chunk)
                         }
+                        // Aggressive cleanup after stream completes
                         await insightsService.unload()
                     }
                     continuation.finish()
                 } catch {
+                    // Cleanup on error
+                    await whisperService.unload()
                     await insightsService.unload()
+                    stateContinuation.yield(.idle)
                     continuation.finish(throwing: error)
                 }
             }
 
-            continuation.onTermination = { _ in
+            continuation.onTermination = { @Sendable [weak self] _ in
                 task.cancel()
+                // Ensure cleanup even on cancellation
+                Task { [weak self] in
+                    await self?.whisperService.unload()
+                    await self?.insightsService.unload()
+                    self?.stateContinuation.yield(.idle)
+                }
             }
         }
     }
@@ -125,6 +137,15 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
             defer { stateContinuation.yield(.idle) }
             try await insightsService.purgeModels()
         }
+    }
+
+    /// Unload models immediately in response to memory pressure (non-throwing).
+    /// Called by MemoryPressureMonitor when system is under memory stress.
+    func purgeModelsOnMemoryPressure() async {
+        // Don't wait for mutex - force immediate unload
+        await whisperService.unload()
+        await insightsService.unload()
+        stateContinuation.yield(.idle)
     }
 
     private func emitState(_ state: LocalAIPluginState) {

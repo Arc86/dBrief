@@ -63,13 +63,21 @@ actor MLXInsightsService {
 
                     _ = try decodeAndNormalize(output)
                     continuation.finish()
+
+                    // Aggressive cleanup: unload immediately after stream completes
+                    await unload()
                 } catch {
+                    await unload()
                     continuation.finish(throwing: error)
                 }
             }
 
-            continuation.onTermination = { _ in
+            continuation.onTermination = { @Sendable [weak self] _ in
                 task.cancel()
+                // Ensure cleanup even on cancellation
+                Task { [weak self] in
+                    await self?.unload()
+                }
             }
         }
     }
@@ -88,19 +96,28 @@ actor MLXInsightsService {
             )
         }
 
-        stateHandler(.analyzing)
-        let container = try await loadModelContainerIfNeeded()
-        let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage)
-        let session = ChatSession(
-            container,
-            instructions: systemPrompt,
-            generateParameters: generationParameters()
-        )
+        do {
+            stateHandler(.analyzing)
+            let container = try await loadModelContainerIfNeeded()
+            let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage)
+            let session = ChatSession(
+                container,
+                instructions: systemPrompt,
+                generateParameters: generationParameters()
+            )
 
-        let truncatedText = Self.truncateTranscript(text)
-        let userPrompt = buildUserPrompt(transcript: truncatedText)
-        let raw = try await session.respond(to: userPrompt)
-        return try decodeAndNormalize(raw)
+            let truncatedText = Self.truncateTranscript(text)
+            let userPrompt = buildUserPrompt(transcript: truncatedText)
+            let raw = try await session.respond(to: userPrompt)
+            let result = try decodeAndNormalize(raw)
+
+            // Aggressive cleanup: unload immediately after inference
+            await unload()
+            return result
+        } catch {
+            await unload()
+            throw error
+        }
     }
 
     func unload() async {
@@ -131,6 +148,21 @@ actor MLXInsightsService {
 
         if let modelContainer {
             return modelContainer
+        }
+
+        // Check available memory before loading 7B model (~5GB)
+        let requiredMemory: Int64 = 8_000_000_000 // 8GB minimum free (5GB model + 3GB buffer)
+        let hasSufficientMemory = await MainActor.run {
+            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
+        }
+        guard hasSufficientMemory else {
+            throw NSError(
+                domain: "MLXInsightsService",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen 2.5 model. Need at least 8GB free memory. Close other apps or use Remote AI engine instead."
+                ]
+            )
         }
 
         // Best-effort release of any stale GPU buffers before allocating Qwen.
@@ -211,8 +243,8 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 2048,
-            maxKVSize: 16384,
+            maxTokens: 1536,  // Reduced from 2048 to limit memory usage
+            maxKVSize: 12288, // Reduced from 16384 to limit memory usage
             temperature: 0.5,
             topP: 0.9,
             prefillStepSize: 512

@@ -1,5 +1,5 @@
 {
-  "originHash" : "93f72652f31a0cfa110a3c5b80630d105b8ee8ba6c9d104bca800916801fece8",
+  "originHash" : "e9304a761b2585f11f7892717a9ea6f3b00a21f21ac1d76090c84b065617c04e",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -80,15 +80,6 @@
       "state" : {
         "revision" : "573e5c9036c2f136b3a8a071da8e8907322403d0",
         "version" : "1.1.6"
-      }
-    },
-    {
-      "identity" : "swiftwhisper",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/exPHAT/SwiftWhisper.git",
-      "state" : {
-        "revision" : "a192004db08de7c6eaa169eede77f1625e7d23fb",
-        "version" : "1.2.0"
       }
     },
     {

@@ -15,8 +15,27 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     func transcribe(fileURL: URL, initialPrompt: String?) async throws -> TranscriptionResult {
+        // Check available memory before loading Whisper model (~1GB)
+        let requiredMemory: Int64 = 2_000_000_000 // 2GB minimum free (1GB model + 1GB buffer)
+        let hasSufficientMemory = await MainActor.run {
+            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
+        }
+        guard hasSufficientMemory else {
+            throw NSError(
+                domain: "WhisperKitTranscriptionService",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Insufficient memory to load WhisperKit model. Need at least 2GB free memory. Close other apps or use Remote transcription instead."
+                ]
+            )
+        }
+
         let whisper = try await loadWhisperKit()
         stateHandler(.transcribing)
+
+        // Convert FLAC to WAV if needed for WhisperKit compatibility
+        let preparedURL = try await prepareAudioFile(fileURL: fileURL)
+        let needsCleanup = preparedURL != fileURL // Track if we created a temp file
 
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
@@ -31,7 +50,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
         do {
             let wkResults = try await whisper.transcribe(
-                audioPath: fileURL.path,
+                audioPath: preparedURL.path,
                 decodeOptions: options
             )
             let mappedSegments = wkResults.flatMap { result in
@@ -51,9 +70,19 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let detectedLanguage = wkResults.first(where: { !$0.language.isEmpty })?.language
 
             let result = TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
+
+            // Cleanup temporary WAV file if we created one
+            if needsCleanup {
+                try? fileManager.removeItem(at: preparedURL)
+            }
+
             await unload()
             return result
         } catch {
+            // Cleanup temporary WAV file even on error
+            if needsCleanup {
+                try? fileManager.removeItem(at: preparedURL)
+            }
             await unload()
             throw error
         }
@@ -79,6 +108,69 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    private func prepareAudioFile(fileURL: URL) async throws -> URL {
+        let ext = fileURL.pathExtension.lowercased()
+        // WhisperKit works best with WAV files, convert FLAC if needed
+        guard ext == "flac" else {
+            return fileURL
+        }
+
+        let outputURL = fileManager.temporaryDirectory
+            .appendingPathComponent("whisperkit-audio-\(UUID().uuidString).wav")
+
+        let ffmpegPaths = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg",
+        ]
+
+        let resolvedPath = ffmpegPaths.first { fileManager.isExecutableFile(atPath: $0) }
+        let process = Process()
+        if let resolvedPath {
+            process.executableURL = URL(fileURLWithPath: resolvedPath)
+            process.arguments = [
+                "-y",
+                "-i", fileURL.path,
+                "-ar", "16000",  // 16kHz sample rate for Whisper
+                "-ac", "1",       // Mono
+                "-f", "wav",
+                outputURL.path,
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [
+                "ffmpeg",
+                "-y",
+                "-i", fileURL.path,
+                "-ar", "16000",
+                "-ac", "1",
+                "-f", "wav",
+                outputURL.path,
+            ]
+            process.environment = [
+                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            ]
+        }
+
+        let stdErr = Pipe()
+        process.standardError = stdErr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw WhisperKitError.ffmpegNotFound
+        }
+
+        guard process.terminationStatus == 0 else {
+            let data = stdErr.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: data, encoding: .utf8) ?? "ffmpeg failed"
+            throw WhisperKitError.conversionFailed(message)
+        }
+
+        return outputURL
+    }
 
     private func loadWhisperKit() async throws -> WhisperKit {
         if let whisperKit {
@@ -172,5 +264,19 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             return String(format: "%02d:%02d:%02d", hours, minutes, secs)
         }
         return String(format: "%02d:%02d", minutes, secs)
+    }
+}
+
+enum WhisperKitError: Error, LocalizedError {
+    case ffmpegNotFound
+    case conversionFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .ffmpegNotFound:
+            "ffmpeg is required to convert FLAC files for transcription. Please install ffmpeg."
+        case .conversionFailed(let message):
+            "Failed to convert audio file for transcription: \(message)"
+        }
     }
 }
