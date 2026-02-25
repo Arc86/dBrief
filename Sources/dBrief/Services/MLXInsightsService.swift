@@ -150,8 +150,8 @@ actor MLXInsightsService {
             return modelContainer
         }
 
-        // Check available memory before loading 7B model (~5GB)
-        let requiredMemory: Int64 = 8_000_000_000 // 8GB minimum free (5GB model + 3GB buffer)
+        // Check available memory before loading 7B model (~4GB)
+        let requiredMemory: Int64 = 5_000_000_000 // 5GB minimum free (4GB model + 1GB buffer)
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
@@ -160,7 +160,7 @@ actor MLXInsightsService {
                 domain: "MLXInsightsService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen 2.5 model. Need at least 8GB free memory. Close other apps or use Remote AI engine instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen 2.5 model. Need at least 5GB free memory. Close other apps or use Remote AI engine instead."
                 ]
             )
         }
