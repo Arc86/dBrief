@@ -324,6 +324,183 @@ final class RecordingManager {
         )
     }
 
+    /// Retries AI analysis for a recording that already has a transcript on disk.
+    /// Skips finalization and transcription — loads the saved transcript and reruns
+    /// AI tasks, title generation, markdown export, and integration dispatch.
+    func retryAIAnalysis(for recording: Recording) async {
+        guard appState.recordingState != .processing else { return }
+
+        // Load transcript from disk if not already in memory
+        if recording.transcription == nil {
+            guard let saved = loadSavedTranscript(for: recording) else { return }
+            recording.transcription = saved
+        }
+
+        // Clear previous AI results
+        recording.summary = nil
+        recording.actionItems = nil
+        recording.tags = nil
+        recording.sentiment = nil
+        recording.generatedTitle = nil
+
+        let localAIAvailable: Bool = {
+            #if canImport(FoundationModels)
+            if #available(macOS 26, *) {
+                return LocalAIService.isAvailable
+            }
+            return false
+            #else
+            return false
+            #endif
+        }()
+
+        // Set up processing state
+        appState.currentRecording = recording
+        appState.recordingState = .processing
+        appState.processingSteps = []
+
+        // Step 2: AI tasks (same as processRecording)
+        if let transcription = recording.transcription {
+            let aiEngine = appSettings.effectiveAIEngine
+            let endpoint = appSettings.effectiveDefaultAIEndpoint
+            let localAvailable = localAIAvailable
+
+            let summaryStepIndex = appendAIStep(labelForSummary(engine: aiEngine))
+            let actionStepIndex = appendAIStep(labelForActionItems(engine: aiEngine))
+            let tagsStepIndex = appendAIStep(labelForTags(engine: aiEngine))
+
+            switch aiEngine {
+            case .appleIntelligence:
+                await runAppleIntelligenceTasks(
+                    transcription: transcription.text,
+                    localAvailable: localAvailable,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
+            case .qwenLocal:
+                await runLocalQwenTasks(
+                    transcription: transcription.text,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
+            case .remoteEndpoint:
+                await runRemoteAITasks(
+                    transcription: transcription.text,
+                    endpoint: endpoint,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
+            }
+        }
+
+        var generatedMarkdownURL: URL?
+
+        // Step 3: Generate title & write Markdown
+        if let transcriptionText = recording.transcription?.text, !transcriptionText.isEmpty {
+            let language = recording.transcription?.language
+            let titleStepIndex = appState.processingSteps.count
+            appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
+            do {
+                #if canImport(FoundationModels)
+                if appSettings.effectiveAIEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
+                    recording.generatedTitle = try await LocalAIService().generateTitle(
+                        transcription: String(transcriptionText.prefix(500)),
+                        language: language
+                    )
+                } else if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                    recording.generatedTitle = try await aiService.generateTitle(
+                        transcription: String(transcriptionText.prefix(500)),
+                        language: language,
+                        endpoint: endpoint
+                    )
+                }
+                #else
+                if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                    recording.generatedTitle = try await aiService.generateTitle(
+                        transcription: String(transcriptionText.prefix(500)),
+                        language: language,
+                        endpoint: endpoint
+                    )
+                }
+                #endif
+                appState.processingSteps[titleStepIndex].status = .completed
+            } catch {
+                // Title generation is non-critical — fall back to text extraction
+                appState.processingSteps[titleStepIndex].status = .completed
+            }
+
+            let stepIndex = appState.processingSteps.count
+            appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
+
+            do {
+                let outputFolder = resolveMarkdownOutputFolder(for: recording)
+                let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
+                case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
+                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "whisper-small (CoreML)")
+                case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
+                }
+                let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
+                case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
+                case .qwenLocal: Endpoint(name: "Qwen 2.5 Local", baseURL: "", modelName: "Qwen2.5-7B-Instruct-4bit (MLX)")
+                case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+                }
+                generatedMarkdownURL = try markdownGenerator.generate(
+                    recording: recording,
+                    outputFolder: outputFolder,
+                    transcriptionEndpoint: transcriptionEndpoint,
+                    aiEndpoint: aiEndpoint,
+                    includeTranscript: appSettings.obsidianIncludeTranscript
+                )
+                appState.processingSteps[stepIndex].status = .completed
+            } catch {
+                appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+            }
+        }
+
+        // Step 4: Integration dispatch
+        if hasEnabledIntegrations {
+            let results = await integrationDispatchService.dispatch(
+                recording: recording,
+                settings: appSettings,
+                generatedMarkdownURL: generatedMarkdownURL
+            )
+
+            for result in results {
+                let stepIndex = appState.processingSteps.count
+                appState.processingSteps.append(
+                    ProcessingStep(
+                        name: "Send: \(result.destination.displayName)",
+                        status: .inProgress
+                    )
+                )
+                switch result.status {
+                case .success, .skipped:
+                    appState.processingSteps[stepIndex].status = .completed
+                case .failed:
+                    appState.processingSteps[stepIndex].status = .failed(result.message)
+                }
+            }
+        }
+
+        appState.recordingState = .idle
+
+        // Send completion notification
+        let failedCount = appState.processingSteps.filter {
+            if case .failed = $0.status { return true }
+            return false
+        }.count
+        sendCompletionNotification(
+            fileName: recording.fileName,
+            failed: failedCount
+        )
+    }
+
     func pickFileForTranscription() {
         // Become a regular app so the open panel can take focus properly
         if !appSettings.showDockIcon {
