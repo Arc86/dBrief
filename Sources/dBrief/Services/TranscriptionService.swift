@@ -579,7 +579,7 @@ actor TranscriptionService {
                     language: language,
                     initialPrompt: initialPrompt,
                     responseFormat: cached.rawValue,
-                    timeout: 12
+                    timeout: 30
                 )
                 return cached
             } catch {
@@ -599,7 +599,7 @@ actor TranscriptionService {
                     language: language,
                     initialPrompt: initialPrompt,
                     responseFormat: format.rawValue,
-                    timeout: 12
+                    timeout: 30
                 )
                 saveCachedResponseFormat(format, for: endpoint)
                 return format
