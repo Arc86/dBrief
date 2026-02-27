@@ -3,6 +3,7 @@ import SwiftUI
 struct RecordingHistoryView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(RecordingManager.self) private var recordingManager
     @State private var recordings: [HistoryItem] = []
 
     struct HistoryItem: Identifiable {
@@ -11,6 +12,7 @@ struct RecordingHistoryView: View {
         let name: String
         let date: Date
         let size: Int64
+        let hasTranscript: Bool
 
         var formattedDate: String {
             let formatter = DateFormatter()
@@ -90,6 +92,25 @@ struct RecordingHistoryView: View {
 
             Spacer()
 
+            if item.hasTranscript {
+                Button {
+                    Task {
+                        let recording = Recording(
+                            fileURL: item.url,
+                            fileSize: item.size,
+                            meetingTitleDraft: item.name,
+                            finalizedAudioURL: item.url
+                        )
+                        await recordingManager.retryAIAnalysis(for: recording)
+                    }
+                } label: {
+                    Image(systemName: "arrow.trianglehead.2.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .help("Retry AI Analysis")
+            }
+
             Button {
                 NSWorkspace.shared.selectFile(item.url.path, inFileViewerRootedAtPath: "")
             } label: {
@@ -159,11 +180,14 @@ struct RecordingHistoryView: View {
     private func loadRecordings() {
         let folder = appSettings.effectiveRecordingFolderURL
         recordings = RecordingDiscovery.discover(in: folder).map { entry in
-            HistoryItem(
+            let transcriptURL = entry.url.deletingPathExtension().appendingPathExtension("transcript.json")
+            let hasTranscript = FileManager.default.fileExists(atPath: transcriptURL.path)
+            return HistoryItem(
                 url: entry.url,
                 name: entry.url.deletingPathExtension().lastPathComponent,
                 date: entry.createdAt,
-                size: entry.size
+                size: entry.size,
+                hasTranscript: hasTranscript
             )
         }
     }
