@@ -111,6 +111,23 @@ struct PostRecordingSheet: View {
                 .buttonStyle(.bordered)
                 .disabled(sanitizedMeetingTitle.isEmpty)
 
+                Button("Queue") {
+                    if let recording = appState.currentRecording {
+                        recording.meetingTitleDraft = sanitizedMeetingTitle
+                    }
+                    Task {
+                        await recordingManager.queueForLater(
+                            transcribe: transcribe,
+                            summary: summary && transcribe,
+                            actionItems: actionItems && transcribe,
+                            tags: tags && transcribe
+                        )
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(sanitizedMeetingTitle.isEmpty)
+                .help("Finalize audio and queue processing for later")
+
                 Spacer()
 
                 Button("Process") {
