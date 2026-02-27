@@ -20,6 +20,7 @@ final class Recording: Identifiable {
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?
+    var transcriptURL: URL?
     var finalizationWarnings: [String]
 
     init(
@@ -33,6 +34,7 @@ final class Recording: Identifiable {
         finalizedAudioURL: URL? = nil,
         segmentAudioURLs: [URL] = [],
         metadataURL: URL? = nil,
+        transcriptURL: URL? = nil,
         finalizationWarnings: [String] = []
     ) {
         self.id = id
@@ -45,6 +47,7 @@ final class Recording: Identifiable {
         self.finalizedAudioURL = finalizedAudioURL
         self.segmentAudioURLs = segmentAudioURLs
         self.metadataURL = metadataURL
+        self.transcriptURL = transcriptURL
         self.finalizationWarnings = finalizationWarnings
     }
 
