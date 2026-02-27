@@ -94,6 +94,32 @@ struct WhisperPipelineTests {
     }
 
     @Test
+    func transcriptionResultRoundTripsToJSON() throws {
+        let original = TranscriptionResult(
+            text: "Hello world. This is a test.",
+            segments: [
+                .init(start: 0.0, end: 1.5, text: "Hello world."),
+                .init(start: 1.5, end: 3.0, text: "This is a test."),
+            ],
+            language: "en",
+            warnings: ["Low confidence on segment 2"]
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(TranscriptionResult.self, from: data)
+
+        #expect(decoded.text == original.text)
+        #expect(decoded.segments.count == 2)
+        #expect(decoded.segments[0].start == 0.0)
+        #expect(decoded.segments[0].end == 1.5)
+        #expect(decoded.segments[0].text == "Hello world.")
+        #expect(decoded.segments[1].start == 1.5)
+        #expect(decoded.segments[1].text == "This is a test.")
+        #expect(decoded.language == "en")
+        #expect(decoded.warnings == ["Low confidence on segment 2"])
+    }
+
+    @Test
     func recordingDiscoveryFindsNestedFlacAndLegacyM4A() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("dbrief-discovery-\(UUID().uuidString)", isDirectory: true)
