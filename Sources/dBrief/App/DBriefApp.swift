@@ -16,6 +16,7 @@ final class AppContext {
     let audioPlayer = AudioPlayer()
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
+    let powerStateMonitor: PowerStateMonitor
     private var permissionsChecked = false
 
     init() {
@@ -27,6 +28,10 @@ final class AppContext {
             appSettings: appSettings,
             recordingManager: recordingManager
         )
+
+        // Start power state monitoring for queue processing nudge
+        self.powerStateMonitor = PowerStateMonitor(appState: appState, recordingManager: recordingManager)
+        powerStateMonitor.startMonitoring()
 
         // Start memory pressure monitoring
         memoryMonitor.startMonitoring()
