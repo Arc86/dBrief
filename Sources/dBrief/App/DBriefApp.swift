@@ -104,6 +104,14 @@ struct DBriefApp: App {
                     .symbolRenderingMode(.hierarchical)
                     .symbolEffect(.pulse, options: .repeating)
                     .foregroundStyle(.blue)
+            } else if context.appState.queuedCount > 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: "waveform")
+                        .symbolRenderingMode(.hierarchical)
+                    Text("\(context.appState.queuedCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             } else {
                 Image(systemName: "waveform")
                     .symbolRenderingMode(.hierarchical)
@@ -163,6 +171,22 @@ struct MenuBarView: View {
                     RecordingHistoryView()
                 }
 
+                if appState.queuedCount > 0, appState.isIdle {
+                    Divider()
+                    HStack {
+                        Label("\(appState.queuedCount) queued", systemImage: "tray.full")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Button("Process Queue") {
+                            Task { await recordingManager.processQueue() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.orange)
+                    }
+                }
+
                 Divider()
 
                 HStack {
@@ -210,6 +234,9 @@ struct MenuBarView: View {
                     .controlSize(.small)
                 }
             }
+        }
+        .task {
+            appState.queuedCount = recordingManager.discoverQueuedItems().count
         }
         .padding(12)
         .frame(width: 300)
