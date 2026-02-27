@@ -591,6 +591,38 @@ final class RecordingManager {
         appState.queuedCount = discoverQueuedItems().count
     }
 
+    func processQueue() async {
+        guard appState.recordingState != .processing else { return }
+
+        let queued = discoverQueuedItems()
+        guard !queued.isEmpty else { return }
+
+        for (audioURL, item) in queued {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+            let size = (attrs?[.size] as? Int64) ?? 0
+            let name = audioURL.deletingPathExtension().lastPathComponent
+
+            let recording = Recording(
+                fileURL: audioURL,
+                fileSize: size,
+                meetingTitleDraft: name,
+                finalizedAudioURL: audioURL
+            )
+
+            appState.currentRecording = recording
+            await processRecording(
+                transcribe: item.transcribe,
+                summary: item.summary,
+                actionItems: item.actionItems,
+                tags: item.tags
+            )
+
+            Self.removeQueueFile(for: audioURL)
+        }
+
+        appState.queuedCount = discoverQueuedItems().count
+    }
+
     func purgeLocalWhisperModel() async throws {
         try await localAIPluginService.purgeWhisperModel()
     }
