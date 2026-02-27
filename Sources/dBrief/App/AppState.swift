@@ -26,6 +26,7 @@ final class AppState {
 
     var processingSteps: [ProcessingStep] = []
     var lastError: String?
+    var queuedCount: Int = 0
 
     var isRecording: Bool { recordingState == .recording }
     var isPaused: Bool { recordingState == .paused }
