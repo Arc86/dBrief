@@ -137,29 +137,39 @@ final class RecordingManager {
 
         // Step 1: Transcription
         if transcribe {
-            let stepIndex = appState.processingSteps.count
-            let stepName: String = {
-                switch appSettings.effectiveTranscriptionEngine {
-                case .appleSpeech: "Transcribing (Apple Speech)"
-                case .localWhisper: "Transcribing (Local Whisper)"
-                case .remoteEndpoint: "Transcribing audio"
-                }
-            }()
-            appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
-            do {
-                let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
-                recording.transcription = result
+            // Check for saved transcript on disk first
+            if let saved = loadSavedTranscript(for: recording) {
+                let stepIndex = appState.processingSteps.count
+                appState.processingSteps.append(ProcessingStep(name: "Loaded saved transcript", status: .inProgress))
+                recording.transcription = saved
                 appState.processingSteps[stepIndex].status = .completed
-                if let warnings = result.warnings, !warnings.isEmpty {
-                    appState.processingSteps.append(
-                        ProcessingStep(
-                            name: "Transcription warnings",
-                            status: .failed(warnings.joined(separator: "\n"))
+            } else {
+                let stepIndex = appState.processingSteps.count
+                let stepName: String = {
+                    switch appSettings.effectiveTranscriptionEngine {
+                    case .appleSpeech: "Transcribing (Apple Speech)"
+                    case .localWhisper: "Transcribing (Local Whisper)"
+                    case .remoteEndpoint: "Transcribing audio"
+                    }
+                }()
+                appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
+                do {
+                    let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
+                    recording.transcription = result
+                    appState.processingSteps[stepIndex].status = .completed
+                    if let warnings = result.warnings, !warnings.isEmpty {
+                        appState.processingSteps.append(
+                            ProcessingStep(
+                                name: "Transcription warnings",
+                                status: .failed(warnings.joined(separator: "\n"))
+                            )
                         )
-                    )
+                    }
+                    // Persist transcript to disk for retry resilience
+                    saveTranscript(result, for: recording)
+                } catch {
+                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
                 }
-            } catch {
-                appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
             }
         }
 
@@ -253,11 +263,21 @@ final class RecordingManager {
 
             do {
                 let outputFolder = resolveMarkdownOutputFolder(for: recording)
+                let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
+                case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
+                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "whisper-small (CoreML)")
+                case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
+                }
+                let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
+                case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
+                case .qwenLocal: Endpoint(name: "Qwen 2.5 Local", baseURL: "", modelName: "Qwen2.5-7B-Instruct-4bit (MLX)")
+                case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+                }
                 generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
                     outputFolder: outputFolder,
-                    transcriptionEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint,
-                    aiEndpoint: appSettings.effectiveDefaultAIEndpoint,
+                    transcriptionEndpoint: transcriptionEndpoint,
+                    aiEndpoint: aiEndpoint,
                     includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
@@ -860,6 +880,36 @@ final class RecordingManager {
             return obsidianFolder
         }
         return appSettings.effectiveTranscriptionFolderURL
+    }
+
+    /// Derives the transcript JSON path from the finalized audio URL.
+    private static func transcriptURL(for recording: Recording) -> URL? {
+        guard let audioURL = recording.finalizedAudioURL else { return nil }
+        return audioURL.deletingPathExtension().appendingPathExtension("transcript.json")
+    }
+
+    /// Saves the transcription result as JSON alongside the audio file.
+    private func saveTranscript(_ result: TranscriptionResult, for recording: Recording) {
+        guard let url = Self.transcriptURL(for: recording) else { return }
+        do {
+            let data = try JSONEncoder().encode(result)
+            try data.write(to: url, options: .atomic)
+            recording.transcriptURL = url
+        } catch {
+            // Non-critical: log but don't fail the pipeline
+        }
+    }
+
+    /// Loads a previously saved transcription from disk.
+    private func loadSavedTranscript(for recording: Recording) -> TranscriptionResult? {
+        let url = recording.transcriptURL ?? Self.transcriptURL(for: recording)
+        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url),
+              let result = try? JSONDecoder().decode(TranscriptionResult.self, from: data) else {
+            return nil
+        }
+        recording.transcriptURL = url
+        return result
     }
 
     private var hasEnabledIntegrations: Bool {
