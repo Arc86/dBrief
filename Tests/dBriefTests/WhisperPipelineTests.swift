@@ -120,6 +120,24 @@ struct WhisperPipelineTests {
     }
 
     @Test
+    func queueItemRoundTripsToJSON() throws {
+        let original = QueueItem(
+            transcribe: true,
+            summary: true,
+            actionItems: false,
+            tags: true
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(QueueItem.self, from: data)
+
+        #expect(decoded.transcribe == true)
+        #expect(decoded.summary == true)
+        #expect(decoded.actionItems == false)
+        #expect(decoded.tags == true)
+    }
+
+    @Test
     func recordingDiscoveryFindsNestedFlacAndLegacyM4A() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("dbrief-discovery-\(UUID().uuidString)", isDirectory: true)
