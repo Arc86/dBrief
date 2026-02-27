@@ -557,6 +557,40 @@ final class RecordingManager {
         appState.recordingState = .idle
     }
 
+    func queueForLater(
+        transcribe: Bool,
+        summary: Bool,
+        actionItems: Bool,
+        tags: Bool
+    ) async {
+        guard let recording = appState.currentRecording else { return }
+
+        do {
+            try await ensureRecordingFinalized(recording: recording)
+        } catch {
+            appState.lastError = error.localizedDescription
+            return
+        }
+
+        let item = QueueItem(
+            transcribe: transcribe,
+            summary: summary && transcribe,
+            actionItems: actionItems && transcribe,
+            tags: tags && transcribe
+        )
+
+        do {
+            try saveQueueItem(item, for: recording)
+        } catch {
+            appState.lastError = error.localizedDescription
+            return
+        }
+
+        appState.showPostRecordingSheet = false
+        appState.recordingState = .idle
+        appState.queuedCount = discoverQueuedItems().count
+    }
+
     func purgeLocalWhisperModel() async throws {
         try await localAIPluginService.purgeWhisperModel()
     }
@@ -1057,6 +1091,57 @@ final class RecordingManager {
             return obsidianFolder
         }
         return appSettings.effectiveTranscriptionFolderURL
+    }
+
+    // MARK: - Queue Persistence
+
+    private static func queueURL(for recording: Recording) -> URL? {
+        guard let audioURL = recording.finalizedAudioURL else { return nil }
+        return audioURL.deletingPathExtension().appendingPathExtension("queue.json")
+    }
+
+    private func saveQueueItem(_ item: QueueItem, for recording: Recording) throws {
+        guard let url = Self.queueURL(for: recording) else {
+            throw NSError(domain: "RecordingManager", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Cannot determine queue file path — recording not finalized."
+            ])
+        }
+        let data = try JSONEncoder().encode(item)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private static func removeQueueFile(for audioURL: URL) {
+        let queueURL = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
+        try? FileManager.default.removeItem(at: queueURL)
+    }
+
+    func discoverQueuedItems() -> [(audioURL: URL, item: QueueItem)] {
+        let folder = appSettings.effectiveRecordingFolderURL
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var results: [(url: URL, date: Date, item: QueueItem)] = []
+        for case let fileURL as URL in enumerator {
+            guard fileURL.pathExtension.lowercased() == "json",
+                  fileURL.lastPathComponent.hasSuffix(".queue.json") else { continue }
+            guard let data = try? Data(contentsOf: fileURL),
+                  let item = try? JSONDecoder().decode(QueueItem.self, from: data) else { continue }
+
+            let stem = fileURL.deletingPathExtension().deletingPathExtension()
+            let audioURL = stem.appendingPathExtension("flac")
+            guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+
+            let values = try? fileURL.resourceValues(forKeys: [.creationDateKey])
+            let date = values?.creationDate ?? .distantPast
+            results.append((url: audioURL, date: date, item: item))
+        }
+
+        return results
+            .sorted { $0.date < $1.date }
+            .map { ($0.url, $0.item) }
     }
 
     /// Derives the transcript JSON path from the finalized audio URL.
