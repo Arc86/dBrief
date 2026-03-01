@@ -18,6 +18,7 @@ actor MLXInsightsService {
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var modelContainer: ModelContainer?
     private let metalLibraryAvailable: Bool
+    private var isInferencing = false
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
@@ -48,48 +49,38 @@ actor MLXInsightsService {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    stateHandler(.analyzing)
-                    let container = try await loadModelContainerIfNeeded()
+                    self.stateHandler(.analyzing)
+                    self.isInferencing = true
+                    let container = try await self.loadModelContainerIfNeeded()
                     let session = ChatSession(
                         container,
                         instructions: systemPrompt,
-                        generateParameters: generationParameters()
+                        generateParameters: self.generationParameters()
                     )
 
                     var output = ""
-                    var chunkCount = 0
                     for try await chunk in session.streamResponse(to: userPrompt) {
                         output += chunk
                         continuation.yield(chunk)
-                        chunkCount += 1
-                        // Every 4 tokens, drain the GPU pipeline and briefly yield so
-                        // WindowServer can composite frames without contention.
-                        if chunkCount % 4 == 0 {
-                            await Self.syncGPUOffPool()
-                            try await Task.sleep(nanoseconds: 2_000_000) // 2ms
-                        }
                     }
+                    self.isInferencing = false
 
-                    _ = try decodeAndNormalize(output)
+                    _ = try self.decodeAndNormalize(output)
                     #if canImport(MLX)
                     Logger.ai.info("MLX memory after inference (stream): \(MLX.Memory.snapshot().description)")
                     #endif
-                    continuation.finish()
 
-                    // Aggressive cleanup: unload immediately after stream completes
-                    await unload()
+                    await self.unload()
+                    continuation.finish()
                 } catch {
-                    await unload()
+                    self.isInferencing = false
+                    await self.unload()
                     continuation.finish(throwing: error)
                 }
             }
 
             continuation.onTermination = { @Sendable [weak self] _ in
                 task.cancel()
-                // Ensure cleanup even on cancellation
-                Task { [weak self] in
-                    await self?.unload()
-                }
             }
         }
     }
@@ -110,6 +101,7 @@ actor MLXInsightsService {
 
         do {
             stateHandler(.analyzing)
+            isInferencing = true
             let container = try await loadModelContainerIfNeeded()
             let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage)
             let session = ChatSession(
@@ -120,44 +112,38 @@ actor MLXInsightsService {
 
             let truncatedText = Self.truncateTranscript(text)
             let userPrompt = buildUserPrompt(transcript: truncatedText)
-            // Use streaming internally so we can inject GPU yield points between tokens,
-            // preventing WindowServer starvation during inference.
             var raw = ""
-            var chunkCount = 0
             for try await chunk in session.streamResponse(to: userPrompt) {
                 raw += chunk
-                chunkCount += 1
-                if chunkCount % 4 == 0 {
-                    await Self.syncGPUOffPool()
-                    try await Task.sleep(nanoseconds: 2_000_000) // 2ms
-                }
             }
+            isInferencing = false
             let result = try decodeAndNormalize(raw)
             #if canImport(MLX)
             Logger.ai.info("MLX memory after inference: \(MLX.Memory.snapshot().description)")
             #endif
 
-            // Aggressive cleanup: unload immediately after inference
             await unload()
             return result
         } catch {
+            isInferencing = false
             await unload()
             throw error
         }
     }
 
     func unload() async {
-        let hadModel = modelContainer != nil
-        modelContainer = nil
-        if hadModel {
-            #if canImport(MLX)
-            Stream.gpu.synchronize()
-            #endif
-            clearGPUCacheIfAvailable()
-            #if canImport(MLX)
-            Logger.ai.info("MLX memory after unload: \(MLX.Memory.snapshot().description)")
-            #endif
+        guard modelContainer != nil else { return }
+        guard !isInferencing else {
+            Logger.ai.info("MLX unload skipped — inference in progress")
+            return
         }
+        modelContainer = nil
+        #if canImport(MLX)
+        // Clear GPU cache only when no inference is running to avoid deadlocking
+        // with MLX's internal eval lock.
+        clearGPUCacheIfAvailable()
+        Logger.ai.info("MLX memory after unload: \(MLX.Memory.snapshot().description)")
+        #endif
     }
 
     func purgeModels() async throws {
@@ -185,10 +171,10 @@ actor MLXInsightsService {
             return modelContainer
         }
 
-        // Check available memory before loading 7B model
-        // hasSufficientMemory uses free + purgeable + 50% inactive, so this threshold
-        // gates against genuinely low-memory conditions rather than peak model usage.
-        let requiredMemory: Int64 = 2_000_000_000
+        // Light memory gate — only block when the system is critically low.
+        // MLX allocates via Metal on unified memory; macOS reclaims inactive/compressed
+        // pages on demand, so traditional free page counts underestimate availability.
+        let requiredMemory: Int64 = 512_000_000 // 512MB truly free
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
@@ -205,16 +191,14 @@ actor MLXInsightsService {
         // Best-effort release of any stale GPU buffers before allocating Qwen.
         clearGPUCacheIfAvailable()
 
-        // Configure MLX memory budgets before loading the model.
-        // cacheLimit = 0: freed tensors return to OS immediately instead of being pooled.
-        // memoryLimit: hard allocation ceiling — MLX back-pressures rather than exceeding.
-        // Use 75% of physical RAM (MLX default) but cap at 12GB to leave headroom for the system.
+        // Configure MLX memory budget before loading the model.
+        // Let MLX manage its own allocation cache (default cacheLimit) to avoid
+        // Metal allocation stalls during inference. Only cap the hard ceiling.
         #if canImport(MLX)
-        MLX.Memory.cacheLimit = 0
         let physicalRAM = ProcessInfo.processInfo.physicalMemory
         let limit = min(Int(Double(physicalRAM) * 0.75), 12 * 1024 * 1024 * 1024)
         MLX.Memory.memoryLimit = limit
-        Logger.ai.info("MLX memory limits: cacheLimit=0, memoryLimit=\(limit / 1_073_741_824)GB")
+        Logger.ai.info("MLX memory limits: memoryLimit=\(limit / 1_073_741_824)GB")
         Logger.ai.info("MLX memory before load: \(MLX.Memory.snapshot().description)")
         #endif
 
@@ -295,11 +279,9 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 1536,  // Reduced from 2048 to limit memory usage
-            maxKVSize: 4096,  // ~340MB KV cache; sufficient for ~9.5K token context
+            maxTokens: 1536,
             temperature: 0.5,
-            topP: 0.9,
-            prefillStepSize: 64  // Smaller batches yield GPU time to WindowServer between prefill steps
+            topP: 0.9
         )
     }
 
@@ -401,18 +383,6 @@ actor MLXInsightsService {
         default:
             return "Neutral"
         }
-    }
-
-    /// Drain the GPU command queue on a GCD thread to avoid blocking Swift's cooperative pool.
-    private static func syncGPUOffPool() async {
-        #if canImport(MLX)
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global(qos: .utility).async {
-                Stream.gpu.synchronize()
-                continuation.resume()
-            }
-        }
-        #endif
     }
 
     private func clearGPUCacheIfAvailable() {
