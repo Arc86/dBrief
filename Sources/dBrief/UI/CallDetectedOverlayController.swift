@@ -43,6 +43,7 @@ final class CallDetectedOverlayController {
     }
 
     func show() {
+        guard panel == nil else { return }
         guard let appState, let appSettings, let recordingManager else { return }
 
         let hosting = NSHostingController(
@@ -64,6 +65,7 @@ final class CallDetectedOverlayController {
         newPanel.isMovableByWindowBackground = false
         newPanel.level = .floating
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        newPanel.isReleasedWhenClosed = false
         newPanel.contentViewController = hosting
         self.panel = newPanel
 
