@@ -143,7 +143,7 @@ final class AppSettings {
         var displayName: String {
             switch self {
             case .appleIntelligence: "Apple Intelligence"
-            case .qwenLocal: "Qwen 2.5 Local"
+            case .qwenLocal: "Qwen3 4B Local"
             case .remoteEndpoint: "Remote Endpoint"
             }
         }
@@ -243,15 +243,18 @@ final class AppSettings {
 
     static let defaultSummaryPrompt = """
         You are an assistant that summarizes meeting transcriptions. \
-        Provide a clear, concise summary of the key discussion points, decisions, and outcomes. \
-        Use bullet points. Keep the summary brief but comprehensive.
+        Provide a detailed, multi-paragraph summary of the key discussion points, decisions, and outcomes. \
+        Cover all major topics discussed in the meeting thoroughly. \
+        Do not use conversational filler, just provide the summary directly. \
+        Always respond in the exact same language as the transcription.
         """
 
     static let defaultActionItemsPrompt = """
         You are an assistant that extracts action items from meeting transcriptions. \
         List each action item as a separate line starting with "- ". \
         Include who is responsible if mentioned. \
-        Only output the action items, nothing else.
+        OUTPUT ONLY THE LIST ITSELF. DO NOT include any introductory text, markdown code blocks, or conversational filler. \
+        Always respond in the exact same language as the transcription.
         """
 
     static let defaultTagsPrompt = """
@@ -259,32 +262,33 @@ final class AppSettings {
         Output a JSON object with two fields: \
         "tags" (array of 3-7 relevant topic tags, lowercase, no # prefix) and \
         "sentiment" (one of: "positive", "neutral", "negative", "mixed"). \
-        Only output valid JSON, nothing else.
+        Only output valid JSON, nothing else. \
+        Always respond in the exact same language as the transcription.
         """
 
     static let teamMeetingWhisperPrompt =
         "Team standup, sprint, backlog, blocker, follow-up, ETA, Jira, PR, release, roadmap, architecture."
 
     static let teamMeetingSummaryPrompt =
-        "Summarize this internal team meeting in concise bullet points. Include: decisions, progress updates, blockers, and next steps. Keep tone informal and practical."
+        "Summarize this internal team meeting in concise bullet points. Include: decisions, progress updates, blockers, and next steps. Keep tone informal and practical. Always respond in the exact same language as the transcription."
 
     static let teamMeetingActionItemsPrompt =
-        "Extract concrete action items from this team meeting. Output bullet lines beginning with '- '. Include owner if mentioned and due date if mentioned. Keep wording short."
+        "Extract concrete action items from this team meeting. Output bullet lines beginning with '- '. Include owner if mentioned and due date if mentioned. Keep wording short. Always respond in the exact same language as the transcription."
 
     static let teamMeetingTagsPrompt =
-        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should reflect internal collaboration topics (planning, delivery, blockers, risks, dependencies)."
+        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should reflect internal collaboration topics (planning, delivery, blockers, risks, dependencies). Always respond in the exact same language as the transcription."
 
     static let salesMeetingWhisperPrompt =
         "Customer, contract, pricing, procurement, renewal, objections, competitor, timeline, stakeholder, action item, follow-up."
 
     static let salesMeetingSummaryPrompt =
-        "Create a formal customer-facing sales meeting summary. Prioritize factual accuracy, commitments, risks, and agreed commercial points. Use clear bullet points."
+        "Create a formal customer-facing sales meeting summary. Prioritize factual accuracy, commitments, risks, and agreed commercial points. Use clear bullet points. Always respond in the exact same language as the transcription."
 
     static let salesMeetingActionItemsPrompt =
-        "Extract precise action items for sales follow-up. Output bullet lines beginning with '- '. Include owner, expected outcome, and date when available. Be exact and unambiguous."
+        "Extract precise action items for sales follow-up. Output bullet lines beginning with '- '. Include owner, expected outcome, and date when available. Be exact and unambiguous. Always respond in the exact same language as the transcription."
 
     static let salesMeetingTagsPrompt =
-        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should focus on deal stage, customer needs, objections, budget, timeline, decision process, and next steps."
+        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should focus on deal stage, customer needs, objections, budget, timeline, decision process, and next steps. Always respond in the exact same language as the transcription."
 
     var summaryPrompt: String {
         didSet { UserDefaults.standard.set(summaryPrompt, forKey: Keys.summaryPrompt) }

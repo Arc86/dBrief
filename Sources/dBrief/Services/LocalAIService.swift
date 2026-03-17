@@ -8,20 +8,50 @@ private let log = Logger.localAI
 /// On-device AI using Apple Foundation Models (macOS 26+).
 @available(macOS 26, *)
 actor LocalAIService {
+    private static let transcriptCharLimit = 12_000
+    private static let transcriptHeadChars = 6_000
+    private static let transcriptTailChars = 6_000
+    private static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
+
+    private static func truncateTranscript(_ transcript: String) -> String {
+        guard transcript.count > transcriptCharLimit else { return transcript }
+        let head = String(transcript.prefix(transcriptHeadChars))
+        let tail = String(transcript.suffix(transcriptTailChars))
+        return head + truncationSeparator + tail
+    }
     func generateSummary(transcription: String, systemPrompt: String) async throws -> String {
+        let truncated = Self.truncateTranscript(transcription)
         let session = LanguageModelSession(instructions: systemPrompt)
-        let response = try await session.respond(to: "Summarize this transcription:\n\n\(transcription)")
+        let response = try await session.respond(to: "Summarize this transcription:\n\n\(truncated)")
         return response.content
     }
 
     func extractActionItems(transcription: String, systemPrompt: String) async throws -> [String] {
+        let truncated = Self.truncateTranscript(transcription)
         let session = LanguageModelSession(instructions: systemPrompt)
-        let response = try await session.respond(to: "Extract action items from this transcription:\n\n\(transcription)")
+        let response = try await session.respond(to: "Extract action items from this transcription:\n\n\(truncated)")
+        
         return response.content
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { $0.hasPrefix("- ") || $0.hasPrefix("* ") }
-            .map { String($0.dropFirst(2)) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") } // Ignore empty lines and markdown blocks
+            .map { line -> String in
+                // Strip common list prefixes: "- ", "* ", or numbered lists like "1. "
+                let pattern = "^[-*]\\s+|^\\d+\\.\\s+"
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
+                    let prefixLength = match.range.length
+                    let index = line.index(line.startIndex, offsetBy: prefixLength)
+                    return String(line[index...])
+                }
+                return line
+            }
+            // Filter out conversational filler and obvious non-action-items
+            .filter { line in
+                let lower = line.lowercased()
+                let fillers = ["here are the action items", "action items:", "no action items", "none"]
+                return !fillers.contains { lower.hasPrefix($0) } && line.count > 5
+            }
     }
 
     struct TagsResult: Sendable {
@@ -30,8 +60,9 @@ actor LocalAIService {
     }
 
     func analyzeTags(transcription: String, systemPrompt: String) async throws -> TagsResult {
+        let truncated = Self.truncateTranscript(transcription)
         let session = LanguageModelSession(instructions: systemPrompt)
-        let response = try await session.respond(to: "Analyze this transcription:\n\n\(transcription)")
+        let response = try await session.respond(to: "Analyze this transcription:\n\n\(truncated)")
 
         guard let data = response.content.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

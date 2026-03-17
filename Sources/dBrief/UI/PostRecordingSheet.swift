@@ -134,14 +134,12 @@ struct PostRecordingSheet: View {
                     if let recording = appState.currentRecording {
                         recording.meetingTitleDraft = sanitizedMeetingTitle
                     }
-                    Task {
-                        await recordingManager.processRecording(
-                            transcribe: transcribe,
-                            summary: summary && transcribe,
-                            actionItems: actionItems && transcribe,
-                            tags: tags && transcribe
-                        )
-                    }
+                    recordingManager.startProcessing(
+                        transcribe: transcribe,
+                        summary: summary && transcribe,
+                        actionItems: actionItems && transcribe,
+                        tags: tags && transcribe
+                    )
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
