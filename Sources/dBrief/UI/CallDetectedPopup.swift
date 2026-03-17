@@ -9,49 +9,37 @@ struct CallDetectedPopup: View {
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Glass background
-            RoundedRectangle(cornerRadius: 12)
+        ZStack {
+            // Glass background — matches native macOS notification style
+            RoundedRectangle(cornerRadius: 14)
                 .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(.quaternary, lineWidth: 0.5)
-                )
 
-            // Content
-            HStack(spacing: 10) {
-                // Branded icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [brandOrange, brandOrangeLight],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 36, height: 36)
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityHidden(true)
+            // Content — icon vertically centered against text block
+            HStack(alignment: .center, spacing: 14) {
+                // dBrief app icon
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("dBrief")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
+                VStack(alignment: .leading, spacing: 4) {
                     Text("\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+
+                    Text("Would you like to start recording?")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 10) {
                         Button("Not Now") {
                             appState.showCallDetectedPopup = false
                         }
                         .buttonStyle(.bordered)
-                        .controlSize(.mini)
+                        .controlSize(.regular)
 
                         Button("Record") {
                             appState.showCallDetectedPopup = false
@@ -62,15 +50,17 @@ struct CallDetectedPopup: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.mini)
+                        .controlSize(.regular)
                         .tint(brandOrange)
                     }
+                    .padding(.top, 8)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-            // Dismiss button — last in ZStack so it's on top for hit-testing
+            // Dismiss button — top-trailing, on top
             Button {
                 appState.showCallDetectedPopup = false
             } label: {
@@ -81,8 +71,9 @@ struct CallDetectedPopup: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
-        .frame(width: 320, height: 90)
+        .frame(width: 360, height: 118)
     }
 }
 
