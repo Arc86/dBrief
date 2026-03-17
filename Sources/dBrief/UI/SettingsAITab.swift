@@ -110,7 +110,7 @@ struct SettingsAITab: View {
         case .appleIntelligence:
             "On-device Foundation Models. Requires macOS 26+ with Apple Silicon."
         case .qwenLocal:
-            "On-device MLX Qwen 2.5 7B 4-bit model. Downloaded once from Hugging Face."
+            "On-device MLX Qwen3 4B 4-bit model. Downloaded once from Hugging Face."
         case .remoteEndpoint:
             "Use a remote LLM endpoint configured below."
         }

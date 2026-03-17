@@ -89,7 +89,7 @@ Three AI backends selected via `AppSettings.aiEngine`:
 | Engine | Class | Backend |
 |--------|-------|---------|
 | Apple Intelligence | `LocalAIService` | On-device via `FoundationModels` framework. Guarded by `#if canImport(FoundationModels)` and `@available(macOS 26, *)`. Only available on Apple Silicon with macOS 26+. |
-| Qwen 2.5 Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/Qwen2.5-7B-Instruct-4bit` via the `mlx-swift-lm` package. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. |
+| Qwen3 4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/Qwen3-4B-Instruct-2507-4bit` via the `mlx-swift-lm` package. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. |
 | Remote Endpoint | `AIService` | OpenAI-compatible `/v1/chat/completions` |
 
 AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export.
@@ -163,7 +163,7 @@ Produces Markdown files with YAML frontmatter (title, date, tags, duration, audi
 | Package | Version | Purpose |
 |---------|---------|---------|
 | [WhisperKit](https://github.com/argmaxinc/WhisperKit) | 0.9.4+ | CoreML-based on-device Whisper transcription |
-| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 2.29.1+ | On-device Qwen 2.5 7B LLM via MLX (Apple Silicon) |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 2.29.1+ | On-device Qwen3 4B LLM via MLX (Apple Silicon) |
 | [swift-testing](https://github.com/apple/swift-testing) | 0.6.0+ | Testing framework |
 
 ### Linked System Frameworks
