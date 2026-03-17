@@ -1,3 +1,4 @@
+
 import Foundation
 import AppKit
 import AVFoundation
@@ -14,6 +15,7 @@ final class RecordingManager {
     private let localTranscriptionService = LocalTranscriptionService()
     private let localAIPluginService = LocalAIPluginService()
     var miniPlayer: FloatingMiniPlayerController?
+    private var processingTask: Task<Void, Never>?
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
@@ -136,6 +138,7 @@ final class RecordingManager {
         }
 
         // Step 1: Transcription
+        guard !Task.isCancelled else { return }
         if transcribe {
             // Check for saved transcript on disk first
             if let saved = loadSavedTranscript(for: recording) {
@@ -174,6 +177,7 @@ final class RecordingManager {
         }
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
+        guard !Task.isCancelled else { return }
         if let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
@@ -270,7 +274,7 @@ final class RecordingManager {
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Qwen 2.5 Local", baseURL: "", modelName: "Qwen2.5-7B-Instruct-4bit (MLX)")
+                case .qwenLocal: Endpoint(name: "Qwen3 4B Local", baseURL: "", modelName: "Qwen3-4B-Instruct-2507-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
@@ -447,7 +451,7 @@ final class RecordingManager {
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Qwen 2.5 Local", baseURL: "", modelName: "Qwen2.5-7B-Instruct-4bit (MLX)")
+                case .qwenLocal: Endpoint(name: "Qwen3 4B Local", baseURL: "", modelName: "Qwen3-4B-Instruct-2507-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
@@ -499,6 +503,33 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+    }
+
+    func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
+        processingTask = Task {
+            await processRecording(transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags)
+            processingTask = nil
+        }
+    }
+
+    func startProcessingQueue() {
+        processingTask = Task {
+            await processQueue()
+            processingTask = nil
+        }
+    }
+
+    func cancelProcessing() async {
+        processingTask?.cancel()
+        processingTask = nil
+        appState.liveInferenceText = nil
+        for i in appState.processingSteps.indices {
+            if case .inProgress = appState.processingSteps[i].status {
+                appState.processingSteps[i].status = .failed("Cancelled by user")
+            }
+        }
+        appState.recordingState = .idle
+        await forceReleaseGPU()
     }
 
     func pickFileForTranscription() {
@@ -638,6 +669,11 @@ final class RecordingManager {
         await localAIPluginService.purgeModelsOnMemoryPressure()
     }
 
+    /// Force-release all Metal/GPU resources before app termination.
+    func forceReleaseGPU() async {
+        await localAIPluginService.forceUnload()
+    }
+
     func requestNotificationPermission() {
         guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -654,7 +690,7 @@ final class RecordingManager {
     private func labelForSummary(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Generating summary (Apple Intelligence)"
-        case .qwenLocal: "Generating summary (Qwen 2.5 local)"
+        case .qwenLocal: "Generating summary (Qwen3 4B local)"
         case .remoteEndpoint: "Generating summary"
         }
     }
@@ -662,7 +698,7 @@ final class RecordingManager {
     private func labelForActionItems(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Extracting action items (Apple Intelligence)"
-        case .qwenLocal: "Extracting action items (Qwen 2.5 local)"
+        case .qwenLocal: "Extracting action items (Qwen3 4B local)"
         case .remoteEndpoint: "Extracting action items"
         }
     }
@@ -670,7 +706,7 @@ final class RecordingManager {
     private func labelForTags(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Analyzing tags (Apple Intelligence)"
-        case .qwenLocal: "Analyzing tags & sentiment (Qwen 2.5 local)"
+        case .qwenLocal: "Analyzing tags & sentiment (Qwen3 4B local)"
         case .remoteEndpoint: "Analyzing tags & sentiment"
         }
     }
@@ -754,19 +790,43 @@ final class RecordingManager {
         guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
         do {
             let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
-                try await self.localAIPluginService.analyzeTranscript(
+                let stream = await self.localAIPluginService.analyzeTranscriptStream(
                     transcription,
                     outputLanguage: self.appSettings.outputLanguage
                 )
+                
+                var chunks: [String] = []
+                var lastUIUpdate = ContinuousClock.now
+                let uiThrottle: ContinuousClock.Duration = .milliseconds(200)
+
+                for try await chunk in stream {
+                    chunks.append(chunk)
+
+                    // Throttle UI updates to avoid starving the Metal GPU
+                    // with SwiftUI re-renders while MLX inference is running.
+                    let now = ContinuousClock.now
+                    if now - lastUIUpdate >= uiThrottle {
+                        let snapshot = chunks.joined()
+                        await MainActor.run { self.appState.liveInferenceText = snapshot }
+                        lastUIUpdate = now
+                    }
+                }
+
+                let fullJSON = chunks.joined()
+                // Final UI update + clear after generation completes
+                await MainActor.run { self.appState.liveInferenceText = nil }
+                
+                // Decode the full finalized JSON text matching the old return type
+                return try MLXInsightsService.decodeAndNormalize(fullJSON)
             }
 
             if let summaryStepIndex {
                 recording.summary = insights.summary
                 markCompleted(summaryStepIndex)
             }
-            if !insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
                 let datePrefix = Self.dateOnlyString(recording.date)
-                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines))"
+                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))"
             }
             if let actionStepIndex {
                 recording.actionItems = insights.actionItems
@@ -777,6 +837,11 @@ final class RecordingManager {
                 recording.sentiment = insights.sentiment
                 markCompleted(tagsStepIndex)
             }
+        } catch is CancellationError {
+            let message = "Cancelled by user"
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
         } catch {
             let message = error.localizedDescription
             markFailed(summaryStepIndex, message)
@@ -867,7 +932,7 @@ final class RecordingManager {
         case .transcribing:
             appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
         case .analyzing:
-            appState.processingSteps[stepIndex].name = "Analyzing transcript (Qwen 2.5 local)"
+            appState.processingSteps[stepIndex].name = "Analyzing transcript (Qwen3 4B local)"
         case .downloading(_, let stage):
             switch stage {
             case .whisperModel:

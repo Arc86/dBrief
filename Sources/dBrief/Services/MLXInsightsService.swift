@@ -8,10 +8,10 @@ import MLX
 #endif
 
 actor MLXInsightsService {
-    private static let modelID = "mlx-community/Qwen2.5-7B-Instruct-4bit"
-    private static let transcriptCharLimit = 32_000
-    private static let transcriptHeadChars = 16_000
-    private static let transcriptTailChars = 16_000
+    private static let modelID = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    private static let transcriptCharLimit = 12_000
+    private static let transcriptHeadChars = 6_000
+    private static let transcriptTailChars = 6_000
     private static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
 
     private let fileManager = FileManager.default
@@ -65,7 +65,7 @@ actor MLXInsightsService {
                     }
                     self.isInferencing = false
 
-                    _ = try self.decodeAndNormalize(output)
+                    _ = try Self.decodeAndNormalize(output)
                     #if canImport(MLX)
                     Logger.ai.info("MLX memory after inference (stream): \(MLX.Memory.snapshot().description)")
                     #endif
@@ -117,7 +117,7 @@ actor MLXInsightsService {
                 raw += chunk
             }
             isInferencing = false
-            let result = try decodeAndNormalize(raw)
+            let result = try Self.decodeAndNormalize(raw)
             #if canImport(MLX)
             Logger.ai.info("MLX memory after inference: \(MLX.Memory.snapshot().description)")
             #endif
@@ -143,6 +143,21 @@ actor MLXInsightsService {
         // with MLX's internal eval lock.
         clearGPUCacheIfAvailable()
         Logger.ai.info("MLX memory after unload: \(MLX.Memory.snapshot().description)")
+        #endif
+    }
+
+    /// Force-release all Metal/GPU resources regardless of inference state.
+    /// Called on app termination to prevent orphaned GPU allocations that
+    /// keep WindowServer at high GPU utilization until reboot.
+    func forceUnload() {
+        isInferencing = false
+        modelContainer = nil
+        #if canImport(MLX)
+        MLX.Memory.clearCache()
+        // Drain any in-flight Metal command buffers so the GPU is idle
+        // before the process exits.
+        Stream().synchronize()
+        Logger.ai.info("MLX force-unloaded for app termination")
         #endif
     }
 
@@ -183,7 +198,7 @@ actor MLXInsightsService {
                 domain: "MLXInsightsService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen 2.5 model. Close other apps or use Remote AI engine instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen3 4B model. Close other apps or use Remote AI engine instead."
                 ]
             )
         }
@@ -196,7 +211,7 @@ actor MLXInsightsService {
         // Metal allocation stalls during inference. Only cap the hard ceiling.
         #if canImport(MLX)
         let physicalRAM = ProcessInfo.processInfo.physicalMemory
-        let limit = min(Int(Double(physicalRAM) * 0.75), 12 * 1024 * 1024 * 1024)
+        let limit = min(Int(Double(physicalRAM) * 0.75), 8 * 1024 * 1024 * 1024)
         MLX.Memory.memoryLimit = limit
         Logger.ai.info("MLX memory limits: memoryLimit=\(limit / 1_073_741_824)GB")
         Logger.ai.info("MLX memory before load: \(MLX.Memory.snapshot().description)")
@@ -260,11 +275,12 @@ actor MLXInsightsService {
         ### RULES
         1. **NO REPETITION:** If a point is made twice, record it once.
         2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
-        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics. Each paragraph should address a distinct topic or theme. Aim for at least 3-5 paragraphs for meetings longer than 10 minutes.
-        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]". Include follow-ups, commitments, and agreed next steps.
-        5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept (do not include the date).
-        6. **TAGS:** Single words only. No spaces. Provide 5-10 relevant, specific tags that capture the key topics discussed.
+        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics.
+        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]".
+        5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept.
+        6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
         7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
+        8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
 
         ### OUTPUT FORMAT (Strict JSON Only)
         {
@@ -281,7 +297,9 @@ actor MLXInsightsService {
         .init(
             maxTokens: 1536,
             temperature: 0.5,
-            topP: 0.9
+            topP: 0.9,
+            repetitionPenalty: 1.05,
+            prefillStepSize: 256
         )
     }
 
@@ -292,7 +310,7 @@ actor MLXInsightsService {
         return head + truncationSeparator + tail
     }
 
-    private func decodeAndNormalize(_ raw: String) throws -> LocalInsightsResult {
+    static func decodeAndNormalize(_ raw: String) throws -> LocalInsightsResult {
         guard let jsonPayload = extractFirstJSONObject(raw) else {
             throw NSError(domain: "MLXInsightsService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model output did not contain valid JSON object."])
         }
@@ -316,7 +334,7 @@ actor MLXInsightsService {
         )
     }
 
-    private func extractFirstJSONObject(_ input: String) -> String? {
+    private static func extractFirstJSONObject(_ input: String) -> String? {
         guard let start = input.firstIndex(of: "{") else { return nil }
         var depth = 0
         var inString = false
@@ -356,7 +374,7 @@ actor MLXInsightsService {
         return nil
     }
 
-    private func normalizeTags(_ tags: [String]) -> [String] {
+    private static func normalizeTags(_ tags: [String]) -> [String] {
         var unique: [String] = []
         var seen = Set<String>()
         for tag in tags {
@@ -374,7 +392,7 @@ actor MLXInsightsService {
         return unique
     }
 
-    private func normalizeSentiment(_ sentiment: String) -> String {
+    private static func normalizeSentiment(_ sentiment: String) -> String {
         switch sentiment.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "positive":
             return "Positive"
