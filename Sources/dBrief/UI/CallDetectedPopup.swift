@@ -1,5 +1,8 @@
 import SwiftUI
 
+private let brandOrange = Color(hex: "#FF6B00")
+private let brandOrangeLight = Color(hex: "#FF9500")
+
 struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
@@ -15,17 +18,6 @@ struct CallDetectedPopup: View {
                         .strokeBorder(.quaternary, lineWidth: 0.5)
                 )
 
-            // Dismiss button
-            Button {
-                appState.showCallDetectedPopup = false
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(10)
-            }
-            .buttonStyle(.plain)
-
             // Content
             HStack(spacing: 10) {
                 // Branded icon
@@ -33,7 +25,7 @@ struct CallDetectedPopup: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color(hex: "#FF6B00"), Color(hex: "#FF9500")],
+                                colors: [brandOrange, brandOrangeLight],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -43,6 +35,7 @@ struct CallDetectedPopup: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                 }
+                .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("dBrief")
@@ -70,14 +63,24 @@ struct CallDetectedPopup: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.mini)
-                        .tint(Color(hex: "#FF6B00"))
+                        .tint(brandOrange)
                     }
                 }
-
-                Spacer()
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
+
+            // Dismiss button — last in ZStack so it's on top for hit-testing
+            Button {
+                appState.showCallDetectedPopup = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(10)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
         }
         .frame(width: 320, height: 90)
     }
