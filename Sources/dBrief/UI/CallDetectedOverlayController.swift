@@ -43,47 +43,47 @@ final class CallDetectedOverlayController {
     }
 
     func show() {
+        guard panel == nil else { return }
         guard let appState, let appSettings, let recordingManager else { return }
 
-        if panel == nil {
-            let hosting = NSHostingController(
-                rootView: CallDetectedPopup()
-                    .environment(appState)
-                    .environment(appSettings)
-                    .environment(recordingManager)
-                    .frame(width: 520, height: 220)
-            )
+        let hosting = NSHostingController(
+            rootView: CallDetectedPopup()
+                .environment(appState)
+                .environment(appSettings)
+                .environment(recordingManager)
+        )
 
-            let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 520, height: 220),
-                styleMask: [.titled, .fullSizeContentView],
-                backing: .buffered,
-                defer: true
-            )
-            panel.titleVisibility = .hidden
-            panel.titlebarAppearsTransparent = true
-            panel.isMovableByWindowBackground = true
-            panel.level = .floating
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.isReleasedWhenClosed = false
-            panel.contentViewController = hosting
-            self.panel = panel
-        }
+        let newPanel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 118),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        newPanel.isOpaque = false
+        newPanel.backgroundColor = .clear
+        newPanel.hasShadow = true
+        newPanel.isMovableByWindowBackground = false
+        newPanel.level = .floating
+        newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        newPanel.isReleasedWhenClosed = false
+        newPanel.contentViewController = hosting
+        self.panel = newPanel
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
-            let size = NSSize(width: 520, height: 220)
+            let size = NSSize(width: 360, height: 118)
             let origin = NSPoint(
-                x: frame.midX - size.width / 2,
-                y: frame.midY - size.height / 2
+                x: frame.maxX - size.width - 12,
+                y: frame.maxY - size.height - 12
             )
-            panel?.setFrame(NSRect(origin: origin, size: size), display: true)
+            newPanel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
 
-        panel?.orderFrontRegardless()
+        newPanel.orderFrontRegardless()
     }
 
     func hide() {
         panel?.orderOut(nil)
+        panel = nil
     }
 }
