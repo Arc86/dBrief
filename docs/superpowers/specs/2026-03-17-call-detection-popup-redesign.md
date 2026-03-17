@@ -15,20 +15,23 @@ Two bugs, one design issue:
 
 ## Root Cause
 
-`NSPanel` style mask is `[.titled, .fullSizeContentView]`. Adding `.nonactivatingPanel` is the idiomatic macOS fix for utility panels from accessory/LSUIElement apps that need to surface without activating the owning application.
+`NSPanel` style mask is `[.titled, .fullSizeContentView]`. macOS does not render application windows for background `LSUIElement` processes that have never been activated — `orderFrontRegardless()` is called but the window is simply not displayed. `.nonactivatingPanel` tells the window server to treat the panel as a utility/accessory surface rather than an application window, allowing it to be shown regardless of the owning app's activation state. This is the idiomatic macOS fix for accessory/LSUIElement apps that need to surface a panel without activating the application.
 
 ## Design
 
 ### Technical Fix
 
-In `CallDetectedOverlayController.show()`:
+In `CallDetectedOverlayController`:
 
 - Change style mask from `[.titled, .fullSizeContentView]` to `[.borderless, .nonactivatingPanel]`
-- Set `panel.isOpaque = false` and `panel.backgroundColor = .clear` to support the glass background rendered by SwiftUI
+- Set `panel.isOpaque = false`, `panel.backgroundColor = .clear` to support the glass background rendered by SwiftUI
+- Set `panel.isMovableByWindowBackground = false` — prevents accidental drag on the transparent background
+- Remove the `.frame(width: 520, height: 220)` modifier from the `NSHostingController` root view; sizing is provided by the panel frame instead
 - Resize panel to 320×90
 - Reposition to top-right corner: `x = screen.visibleFrame.maxX - 320 - 12`, `y = screen.visibleFrame.maxY - 90 - 12`
 - Keep `panel.level = .floating`, `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]`
 - Keep `panel.orderFrontRegardless()` — now works correctly with `.nonactivatingPanel`
+- **Panel reuse**: nil out `self.panel` in `hide()` so each subsequent show creates a fresh panel with the correct style mask. The current `if panel == nil` guard would otherwise reuse the old panel (created with the old style mask) on the second and subsequent detections in the same session.
 
 ### Visual Design
 
@@ -57,6 +60,8 @@ Notification banner style matching Option A:
 ### Removed: "Don't Ask Again" button
 
 The "Don't Ask Again" button is removed from the popup. Users can still add apps to the call detection blocklist via Settings → General → Call Detection. This keeps the popup focused on the immediate decision (record or dismiss) and avoids a three-button layout in a 320px banner.
+
+`dismissedCallAppPIDs` in `CallDetectionService.promptIfNeeded()` is a separate PID-scoped suppression guard that was never populated by the old popup UI. It is not touched by this change — it remains as-is (appears to be for future use or auto-record path suppression).
 
 ## Files Changed
 
