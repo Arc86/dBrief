@@ -3,7 +3,12 @@ import AppKit
 
 struct TranscriptionProgressView: View {
     @Environment(AppState.self) private var appState
+    var onCancel: (() async -> Void)?
     @State private var copied = false
+
+    private var hasInProgressStep: Bool {
+        appState.processingSteps.contains { if case .inProgress = $0.status { return true }; return false }
+    }
 
     private var isComplete: Bool {
         !appState.processingSteps.isEmpty && appState.processingSteps.allSatisfy {
@@ -28,6 +33,31 @@ struct TranscriptionProgressView: View {
 
                     Spacer()
                 }
+            }
+            
+            if let liveText = appState.liveInferenceText {
+                Divider()
+                ScrollView {
+                    Text(liveText)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxHeight: 150)
+                .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                .cornerRadius(4)
+            }
+
+            if hasInProgressStep, let onCancel {
+                Button {
+                    Task { await onCancel() }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.red)
             }
 
             if isComplete, let recording = appState.currentRecording, recording.transcription != nil {
