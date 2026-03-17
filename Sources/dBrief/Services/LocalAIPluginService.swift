@@ -148,6 +148,14 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         stateContinuation.yield(.idle)
     }
 
+    /// Force-release all GPU resources for app termination.
+    /// Bypasses the inference guard so Metal buffers are freed before _exit().
+    func forceUnload() async {
+        await insightsService.forceUnload()
+        await whisperService.unload()
+        stateContinuation.yield(.idle)
+    }
+
     private func emitState(_ state: LocalAIPluginState) {
         stateContinuation.yield(state)
     }

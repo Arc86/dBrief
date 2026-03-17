@@ -82,9 +82,33 @@ final class AppContext {
     }
 }
 
+class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set by DBriefApp so the delegate can clean up GPU resources on quit.
+    weak var recordingManager: RecordingManager?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Release Metal/GPU resources before hard-exiting so WindowServer
+        // doesn't inherit orphaned GPU allocations that keep it at high
+        // utilization until reboot.
+        Task { @MainActor in
+            await self.recordingManager?.forceReleaseGPU()
+            // Bypasses C++ static destructors (`__cxa_finalize_ranges`) which
+            // deadlock in `mlx::core::scheduler::Scheduler::~Scheduler()`.
+            _exit(0)
+        }
+        // Cancel normal termination — the Task above will _exit().
+        return .terminateCancel
+    }
+}
+
 @main
 struct DBriefApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var context = AppContext()
+
+    init() {
+        appDelegate.recordingManager = context.recordingManager
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -170,7 +194,7 @@ struct MenuBarView: View {
                     PostRecordingSheet()
                 } else if appState.isProcessing || appState.hasProcessingResults {
                     Divider()
-                    TranscriptionProgressView()
+                    TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
                 } else if showHistory {
                     Divider()
                     RecordingHistoryView()
@@ -184,7 +208,7 @@ struct MenuBarView: View {
                             .foregroundStyle(.orange)
                         Spacer()
                         Button("Process Queue") {
-                            Task { await recordingManager.processQueue() }
+                            recordingManager.startProcessingQueue()
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)

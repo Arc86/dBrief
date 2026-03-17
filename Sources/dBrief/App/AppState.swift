@@ -25,6 +25,7 @@ final class AppState {
     var detectedCallAppBundleId: String?
 
     var processingSteps: [ProcessingStep] = []
+    var liveInferenceText: String?
     var lastError: String?
     var queuedCount: Int = 0
 
