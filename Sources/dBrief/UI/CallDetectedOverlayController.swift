@@ -54,7 +54,7 @@ final class CallDetectedOverlayController {
         )
 
         let newPanel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 90),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 118),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -71,7 +71,7 @@ final class CallDetectedOverlayController {
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
-            let size = NSSize(width: 320, height: 90)
+            let size = NSSize(width: 360, height: 118)
             let origin = NSPoint(
                 x: frame.maxX - size.width - 12,
                 y: frame.maxY - size.height - 12
