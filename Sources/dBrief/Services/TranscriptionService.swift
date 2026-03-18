@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 actor TranscriptionService {
     struct ChunkingConfiguration: Sendable {
@@ -69,8 +70,15 @@ actor TranscriptionService {
         }
 
         let maxUploadBytes = max(1, chunking.maxUploadMB) * 1_024 * 1_024
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
-        let shouldChunk = chunking.enabled && fileSize > Int64(maxUploadBytes)
+        // Use resourceValues for reliable Int-typed file size; fall back to Int64.max so
+        // an unreadable size always triggers chunking rather than sending a potentially
+        // oversized file (which would result in a 413 from the remote endpoint).
+        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            .map { Int64($0) } ?? Int64.max
+        // Always chunk when the file exceeds the upload threshold — chunking.enabled only
+        // controls proactive splitting; it must not block chunking that is required to
+        // stay within endpoint file-size limits.
+        let shouldChunk = fileSize > Int64(maxUploadBytes)
 
         if shouldChunk {
             return try await transcribeChunked(
@@ -608,7 +616,10 @@ actor TranscriptionService {
             }
         }
 
-        throw TranscriptionError.noSupportedResponseFormat
+        // All probes failed — likely a content rejection (e.g. silent audio) rather than a
+        // format incompatibility. Fall back to verbose_json and let the actual transcription
+        // request fail with a real server error if the endpoint truly can't be reached.
+        return .verboseJSON
     }
 
     private func sendRequest(
@@ -681,8 +692,9 @@ actor TranscriptionService {
             throw TranscriptionError.invalidResponse
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw TranscriptionError.serverError(httpResponse.statusCode, body)
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            Logger.transcription.error("HTTP \(httpResponse.statusCode, privacy: .public) from \(url.host ?? "?", privacy: .public) (\(fileName, privacy: .public)): \(responseBody, privacy: .public)")
+            throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
         }
         return data
     }
@@ -849,7 +861,6 @@ enum TranscriptionError: Error, LocalizedError {
     case invalidEndpoint
     case invalidResponse
     case noModelsFound
-    case noSupportedResponseFormat
     case chunkingFailed(String)
     case serverError(Int, String)
 
@@ -858,7 +869,6 @@ enum TranscriptionError: Error, LocalizedError {
         case .invalidEndpoint: "Invalid transcription endpoint URL."
         case .invalidResponse: "Invalid response from transcription server."
         case .noModelsFound: "Connected, but no models were returned by the provider."
-        case .noSupportedResponseFormat: "Endpoint does not support any known transcription response format."
         case .chunkingFailed(let message): "Chunking failed: \(message)"
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }

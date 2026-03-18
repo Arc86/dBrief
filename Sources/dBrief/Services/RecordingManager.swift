@@ -4,6 +4,7 @@ import AppKit
 import AVFoundation
 import UserNotifications
 import UniformTypeIdentifiers
+import OSLog
 
 @MainActor
 @Observable
@@ -171,7 +172,9 @@ final class RecordingManager {
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
                 } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    let msg = error.localizedDescription
+                    Logger.transcription.error("Transcription failed: \(msg, privacy: .public)")
+                    appState.processingSteps[stepIndex].status = .failed(msg)
                 }
             }
         }
