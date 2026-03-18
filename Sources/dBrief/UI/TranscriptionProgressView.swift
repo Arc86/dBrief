@@ -24,14 +24,27 @@ struct TranscriptionProgressView: View {
                 .font(.headline)
 
             ForEach(appState.processingSteps) { step in
-                HStack(spacing: 8) {
-                    stepIcon(for: step.status)
-                        .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        stepIcon(for: step.status)
+                            .frame(width: 16)
 
-                    Text(step.name)
-                        .font(.callout)
+                        Text(step.name)
+                            .font(.callout)
 
-                    Spacer()
+                        Spacer()
+                    }
+                    if case .failed(let message) = step.status, !message.isEmpty {
+                        ScrollView {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 60)
+                        .padding(.leading, 24)
+                    }
                 }
             }
             
