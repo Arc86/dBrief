@@ -44,7 +44,7 @@ struct RecordingControlsView: View {
                             .fill(.red)
                             .frame(width: 7, height: 7)
                             .opacity(appState.isRecording ? 1 : 0.3)
-                            .animation(.easeInOut(duration: 0.6).repeatForever(), value: appState.isRecording)
+                            .animation(.easeInOut(duration: 0.6), value: appState.isRecording)
                         Text(appState.isPaused ? "PAUSED" : "REC")
                             .font(.caption2)
                             .fontWeight(.bold)
