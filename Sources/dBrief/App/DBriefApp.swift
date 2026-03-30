@@ -38,6 +38,9 @@ final class AppContext {
         memoryMonitor.registerCleanupHandler { [weak recordingManager] in
             await recordingManager?.handleMemoryPressure()
         }
+        memoryMonitor.registerPressureHandler { [weak self] level in
+            self?.appState.memoryPressureLevel = level
+        }
 
         Task { await self.ensureReady() }
     }
