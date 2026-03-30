@@ -277,13 +277,15 @@ struct ResultsView: View {
 
             Spacer()
 
-            if let markdownURL = findMarkdownFile(for: recording) {
-                Button("Open File") {
-                    NSWorkspace.shared.open(markdownURL)
+            let markdownURL = findMarkdownFile(for: recording)
+            Button("Open File") {
+                if let url = markdownURL {
+                    NSWorkspace.shared.open(url)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(markdownURL == nil)
 
             Button("Dismiss") {
                 appState.processingSteps.removeAll()
