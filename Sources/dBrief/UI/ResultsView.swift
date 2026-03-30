@@ -8,6 +8,7 @@ struct ResultsView: View {
 
     @State private var collapsedSections = Set<Section>()
     @State private var copied = false
+    @State private var showAllActionItems = false
 
     enum Section: Hashable {
         case summary
@@ -63,16 +64,16 @@ struct ResultsView: View {
                             collapsibleSection(.actionItems, title: "Action Items (\(items.count))") {
                                 VStack(alignment: .leading, spacing: 4) {
                                     let isCollapsed = collapsedSections.contains(.actionItems)
-                                    let visible = isCollapsed ? [] : Array(items.prefix(3))
+                                    let visible = isCollapsed ? [] : (showAllActionItems ? Array(items[...]) : Array(items.prefix(3)))
                                     ForEach(Array(visible.enumerated()), id: \.offset) { _, item in
                                         HStack(alignment: .top, spacing: 6) {
                                             Text("◦").foregroundStyle(.secondary).font(.caption)
                                             Text(item).font(.callout)
                                         }
                                     }
-                                    if !isCollapsed && items.count > 3 {
+                                    if !isCollapsed && !showAllActionItems && items.count > 3 {
                                         Button("+\(items.count - 3) more") {
-                                            collapsedSections.remove(.actionItems)
+                                            showAllActionItems = true
                                         }
                                         .buttonStyle(.borderless)
                                         .font(.caption)
@@ -87,6 +88,16 @@ struct ResultsView: View {
                         if recording.tags != nil || recording.sentiment != nil {
                             collapsibleSection(.tagsAndSentiment, title: tagsAndSentimentTitle(recording)) {
                                 VStack(alignment: .leading, spacing: 6) {
+                                    if let sentiment = recording.sentiment {
+                                        HStack {
+                                            Text("Sentiment")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Spacer()
+                                            Text(sentiment)
+                                                .font(.caption)
+                                        }
+                                    }
                                     if let tags = recording.tags, !tags.isEmpty {
                                         FlowLayout(spacing: 4) {
                                             ForEach(tags, id: \.self) { tag in
