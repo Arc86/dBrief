@@ -1,8 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @State private var inputDevices: [AudioInputDevice] = []
+    @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
         @Bindable var settings = appSettings
@@ -53,51 +54,6 @@ struct SettingsGeneralTab: View {
             }
             .listRowBackground(Color.clear)
 
-            if appSettings.powerUserMode {
-                Section("Audio Quality") {
-                    LabeledContent("Recording profile:") {
-                        Text("Whisper optimized (16 kHz mono FLAC)")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    LabeledContent("Post-process:") {
-                        Text("80Hz high-pass, light denoise, AGC/echo cancel, -20 LUFS to -3dBTP")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .listRowBackground(Color.clear)
-
-                Section("Audio Input") {
-                    let selectedUID = settings.audioInputDeviceUID
-                    let knownUIDs = Set(inputDevices.map { $0.uid })
-                    let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
-
-                    LabeledContent("Input device:") {
-                        Picker("", selection: $settings.audioInputDeviceUID) {
-                            Text("System Default").tag("")
-                            ForEach(inputDevices) { device in
-                                Text(device.displayName).tag(device.uid)
-                            }
-                            if isMissingSelection {
-                                Text("Unavailable device (reconnect)").tag(selectedUID)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 220, alignment: .trailing)
-                    }
-                    LabeledContent("Refresh device list") {
-                        Button("Refresh") {
-                            inputDevices = AudioInputDeviceManager.availableInputDevices()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .listRowBackground(Color.clear)
-            }
-
             Section("Call Detection") {
                 Toggle("Enable call detection", isOn: $settings.callDetectionEnabled)
 
@@ -132,15 +88,46 @@ struct SettingsGeneralTab: View {
                 }
                 .listRowBackground(Color.clear)
             }
+
+            Section("Permissions") {
+                LabeledContent("Microphone:") {
+                    HStack {
+                        Image(systemName: recordingManager.hasMicrophonePermission ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .red)
+                        Text(recordingManager.hasMicrophonePermission ? "Granted" : "Not granted")
+                            .foregroundStyle(.secondary)
+                        if !recordingManager.hasMicrophonePermission {
+                            Button("Request") {
+                                Task { await recordingManager.checkPermissions() }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                LabeledContent("Screen Recording:") {
+                    HStack {
+                        Image(systemName: recordingManager.hasSystemAudioPermission ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(recordingManager.hasSystemAudioPermission ? .green : .red)
+                        Text(recordingManager.hasSystemAudioPermission ? "Granted" : "Not granted")
+                            .foregroundStyle(.secondary)
+                        if !recordingManager.hasSystemAudioPermission {
+                            Button("Open Settings") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+            .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
         .toggleStyle(.smallSwitch)
         .padding(.top, -20)
-        .onAppear {
-            inputDevices = AudioInputDeviceManager.availableInputDevices()
-        }
     }
 
     private func chooseFolder(completion: @escaping (URL) -> Void) {
