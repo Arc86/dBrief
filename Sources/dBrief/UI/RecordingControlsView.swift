@@ -11,39 +11,57 @@ struct RecordingControlsView: View {
     var body: some View {
         @Bindable var settings = appSettings
         VStack(spacing: 8) {
-            HStack {
-                Text("Profile")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { settings.activeProfileId },
-                        set: { settings.setActiveProfile($0) }
-                    )
-                ) {
-                    ForEach(settings.profiles) { profile in
-                        Text(profile.name).tag(profile.id)
+            // Profile picker — hidden while recording
+            if appState.isIdle {
+                HStack {
+                    Text("Profile")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { settings.activeProfileId },
+                            set: { settings.setActiveProfile($0) }
+                        )
+                    ) {
+                        ForEach(settings.profiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 170)
+                }
+            }
+
+            // REC header shown while recording
+            if appState.isRecording || appState.isPaused {
+                HStack {
+                    Spacer()
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 7, height: 7)
+                            .opacity(appState.isRecording ? 1 : 0.3)
+                            .animation(.easeInOut(duration: 0.6).repeatForever(), value: appState.isRecording)
+                        Text(appState.isPaused ? "PAUSED" : "REC")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(appState.isRecording ? .red : .secondary)
                     }
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 170)
             }
 
             // Timer and level
             if appState.isRecording || appState.isPaused {
-                HStack {
+                HStack(alignment: .bottom) {
                     Text(formattedDuration)
                         .font(.system(.title2, design: .monospaced))
                         .foregroundStyle(.primary)
-
                     Spacer()
-
-                    // Level meter
-                    LevelMeter(level: appState.peakLevel)
-                        .frame(width: 60, height: 12)
+                    LevelMeterBars(level: appState.peakLevel)
+                        .frame(width: 36, height: 20)
                 }
             }
 
@@ -54,13 +72,9 @@ struct RecordingControlsView: View {
                         appState.lastError = nil
                         Task {
                             do {
-                                log.info("Starting recording...")
                                 try await recordingManager.startRecording()
-                                log.info("Recording started")
                             } catch {
                                 let msg = error.localizedDescription
-                                log.error("Record failed: \(msg, privacy: .public)")
-                                fputs("[dBrief] Record failed: \(msg)\n", stderr)
                                 appState.lastError = msg
                             }
                         }
@@ -71,43 +85,42 @@ struct RecordingControlsView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                 } else if appState.isRecording {
-                    Button {
-                        recordingManager.pauseRecording()
-                    } label: {
-                        Label("Pause", systemImage: "pause.fill")
-                            .frame(maxWidth: .infinity)
+                    Button { recordingManager.pauseRecording() } label: {
+                        Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
 
-                    Button {
-                        Task {
-                            await recordingManager.stopRecording()
-                        }
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                            .frame(maxWidth: .infinity)
+                    Button { Task { await recordingManager.stopRecording() } } label: {
+                        Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                 } else if appState.isPaused {
-                    Button {
-                        try? recordingManager.resumeRecording()
-                    } label: {
-                        Label("Resume", systemImage: "play.fill")
-                            .frame(maxWidth: .infinity)
+                    Button { try? recordingManager.resumeRecording() } label: {
+                        Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
 
-                    Button {
-                        Task {
-                            await recordingManager.stopRecording()
-                        }
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                            .frame(maxWidth: .infinity)
+                    Button { Task { await recordingManager.stopRecording() } } label: {
+                        Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                }
+            }
+
+            // Audio source chips
+            if appState.isRecording || appState.isPaused {
+                HStack(spacing: 8) {
+                    Label("Mic", systemImage: "mic.fill")
+                        .font(.caption2)
+                        .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .secondary)
+                    if recordingManager.hasSystemAudioPermission {
+                        Label("System Audio", systemImage: "speaker.wave.2.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                    Spacer()
                 }
             }
 
@@ -146,26 +159,31 @@ struct RecordingControlsView: View {
     }
 }
 
-struct LevelMeter: View {
+struct LevelMeterBars: View {
     let level: Float
+    private let barCount = 8
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(.quaternary)
-
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(meterColor)
-                    .frame(width: max(0, geo.size.width * CGFloat(min(level, 1.0))))
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(barColor(for: index))
+                    .frame(width: 3, height: barHeight(for: index))
                     .animation(.linear(duration: 0.05), value: level)
             }
         }
     }
 
-    private var meterColor: Color {
-        if level > 0.8 { return .red }
-        if level > 0.5 { return .yellow }
+    private func barHeight(for index: Int) -> CGFloat {
+        let threshold = Float(index + 1) / Float(barCount)
+        let filled = level >= threshold
+        return filled ? CGFloat(4 + index * 2) : 4
+    }
+
+    private func barColor(for index: Int) -> Color {
+        let threshold = Float(index + 1) / Float(barCount)
+        if threshold > 0.85 { return .red }
+        if threshold > 0.6  { return .yellow }
         return .green
     }
 }
