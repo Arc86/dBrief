@@ -30,4 +30,20 @@ struct MemoryHardeningTests {
         await monitor.testTrigger(.warning)
         #expect(received == .warning)
     }
+
+    @Test func preflightCheckReturnsNilForRemoteEndpoint() {
+        let warning = RecordingManager.preflightCheck(
+            engine: .remoteEndpoint,
+            hasRemoteEndpoint: true
+        )
+        #expect(warning == nil)
+    }
+
+    @Test func preflightCheckReturnsNilForAppleIntelligence() {
+        let warning = RecordingManager.preflightCheck(
+            engine: .appleIntelligence,
+            hasRemoteEndpoint: false
+        )
+        #expect(warning == nil)
+    }
 }

@@ -22,9 +22,41 @@ final class RecordingManager {
     private let integrationDispatchService = IntegrationDispatchService()
     private let recordingFinalizer = RecordingFinalizer()
 
+    // Memory requirements for local models (bytes)
+    private enum MemoryThreshold {
+        static let whisperKit: Int64 = 1_288_490_189   // 1.2 GB
+        static let qwen3_4b:   Int64 = 4_831_838_209   // 4.5 GB
+    }
+
     init(appState: AppState, appSettings: AppSettings) {
         self.appState = appState
         self.appSettings = appSettings
+    }
+
+    /// Returns a PreflightWarning if the given engine requires more memory than is available.
+    /// Returns nil if memory is sufficient or the engine is remote (no check needed).
+    static func preflightCheck(
+        engine: AppSettings.AIEngine,
+        hasRemoteEndpoint: Bool
+    ) -> PreflightWarning? {
+        let required: Int64
+        let modelName: String
+        switch engine {
+        case .qwenLocal:
+            required = MemoryThreshold.qwen3_4b
+            modelName = "Qwen3 4B (Local)"
+        case .appleIntelligence, .remoteEndpoint:
+            return nil   // no local model loaded
+        }
+        guard !MemoryPressureMonitor.hasSufficientMemory(requiredBytes: required) else { return nil }
+        let stats = MemoryPressureMonitor.getMemoryStats()
+        let available = stats.map { Double($0.free) / 1_073_741_824 } ?? 0
+        return PreflightWarning(
+            modelName: modelName,
+            requiredGB: Double(required) / 1_073_741_824,
+            availableGB: available,
+            hasRemoteEndpoint: hasRemoteEndpoint
+        )
     }
 
     func checkPermissions() async {
@@ -185,6 +217,13 @@ final class RecordingManager {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
+
+            // Pre-flight memory check — informational, non-blocking
+            let remoteAIEndpoint = appSettings.effectiveDefaultAIEndpoint
+            appState.preflightWarning = RecordingManager.preflightCheck(
+                engine: aiEngine,
+                hasRemoteEndpoint: remoteAIEndpoint != nil
+            )
 
             let summaryStepIndex = summary ? appendAIStep(
                 labelForSummary(engine: aiEngine)
@@ -371,6 +410,13 @@ final class RecordingManager {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
+
+            // Pre-flight memory check — informational, non-blocking
+            let remoteAIEndpoint = appSettings.effectiveDefaultAIEndpoint
+            appState.preflightWarning = RecordingManager.preflightCheck(
+                engine: aiEngine,
+                hasRemoteEndpoint: remoteAIEndpoint != nil
+            )
 
             let summaryStepIndex = appendAIStep(labelForSummary(engine: aiEngine))
             let actionStepIndex = appendAIStep(labelForActionItems(engine: aiEngine))
