@@ -6,23 +6,19 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab? = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general = "General"
-        case permissions = "Permissions"
-        case transcription = "Transcription"
-        case ai = "AI"
-        case profiles = "Profiles"
+        case general      = "General"
+        case recording    = "Recording"
+        case aiAndModels  = "AI & Models"
         case integrations = "Integrations"
-        case about = "About"
+        case profiles     = "Profiles"
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .general: "gear"
-            case .permissions: "lock.shield"
-            case .transcription: "waveform"
-            case .ai: "brain"
-            case .profiles: "person.3"
+            case .general:      "gear"
+            case .recording:    "mic"
+            case .aiAndModels:  "brain"
             case .integrations: "puzzlepiece.extension"
-            case .about: "info.circle"
+            case .profiles:     "person.3"
             }
         }
     }
@@ -47,16 +43,22 @@ struct SettingsView: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+            Divider()
+            if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+                Text("dBrief v\(version)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
         } detail: {
             if let tab = selectedTab {
                 switch tab {
-                case .general: SettingsGeneralTab()
-                case .permissions: SettingsPermissionsTab()
-                case .transcription: SettingsTranscriptionTab()
-                case .ai: SettingsAITab()
-                case .profiles: SettingsProfilesTab()
+                case .general:      SettingsGeneralTab()
+                case .recording:    SettingsRecordingTab()
+                case .aiAndModels:  SettingsAIModelsTab()
                 case .integrations: SettingsIntegrationsTab()
-                case .about: AboutTab()
+                case .profiles:     SettingsProfilesTab()
                 }
             } else {
                 SettingsGeneralTab()
