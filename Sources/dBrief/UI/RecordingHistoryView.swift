@@ -205,6 +205,7 @@ struct RecordingHistoryView: View {
         .controlSize(.mini)
     }
 
+    @MainActor
     private func loadSummary(for item: HistoryItem) {
         guard loadedSummaries[item.id] == nil else { return }
         Task {
