@@ -5,6 +5,8 @@ struct TranscriptionProgressView: View {
     @Environment(AppState.self) private var appState
     var onCancel: (() async -> Void)?
     @State private var copied = false
+    @State private var memStats: (used: Int64, free: Int64, total: Int64)? = nil
+    @State private var memTimer: Timer? = nil
 
     private var hasInProgressStep: Bool {
         appState.processingSteps.contains { if case .inProgress = $0.status { return true }; return false }
@@ -18,6 +20,38 @@ struct TranscriptionProgressView: View {
         }
     }
 
+    @ViewBuilder
+    private var memoryBar: some View {
+        if let stats = memStats, stats.total > 0 {
+            let fraction = Double(stats.used) / Double(stats.total)
+            let usedGB = Double(stats.used) / 1_073_741_824
+            let totalGB = Double(stats.total) / 1_073_741_824
+            let color: Color = fraction > 0.85 ? .red : fraction > 0.6 ? .yellow : .green
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Memory")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
+                        .font(.caption2)
+                        .foregroundStyle(fraction > 0.6 ? color : .secondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2).fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(color)
+                            .frame(width: geo.size.width * CGFloat(min(fraction, 1.0)))
+                            .animation(.linear(duration: 0.3), value: fraction)
+                    }
+                }
+                .frame(height: 4)
+            }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(isComplete ? "Processing Complete" : "Processing...")
@@ -28,11 +62,14 @@ struct TranscriptionProgressView: View {
                     HStack(spacing: 8) {
                         stepIcon(for: step.status)
                             .frame(width: 16)
-
                         Text(step.name)
                             .font(.callout)
-
                         Spacer()
+                        if case .inProgress = step.status, appState.memoryPressureLevel != .normal {
+                            Text("⚠ Low RAM")
+                                .font(.caption2)
+                                .foregroundStyle(.yellow)
+                        }
                     }
                     if case .failed(let message) = step.status, !message.isEmpty {
                         ScrollView {
@@ -61,6 +98,8 @@ struct TranscriptionProgressView: View {
                 .background(Color(NSColor.textBackgroundColor).opacity(0.5))
                 .cornerRadius(4)
             }
+
+            memoryBar
 
             if hasInProgressStep, let onCancel {
                 Button {
@@ -119,6 +158,18 @@ struct TranscriptionProgressView: View {
             }
         }
         .padding(.vertical, 4)
+        .onAppear {
+            memStats = MemoryPressureMonitor.getMemoryStats()
+            memTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                Task { @MainActor in
+                    self.memStats = MemoryPressureMonitor.getMemoryStats()
+                }
+            }
+        }
+        .onDisappear {
+            memTimer?.invalidate()
+            memTimer = nil
+        }
     }
 
     @ViewBuilder
