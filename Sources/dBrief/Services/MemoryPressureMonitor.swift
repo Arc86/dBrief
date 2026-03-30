@@ -6,8 +6,12 @@ private let log = Logger(subsystem: "com.dbrief.app", category: "MemoryPressure"
 /// Monitors system memory pressure and triggers cleanup callbacks when memory is constrained.
 @MainActor
 final class MemoryPressureMonitor {
+    typealias PressureHandler = (MemoryPressureLevel) async -> Void
+
     private var dispatchSource: DispatchSourceMemoryPressure?
     private var cleanupHandlers: [() async -> Void] = []
+    private var pressureHandlers: [PressureHandler] = []
+    private(set) var currentLevel: MemoryPressureLevel = .normal
     private var isMonitoring = false
 
     init() {}
@@ -51,6 +55,11 @@ final class MemoryPressureMonitor {
     /// Register a cleanup handler that will be called when memory pressure is detected.
     func registerCleanupHandler(_ handler: @escaping () async -> Void) {
         cleanupHandlers.append(handler)
+    }
+
+    /// Register a handler that receives the pressure level when it changes.
+    func registerPressureHandler(_ handler: @escaping PressureHandler) {
+        pressureHandlers.append(handler)
     }
 
     /// Check if there's sufficient free memory before allocating a large object.
@@ -133,6 +142,10 @@ final class MemoryPressureMonitor {
     // MARK: - Private
 
     private func triggerCleanup() async {
+        currentLevel = .warning
+        for handler in pressureHandlers {
+            await handler(.warning)
+        }
         log.info("Executing \(self.cleanupHandlers.count) cleanup handlers")
         for handler in self.cleanupHandlers {
             await handler()
@@ -140,6 +153,10 @@ final class MemoryPressureMonitor {
     }
 
     private func triggerAggressiveCleanup() async {
+        currentLevel = .critical
+        for handler in pressureHandlers {
+            await handler(.critical)
+        }
         log.warning("Executing AGGRESSIVE cleanup")
         for handler in self.cleanupHandlers {
             await handler()
@@ -151,4 +168,17 @@ final class MemoryPressureMonitor {
         // Give system a moment to recover
         try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
     }
+
+    // MARK: - Test Helpers
+
+    #if DEBUG
+    /// Test helper — directly fires pressure handlers without a real dispatch source event.
+    func testTrigger(_ level: MemoryPressureLevel) async {
+        if level == .critical {
+            await triggerAggressiveCleanup()
+        } else {
+            await triggerCleanup()
+        }
+    }
+    #endif
 }
