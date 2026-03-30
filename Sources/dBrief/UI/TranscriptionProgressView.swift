@@ -162,7 +162,7 @@ struct TranscriptionProgressView: View {
             memStats = MemoryPressureMonitor.getMemoryStats()
             memTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
                 Task { @MainActor in
-                    self.memStats = MemoryPressureMonitor.getMemoryStats()
+                    memStats = MemoryPressureMonitor.getMemoryStats()
                 }
             }
         }
