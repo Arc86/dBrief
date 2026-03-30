@@ -28,6 +28,8 @@ final class AppState {
     var liveInferenceText: String?
     var lastError: String?
     var queuedCount: Int = 0
+    var memoryPressureLevel: MemoryPressureLevel = .normal
+    var preflightWarning: PreflightWarning?
 
     var isRecording: Bool { recordingState == .recording }
     var isPaused: Bool { recordingState == .paused }
@@ -47,4 +49,19 @@ struct ProcessingStep: Identifiable {
         case completed
         case failed(String)
     }
+}
+
+// MARK: - Memory pressure
+
+enum MemoryPressureLevel: Equatable {
+    case normal
+    case warning
+    case critical
+}
+
+struct PreflightWarning: Equatable {
+    let modelName: String
+    let requiredGB: Double
+    let availableGB: Double
+    let hasRemoteEndpoint: Bool
 }
