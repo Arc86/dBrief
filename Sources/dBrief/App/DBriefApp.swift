@@ -179,8 +179,6 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @State private var showHistory = false
-
     var body: some View {
         VStack(spacing: 10) {
             if !appSettings.hasCompletedOnboarding {
@@ -195,10 +193,15 @@ struct MenuBarView: View {
                 if appState.showPostRecordingSheet {
                     Divider()
                     PostRecordingSheet()
-                } else if appState.isProcessing || appState.hasProcessingResults {
+                } else if appState.isProcessing {
                     Divider()
                     TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
-                } else if showHistory {
+                } else if appState.hasProcessingResults {
+                    Divider()
+                    ResultsView()
+                }
+
+                if appState.isIdle, !appState.hasProcessingResults {
                     Divider()
                     RecordingHistoryView()
                 }
@@ -222,16 +225,6 @@ struct MenuBarView: View {
                 Divider()
 
                 HStack {
-                    Button {
-                        showHistory.toggle()
-                    } label: {
-                        Label(showHistory ? "Hide History" : "History", systemImage: "clock.arrow.circlepath")
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-
-                    Spacer()
-
                     Button {
                         recordingManager.pickFileForTranscription()
                     } label: {
