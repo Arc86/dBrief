@@ -54,7 +54,7 @@ struct ResultsView: View {
                     if recording.summary != nil || recording.actionItems != nil {
                         if let summary = recording.summary {
                             collapsibleSection(.summary, title: "Summary") {
-                                Text(summary)
+                                Text(.init(summary))
                                     .font(.callout)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -117,7 +117,7 @@ struct ResultsView: View {
                     } else if let transcription = recording.transcription {
                         // AI failed but transcription succeeded — show transcript
                         collapsibleSection(.transcript, title: "Transcript") {
-                            Text(transcription.text)
+                            Text(.init(transcription.text))
                                 .font(.callout)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -130,6 +130,7 @@ struct ResultsView: View {
                 }
                 .padding(.bottom, 8)
             }
+            .frame(minHeight: 160, maxHeight: 320)
 
             Divider()
                 .padding(.vertical, 6)
@@ -182,13 +183,13 @@ struct ResultsView: View {
     }
 
     private func abbreviatedStepName(_ name: String) -> String {
-        if name.lowercased().contains("transcrib") { return "Transcribed" }
-        if name.lowercased().contains("summar") { return "Summary" }
-        if name.lowercased().contains("action") { return "Actions" }
+        if name.lowercased().contains("transcrib") { return "Trans" }
+        if name.lowercased().contains("summar") { return "Summ" }
+        if name.lowercased().contains("action") { return "Act" }
         if name.lowercased().contains("tag") { return "Tags" }
         if name.lowercased().contains("title") { return "Title" }
         if name.lowercased().contains("markdown") { return "Notes" }
-        return name
+        return String(name.prefix(5))
     }
 
     // MARK: - Collapsible section

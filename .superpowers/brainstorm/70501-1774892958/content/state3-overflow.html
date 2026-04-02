@@ -1,0 +1,155 @@
+<h2>State 3 — Results with Long Content</h2>
+<p class="subtitle">Two approaches for handling a 45-minute meeting with a long summary and many action items.</p>
+
+<div class="split" style="gap:20px;align-items:flex-start;">
+
+  <!-- Option A: Scrollable sections with max-height -->
+  <div class="mockup" style="flex:1;">
+    <div class="mockup-header">A — Scrollable content area</div>
+    <div class="mockup-body" style="background:#1c1c1e;padding:14px;font-family:-apple-system,sans-serif;width:280px;box-sizing:border-box;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;margin-bottom:10px;">
+        <div style="min-width:0;flex:1;">
+          <div style="color:#fff;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Q1 Planning — Product & Engineering</div>
+        </div>
+        <span style="margin-left:8px;color:#636366;font-size:11px;white-space:nowrap;flex-shrink:0;">45 min</span>
+      </div>
+      <!-- Status strip -->
+      <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="color:#30d158;font-size:10px;">✓ Transcribed</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Summary</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Actions</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Tags</span>
+      </div>
+
+      <!-- Scrollable area -->
+      <div style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px;">
+        <!-- Summary -->
+        <div style="background:#2c2c2e;border-radius:8px;padding:10px;">
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px;">Summary</div>
+          <div style="color:#ebebf5;font-size:11px;line-height:1.6;">The team aligned on Q1 goals across product and engineering. The main themes were reliability, onboarding improvements, and reducing time-to-value for new customers. There was significant discussion about the tradeoffs between shipping new features vs. paying down technical debt, with the team agreeing to a 60/40 split favouring stability. The launch timeline for the mobile app was pushed to end of Q2 due to resource constraints.</div>
+        </div>
+        <!-- Action items -->
+        <div style="background:#2c2c2e;border-radius:8px;padding:10px;">
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Action Items</div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Sarah to revise onboarding flow mockups by next Thursday</span></div>
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Alex to audit API endpoints for deprecation candidates</span></div>
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Tom to scope mobile app delay impact and update roadmap</span></div>
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Ops to confirm budget approval for new CI infrastructure</span></div>
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Jesper to share updated Q1 OKRs with the team by EOW</span></div>
+          </div>
+        </div>
+        <!-- Tags -->
+        <div style="background:#2c2c2e;border-radius:8px;padding:8px 10px;">
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px;">Tags · Sentiment: Positive</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <span style="background:#1c1c1e;border-radius:4px;padding:2px 6px;color:#ebebf5;font-size:10px;">planning</span>
+            <span style="background:#1c1c1e;border-radius:4px;padding:2px 6px;color:#ebebf5;font-size:10px;">roadmap</span>
+            <span style="background:#1c1c1e;border-radius:4px;padding:2px 6px;color:#ebebf5;font-size:10px;">q1</span>
+            <span style="background:#1c1c1e;border-radius:4px;padding:2px 6px;color:#ebebf5;font-size:10px;">mobile</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sticky actions bar -->
+      <div style="display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+        <div style="flex:1;background:#0a84ff;border-radius:6px;padding:7px;text-align:center;color:#fff;font-size:11px;font-weight:600;">Copy Notes</div>
+        <div style="background:#2c2c2e;border-radius:6px;padding:7px 10px;color:#fff;font-size:11px;">↗ Open</div>
+        <div style="background:#2c2c2e;border-radius:6px;padding:7px 10px;color:#636366;font-size:11px;">✕</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: Collapsed sections with expand -->
+  <div class="mockup" style="flex:1;">
+    <div class="mockup-header">B — Collapsible sections</div>
+    <div class="mockup-body" style="background:#1c1c1e;padding:14px;font-family:-apple-system,sans-serif;width:280px;box-sizing:border-box;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;margin-bottom:10px;">
+        <div style="color:#fff;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">Q1 Planning — Product & Engineering</div>
+        <span style="margin-left:8px;color:#636366;font-size:11px;white-space:nowrap;">45 min</span>
+      </div>
+      <!-- Status strip -->
+      <div style="display:flex;gap:4px;margin-bottom:12px;">
+        <span style="color:#30d158;font-size:10px;">✓ Transcribed</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Summary</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Actions</span>
+        <span style="color:#636366;font-size:10px;">·</span>
+        <span style="color:#30d158;font-size:10px;">✓ Tags</span>
+      </div>
+
+      <!-- Summary — expanded -->
+      <div style="background:#2c2c2e;border-radius:8px;margin-bottom:6px;overflow:hidden;">
+        <div style="padding:8px 10px;display:flex;align-items:center;cursor:pointer;">
+          <span style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;flex:1;">Summary</span>
+          <span style="color:#636366;font-size:10px;">▼</span>
+        </div>
+        <div style="padding:0 10px 10px;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="color:#ebebf5;font-size:11px;line-height:1.6;margin-top:8px;">The team aligned on Q1 goals across product and engineering. The main themes were reliability, onboarding improvements, and reducing time-to-value for new customers. There was significant discussion about the tradeoffs between shipping new features vs. paying down technical debt...</div>
+          <div style="color:#0a84ff;font-size:10px;margin-top:4px;cursor:pointer;">Show more</div>
+        </div>
+      </div>
+
+      <!-- Action items — expanded -->
+      <div style="background:#2c2c2e;border-radius:8px;margin-bottom:6px;overflow:hidden;">
+        <div style="padding:8px 10px;display:flex;align-items:center;cursor:pointer;">
+          <span style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;flex:1;">Action Items <span style="color:#0a84ff;">5</span></span>
+          <span style="color:#636366;font-size:10px;">▼</span>
+        </div>
+        <div style="padding:0 10px 10px;border-top:1px solid rgba(255,255,255,0.05);">
+          <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Sarah to revise onboarding flow mockups by next Thursday</span></div>
+            <div style="display:flex;gap:6px;align-items:flex-start;"><span style="color:#636366;font-size:10px;margin-top:1px;flex-shrink:0;">◦</span><span style="color:#ebebf5;font-size:11px;line-height:1.4;">Alex to audit API endpoints for deprecation candidates</span></div>
+            <div style="color:#0a84ff;font-size:10px;margin-top:2px;cursor:pointer;padding-left:14px;">+3 more</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tags — collapsed -->
+      <div style="background:#2c2c2e;border-radius:8px;margin-bottom:10px;">
+        <div style="padding:8px 10px;display:flex;align-items:center;cursor:pointer;">
+          <span style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;flex:1;">Tags · Positive</span>
+          <span style="color:#636366;font-size:10px;">▶</span>
+        </div>
+      </div>
+
+      <!-- Actions bar -->
+      <div style="display:flex;gap:6px;">
+        <div style="flex:1;background:#0a84ff;border-radius:6px;padding:7px;text-align:center;color:#fff;font-size:11px;font-weight:600;">Copy Notes</div>
+        <div style="background:#2c2c2e;border-radius:6px;padding:7px 10px;color:#fff;font-size:11px;">↗ Open</div>
+        <div style="background:#2c2c2e;border-radius:6px;padding:7px 10px;color:#636366;font-size:11px;">✕</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>Trade-offs</h3>
+  <div class="pros-cons" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div>
+      <p class="label">Option A — Scroll</p>
+      <ul style="font-size:13px;line-height:1.8;padding-left:16px;">
+        <li>Everything visible at once, just scroll</li>
+        <li>Simpler to implement, no state</li>
+        <li>Familiar — works like any list</li>
+        <li style="color:#888;">Popover can feel tall on long content</li>
+      </ul>
+    </div>
+    <div>
+      <p class="label">Option B — Collapsible</p>
+      <ul style="font-size:13px;line-height:1.8;padding-left:16px;">
+        <li>Compact regardless of content length</li>
+        <li>User controls what they see</li>
+        <li style="color:#888;">More interactions to reach content</li>
+        <li style="color:#888;">Adds complexity for longer meetings</li>
+      </ul>
+    </div>
+  </div>
+</div>

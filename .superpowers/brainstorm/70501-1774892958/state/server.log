@@ -1,0 +1,9 @@
+{"type":"server-started","port":63180,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:63180","screen_dir":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content","state_dir":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/state"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/design-direction.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/waiting-1.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/popover-layout.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/state3-overflow.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/settings-structure.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/memory-states.html"}
+{"type":"screen-added","file":"/Users/jesper.mol/code/VoiceRecorder/.superpowers/brainstorm/70501-1774892958/content/waiting-2.html"}
+{"type":"server-stopped","reason":"owner process exited"}

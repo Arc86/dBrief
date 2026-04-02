@@ -10,12 +10,24 @@ struct SettingsAIModelsTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $selectedSubTab) {
+            HStack(spacing: 0) {
                 ForEach(SubTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Button {
+                        selectedSubTab = tab
+                    } label: {
+                        Text(tab.rawValue)
+                            .font(.callout)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                            .background(selectedSubTab == tab ? Color(NSColor.selectedControlColor) : Color.clear)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .pickerStyle(.segmented)
+            .background(Color(NSColor.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(NSColor.separatorColor), lineWidth: 1))
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 4)
