@@ -1,0 +1,97 @@
+<h2>Call Detection Popup — Design Options</h2>
+<p class="subtitle">Which style feels right for dBrief's notification popup? All options fix the "must click menu bar first" bug.</p>
+
+<div class="cards">
+
+  <!-- Option A: macOS Notification Banner -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1a1a; padding: 20px; display:flex; align-items:flex-start; justify-content:flex-end; min-height:160px;">
+      <!-- simulated desktop background -->
+      <div style="width:320px; background:rgba(40,40,40,0.92); backdrop-filter:blur(20px); border-radius:12px; padding:12px 14px; box-shadow:0 8px 32px rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#FF6B00,#FF9500);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span style="color:white;font-size:16px;">🎙</span>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:1px;">
+              <span style="font-size:10px;font-weight:600;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;">dBrief</span>
+              <span style="width:5px;height:5px;border-radius:50%;background:#FF6B00;display:inline-block;"></span>
+            </div>
+            <div style="font-size:13px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Microsoft Teams call detected</div>
+          </div>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:14px;padding:2px 4px;">✕</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;padding-left:46px;">
+          <button style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;">Not Now</button>
+          <button style="background:linear-gradient(135deg,#FF6B00,#FF9500);border:none;color:white;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;">● Record</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Notification Banner</h3>
+      <p>Top-right corner, like macOS system notifications. Small (320×90px), dark glass, branded orange. Slides in, doesn't steal focus.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Compact HUD Bar -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1a1a; padding: 20px; display:flex; align-items:flex-start; justify-content:center; min-height:160px;">
+      <div style="width:420px; background:rgba(30,30,30,0.95); backdrop-filter:blur(20px); border-radius:100px; padding:10px 16px; box-shadow:0 8px 32px rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:12px; margin-top:10px;">
+        <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#FF6B00,#FF9500);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span style="color:white;font-size:12px;">🎙</span>
+        </div>
+        <div style="flex:1;">
+          <span style="font-size:12px;color:rgba(255,255,255,0.5);">dBrief · </span>
+          <span style="font-size:12px;font-weight:500;color:#fff;">Teams call detected</span>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);border-radius:100px;padding:4px 12px;font-size:11px;cursor:pointer;">Not Now</button>
+          <button style="background:linear-gradient(135deg,#FF6B00,#FF9500);border:none;color:white;border-radius:100px;padding:4px 14px;font-size:11px;font-weight:600;cursor:pointer;">Record</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Pill Bar</h3>
+      <p>Top-center floating pill, super minimal. No title bar, one line of text, two actions. Widest support for screen sizes.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Status-bar dropdown style -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1a1a; padding: 20px; display:flex; align-items:flex-start; justify-content:center; min-height:160px;">
+      <!-- macOS menu bar simulation -->
+      <div style="width:100%; position:relative;">
+        <div style="background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); height:24px; border-radius:4px; display:flex; align-items:center; padding:0 12px; margin-bottom:0;">
+          <span style="font-size:11px; color:rgba(255,255,255,0.9); font-weight:600;">dBrief</span>
+          <span style="flex:1;"></span>
+          <span style="font-size:10px; color:rgba(255,255,255,0.5);">🎙 ...</span>
+        </div>
+        <div style="position:absolute;right:30px;top:24px;width:260px;background:rgba(40,40,40,0.97);border-radius:0 0 10px 10px;border:1px solid rgba(255,255,255,0.1);border-top:none;box-shadow:0 8px 20px rgba(0,0,0,0.5);padding:14px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#FF6B00,#FF9500);display:flex;align-items:center;justify-content:center;">
+              <span style="font-size:14px;">🎙</span>
+            </div>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#fff;">Teams call detected</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.4);">Start recording now?</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button style="flex:1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);border-radius:6px;padding:5px;font-size:11px;cursor:pointer;">Not Now</button>
+            <button style="flex:1;background:linear-gradient(135deg,#FF6B00,#FF9500);border:none;color:white;border-radius:6px;padding:5px;font-size:11px;font-weight:600;cursor:pointer;">● Start Recording</button>
+          </div>
+          <div style="text-align:center;margin-top:8px;">
+            <a href="#" style="font-size:10px;color:rgba(255,255,255,0.25);text-decoration:none;">Don't ask again for Teams</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Menu Bar Dropdown</h3>
+      <p>Appears below the dBrief menu bar icon (like a mini popover). Anchored to the icon, slightly larger at 260px. "Don't ask again" is a subtle link at the bottom.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">All three fix the core bug (`.nonactivatingPanel` + proper window level). The difference is purely visual style and screen position.</p>
