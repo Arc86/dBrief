@@ -1,10 +1,14 @@
 import SwiftUI
 import AppKit
+import OSLog
 
 /// Manages a small floating window that shows recording status.
 @MainActor
 @Observable
 final class FloatingMiniPlayerController {
+    private static let panelWidth: CGFloat = 220
+    private static let screenMargin: CGFloat = 12
+
     private var window: NSPanel?
     private var appState: AppState?
     private var recordingManager: RecordingManager?
@@ -18,7 +22,7 @@ final class FloatingMiniPlayerController {
         guard window == nil, let appState, let recordingManager else { return }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 120),
+            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 0),
             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -28,7 +32,6 @@ final class FloatingMiniPlayerController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
-        panel.title = ""
         panel.isMovableByWindowBackground = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -44,11 +47,15 @@ final class FloatingMiniPlayerController {
         let hosting = NSHostingView(rootView: content)
         panel.contentView = hosting
 
+        // Size panel to fit SwiftUI content
+        let fittingSize = hosting.fittingSize
+        panel.setContentSize(CGSize(width: Self.panelWidth, height: fittingSize.height))
+
         // Position at top-right of screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let x = screenFrame.maxX - 232
-            let y = screenFrame.maxY - 132
+            let x = screenFrame.maxX - Self.panelWidth - Self.screenMargin
+            let y = screenFrame.maxY - fittingSize.height - Self.screenMargin
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -70,12 +77,19 @@ private struct MiniPlayerView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
 
+    private static let cachedIcon: Image = {
+        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
+           let img = NSImage(contentsOf: url) { return Image(nsImage: img) }
+        if let img = NSImage(named: "AppIcon") { return Image(nsImage: img) }
+        return Image(systemName: "waveform.circle.fill")
+    }()
+
     var body: some View {
         VStack(spacing: 8) {
             // Top row: status + timer
             HStack {
                 HStack(spacing: 5) {
-                    appIcon
+                    Self.cachedIcon
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
@@ -103,7 +117,6 @@ private struct MiniPlayerView: View {
 
                 Text(formattedDuration)
                     .font(.system(.caption, design: .monospaced, weight: .semibold))
-                    .monospacedDigit()
                     .foregroundStyle(.primary)
             }
 
@@ -126,7 +139,11 @@ private struct MiniPlayerView: View {
                     .buttonStyle(.bordered)
                 } else if appState.isPaused {
                     Button {
-                        try? recordingManager.resumeRecording()
+                        do {
+                            try recordingManager.resumeRecording()
+                        } catch {
+                            Logger.recording.error("Failed to resume recording: \(error)")
+                        }
                     } label: {
                         Label("Resume", systemImage: "play.fill")
                             .font(.caption.weight(.medium))
@@ -150,20 +167,8 @@ private struct MiniPlayerView: View {
         }
         .padding(12)
         .frame(width: 220)
-        .fixedSize(horizontal: false, vertical: true)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
-    }
-
-    private var appIcon: Image {
-        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
-           let nsImage = NSImage(contentsOf: url) {
-            return Image(nsImage: nsImage)
-        }
-        if let nsImage = NSImage(named: "AppIcon") {
-            return Image(nsImage: nsImage)
-        }
-        return Image(systemName: "waveform.circle.fill")
     }
 
     private var formattedDuration: String {
@@ -182,27 +187,27 @@ private struct MiniWaveform: View {
     let level: Float
     private let barCount = 20
 
-    private var heights: [CGFloat] {
-        let clamped = CGFloat(min(max(level, 0), 1))
-        return (0..<barCount).map { i in
-            // Create a natural wave pattern that responds to level
-            let position = Double(i) / Double(barCount - 1)
-            let wave = sin(position * .pi) // bell curve shape
-            let base: CGFloat = 2
-            let maxExtra: CGFloat = 16
-            return base + maxExtra * wave * (0.2 + clamped * 0.8)
-        }
-    }
+    @State private var history: [Float] = Array(repeating: 0, count: 20)
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { idx in
                 Capsule()
                     .fill(.tint)
-                    .frame(width: 2.5, height: heights[idx])
+                    .frame(width: 2.5, height: barHeight(for: idx))
             }
         }
         .tint(.blue.opacity(0.7))
-        .animation(.easeOut(duration: 0.12), value: level)
+        .animation(.easeOut(duration: 0.1), value: history)
+        .onChange(of: level) { _, newLevel in
+            history.removeFirst()
+            history.append(newLevel)
+        }
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        let base: CGFloat = 2
+        let maxExtra: CGFloat = 16
+        return base + maxExtra * CGFloat(history[index])
     }
 }

@@ -7,7 +7,7 @@ enum ProfilePresetKind: String, Codable, CaseIterable, Sendable {
     case custom
 }
 
-struct MeetingProfileOverrides: Codable, Hashable, Sendable {
+struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var transcriptionLanguage: String?
     var whisperPrompt: String?
     var transcriptionEngine: AppSettings.TranscriptionEngine?
