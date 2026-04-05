@@ -243,52 +243,109 @@ final class AppSettings {
 
     static let defaultSummaryPrompt = """
         You are an assistant that summarizes meeting transcriptions. \
-        Provide a detailed, multi-paragraph summary of the key discussion points, decisions, and outcomes. \
-        Cover all major topics discussed in the meeting thoroughly. \
-        Do not use conversational filler, just provide the summary directly. \
-        Always respond in the exact same language as the transcription.
+        Write the summary in the same language as the transcription. \
+        Structure: \
+        1. **Overview** — 2-3 sentences capturing the meeting's purpose and main outcome. \
+        2. **Discussion Points** — One paragraph per major topic, covering what was discussed, \
+        key arguments or viewpoints raised, and any context needed to understand the discussion. \
+        Include participant names when relevant. \
+        3. **Decisions & Outcomes** — Bullet list of concrete decisions made and their rationale. \
+        4. **Open Questions** — Any unresolved topics or questions that were left for follow-up. \
+        Be detailed enough that someone who missed the meeting gets a clear, complete picture. \
+        Do not omit topics even if they seem minor. \
+        Do not add conversational filler or introductory text — start directly with the overview.
         """
 
     static let defaultActionItemsPrompt = """
         You are an assistant that extracts action items from meeting transcriptions. \
-        List each action item as a separate line starting with "- ". \
-        Include who is responsible if mentioned. \
-        OUTPUT ONLY THE LIST ITSELF. DO NOT include any introductory text, markdown code blocks, or conversational filler. \
-        Always respond in the exact same language as the transcription.
+        Write in the same language as the transcription. \
+        Extract ONLY concrete, committed action items — tasks someone explicitly agreed to do or was clearly assigned. \
+        Do NOT include: vague suggestions ("we should look into...", "it would be nice to..."), \
+        general discussion topics or ideas without a clear owner or commitment, \
+        decisions (those belong in the summary), or duplicate items. \
+        If the same task is mentioned multiple times, list it once. \
+        Format each item as a single line starting with "- ", including: \
+        the task itself (specific and actionable), owner name if mentioned, deadline or timeframe if mentioned. \
+        Output ONLY the list. No introductory text, headers, or markdown code blocks. \
+        If there are no concrete action items, output exactly: "- No action items identified"
         """
 
     static let defaultTagsPrompt = """
         You are an assistant that analyzes meeting transcriptions. \
-        Output a JSON object with two fields: \
-        "tags" (array of 3-7 relevant topic tags, lowercase, no # prefix) and \
-        "sentiment" (one of: "positive", "neutral", "negative", "mixed"). \
-        Only output valid JSON, nothing else. \
-        Always respond in the exact same language as the transcription.
+        Respond in the same language as the transcription. \
+        Output a JSON object with exactly two fields: \
+        "tags" (array of 3-7 topic tags, lowercase, no spaces, use hyphens for multi-word tags \
+        e.g. "project-management", no # prefix, no special characters except hyphens, \
+        must be compatible with Obsidian) and \
+        "sentiment" (one of: "positive", "neutral", "negative", "mixed" — \
+        use "mixed" only when the meeting had clearly distinct positive and negative segments). \
+        Output valid JSON only. No markdown code fences, no explanation.
         """
 
     static let teamMeetingWhisperPrompt =
         "Team standup, sprint, backlog, blocker, follow-up, ETA, Jira, PR, release, roadmap, architecture."
 
-    static let teamMeetingSummaryPrompt =
-        "Summarize this internal team meeting in concise bullet points. Include: decisions, progress updates, blockers, and next steps. Keep tone informal and practical. Always respond in the exact same language as the transcription."
+    static let teamMeetingSummaryPrompt = """
+        Summarize this internal team meeting. Write in the same language as the transcription. \
+        Structure: \
+        1. **Overview** — 1-2 sentences on the meeting's purpose. \
+        2. **Progress Updates** — What each person or team reported, including status and blockers. \
+        3. **Decisions** — Bullet list of what was decided and why. \
+        4. **Next Steps** — What happens next, including owners and timelines if mentioned. \
+        Keep tone informal and practical. Be detailed enough that absent team members are fully caught up.
+        """
 
-    static let teamMeetingActionItemsPrompt =
-        "Extract concrete action items from this team meeting. Output bullet lines beginning with '- '. Include owner if mentioned and due date if mentioned. Keep wording short. Always respond in the exact same language as the transcription."
+    static let teamMeetingActionItemsPrompt = """
+        Extract action items from this team meeting. Write in the same language as the transcription. \
+        Only include tasks someone explicitly committed to or was assigned. \
+        Exclude vague suggestions, discussion topics, and decisions without a clear task. \
+        Deduplicate — list each task once even if mentioned multiple times. \
+        Format: bullet lines beginning with "- ", including owner and due date if mentioned. Keep wording short. \
+        If there are no concrete action items, output exactly: "- No action items identified"
+        """
 
-    static let teamMeetingTagsPrompt =
-        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should reflect internal collaboration topics (planning, delivery, blockers, risks, dependencies). Always respond in the exact same language as the transcription."
+    static let teamMeetingTagsPrompt = """
+        Respond in the same language as the transcription. \
+        Return valid JSON only: {"tags": [...], "sentiment": "..."}. \
+        Tags: 3-7 tags reflecting internal collaboration topics (planning, delivery, blockers, risks, dependencies). \
+        Lowercase, no spaces (use hyphens for multi-word tags e.g. "sprint-planning"), no # prefix, Obsidian-compatible. \
+        Sentiment: one of "positive", "neutral", "negative", "mixed". \
+        No markdown code fences, no explanation.
+        """
 
     static let salesMeetingWhisperPrompt =
         "Customer, contract, pricing, procurement, renewal, objections, competitor, timeline, stakeholder, action item, follow-up."
 
-    static let salesMeetingSummaryPrompt =
-        "Create a formal customer-facing sales meeting summary. Prioritize factual accuracy, commitments, risks, and agreed commercial points. Use clear bullet points. Always respond in the exact same language as the transcription."
+    static let salesMeetingSummaryPrompt = """
+        Summarize this sales meeting. Write in the same language as the transcription. \
+        Structure: \
+        1. **Overview** — 1-2 sentences on who attended and the meeting's purpose. \
+        2. **Customer Requirements & Concerns** — What the customer needs, their pain points, and any objections raised. \
+        3. **Commercial Discussion** — Pricing, terms, timelines, and any commitments made by either side. \
+        4. **Decisions & Agreements** — Bullet list of what was agreed upon. \
+        5. **Risks & Open Items** — Unresolved concerns, competitor mentions, or blockers to closing. \
+        6. **Next Steps** — Agreed follow-up actions with owners and dates if mentioned. \
+        Keep tone professional and factually precise. Prioritize accuracy over brevity — \
+        this summary may be shared with stakeholders who were not present.
+        """
 
-    static let salesMeetingActionItemsPrompt =
-        "Extract precise action items for sales follow-up. Output bullet lines beginning with '- '. Include owner, expected outcome, and date when available. Be exact and unambiguous. Always respond in the exact same language as the transcription."
+    static let salesMeetingActionItemsPrompt = """
+        Extract action items for sales follow-up. Write in the same language as the transcription. \
+        Only include tasks that were explicitly committed to or assigned — not vague intentions or discussion points. \
+        Deduplicate — list each task once even if mentioned multiple times. \
+        Format: bullet lines beginning with "- ", including owner, expected outcome, and date when available. \
+        Be exact and unambiguous. \
+        If there are no concrete action items, output exactly: "- No action items identified"
+        """
 
-    static let salesMeetingTagsPrompt =
-        "Return valid JSON only: {\"tags\": [...], \"sentiment\": \"...\"}. Tags should focus on deal stage, customer needs, objections, budget, timeline, decision process, and next steps. Always respond in the exact same language as the transcription."
+    static let salesMeetingTagsPrompt = """
+        Respond in the same language as the transcription. \
+        Return valid JSON only: {"tags": [...], "sentiment": "..."}. \
+        Tags: 3-7 tags focusing on deal stage, customer needs, objections, budget, timeline, decision process. \
+        Lowercase, no spaces (use hyphens for multi-word tags e.g. "deal-negotiation"), no # prefix, Obsidian-compatible. \
+        Sentiment: one of "positive", "neutral", "negative", "mixed". \
+        No markdown code fences, no explanation.
+        """
 
     var summaryPrompt: String {
         didSet { UserDefaults.standard.set(summaryPrompt, forKey: Keys.summaryPrompt) }
