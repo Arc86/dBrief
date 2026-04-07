@@ -2,16 +2,18 @@ import Foundation
 
 struct RichTranscriptBuilder {
     func build(from result: TranscriptionResult) -> RichTranscript {
-        RichTranscript(from: result)
-    }
-
-    func build(from result: TranscriptionResult, starring: Set<UUID> = []) -> RichTranscript {
-        var transcript = RichTranscript(from: result)
-        for idx in transcript.segments.indices {
-            if starring.contains(transcript.segments[idx].id) {
-                transcript.segments[idx].isStarred = true
-            }
+        let segments = result.segments.map { seg -> RichSegment in
+            let tokens: [RichToken] = seg.words?.map { word in
+                RichToken(text: word.word, start: word.start, end: word.end)
+            } ?? []
+            return RichSegment(
+                start: seg.start,
+                end: seg.end,
+                text: seg.text,
+                originalText: seg.text,
+                tokens: tokens
+            )
         }
-        return transcript
+        return RichTranscript(segments: segments)
     }
 }
