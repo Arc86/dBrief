@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 struct TranscriptWindowView: View {
     @Binding var recordingId: UUID?
@@ -10,6 +11,7 @@ struct TranscriptWindowView: View {
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
     @State private var showStarredOnly = false
+    @State private var currentTime: TimeInterval = 0
 
     private var recording: Recording? {
         guard let id = recordingId else { return nil }
@@ -70,6 +72,7 @@ struct TranscriptWindowView: View {
                             .padding(12)
                         }
                         .onChange(of: audioPlayer.currentTime) { _, newTime in
+                            currentTime = newTime
                             if let t = richTranscript,
                                let active = t.segments.first(where: { newTime >= $0.start && newTime < $0.end }) {
                                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
@@ -82,7 +85,7 @@ struct TranscriptWindowView: View {
                     if let audioURL = recording.finalizedAudioURL {
                         TranscriptPlayerBar(
                             audioURL: audioURL,
-                            currentTime: .constant(audioPlayer.currentTime)
+                            currentTime: $currentTime
                         )
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -112,7 +115,7 @@ struct TranscriptWindowView: View {
     }
 
     private func isSegmentActive(_ segment: RichSegment) -> Bool {
-        audioPlayer.currentTime >= segment.start && audioPlayer.currentTime < segment.end
+        currentTime >= segment.start && currentTime < segment.end
     }
 
     private func seek(to time: TimeInterval, in recording: Recording) {
@@ -142,7 +145,11 @@ struct TranscriptWindowView: View {
     private func saveTranscript(_ transcript: RichTranscript, for recording: Recording) {
         let store = context.transcriptStore
         Task {
-            try? await store.save(transcript, for: recording)
+            do {
+                try await store.save(transcript, for: recording)
+            } catch {
+                Logger.recording.error("TranscriptWindowView: failed to save transcript: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 

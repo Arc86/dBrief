@@ -138,9 +138,9 @@ struct TranscriptSegmentRow: View {
 
     private func scheduleSave(_ text: String) {
         saveTask?.cancel()
-        saveTask = Task {
+        saveTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, isEditing else { return }
             onSave(text)
         }
     }
