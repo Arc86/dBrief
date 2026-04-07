@@ -14,6 +14,7 @@ final class AppState {
     var recordingDuration: TimeInterval = 0
     var peakLevel: Float = 0
     var currentRecording: Recording?
+    var recentRecordings: [Recording] = []
 
     var showPostRecordingSheet = false
     var showCallDetectedPopup = false {
@@ -36,6 +37,10 @@ final class AppState {
     var isProcessing: Bool { recordingState == .processing }
     var isIdle: Bool { recordingState == .idle }
     var hasProcessingResults: Bool { !processingSteps.isEmpty }
+
+    func recording(for id: UUID) -> Recording? {
+        recentRecordings.first { $0.id == id }
+    }
 }
 
 struct ProcessingStep: Identifiable {

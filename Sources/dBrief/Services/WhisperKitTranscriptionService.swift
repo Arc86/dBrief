@@ -47,6 +47,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.temperature = 0
         options.skipSpecialTokens = true
         options.withoutTimestamps = false
+        options.wordTimestamps = true
 
         do {
             let wkResults = try await whisper.transcribe(
@@ -54,11 +55,25 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 decodeOptions: options
             )
             let mappedSegments = wkResults.flatMap { result in
-                result.segments.map {
-                    TranscriptionResult.Segment(
-                        start: Double($0.start),
-                        end: Double($0.end),
-                        text: cleanTranscriptArtifacts($0.text)
+                result.segments.map { seg -> TranscriptionResult.Segment in
+                    let wordTimings: [TranscriptionResult.Word]? = {
+                        if let words = seg.words {
+                            return words.map {
+                                TranscriptionResult.Word(
+                                    word: $0.word,
+                                    start: Double($0.start),
+                                    end: Double($0.end),
+                                    probability: Double($0.probability)
+                                )
+                            }
+                        }
+                        return nil
+                    }()
+                    return TranscriptionResult.Segment(
+                        start: Double(seg.start),
+                        end: Double(seg.end),
+                        text: cleanTranscriptArtifacts(seg.text),
+                        words: wordTimings
                     )
                 }
             }

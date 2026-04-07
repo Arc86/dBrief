@@ -10,6 +10,7 @@ private let log = Logger.app
 final class AppContext {
     let appState = AppState()
     let appSettings = AppSettings()
+    let transcriptStore = TranscriptStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
@@ -22,7 +23,7 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         registerFontAwesomeBrands()
-        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings)
+        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore)
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -159,6 +160,13 @@ struct DBriefApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
+
+        WindowGroup(for: UUID.self) { recordingId in
+            TranscriptWindowView(recordingId: recordingId)
+                .environment(context.appState)
+                .environment(context.appSettings)
+                .environment(context.audioPlayer)
+        }
     }
 }
 

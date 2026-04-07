@@ -18,6 +18,7 @@ struct RecordingHistoryView: View {
         let duration: TimeInterval
         let profileName: String?
         let hasTranscript: Bool
+        let hasRichTranscript: Bool
 
         var formattedDate: String {
             let formatter = DateFormatter()
@@ -123,6 +124,10 @@ struct RecordingHistoryView: View {
                             if item.hasTranscript {
                                 Text("·")
                                 Text("✓ AI").foregroundStyle(.green)
+                            }
+                            if item.hasRichTranscript {
+                                Text("·")
+                                Text("Transcript").foregroundStyle(.blue)
                             }
                         }
                         .font(.caption2)
@@ -240,6 +245,7 @@ struct RecordingHistoryView: View {
             item.url,
             base.appendingPathExtension("md"),
             base.appendingPathExtension("transcript.json"),
+            base.appendingPathExtension("richtranscript.json"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
@@ -303,6 +309,8 @@ struct RecordingHistoryView: View {
             let base = entry.url.deletingPathExtension()
             let transcriptURL = base.appendingPathExtension("transcript.json")
             let hasTranscript = FileManager.default.fileExists(atPath: transcriptURL.path)
+            let richTranscriptURL = base.appendingPathExtension("richtranscript.json")
+            let hasRichTranscript = FileManager.default.fileExists(atPath: richTranscriptURL.path)
 
             var duration: TimeInterval = 0
             let metaURL = base.appendingPathExtension("json")
@@ -319,7 +327,8 @@ struct RecordingHistoryView: View {
                 size: entry.size,
                 duration: duration,
                 profileName: nil,
-                hasTranscript: hasTranscript
+                hasTranscript: hasTranscript,
+                hasRichTranscript: hasRichTranscript
             )
         }
     }

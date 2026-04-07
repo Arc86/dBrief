@@ -21,6 +21,8 @@ final class RecordingManager {
     private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
     private let recordingFinalizer = RecordingFinalizer()
+    private let transcriptStore: TranscriptStore
+    private let richTranscriptBuilder = RichTranscriptBuilder()
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
@@ -28,9 +30,10 @@ final class RecordingManager {
         static let qwen3_4b:   Int64 = 4_831_838_209   // 4.5 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore) {
         self.appState = appState
         self.appSettings = appSettings
+        self.transcriptStore = transcriptStore
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -203,6 +206,10 @@ final class RecordingManager {
                     }
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
+                    // Build and save rich transcript with word-level sync
+                    let rich = richTranscriptBuilder.build(from: result)
+                    recording.richTranscript = rich
+                    await transcriptStore.save(rich, for: recording)
                 } catch {
                     let msg = error.localizedDescription
                     Logger.transcription.error("Transcription failed: \(msg, privacy: .public)")
@@ -1352,7 +1359,8 @@ final class RecordingManager {
                     .init(
                         start: segment.start + piece.offsetSeconds,
                         end: segment.end + piece.offsetSeconds,
-                        text: segment.text
+                        text: segment.text,
+                        words: segment.words
                     )
                 )
             }
