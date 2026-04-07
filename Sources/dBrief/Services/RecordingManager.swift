@@ -209,7 +209,7 @@ final class RecordingManager {
                     // Build and save rich transcript with word-level sync
                     let rich = richTranscriptBuilder.build(from: result)
                     recording.richTranscript = rich
-                    await transcriptStore.save(rich, for: recording)
+                    try? await transcriptStore.save(rich, for: recording)
                 } catch {
                     let msg = error.localizedDescription
                     Logger.transcription.error("Transcription failed: \(msg, privacy: .public)")
