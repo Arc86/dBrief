@@ -163,6 +163,7 @@ struct DBriefApp: App {
 
         WindowGroup(for: UUID.self) { recordingId in
             TranscriptWindowView(recordingId: recordingId)
+                .environment(context)
                 .environment(context.appState)
                 .environment(context.appSettings)
                 .environment(context.audioPlayer)

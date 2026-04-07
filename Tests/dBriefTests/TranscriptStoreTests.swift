@@ -3,72 +3,54 @@ import Foundation
 import Testing
 
 struct TranscriptStoreTests {
-    @Test("load returns nil when no sidecar exists")
-    @MainActor
+    @Test("load throws when no sidecar file exists")
     func loadNonExistent() async {
         let store = TranscriptStore()
-        let recording = Recording(
-            fileURL: URL(fileURLWithPath: "/tmp/nonexistent.flac"),
-            finalizedAudioURL: URL(fileURLWithPath: "/tmp/nonexistent.flac")
-        )
-        let result = await store.load(for: recording)
-        #expect(result == nil)
+        let url = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).richtranscript.json")
+        await #expect(throws: (any Error).self) {
+            try await store.load(from: url)
+        }
     }
 
-    @Test("save and load round-trip")
-    @MainActor
+    @Test("save and load round-trip preserves segments and version")
     func saveAndLoad() async throws {
         let store = TranscriptStore()
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let audioURL = tempDir.appendingPathComponent("test.recording.flac")
-        try "dummy".write(to: audioURL, atomically: true, encoding: .utf8)
-
-        let recording = Recording(
-            fileURL: audioURL,
-            finalizedAudioURL: audioURL
+        let url = tempDir.appendingPathComponent("test.richtranscript.json")
+        let transcript = RichTranscript(
+            segments: [
+                RichSegment(start: 0, end: 1.5, text: "Hello", originalText: "Hello"),
+                RichSegment(start: 1.5, end: 3.0, text: "World", originalText: "World"),
+            ]
         )
 
-        let transcript = RichTranscript(segments: [
-            RichTranscript.Segment(start: 0, end: 1.5, text: "Hello world"),
-            RichTranscript.Segment(start: 1.5, end: 3.0, text: "Goodbye world"),
-        ])
+        try await store.save(transcript, to: url)
+        let loaded = try await store.load(from: url)
 
-        await store.save(transcript, for: recording)
-
-        let loaded = await store.load(for: recording)
-        #expect(loaded != nil)
-        #expect(loaded?.segments.count == 2)
-        #expect(loaded?.segments[0].text == "Hello world")
-        #expect(loaded?.segments[1].text == "Goodbye world")
+        #expect(loaded.segments.count == 2)
+        #expect(loaded.segments[0].text == "Hello")
+        #expect(loaded.segments[1].text == "World")
+        #expect(loaded.version == 1)
     }
 
-    @Test("delete removes sidecar")
-    @MainActor
-    func deleteSidecar() async throws {
+    @Test("schema version field is preserved across encode/decode")
+    func schemaVersionPreserved() async throws {
         let store = TranscriptStore()
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let audioURL = tempDir.appendingPathComponent("test.recording.flac")
-        try "dummy".write(to: audioURL, atomically: true, encoding: .utf8)
+        let url = tempDir.appendingPathComponent("version.richtranscript.json")
+        var transcript = RichTranscript(segments: [])
+        transcript.version = 1
 
-        let recording = Recording(
-            fileURL: audioURL,
-            finalizedAudioURL: audioURL
-        )
-
-        let transcript = RichTranscript(segments: [
-            RichTranscript.Segment(start: 0, end: 1.0, text: "Test"),
-        ])
-
-        await store.save(transcript, for: recording)
-        #expect(await store.exists(for: recording) == true)
-
-        await store.delete(for: recording)
-        #expect(await store.exists(for: recording) == false)
+        try await store.save(transcript, to: url)
+        let loaded = try await store.load(from: url)
+        #expect(loaded.version == 1)
     }
 }

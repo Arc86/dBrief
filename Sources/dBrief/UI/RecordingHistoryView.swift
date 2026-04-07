@@ -2,7 +2,9 @@ import SwiftUI
 import AppKit
 
 struct RecordingHistoryView: View {
+    @Environment(\.openWindow) private var openWindow
     @Environment(AppSettings.self) private var appSettings
+    @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(RecordingManager.self) private var recordingManager
     @State private var recordings: [HistoryItem] = []
@@ -125,10 +127,6 @@ struct RecordingHistoryView: View {
                                 Text("·")
                                 Text("✓ AI").foregroundStyle(.green)
                             }
-                            if item.hasRichTranscript {
-                                Text("·")
-                                Text("Transcript").foregroundStyle(.blue)
-                            }
                         }
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -181,6 +179,20 @@ struct RecordingHistoryView: View {
                                 )
                                 await recordingManager.retryAIAnalysis(for: recording)
                             }
+                        }
+                    }
+
+                    if item.hasRichTranscript {
+                        actionChip(title: "Transcript", systemImage: "doc.text") {
+                            let rec = Recording(
+                                fileURL: item.url,
+                                fileSize: item.size,
+                                meetingTitleDraft: item.name,
+                                finalizedAudioURL: item.url
+                            )
+                            appState.recentRecordings.removeAll { $0.id == rec.id }
+                            appState.recentRecordings.append(rec)
+                            openWindow(value: rec.id)
                         }
                     }
 

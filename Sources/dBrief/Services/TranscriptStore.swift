@@ -3,50 +3,46 @@ import OSLog
 
 actor TranscriptStore {
     private let fileManager = FileManager.default
-    private let logger = Logger.recording
 
-    func load(for recording: Recording) async -> RichTranscript? {
-        let url = await MainActor.run { recording.transcriptSidecarURL }
-        guard let url else { return nil }
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        do {
-            let data = try Data(contentsOf: url)
-            let transcript = try JSONDecoder().decode(RichTranscript.self, from: data)
-            logger.info("Loaded rich transcript from \(url.lastPathComponent, privacy: .public)")
-            return transcript
-        } catch {
-            logger.error("Failed to load rich transcript: \(error.localizedDescription, privacy: .public)")
-            return nil
-        }
+    // Primary URL-based throwing interface
+    func load(from url: URL) async throws -> RichTranscript {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(RichTranscript.self, from: data)
     }
 
-    func save(_ transcript: RichTranscript, for recording: Recording) async {
-        let url = await MainActor.run { recording.transcriptSidecarURL }
-        guard let url else { return }
-        do {
-            let data = try JSONEncoder().encode(transcript)
-            try data.write(to: url, options: .atomic)
-            logger.info("Saved rich transcript to \(url.lastPathComponent, privacy: .public)")
-        } catch {
-            logger.error("Failed to save rich transcript: \(error.localizedDescription, privacy: .public)")
-        }
+    func save(_ transcript: RichTranscript, to url: URL) async throws {
+        let data = try JSONEncoder().encode(transcript)
+        try data.write(to: url, options: .atomic)
     }
 
-    func delete(for recording: Recording) async {
-        let url = await MainActor.run { recording.transcriptSidecarURL }
-        guard let url else { return }
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        do {
-            try fileManager.removeItem(at: url)
-            logger.info("Deleted rich transcript at \(url.lastPathComponent, privacy: .public)")
-        } catch {
-            logger.error("Failed to delete rich transcript: \(error.localizedDescription, privacy: .public)")
-        }
+    // Convenience Recording-based overloads
+    func load(for recording: Recording) async throws -> RichTranscript {
+        let url = try await sidecarURL(for: recording)
+        return try await load(from: url)
+    }
+
+    func save(_ transcript: RichTranscript, for recording: Recording) async throws {
+        let url = try await sidecarURL(for: recording)
+        try await save(transcript, to: url)
     }
 
     func exists(for recording: Recording) async -> Bool {
-        let url = await MainActor.run { recording.transcriptSidecarURL }
-        guard let url else { return false }
+        guard let url = await MainActor.run(body: { recording.transcriptSidecarURL }) else { return false }
         return fileManager.fileExists(atPath: url.path)
     }
+
+    func delete(for recording: Recording) async throws {
+        let url = try await sidecarURL(for: recording)
+        try fileManager.removeItem(at: url)
+    }
+
+    private func sidecarURL(for recording: Recording) async throws -> URL {
+        let url = await MainActor.run(body: { recording.transcriptSidecarURL })
+        guard let url else { throw TranscriptStoreError.noSidecarURL }
+        return url
+    }
+}
+
+enum TranscriptStoreError: Error {
+    case noSidecarURL
 }

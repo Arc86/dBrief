@@ -3,32 +3,8 @@ import Foundation
 import Testing
 
 struct RichTranscriptBuilderTests {
-    @Test("build creates RichTranscript from TranscriptionResult")
-    func buildBasic() {
-        let builder = RichTranscriptBuilder()
-        let result = TranscriptionResult(
-            text: "Hello world. Goodbye world.",
-            segments: [
-                TranscriptionResult.Segment(start: 0.0, end: 1.5, text: "Hello world."),
-                TranscriptionResult.Segment(start: 1.5, end: 3.0, text: "Goodbye world."),
-            ]
-        )
-
-        let transcript = builder.build(from: result)
-
-        #expect(transcript.segments.count == 2)
-        #expect(transcript.segments[0].text == "Hello world.")
-        #expect(transcript.segments[0].start == 0.0)
-        #expect(transcript.segments[0].end == 1.5)
-        #expect(transcript.segments[0].isStarred == false)
-        #expect(transcript.segments[0].editedText == nil)
-        #expect(transcript.segments[1].text == "Goodbye world.")
-        #expect(transcript.segments[1].isStarred == false)
-    }
-
-    @Test("build preserves word timings")
-    func buildWithWordTimings() {
-        let builder = RichTranscriptBuilder()
+    @Test("segments with word timestamps produce populated tokens")
+    func buildWithWordTimestamps() {
         let result = TranscriptionResult(
             text: "Hello world",
             segments: [
@@ -37,63 +13,73 @@ struct RichTranscriptBuilderTests {
                     end: 1.0,
                     text: "Hello world",
                     words: [
-                        TranscriptionResult.Word(word: "Hello", start: 0.0, end: 0.5, probability: 0.99),
-                        TranscriptionResult.Word(word: "world", start: 0.5, end: 1.0, probability: 0.98),
+                        TranscriptionResult.Word(word: "Hello", start: 0.0, end: 0.5),
+                        TranscriptionResult.Word(word: "world", start: 0.5, end: 1.0),
                     ]
                 ),
             ]
         )
 
-        let transcript = builder.build(from: result)
+        let transcript = RichTranscriptBuilder().build(from: result)
 
         #expect(transcript.segments.count == 1)
-        #expect(transcript.segments[0].wordTimings?.count == 2)
-        #expect(transcript.segments[0].wordTimings?[0].word == "Hello")
-        #expect(transcript.segments[0].wordTimings?[0].start == 0.0)
-        #expect(transcript.segments[0].wordTimings?[0].end == 0.5)
-        #expect(transcript.segments[0].wordTimings?[0].probability == 0.99)
-        #expect(transcript.segments[0].wordTimings?[1].word == "world")
-        #expect(transcript.segments[0].wordTimings?[1].probability == 0.98)
+        #expect(transcript.segments[0].tokens.count == 2)
+        #expect(transcript.segments[0].tokens[0].text == "Hello")
+        #expect(transcript.segments[0].tokens[0].start == 0.0)
+        #expect(transcript.segments[0].tokens[0].end == 0.5)
+        #expect(transcript.segments[0].tokens[0].isFillerWord == false)
+        #expect(transcript.segments[0].tokens[1].text == "world")
     }
 
-    @Test("build with starring marks correct segments")
-    func buildWithStarring() {
-        let builder = RichTranscriptBuilder()
+    @Test("segments without word timestamps produce empty tokens")
+    func buildWithoutWordTimestamps() {
         let result = TranscriptionResult(
-            text: "First Second Third",
+            text: "No words",
             segments: [
-                TranscriptionResult.Segment(start: 0.0, end: 1.0, text: "First"),
-                TranscriptionResult.Segment(start: 1.0, end: 2.0, text: "Second"),
-                TranscriptionResult.Segment(start: 2.0, end: 3.0, text: "Third"),
+                TranscriptionResult.Segment(start: 0.0, end: 2.0, text: "No words"),
             ]
         )
 
-        let transcript = builder.build(from: result)
-        #expect(transcript.segments[0].isStarred == false)
-        #expect(transcript.segments[1].isStarred == false)
-        #expect(transcript.segments[2].isStarred == false)
+        let transcript = RichTranscriptBuilder().build(from: result)
 
-        let starring: Set<UUID> = [transcript.segments[1].id]
-        let starredTranscript = builder.build(from: result, starring: starring)
-
-        #expect(starredTranscript.segments[0].isStarred == false)
-        #expect(starredTranscript.segments[1].isStarred == true)
-        #expect(starredTranscript.segments[2].isStarred == false)
+        #expect(transcript.segments.count == 1)
+        #expect(transcript.segments[0].tokens.isEmpty)
     }
 
-    @Test("RichTranscript Segment displayText uses editedText when present")
-    func displayTextPrefersEdited() {
-        var segment = RichTranscript.Segment(
-            start: 0.0,
-            end: 1.0,
-            text: "Original",
-            isStarred: false,
-            editedText: "Edited"
+    @Test("originalText matches input text and isEdited defaults to false")
+    func originalTextMatchesInput() {
+        let result = TranscriptionResult(
+            text: "Original text",
+            segments: [
+                TranscriptionResult.Segment(start: 0.0, end: 1.0, text: "Original text"),
+            ]
         )
 
-        #expect(segment.displayText == "Edited")
+        let transcript = RichTranscriptBuilder().build(from: result)
 
-        segment.editedText = nil
-        #expect(segment.displayText == "Original")
+        #expect(transcript.segments[0].text == "Original text")
+        #expect(transcript.segments[0].originalText == "Original text")
+        #expect(transcript.segments[0].isEdited == false)
+    }
+
+    @Test("isFillerWord defaults to false for all tokens")
+    func fillerWordDefaultsFalse() {
+        let result = TranscriptionResult(
+            text: "Um well",
+            segments: [
+                TranscriptionResult.Segment(
+                    start: 0.0,
+                    end: 1.0,
+                    text: "Um well",
+                    words: [
+                        TranscriptionResult.Word(word: "Um", start: 0.0, end: 0.3),
+                        TranscriptionResult.Word(word: "well", start: 0.3, end: 1.0),
+                    ]
+                ),
+            ]
+        )
+
+        let transcript = RichTranscriptBuilder().build(from: result)
+        #expect(transcript.segments[0].tokens.allSatisfy { !$0.isFillerWord })
     }
 }
