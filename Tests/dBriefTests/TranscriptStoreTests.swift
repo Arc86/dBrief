@@ -37,20 +37,26 @@ struct TranscriptStoreTests {
         #expect(loaded.version == 1)
     }
 
-    @Test("schema version field is preserved across encode/decode")
-    func schemaVersionPreserved() async throws {
+    @Test("starred and isEdited flags survive round-trip")
+    func flagsRoundTrip() async throws {
         let store = TranscriptStore()
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let url = tempDir.appendingPathComponent("version.richtranscript.json")
-        var transcript = RichTranscript(segments: [])
-        transcript.version = 1
+        let url = tempDir.appendingPathComponent("flags.richtranscript.json")
+        var seg = RichSegment(start: 0, end: 1, text: "Edited text", originalText: "Original text")
+        seg.isStarred = true
+        seg.isEdited = true
+        let transcript = RichTranscript(segments: [seg])
 
         try await store.save(transcript, to: url)
         let loaded = try await store.load(from: url)
-        #expect(loaded.version == 1)
+
+        #expect(loaded.segments[0].isStarred == true)
+        #expect(loaded.segments[0].isEdited == true)
+        #expect(loaded.segments[0].originalText == "Original text")
+        #expect(loaded.segments[0].text == "Edited text")
     }
 }
