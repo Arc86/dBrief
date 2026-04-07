@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ResultsView: View {
+    @Environment(\.openWindow) var openWindow
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
@@ -298,6 +299,18 @@ struct ResultsView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(markdownURL == nil)
+
+            if let transcript = recording.richTranscript, !transcript.segments.isEmpty {
+                Button("View Transcript") {
+                    if let id = recording.id as UUID? {
+                        appState.recentRecordings = appState.recentRecordings.filter { $0.id != id }
+                        appState.recentRecordings.append(recording)
+                        openWindow(value: id)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
 
             Button("Dismiss") {
                 appState.processingSteps.removeAll()

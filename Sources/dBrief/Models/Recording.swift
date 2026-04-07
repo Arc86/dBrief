@@ -22,6 +22,7 @@ final class Recording: Identifiable {
     var metadataURL: URL?
     var transcriptURL: URL?
     var finalizationWarnings: [String]
+    var richTranscript: RichTranscript?
 
     init(
         id: UUID = UUID(),
@@ -63,5 +64,10 @@ final class Recording: Identifiable {
 
     var fileName: String {
         fileURL.deletingPathExtension().lastPathComponent
+    }
+
+    var transcriptSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("richtranscript.json")
     }
 }

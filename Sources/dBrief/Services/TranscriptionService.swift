@@ -459,7 +459,8 @@ actor TranscriptionService {
                     let shifted = TranscriptionResult.Segment(
                         start: segment.start + chunk.startSeconds,
                         end: segment.end + chunk.startSeconds,
-                        text: segment.text
+                        text: segment.text,
+                        words: segment.words
                     )
                     if shouldDropSegment(shifted, existing: mergedSegments, overlapSeconds: overlapSeconds) {
                         continue
@@ -562,7 +563,22 @@ actor TranscriptionService {
                 let start = normalizeTimestamp(seg["start"])
                 let end = normalizeTimestamp(seg["end"])
                 let segText = seg["text"] as? String ?? ""
-                segments.append(.init(start: start, end: end, text: segText))
+                var words: [TranscriptionResult.Word]?
+                if let rawWords = seg["words"] as? [[String: Any]] {
+                    words = rawWords.compactMap { rawWord in
+                        guard let wordText = rawWord["word"] as? String else { return nil }
+                        let wordStart = normalizeTimestamp(rawWord["start"])
+                        let wordEnd = normalizeTimestamp(rawWord["end"])
+                        let probability = rawWord["probability"] as? Double
+                        return TranscriptionResult.Word(
+                            word: wordText,
+                            start: wordStart,
+                            end: wordEnd,
+                            probability: probability
+                        )
+                    }
+                }
+                segments.append(.init(start: start, end: end, text: segText, words: words))
             }
         }
 
