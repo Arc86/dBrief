@@ -26,11 +26,11 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         continuation.yield(.idle)
     }
 
-    func transcribe(fileURL: URL, initialPrompt: String?) async throws -> TranscriptionResult {
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
         try await mutex.withLock {
             defer { stateContinuation.yield(.idle) }
             await insightsService.unload()
-            return try await whisperService.transcribe(fileURL: fileURL, initialPrompt: initialPrompt)
+            return try await whisperService.transcribe(fileURL: fileURL, initialPrompt: initialPrompt, whisperConfig: whisperConfig)
         }
     }
 
