@@ -1,0 +1,4 @@
+{"type":"server-started","port":65366,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:65366","screen_dir":"/Users/jesper/Documents/Code/dBrief/.superpowers/brainstorm/35550-1775591479/content","state_dir":"/Users/jesper/Documents/Code/dBrief/.superpowers/brainstorm/35550-1775591479/state"}
+{"type":"screen-added","file":"/Users/jesper/Documents/Code/dBrief/.superpowers/brainstorm/35550-1775591479/content/transcript-window.html"}
+{"type":"screen-added","file":"/Users/jesper/Documents/Code/dBrief/.superpowers/brainstorm/35550-1775591479/content/waiting-1.html"}
+{"type":"server-stopped","reason":"idle timeout"}

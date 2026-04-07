@@ -1,0 +1,258 @@
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1e1e1e; color: #e0e0e0; }
+
+  .window-frame {
+    max-width: 860px;
+    margin: 24px auto;
+    background: #2b2b2b;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    border: 1px solid #3a3a3a;
+  }
+
+  /* Title bar */
+  .titlebar {
+    background: #323232;
+    border-bottom: 1px solid #3a3a3a;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .traffic-lights { display: flex; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-red { background: #ff5f57; }
+  .dot-yellow { background: #febc2e; }
+  .dot-green { background: #28c840; }
+  .title-text { font-size: 13px; font-weight: 600; color: #e0e0e0; flex: 1; text-align: center; }
+
+  /* Audio player bar */
+  .player-bar {
+    background: #2b2b2b;
+    border-bottom: 1px solid #3a3a3a;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .play-btn {
+    width: 32px; height: 32px;
+    background: #0a84ff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; cursor: pointer; flex-shrink: 0;
+  }
+  .scrubber-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .scrubber { height: 4px; background: #484848; border-radius: 2px; position: relative; cursor: pointer; }
+  .scrubber-fill { height: 100%; width: 32%; background: #0a84ff; border-radius: 2px; }
+  .scrubber-thumb { width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; top: -4px; left: calc(32% - 6px); }
+  .time-labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+
+  /* Toolbar */
+  .toolbar {
+    background: #2b2b2b;
+    border-bottom: 1px solid #3a3a3a;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-btn {
+    font-size: 12px; padding: 4px 10px;
+    border-radius: 6px; cursor: pointer;
+    border: 1px solid #484848; color: #aaa;
+    background: transparent;
+  }
+  .filter-btn.active { background: #0a84ff22; border-color: #0a84ff; color: #0a84ff; }
+  .toolbar-spacer { flex: 1; }
+  .icon-btn { font-size: 14px; color: #888; cursor: pointer; padding: 4px 6px; }
+
+  /* Transcript body */
+  .transcript-body { padding: 16px; overflow-y: auto; max-height: 420px; }
+
+  .segment {
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #323232;
+    border: 1px solid transparent;
+    position: relative;
+  }
+  .segment:hover { border-color: #484848; }
+  .segment.playing { border-color: #0a84ff55; background: #0a84ff0a; }
+  .segment.starred { border-color: #ffd60a44; background: #ffd60a08; }
+
+  .segment-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .speaker-badge {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 4px;
+    background: #484848; color: #ccc;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .speaker-badge.spk1 { background: #0a84ff22; color: #5ac8fa; }
+  .speaker-badge.spk2 { background: #30d15822; color: #30d158; }
+  .timestamp { font-size: 11px; color: #666; cursor: pointer; }
+  .timestamp:hover { color: #0a84ff; }
+  .seg-actions { margin-left: auto; display: flex; gap: 6px; opacity: 0; }
+  .segment:hover .seg-actions { opacity: 1; }
+  .star-btn { font-size: 14px; cursor: pointer; color: #666; }
+  .star-btn.on { color: #ffd60a; }
+  .edit-btn { font-size: 12px; color: #666; cursor: pointer; }
+
+  .segment-text { font-size: 13px; line-height: 1.6; color: #d0d0d0; }
+
+  /* Token highlight styles */
+  .token { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+  .token:hover { background: #0a84ff33; color: #5ac8fa; }
+  .token.playing { background: #0a84ff55; color: #fff; }
+
+  /* Editing state */
+  .segment.editing .segment-text { display: none; }
+  .segment-editor {
+    display: none;
+    width: 100%; background: #1e1e1e; color: #e0e0e0;
+    border: 1px solid #0a84ff; border-radius: 4px;
+    padding: 6px 8px; font-size: 13px; line-height: 1.6;
+    font-family: -apple-system, sans-serif; resize: none;
+    min-height: 48px;
+  }
+  .segment.editing .segment-editor { display: block; }
+  .edit-hint { display: none; font-size: 11px; color: #666; margin-top: 4px; }
+  .segment.editing .edit-hint { display: block; }
+
+  .question-label { font-size: 13px; color: #999; margin-bottom: 12px; }
+</style>
+
+<h2>Transcript Window Layout</h2>
+<p class="subtitle">Review the layout and interactions. Hover over a segment to see controls. Click timestamps or words to see the sync indicator.</p>
+
+<div style="margin: 20px 0;">
+  <div class="window-frame">
+    <!-- Title bar -->
+    <div class="titlebar">
+      <div class="traffic-lights">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+      </div>
+      <div class="title-text">Q1 Planning — Apr 7, 2026 · 38:14</div>
+    </div>
+
+    <!-- Audio player -->
+    <div class="player-bar">
+      <div class="play-btn">▶</div>
+      <div class="scrubber-wrap">
+        <div class="scrubber">
+          <div class="scrubber-fill"></div>
+          <div class="scrubber-thumb"></div>
+        </div>
+        <div class="time-labels"><span>12:22</span><span>38:14</span></div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button class="filter-btn active">All</button>
+      <button class="filter-btn">⭐ Starred</button>
+      <div class="toolbar-spacer"></div>
+      <span class="icon-btn" title="Search">🔍</span>
+      <span class="icon-btn" title="Export">↗</span>
+    </div>
+
+    <!-- Transcript -->
+    <div class="transcript-body">
+
+      <div class="segment playing" id="seg1">
+        <div class="segment-header">
+          <span class="speaker-badge spk1">Speaker 1</span>
+          <span class="timestamp" onclick="seekTo(this, '12:18')">12:18</span>
+          <div class="seg-actions">
+            <span class="star-btn" onclick="toggleStar(this)">☆</span>
+            <span class="edit-btn" onclick="toggleEdit('seg1')">✎</span>
+          </div>
+        </div>
+        <div class="segment-text">
+          <span class="token playing">Okay</span> <span class="token">so</span> <span class="token">let's</span> <span class="token">kick</span> <span class="token">off</span> <span class="token">the</span> <span class="token">Q1</span> <span class="token">planning</span> <span class="token">session.</span> <span class="token">We</span> <span class="token">need</span> <span class="token">to</span> <span class="token">cover</span> <span class="token">the</span> <span class="token">roadmap</span> <span class="token">priorities</span> <span class="token">and</span> <span class="token">decide</span> <span class="token">what</span> <span class="token">gets</span> <span class="token">cut.</span>
+        </div>
+        <textarea class="segment-editor">Okay so let's kick off the Q1 planning session. We need to cover the roadmap priorities and decide what gets cut.</textarea>
+        <div class="edit-hint">Press Esc to cancel · Changes auto-saved</div>
+      </div>
+
+      <div class="segment starred" id="seg2">
+        <div class="segment-header">
+          <span class="speaker-badge spk2">Speaker 2</span>
+          <span class="timestamp" onclick="seekTo(this, '12:31')">12:31</span>
+          <div class="seg-actions">
+            <span class="star-btn on" onclick="toggleStar(this)">★</span>
+            <span class="edit-btn" onclick="toggleEdit('seg2')">✎</span>
+          </div>
+        </div>
+        <div class="segment-text">
+          <span class="token">I</span> <span class="token">think</span> <span class="token">the</span> <span class="token">biggest</span> <span class="token">risk</span> <span class="token">is</span> <span class="token">the</span> <span class="token">ML</span> <span class="token">pipeline</span> <span class="token">—</span> <span class="token">we</span> <span class="token">haven't</span> <span class="token">validated</span> <span class="token">the</span> <span class="token">latency</span> <span class="token">numbers</span> <span class="token">yet</span> <span class="token">and</span> <span class="token">that's</span> <span class="token">blocking</span> <span class="token">the</span> <span class="token">mobile</span> <span class="token">team.</span>
+        </div>
+        <textarea class="segment-editor">I think the biggest risk is the ML pipeline — we haven't validated the latency numbers yet and that's blocking the mobile team.</textarea>
+        <div class="edit-hint">Press Esc to cancel · Changes auto-saved</div>
+      </div>
+
+      <div class="segment" id="seg3">
+        <div class="segment-header">
+          <span class="speaker-badge spk1">Speaker 1</span>
+          <span class="timestamp" onclick="seekTo(this, '12:48')">12:48</span>
+          <div class="seg-actions">
+            <span class="star-btn" onclick="toggleStar(this)">☆</span>
+            <span class="edit-btn" onclick="toggleEdit('seg3')">✎</span>
+          </div>
+        </div>
+        <div class="segment-text">
+          <span class="token">Right,</span> <span class="token">so</span> <span class="token">let's</span> <span class="token">put</span> <span class="token">that</span> <span class="token">at</span> <span class="token">the</span> <span class="token">top</span> <span class="token">of</span> <span class="token">the</span> <span class="token">list.</span> <span class="token">Can</span> <span class="token">you</span> <span class="token">get</span> <span class="token">benchmark</span> <span class="token">results</span> <span class="token">by</span> <span class="token">Thursday?</span>
+        </div>
+        <textarea class="segment-editor">Right, so let's put that at the top of the list. Can you get benchmark results by Thursday?</textarea>
+        <div class="edit-hint">Press Esc to cancel · Changes auto-saved</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<p style="font-size:12px; color:#777; margin-top:8px;">
+  Hover a segment to reveal star/edit controls. The blue highlight on "Okay" shows the currently playing word (word-level sync). The gold border shows a starred segment. The blue border + tint shows the currently playing segment.
+</p>
+
+<script>
+function seekTo(el, time) {
+  el.style.color = '#0a84ff';
+  setTimeout(() => el.style.color = '', 800);
+}
+function toggleStar(el) {
+  if (el.classList.contains('on')) {
+    el.classList.remove('on');
+    el.textContent = '☆';
+    el.closest('.segment').classList.remove('starred');
+  } else {
+    el.classList.add('on');
+    el.textContent = '★';
+    el.closest('.segment').classList.add('starred');
+  }
+}
+function toggleEdit(id) {
+  const seg = document.getElementById(id);
+  seg.classList.toggle('editing');
+}
+document.querySelectorAll('.token').forEach(t => {
+  t.addEventListener('mouseenter', function() {
+    if (!this.classList.contains('playing')) this.style.background = '#0a84ff33';
+  });
+  t.addEventListener('mouseleave', function() {
+    if (!this.classList.contains('playing')) this.style.background = '';
+  });
+  t.addEventListener('click', function() {
+    document.querySelectorAll('.token.playing').forEach(p => p.classList.remove('playing'));
+    this.classList.add('playing');
+  });
+});
+</script>
