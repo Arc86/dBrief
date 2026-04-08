@@ -1,5 +1,6 @@
 import SwiftUI
 import Metal
+import WhisperKit
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
@@ -12,6 +13,9 @@ struct SettingsTranscriptionTab: View {
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false
     @State private var purgeMessage: String?
+    @State private var whisperModels: [WhisperModelInfo] = []
+    @State private var isFetchingWhisperModels = false
+    @State private var whisperModelFetchError: String?
 
     enum TestResult {
         case testing
@@ -20,6 +24,25 @@ struct SettingsTranscriptionTab: View {
     }
 
     private var hasMetalGPU: Bool { MTLCreateSystemDefaultDevice() != nil }
+
+    private func fetchWhisperModels() {
+        guard !isFetchingWhisperModels else { return }
+        isFetchingWhisperModels = true
+        whisperModelFetchError = nil
+        Task {
+            do {
+                let modelNames = try await WhisperKit.fetchAvailableModels(
+                    from: "argmaxinc/whisperkit-coreml"
+                )
+                whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
+            } catch {
+                whisperModels = WhisperModelInfo.fallbackModelNames
+                    .map { WhisperModelInfo.parse($0) }.sorted()
+                whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
+            }
+            isFetchingWhisperModels = false
+        }
+    }
 
     var body: some View {
         if isEditing {
@@ -75,13 +98,24 @@ struct SettingsTranscriptionTab: View {
             case .localWhisper:
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledContent("Model:") {
-                        Picker("", selection: $settings.whisperModelName) {
-                            Text("Small (faster, less accurate)").tag("openai_whisper-small")
-                            Text("Medium (balanced)").tag("openai_whisper-medium")
+                        if isFetchingWhisperModels && whisperModels.isEmpty {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 280, alignment: .trailing)
+                        } else {
+                            Picker("", selection: $settings.whisperModelName) {
+                                if whisperModels.isEmpty {
+                                    Text("openai_whisper-small").tag("openai_whisper-small")
+                                } else {
+                                    ForEach(whisperModels, id: \.id) { model in
+                                        Text(model.displayName).tag(model.id)
+                                    }
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(width: 280, alignment: .trailing)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 220, alignment: .trailing)
                     }
 
                     LabeledContent("GPU acceleration:") {
@@ -92,7 +126,7 @@ struct SettingsTranscriptionTab: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(width: 220, alignment: .trailing)
+                        .frame(width: 280, alignment: .trailing)
                     }
 
                     if !hasMetalGPU {
@@ -101,9 +135,26 @@ struct SettingsTranscriptionTab: View {
                             .foregroundStyle(.orange)
                     }
 
-                    Text("On-device transcription using WhisperKit. Best privacy — audio never leaves your Mac. Model artifacts downloaded once from Hugging Face (argmaxinc/whisperkit-coreml). Changing the model purges the current download.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let error = whisperModelFetchError {
+                        Label(error, systemImage: "wifi.slash")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    HStack {
+                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            fetchWhisperModels()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Refresh model list from HuggingFace")
+                    }
 
                     Button("Purge local WhisperKit model") {
                         Task {
@@ -123,6 +174,7 @@ struct SettingsTranscriptionTab: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .onAppear { fetchWhisperModels() }
             case .remoteEndpoint:
                 Text("Use a remote Whisper API or server. Requires an endpoint.")
                     .font(.caption)
