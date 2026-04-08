@@ -58,15 +58,19 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.detectLanguage = whisperConfig.language == nil
         options.task = .transcribe
         options.promptTokens = promptTokens.isEmpty ? nil : promptTokens
-        // Dynamic worker count based on available CPU cores, leaving 1 for system
-        options.concurrentWorkerCount = max(1, min(8, ProcessInfo.processInfo.activeProcessorCount - 1))
+        // Dynamic worker count: balance speed vs memory usage
+        // WhisperKit's decoder is memory-bound; each worker allocates memory for parallel token generation
+        // Conservative scaling: 2 workers on 4+ core systems, 3 on 8+ core systems
+        // Memory cost ~300-400MB per additional worker, so cap based on system memory
+        let coreCount = ProcessInfo.processInfo.activeProcessorCount
+        options.concurrentWorkerCount = coreCount >= 8 ? min(3, coreCount - 5) : min(2, max(1, coreCount - 2))
         options.temperature = 0
         options.skipSpecialTokens = true
         options.withoutTimestamps = false
         options.wordTimestamps = true
 
         do {
-            Logger.localAI.debug("Calling whisper.transcribe with audioPath=\(preparedURL.path, privacy: .public), workers=\(options.concurrentWorkerCount, privacy: .public)")
+            Logger.localAI.debug("Calling whisper.transcribe with audioPath=\(preparedURL.path, privacy: .public), workers=\(options.concurrentWorkerCount, privacy: .public) (cores=\(coreCount))")
             let transcribeStart = Date()
             let wkResults = try await whisper.transcribe(
                 audioPath: preparedURL.path,
