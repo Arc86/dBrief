@@ -13,7 +13,8 @@ actor RecordingFinalizer {
     func finalize(
         rawURL: URL,
         recording: Recording,
-        baseFolder: URL
+        baseFolder: URL,
+        segmentationEnabled: Bool = true
     ) async throws -> RecordingFinalizationResult {
         let snapshot = await MainActor.run { Snapshot(recording: recording) }
         let normalizedTitle = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
@@ -47,7 +48,7 @@ actor RecordingFinalizer {
         }
 
         var segmentURLs: [URL] = []
-        if snapshot.duration > 1800 {
+        if segmentationEnabled && snapshot.duration > 1800 {
             if let ffmpegPath {
                 do {
                     segmentURLs = try createSegments(

@@ -1161,10 +1161,13 @@ final class RecordingManager {
             recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
         }
 
+        // Skip segmentation for local transcription engines (they handle long files well)
+        let segmentationEnabled = appSettings.effectiveTranscriptionEngine != .localWhisper
         let result = try await recordingFinalizer.finalize(
             rawURL: recording.fileURL,
             recording: recording,
-            baseFolder: appSettings.effectiveRecordingFolderURL
+            baseFolder: appSettings.effectiveRecordingFolderURL,
+            segmentationEnabled: segmentationEnabled
         )
 
         recording.fileURL = result.masterAudioURL
