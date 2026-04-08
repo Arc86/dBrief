@@ -139,19 +139,19 @@ final class AppSettings {
 
     enum WhisperModelSize: String, CaseIterable, Codable, Hashable, Sendable {
         case small
-        case largeTurbo
+        case medium
 
         var modelName: String {
             switch self {
             case .small: "openai_whisper-small"
-            case .largeTurbo: "openai_whisper-large-v3-turbo"
+            case .medium: "openai_whisper-medium"
             }
         }
 
         var displayName: String {
             switch self {
-            case .small: "Whisper Small (~460 MB)"
-            case .largeTurbo: "Whisper Large Turbo (~800 MB, faster)"
+            case .small: "Whisper Small (~460 MB, fastest)"
+            case .medium: "Whisper Medium (~769 MB, balanced)"
             }
         }
 
@@ -159,7 +159,7 @@ final class AppSettings {
         var requiredFreeMemory: Int64 {
             switch self {
             case .small: 2_000_000_000       // 2 GB (1 GB model + 1 GB buffer)
-            case .largeTurbo: 3_500_000_000  // 3.5 GB (2 GB model + 1.5 GB buffer)
+            case .medium: 3_000_000_000      // 3 GB (1.5 GB model + 1.5 GB buffer)
             }
         }
     }
