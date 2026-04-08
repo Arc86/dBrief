@@ -206,6 +206,15 @@ struct WhisperModelInfo: Sendable {
         parse("distil-whisper_distil-large-v3_turbo_600MB.en"),
         parse("openai_whisper-large-v3-v20240930_626MB"),
     ]
+
+    /// Fallback list of model names (without parsed metadata).
+    static let fallbackModelNames: [String] = fallbackModels.map { $0.originalName }
+}
+
+// MARK: - Identifiable
+
+extension WhisperModelInfo: Identifiable {
+    var id: String { originalName }
 }
 
 // MARK: - Comparable
