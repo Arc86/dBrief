@@ -318,7 +318,7 @@ final class RecordingManager {
                 let outputFolder = resolveMarkdownOutputFolder(for: recording)
                 let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
                 case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelSize.modelName) (CoreML)")
+                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
                 case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
@@ -502,7 +502,7 @@ final class RecordingManager {
                 let outputFolder = resolveMarkdownOutputFolder(for: recording)
                 let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
                 case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelSize.modelName) (CoreML)")
+                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
                 case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
@@ -1107,7 +1107,7 @@ final class RecordingManager {
             )
         case .localWhisper:
             let whisperConfig = WhisperRuntimeConfig(
-                modelSize: appSettings.whisperModelSize,
+                modelName: appSettings.whisperModelName,
                 computeUnits: appSettings.whisperComputeUnits,
                 language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage
             )

@@ -75,10 +75,9 @@ struct SettingsTranscriptionTab: View {
             case .localWhisper:
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledContent("Model:") {
-                        Picker("", selection: $settings.whisperModelSize) {
-                            ForEach(AppSettings.WhisperModelSize.allCases, id: \.self) { size in
-                                Text(size.displayName).tag(size)
-                            }
+                        Picker("", selection: $settings.whisperModelName) {
+                            Text("Small (faster, less accurate)").tag("openai_whisper-small")
+                            Text("Medium (balanced)").tag("openai_whisper-medium")
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
