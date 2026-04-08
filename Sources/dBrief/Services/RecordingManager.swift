@@ -26,8 +26,7 @@ final class RecordingManager {
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
-        static let whisperKit: Int64 = 1_288_490_189   // 1.2 GB
-        static let qwen3_4b:   Int64 = 4_831_838_209   // 4.5 GB
+        static let qwen3_4b: Int64 = 4_831_838_209   // 4.5 GB
     }
 
     init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore) {
