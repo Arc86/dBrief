@@ -23,7 +23,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
-        Logger.localAI.debug("Starting transcription for file: \(fileURL.lastPathComponent, privacy: .public)")
+        Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Dynamic memory gate: use WhisperModelInfo for model-aware estimation
         let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
@@ -42,15 +42,12 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             )
         }
 
-        Logger.localAI.debug("Memory check passed, loading WhisperKit")
         let whisper = try await loadWhisperKit(config: whisperConfig)
-        Logger.localAI.debug("WhisperKit loaded, starting transcription")
         stateHandler(.transcribing)
 
         // Convert FLAC to WAV if needed for WhisperKit compatibility
         let preparedURL = try await prepareAudioFile(fileURL: fileURL)
         let needsCleanup = preparedURL != fileURL
-        Logger.localAI.debug("Audio file prepared: \(preparedURL.lastPathComponent, privacy: .public), needsCleanup=\(needsCleanup)")
 
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
@@ -70,7 +67,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.wordTimestamps = true
 
         do {
-            Logger.localAI.debug("Calling whisper.transcribe with audioPath=\(preparedURL.path, privacy: .public), workers=\(options.concurrentWorkerCount, privacy: .public) (cores=\(coreCount))")
             let transcribeStart = Date()
             let wkResults = try await whisper.transcribe(
                 audioPath: preparedURL.path,
@@ -83,7 +79,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 Logger.localAI.warning("Transcription exceeded 10-minute timeout threshold: \(String(format: "%.1f", transcribeDuration))s")
             }
 
-            Logger.localAI.debug("whisper.transcribe completed in \(String(format: "%.2f", transcribeDuration))s, returned \(wkResults.count) result segments")
+            Logger.localAI.info("Transcription completed in \(String(format: "%.1f", transcribeDuration))s")
             let mappedSegments = wkResults.flatMap { result in
                 result.segments.map { seg -> TranscriptionResult.Segment in
                     let wordTimings: [TranscriptionResult.Word]? = {
@@ -158,12 +154,10 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     private func loadWhisperKit(config: WhisperRuntimeConfig) async throws -> WhisperKit {
         // Reuse existing instance if the same config is already loaded
         if let whisperKit, loadedConfig == config {
-            Logger.localAI.debug("Reusing already-loaded WhisperKit instance")
             return whisperKit
         }
         // Config changed or not yet loaded — unload any stale instance first
         if whisperKit != nil {
-            Logger.localAI.debug("Unloading stale WhisperKit instance before reloading")
             await unload()
         }
 
@@ -171,9 +165,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let downloadBase = try whisperDownloadBaseURL()
         let computeOpts = buildComputeOptions(for: config)
 
-        Logger.localAI.info(
-            "WhisperKit loading: model=\(config.modelName, privacy: .public) computeUnits=\(config.computeUnits.rawValue, privacy: .public) metalGPU=\(Self.hasMetalGPU, privacy: .public)"
-        )
+        Logger.localAI.info("Loading WhisperKit: model=\(config.modelName, privacy: .public)")
 
         let wkConfig = WhisperKitConfig(
             model: config.modelName,
@@ -185,11 +177,10 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             download: true
         )
 
-        Logger.localAI.debug("Creating WhisperKit instance with downloadBase=\(downloadBase.path, privacy: .public)")
         let whisper = try await WhisperKit(wkConfig)
         self.whisperKit = whisper
         self.loadedConfig = config
-        Logger.localAI.info("WhisperKit instance created and models loaded successfully")
+        Logger.localAI.info("WhisperKit loaded successfully")
         return whisper
     }
 
@@ -215,14 +206,11 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     private func prepareAudioFile(fileURL: URL) async throws -> URL {
         let ext = fileURL.pathExtension.lowercased()
-        Logger.localAI.debug("prepareAudioFile: fileURL=\(fileURL.lastPathComponent, privacy: .public), extension=\(ext, privacy: .public)")
 
         guard ext == "flac" else {
-            Logger.localAI.debug("File is not FLAC, returning as-is")
             return fileURL
         }
 
-        Logger.localAI.debug("FLAC file detected, converting to WAV")
         let outputURL = fileManager.temporaryDirectory
             .appendingPathComponent("whisperkit-audio-\(UUID().uuidString).wav")
 
@@ -233,8 +221,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         ]
 
         let resolvedPath = ffmpegPaths.first { fileManager.isExecutableFile(atPath: $0) }
-        let ffmpegPath = resolvedPath ?? "ffmpeg"
-        Logger.localAI.debug("Using ffmpeg at: \(ffmpegPath, privacy: .public)")
 
         let process = Process()
         if let resolvedPath {
@@ -281,7 +267,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             throw WhisperKitError.conversionFailed(message)
         }
 
-        Logger.localAI.debug("FLAC to WAV conversion successful: \(outputURL.lastPathComponent, privacy: .public)")
         return outputURL
     }
 
