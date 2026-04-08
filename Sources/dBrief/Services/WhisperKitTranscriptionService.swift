@@ -26,7 +26,18 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         Logger.localAI.debug("Starting transcription for file: \(fileURL.lastPathComponent, privacy: .public)")
 
         // Dynamic memory gate: requirement depends on model size
-        let requiredMemory = whisperConfig.modelSize.requiredFreeMemory
+        let requiredMemory: Int64 = if whisperConfig.modelSize.modelName.contains("tiny") {
+            500_000_000
+        } else if whisperConfig.modelSize.modelName.contains("base") {
+            800_000_000
+        } else if whisperConfig.modelSize.modelName.contains("medium") {
+            3_000_000_000
+        } else if whisperConfig.modelSize.modelName.contains("large") {
+            5_000_000_000
+        } else {
+            2_000_000_000  // default for small
+        }
+
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
@@ -52,8 +63,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
-        options.language = nil
-        options.detectLanguage = true
+        options.language = whisperConfig.language
+        options.detectLanguage = whisperConfig.language == nil
         options.task = .transcribe
         options.promptTokens = promptTokens.isEmpty ? nil : promptTokens
         options.concurrentWorkerCount = 1
@@ -70,6 +81,12 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 decodeOptions: options
             )
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
+
+            // Log timeout warning if transcription took more than 10 minutes
+            if transcribeDuration > 600 {
+                Logger.localAI.warning("Transcription exceeded 10-minute timeout threshold: \(String(format: "%.1f", transcribeDuration))s")
+            }
+
             Logger.localAI.debug("whisper.transcribe completed in \(String(format: "%.2f", transcribeDuration))s, returned \(wkResults.count) result segments")
             let mappedSegments = wkResults.flatMap { result in
                 result.segments.map { seg -> TranscriptionResult.Segment in
@@ -80,7 +97,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                                     word: $0.word,
                                     start: Double($0.start),
                                     end: Double($0.end),
-                                    probability: Double($0.probability)
+                                    probability: Double($0.probability ?? 0.0)
                                 )
                             }
                         }
@@ -95,9 +112,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 }
             }
             let rawText = wkResults
-                .map(\.text)
+                .map { $0.text }
                 .joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
             let fullText = cleanTranscriptArtifacts(rawText)
             let detectedLanguage = wkResults.first(where: { !$0.language.isEmpty })?.language
 

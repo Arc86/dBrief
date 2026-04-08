@@ -1108,7 +1108,8 @@ final class RecordingManager {
         case .localWhisper:
             let whisperConfig = WhisperRuntimeConfig(
                 modelSize: appSettings.whisperModelSize,
-                computeUnits: appSettings.whisperComputeUnits
+                computeUnits: appSettings.whisperComputeUnits,
+                language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage
             )
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
                 try await self.localAIPluginService.transcribe(
