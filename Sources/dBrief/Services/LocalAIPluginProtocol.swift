@@ -17,8 +17,9 @@ enum LocalAIPluginState: Sendable {
 struct WhisperRuntimeConfig: Sendable, Equatable {
     let modelSize: AppSettings.WhisperModelSize
     let computeUnits: AppSettings.WhisperComputeUnits
+    let language: String?
 
-    static let `default` = WhisperRuntimeConfig(modelSize: .small, computeUnits: .all)
+    static let `default` = WhisperRuntimeConfig(modelSize: .small, computeUnits: .all, language: nil)
 }
 
 protocol LocalAIPluginProtocol: Sendable {
