@@ -1,4 +1,5 @@
 import SwiftUI
+import Metal
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
@@ -17,6 +18,8 @@ struct SettingsTranscriptionTab: View {
         case success
         case failure(String)
     }
+
+    private var hasMetalGPU: Bool { MTLCreateSystemDefaultDevice() != nil }
 
     var body: some View {
         if isEditing {
@@ -70,13 +73,39 @@ struct SettingsTranscriptionTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .localWhisper:
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("On-device transcription using WhisperKit small (~460 MB class). Best privacy — audio never leaves your Mac.")
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("Model:") {
+                        Picker("", selection: $settings.whisperModelSize) {
+                            ForEach(AppSettings.WhisperModelSize.allCases, id: \.self) { size in
+                                Text(size.displayName).tag(size)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 220, alignment: .trailing)
+                    }
+
+                    LabeledContent("GPU acceleration:") {
+                        Picker("", selection: $settings.whisperComputeUnits) {
+                            ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { units in
+                                Text(units.displayName).tag(units)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 220, alignment: .trailing)
+                    }
+
+                    if !hasMetalGPU {
+                        Label("No Metal GPU detected — GPU options will fall back to Neural Engine.", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Text("On-device transcription using WhisperKit. Best privacy — audio never leaves your Mac. Model artifacts downloaded once from Hugging Face (argmaxinc/whisperkit-coreml). Changing the model purges the current download.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Model artifacts are downloaded once from Hugging Face (argmaxinc/whisperkit-coreml) with auto language detection and bilingual prompt bias for NL/EN code-switching.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+
                     Button("Purge local WhisperKit model") {
                         Task {
                             do {
