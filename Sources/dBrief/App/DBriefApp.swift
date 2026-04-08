@@ -188,6 +188,9 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+
+    @State private var showYouTubeInput = false
+
     var body: some View {
         VStack(spacing: 10) {
             if !appSettings.hasCompletedOnboarding {
@@ -233,15 +236,32 @@ struct MenuBarView: View {
 
                 Divider()
 
-                HStack {
-                    Button {
-                        recordingManager.pickFileForTranscription()
-                    } label: {
-                        Label("Transcribe File...", systemImage: "doc.badge.plus")
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Button {
+                            recordingManager.pickFileForTranscription()
+                        } label: {
+                            Label("Transcribe File...", systemImage: "doc.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .disabled(!appState.isIdle)
+
+                        Spacer()
+
+                        Button {
+                            showYouTubeInput.toggle()
+                        } label: {
+                            Label("YouTube URL...", systemImage: "play.rectangle")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .disabled(!appState.isIdle)
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .disabled(!appState.isIdle)
+
+                    if showYouTubeInput && appState.isIdle {
+                        YouTubeURLInputView(isVisible: $showYouTubeInput)
+                    }
                 }
 
                 Divider()
