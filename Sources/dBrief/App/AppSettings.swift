@@ -49,7 +49,7 @@ final class AppSettings {
         static let activeProfileId = "activeProfileId"
         static let powerUserMode = "powerUserMode"
         static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
-        static let whisperModelSize = "whisperModelSize"
+        static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
     }
 
@@ -137,32 +137,6 @@ final class AppSettings {
         }
     }
 
-    enum WhisperModelSize: String, CaseIterable, Codable, Hashable, Sendable {
-        case small
-        case medium
-
-        var modelName: String {
-            switch self {
-            case .small: "openai_whisper-small"
-            case .medium: "openai_whisper-medium"
-            }
-        }
-
-        var displayName: String {
-            switch self {
-            case .small: "Whisper Small (~460 MB, fastest)"
-            case .medium: "Whisper Medium (~769 MB, balanced)"
-            }
-        }
-
-        /// Minimum free memory required before loading this model (model size + runtime buffer).
-        var requiredFreeMemory: Int64 {
-            switch self {
-            case .small: 2_000_000_000       // 2 GB (1 GB model + 1 GB buffer)
-            case .medium: 3_000_000_000      // 3 GB (1.5 GB model + 1.5 GB buffer)
-            }
-        }
-    }
 
     enum WhisperComputeUnits: String, CaseIterable, Codable, Hashable, Sendable {
         case cpuAndNeuralEngine
@@ -282,9 +256,9 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(whisperPrompt, forKey: Keys.whisperPrompt) }
     }
 
-    /// WhisperKit model variant to use for local transcription.
-    var whisperModelSize: WhisperModelSize {
-        didSet { UserDefaults.standard.set(whisperModelSize.rawValue, forKey: Keys.whisperModelSize) }
+    /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
+    var whisperModelName: String {
+        didSet { UserDefaults.standard.set(whisperModelName, forKey: Keys.whisperModelName) }
     }
 
     /// Compute units for WhisperKit CoreML inference (Metal GPU / Neural Engine selection).
@@ -567,7 +541,18 @@ final class AppSettings {
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
-        self.whisperModelSize = WhisperModelSize(rawValue: defaults.string(forKey: Keys.whisperModelSize) ?? "") ?? .small
+        self.whisperModelName = {
+            // New key takes priority
+            if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {
+                return name
+            }
+            // Migrate from old enum-based key
+            switch defaults.string(forKey: "whisperModelSize") ?? "" {
+            case "small":  return "openai_whisper-small"
+            case "medium": return "openai_whisper-medium"
+            default:       return "openai_whisper-small"
+            }
+        }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt

@@ -15,11 +15,11 @@ enum LocalAIPluginState: Sendable {
 /// Runtime configuration passed to WhisperKit for each transcription call.
 /// Allows the user's model and GPU settings to take effect without restarting the app.
 struct WhisperRuntimeConfig: Sendable, Equatable {
-    let modelSize: AppSettings.WhisperModelSize
+    let modelName: String
     let computeUnits: AppSettings.WhisperComputeUnits
     let language: String?
 
-    static let `default` = WhisperRuntimeConfig(modelSize: .small, computeUnits: .all, language: nil)
+    static let `default` = WhisperRuntimeConfig(modelName: "openai_whisper-small", computeUnits: .all, language: nil)
 }
 
 protocol LocalAIPluginProtocol: Sendable {
