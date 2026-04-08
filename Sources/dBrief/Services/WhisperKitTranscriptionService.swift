@@ -58,14 +58,15 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.detectLanguage = whisperConfig.language == nil
         options.task = .transcribe
         options.promptTokens = promptTokens.isEmpty ? nil : promptTokens
-        options.concurrentWorkerCount = 1
+        // Dynamic worker count based on available CPU cores, leaving 1 for system
+        options.concurrentWorkerCount = max(1, min(8, ProcessInfo.processInfo.activeProcessorCount - 1))
         options.temperature = 0
         options.skipSpecialTokens = true
         options.withoutTimestamps = false
         options.wordTimestamps = true
 
         do {
-            Logger.localAI.debug("Calling whisper.transcribe with audioPath=\(preparedURL.path, privacy: .public)")
+            Logger.localAI.debug("Calling whisper.transcribe with audioPath=\(preparedURL.path, privacy: .public), workers=\(options.concurrentWorkerCount, privacy: .public)")
             let transcribeStart = Date()
             let wkResults = try await whisper.transcribe(
                 audioPath: preparedURL.path,
