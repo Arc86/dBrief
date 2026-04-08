@@ -23,6 +23,7 @@ final class RecordingManager {
     private let recordingFinalizer = RecordingFinalizer()
     private let transcriptStore: TranscriptStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
+    private let youtubeDownloadService = YouTubeDownloadService()
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
@@ -626,6 +627,30 @@ final class RecordingManager {
             fileSize: size,
             meetingTitleDraft: defaultMeetingTitle(from: nil),
             finalizedAudioURL: url
+        )
+        appState.currentRecording = recording
+        appState.showPostRecordingSheet = true
+    }
+
+    // MARK: - YouTube
+
+    /// Download audio from a YouTube (or any yt-dlp-supported) URL, then show
+    /// the post-recording sheet so the user can set options before processing.
+    func loadYouTubeAudio(from urlString: String) async throws {
+        let (audioURL, videoTitle) = try await youtubeDownloadService.downloadAudio(from: urlString)  // actor hop
+
+        let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+        let size = (attrs?[.size] as? Int64) ?? 0
+
+        let sanitizedTitle = videoTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty ? "youtube-video" : videoTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let recording = Recording(
+            fileURL: audioURL,
+            fileSize: size,
+            meetingTitleDraft: sanitizedTitle,
+            finalizedAudioURL: audioURL          // skip re-finalization; file is already ready
         )
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true
