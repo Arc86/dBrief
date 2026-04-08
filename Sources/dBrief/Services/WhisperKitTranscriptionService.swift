@@ -25,18 +25,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
         Logger.localAI.debug("Starting transcription for file: \(fileURL.lastPathComponent, privacy: .public)")
 
-        // Dynamic memory gate: requirement depends on model size
-        let requiredMemory: Int64 = if whisperConfig.modelName.contains("tiny") {
-            500_000_000
-        } else if whisperConfig.modelName.contains("base") {
-            800_000_000
-        } else if whisperConfig.modelName.contains("medium") {
-            3_000_000_000
-        } else if whisperConfig.modelName.contains("large") {
-            5_000_000_000
-        } else {
-            2_000_000_000  // default for small
-        }
+        // Dynamic memory gate: use WhisperModelInfo for model-aware estimation
+        let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
+        let requiredMemory: Int64 = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
 
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
@@ -46,7 +37,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 domain: "WhisperKitTranscriptionService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load \(whisperConfig.modelName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load \(modelInfo.displayName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
                 ]
             )
         }
