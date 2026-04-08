@@ -16,6 +16,7 @@ struct SettingsTranscriptionTab: View {
     @State private var whisperModels: [WhisperModelInfo] = []
     @State private var isFetchingWhisperModels = false
     @State private var whisperModelFetchError: String?
+    @State private var showAllWhisperModels = false
 
     enum TestResult {
         case testing
@@ -103,11 +104,20 @@ struct SettingsTranscriptionTab: View {
                                 .controlSize(.small)
                                 .frame(width: 280, alignment: .trailing)
                         } else {
+                            let modelsToShow = showAllWhisperModels ? whisperModels : whisperModels.filter { model in
+                                // Show only recommended: tiny, small, medium, large-v3, large-v3-turbo, distil-large-v3, distil-turbo
+                                model.family == "tiny" || model.family == "small" || model.family == "medium" ||
+                                (model.family == "large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                                (model.family == "large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                                (model.family == "distil-large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                                (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
+                            }
+
                             Picker("", selection: $settings.whisperModelName) {
-                                if whisperModels.isEmpty {
+                                if modelsToShow.isEmpty {
                                     Text("openai_whisper-small").tag("openai_whisper-small")
                                 } else {
-                                    ForEach(whisperModels, id: \.id) { model in
+                                    ForEach(modelsToShow, id: \.id) { model in
                                         Text(model.displayName).tag(model.id)
                                     }
                                 }
@@ -139,6 +149,12 @@ struct SettingsTranscriptionTab: View {
                         Label(error, systemImage: "wifi.slash")
                             .font(.caption)
                             .foregroundStyle(.orange)
+                    }
+
+                    HStack {
+                        Text("Show all models").font(.caption).foregroundStyle(.secondary)
+                        Toggle("", isOn: $showAllWhisperModels)
+                            .controlSize(.small)
                     }
 
                     HStack {
