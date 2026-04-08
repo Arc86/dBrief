@@ -1,5 +1,5 @@
 {
-  "originHash" : "e9304a761b2585f11f7892717a9ea6f3b00a21f21ac1d76090c84b065617c04e",
+  "originHash" : "91161fa480512adcfaa717777b8d5f52e6750a4792e8a8b8e4df7d9a4e2ffc35",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/argmaxinc/WhisperKit.git",
       "state" : {
-        "revision" : "664e1b5a65296cd957dfdf262cd120ca88f3b24b",
-        "version" : "0.15.0"
+        "revision" : "e2adabbe7d98dc4d0ab9a5b75424ecc42a9cdbef",
+        "version" : "0.18.0"
       }
     }
   ],
