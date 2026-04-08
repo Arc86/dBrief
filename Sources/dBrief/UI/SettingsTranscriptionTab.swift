@@ -77,6 +77,11 @@ struct SettingsTranscriptionTab: View {
         }
     }
 
+    private func formatMemory(_ mb: Int) -> String {
+        let gb = Double(mb) / 1_024
+        return String(format: "%.1f GB", gb)
+    }
+
     private var engineSection: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
@@ -126,6 +131,12 @@ struct SettingsTranscriptionTab: View {
                             .pickerStyle(.menu)
                             .frame(width: 280, alignment: .trailing)
                         }
+
+                        if let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName }) {
+                            Text("~\(formatMemory(selectedModel.estimatedMemoryMB)) required")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     LabeledContent("GPU acceleration:") {
@@ -137,6 +148,14 @@ struct SettingsTranscriptionTab: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(width: 280, alignment: .trailing)
+                    }
+
+                    if let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName }) {
+                        if selectedModel.estimatedMemoryMB > 4_096 {
+                            Label("Large models require closing other apps", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
 
                     if !hasMetalGPU {
@@ -158,7 +177,7 @@ struct SettingsTranscriptionTab: View {
                     }
 
                     HStack {
-                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace.")
+                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace. Small (~2 GB) recommended for most Macs.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
