@@ -49,6 +49,8 @@ final class AppSettings {
         static let activeProfileId = "activeProfileId"
         static let powerUserMode = "powerUserMode"
         static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
+        static let whisperModelSize = "whisperModelSize"
+        static let whisperComputeUnits = "whisperComputeUnits"
     }
 
     // MARK: - Recording
@@ -131,6 +133,47 @@ final class AppSettings {
             case .appleSpeech: "Apple Speech"
             case .localWhisper: "Local Whisper"
             case .remoteEndpoint: "Remote Endpoint"
+            }
+        }
+    }
+
+    enum WhisperModelSize: String, CaseIterable, Codable, Hashable, Sendable {
+        case small
+        case largeTurbo
+
+        var modelName: String {
+            switch self {
+            case .small: "openai_whisper-small"
+            case .largeTurbo: "openai_whisper-large-v3-turbo"
+            }
+        }
+
+        var displayName: String {
+            switch self {
+            case .small: "Whisper Small (~460 MB)"
+            case .largeTurbo: "Whisper Large Turbo (~800 MB, faster)"
+            }
+        }
+
+        /// Minimum free memory required before loading this model (model size + runtime buffer).
+        var requiredFreeMemory: Int64 {
+            switch self {
+            case .small: 2_000_000_000       // 2 GB (1 GB model + 1 GB buffer)
+            case .largeTurbo: 3_500_000_000  // 3.5 GB (2 GB model + 1.5 GB buffer)
+            }
+        }
+    }
+
+    enum WhisperComputeUnits: String, CaseIterable, Codable, Hashable, Sendable {
+        case cpuAndNeuralEngine
+        case cpuAndGPU
+        case all
+
+        var displayName: String {
+            switch self {
+            case .cpuAndNeuralEngine: "Neural Engine"
+            case .cpuAndGPU: "Metal GPU"
+            case .all: "All (GPU + Neural Engine)"
             }
         }
     }
@@ -237,6 +280,16 @@ final class AppSettings {
     /// Custom vocabulary/context hint for Whisper (initial_prompt parameter). Helps with proper nouns, acronyms, etc.
     var whisperPrompt: String {
         didSet { UserDefaults.standard.set(whisperPrompt, forKey: Keys.whisperPrompt) }
+    }
+
+    /// WhisperKit model variant to use for local transcription.
+    var whisperModelSize: WhisperModelSize {
+        didSet { UserDefaults.standard.set(whisperModelSize.rawValue, forKey: Keys.whisperModelSize) }
+    }
+
+    /// Compute units for WhisperKit CoreML inference (Metal GPU / Neural Engine selection).
+    var whisperComputeUnits: WhisperComputeUnits {
+        didSet { UserDefaults.standard.set(whisperComputeUnits.rawValue, forKey: Keys.whisperComputeUnits) }
     }
 
     // MARK: - AI Prompts
@@ -514,6 +567,8 @@ final class AppSettings {
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
+        self.whisperModelSize = WhisperModelSize(rawValue: defaults.string(forKey: Keys.whisperModelSize) ?? "") ?? .small
+        self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt

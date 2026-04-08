@@ -1,22 +1,30 @@
 import Foundation
+import CoreML
+import Metal
 import WhisperKit
+import OSLog
 
 final class WhisperKitTranscriptionService: @unchecked Sendable {
     private static let modelRepo = "argmaxinc/whisperkit-coreml"
-    private static let modelName = "openai_whisper-small"
     private static let bilingualPrefix = "This conversation is likely in Dutch and/or English; however, adjust language accordingly."
+
+    /// Whether a Metal-capable GPU is present on this Mac.
+    /// Evaluated once at load time; non-Metal Macs (rare) fall back to Neural Engine only.
+    static let hasMetalGPU: Bool = MTLCreateSystemDefaultDevice() != nil
 
     private let fileManager = FileManager.default
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var whisperKit: WhisperKit?
+    /// Config used to create the currently-loaded WhisperKit instance.
+    private var loadedConfig: WhisperRuntimeConfig?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
     }
 
-    func transcribe(fileURL: URL, initialPrompt: String?) async throws -> TranscriptionResult {
-        // Check available memory before loading Whisper model (~1GB)
-        let requiredMemory: Int64 = 2_000_000_000 // 2GB minimum free (1GB model + 1GB buffer)
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
+        // Dynamic memory gate: requirement depends on model size
+        let requiredMemory = whisperConfig.modelSize.requiredFreeMemory
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
@@ -25,17 +33,17 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 domain: "WhisperKitTranscriptionService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load WhisperKit model. Need at least 2GB free memory. Close other apps or use Remote transcription instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load \(whisperConfig.modelSize.displayName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
                 ]
             )
         }
 
-        let whisper = try await loadWhisperKit()
+        let whisper = try await loadWhisperKit(config: whisperConfig)
         stateHandler(.transcribing)
 
         // Convert FLAC to WAV if needed for WhisperKit compatibility
         let preparedURL = try await prepareAudioFile(fileURL: fileURL)
-        let needsCleanup = preparedURL != fileURL // Track if we created a temp file
+        let needsCleanup = preparedURL != fileURL
 
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
@@ -86,7 +94,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             let result = TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
 
-            // Cleanup temporary WAV file if we created one
             if needsCleanup {
                 try? fileManager.removeItem(at: preparedURL)
             }
@@ -94,7 +101,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             await unload()
             return result
         } catch {
-            // Cleanup temporary WAV file even on error
             if needsCleanup {
                 try? fileManager.removeItem(at: preparedURL)
             }
@@ -104,7 +110,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     func prepareModelIfNeeded() async throws {
-        _ = try await loadWhisperKit()
+        _ = try await loadWhisperKit(config: .default)
         await unload()
     }
 
@@ -112,6 +118,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         guard let whisperKit else { return }
         await whisperKit.unloadModels()
         self.whisperKit = nil
+        self.loadedConfig = nil
     }
 
     func purgeModels() async throws {
@@ -124,9 +131,64 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Private
 
+    private func loadWhisperKit(config: WhisperRuntimeConfig) async throws -> WhisperKit {
+        // Reuse existing instance if the same config is already loaded
+        if let whisperKit, loadedConfig == config {
+            return whisperKit
+        }
+        // Config changed or not yet loaded — unload any stale instance first
+        if whisperKit != nil {
+            await unload()
+        }
+
+        stateHandler(.downloading(progress: nil, stage: .whisperModel))
+        let downloadBase = try whisperDownloadBaseURL()
+        let computeOpts = buildComputeOptions(for: config)
+
+        Logger.localai.info(
+            "WhisperKit loading: model=\(config.modelSize.modelName, privacy: .public) " +
+            "computeUnits=\(config.computeUnits.rawValue, privacy: .public) " +
+            "metalGPU=\(Self.hasMetalGPU, privacy: .public)"
+        )
+
+        let wkConfig = WhisperKitConfig(
+            model: config.modelSize.modelName,
+            downloadBase: downloadBase,
+            modelRepo: Self.modelRepo,
+            computeOptions: computeOpts,
+            prewarm: false,
+            load: false,
+            download: true
+        )
+
+        let whisper = try await WhisperKit(wkConfig)
+        self.whisperKit = whisper
+        self.loadedConfig = config
+        return whisper
+    }
+
+    /// Maps the user's WhisperComputeUnits preference to a CoreML ModelComputeOptions.
+    /// On non-Metal hardware the preference is ignored and Neural Engine is used as fallback.
+    private func buildComputeOptions(for config: WhisperRuntimeConfig) -> ModelComputeOptions {
+        let units: MLComputeUnits
+        if Self.hasMetalGPU {
+            switch config.computeUnits {
+            case .cpuAndNeuralEngine: units = .cpuAndNeuralEngine
+            case .cpuAndGPU:         units = .cpuAndGPU
+            case .all:               units = .all
+            }
+        } else {
+            // No Metal GPU — fall back to Neural Engine for both encoder and decoder
+            units = .cpuAndNeuralEngine
+        }
+        // Use the same compute units for encoder and decoder for predictable performance.
+        // The encoder benefits most from GPU/ANE parallelism; the decoder is autoregressive
+        // but still benefits from ANE on Apple Silicon.
+        return ModelComputeOptions(audioEncoderCompute: units, textDecoderCompute: units)
+    }
+
     private func prepareAudioFile(fileURL: URL) async throws -> URL {
         let ext = fileURL.pathExtension.lowercased()
-        // WhisperKit works best with WAV files, convert FLAC if needed
         guard ext == "flac" else {
             return fileURL
         }
@@ -147,8 +209,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             process.arguments = [
                 "-y",
                 "-i", fileURL.path,
-                "-ar", "16000",  // 16kHz sample rate for Whisper
-                "-ac", "1",       // Mono
+                "-ar", "16000",
+                "-ac", "1",
                 "-f", "wav",
                 outputURL.path,
             ]
@@ -185,26 +247,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
 
         return outputURL
-    }
-
-    private func loadWhisperKit() async throws -> WhisperKit {
-        if let whisperKit {
-            return whisperKit
-        }
-        stateHandler(.downloading(progress: nil, stage: .whisperModel))
-        let downloadBase = try whisperDownloadBaseURL()
-        let config = WhisperKitConfig(
-            model: Self.modelName,
-            downloadBase: downloadBase,
-            modelRepo: Self.modelRepo,
-            prewarm: false,
-            load: false,
-            download: true
-        )
-
-        let whisper = try await WhisperKit(config)
-        self.whisperKit = whisper
-        return whisper
     }
 
     private func whisperDownloadBaseURL() throws -> URL {
