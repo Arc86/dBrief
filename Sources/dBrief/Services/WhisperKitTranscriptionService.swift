@@ -26,13 +26,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         Logger.localAI.debug("Starting transcription for file: \(fileURL.lastPathComponent, privacy: .public)")
 
         // Dynamic memory gate: requirement depends on model size
-        let requiredMemory: Int64 = if whisperConfig.modelSize.modelName.contains("tiny") {
+        let requiredMemory: Int64 = if whisperConfig.modelName.contains("tiny") {
             500_000_000
-        } else if whisperConfig.modelSize.modelName.contains("base") {
+        } else if whisperConfig.modelName.contains("base") {
             800_000_000
-        } else if whisperConfig.modelSize.modelName.contains("medium") {
+        } else if whisperConfig.modelName.contains("medium") {
             3_000_000_000
-        } else if whisperConfig.modelSize.modelName.contains("large") {
+        } else if whisperConfig.modelName.contains("large") {
             5_000_000_000
         } else {
             2_000_000_000  // default for small
@@ -46,7 +46,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 domain: "WhisperKitTranscriptionService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load \(whisperConfig.modelSize.displayName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load \(whisperConfig.modelName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
                 ]
             )
         }
@@ -176,11 +176,11 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let computeOpts = buildComputeOptions(for: config)
 
         Logger.localAI.info(
-            "WhisperKit loading: model=\(config.modelSize.modelName, privacy: .public) computeUnits=\(config.computeUnits.rawValue, privacy: .public) metalGPU=\(Self.hasMetalGPU, privacy: .public)"
+            "WhisperKit loading: model=\(config.modelName, privacy: .public) computeUnits=\(config.computeUnits.rawValue, privacy: .public) metalGPU=\(Self.hasMetalGPU, privacy: .public)"
         )
 
         let wkConfig = WhisperKitConfig(
-            model: config.modelSize.modelName,
+            model: config.modelName,
             downloadBase: downloadBase,
             modelRepo: Self.modelRepo,
             computeOptions: computeOpts,
