@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>dBrief</string>
+	<key>CFBundleExecutable</key>
+	<string>dBrief</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.dbrief.app</string>
+	<key>CFBundleName</key>
+	<string>dBrief</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1.1.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>dBrief needs microphone access to record audio from your microphone during calls and voice recordings.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>dBrief uses full Reminders access to save extracted action items.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>dBrief uses Reminders access to save extracted action items.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>dBrief needs screen recording permission to capture system audio during calls.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>dBrief uses speech recognition to transcribe your recordings on-device.</string>
+</dict>
+</plist>
