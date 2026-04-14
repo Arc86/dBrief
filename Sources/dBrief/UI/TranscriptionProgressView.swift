@@ -109,31 +109,30 @@ struct TranscriptionProgressView: View {
 
             memoryBar
 
-            if hasInProgressStep {
-                HStack {
-                    if let onCancel {
-                        Button {
-                            Task { await onCancel() }
-                        } label: {
-                            Label("Stop", systemImage: "stop.fill")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(.red)
+            HStack {
+                if hasInProgressStep, let onCancel {
+                    Button {
+                        Task { await onCancel() }
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                }
 
-                    if !appState.liveTranscriptSegments.isEmpty {
-                        Button {
-                            openWindow(id: "live-transcript")
-                            NSApp.activate(ignoringOtherApps: true)
-                        } label: {
-                            Label("Live Transcript", systemImage: "text.viewfinder")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                if !appState.liveTranscriptSegments.isEmpty {
+                    Button {
+                        openWindow(id: "live-transcript")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
+                        Label("Live Transcript", systemImage: "text.viewfinder")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if isComplete, let recording = appState.currentRecording, recording.transcription != nil {
                 Divider()

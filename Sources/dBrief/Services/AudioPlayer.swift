@@ -13,12 +13,16 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private(set) var currentFileURL: URL?
     private var timer: Timer?
 
+    private(set) var playbackRate: Float = 1.0
+
     func play(url: URL) {
         stop()
 
         do {
             player = try AVAudioPlayer(contentsOf: url)
             player?.delegate = self
+            player?.enableRate = true
+            player?.rate = playbackRate
             player?.prepareToPlay()
             duration = player?.duration ?? 0
             currentFileURL = url
@@ -29,6 +33,11 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         } catch {
             log.error("Playback failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    func setRate(_ rate: Float) {
+        playbackRate = rate
+        player?.rate = rate
     }
 
     func pause() {

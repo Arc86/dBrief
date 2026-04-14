@@ -59,6 +59,66 @@ actor AIService {
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'."))
     }
 
+    /// Streaming chat completion via SSE. Yields text delta chunks as they arrive.
+    nonisolated func streamChat(
+        systemPrompt: String,
+        userMessage: String,
+        endpoint: Endpoint
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard let url = endpoint.chatCompletionsURL else {
+                        throw AIServiceError.invalidEndpoint
+                    }
+
+                    let body: [String: Any] = [
+                        "model": endpoint.modelName,
+                        "messages": [
+                            ["role": "system", "content": systemPrompt],
+                            ["role": "user", "content": userMessage],
+                        ],
+                        "temperature": 0.3,
+                        "stream": true,
+                    ]
+
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    if !endpoint.apiKey.isEmpty {
+                        request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
+                    }
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    request.timeoutInterval = 120
+
+                    let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let httpResponse = response as? HTTPURLResponse,
+                          (200...299).contains(httpResponse.statusCode)
+                    else {
+                        throw AIServiceError.invalidResponse
+                    }
+
+                    for try await line in asyncBytes.lines {
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonStr = String(line.dropFirst(6))
+                        if jsonStr.trimmingCharacters(in: .whitespaces) == "[DONE]" { break }
+                        guard let data = jsonStr.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let choices = json["choices"] as? [[String: Any]],
+                              let delta = choices.first?["delta"] as? [String: Any],
+                              let content = delta["content"] as? String
+                        else { continue }
+                        continuation.yield(content)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
     func testConnection(endpoint: Endpoint) async throws -> Bool {
         _ = try await fetchAvailableModels(endpoint: endpoint)
         return true
