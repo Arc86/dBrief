@@ -54,6 +54,10 @@ struct MarkdownGenerator {
         lines.append("duration: \"\(recording.formattedDuration)\"")
         lines.append("audio_file: \"[[\(recording.fileURL.lastPathComponent)]]\"")
 
+        if let speakerCount = recording.transcription?.speakerCount, speakerCount > 1 {
+            lines.append("speakers: \(speakerCount)")
+        }
+
         if let transcriptionEndpoint {
             lines.append("transcription_model: \"\(transcriptionEndpoint.modelName)\"")
         }
@@ -113,12 +117,19 @@ struct MarkdownGenerator {
             lines.append("## 💬 Transcript")
             lines.append("")
 
+            let speakerLabels = recording.richTranscript?.speakerLabels ?? []
             if transcription.segments.isEmpty {
                 lines.append(transcription.text)
             } else {
                 for segment in transcription.segments {
                     let timestamp = formatTimestamp(segment.start)
-                    lines.append("**[\(timestamp)]** \(segment.text.trimmingCharacters(in: .whitespaces))")
+                    let text = segment.text.trimmingCharacters(in: .whitespaces)
+                    if let speakerId = segment.speaker {
+                        let displayName = speakerLabels.first(where: { $0.id == speakerId })?.displayName ?? speakerId
+                        lines.append("**[\(timestamp)] \(displayName):** \(text)")
+                    } else {
+                        lines.append("**[\(timestamp)]** \(text)")
+                    }
                     lines.append("")
                 }
             }

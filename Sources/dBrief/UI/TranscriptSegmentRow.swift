@@ -2,16 +2,20 @@ import SwiftUI
 
 struct TranscriptSegmentRow: View {
     let segment: RichSegment
+    let speakerLabels: [SpeakerLabel]
     let isActive: Bool
     let currentTime: TimeInterval
     let onSeek: (Double) -> Void
     let onToggleStar: () -> Void
     let onSave: (String) -> Void
+    let onRenameSpeaker: (String, String) -> Void  // (speakerId, newDisplayName)
 
     @State private var isHovered = false
     @State private var isEditing = false
     @State private var editText = ""
     @State private var saveTask: Task<Void, Never>?
+    @State private var showingSpeakerRename = false
+    @State private var speakerRenameText = ""
 
     private var borderColor: Color {
         if isEditing { return .accentColor }
@@ -27,18 +31,62 @@ struct TranscriptSegmentRow: View {
         return Color(nsColor: .controlBackgroundColor)
     }
 
+    /// Resolve speaker display name from labels, falling back to the raw speaker ID.
+    private func speakerDisplayName(for speakerId: String) -> String {
+        speakerLabels.first(where: { $0.id == speakerId })?.displayName ?? speakerId
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Header
             HStack(spacing: 6) {
-                // Speaker badge (placeholder until Sub-project 2)
-                Text("Speaker 1")
-                    .font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                // Speaker badge — tappable to rename
+                if let speakerId = segment.speakerId {
+                    let displayName = speakerDisplayName(for: speakerId)
+                    let color = speakerColor(for: speakerId)
+                    Text(displayName)
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(color.opacity(0.15))
+                        .foregroundStyle(color)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .onTapGesture {
+                            speakerRenameText = displayName
+                            showingSpeakerRename = true
+                        }
+                        .popover(isPresented: $showingSpeakerRename, arrowEdge: .bottom) {
+                            VStack(spacing: 8) {
+                                Text("Rename Speaker")
+                                    .font(.caption.bold())
+                                TextField("Name", text: $speakerRenameText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 140)
+                                    .onSubmit {
+                                        let name = speakerRenameText.trimmingCharacters(in: .whitespaces)
+                                        if !name.isEmpty {
+                                            onRenameSpeaker(speakerId, name)
+                                        }
+                                        showingSpeakerRename = false
+                                    }
+                                HStack {
+                                    Button("Cancel") { showingSpeakerRename = false }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                    Button("Save") {
+                                        let name = speakerRenameText.trimmingCharacters(in: .whitespaces)
+                                        if !name.isEmpty {
+                                            onRenameSpeaker(speakerId, name)
+                                        }
+                                        showingSpeakerRename = false
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                }
+                            }
+                            .padding(12)
+                        }
+                }
 
                 // Timestamp button — seeks on tap
                 Button(formattedTimestamp(segment.start)) {
@@ -91,7 +139,6 @@ struct TranscriptSegmentRow: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else if segment.tokens.isEmpty {
-                // No word timestamps — plain text, tap seeks to segment start
                 Text(segment.text)
                     .font(.callout)
                     .foregroundStyle(.primary)
@@ -99,7 +146,6 @@ struct TranscriptSegmentRow: View {
                     .contentShape(Rectangle())
                     .onTapGesture { onSeek(segment.start) }
             } else {
-                // Token flow with per-word seeking and current-word highlight
                 FlowLayout(spacing: 2) {
                     ForEach(segment.tokens.indices, id: \.self) { i in
                         let token = segment.tokens[i]
@@ -143,6 +189,12 @@ struct TranscriptSegmentRow: View {
             guard !Task.isCancelled, isEditing else { return }
             onSave(text)
         }
+    }
+
+    private func speakerColor(for speakerId: String) -> Color {
+        let palette: [Color] = [.accentColor, .orange, .green, .purple, .pink, .cyan, .yellow, .indigo]
+        let hash = abs(speakerId.unicodeScalars.reduce(0) { $0 &+ Int($1.value) })
+        return palette[hash % palette.count]
     }
 
     private func formattedTimestamp(_ seconds: Double) -> String {

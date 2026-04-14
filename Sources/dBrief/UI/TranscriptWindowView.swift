@@ -60,11 +60,13 @@ struct TranscriptWindowView: View {
                                 ForEach(displayedSegments) { segment in
                                     TranscriptSegmentRow(
                                         segment: segment,
+                                        speakerLabels: richTranscript?.speakerLabels ?? [],
                                         isActive: isSegmentActive(segment),
                                         currentTime: audioPlayer.currentTime,
                                         onSeek: { time in seek(to: time, in: recording) },
                                         onToggleStar: { toggleStar(segment: segment, in: recording) },
-                                        onSave: { newText in editSegment(segment, newText: newText, in: recording) }
+                                        onSave: { newText in editSegment(segment, newText: newText, in: recording) },
+                                        onRenameSpeaker: { speakerId, newName in renameSpeaker(speakerId: speakerId, displayName: newName, in: recording) }
                                     )
                                     .id(segment.id)
                                 }
@@ -128,6 +130,17 @@ struct TranscriptWindowView: View {
         guard var transcript = richTranscript,
               let idx = transcript.segments.firstIndex(where: { $0.id == segment.id }) else { return }
         transcript.segments[idx].isStarred.toggle()
+        richTranscript = transcript
+        saveTranscript(transcript, for: recording)
+    }
+
+    private func renameSpeaker(speakerId: String, displayName: String, in recording: Recording) {
+        guard var transcript = richTranscript else { return }
+        if let idx = transcript.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
+            transcript.speakerLabels[idx].displayName = displayName
+        } else {
+            transcript.speakerLabels.append(SpeakerLabel(id: speakerId, displayName: displayName))
+        }
         richTranscript = transcript
         saveTranscript(transcript, for: recording)
     }

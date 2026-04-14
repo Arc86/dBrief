@@ -10,6 +10,7 @@ struct PostRecordingSheet: View {
     @State private var actionItems = true
     @State private var tags = true
     @State private var meetingTitle = ""
+    @State private var participantsText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -38,6 +39,17 @@ struct PostRecordingSheet: View {
             Text("Used for FLAC file naming (`YYYY-MM-DD_HHMM_[meeting-title].flac`).")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+            if appSettings.diarizationEnabled {
+                LabeledContent("Participants:") {
+                    TextField("Alice, Bob, Charlie", text: $participantsText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+                Text("Comma-separated names. Matched to speakers in order of first appearance.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             Divider()
 
@@ -103,18 +115,14 @@ struct PostRecordingSheet: View {
 
             HStack {
                 Button("Skip") {
-                    if let recording = appState.currentRecording {
-                        recording.meetingTitleDraft = sanitizedMeetingTitle
-                    }
+                    applyFieldsToRecording()
                     Task { await recordingManager.skipProcessing() }
                 }
                 .buttonStyle(.bordered)
                 .disabled(sanitizedMeetingTitle.isEmpty)
 
                 Button("Queue") {
-                    if let recording = appState.currentRecording {
-                        recording.meetingTitleDraft = sanitizedMeetingTitle
-                    }
+                    applyFieldsToRecording()
                     Task {
                         await recordingManager.queueForLater(
                             transcribe: transcribe,
@@ -131,9 +139,7 @@ struct PostRecordingSheet: View {
                 Spacer()
 
                 Button("Process") {
-                    if let recording = appState.currentRecording {
-                        recording.meetingTitleDraft = sanitizedMeetingTitle
-                    }
+                    applyFieldsToRecording()
                     recordingManager.startProcessing(
                         transcribe: transcribe,
                         summary: summary && transcribe,
@@ -191,5 +197,14 @@ struct PostRecordingSheet: View {
     private func fallbackMeetingTitle(recording: Recording) -> String {
         let appName = recording.associatedApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return appName.isEmpty ? "meeting" : appName
+    }
+
+    private func applyFieldsToRecording() {
+        guard let recording = appState.currentRecording else { return }
+        recording.meetingTitleDraft = sanitizedMeetingTitle
+        recording.participants = participantsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 }

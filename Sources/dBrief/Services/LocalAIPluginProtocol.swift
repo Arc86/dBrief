@@ -1,14 +1,18 @@
 import Foundation
 
 enum DownloadStage: Sendable {
-    case whisperModel
+    case whisperModel         // Downloading model weights from HuggingFace
+    case whisperModelLoading  // Model cached locally, now loading into memory
     case llmModel
+    case speakerKitModel
 }
 
 enum LocalAIPluginState: Sendable {
     case idle
     case downloading(progress: Double?, stage: DownloadStage)
     case transcribing
+    case newSegments([LiveTranscriptSegment])
+    case diarizing
     case analyzing
 }
 
@@ -16,10 +20,14 @@ enum LocalAIPluginState: Sendable {
 /// Allows the user's model and GPU settings to take effect without restarting the app.
 struct WhisperRuntimeConfig: Sendable, Equatable {
     let modelName: String
-    let computeUnits: AppSettings.WhisperComputeUnits
     let language: String?
+    let diarizationEnabled: Bool
 
-    static let `default` = WhisperRuntimeConfig(modelName: "openai_whisper-small", computeUnits: .all, language: nil)
+    static let `default` = WhisperRuntimeConfig(
+        modelName: "openai_whisper-small",
+        language: nil,
+        diarizationEnabled: false
+    )
 }
 
 protocol LocalAIPluginProtocol: Sendable {
