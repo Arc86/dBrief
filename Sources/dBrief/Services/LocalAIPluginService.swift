@@ -105,6 +105,33 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         return markdown
     }
 
+    /// Stream a chat response using the local Qwen model.
+    /// Used by TranscriptChatService for conversational AI over a loaded transcript.
+    func chatStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream<String, Error> { continuation in
+            let task = Task {
+                do {
+                    try await mutex.withLock {
+                        defer { stateContinuation.yield(.idle) }
+                        await whisperService.unload()
+                        let upstream = await insightsService.chatStream(
+                            systemPrompt: systemPrompt,
+                            userMessage: userMessage
+                        )
+                        for try await chunk in upstream {
+                            continuation.yield(chunk)
+                        }
+                        await insightsService.unload()
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
     func prepareModelsIfNeeded() async {
         do {
             try await mutex.withLock {

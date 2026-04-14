@@ -306,6 +306,7 @@ struct ResultsView: View {
                         appState.recentRecordings = appState.recentRecordings.filter { $0.id != id }
                         appState.recentRecordings.append(recording)
                         openWindow(value: id)
+                        NSApp.activate(ignoringOtherApps: true)
                     }
                 }
                 .buttonStyle(.bordered)

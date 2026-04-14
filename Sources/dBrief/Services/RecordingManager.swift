@@ -15,6 +15,8 @@ final class RecordingManager {
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
     private let localAIPluginService = LocalAIPluginService()
+    /// Exposed for TranscriptChatService — read-only reference, access serialized through actor's AsyncMutex.
+    var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
     private var processingTask: Task<Void, Never>?
     private let aiService = AIService()

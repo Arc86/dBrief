@@ -1,6 +1,12 @@
 import SwiftUI
 import OSLog
 
+enum TranscriptViewMode: String, CaseIterable {
+    case transcript = "Transcript"
+    case segments = "Segments"
+    case chat = "Chat"
+}
+
 struct TranscriptWindowView: View {
     @Binding var recordingId: UUID?
 
@@ -8,10 +14,19 @@ struct TranscriptWindowView: View {
     @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audioPlayer
 
+    // Persisted display preferences
+    @AppStorage("transcriptFontSize") private var fontSize: Int = 16
+    @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
+    @AppStorage("showTranscriptSidePanel") private var showSidePanel: Bool = true
+
+    // Per-window state
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
-    @State private var showStarredOnly = false
+    @State private var viewMode: TranscriptViewMode = .transcript
+    @State private var searchText = ""
     @State private var currentTime: TimeInterval = 0
+    @State private var chatService: TranscriptChatService?
+    @State private var copied = false
 
     private var recording: Recording? {
         guard let id = recordingId else { return nil }
@@ -21,87 +36,25 @@ struct TranscriptWindowView: View {
 
     private var displayedSegments: [RichSegment] {
         guard let t = richTranscript else { return [] }
-        return showStarredOnly ? t.segments.filter { $0.isStarred } : t.segments
+        let segments = t.segments
+        guard !searchText.isEmpty else { return segments }
+        let q = searchText.lowercased()
+        return segments.filter { $0.text.lowercased().contains(q) }
     }
 
     var body: some View {
         if let recording {
             VStack(spacing: 0) {
-                // Toolbar: All / Starred filter
-                HStack(spacing: 8) {
-                    Button("All") { showStarredOnly = false }
-                        .buttonStyle(TranscriptFilterButtonStyle(isActive: !showStarredOnly))
-                    Button("⭐ Starred") { showStarredOnly = true }
-                        .buttonStyle(TranscriptFilterButtonStyle(isActive: showStarredOnly))
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(nsColor: .windowBackgroundColor))
+                toolbar
 
                 Divider()
 
-                if loadFailed {
-                    VStack(spacing: 12) {
-                        Spacer()
-                        Text("Transcript unavailable")
-                            .foregroundStyle(.secondary)
-                        Button("Rebuild") {
-                            rebuildTranscript(for: recording)
-                        }
-                        .buttonStyle(.bordered)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let _ = richTranscript {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(spacing: 4) {
-                                ForEach(displayedSegments) { segment in
-                                    TranscriptSegmentRow(
-                                        segment: segment,
-                                        speakerLabels: richTranscript?.speakerLabels ?? [],
-                                        isActive: isSegmentActive(segment),
-                                        currentTime: audioPlayer.currentTime,
-                                        onSeek: { time in seek(to: time, in: recording) },
-                                        onToggleStar: { toggleStar(segment: segment, in: recording) },
-                                        onSave: { newText in editSegment(segment, newText: newText, in: recording) },
-                                        onRenameSpeaker: { speakerId, newName in renameSpeaker(speakerId: speakerId, displayName: newName, in: recording) }
-                                    )
-                                    .id(segment.id)
-                                }
-                            }
-                            .padding(12)
-                        }
-                        .onChange(of: audioPlayer.currentTime) { _, newTime in
-                            currentTime = newTime
-                            if let t = richTranscript,
-                               let active = t.segments.first(where: { newTime >= $0.start && newTime < $0.end }) {
-                                withAnimation { proxy.scrollTo(active.id, anchor: .center) }
-                            }
-                        }
-                    }
+                HStack(spacing: 0) {
+                    mainContent(for: recording)
 
-                    Divider()
-
-                    if let audioURL = recording.finalizedAudioURL {
-                        TranscriptPlayerBar(
-                            audioURL: audioURL,
-                            currentTime: $currentTime
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                    } else {
-                        Text("Audio file not found")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(8)
-                    }
-                } else {
-                    VStack {
-                        Spacer()
-                        ProgressView("Loading transcript…")
-                        Spacer()
+                    if showSidePanel, let _ = richTranscript {
+                        Divider()
+                        sidePanelPane(for: recording)
                     }
                 }
             }
@@ -110,11 +63,211 @@ struct TranscriptWindowView: View {
             .task(id: recordingId) {
                 await loadTranscript(for: recording)
             }
+            .onChange(of: viewMode) { _, newMode in
+                if newMode == .chat, chatService == nil {
+                    buildChatService(for: recording)
+                }
+            }
         } else {
             Text("No recording selected")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
+
+    // MARK: - Toolbar
+
+    private var toolbar: some View {
+        HStack(spacing: 10) {
+            // Mode picker
+            Picker("Mode", selection: $viewMode) {
+                ForEach(TranscriptViewMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 230)
+
+            // Search (only for transcript/segments)
+            if viewMode != .chat {
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.callout)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: 180)
+            }
+
+            Spacer()
+
+            // Copy transcript
+            Button {
+                copyTranscript()
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .foregroundStyle(copied ? Color.green : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .disabled(richTranscript == nil)
+            .help("Copy full transcript")
+
+            // Toggle sidebar
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSidePanel.toggle()
+                }
+            } label: {
+                Image(systemName: showSidePanel ? "sidebar.right" : "sidebar.right")
+                    .symbolVariant(showSidePanel ? .fill : .none)
+                    .foregroundStyle(showSidePanel ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(showSidePanel ? "Hide sidebar" : "Show sidebar")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Main content
+
+    @ViewBuilder
+    private func mainContent(for recording: Recording) -> some View {
+        VStack(spacing: 0) {
+            if loadFailed {
+                failedState(for: recording)
+            } else if viewMode == .chat {
+                chatContent(for: recording)
+            } else if let _ = richTranscript {
+                segmentScrollView
+                Divider()
+                if let audioURL = recording.finalizedAudioURL {
+                    TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                } else {
+                    Text("Audio file not found")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                }
+            } else {
+                loadingState
+            }
+        }
+    }
+
+    private var segmentScrollView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: viewMode == .transcript ? 0 : 4) {
+                    ForEach(displayedSegments) { segment in
+                        TranscriptSegmentRow(
+                            segment: segment,
+                            speakerLabels: richTranscript?.speakerLabels ?? [],
+                            isActive: isSegmentActive(segment),
+                            currentTime: audioPlayer.currentTime,
+                            displayMode: viewMode == .transcript ? .transcript : .segments,
+                            showSpeakerNames: showSpeakerNames,
+                            fontSize: fontSize,
+                            onSeek: { time in seek(to: time, in: recording!) },
+                            onToggleStar: { toggleStar(segment: segment, in: recording!) },
+                            onSave: { newText in editSegment(segment, newText: newText, in: recording!) },
+                            onRenameSpeaker: { id, name in renameSpeaker(speakerId: id, displayName: name, in: recording!) }
+                        )
+                        .id(segment.id)
+                    }
+
+                    if displayedSegments.isEmpty && !searchText.isEmpty {
+                        Text("No segments matching \"\(searchText)\"")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(24)
+                    }
+                }
+                .padding(viewMode == .transcript ? 0 : 12)
+                .padding(.vertical, viewMode == .transcript ? 8 : 0)
+            }
+            .onChange(of: audioPlayer.currentTime) { _, newTime in
+                currentTime = newTime
+                guard viewMode != .chat, let t = richTranscript,
+                      let active = t.segments.first(where: { newTime >= $0.start && newTime < $0.end })
+                else { return }
+                withAnimation { proxy.scrollTo(active.id, anchor: .center) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chatContent(for recording: Recording) -> some View {
+        if let chatService {
+            TranscriptChatView(chatService: chatService)
+        } else {
+            VStack(spacing: 12) {
+                Spacer()
+                ProgressView()
+                Text("Preparing chat…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task { buildChatService(for: recording) }
+        }
+    }
+
+    private var loadingState: some View {
+        VStack {
+            Spacer()
+            ProgressView("Loading transcript…")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func failedState(for recording: Recording) -> some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Text("Transcript unavailable")
+                .foregroundStyle(.secondary)
+            Button("Rebuild") { rebuildTranscript(for: recording) }
+                .buttonStyle(.bordered)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Side panel
+
+    @ViewBuilder
+    private func sidePanelPane(for recording: Recording) -> some View {
+        if richTranscript != nil {
+            TranscriptSidePanel(
+                richTranscript: Binding(
+                    get: { richTranscript ?? RichTranscript(segments: []) },
+                    set: { updated in
+                        richTranscript = updated
+                        saveTranscript(updated, for: recording)
+                    }
+                ),
+                recording: recording,
+                fontSize: $fontSize,
+                showSpeakerNames: $showSpeakerNames
+            )
+            .frame(width: 220)
+            .transition(.move(edge: .trailing))
+        }
+    }
+
+    // MARK: - Actions
 
     private func isSegmentActive(_ segment: RichSegment) -> Bool {
         currentTime >= segment.start && currentTime < segment.end
@@ -128,7 +281,8 @@ struct TranscriptWindowView: View {
 
     private func toggleStar(segment: RichSegment, in recording: Recording) {
         guard var transcript = richTranscript,
-              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id }) else { return }
+              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id })
+        else { return }
         transcript.segments[idx].isStarred.toggle()
         richTranscript = transcript
         saveTranscript(transcript, for: recording)
@@ -147,7 +301,8 @@ struct TranscriptWindowView: View {
 
     private func editSegment(_ segment: RichSegment, newText: String, in recording: Recording) {
         guard var transcript = richTranscript,
-              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id }) else { return }
+              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id })
+        else { return }
         transcript.segments[idx].text = newText
         transcript.segments[idx].isEdited = true
         transcript.segments[idx].tokens = []
@@ -155,18 +310,48 @@ struct TranscriptWindowView: View {
         saveTranscript(transcript, for: recording)
     }
 
+    private func copyTranscript() {
+        guard let transcript = richTranscript else { return }
+        let text = transcript.segments.map { $0.text }.joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+
+    private func buildChatService(for recording: Recording) {
+        guard chatService == nil else { return }
+        let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n") ?? recording.transcription?.text ?? ""
+        let labels = richTranscript?.speakerLabels ?? []
+        chatService = TranscriptChatService(
+            transcriptText: text,
+            speakerLabels: labels,
+            appSettings: context.appSettings,
+            localPlugin: context.recordingManager.localPlugin
+        )
+    }
+
+    // MARK: - Persistence
+
     private func saveTranscript(_ transcript: RichTranscript, for recording: Recording) {
         let store = context.transcriptStore
         Task {
             do {
                 try await store.save(transcript, for: recording)
             } catch {
-                Logger.recording.error("TranscriptWindowView: failed to save transcript: \(error.localizedDescription, privacy: .public)")
+                Logger.recording.error("TranscriptWindowView: failed to save: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
     private func loadTranscript(for recording: Recording) async {
+        richTranscript = nil
+        loadFailed = false
+        chatService = nil
+
         if let cached = recording.richTranscript {
             richTranscript = cached
             return
