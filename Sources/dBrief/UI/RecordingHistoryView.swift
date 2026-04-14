@@ -193,6 +193,7 @@ struct RecordingHistoryView: View {
                             appState.recentRecordings.removeAll { $0.id == rec.id }
                             appState.recentRecordings.append(rec)
                             openWindow(value: rec.id)
+                            NSApp.activate(ignoringOtherApps: true)
                         }
                     }
 

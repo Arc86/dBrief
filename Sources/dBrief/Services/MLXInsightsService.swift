@@ -131,6 +131,38 @@ actor MLXInsightsService {
         }
     }
 
+    /// Stream a chat response for an arbitrary system prompt and user message.
+    /// Used by TranscriptChatService for conversational AI over transcripts.
+    func chatStream(systemPrompt: String, userMessage: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    self.stateHandler(.analyzing)
+                    self.isInferencing = true
+                    let container = try await self.loadModelContainerIfNeeded()
+                    let session = ChatSession(
+                        container,
+                        instructions: systemPrompt,
+                        generateParameters: self.generationParameters()
+                    )
+                    for try await chunk in session.streamResponse(to: userMessage) {
+                        continuation.yield(chunk)
+                    }
+                    self.isInferencing = false
+                    await self.unload()
+                    continuation.finish()
+                } catch {
+                    self.isInferencing = false
+                    await self.unload()
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable [weak self] _ in
+                task.cancel()
+            }
+        }
+    }
+
     func unload() async {
         guard modelContainer != nil else { return }
         guard !isInferencing else {

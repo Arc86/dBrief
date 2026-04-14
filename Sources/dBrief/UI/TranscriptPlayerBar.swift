@@ -6,58 +6,84 @@ struct TranscriptPlayerBar: View {
     let audioURL: URL
     @Binding var currentTime: TimeInterval
 
+    @State private var waveformSamples: [Float] = []
+
+    private var isThisFile: Bool { audioPlayer.currentFileURL == audioURL }
+    private var displayTime: TimeInterval { isThisFile ? audioPlayer.currentTime : currentTime }
+    private var duration: TimeInterval { isThisFile ? audioPlayer.duration : 0 }
+    private var playbackFraction: Double {
+        guard duration > 0 else { return 0 }
+        return displayTime / duration
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
+            // Play / Pause
             Button {
                 audioPlayer.togglePlayPause(url: audioURL)
             } label: {
-                Image(systemName: audioPlayer.currentFileURL == audioURL && audioPlayer.isPlaying
-                    ? "pause.fill"
-                    : "play.fill")
+                Image(systemName: isThisFile && audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 20)
             }
             .buttonStyle(.borderless)
 
-            Text(audioPlayer.currentFileURL == audioURL
-                ? audioPlayer.formattedCurrentTime
-                : formatTime(currentTime))
-                .font(.caption.monospacedDigit())
+            // Current time
+            Text(formatTime(displayTime))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .trailing)
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(.quaternary)
-                    Rectangle()
-                        .fill(.blue)
-                        .frame(width: audioPlayer.currentFileURL == audioURL && audioPlayer.duration > 0
-                            ? geo.size.width * (audioPlayer.currentTime / audioPlayer.duration)
-                            : audioPlayer.duration > 0
-                                ? geo.size.width * (currentTime / audioPlayer.duration)
-                                : 0)
+            // Waveform
+            WaveformView(
+                samples: waveformSamples,
+                playbackFraction: playbackFraction,
+                onSeek: { fraction in
+                    let seekTime = (isThisFile ? audioPlayer.duration : 0) * fraction
+                    if isThisFile {
+                        audioPlayer.seek(to: seekTime)
+                    }
+                    currentTime = seekTime
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 2))
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let fraction = max(0, min(1, value.location.x / geo.size.width))
-                            let seekTime = audioPlayer.duration * fraction
-                            if audioPlayer.currentFileURL == audioURL {
-                                audioPlayer.seek(to: seekTime)
-                            }
-                            currentTime = seekTime
-                        }
-                )
-            }
-            .frame(height: 6)
+            )
+            .frame(height: 36)
 
-            Text(audioPlayer.duration > 0 ? audioPlayer.formattedDuration : formatTime(audioPlayer.duration))
-                .font(.caption.monospacedDigit())
+            // Duration
+            Text(formatTime(isThisFile ? audioPlayer.duration : 0))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .leading)
+
+            // Playback speed
+            Menu {
+                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { speed in
+                    Button(speedLabel(speed)) {
+                        audioPlayer.setRate(speed)
+                    }
+                }
+            } label: {
+                Text(speedLabel(audioPlayer.playbackRate))
+                    .font(.caption2.monospacedDigit())
+                    .frame(width: 30)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .task {
+            guard waveformSamples.isEmpty else { return }
+            waveformSamples = await WaveformGenerator.generate(from: audioURL)
         }
     }
 
+    private func speedLabel(_ speed: Float) -> String {
+        speed == 1.0 ? "1×" : String(format: "%g×", speed)
+    }
+
     private func formatTime(_ time: TimeInterval) -> String {
-        let total = Int(time)
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        let total = Int(max(0, time))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }
