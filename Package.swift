@@ -15,6 +15,7 @@ let package = Package(
             name: "dBrief",
             dependencies: [
                 "WhisperKit",
+                .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
             ],

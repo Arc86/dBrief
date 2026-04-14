@@ -51,6 +51,7 @@ final class AppSettings {
         static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
+        static let diarizationEnabled = "diarizationEnabled"
     }
 
     // MARK: - Recording
@@ -262,8 +263,14 @@ final class AppSettings {
     }
 
     /// Compute units for WhisperKit CoreML inference (Metal GPU / Neural Engine selection).
+    /// Kept for backward compatibility but no longer used — WhisperKit's per-component defaults are used instead.
     var whisperComputeUnits: WhisperComputeUnits {
         didSet { UserDefaults.standard.set(whisperComputeUnits.rawValue, forKey: Keys.whisperComputeUnits) }
+    }
+
+    /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
+    var diarizationEnabled: Bool {
+        didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
     }
 
     // MARK: - AI Prompts
@@ -554,6 +561,7 @@ final class AppSettings {
             }
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
+        self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt

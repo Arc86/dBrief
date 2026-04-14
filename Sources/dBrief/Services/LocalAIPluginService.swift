@@ -132,6 +132,13 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         }
     }
 
+    func purgeSpeakerKitModel() async throws {
+        try await mutex.withLock {
+            defer { stateContinuation.yield(.idle) }
+            try await whisperService.purgeSpeakerKitModels()
+        }
+    }
+
     func purgeQwenModel() async throws {
         try await mutex.withLock {
             defer { stateContinuation.yield(.idle) }

@@ -1,5 +1,4 @@
 import SwiftUI
-import Metal
 import WhisperKit
 
 struct SettingsTranscriptionTab: View {
@@ -23,8 +22,6 @@ struct SettingsTranscriptionTab: View {
         case success
         case failure(String)
     }
-
-    private var hasMetalGPU: Bool { MTLCreateSystemDefaultDevice() != nil }
 
     private func fetchWhisperModels() {
         guard !isFetchingWhisperModels else { return }
@@ -110,7 +107,6 @@ struct SettingsTranscriptionTab: View {
                                 .frame(width: 280, alignment: .trailing)
                         } else {
                             let modelsToShow = showAllWhisperModels ? whisperModels : whisperModels.filter { model in
-                                // Show only recommended: tiny, small, medium, large-v3, large-v3-turbo, distil-large-v3, distil-turbo
                                 model.family == "tiny" || model.family == "small" || model.family == "medium" ||
                                 (model.family == "large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
                                 (model.family == "large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
@@ -139,17 +135,6 @@ struct SettingsTranscriptionTab: View {
                         }
                     }
 
-                    LabeledContent("GPU acceleration:") {
-                        Picker("", selection: $settings.whisperComputeUnits) {
-                            ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { units in
-                                Text(units.displayName).tag(units)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 280, alignment: .trailing)
-                    }
-
                     if let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName }) {
                         if selectedModel.estimatedMemoryMB > 4_096 {
                             Label("Large models require closing other apps", systemImage: "exclamationmark.triangle.fill")
@@ -158,11 +143,10 @@ struct SettingsTranscriptionTab: View {
                         }
                     }
 
-                    if !hasMetalGPU {
-                        Label("No Metal GPU detected — GPU options will fall back to Neural Engine.", systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
+                    Toggle("Speaker diarization", isOn: $settings.diarizationEnabled)
+                    Text("Identifies who said what. Adds processing time and ~500 MB memory. Requires word timestamps.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     if let error = whisperModelFetchError {
                         Label(error, systemImage: "wifi.slash")
@@ -177,7 +161,7 @@ struct SettingsTranscriptionTab: View {
                     }
 
                     HStack {
-                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace. Small (~2 GB) recommended for most Macs.")
+                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace. Large V3 Turbo recommended for Apple Silicon Macs.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -248,14 +232,13 @@ struct SettingsTranscriptionTab: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(width: 200, alignment: .trailing)
-                .disabled(settings.transcriptionEngine == .localWhisper)
             }
             if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
                 Text("Apple Speech uses the system language when set to Auto.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if settings.transcriptionEngine == .localWhisper {
-                Text("Local Whisper always auto-detects language.")
+            } else if settings.transcriptionEngine == .localWhisper && settings.transcriptionLanguage.isEmpty {
+                Text("WhisperKit auto-detects language when set to Auto-detect.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

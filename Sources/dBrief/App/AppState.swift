@@ -27,6 +27,7 @@ final class AppState {
 
     var processingSteps: [ProcessingStep] = []
     var liveInferenceText: String?
+    var liveTranscriptSegments: [LiveTranscriptSegment] = []
     var lastError: String?
     var queuedCount: Int = 0
     var memoryPressureLevel: MemoryPressureLevel = .normal
@@ -47,6 +48,7 @@ struct ProcessingStep: Identifiable {
     let id = UUID()
     var name: String
     var status: Status
+    var progress: Double?   // 0.0–1.0 for determinate, nil for indeterminate spinner
 
     enum Status {
         case pending
@@ -54,6 +56,15 @@ struct ProcessingStep: Identifiable {
         case completed
         case failed(String)
     }
+}
+
+// MARK: - Live transcript
+
+struct LiveTranscriptSegment: Identifiable, Sendable {
+    let id = UUID()
+    let start: Double
+    let end: Double
+    let text: String
 }
 
 // MARK: - Memory pressure

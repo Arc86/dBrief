@@ -3,6 +3,7 @@ import AppKit
 
 struct TranscriptionProgressView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.openWindow) private var openWindow
     var onCancel: (() async -> Void)?
     @State private var copied = false
     @State private var memStats: (used: Int64, free: Int64, total: Int64)? = nil
@@ -71,6 +72,13 @@ struct TranscriptionProgressView: View {
                                 .foregroundStyle(.yellow)
                         }
                     }
+                    if case .inProgress = step.status, let progress = step.progress {
+                        ProgressView(value: progress, total: 1.0)
+                            .progressViewStyle(.linear)
+                            .frame(height: 4)
+                            .padding(.leading, 24)
+                            .animation(.linear(duration: 0.3), value: progress)
+                    }
                     if case .failed(let message) = step.status, !message.isEmpty {
                         ScrollView {
                             Text(message)
@@ -101,15 +109,30 @@ struct TranscriptionProgressView: View {
 
             memoryBar
 
-            if hasInProgressStep, let onCancel {
-                Button {
-                    Task { await onCancel() }
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
+            if hasInProgressStep {
+                HStack {
+                    if let onCancel {
+                        Button {
+                            Task { await onCancel() }
+                        } label: {
+                            Label("Stop", systemImage: "stop.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.red)
+                    }
+
+                    if !appState.liveTranscriptSegments.isEmpty {
+                        Button {
+                            openWindow(id: "live-transcript")
+                            NSApp.activate(ignoringOtherApps: true)
+                        } label: {
+                            Label("Live Transcript", systemImage: "text.viewfinder")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.red)
             }
 
             if isComplete, let recording = appState.currentRecording, recording.transcription != nil {

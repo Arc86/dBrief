@@ -151,6 +151,7 @@ final class RecordingManager {
         appState.recordingState = .processing
         appState.showPostRecordingSheet = false
         appState.processingSteps = []
+        appState.liveTranscriptSegments = []
 
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
@@ -205,8 +206,8 @@ final class RecordingManager {
                     }
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
-                    // Build and save rich transcript with word-level sync
-                    let rich = richTranscriptBuilder.build(from: result)
+                    // Build and save rich transcript with word-level sync (pass participant names for speaker mapping)
+                    let rich = richTranscriptBuilder.build(from: result, participants: recording.participants)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
                 } catch {
@@ -986,14 +987,25 @@ final class RecordingManager {
             break
         case .transcribing:
             appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
+        case .newSegments(let segments):
+            appState.liveTranscriptSegments.append(contentsOf: segments)
+            return // don't update step name
+        case .diarizing:
+            appState.processingSteps[stepIndex].name = "Identifying speakers"
         case .analyzing:
             appState.processingSteps[stepIndex].name = "Analyzing transcript (Qwen3 4B local)"
-        case .downloading(_, let stage):
+        case .downloading(let progress, let stage):
+            appState.processingSteps[stepIndex].progress = progress
             switch stage {
             case .whisperModel:
-                appState.processingSteps[stepIndex].name = "Downloading WhisperKit model"
+                appState.processingSteps[stepIndex].name = "Downloading WhisperKit model…"
+            case .whisperModelLoading:
+                appState.processingSteps[stepIndex].name = "Loading WhisperKit model…"
+                appState.processingSteps[stepIndex].progress = nil // loading is indeterminate
             case .llmModel:
                 appState.processingSteps[stepIndex].name = "Downloading Qwen model"
+            case .speakerKitModel:
+                appState.processingSteps[stepIndex].name = "Downloading SpeakerKit model"
             }
         }
     }
@@ -1107,8 +1119,8 @@ final class RecordingManager {
         case .localWhisper:
             let whisperConfig = WhisperRuntimeConfig(
                 modelName: appSettings.whisperModelName,
-                computeUnits: appSettings.whisperComputeUnits,
-                language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage
+                language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage,
+                diarizationEnabled: appSettings.diarizationEnabled
             )
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
                 try await self.localAIPluginService.transcribe(
