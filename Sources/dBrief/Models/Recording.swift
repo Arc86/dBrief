@@ -17,6 +17,8 @@ final class Recording: Identifiable {
     var associatedApp: String?
     var obsidianFolderRelativePath: String?
     var meetingTitleDraft: String
+    /// Participant names entered by the user, mapped to diarization speakers in order of first appearance.
+    var participants: [String] = []
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?

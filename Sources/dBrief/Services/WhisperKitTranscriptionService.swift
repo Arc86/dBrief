@@ -1,101 +1,162 @@
 import Foundation
-import CoreML
-import Metal
-import WhisperKit
+@preconcurrency import WhisperKit
+import SpeakerKit
 import OSLog
 
 final class WhisperKitTranscriptionService: @unchecked Sendable {
     private static let modelRepo = "argmaxinc/whisperkit-coreml"
-    private static let bilingualPrefix = "This conversation is likely in Dutch and/or English; however, adjust language accordingly."
-
-    /// Whether a Metal-capable GPU is present on this Mac.
-    /// Evaluated once at load time; non-Metal Macs (rare) fall back to Neural Engine only.
-    static let hasMetalGPU: Bool = MTLCreateSystemDefaultDevice() != nil
 
     private let fileManager = FileManager.default
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var whisperKit: WhisperKit?
-    /// Config used to create the currently-loaded WhisperKit instance.
     private var loadedConfig: WhisperRuntimeConfig?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
     }
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
+    // MARK: - Public API
+
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> dBrief.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
-        // Dynamic memory gate: use WhisperModelInfo for model-aware estimation
+        // Memory gate before loading the model
         let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
         let requiredMemory: Int64 = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
-
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
         guard hasSufficientMemory else {
-            throw NSError(
-                domain: "WhisperKitTranscriptionService",
-                code: 4,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load \(modelInfo.displayName). Need at least \(String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)) GB free. Close other apps or use Remote transcription instead."
-                ]
+            throw TranscriptionServiceError.insufficientMemory(
+                model: modelInfo.displayName,
+                requiredGB: String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)
             )
+        }
+
+        // Load audio as float array — shared between WhisperKit and SpeakerKit
+        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
+        let audioArray: [Float]
+        do {
+            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
+        } catch {
+            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
+            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
         }
 
         let whisper = try await loadWhisperKit(config: whisperConfig)
         stateHandler(.transcribing)
 
-        // Convert FLAC to WAV if needed for WhisperKit compatibility
-        let preparedURL = try await prepareAudioFile(fileURL: fileURL)
-        let needsCleanup = preparedURL != fileURL
-
+        // Build decoding options — WhisperKit manages compute units and worker count internally
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
         options.language = whisperConfig.language
         options.detectLanguage = whisperConfig.language == nil
         options.task = .transcribe
         options.promptTokens = promptTokens.isEmpty ? nil : promptTokens
-        // Dynamic worker count: balance speed vs memory usage
-        // WhisperKit's decoder is memory-bound; each worker allocates memory for parallel token generation
-        // Conservative scaling: 2 workers on 4+ core systems, 3 on 8+ core systems
-        // Memory cost ~300-400MB per additional worker, so cap based on system memory
-        let coreCount = ProcessInfo.processInfo.activeProcessorCount
-        options.concurrentWorkerCount = coreCount >= 8 ? min(3, coreCount - 5) : min(2, max(1, coreCount - 2))
         options.temperature = 0
         options.skipSpecialTokens = true
         options.withoutTimestamps = false
         options.wordTimestamps = true
+        options.chunkingStrategy = .vad
 
         do {
             let transcribeStart = Date()
+            // wkResults type inferred as WhisperKit's TranscriptionResult — kept local to avoid
+            // the module/class name collision when naming the type in function signatures.
             let wkResults = try await whisper.transcribe(
-                audioPath: preparedURL.path,
-                decodeOptions: options
+                audioArray: audioArray,
+                decodeOptions: options,
+                segmentCallback: { [stateHandler] segments in
+                    let liveSegments = segments.map { seg in
+                        LiveTranscriptSegment(
+                            start: Double(seg.start),
+                            end: Double(seg.end),
+                            text: seg.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                        )
+                    }
+                    if !liveSegments.isEmpty {
+                        stateHandler(.newSegments(liveSegments))
+                    }
+                }
             )
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
+            Logger.localAI.info("Transcription completed in \(String(format: "%.1f", transcribeDuration))s")
 
-            // Log timeout warning if transcription took more than 10 minutes
-            if transcribeDuration > 600 {
-                Logger.localAI.warning("Transcription exceeded 10-minute timeout threshold: \(String(format: "%.1f", transcribeDuration))s")
+            // --- Speaker diarization (optional) ---
+            // Diarization must be inlined here because wkResults type can only be inferred
+            // from the transcribe() return — cannot be named explicitly in a function signature.
+            if whisperConfig.diarizationEnabled {
+                stateHandler(.diarizing)
+                do {
+                    let downloadBase = try speakerKitDownloadBaseURL()
+                    let skConfig = PyannoteConfig(
+                        downloadBase: downloadBase.path,
+                        download: true,
+                        load: true,
+                        verbose: true
+                    )
+                    let speakerKit = try await SpeakerKit(skConfig)
+                    let diarResult = try await speakerKit.diarize(audioArray: audioArray)
+                    Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
+
+                    let speakerSegments = diarResult.addSpeakerInfo(to: wkResults, strategy: SpeakerInfoStrategy.subsegment)
+                    await speakerKit.unloadModels()
+
+                    var allSegments: [dBrief.TranscriptionResult.Segment] = []
+                    var fullTextParts: [String] = []
+
+                    for group in speakerSegments {
+                        for seg in group {
+                            let speakerId = speakerInfoString(seg.speaker)
+                            let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
+                                seg.speakerWords.map { sw in
+                                    dBrief.TranscriptionResult.Word(
+                                        word: sw.wordTiming.word,
+                                        start: Double(sw.wordTiming.start),
+                                        end: Double(sw.wordTiming.end),
+                                        probability: nil,
+                                        speaker: speakerInfoString(sw.speaker)
+                                    )
+                                }
+
+                            let segText = cleanTranscriptArtifacts(seg.text)
+                            guard !segText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else { continue }
+
+                            allSegments.append(dBrief.TranscriptionResult.Segment(
+                                start: Double(seg.startTime),
+                                end: Double(seg.endTime),
+                                text: segText,
+                                words: wordTimings,
+                                speaker: speakerId
+                            ))
+                            fullTextParts.append(segText)
+                        }
+                    }
+
+                    let fullText = fullTextParts.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    await unload()
+                    return dBrief.TranscriptionResult(
+                        text: fullText,
+                        segments: allSegments,
+                        speakerCount: diarResult.speakerCount
+                    )
+                } catch {
+                    Logger.localAI.error("Diarization failed: \(error.localizedDescription, privacy: .public) — continuing without speaker labels")
+                }
             }
 
-            Logger.localAI.info("Transcription completed in \(String(format: "%.1f", transcribeDuration))s")
+            // --- Map WhisperKit results to our type (no diarization or diarization failed) ---
             let mappedSegments = wkResults.flatMap { result in
-                result.segments.map { seg -> TranscriptionResult.Segment in
-                    let wordTimings: [TranscriptionResult.Word]? = {
-                        if let words = seg.words {
-                            return words.map {
-                                TranscriptionResult.Word(
-                                    word: $0.word,
-                                    start: Double($0.start),
-                                    end: Double($0.end),
-                                    probability: Double($0.probability ?? 0.0)
-                                )
-                            }
-                        }
-                        return nil
-                    }()
-                    return TranscriptionResult.Segment(
+                result.segments.map { seg -> dBrief.TranscriptionResult.Segment in
+                    let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.words?.map {
+                        dBrief.TranscriptionResult.Word(
+                            word: $0.word,
+                            start: Double($0.start),
+                            end: Double($0.end),
+                            probability: Double($0.probability)
+                        )
+                    }
+                    return dBrief.TranscriptionResult.Segment(
                         start: Double(seg.start),
                         end: Double(seg.end),
                         text: cleanTranscriptArtifacts(seg.text),
@@ -110,20 +171,10 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let fullText = cleanTranscriptArtifacts(rawText)
             let detectedLanguage = wkResults.first(where: { !$0.language.isEmpty })?.language
 
-            Logger.localAI.info("Transcription complete: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
-
-            let result = TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
-
-            if needsCleanup {
-                try? fileManager.removeItem(at: preparedURL)
-            }
-
+            Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
             await unload()
-            return result
+            return dBrief.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
         } catch {
-            if needsCleanup {
-                try? fileManager.removeItem(at: preparedURL)
-            }
             await unload()
             throw error
         }
@@ -149,125 +200,80 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
     }
 
-    // MARK: - Private
+    func purgeSpeakerKitModels() async throws {
+        let dir = try speakerKitDownloadBaseURL()
+        if fileManager.fileExists(atPath: dir.path) {
+            try fileManager.removeItem(at: dir)
+        }
+    }
+
+    // MARK: - WhisperKit Loading
 
     private func loadWhisperKit(config: WhisperRuntimeConfig) async throws -> WhisperKit {
-        // Reuse existing instance if the same config is already loaded
         if let whisperKit, loadedConfig == config {
             return whisperKit
         }
-        // Config changed or not yet loaded — unload any stale instance first
         if whisperKit != nil {
             await unload()
         }
 
-        stateHandler(.downloading(progress: nil, stage: .whisperModel))
         let downloadBase = try whisperDownloadBaseURL()
-        let computeOpts = buildComputeOptions(for: config)
+        let isCached = isModelCached(name: config.modelName, downloadBase: downloadBase)
 
-        Logger.localAI.info("Loading WhisperKit: model=\(config.modelName, privacy: .public)")
+        Logger.localAI.info("Loading WhisperKit: model=\(config.modelName, privacy: .public), cached=\(isCached)")
 
+        // Phase 1: Download model with progress (skip if already cached)
+        let modelFolder: String
+        if isCached {
+            stateHandler(.downloading(progress: nil, stage: .whisperModelLoading))
+            modelFolder = downloadBase.appendingPathComponent(config.modelName).path
+        } else {
+            stateHandler(.downloading(progress: 0.0, stage: .whisperModel))
+            let downloadedURL = try await WhisperKit.download(
+                variant: config.modelName,
+                downloadBase: downloadBase,
+                from: Self.modelRepo,
+                progressCallback: { [stateHandler] progress in
+                    stateHandler(.downloading(progress: progress.fractionCompleted, stage: .whisperModel))
+                }
+            )
+            modelFolder = downloadedURL.path
+        }
+
+        // Phase 2: Init WhisperKit with pre-downloaded model (no download, no load)
         let wkConfig = WhisperKitConfig(
-            model: config.modelName,
-            downloadBase: downloadBase,
-            modelRepo: Self.modelRepo,
-            computeOptions: computeOpts,
-            prewarm: false,
-            load: true,
-            download: true
+            modelFolder: modelFolder,
+            verbose: true,
+            logLevel: .info,
+            load: false,
+            download: false
         )
 
         let whisper = try await WhisperKit(wkConfig)
+
+        // Phase 3: Set state callback then load models — callback tracks loading progress
+        stateHandler(.downloading(progress: nil, stage: .whisperModelLoading))
+        whisper.modelStateCallback = { [stateHandler] (_: ModelState?, newState: ModelState) in
+            switch newState {
+            case .loading, .prewarming:
+                stateHandler(.downloading(progress: nil, stage: .whisperModelLoading))
+            case .loaded:
+                stateHandler(.transcribing)
+            default:
+                break
+            }
+        }
+        try await whisper.loadModels()
+
         self.whisperKit = whisper
         self.loadedConfig = config
         Logger.localAI.info("WhisperKit loaded successfully")
         return whisper
     }
 
-    /// Maps the user's WhisperComputeUnits preference to a CoreML ModelComputeOptions.
-    /// On non-Metal hardware the preference is ignored and Neural Engine is used as fallback.
-    private func buildComputeOptions(for config: WhisperRuntimeConfig) -> ModelComputeOptions {
-        let units: MLComputeUnits
-        if Self.hasMetalGPU {
-            switch config.computeUnits {
-            case .cpuAndNeuralEngine: units = .cpuAndNeuralEngine
-            case .cpuAndGPU:         units = .cpuAndGPU
-            case .all:               units = .all
-            }
-        } else {
-            // No Metal GPU — fall back to Neural Engine for both encoder and decoder
-            units = .cpuAndNeuralEngine
-        }
-        // Use the same compute units for encoder and decoder for predictable performance.
-        // The encoder benefits most from GPU/ANE parallelism; the decoder is autoregressive
-        // but still benefits from ANE on Apple Silicon.
-        return ModelComputeOptions(audioEncoderCompute: units, textDecoderCompute: units)
-    }
-
-    private func prepareAudioFile(fileURL: URL) async throws -> URL {
-        let ext = fileURL.pathExtension.lowercased()
-
-        guard ext == "flac" else {
-            return fileURL
-        }
-
-        let outputURL = fileManager.temporaryDirectory
-            .appendingPathComponent("whisperkit-audio-\(UUID().uuidString).wav")
-
-        let ffmpegPaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-
-        let resolvedPath = ffmpegPaths.first { fileManager.isExecutableFile(atPath: $0) }
-
-        let process = Process()
-        if let resolvedPath {
-            process.executableURL = URL(fileURLWithPath: resolvedPath)
-            process.arguments = [
-                "-y",
-                "-i", fileURL.path,
-                "-ar", "16000",
-                "-ac", "1",
-                "-f", "wav",
-                outputURL.path,
-            ]
-        } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [
-                "ffmpeg",
-                "-y",
-                "-i", fileURL.path,
-                "-ar", "16000",
-                "-ac", "1",
-                "-f", "wav",
-                outputURL.path,
-            ]
-            process.environment = [
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            ]
-        }
-
-        let stdErr = Pipe()
-        process.standardError = stdErr
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            Logger.localAI.error("ffmpeg process failed to run: \(error.localizedDescription, privacy: .public)")
-            throw WhisperKitError.ffmpegNotFound
-        }
-
-        guard process.terminationStatus == 0 else {
-            let data = stdErr.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "ffmpeg failed"
-            Logger.localAI.error("ffmpeg conversion failed: \(message, privacy: .public)")
-            throw WhisperKitError.conversionFailed(message)
-        }
-
-        return outputURL
+    private func isModelCached(name: String, downloadBase: URL) -> Bool {
+        let modelDir = downloadBase.appendingPathComponent(name)
+        return fileManager.fileExists(atPath: modelDir.path)
     }
 
     private func whisperDownloadBaseURL() throws -> URL {
@@ -281,17 +287,36 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         return dir
     }
 
-    private func buildPromptTokens(userPrompt: String?, whisper: WhisperKit) -> [Int] {
-        let trimmedUserPrompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let promptText: String = {
-            if trimmedUserPrompt.isEmpty {
-                return Self.bilingualPrefix
-            }
-            return "\(Self.bilingualPrefix)\n\(trimmedUserPrompt)"
-        }()
+    private func speakerKitDownloadBaseURL() throws -> URL {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
+        let dir = appSupport
+            .appendingPathComponent(bundle, isDirectory: true)
+            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+            .appendingPathComponent("SpeakerKit", isDirectory: true)
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 
-        guard let tokenizer = whisper.tokenizer else { return [] }
-        return tokenizer.encode(text: promptText)
+    private func speakerInfoString(_ speaker: SpeakerInfo) -> String? {
+        switch speaker {
+        case .speakerId(let id): return "Speaker \(id + 1)"
+        case .multiple(let ids): return ids.isEmpty ? nil : "Speaker \(ids[0] + 1)"
+        case .noMatch: return nil
+        }
+    }
+
+    // MARK: - Utilities
+
+    private func buildPromptTokens(userPrompt: String?, whisper: WhisperKit) -> [Int] {
+        guard
+            let prompt = userPrompt?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+            !prompt.isEmpty,
+            let tokenizer = whisper.tokenizer
+        else {
+            return []
+        }
+        return tokenizer.encode(text: prompt)
     }
 
     private func cleanTranscriptArtifacts(_ text: String) -> String {
@@ -306,14 +331,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             with: " ",
             options: .regularExpression
         )
-        return normalizedWhitespace.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedWhitespace.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }
 
     private func formatWhisperTimestampTokens(in text: String) -> String {
         guard let regex = try? NSRegularExpression(pattern: #"<\|([0-9]+(?:\.[0-9]+)?)\|>"#) else {
             return text
         }
-
         let nsRange = NSRange(text.startIndex..., in: text)
         let matches = regex.matches(in: text, options: [], range: nsRange)
         guard !matches.isEmpty else { return text }
@@ -326,9 +350,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 let secondsRange = Range(match.range(at: 1), in: result),
                 let seconds = Double(result[secondsRange])
             else { continue }
-
-            let replacement = "**[\(formatTimestamp(seconds))]**"
-            result.replaceSubrange(wholeRange, with: replacement)
+            result.replaceSubrange(wholeRange, with: "**[\(formatTimestamp(seconds))]**")
         }
         return result
     }
@@ -345,16 +367,25 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 }
 
-enum WhisperKitError: Error, LocalizedError {
-    case ffmpegNotFound
-    case conversionFailed(String)
+enum TranscriptionServiceError: Error, LocalizedError {
+    case transcriptionTimeout
+    case modelLoadTimeout
+    case insufficientMemory(model: String, requiredGB: String)
+    case audioLoadFailed(String)
+    case diarizationFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .ffmpegNotFound:
-            "ffmpeg is required to convert FLAC files for transcription. Please install ffmpeg."
-        case .conversionFailed(let message):
-            "Failed to convert audio file for transcription: \(message)"
+        case .transcriptionTimeout:
+            "Transcription timed out after 10 minutes. Try a smaller model or use Remote transcription."
+        case .modelLoadTimeout:
+            "Model loading timed out. Check your internet connection and try again."
+        case .insufficientMemory(let model, let gb):
+            "Insufficient memory to load \(model). Need at least \(gb) GB free. Close other apps or use Remote transcription."
+        case .audioLoadFailed(let message):
+            "Failed to load audio file: \(message)"
+        case .diarizationFailed(let message):
+            "Speaker diarization failed: \(message)"
         }
     }
 }

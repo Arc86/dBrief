@@ -62,6 +62,41 @@ struct RichTranscriptBuilderTests {
         #expect(transcript.segments[0].isEdited == false)
     }
 
+    @Test("speaker IDs are propagated from TranscriptionResult segments to RichSegments")
+    func speakerIdPropagation() {
+        let result = TranscriptionResult(
+            text: "Hello. Goodbye.",
+            segments: [
+                TranscriptionResult.Segment(start: 0.0, end: 1.0, text: "Hello.", speaker: "Speaker 1"),
+                TranscriptionResult.Segment(start: 1.0, end: 2.0, text: "Goodbye.", speaker: "Speaker 2"),
+            ],
+            speakerCount: 2
+        )
+
+        let transcript = RichTranscriptBuilder().build(from: result)
+
+        #expect(transcript.segments[0].speakerId == "Speaker 1")
+        #expect(transcript.segments[1].speakerId == "Speaker 2")
+        #expect(transcript.speakerLabels.count == 2)
+        #expect(transcript.speakerLabels.map(\.id).contains("Speaker 1"))
+        #expect(transcript.speakerLabels.map(\.id).contains("Speaker 2"))
+    }
+
+    @Test("segments without speaker data produce nil speakerId")
+    func noSpeakerIdWhenNoDiarization() {
+        let result = TranscriptionResult(
+            text: "Hello.",
+            segments: [
+                TranscriptionResult.Segment(start: 0.0, end: 1.0, text: "Hello."),
+            ]
+        )
+
+        let transcript = RichTranscriptBuilder().build(from: result)
+
+        #expect(transcript.segments[0].speakerId == nil)
+        #expect(transcript.speakerLabels.isEmpty)
+    }
+
     @Test("isFillerWord defaults to false for all tokens")
     func fillerWordDefaultsFalse() {
         let result = TranscriptionResult(

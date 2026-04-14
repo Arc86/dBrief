@@ -168,6 +168,13 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.audioPlayer)
         }
+
+        WindowGroup(id: "live-transcript") {
+            LiveTranscriptView()
+                .environment(context.appState)
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 600, height: 400)
     }
 }
 

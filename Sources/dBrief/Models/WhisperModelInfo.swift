@@ -52,6 +52,7 @@ struct WhisperModelInfo: Sendable {
         // Calculate estimated memory
         let estimatedMemoryMB = calculateMemory(
             family: family,
+            isTurbo: isTurbo,
             quantizedSizeMB: quantizedSizeMB
         )
 
@@ -157,34 +158,36 @@ struct WhisperModelInfo: Sendable {
         return displayName
     }
 
-    /// Calculate estimated memory in MB based on family and quantization.
+    /// Calculate estimated memory in MB based on family, turbo flag, and quantization.
     private static func calculateMemory(
         family: String,
+        isTurbo: Bool,
         quantizedSizeMB: Int?
     ) -> Int {
-        // Base memory by family (in MB)
-        let baseMemory: Int
-        switch family {
-        case "tiny":
-            baseMemory = 500
-        case "base":
-            baseMemory = 800
-        case "small":
-            baseMemory = 2048
-        case "medium":
-            baseMemory = 3072
-        case "large-v2", "large-v3", "large-v3-v20240930", "large", "distil-large-v3":
-            baseMemory = 5120
-        default:
-            baseMemory = 3072 // conservative default
-        }
-
-        // If quantized, add 1GB buffer
+        // Quantized models: model size on disk + 1 GB runtime buffer
         if let quantizedSize = quantizedSizeMB {
             return quantizedSize + 1024
         }
 
-        return baseMemory
+        // Full-precision base memory by family (in MB)
+        switch family {
+        case "tiny":
+            return 500
+        case "base":
+            return 800
+        case "small":
+            return 2048
+        case "medium":
+            return 3072
+        case "large-v2", "large-v3", "large-v3-v20240930", "large":
+            // Turbo variants have ~809M params (vs 1558M for full large-v3) — roughly half the memory
+            return isTurbo ? 2048 : 5120
+        case "distil-large-v3":
+            // Distil turbo is also a lighter model
+            return isTurbo ? 2048 : 4096
+        default:
+            return isTurbo ? 2048 : 3072
+        }
     }
 
     /// Fallback list of core Whisper models for offline use.
