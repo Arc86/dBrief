@@ -247,7 +247,7 @@ final class RecordingManager {
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceTasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -256,7 +256,7 @@ final class RecordingManager {
                 )
             case .qwenLocal:
                 await runLocalQwenTasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -264,7 +264,7 @@ final class RecordingManager {
                 )
             case .remoteEndpoint:
                 await runRemoteAITasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     endpoint: endpoint,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -279,7 +279,7 @@ final class RecordingManager {
         // Step 3: Generate title & write Markdown
         if transcribe || summary || actionItems || tags {
             // Generate AI title from transcription
-            if let transcriptionText = recording.transcription?.text, !transcriptionText.isEmpty {
+            if let transcriptionText = recording.transcription?.textForLLM, !transcriptionText.isEmpty {
                 let language = recording.transcription?.language
                 let titleStepIndex = appState.processingSteps.count
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
@@ -434,7 +434,7 @@ final class RecordingManager {
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceTasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -443,7 +443,7 @@ final class RecordingManager {
                 )
             case .qwenLocal:
                 await runLocalQwenTasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -451,7 +451,7 @@ final class RecordingManager {
                 )
             case .remoteEndpoint:
                 await runRemoteAITasks(
-                    transcription: transcription.text,
+                    transcription: transcription.textForLLM,
                     endpoint: endpoint,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -464,7 +464,7 @@ final class RecordingManager {
         var generatedMarkdownURL: URL?
 
         // Step 3: Generate title & write Markdown
-        if let transcriptionText = recording.transcription?.text, !transcriptionText.isEmpty {
+        if let transcriptionText = recording.transcription?.textForLLM, !transcriptionText.isEmpty {
             let language = recording.transcription?.language
             let titleStepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
@@ -627,7 +627,7 @@ final class RecordingManager {
             fileURL: url,
             fileSize: size,
             meetingTitleDraft: defaultMeetingTitle(from: nil),
-            finalizedAudioURL: url
+            finalizedAudioURL: nil
         )
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true

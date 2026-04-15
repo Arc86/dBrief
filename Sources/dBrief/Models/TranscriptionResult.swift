@@ -58,4 +58,20 @@ struct TranscriptionResult: Codable, Sendable {
         self.warnings = warnings
         self.speakerCount = speakerCount
     }
+
+    var textForLLM: String {
+        if segments.isEmpty {
+            return text.replacingOccurrences(of: #"\*\*\[\d{2}:\d{2}:\d{2}\]\*\*"#, with: "", options: .regularExpression)
+        }
+        let hasSpeakerInfo = segments.contains { $0.speaker != nil }
+        if hasSpeakerInfo {
+            return segments.map { segment in
+                if let speaker = segment.speaker {
+                    return "\(speaker): \(segment.text)"
+                }
+                return segment.text
+            }.joined(separator: "\n")
+        }
+        return segments.map { $0.text }.joined(separator: " ")
+    }
 }
