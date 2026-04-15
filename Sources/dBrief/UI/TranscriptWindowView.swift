@@ -56,12 +56,8 @@ struct TranscriptWindowView: View {
     var body: some View {
         if let recording {
             ZStack {
-                Group {
-                    if #available(macOS 14, *) {
-                        TranscriptDesignTokens.windowBackground(scheme: colorScheme)
-                            .ignoresSafeArea()
-                    }
-                }
+                TranscriptDesignTokens.windowBackground(scheme: colorScheme)
+                    .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     toolbar
@@ -302,15 +298,6 @@ struct TranscriptWindowView: View {
         audioPlayer.seek(to: time)
     }
 
-    private func toggleStar(segment: RichSegment, in recording: Recording) {
-        guard var transcript = richTranscript,
-              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id })
-        else { return }
-        transcript.segments[idx].isStarred.toggle()
-        richTranscript = transcript
-        saveTranscript(transcript, for: recording)
-    }
-
     private func renameSpeaker(speakerId: String, displayName: String, in recording: Recording) {
         guard var transcript = richTranscript else { return }
         if let idx = transcript.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
@@ -318,17 +305,6 @@ struct TranscriptWindowView: View {
         } else {
             transcript.speakerLabels.append(SpeakerLabel(id: speakerId, displayName: displayName))
         }
-        richTranscript = transcript
-        saveTranscript(transcript, for: recording)
-    }
-
-    private func editSegment(_ segment: RichSegment, newText: String, in recording: Recording) {
-        guard var transcript = richTranscript,
-              let idx = transcript.segments.firstIndex(where: { $0.id == segment.id })
-        else { return }
-        transcript.segments[idx].text = newText
-        transcript.segments[idx].isEdited = true
-        transcript.segments[idx].tokens = []
         richTranscript = transcript
         saveTranscript(transcript, for: recording)
     }
