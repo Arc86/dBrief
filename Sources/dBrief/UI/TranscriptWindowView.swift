@@ -13,6 +13,7 @@ struct TranscriptWindowView: View {
     @Environment(AppContext.self) private var context
     @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(\.colorScheme) private var colorScheme
 
     // Persisted display preferences
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
@@ -42,19 +43,38 @@ struct TranscriptWindowView: View {
         return segments.filter { $0.text.lowercased().contains(q) }
     }
 
+    private var displayedTurns: [SpeakerTurn] {
+        guard let t = richTranscript else { return [] }
+        let turns = t.speakerTurns()
+        guard !searchText.isEmpty else { return turns }
+        let q = searchText.lowercased()
+        return turns.filter { turn in
+            turn.text.lowercased().contains(q)
+        }
+    }
+
     var body: some View {
         if let recording {
-            VStack(spacing: 0) {
-                toolbar
+            ZStack {
+                Group {
+                    if #available(macOS 14, *) {
+                        TranscriptDesignTokens.windowBackground(scheme: colorScheme)
+                            .ignoresSafeArea()
+                    }
+                }
 
-                Divider()
+                VStack(spacing: 0) {
+                    toolbar
 
-                HStack(spacing: 0) {
-                    mainContent(for: recording)
+                    Divider()
 
-                    if showSidePanel, let _ = richTranscript {
-                        Divider()
-                        sidePanelPane(for: recording)
+                    HStack(spacing: 0) {
+                        mainContent(for: recording)
+
+                        if showSidePanel, let _ = richTranscript {
+                            Divider()
+                            sidePanelPane(for: recording)
+                        }
                     }
                 }
             }
@@ -100,7 +120,12 @@ struct TranscriptWindowView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6).fill(.ultraThinMaterial)
+                        RoundedRectangle(cornerRadius: 6).fill(TranscriptDesignTokens.cardFill(scheme: colorScheme))
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .frame(width: 180)
             }
@@ -133,7 +158,10 @@ struct TranscriptWindowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(
+            TranscriptDesignTokens.structureFill(scheme: colorScheme)
+                .background(.ultraThinMaterial)
+        )
     }
 
     // MARK: - Main content
@@ -150,8 +178,6 @@ struct TranscriptWindowView: View {
                 Divider()
                 if let audioURL = recording.finalizedAudioURL {
                     TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
                 } else {
                     Text("Audio file not found")
                         .font(.caption)
@@ -167,38 +193,35 @@ struct TranscriptWindowView: View {
     private var segmentScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: viewMode == .transcript ? 0 : 4) {
-                    ForEach(displayedSegments) { segment in
-                        TranscriptSegmentRow(
-                            segment: segment,
+                LazyVStack(spacing: TranscriptDesignTokens.cardGap) {
+                    ForEach(displayedTurns) { turn in
+                        SpeakerTurnCard(
+                            turn: turn,
                             speakerLabels: richTranscript?.speakerLabels ?? [],
-                            isActive: isSegmentActive(segment),
-                            currentTime: audioPlayer.currentTime,
-                            displayMode: viewMode == .transcript ? .transcript : .segments,
+                            isActive: isTurnActive(turn),
                             showSpeakerNames: showSpeakerNames,
                             fontSize: fontSize,
                             onSeek: { time in seek(to: time, in: recording!) },
-                            onToggleStar: { toggleStar(segment: segment, in: recording!) },
-                            onSave: { newText in editSegment(segment, newText: newText, in: recording!) },
-                            onRenameSpeaker: { id, name in renameSpeaker(speakerId: id, displayName: name, in: recording!) }
+                            onRenameSpeaker: { id, name in
+                                renameSpeaker(speakerId: id, displayName: name, in: recording!)
+                            }
                         )
-                        .id(segment.id)
+                        .id(turn.id)
                     }
 
-                    if displayedSegments.isEmpty && !searchText.isEmpty {
-                        Text("No segments matching \"\(searchText)\"")
+                    if displayedTurns.isEmpty && !searchText.isEmpty {
+                        Text("No results for \"\(searchText)\"")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .padding(24)
                     }
                 }
-                .padding(viewMode == .transcript ? 0 : 12)
-                .padding(.vertical, viewMode == .transcript ? 8 : 0)
+                .padding(TranscriptDesignTokens.scrollPadding)
             }
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
-                guard viewMode != .chat, let t = richTranscript,
-                      let active = t.segments.first(where: { newTime >= $0.start && newTime < $0.end })
+                guard viewMode != .chat,
+                      let active = displayedTurns.first(where: { newTime >= $0.startTime && newTime < $0.endTime })
                 else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
             }
@@ -271,6 +294,10 @@ struct TranscriptWindowView: View {
 
     private func isSegmentActive(_ segment: RichSegment) -> Bool {
         currentTime >= segment.start && currentTime < segment.end
+    }
+
+    private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
+        currentTime >= turn.startTime && currentTime < turn.endTime
     }
 
     private func seek(to time: TimeInterval, in recording: Recording) {
