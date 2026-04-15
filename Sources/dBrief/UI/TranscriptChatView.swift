@@ -5,6 +5,7 @@ struct TranscriptChatView: View {
 
     @State private var inputText = ""
     @State private var scrollToBottom = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,8 +15,6 @@ struct TranscriptChatView: View {
                 messageList
             }
 
-            Divider()
-
             inputBar
         }
     }
@@ -24,39 +23,85 @@ struct TranscriptChatView: View {
 
     private var promptTemplates: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Ask anything about this transcript, or pick a template:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+            VStack(alignment: .leading, spacing: 12) {
+                // Prominent input at top
+                HStack(spacing: 8) {
+                    Text("✦")
+                        .font(.system(size: 13))
+                        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
+                    TextField("Ask anything about this transcript…", text: $inputText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.callout)
+                        .lineLimit(1...4)
+                        .onSubmit { submitMessage() }
+                    Button { submitMessage() } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(
+                                inputText.trimmingCharacters(in: .whitespaces).isEmpty
+                                    ? TranscriptDesignTokens.secondaryText(scheme: colorScheme)
+                                    : Color.accentColor
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
+                            .fill(.ultraThinMaterial)
+                        RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
+                            .fill(TranscriptDesignTokens.cardFill(scheme: colorScheme))
+                    }
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
+                        .stroke(TranscriptDesignTokens.cardBorder(scheme: colorScheme), lineWidth: 1)
+                )
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                // Section label
+                Text("QUICK TEMPLATES")
+                    .font(.system(size: 9, weight: .bold))
+                    .kerning(0.5)
+                    .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+
+                // Chip grid
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 110), spacing: 6)],
+                    spacing: 6
+                ) {
                     ForEach(ChatPromptTemplate.defaults) { template in
                         Button {
-                            Task { await chatService.send(template.prompt) }
+                            inputText = template.prompt
+                            submitMessage()
                         } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: template.systemIcon)
-                                    .font(.callout)
-                                    .frame(width: 20)
-                                    .foregroundStyle(Color.accentColor)
-                                Text(template.title)
-                                    .font(.callout)
-                                    .foregroundStyle(.primary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 0.5))
+                            Text(template.title)
+                                .font(.system(size: 11))
+                                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+                                .padding(.vertical, 5)
+                                .padding(.horizontal, 10)
+                                .frame(maxWidth: .infinity)
+                                .background(
+                                    Capsule()
+                                        .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 0.5)
+                                )
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 16)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
         }
     }
@@ -111,7 +156,7 @@ struct TranscriptChatView: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
                 }
                 .buttonStyle(.borderless)
                 .help("Clear chat")
@@ -128,14 +173,26 @@ struct TranscriptChatView: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(inputText.trimmingCharacters(in: .whitespaces).isEmpty || chatService.isStreaming
-                        ? Color.secondary : Color.accentColor)
+                    .foregroundStyle(
+                        inputText.trimmingCharacters(in: .whitespaces).isEmpty || chatService.isStreaming
+                            ? TranscriptDesignTokens.secondaryText(scheme: colorScheme)
+                            : Color.accentColor
+                    )
             }
             .buttonStyle(.plain)
             .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || chatService.isStreaming)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(
+            TranscriptDesignTokens.structureFill(scheme: colorScheme)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TranscriptDesignTokens.structureBorder(scheme: colorScheme))
+                .frame(height: 1)
+        }
     }
 
     // MARK: - Helpers
