@@ -174,10 +174,12 @@ struct TranscriptWindowView: View {
             } else if viewMode == .chat {
                 chatContent(for: recording)
             } else if let _ = richTranscript {
-                segmentScrollView
+                segmentScrollView(for: recording)
                 Divider()
                 if let audioURL = recording.finalizedAudioURL {
                     TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 } else {
                     Text("Audio file not found")
                         .font(.caption)
@@ -190,7 +192,7 @@ struct TranscriptWindowView: View {
         }
     }
 
-    private var segmentScrollView: some View {
+    private func segmentScrollView(for recording: Recording) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: TranscriptDesignTokens.cardGap) {
@@ -201,9 +203,9 @@ struct TranscriptWindowView: View {
                             isActive: isTurnActive(turn),
                             showSpeakerNames: showSpeakerNames,
                             fontSize: fontSize,
-                            onSeek: { time in seek(to: time, in: recording!) },
+                            onSeek: { time in seek(to: time, in: recording) },
                             onRenameSpeaker: { id, name in
-                                renameSpeaker(speakerId: id, displayName: name, in: recording!)
+                                renameSpeaker(speakerId: id, displayName: name, in: recording)
                             }
                         )
                         .id(turn.id)
@@ -291,10 +293,6 @@ struct TranscriptWindowView: View {
     }
 
     // MARK: - Actions
-
-    private func isSegmentActive(_ segment: RichSegment) -> Bool {
-        currentTime >= segment.start && currentTime < segment.end
-    }
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
         currentTime >= turn.startTime && currentTime < turn.endTime
