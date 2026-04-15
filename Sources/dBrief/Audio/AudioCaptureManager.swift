@@ -152,20 +152,30 @@ final class AudioCaptureManager {
 
         var micFormat: AVAudioFormat?
         if hasMicrophonePermission {
+            let inputNode = mixer.engine.inputNode
+            // Enable voice processing (AEC) BEFORE setting device and BEFORE any
+            // connections. AEC removes speaker output from the mic input, preventing
+            // the acoustic echo that occurs when the laptop mic picks up speaker audio.
+            // Ordering matters: VP must be enabled on a fresh, unconfigured inputNode.
+            do {
+                try inputNode.setVoiceProcessingEnabled(true)
+                log.info("Voice processing (AEC) enabled on mic input")
+            } catch {
+                log.warning("Voice processing unavailable — acoustic echo may occur: \(error.localizedDescription, privacy: .public)")
+            }
             do {
                 try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: mixer.engine)
             } catch {
                 log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
             }
-            let inputNode = mixer.engine.inputNode
-            // Voice processing disabled - causes format mismatch errors (-10875)
-            // enableVoiceProcessingIfAvailable(on: inputNode)
+            // Re-query format after enabling VP — VP may change the input format
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
                 micFormat = inputFormat
             }
         }
 
+        log.info("[AudioCaptureManager] Mic format: \(micFormat.map { "\($0.sampleRate)Hz \($0.channelCount)ch interleaved=\($0.isInterleaved)" } ?? "nil", privacy: .public)")
         try mixer.setUp(systemAudioFormat: nil, micFormat: micFormat)
 
         // Set up mic through the mixer's engine
@@ -198,8 +208,14 @@ final class AudioCaptureManager {
         }
 
         let inputNode = engine.inputNode
-        // Voice processing disabled - causes format mismatch errors (-10875)
-        // enableVoiceProcessingIfAvailable(on: inputNode)
+        // Enable voice processing (AEC) before device setup — same ordering rule as
+        // mixed mode. Errors are non-fatal; recording continues without AEC.
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+            log.info("Voice processing (AEC) enabled on mic input")
+        } catch {
+            log.warning("Voice processing unavailable: \(error.localizedDescription, privacy: .public)")
+        }
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         guard inputFormat.sampleRate > 0 else {
@@ -291,12 +307,4 @@ final class AudioCaptureManager {
         timer = nil
     }
 
-    private func enableVoiceProcessingIfAvailable(on inputNode: AVAudioInputNode) {
-        do {
-            try inputNode.setVoiceProcessingEnabled(true)
-            log.info("Voice processing enabled on input node")
-        } catch {
-            log.warning("Voice processing unavailable: \(error.localizedDescription, privacy: .public)")
-        }
-    }
 }
