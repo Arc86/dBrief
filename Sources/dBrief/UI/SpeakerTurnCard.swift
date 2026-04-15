@@ -104,6 +104,7 @@ struct SpeakerTurnCard: View {
                 Button("Save") { commitRename() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(speakerRenameText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(12)
