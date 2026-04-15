@@ -79,7 +79,7 @@ struct TranscriptSegmentRow: View {
     private var speakerColumn: some View {
         if showSpeakerNames, let speakerId = segment.speakerId {
             let displayName = speakerDisplayName(for: speakerId)
-            let color = speakerColor(for: speakerId)
+            let color = TranscriptDesignTokens.speakerColor(for: speakerId)
             Button {
                 speakerRenameText = displayName
                 showingSpeakerRename = true
@@ -107,7 +107,7 @@ struct TranscriptSegmentRow: View {
             HStack(spacing: 6) {
                 if let speakerId = segment.speakerId, showSpeakerNames {
                     let displayName = speakerDisplayName(for: speakerId)
-                    let color = speakerColor(for: speakerId)
+                    let color = TranscriptDesignTokens.speakerColor(for: speakerId)
                     Text(displayName)
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 6)
@@ -246,12 +246,6 @@ struct TranscriptSegmentRow: View {
 
     private func speakerDisplayName(for speakerId: String) -> String {
         speakerLabels.first(where: { $0.id == speakerId })?.displayName ?? speakerId
-    }
-
-    private func speakerColor(for speakerId: String) -> Color {
-        let palette: [Color] = [.accentColor, .orange, .green, .purple, .pink, .cyan, .yellow, .indigo]
-        let hash = abs(speakerId.unicodeScalars.reduce(0) { $0 &+ Int($1.value) })
-        return palette[hash % palette.count]
     }
 
     private func formattedTimestamp(_ seconds: Double) -> String {
