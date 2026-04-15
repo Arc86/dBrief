@@ -178,8 +178,6 @@ struct TranscriptWindowView: View {
                 Divider()
                 if let audioURL = recording.finalizedAudioURL {
                     TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
                 } else {
                     Text("Audio file not found")
                         .font(.caption)
