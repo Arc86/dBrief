@@ -84,6 +84,10 @@ final class AudioFileWriter: @unchecked Sendable {
         // Compute peak level from raw input
         _lastPeakLevel = Self.extractPeakLevel(from: buffer)
 
+        if writeCount == 0 {
+            log.info("[AudioFileWriter] First buffer: \(buffer.format.sampleRate, privacy: .public)Hz, \(buffer.format.channelCount, privacy: .public)ch, interleaved=\(buffer.format.isInterleaved, privacy: .public), frames=\(buffer.frameLength, privacy: .public). Target: \(self.processingFormat.sampleRate, privacy: .public)Hz, \(self.processingFormat.channelCount, privacy: .public)ch")
+        }
+
         if buffer.format != processingFormat {
             guard let converted = convert(buffer, to: processingFormat) else {
                 if writeCount == 0 {

@@ -1,5 +1,8 @@
 @preconcurrency import AVFoundation
 import CoreMedia
+import os
+
+private let log = Logger.audio
 
 final class AudioMixer: @unchecked Sendable {
     let engine: AVAudioEngine
@@ -97,10 +100,16 @@ final class AudioMixer: @unchecked Sendable {
         micPlayer.play()
     }
 
+    private var systemAudioLogCount = 0
+
     /// Feed system audio CMSampleBuffer into the mixer via the player node
     func scheduleSystemAudio(_ sampleBuffer: CMSampleBuffer) {
         guard hasSystemAudio else { return }
         guard let pcmBuffer = sampleBuffer.toPCMBuffer() else { return }
+        if systemAudioLogCount == 0 {
+            log.info("[AudioMixer] First system audio buffer: \(pcmBuffer.format.sampleRate, privacy: .public)Hz, \(pcmBuffer.format.channelCount, privacy: .public)ch, interleaved=\(pcmBuffer.format.isInterleaved, privacy: .public), frames=\(pcmBuffer.frameLength, privacy: .public)")
+        }
+        systemAudioLogCount += 1
         systemAudioPlayer.scheduleBuffer(pcmBuffer)
     }
 
@@ -110,6 +119,7 @@ final class AudioMixer: @unchecked Sendable {
 
     private func installMixerTap() {
         let mixerFormat = captureMixer.outputFormat(forBus: 0)
+        log.info("[AudioMixer] captureMixer format before engine start: \(mixerFormat.sampleRate, privacy: .public)Hz, \(mixerFormat.channelCount, privacy: .public)ch, interleaved=\(mixerFormat.isInterleaved, privacy: .public)")
         captureMixer.installTap(onBus: 0, bufferSize: 4096, format: mixerFormat) { [weak self] buffer, time in
             guard let self else { return }
             self.mixedBufferHandler?(buffer, time)
