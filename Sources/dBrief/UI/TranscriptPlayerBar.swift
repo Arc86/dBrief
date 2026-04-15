@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TranscriptPlayerBar: View {
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(\.colorScheme) private var colorScheme
 
     let audioURL: URL
     @Binding var currentTime: TimeInterval
@@ -18,7 +19,6 @@ struct TranscriptPlayerBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // Play / Pause
             Button {
                 audioPlayer.togglePlayPause(url: audioURL)
             } label: {
@@ -28,38 +28,30 @@ struct TranscriptPlayerBar: View {
             }
             .buttonStyle(.borderless)
 
-            // Current time
             Text(formatTime(displayTime))
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
                 .frame(width: 40, alignment: .trailing)
 
-            // Waveform
             WaveformView(
                 samples: waveformSamples,
                 playbackFraction: playbackFraction,
                 onSeek: { fraction in
                     let seekTime = (isThisFile ? audioPlayer.duration : 0) * fraction
-                    if isThisFile {
-                        audioPlayer.seek(to: seekTime)
-                    }
+                    if isThisFile { audioPlayer.seek(to: seekTime) }
                     currentTime = seekTime
                 }
             )
             .frame(height: 36)
 
-            // Duration
             Text(formatTime(isThisFile ? audioPlayer.duration : 0))
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
                 .frame(width: 40, alignment: .leading)
 
-            // Playback speed
             Menu {
                 ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { speed in
-                    Button(speedLabel(speed)) {
-                        audioPlayer.setRate(speed)
-                    }
+                    Button(speedLabel(speed)) { audioPlayer.setRate(speed) }
                 }
             } label: {
                 Text(speedLabel(audioPlayer.playbackRate))
@@ -68,6 +60,17 @@ struct TranscriptPlayerBar: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            TranscriptDesignTokens.structureFill(scheme: colorScheme)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TranscriptDesignTokens.structureBorder(scheme: colorScheme))
+                .frame(height: 1)
         }
         .task {
             guard waveformSamples.isEmpty else { return }
