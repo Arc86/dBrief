@@ -9,6 +9,7 @@ struct TranscriptSidePanel: View {
     @State private var metadataExpanded = false
     @State private var renamingId: String? = nil
     @State private var renameText = ""
+    @Environment(\.colorScheme) private var colorScheme
 
     private var uniqueSpeakerIds: [String] {
         var seen = Set<String>()
@@ -84,7 +85,10 @@ struct TranscriptSidePanel: View {
                 .padding(.vertical, 10)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(
+            TranscriptDesignTokens.sidebarFill(scheme: colorScheme)
+                .background(.ultraThinMaterial)
+        )
     }
 
     // MARK: - Speaker row
@@ -92,14 +96,9 @@ struct TranscriptSidePanel: View {
     @ViewBuilder
     private func speakerRow(for speakerId: String) -> some View {
         let displayName = speakerDisplayName(for: speakerId)
-        let color = speakerColor(for: speakerId)
         let isRenaming = renamingId == speakerId
 
         HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-
             if isRenaming {
                 TextField("Name", text: $renameText, onCommit: { commitRename(speakerId: speakerId) })
                     .textFieldStyle(.plain)
@@ -110,13 +109,10 @@ struct TranscriptSidePanel: View {
                     }
                     .onAppear { renameText = displayName }
             } else {
-                Text(displayName)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .onTapGesture {
-                        renameText = displayName
-                        renamingId = speakerId
-                    }
+                SpeakerPillView(speakerId: speakerId, displayName: displayName) {
+                    renameText = displayName
+                    renamingId = speakerId
+                }
             }
 
             Spacer()
@@ -132,7 +128,7 @@ struct TranscriptSidePanel: View {
                 } label: {
                     Image(systemName: "pencil")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
                 }
                 .buttonStyle(.plain)
             }
@@ -188,7 +184,7 @@ struct TranscriptSidePanel: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.caption.bold())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 6)
@@ -198,12 +194,6 @@ struct TranscriptSidePanel: View {
 
     private func speakerDisplayName(for speakerId: String) -> String {
         richTranscript.speakerLabels.first(where: { $0.id == speakerId })?.displayName ?? speakerId
-    }
-
-    private func speakerColor(for speakerId: String) -> Color {
-        let palette: [Color] = [.accentColor, .orange, .green, .purple, .pink, .cyan, .yellow, .indigo]
-        let hash = abs(speakerId.unicodeScalars.reduce(0) { $0 &+ Int($1.value) })
-        return palette[hash % palette.count]
     }
 
     private func commitRename(speakerId: String) {
