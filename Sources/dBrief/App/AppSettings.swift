@@ -52,6 +52,7 @@ final class AppSettings {
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
+        static let parakeetModelVariant = "parakeetModelVariant"
     }
 
     // MARK: - Recording
@@ -127,12 +128,14 @@ final class AppSettings {
     enum TranscriptionEngine: String, CaseIterable, Codable, Hashable, Sendable {
         case appleSpeech
         case localWhisper
+        case parakeetLocal
         case remoteEndpoint
 
         var displayName: String {
             switch self {
             case .appleSpeech: "Apple Speech"
             case .localWhisper: "Local Whisper"
+            case .parakeetLocal: "Parakeet (Local)"
             case .remoteEndpoint: "Remote Endpoint"
             }
         }
@@ -271,6 +274,11 @@ final class AppSettings {
     /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
     var diarizationEnabled: Bool {
         didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
+    }
+
+    /// Parakeet CoreML model variant to use for local Parakeet transcription.
+    var parakeetModelVariant: String {
+        didSet { UserDefaults.standard.set(parakeetModelVariant, forKey: Keys.parakeetModelVariant) }
     }
 
     // MARK: - AI Prompts
@@ -562,6 +570,7 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
+        self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
