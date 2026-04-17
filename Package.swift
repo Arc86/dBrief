@@ -9,6 +9,7 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.18.0"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.29.1"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.13.6"),
     ],
     targets: [
         .executableTarget(
@@ -18,6 +19,7 @@ let package = Package(
                 .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                "FluidAudio",
             ],
             exclude: ["Resources", "Images"],
             linkerSettings: [
