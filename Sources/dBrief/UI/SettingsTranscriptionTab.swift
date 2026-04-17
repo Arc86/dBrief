@@ -98,6 +98,8 @@ struct SettingsTranscriptionTab: View {
                 Text("On-device, no server needed. Quality may be lower than Whisper.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            case .parakeetLocal:
+                parakeetSection
             case .localWhisper:
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledContent("Model:") {
@@ -197,6 +199,51 @@ struct SettingsTranscriptionTab: View {
             case .remoteEndpoint:
                 Text("Use a remote Whisper API or server. Requires an endpoint.")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var parakeetSection: some View {
+        @Bindable var settings = appSettings
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent("Model:") {
+                Picker("", selection: $settings.parakeetModelVariant) {
+                    ForEach(ParakeetModelInfo.variants) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 280, alignment: .trailing)
+            }
+
+            if let selected = ParakeetModelInfo.variants.first(where: { $0.id == settings.parakeetModelVariant }) {
+                Text("~\(formatMemory(selected.estimatedMemoryMB)) required")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("On-device transcription using CoreML. Audio never leaves your Mac. Model downloaded once from HuggingFace. Primarily English-optimized; language selection has no effect on the model. Speaker diarization is not supported.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Purge local Parakeet model") {
+                Task {
+                    do {
+                        try await recordingManager.purgeLocalParakeetModel()
+                        purgeMessage = "Local Parakeet model cache removed."
+                    } catch {
+                        purgeMessage = error.localizedDescription
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            if let purgeMessage {
+                Text(purgeMessage)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }

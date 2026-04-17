@@ -5,6 +5,8 @@ enum DownloadStage: Sendable {
     case whisperModelLoading  // Model cached locally, now loading into memory
     case llmModel
     case speakerKitModel
+    case parakeetModel        // Downloading Parakeet CoreML model from HuggingFace
+    case parakeetModelLoading // Cached Parakeet model loading into memory
 }
 
 enum LocalAIPluginState: Sendable {
