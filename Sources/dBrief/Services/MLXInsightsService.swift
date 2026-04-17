@@ -2,13 +2,14 @@ import Foundation
 import Darwin
 import Hub
 import MLXLMCommon
+import Tokenizers
 import os
 #if canImport(MLX)
 import MLX
 #endif
 
 actor MLXInsightsService {
-    private static let modelID = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    private static let modelID = "mlx-community/gemma-4-e4b-4bit"
     private static let transcriptCharLimit = 12_000
     private static let transcriptHeadChars = 6_000
     private static let transcriptTailChars = 6_000
@@ -209,7 +210,7 @@ actor MLXInsightsService {
                 domain: "MLXInsightsService",
                 code: 3,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Local Qwen is unavailable: MLX Metal library is missing in this app bundle. Rebuild/run with SwiftPM resources or use Apple Intelligence/Remote AI engine."
+                    NSLocalizedDescriptionKey: "Local Gemma is unavailable: MLX Metal library is missing in this app bundle. Rebuild/run with SwiftPM resources or use Apple Intelligence/Remote AI engine."
                 ]
             )
         }
@@ -230,12 +231,12 @@ actor MLXInsightsService {
                 domain: "MLXInsightsService",
                 code: 4,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load Qwen3 4B model. Close other apps or use Remote AI engine instead."
+                    NSLocalizedDescriptionKey: "Insufficient memory to load Gemma 4 E4B model. Close other apps or use Remote AI engine instead."
                 ]
             )
         }
 
-        // Best-effort release of any stale GPU buffers before allocating Qwen.
+        // Best-effort release of any stale GPU buffers before allocating Gemma 4.
         clearGPUCacheIfAvailable()
 
         // Configure MLX memory budget before loading the model.
@@ -251,12 +252,13 @@ actor MLXInsightsService {
 
         stateHandler(.downloading(progress: nil, stage: .llmModel))
         let hub = HubApi(downloadBase: try llmDownloadBaseURL())
+        let downloader = HubApiDownloader(hub: hub)
+        let tokenizerLoader = TransformersTokenizerLoader()
         let container = try await loadModelContainer(
-            hub: hub,
+            from: downloader,
+            using: tokenizerLoader,
             id: Self.modelID
-        ) { _ in
-            // Progress callback available, but mapped as indeterminate in the unified UI for now.
-        }
+        )
         self.modelContainer = container
         stateHandler(.analyzing)
         return container
@@ -327,7 +329,8 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 1536,
+            maxTokens: 4096,
+            kvBits: 8,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
@@ -344,6 +347,8 @@ actor MLXInsightsService {
 
     static func decodeAndNormalize(_ raw: String) throws -> LocalInsightsResult {
         guard let jsonPayload = extractFirstJSONObject(raw) else {
+            let preview = String(raw.prefix(500))
+            Logger.ai.error("MLX JSON parse failed. Raw output prefix: \(preview, privacy: .public)")
             throw NSError(domain: "MLXInsightsService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model output did not contain valid JSON object."])
         }
         guard let data = jsonPayload.data(using: .utf8) else {
@@ -367,13 +372,23 @@ actor MLXInsightsService {
     }
 
     private static func extractFirstJSONObject(_ input: String) -> String? {
-        guard let start = input.firstIndex(of: "{") else { return nil }
+        // Reasoning models (Gemma 4) emit <think>…</think> before the answer.
+        // Search for JSON only after the last closing tag to avoid partial matches
+        // inside the thinking block.
+        let searchIn: String
+        if let thinkEnd = input.range(of: "</think>", options: .backwards) {
+            searchIn = String(input[thinkEnd.upperBound...])
+        } else {
+            searchIn = input
+        }
+
+        guard let start = searchIn.firstIndex(of: "{") else { return nil }
         var depth = 0
         var inString = false
         var isEscaped = false
 
-        for idx in input[start...].indices {
-            let char = input[idx]
+        for idx in searchIn[start...].indices {
+            let char = searchIn[idx]
 
             if inString {
                 if isEscaped {
@@ -398,7 +413,7 @@ actor MLXInsightsService {
             } else if char == "}" {
                 depth -= 1
                 if depth == 0 {
-                    return String(input[start...idx])
+                    return String(searchIn[start...idx])
                 }
             }
         }
@@ -462,6 +477,7 @@ actor MLXInsightsService {
     }
 
     private static func hasMetalLibrary() -> Bool {
+
         var candidates: [URL] = []
 
         if let resourceURL = Bundle.main.resourceURL {
@@ -479,5 +495,74 @@ actor MLXInsightsService {
         }
 
         return candidates.contains { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
+// MARK: - HuggingFace bridging for mlx-swift-lm 3.x Downloader/TokenizerLoader protocols
+
+private struct HubApiDownloader: Downloader {
+    let hub: HubApi
+
+    func download(
+        id: String,
+        revision: String?,
+        matching patterns: [String],
+        useLatest: Bool,
+        progressHandler: @Sendable @escaping (Progress) -> Void
+    ) async throws -> URL {
+        try await hub.snapshot(
+            from: id,
+            revision: revision ?? "main",
+            matching: patterns,
+            progressHandler: progressHandler
+        )
+    }
+}
+
+private struct TransformersTokenizerLoader: TokenizerLoader {
+    func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
+        let upstream = try await AutoTokenizer.from(modelFolder: directory)
+        return TransformersTokenizerBridge(upstream)
+    }
+}
+
+private struct TransformersTokenizerBridge: MLXLMCommon.Tokenizer {
+    private let upstream: any Tokenizers.Tokenizer
+
+    init(_ upstream: any Tokenizers.Tokenizer) {
+        self.upstream = upstream
+    }
+
+    func encode(text: String, addSpecialTokens: Bool) -> [Int] {
+        upstream.encode(text: text, addSpecialTokens: addSpecialTokens)
+    }
+
+    func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
+        upstream.decode(tokens: tokenIds, skipSpecialTokens: skipSpecialTokens)
+    }
+
+    func convertTokenToId(_ token: String) -> Int? {
+        upstream.convertTokenToId(token)
+    }
+
+    func convertIdToToken(_ id: Int) -> String? {
+        upstream.convertIdToToken(id)
+    }
+
+    var bosToken: String? { upstream.bosToken }
+    var eosToken: String? { upstream.eosToken }
+    var unknownToken: String? { upstream.unknownToken }
+
+    func applyChatTemplate(
+        messages: [[String: any Sendable]],
+        tools: [[String: any Sendable]]?,
+        additionalContext: [String: any Sendable]?
+    ) throws -> [Int] {
+        do {
+            return try upstream.applyChatTemplate(
+                messages: messages, tools: tools, additionalContext: additionalContext)
+        } catch Tokenizers.TokenizerError.missingChatTemplate {
+            throw MLXLMCommon.TokenizerError.missingChatTemplate
+        }
     }
 }
