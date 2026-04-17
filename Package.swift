@@ -7,7 +7,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.18.0"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.29.1"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.0.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
     ],
     targets: [
@@ -18,6 +19,8 @@ let package = Package(
                 .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "Hub", package: "swift-transformers"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ],
             exclude: ["Resources", "Images"],
             linkerSettings: [
