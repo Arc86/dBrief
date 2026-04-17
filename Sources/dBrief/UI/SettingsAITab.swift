@@ -55,11 +55,11 @@ struct SettingsAITab: View {
                         }
                     }
                     if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
-                        Button("Purge local Qwen model") {
+                        Button("Purge local Gemma model") {
                             Task {
                                 do {
                                     try await recordingManager.purgeLocalQwenModel()
-                                    purgeMessage = "Local Qwen model cache removed."
+                                    purgeMessage = "Local Gemma model cache removed."
                                 } catch {
                                     purgeMessage = error.localizedDescription
                                 }
@@ -110,7 +110,7 @@ struct SettingsAITab: View {
         case .appleIntelligence:
             "On-device Foundation Models. Requires macOS 26+ with Apple Silicon."
         case .qwenLocal:
-            "On-device MLX Qwen3 4B 4-bit model. Downloaded once from Hugging Face."
+            "On-device MLX Gemma 4 E4B 4-bit model. Downloaded once from Hugging Face."
         case .remoteEndpoint:
             "Use a remote LLM endpoint configured below."
         }
