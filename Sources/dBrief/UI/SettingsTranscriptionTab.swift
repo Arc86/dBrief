@@ -225,7 +225,7 @@ struct SettingsTranscriptionTab: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("On-device transcription using CoreML. Audio never leaves your Mac. Model downloaded once from HuggingFace. Primarily English-optimized; language selection has no effect on the model. Speaker diarization is not supported.")
+            Text("On-device transcription via FluidAudio and CoreML. Audio never leaves your Mac. Model is downloaded once from HuggingFace (~1.5–1.8 GB). v2 is English-only; v3 supports 25 European languages. Language selection has no effect. Speaker diarization is not supported.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
