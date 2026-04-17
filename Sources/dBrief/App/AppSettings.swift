@@ -570,7 +570,7 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
-        self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "nvidia_parakeet-tdt-0.6b-v3"
+        self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
