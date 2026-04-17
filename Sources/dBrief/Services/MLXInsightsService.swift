@@ -253,7 +253,9 @@ actor MLXInsightsService {
         stateHandler(.downloading(progress: nil, stage: .llmModel))
         let hub = HubApi(downloadBase: try llmDownloadBaseURL())
         let downloader = HubApiDownloader(hub: hub)
-        let tokenizerLoader = TransformersTokenizerLoader()
+        let tokenizerLoader = TransformersTokenizerLoader(
+            fallbackChatTemplate: Self.gemma4ChatTemplate
+        )
         let container = try await loadModelContainer(
             from: downloader,
             using: tokenizerLoader,
@@ -330,13 +332,20 @@ actor MLXInsightsService {
     private func generationParameters() -> GenerateParameters {
         .init(
             maxTokens: 4096,
-            kvBits: 8,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
             prefillStepSize: 256
         )
     }
+
+    /// Official Gemma 4 turn-based chat template.
+    /// mlx-community/gemma-4-*-4bit ships without a `chat_template` in
+    /// tokenizer_config.json, which causes mlx-swift-lm to fall back to naïve
+    /// text concatenation and produce gibberish. This matches the Unsloth/Google
+    /// reference; see
+    /// https://huggingface.co/mlx-community/gemma-4-31b-8bit/discussions/1
+    private static let gemma4ChatTemplate = "{%- set ns = namespace(prev_message_type=None) -%}{%- set loop_messages = messages -%}{{ bos_token }}{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}{{ '<|turn>system\\n' }}{%- if enable_thinking is defined and enable_thinking -%}{{ '<|think|>' }}{%- set ns.prev_message_type = 'think' -%}{%- endif -%}{%- if messages[0]['role'] in ['system', 'developer'] -%}{{ messages[0]['content'] | trim }}{%- set loop_messages = messages[1:] -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endif %}{%- for message in loop_messages -%}{%- set ns.prev_message_type = None -%}{%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}{{ '<|turn>' + role + '\\n' }}{%- if message['content'] is string -%}{%- if role == 'model' -%}{{ message['content'] | trim }}{%- else -%}{{ message['content'] | trim }}{%- endif -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endfor -%}{%- if add_generation_prompt -%}{{ '<|turn>model\\n' }}{%- endif -%}"
 
     private static func truncateTranscript(_ transcript: String) -> String {
         guard transcript.count > transcriptCharLimit else { return transcript }
@@ -520,17 +529,21 @@ private struct HubApiDownloader: Downloader {
 }
 
 private struct TransformersTokenizerLoader: TokenizerLoader {
+    let fallbackChatTemplate: String?
+
     func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
         let upstream = try await AutoTokenizer.from(modelFolder: directory)
-        return TransformersTokenizerBridge(upstream)
+        return TransformersTokenizerBridge(upstream, fallbackChatTemplate: fallbackChatTemplate)
     }
 }
 
 private struct TransformersTokenizerBridge: MLXLMCommon.Tokenizer {
     private let upstream: any Tokenizers.Tokenizer
+    private let fallbackChatTemplate: String?
 
-    init(_ upstream: any Tokenizers.Tokenizer) {
+    init(_ upstream: any Tokenizers.Tokenizer, fallbackChatTemplate: String? = nil) {
         self.upstream = upstream
+        self.fallbackChatTemplate = fallbackChatTemplate
     }
 
     func encode(text: String, addSpecialTokens: Bool) -> [Int] {
@@ -562,7 +575,18 @@ private struct TransformersTokenizerBridge: MLXLMCommon.Tokenizer {
             return try upstream.applyChatTemplate(
                 messages: messages, tools: tools, additionalContext: additionalContext)
         } catch Tokenizers.TokenizerError.missingChatTemplate {
-            throw MLXLMCommon.TokenizerError.missingChatTemplate
+            guard let fallbackChatTemplate else {
+                throw MLXLMCommon.TokenizerError.missingChatTemplate
+            }
+            return try upstream.applyChatTemplate(
+                messages: messages,
+                chatTemplate: .literal(fallbackChatTemplate),
+                addGenerationPrompt: true,
+                truncation: false,
+                maxLength: nil,
+                tools: tools,
+                additionalContext: additionalContext
+            )
         }
     }
 }
