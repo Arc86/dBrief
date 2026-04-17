@@ -77,7 +77,15 @@ actor LocalAIService {
 
     func generateTitle(transcription: String, language: String?) async throws -> String {
         let langHint = language.map { " The content is in language code '\($0)'." } ?? ""
-        let session = LanguageModelSession(instructions: "Generate a short, descriptive title (3-8 words) for the following transcription. Respond with ONLY the title, no quotes, no punctuation at the end, no explanation. The title should be in the same language as the content.\(langHint)")
+        let instructions = """
+        You write a single meeting title that captures the MAIN TOPIC or DECISION in 3–8 words.
+        The input may be a transcript excerpt or a meeting summary — either way, return only the title.
+        Rules:
+        - Output ONLY the title. No quotes, no preamble, no trailing punctuation, no explanation.
+        - Use concrete nouns from the content (projects, people, decisions). Avoid generic words like \"Meeting\", \"Discussion\", or \"Call\".
+        - Use the same language as the input.\(langHint)
+        """
+        let session = LanguageModelSession(instructions: instructions)
         let response = try await session.respond(to: transcription)
         return response.content
             .trimmingCharacters(in: .whitespacesAndNewlines)

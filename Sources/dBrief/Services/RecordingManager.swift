@@ -154,6 +154,7 @@ final class RecordingManager {
         appState.showPostRecordingSheet = false
         appState.processingSteps = []
         appState.liveTranscriptSegments = []
+        appState.liveInferenceText = nil
 
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
@@ -278,29 +279,39 @@ final class RecordingManager {
 
         // Step 3: Generate title & write Markdown
         if transcribe || summary || actionItems || tags {
-            // Generate AI title from transcription
-            if let transcriptionText = recording.transcription?.textForLLM, !transcriptionText.isEmpty {
+            // Gemma local generates `title_concept` inline in the JSON analysis
+            // (see runLocalQwenTasks). Skip the separate title call for it so a
+            // remote endpoint — if configured — doesn't override Gemma's title.
+            let engine = appSettings.effectiveAIEngine
+            if engine != .qwenLocal,
+               let transcriptionText = recording.transcription?.textForLLM,
+               !transcriptionText.isEmpty {
                 let language = recording.transcription?.language
+                // Prefer the generated summary as input — titles from a distilled
+                // summary are more topical than titles from the first 500 chars.
+                let titleInput = recording.summary ?? String(transcriptionText.prefix(500))
                 let titleStepIndex = appState.processingSteps.count
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
                     #if canImport(FoundationModels)
-                    if appSettings.effectiveAIEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
+                    if engine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
                         recording.generatedTitle = try await LocalAIService().generateTitle(
-                            transcription: String(transcriptionText.prefix(500)),
+                            transcription: titleInput,
                             language: language
                         )
-                    } else if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                    } else if engine == .remoteEndpoint,
+                              let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         recording.generatedTitle = try await aiService.generateTitle(
-                            transcription: String(transcriptionText.prefix(500)),
+                            transcription: titleInput,
                             language: language,
                             endpoint: endpoint
                         )
                     }
                     #else
-                    if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                    if engine == .remoteEndpoint,
+                       let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         recording.generatedTitle = try await aiService.generateTitle(
-                            transcription: String(transcriptionText.prefix(500)),
+                            transcription: titleInput,
                             language: language,
                             endpoint: endpoint
                         )
@@ -413,6 +424,7 @@ final class RecordingManager {
         appState.currentRecording = recording
         appState.recordingState = .processing
         appState.processingSteps = []
+        appState.liveInferenceText = nil
 
         // Step 2: AI tasks (same as processRecording)
         if let transcription = recording.transcription {
@@ -464,28 +476,34 @@ final class RecordingManager {
         var generatedMarkdownURL: URL?
 
         // Step 3: Generate title & write Markdown
-        if let transcriptionText = recording.transcription?.textForLLM, !transcriptionText.isEmpty {
+        let engine = appSettings.effectiveAIEngine
+        if engine != .qwenLocal,
+           let transcriptionText = recording.transcription?.textForLLM,
+           !transcriptionText.isEmpty {
             let language = recording.transcription?.language
+            let titleInput = recording.summary ?? String(transcriptionText.prefix(500))
             let titleStepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
             do {
                 #if canImport(FoundationModels)
-                if appSettings.effectiveAIEngine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
+                if engine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
                     recording.generatedTitle = try await LocalAIService().generateTitle(
-                        transcription: String(transcriptionText.prefix(500)),
+                        transcription: titleInput,
                         language: language
                     )
-                } else if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                } else if engine == .remoteEndpoint,
+                          let endpoint = appSettings.effectiveDefaultAIEndpoint {
                     recording.generatedTitle = try await aiService.generateTitle(
-                        transcription: String(transcriptionText.prefix(500)),
+                        transcription: titleInput,
                         language: language,
                         endpoint: endpoint
                     )
                 }
                 #else
-                if let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                if engine == .remoteEndpoint,
+                   let endpoint = appSettings.effectiveDefaultAIEndpoint {
                     recording.generatedTitle = try await aiService.generateTitle(
-                        transcription: String(transcriptionText.prefix(500)),
+                        transcription: titleInput,
                         language: language,
                         endpoint: endpoint
                     )
@@ -871,10 +889,11 @@ final class RecordingManager {
                 }
 
                 let fullJSON = chunks.joined()
-                // Final UI update + clear after generation completes
-                await MainActor.run { self.appState.liveInferenceText = nil }
-                
-                // Decode the full finalized JSON text matching the old return type
+                // Push the final snapshot — throttled updates may have skipped
+                // the last chunks on fast generations, and the previous clear
+                // here could blank the view after a single flash.
+                await MainActor.run { self.appState.liveInferenceText = fullJSON }
+
                 return try MLXInsightsService.decodeAndNormalize(fullJSON)
             }
 
