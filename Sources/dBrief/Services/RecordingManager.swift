@@ -15,6 +15,7 @@ final class RecordingManager {
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
     private let localAIPluginService = LocalAIPluginService()
+    private let parakeetService = ParakeetTranscriptionService()
     /// Exposed for TranscriptChatService — read-only reference, access serialized through actor's AsyncMutex.
     var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
@@ -190,6 +191,7 @@ final class RecordingManager {
                     switch appSettings.effectiveTranscriptionEngine {
                     case .appleSpeech: "Transcribing (Apple Speech)"
                     case .localWhisper: "Transcribing (Local Whisper)"
+                    case .parakeetLocal: "Transcribing (Parakeet)"
                     case .remoteEndpoint: "Transcribing audio"
                     }
                 }()
@@ -321,6 +323,7 @@ final class RecordingManager {
                 let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
                 case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
                 case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
+                case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
                 case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
@@ -505,6 +508,7 @@ final class RecordingManager {
                 let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
                 case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
                 case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
+                case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
                 case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
@@ -720,16 +724,21 @@ final class RecordingManager {
         try await localAIPluginService.purgeQwenModel()
     }
 
+    func purgeLocalParakeetModel() async throws {
+        try await parakeetService.purgeModels()
+    }
+
     /// Called by MemoryPressureMonitor when system memory pressure is detected.
     /// Unloads all local AI models to free memory.
     func handleMemoryPressure() async {
-        // Unload both Whisper and Qwen models to free GPU/unified memory
         await localAIPluginService.purgeModelsOnMemoryPressure()
+        try? await parakeetService.purgeModels()
     }
 
     /// Force-release all Metal/GPU resources before app termination.
     func forceReleaseGPU() async {
         await localAIPluginService.forceUnload()
+        try? await parakeetService.purgeModels()
     }
 
     func requestNotificationPermission() {
@@ -982,6 +991,48 @@ final class RecordingManager {
         return try await operation()
     }
 
+    private func withParakeetStepAdapter<T>(
+        stepIndex: Int,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let stateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await state in parakeetService.stateStream {
+                if Task.isCancelled { return }
+                applyParakeetState(state, toStepIndex: stepIndex)
+            }
+        }
+        defer { stateTask.cancel() }
+        return try await operation()
+    }
+
+    private func applyParakeetState(_ state: LocalAIPluginState, toStepIndex stepIndex: Int) {
+        guard appState.processingSteps.indices.contains(stepIndex) else { return }
+        switch state {
+        case .idle:
+            break
+        case .transcribing:
+            appState.processingSteps[stepIndex].name = "Transcribing (Parakeet)"
+        case .newSegments:
+            break // Parakeet doesn't produce live segments
+        case .diarizing:
+            appState.processingSteps[stepIndex].name = "Identifying speakers"
+        case .analyzing:
+            break
+        case .downloading(let progress, let stage):
+            appState.processingSteps[stepIndex].progress = progress
+            switch stage {
+            case .parakeetModel:
+                appState.processingSteps[stepIndex].name = "Downloading Parakeet model…"
+            case .parakeetModelLoading:
+                appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
+                appState.processingSteps[stepIndex].progress = nil
+            default:
+                break
+            }
+        }
+    }
+
     private func applyPluginState(_ state: LocalAIPluginState, toStepIndex stepIndex: Int) {
         guard appState.processingSteps.indices.contains(stepIndex) else { return }
         switch state {
@@ -1008,6 +1059,11 @@ final class RecordingManager {
                 appState.processingSteps[stepIndex].name = "Downloading Gemma model"
             case .speakerKitModel:
                 appState.processingSteps[stepIndex].name = "Downloading SpeakerKit model"
+            case .parakeetModel:
+                appState.processingSteps[stepIndex].name = "Downloading Parakeet model…"
+            case .parakeetModelLoading:
+                appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
+                appState.processingSteps[stepIndex].progress = nil
             }
         }
     }
@@ -1131,6 +1187,14 @@ final class RecordingManager {
                     whisperConfig: whisperConfig
                 )
             }
+        case .parakeetLocal:
+            return try await withParakeetStepAdapter(stepIndex: stepIndex) {
+                try await self.parakeetService.transcribe(
+                    fileURL: url,
+                    language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
+                    modelVariant: self.appSettings.parakeetModelVariant
+                )
+            }
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint else {
                 throw TranscriptionError.invalidEndpoint
@@ -1175,8 +1239,9 @@ final class RecordingManager {
             recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
         }
 
-        // Skip segmentation for local transcription engines (they handle long files well)
+        // Skip segmentation for local transcription engines (they handle long files natively)
         let segmentationEnabled = appSettings.effectiveTranscriptionEngine != .localWhisper
+            && appSettings.effectiveTranscriptionEngine != .parakeetLocal
         let result = try await recordingFinalizer.finalize(
             rawURL: recording.fileURL,
             recording: recording,
