@@ -161,7 +161,7 @@ final class AppSettings {
         var displayName: String {
             switch self {
             case .appleIntelligence: "Apple Intelligence"
-            case .qwenLocal: "Qwen3 4B Local"
+            case .qwenLocal: "Gemma 4 E4B Local"
             case .remoteEndpoint: "Remote Endpoint"
             }
         }

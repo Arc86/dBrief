@@ -65,12 +65,28 @@ struct TranscriptionResult: Codable, Sendable {
         }
         let hasSpeakerInfo = segments.contains { $0.speaker != nil }
         if hasSpeakerInfo {
-            return segments.map { segment in
-                if let speaker = segment.speaker {
-                    return "\(speaker): \(segment.text)"
+            var lines: [String] = []
+            var currentSpeaker: String? = nil
+            var currentParts: [String] = []
+            for segment in segments {
+                let trimmed = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                if segment.speaker == currentSpeaker {
+                    currentParts.append(trimmed)
+                } else {
+                    if !currentParts.isEmpty {
+                        let joined = currentParts.joined(separator: " ")
+                        lines.append(currentSpeaker.map { "\($0): \(joined)" } ?? joined)
+                    }
+                    currentSpeaker = segment.speaker
+                    currentParts = [trimmed]
                 }
-                return segment.text
-            }.joined(separator: "\n")
+            }
+            if !currentParts.isEmpty {
+                let joined = currentParts.joined(separator: " ")
+                lines.append(currentSpeaker.map { "\($0): \(joined)" } ?? joined)
+            }
+            return lines.joined(separator: "\n")
         }
         return segments.map { $0.text }.joined(separator: " ")
     }
