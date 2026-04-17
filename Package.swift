@@ -10,6 +10,7 @@ let package = Package(
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.0.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.13.6"),
     ],
     targets: [
         .executableTarget(
@@ -19,6 +20,7 @@ let package = Package(
                 .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                "FluidAudio",
                 .product(name: "Hub", package: "swift-transformers"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ],
