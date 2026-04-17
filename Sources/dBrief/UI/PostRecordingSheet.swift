@@ -114,17 +114,14 @@ struct PostRecordingSheet: View {
             Divider()
 
             HStack {
-                Button {
+                Button("Skip") {
                     applyFieldsToRecording()
                     Task { await recordingManager.skipProcessing() }
-                } label: {
-                    Image(systemName: "forward.fill")
                 }
                 .buttonStyle(.bordered)
                 .disabled(sanitizedMeetingTitle.isEmpty)
-                .help("Skip processing and save audio only")
 
-                Button {
+                Button("Queue") {
                     applyFieldsToRecording()
                     Task {
                         await recordingManager.queueForLater(
@@ -134,8 +131,6 @@ struct PostRecordingSheet: View {
                             tags: tags && transcribe
                         )
                     }
-                } label: {
-                    Image(systemName: "clock.fill")
                 }
                 .buttonStyle(.bordered)
                 .disabled(sanitizedMeetingTitle.isEmpty)
@@ -143,7 +138,7 @@ struct PostRecordingSheet: View {
 
                 Spacer()
 
-                Button {
+                Button("Process") {
                     applyFieldsToRecording()
                     recordingManager.startProcessing(
                         transcribe: transcribe,
@@ -151,8 +146,6 @@ struct PostRecordingSheet: View {
                         actionItems: actionItems && transcribe,
                         tags: tags && transcribe
                     )
-                } label: {
-                    Image(systemName: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
@@ -161,7 +154,6 @@ struct PostRecordingSheet: View {
                             && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
                             && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
                 )
-                .help("Finalize audio and process now")
             }
         }
         .padding(.vertical, 4)
