@@ -1,5 +1,5 @@
 {
-  "originHash" : "9a5cae78fc08c5902a02979726039cef52a193daa41e61955e715d5f74024bf3",
+  "originHash" : "895700ee72bf51fc6e2d8b5955f29c99c2d23f461116ac60cf959c646c56c33c",
   "pins" : [
     {
       "identity" : "fluidaudio",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift",
       "state" : {
-        "revision" : "4dccaeda1d83cf8697f235d2786c2d72ad4bb925",
-        "version" : "0.30.3"
+        "revision" : "61b9e011e09a62b489f6bd647958f1555bdf2896",
+        "version" : "0.31.3"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift-lm.git",
       "state" : {
-        "revision" : "360c5052b81cc154b04ee0933597a4ad6db4b8ae",
-        "version" : "2.30.3"
+        "revision" : "1c05248bb0899e2a7a4962b84d319cf12f4e12aa",
+        "version" : "3.31.3"
       }
     },
     {

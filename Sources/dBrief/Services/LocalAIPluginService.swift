@@ -105,7 +105,7 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         return markdown
     }
 
-    /// Stream a chat response using the local Qwen model.
+    /// Stream a chat response using the local Gemma model.
     /// Used by TranscriptChatService for conversational AI over a loaded transcript.
     func chatStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream<String, Error> { continuation in
