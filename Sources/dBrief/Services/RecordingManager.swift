@@ -28,7 +28,7 @@ final class RecordingManager {
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
-        static let qwen3_4b: Int64 = 4_831_838_209   // 4.5 GB
+        static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
     init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore) {
@@ -47,8 +47,8 @@ final class RecordingManager {
         let modelName: String
         switch engine {
         case .qwenLocal:
-            required = MemoryThreshold.qwen3_4b
-            modelName = "Qwen3 4B (Local)"
+            required = MemoryThreshold.gemma4_e4b
+            modelName = "Gemma 4 E4B (Local)"
         case .appleIntelligence, .remoteEndpoint:
             return nil   // no local model loaded
         }
@@ -325,7 +325,7 @@ final class RecordingManager {
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Qwen3 4B Local", baseURL: "", modelName: "Qwen3-4B-Instruct-2507-4bit (MLX)")
+                case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
@@ -509,7 +509,7 @@ final class RecordingManager {
                 }
                 let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Qwen3 4B Local", baseURL: "", modelName: "Qwen3-4B-Instruct-2507-4bit (MLX)")
+                case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
@@ -748,7 +748,7 @@ final class RecordingManager {
     private func labelForSummary(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Generating summary (Apple Intelligence)"
-        case .qwenLocal: "Generating summary (Qwen3 4B local)"
+        case .qwenLocal: "Generating summary (Gemma 4 E4B local)"
         case .remoteEndpoint: "Generating summary"
         }
     }
@@ -756,7 +756,7 @@ final class RecordingManager {
     private func labelForActionItems(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Extracting action items (Apple Intelligence)"
-        case .qwenLocal: "Extracting action items (Qwen3 4B local)"
+        case .qwenLocal: "Extracting action items (Gemma 4 E4B local)"
         case .remoteEndpoint: "Extracting action items"
         }
     }
@@ -764,7 +764,7 @@ final class RecordingManager {
     private func labelForTags(engine: AppSettings.AIEngine) -> String {
         switch engine {
         case .appleIntelligence: "Analyzing tags (Apple Intelligence)"
-        case .qwenLocal: "Analyzing tags & sentiment (Qwen3 4B local)"
+        case .qwenLocal: "Analyzing tags & sentiment (Gemma 4 E4B local)"
         case .remoteEndpoint: "Analyzing tags & sentiment"
         }
     }
@@ -995,7 +995,7 @@ final class RecordingManager {
         case .diarizing:
             appState.processingSteps[stepIndex].name = "Identifying speakers"
         case .analyzing:
-            appState.processingSteps[stepIndex].name = "Analyzing transcript (Qwen3 4B local)"
+            appState.processingSteps[stepIndex].name = "Analyzing transcript (Gemma 4 E4B local)"
         case .downloading(let progress, let stage):
             appState.processingSteps[stepIndex].progress = progress
             switch stage {
@@ -1005,7 +1005,7 @@ final class RecordingManager {
                 appState.processingSteps[stepIndex].name = "Loading WhisperKit model…"
                 appState.processingSteps[stepIndex].progress = nil // loading is indeterminate
             case .llmModel:
-                appState.processingSteps[stepIndex].name = "Downloading Qwen model"
+                appState.processingSteps[stepIndex].name = "Downloading Gemma model"
             case .speakerKitModel:
                 appState.processingSteps[stepIndex].name = "Downloading SpeakerKit model"
             }
