@@ -1,4 +1,4 @@
-<img width="800" height="800" alt="dBrief-Icon" src="https://github.com/user-attachments/assets/f146265e-0871-4757-90a5-1eb1a7e37199" />
+<img width="400" height="400" alt="dBrief-Icon" src="https://github.com/user-attachments/assets/f146265e-0871-4757-90a5-1eb1a7e37199" />
 # dBrief
 
 dBrief is a macOS menu bar app that records your meetings, transcribes them, and uses AI to generate summaries, action items, tags, and sentiment. Results can be exported as Markdown notes to Obsidian, Apple Notes, Notion, and more.
