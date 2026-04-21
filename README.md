@@ -1,4 +1,4 @@
-<img width="200" height="200" alt="dBrief-Icon" src="https://github.com/user-attachments/assets/f146265e-0871-4757-90a5-1eb1a7e37199" />
+<img width="150" height="150" alt="dBrief-Icon" src="https://github.com/user-attachments/assets/f146265e-0871-4757-90a5-1eb1a7e37199" />
 
 # dBrief
 
