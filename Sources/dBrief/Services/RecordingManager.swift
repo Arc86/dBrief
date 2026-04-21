@@ -226,7 +226,7 @@ final class RecordingManager {
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         guard !Task.isCancelled else { return }
-        if let transcription = recording.transcription {
+        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
@@ -431,7 +431,7 @@ final class RecordingManager {
         appState.liveInferenceText = nil
 
         // Step 2: AI tasks (same as processRecording)
-        if let transcription = recording.transcription {
+        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
