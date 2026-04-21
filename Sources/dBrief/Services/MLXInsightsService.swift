@@ -9,10 +9,16 @@ import MLX
 #endif
 
 actor MLXInsightsService {
-    private static let modelID = "mlx-community/gemma-4-e4b-4bit"
-    private static let transcriptCharLimit = 12_000
-    private static let transcriptHeadChars = 6_000
-    private static let transcriptTailChars = 6_000
+    private static let modelID = "mlx-community/gemma-4-e4b-it-4bit"
+    // Gemma 4 E4B has a 128K context. With ~4 chars/token this budget is ~25K
+    // input tokens, leaving plenty of headroom for the system prompt (~1K) and
+    // the 8K output ceiling. Sized to fit a ~3-hour meeting without truncation.
+    private static let transcriptCharLimit = 100_000
+    // Keep a small intro slice for context, then the full tail. Meetings tend
+    // to load substance in the middle and end — truncating by dropping the
+    // head preserves that detail.
+    private static let transcriptHeadChars = 5_000
+    private static let transcriptTailChars = 95_000
     private static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
 
     private let fileManager = FileManager.default
@@ -331,7 +337,7 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 4096,
+            maxTokens: 8192,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
