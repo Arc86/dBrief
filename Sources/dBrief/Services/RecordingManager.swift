@@ -154,6 +154,7 @@ final class RecordingManager {
         }()
         appState.recordingState = .processing
         appState.showPostRecordingSheet = false
+        appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveTranscriptSegments = []
         appState.liveInferenceText = nil
@@ -406,7 +407,8 @@ final class RecordingManager {
             recording.transcription = saved
         }
 
-        // Clear previous AI results
+        // Clear previous AI results and any stale memory warning
+        appState.preflightWarning = nil
         recording.summary = nil
         recording.actionItems = nil
         recording.tags = nil
