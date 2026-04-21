@@ -73,10 +73,6 @@ final class AudioMixer: @unchecked Sendable {
     }
 
     func stop() {
-        if hasSystemAudio {
-            systemAudioPlayer.stop()
-        }
-        micPlayer.stop()
         engine.stop()
         captureMixer.removeTap(onBus: 0)
         lock.withLock {

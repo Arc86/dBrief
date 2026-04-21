@@ -84,8 +84,6 @@ final class RecordingManager {
 
         try await audioCaptureManager.startRecording(
             to: rawURL,
-            sampleRate: 16_000,
-            bitRate: 128_000,
             inputDeviceUID: appSettings.audioInputDeviceUID
         )
         appState.recordingState = .recording
