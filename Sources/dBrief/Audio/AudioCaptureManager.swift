@@ -44,8 +44,6 @@ final class AudioCaptureManager {
 
     func startRecording(
         to fileURL: URL,
-        sampleRate: Int = 16000,
-        bitRate: Int = 128000,
         inputDeviceUID: String? = nil
     ) async throws {
         guard !isCapturing else { return }
@@ -62,14 +60,8 @@ final class AudioCaptureManager {
 
         log.info("Starting recording to \(fileURL.lastPathComponent, privacy: .public)")
 
-        let writer: AudioFileWriter
-        do {
-            writer = try AudioFileWriter(fileURL: fileURL, sampleRate: sampleRate, bitRate: bitRate)
-            log.info("File writer created successfully")
-        } catch {
-            log.error("File writer creation failed: \(error.localizedDescription, privacy: .public)")
-            throw AudioCaptureError.fileWriterFailed(error)
-        }
+        let writer = AudioFileWriter(fileURL: fileURL)
+        log.info("File writer created successfully")
         self.fileWriter = writer
 
         if hasSystemAudioPermission {
@@ -105,17 +97,22 @@ final class AudioCaptureManager {
             self.micEngine = nil
         }
 
-        // Stop mixer mode
-        if let mixer {
-            mixer.stop()
-            self.mixer = nil
-        }
-
         // Stop mic-only mode
         if let micOnlyEngine {
             micOnlyEngine.inputNode.removeTap(onBus: 0)
             micOnlyEngine.stop()
             self.micOnlyEngine = nil
+        }
+
+        // Drain: let queued buffers play through to the file writer
+        if mixer != nil {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        // Stop mixer and close file
+        if let mixer {
+            mixer.stop()
+            self.mixer = nil
         }
 
         fileWriter?.close()
