@@ -19,6 +19,12 @@ struct SettingsAITab: View {
         } else {
             @Bindable var settings = appSettings
             Form {
+                Section {
+                    Toggle("Enable AI processing", isOn: $settings.aiProcessingEnabled)
+                    Text("When off, recordings are transcribed only — no summary, action items, or tag analysis.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Engine") {
                     Picker("AI engine", selection: $settings.aiEngine) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
