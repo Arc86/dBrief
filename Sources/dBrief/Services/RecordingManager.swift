@@ -1288,7 +1288,8 @@ final class RecordingManager {
             tracks: tracks,
             recording: recording,
             baseFolder: appSettings.effectiveRecordingFolderURL,
-            segmentationEnabled: segmentationEnabled
+            segmentationEnabled: segmentationEnabled,
+            echoSuppressionEnabled: appSettings.acousticEchoCancellation
         )
         recording.capturedTracks = nil  // scratch files have been consumed
 

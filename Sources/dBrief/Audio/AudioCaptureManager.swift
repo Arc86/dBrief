@@ -182,12 +182,19 @@ final class AudioCaptureManager {
         }
 
         let inputNode = engine.inputNode
-        if aecEnabled {
+        // Apple's Voice Processing IO provides real-time AEC, but it switches
+        // AVAudioEngine into a VoIP mode that ducks system audio at the OS
+        // level — so enabling it alongside ScreenCaptureKit causes empty
+        // system-audio buffers. Restrict it to mic-only recording, where
+        // there's no SCStream to conflict with. In mixed mode we perform
+        // echo suppression offline via the system-track sidechain in
+        // `RecordingFinalizer`.
+        if aecEnabled && !hasSystemAudioPermission {
             do {
                 try inputNode.setVoiceProcessingEnabled(true)
-                log.info("AEC enabled on mic input")
+                log.info("Voice-processing AEC enabled (mic-only mode)")
             } catch {
-                log.warning("AEC unavailable: \(error.localizedDescription, privacy: .public)")
+                log.warning("Voice-processing AEC unavailable: \(error.localizedDescription, privacy: .public)")
             }
         }
 

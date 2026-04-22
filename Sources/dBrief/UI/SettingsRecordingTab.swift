@@ -37,7 +37,7 @@ struct SettingsRecordingTab: View {
 
             Section("Echo Cancellation") {
                 Toggle("Remove meeting audio from microphone", isOn: $settings.acousticEchoCancellation)
-                Text("Recommended when using laptop speakers. Prevents meeting audio from being picked up by your microphone.")
+                Text("Recommended when using laptop speakers. Uses the captured system audio as a reference to suppress speaker bleed in the mic during mixing. Falls back to real-time voice processing when recording mic only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -56,7 +56,7 @@ struct SettingsRecordingTab: View {
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     LabeledContent("Post-process:") {
-                        Text("Mic: 80Hz HPF, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0")
+                        Text("Mic: 80Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: .infinity, alignment: .trailing)
