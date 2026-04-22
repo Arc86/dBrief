@@ -14,7 +14,8 @@ actor RecordingFinalizer {
         tracks: CapturedTracks,
         recording: Recording,
         baseFolder: URL,
-        segmentationEnabled: Bool = true
+        segmentationEnabled: Bool = true,
+        echoSuppressionEnabled: Bool = true
     ) async throws -> RecordingFinalizationResult {
         let snapshot = await MainActor.run { Snapshot(recording: recording) }
         let normalizedTitle = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
@@ -32,8 +33,8 @@ actor RecordingFinalizer {
 
         if let ffmpegPath {
             // Only pass tracks that actually exist and have audio data.
-            // When AEC is active, the system CAF may never be written (no SCStream
-            // buffers arrive), causing ffmpeg to fail on a missing file.
+            // In mic-only mode the system CAF is never written; guard against
+            // handing ffmpeg a missing file.
             let usableTracks = CapturedTracks(
                 systemURL: tracks.systemURL.flatMap { hasAudioContent($0) ? $0 : nil },
                 micURL:    tracks.micURL.flatMap    { hasAudioContent($0) ? $0 : nil }
@@ -49,7 +50,8 @@ actor RecordingFinalizer {
                     ffmpegPath: ffmpegPath,
                     tracks: usableTracks,
                     outputURL: masterURL,
-                    snapshot: snapshot
+                    snapshot: snapshot,
+                    echoSuppressionEnabled: echoSuppressionEnabled
                 )
                 if let url = tracks.systemURL, fileManager.fileExists(atPath: url.path) {
                     try? fileManager.removeItem(at: url)
@@ -108,7 +110,8 @@ actor RecordingFinalizer {
         ffmpegPath: String,
         tracks: CapturedTracks,
         outputURL: URL,
-        snapshot: Snapshot
+        snapshot: Snapshot,
+        echoSuppressionEnabled: Bool
     ) throws {
         let isoDate = ISO8601DateFormatter().string(from: snapshot.date)
         let title = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
@@ -117,14 +120,41 @@ actor RecordingFinalizer {
         let args: [String]
         switch (tracks.systemURL, tracks.micURL) {
         case (let system?, let mic?):
+            // When both tracks are present, the system track is the exact
+            // audio being played through the speakers, which is the same
+            // signal the built-in mic is leaking back as echo. We use it as
+            // a sidechain detector on a compressor/gate so the mic is
+            // aggressively ducked whenever system audio is active — removing
+            // the speaker bleed without needing precise time alignment.
+            //
+            // threshold=0.03  → any system audio above ~-30dBFS triggers ducking
+            // ratio=20        → near-gate attenuation of the mic during speaker playback
+            // attack=5        → catch the leading edge of speaker audio quickly
+            // release=250     → hold the duck through brief gaps so reverb tails don't bleed through
+            // level_sc=2      → boost detector sensitivity (~+6dB) so soft remote speech still triggers
+            let filterGraph: String
+            if echoSuppressionEnabled {
+                // Split the system track: one copy for the final mix, one as
+                // the sidechain reference used to duck the mic during speaker
+                // playback.
+                filterGraph = "[0:a]asplit=2[sys0][scref];"
+                    + "[sys0]highpass=f=40,lowpass=f=12000[sys];"
+                    + "[scref]aformat=channel_layouts=mono[scmono];"
+                    + "[1:a]highpass=f=80[michp];"
+                    + "[michp][scmono]sidechaincompress=threshold=0.03:ratio=20:attack=5:release=250:level_sc=2:makeup=1:mode=downward[micducked];"
+                    + "[micducked]loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
+                    + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]"
+            } else {
+                filterGraph = "[0:a]highpass=f=40,lowpass=f=12000[sys];"
+                    + "[1:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
+                    + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]"
+            }
             args = [
                 "-y",
                 "-i", system.path,
                 "-i", mic.path,
                 "-filter_complex",
-                "[0:a]highpass=f=40,lowpass=f=12000[sys];"
-                    + "[1:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
-                    + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]",
+                filterGraph,
                 "-map", "[out]",
                 "-c:a", "aac", "-b:a", "96k",
                 "-ar", "48000", "-ac", "2",
