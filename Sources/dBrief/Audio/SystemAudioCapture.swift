@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 @preconcurrency import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, @unchecked Sendable {
@@ -82,5 +83,59 @@ enum AudioCaptureError: Error, LocalizedError {
         case .engineStartFailed(let error): "Audio engine failed to start: \(error.localizedDescription)"
         case .fileWriterFailed(let error): "Audio file writer failed: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - CMSampleBuffer → AVAudioPCMBuffer
+
+extension CMSampleBuffer {
+    func toPCMBuffer() -> AVAudioPCMBuffer? {
+        guard let formatDescription = formatDescription,
+              var asbd = formatDescription.audioStreamBasicDescription
+        else { return nil }
+
+        guard let audioFormat = AVAudioFormat(streamDescription: &asbd) else { return nil }
+
+        let frameCount = CMSampleBufferGetNumSamples(self)
+        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
+            return nil
+        }
+        pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
+
+        let channelCount = Int(asbd.mChannelsPerFrame)
+        let bufferListSize = MemoryLayout<AudioBufferList>.size
+            + max(0, channelCount - 1) * MemoryLayout<AudioBuffer>.size
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferListSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawPointer.deallocate() }
+        let bufferListPointer = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            self,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: bufferListPointer,
+            bufferListSize: bufferListSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr else { return nil }
+
+        let sourceList = UnsafeMutableAudioBufferListPointer(bufferListPointer)
+        let destList = UnsafeMutableAudioBufferListPointer(pcmBuffer.mutableAudioBufferList)
+
+        let bufferCount = min(sourceList.count, destList.count)
+        for index in 0..<bufferCount {
+            let src = sourceList[index]
+            let dst = destList[index]
+            guard let srcData = src.mData, let dstData = dst.mData else { continue }
+            memcpy(dstData, srcData, min(Int(src.mDataByteSize), Int(dst.mDataByteSize)))
+        }
+
+        return pcmBuffer
     }
 }

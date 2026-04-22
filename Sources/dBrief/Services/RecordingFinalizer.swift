@@ -11,7 +11,7 @@ actor RecordingFinalizer {
     private let fileManager = FileManager.default
 
     func finalize(
-        rawURL: URL,
+        tracks: CapturedTracks,
         recording: Recording,
         baseFolder: URL,
         segmentationEnabled: Bool = true
@@ -23,7 +23,7 @@ actor RecordingFinalizer {
         let masterURL = try Self.uniqueFileURL(
             folder: targetFolder,
             baseName: baseName,
-            fileExtension: "flac",
+            fileExtension: "m4a",
             fileManager: fileManager
         )
 
@@ -34,22 +34,28 @@ actor RecordingFinalizer {
             do {
                 try transcodeWithFFmpeg(
                     ffmpegPath: ffmpegPath,
-                    inputURL: rawURL,
+                    tracks: tracks,
                     outputURL: masterURL,
                     snapshot: snapshot
                 )
+                if let url = tracks.systemURL, fileManager.fileExists(atPath: url.path) {
+                    try? fileManager.removeItem(at: url)
+                }
+                if let url = tracks.micURL, fileManager.fileExists(atPath: url.path) {
+                    try? fileManager.removeItem(at: url)
+                }
             } catch {
-                warnings.append("ffmpeg transcode failed; using raw FLAC fallback. \(error.localizedDescription)")
-                try fallbackMoveRawFile(rawURL: rawURL, targetURL: masterURL)
+                warnings.append("ffmpeg merge failed; keeping raw CAF(s). \(error.localizedDescription)")
+                try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
             }
         } else {
-            warnings.append("ffmpeg not found. Skipped DSP normalization, compression-level tuning, and tag embedding.")
-            try fallbackMoveRawFile(rawURL: rawURL, targetURL: masterURL)
+            warnings.append("ffmpeg not found. Skipped merge and AAC encode; master is raw CAF.")
+            try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
         }
 
         var segmentURLs: [URL] = []
         if segmentationEnabled && snapshot.duration > 1800 {
-            if let ffmpegPath {
+            if let ffmpegPath, fileManager.fileExists(atPath: masterURL.path) {
                 do {
                     segmentURLs = try createSegments(
                         ffmpegPath: ffmpegPath,
@@ -77,11 +83,6 @@ actor RecordingFinalizer {
         let metadataURL = masterURL.deletingPathExtension().appendingPathExtension("json")
         try writeMetadata(metadataPayload, to: metadataURL)
 
-        // Cleanup raw scratch file once we have a finalized master.
-        if fileManager.fileExists(atPath: rawURL.path) {
-            try? fileManager.removeItem(at: rawURL)
-        }
-
         return RecordingFinalizationResult(
             masterAudioURL: masterURL,
             segmentAudioURLs: segmentURLs,
@@ -92,34 +93,74 @@ actor RecordingFinalizer {
 
     private func transcodeWithFFmpeg(
         ffmpegPath: String,
-        inputURL: URL,
+        tracks: CapturedTracks,
         outputURL: URL,
         snapshot: Snapshot
     ) throws {
-        let processResult = runFFmpeg(
-            ffmpegPath: ffmpegPath,
-            arguments: [
+        let isoDate = ISO8601DateFormatter().string(from: snapshot.date)
+        let title = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
+        let durationMeta = "duration_seconds=\(Int(snapshot.duration))"
+
+        let args: [String]
+        switch (tracks.systemURL, tracks.micURL) {
+        case (let system?, let mic?):
+            args = [
                 "-y",
-                "-i", inputURL.path,
-                "-c:a", "flac",
-                "-compression_level", "8",
-                "-af", "highpass=f=80,loudnorm=I=-14:TP=-1:LRA=14",
-                "-metadata", "date=\(ISO8601DateFormatter().string(from: snapshot.date))",
-                "-metadata", "title=\(Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp))",
-                "-metadata", "duration_seconds=\(Int(snapshot.duration))",
+                "-i", system.path,
+                "-i", mic.path,
+                "-filter_complex",
+                "[0:a]highpass=f=40,lowpass=f=12000[sys];"
+                    + "[1:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
+                    + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]",
+                "-map", "[out]",
+                "-c:a", "aac", "-b:a", "96k",
+                "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart",
+                "-metadata", "date=\(isoDate)",
+                "-metadata", "title=\(title)",
+                "-metadata", durationMeta,
                 outputURL.path,
             ]
-        )
+        case (nil, let mic?):
+            args = [
+                "-y",
+                "-i", mic.path,
+                "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-c:a", "aac", "-b:a", "64k",
+                "-ar", "48000", "-ac", "1",
+                "-movflags", "+faststart",
+                "-metadata", "date=\(isoDate)",
+                "-metadata", "title=\(title)",
+                "-metadata", durationMeta,
+                outputURL.path,
+            ]
+        case (let system?, nil):
+            args = [
+                "-y",
+                "-i", system.path,
+                "-af", "highpass=f=40,lowpass=f=12000",
+                "-c:a", "aac", "-b:a", "96k",
+                "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart",
+                "-metadata", "date=\(isoDate)",
+                "-metadata", "title=\(title)",
+                "-metadata", durationMeta,
+                outputURL.path,
+            ]
+        case (nil, nil):
+            throw RecordingFinalizerError.ffmpegFailed("No input tracks to finalize.")
+        }
 
-        guard processResult.status == 0 else {
-            throw RecordingFinalizerError.ffmpegFailed(processResult.stderr)
+        let result = runFFmpeg(ffmpegPath: ffmpegPath, arguments: args)
+        guard result.status == 0 else {
+            throw RecordingFinalizerError.ffmpegFailed(result.stderr)
         }
     }
 
     private func createSegments(ffmpegPath: String, masterURL: URL) throws -> [URL] {
         let stem = masterURL.deletingPathExtension().lastPathComponent
         let folder = masterURL.deletingLastPathComponent()
-        let pattern = folder.appendingPathComponent("\(stem)_part%02d.flac")
+        let pattern = folder.appendingPathComponent("\(stem)_part%02d.m4a")
 
         let processResult = runFFmpeg(
             ffmpegPath: ffmpegPath,
@@ -147,21 +188,28 @@ actor RecordingFinalizer {
 
         return entries
             .filter {
-                $0.pathExtension.lowercased() == "flac"
+                $0.pathExtension.lowercased() == "m4a"
                     && $0.deletingPathExtension().lastPathComponent.hasPrefix("\(stem)_part")
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private func fallbackMoveRawFile(rawURL: URL, targetURL: URL) throws {
-        guard rawURL != targetURL else { return }
+    private func fallbackPromoteTrack(tracks: CapturedTracks, targetURL: URL) throws {
+        let source: URL
+        if let mic = tracks.micURL, fileManager.fileExists(atPath: mic.path) {
+            source = mic
+        } else if let system = tracks.systemURL, fileManager.fileExists(atPath: system.path) {
+            source = system
+        } else {
+            throw RecordingFinalizerError.ffmpegFailed("No usable track for fallback.")
+        }
         if fileManager.fileExists(atPath: targetURL.path) {
             try fileManager.removeItem(at: targetURL)
         }
         do {
-            try fileManager.moveItem(at: rawURL, to: targetURL)
+            try fileManager.moveItem(at: source, to: targetURL)
         } catch {
-            try fileManager.copyItem(at: rawURL, to: targetURL)
+            try fileManager.copyItem(at: source, to: targetURL)
         }
     }
 
