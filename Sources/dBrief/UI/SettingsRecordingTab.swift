@@ -35,15 +35,28 @@ struct SettingsRecordingTab: View {
             }
             .listRowBackground(Color.clear)
 
+            Section("Echo Cancellation") {
+                Toggle("Remove meeting audio from microphone", isOn: $settings.acousticEchoCancellation)
+                Text("Recommended when using laptop speakers. Prevents meeting audio from being picked up by your microphone.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowBackground(Color.clear)
+
             if appSettings.powerUserMode {
                 Section("Audio Quality") {
-                    LabeledContent("Recording profile:") {
-                        Text("Native rate FLAC (48 kHz stereo)")
+                    LabeledContent("Capture:") {
+                        Text("CAF/LPCM per track (system + mic separate)")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    LabeledContent("Master output:") {
+                        Text("M4A/AAC 96 kbps · 48 kHz stereo")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     LabeledContent("Post-process:") {
-                        Text("80Hz high-pass, -14 LUFS to -1dBTP, AEC/echo cancel")
+                        Text("Mic: 80Hz HPF, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: .infinity, alignment: .trailing)
