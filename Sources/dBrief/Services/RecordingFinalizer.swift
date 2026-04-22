@@ -31,10 +31,23 @@ actor RecordingFinalizer {
         let ffmpegPath = resolveFFmpegPath()
 
         if let ffmpegPath {
+            // Only pass tracks that actually exist and have audio data.
+            // When AEC is active, the system CAF may never be written (no SCStream
+            // buffers arrive), causing ffmpeg to fail on a missing file.
+            let usableTracks = CapturedTracks(
+                systemURL: tracks.systemURL.flatMap { hasAudioContent($0) ? $0 : nil },
+                micURL:    tracks.micURL.flatMap    { hasAudioContent($0) ? $0 : nil }
+            )
+            if usableTracks.systemURL == nil, let url = tracks.systemURL {
+                warnings.append("System audio track missing or empty (\(url.lastPathComponent)); using mic-only output.")
+            }
+            if usableTracks.micURL == nil, let url = tracks.micURL {
+                warnings.append("Mic track missing or empty (\(url.lastPathComponent)).")
+            }
             do {
                 try transcodeWithFFmpeg(
                     ffmpegPath: ffmpegPath,
-                    tracks: tracks,
+                    tracks: usableTracks,
                     outputURL: masterURL,
                     snapshot: snapshot
                 )
@@ -192,6 +205,13 @@ actor RecordingFinalizer {
                     && $0.deletingPathExtension().lastPathComponent.hasPrefix("\(stem)_part")
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func hasAudioContent(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path),
+              let attrs = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = attrs[FileAttributeKey.size] as? Int64 else { return false }
+        return size > 4096  // a valid CAF header + at least one audio packet
     }
 
     private func fallbackPromoteTrack(tracks: CapturedTracks, targetURL: URL) throws {

@@ -102,11 +102,24 @@ extension CMSampleBuffer {
         }
         pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
 
-        let channelCount = Int(asbd.mChannelsPerFrame)
-        let bufferListSize = MemoryLayout<AudioBufferList>.size
-            + max(0, channelCount - 1) * MemoryLayout<AudioBuffer>.size
+        // Two-step: ask for required size first, then allocate exactly that much.
+        // Using the manually-calculated size can under-allocate when the
+        // alignment flag forces padding, causing kCMSampleBufferError_ArrayTooSmall.
+        var requiredSize: Int = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            self,
+            bufferListSizeNeededOut: &requiredSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: nil
+        )
+        guard requiredSize > 0 else { return nil }
+
         let rawPointer = UnsafeMutableRawPointer.allocate(
-            byteCount: bufferListSize,
+            byteCount: requiredSize,
             alignment: MemoryLayout<AudioBufferList>.alignment
         )
         defer { rawPointer.deallocate() }
@@ -117,7 +130,7 @@ extension CMSampleBuffer {
             self,
             bufferListSizeNeededOut: nil,
             bufferListOut: bufferListPointer,
-            bufferListSize: bufferListSize,
+            bufferListSize: requiredSize,
             blockBufferAllocator: nil,
             blockBufferMemoryAllocator: nil,
             flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
