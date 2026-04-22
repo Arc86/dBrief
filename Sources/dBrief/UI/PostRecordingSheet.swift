@@ -36,7 +36,7 @@ struct PostRecordingSheet: View {
                     .frame(maxWidth: 220)
             }
 
-            Text("Used for FLAC file naming (`YYYY-MM-DD_HHMM_[meeting-title].flac`).")
+            Text("Used for file naming (`YYYY-MM-DD_HHMM_[meeting-title].m4a`).")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
