@@ -84,8 +84,6 @@ final class RecordingManager {
 
         try await audioCaptureManager.startRecording(
             to: rawURL,
-            sampleRate: 16_000,
-            bitRate: 128_000,
             inputDeviceUID: appSettings.audioInputDeviceUID
         )
         appState.recordingState = .recording
@@ -154,6 +152,7 @@ final class RecordingManager {
         }()
         appState.recordingState = .processing
         appState.showPostRecordingSheet = false
+        appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveTranscriptSegments = []
         appState.liveInferenceText = nil
@@ -226,7 +225,7 @@ final class RecordingManager {
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         guard !Task.isCancelled else { return }
-        if let transcription = recording.transcription {
+        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
@@ -406,7 +405,8 @@ final class RecordingManager {
             recording.transcription = saved
         }
 
-        // Clear previous AI results
+        // Clear previous AI results and any stale memory warning
+        appState.preflightWarning = nil
         recording.summary = nil
         recording.actionItems = nil
         recording.tags = nil
@@ -431,7 +431,7 @@ final class RecordingManager {
         appState.liveInferenceText = nil
 
         // Step 2: AI tasks (same as processRecording)
-        if let transcription = recording.transcription {
+        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable

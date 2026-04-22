@@ -76,7 +76,7 @@ struct RecordingHistoryView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 260)
             }
 
             // Mini player

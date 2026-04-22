@@ -16,6 +16,11 @@ final class AudioCaptureManager {
     private var mixer: AudioMixer?
     private var fileWriter: AudioFileWriter?
     private var micOnlyEngine: AVAudioEngine?
+    /// Dedicated AEC-enabled engine used in mixed mode. Kept separate from
+    /// `mixer.engine` because `setVoiceProcessingEnabled(true)` reconfigures the
+    /// whole engine into a VoIP I/O unit, which is incompatible with our
+    /// dual-player mixer graph.
+    private var micEngine: AVAudioEngine?
     private var timer: Timer?
     private var startTime: Date?
     private var pauseAccumulator: TimeInterval = 0
@@ -39,8 +44,6 @@ final class AudioCaptureManager {
 
     func startRecording(
         to fileURL: URL,
-        sampleRate: Int = 16000,
-        bitRate: Int = 128000,
         inputDeviceUID: String? = nil
     ) async throws {
         guard !isCapturing else { return }
@@ -57,14 +60,8 @@ final class AudioCaptureManager {
 
         log.info("Starting recording to \(fileURL.lastPathComponent, privacy: .public)")
 
-        let writer: AudioFileWriter
-        do {
-            writer = try AudioFileWriter(fileURL: fileURL, sampleRate: sampleRate, bitRate: bitRate)
-            log.info("File writer created successfully")
-        } catch {
-            log.error("File writer creation failed: \(error.localizedDescription, privacy: .public)")
-            throw AudioCaptureError.fileWriterFailed(error)
-        }
+        let writer = AudioFileWriter(fileURL: fileURL)
+        log.info("File writer created successfully")
         self.fileWriter = writer
 
         if hasSystemAudioPermission {
@@ -93,11 +90,11 @@ final class AudioCaptureManager {
             self.systemCapture = nil
         }
 
-        // Stop mixer mode
-        if let mixer {
-            mixer.engine.inputNode.removeTap(onBus: 0)
-            mixer.stop()
-            self.mixer = nil
+        // Stop dedicated mic engine (mixed mode)
+        if let micEngine {
+            micEngine.inputNode.removeTap(onBus: 0)
+            micEngine.stop()
+            self.micEngine = nil
         }
 
         // Stop mic-only mode
@@ -105,6 +102,17 @@ final class AudioCaptureManager {
             micOnlyEngine.inputNode.removeTap(onBus: 0)
             micOnlyEngine.stop()
             self.micOnlyEngine = nil
+        }
+
+        // Drain: let queued buffers play through to the file writer
+        if mixer != nil {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+
+        // Stop mixer and close file
+        if let mixer {
+            mixer.stop()
+            self.mixer = nil
         }
 
         fileWriter?.close()
@@ -118,6 +126,7 @@ final class AudioCaptureManager {
     func pauseRecording() {
         guard isCapturing else { return }
         mixer?.pause()
+        micEngine?.pause()
         micOnlyEngine?.pause()
         pauseStartTime = Date()
         stopTimer()
@@ -130,6 +139,9 @@ final class AudioCaptureManager {
             pauseStartTime = nil
         }
         try mixer?.resume()
+        if let micEngine {
+            try micEngine.start()
+        }
         if let micOnlyEngine {
             try micOnlyEngine.start()
         }
@@ -150,25 +162,26 @@ final class AudioCaptureManager {
         }
         self.systemCapture = capture
 
+        // Build the mic on its own engine so we can enable voice-processing (AEC)
+        // without forcing the whole mixer graph into a VoIP I/O configuration.
+        // The AEC'd mic buffers are then scheduled onto the mixer's micPlayer,
+        // keeping the existing systemAudio + mic summing intact.
         var micFormat: AVAudioFormat?
         if hasMicrophonePermission {
-            let inputNode = mixer.engine.inputNode
-            // Enable voice processing (AEC) BEFORE setting device and BEFORE any
-            // connections. AEC removes speaker output from the mic input, preventing
-            // the acoustic echo that occurs when the laptop mic picks up speaker audio.
-            // Ordering matters: VP must be enabled on a fresh, unconfigured inputNode.
+            let micEngine = AVAudioEngine()
+            self.micEngine = micEngine
+            do {
+                try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: micEngine)
+            } catch {
+                log.warning("Failed to set input device on mic engine: \(error.localizedDescription, privacy: .public)")
+            }
+            let inputNode = micEngine.inputNode
             do {
                 try inputNode.setVoiceProcessingEnabled(true)
-                log.info("Voice processing (AEC) enabled on mic input")
+                log.info("Voice processing (AEC) enabled on dedicated mic engine")
             } catch {
                 log.warning("Voice processing unavailable — acoustic echo may occur: \(error.localizedDescription, privacy: .public)")
             }
-            do {
-                try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: mixer.engine)
-            } catch {
-                log.warning("Failed to set input device: \(error.localizedDescription, privacy: .public)")
-            }
-            // Re-query format after enabling VP — VP may change the input format
             let inputFormat = inputNode.outputFormat(forBus: 0)
             if inputFormat.sampleRate > 0 {
                 micFormat = inputFormat
@@ -178,19 +191,21 @@ final class AudioCaptureManager {
         log.info("[AudioCaptureManager] Mic format: \(micFormat.map { "\($0.sampleRate)Hz \($0.channelCount)ch interleaved=\($0.isInterleaved)" } ?? "nil", privacy: .public)")
         try mixer.setUp(systemAudioFormat: nil, micFormat: micFormat)
 
-        // Set up mic through the mixer's engine
-        if hasMicrophonePermission, let micFormat {
-            let inputNode = mixer.engine.inputNode
-            // Tap mic input and feed it into the mix via the mic player node.
+        // Tap the AEC'd mic buffers from the dedicated engine and feed them into
+        // the mixer's micPlayer node.
+        if let micEngine, let micFormat {
             let micHandler = Self.makeMicTapHandler(mixer: mixer)
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat, block: micHandler)
-            log.info("Mic tap installed on mixer engine")
+            micEngine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: micFormat, block: micHandler)
+            log.info("Mic tap installed on dedicated mic engine (AEC)")
         }
 
         // Tap mixed output — handler created in nonisolated context
         mixer.mixedBufferHandler = Self.makeTapHandler(writer: writer)
 
         try mixer.start()
+        if let micEngine {
+            try micEngine.start()
+        }
         try await capture.start()
         log.info("Mixed mode started (system audio + mic)")
     }
@@ -208,13 +223,13 @@ final class AudioCaptureManager {
         }
 
         let inputNode = engine.inputNode
-        // Enable voice processing (AEC) before device setup — same ordering rule as
-        // mixed mode. Errors are non-fatal; recording continues without AEC.
+        // Voice processing is safe in mic-only mode: there's no mixer graph to
+        // fight the VoIP I/O unit, so the -10875 format-mismatch doesn't occur.
         do {
             try inputNode.setVoiceProcessingEnabled(true)
             log.info("Voice processing (AEC) enabled on mic input")
         } catch {
-            log.warning("Voice processing unavailable: \(error.localizedDescription, privacy: .public)")
+            log.warning("Voice processing unavailable — acoustic echo may occur: \(error.localizedDescription, privacy: .public)")
         }
         let inputFormat = inputNode.outputFormat(forBus: 0)
 

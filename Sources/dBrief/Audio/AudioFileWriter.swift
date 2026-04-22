@@ -19,7 +19,6 @@ final class AudioFileWriter: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private let lock = NSLock()
     private var converter: AVAudioConverter?
-    private let processingFormat: AVAudioFormat
     private var _lastPeakLevel: Float = 0
 
     /// Thread-safe peak level from the last written buffer.
@@ -29,44 +28,12 @@ final class AudioFileWriter: @unchecked Sendable {
         return _lastPeakLevel
     }
 
-    init(fileURL: URL, sampleRate: Int = 16000, bitRate _: Int = 128000) throws {
-        self.fileURL = fileURL
-
-        let rate = Double(sampleRate)
-
-        // Processing format: mono float32 at configured sample rate
-        self.processingFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: rate,
-            channels: 1,
-            interleaved: false
-        )!
-
+    init(fileURL: URL) {
+        // Normalise extension to .flac
         let outputURL = fileURL.pathExtension.lowercased() == "flac"
             ? fileURL
             : fileURL.deletingPathExtension().appendingPathExtension("flac")
-
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatFLAC,
-            AVSampleRateKey: rate,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderBitDepthHintKey: 16,
-        ]
-
-        do {
-            self.audioFile = try AVAudioFile(
-                forWriting: outputURL,
-                settings: settings,
-                commonFormat: .pcmFormatFloat32,
-                interleaved: false
-            )
-            log.info("File writer: FLAC in \(outputURL.lastPathComponent, privacy: .public)")
-            return
-        } catch {
-            log.warning("FLAC encoder not available (\(error.localizedDescription, privacy: .public))")
-        }
-
-        throw AudioFileWriterError.noCompatibleFLACEncoder
+        self.fileURL = outputURL
     }
 
     var actualFileURL: URL {
@@ -79,19 +46,43 @@ final class AudioFileWriter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        // Lazily create the AVAudioFile on the first write, using the buffer's own format.
+        if audioFile == nil {
+            let format = buffer.format
+            let settings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatFLAC,
+                AVSampleRateKey: format.sampleRate,
+                AVNumberOfChannelsKey: Int(format.channelCount),
+                AVEncoderBitDepthHintKey: 16,
+            ]
+            do {
+                let file = try AVAudioFile(
+                    forWriting: fileURL,
+                    settings: settings,
+                    commonFormat: .pcmFormatFloat32,
+                    interleaved: false
+                )
+                audioFile = file
+                log.info("[AudioFileWriter] Created FLAC file at \(self.fileURL.lastPathComponent, privacy: .public) — \(format.sampleRate, privacy: .public)Hz, \(format.channelCount, privacy: .public)ch, interleaved=\(format.isInterleaved, privacy: .public)")
+            } catch {
+                log.error("[AudioFileWriter] Failed to create FLAC file: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+        }
+
         guard let audioFile else { return }
 
         // Compute peak level from raw input
         _lastPeakLevel = Self.extractPeakLevel(from: buffer)
 
         if writeCount == 0 {
-            log.info("[AudioFileWriter] First buffer: \(buffer.format.sampleRate, privacy: .public)Hz, \(buffer.format.channelCount, privacy: .public)ch, interleaved=\(buffer.format.isInterleaved, privacy: .public), frames=\(buffer.frameLength, privacy: .public). Target: \(self.processingFormat.sampleRate, privacy: .public)Hz, \(self.processingFormat.channelCount, privacy: .public)ch")
+            log.info("[AudioFileWriter] First buffer: \(buffer.format.sampleRate, privacy: .public)Hz, \(buffer.format.channelCount, privacy: .public)ch, interleaved=\(buffer.format.isInterleaved, privacy: .public), frames=\(buffer.frameLength, privacy: .public). Target: \(audioFile.processingFormat.sampleRate, privacy: .public)Hz, \(audioFile.processingFormat.channelCount, privacy: .public)ch")
         }
 
-        if buffer.format != processingFormat {
-            guard let converted = convert(buffer, to: processingFormat) else {
+        if buffer.format != audioFile.processingFormat {
+            guard let converted = convert(buffer, to: audioFile.processingFormat) else {
                 if writeCount == 0 {
-                    log.error("Conversion returned nil. Input: \(buffer.format.sampleRate, privacy: .public)Hz \(buffer.format.channelCount, privacy: .public)ch, target: \(self.processingFormat.sampleRate, privacy: .public)Hz")
+                    log.error("[AudioFileWriter] Conversion returned nil. Input: \(buffer.format.sampleRate, privacy: .public)Hz \(buffer.format.channelCount, privacy: .public)ch, target: \(audioFile.processingFormat.sampleRate, privacy: .public)Hz")
                 }
                 return
             }

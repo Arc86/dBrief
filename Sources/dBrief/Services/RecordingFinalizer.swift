@@ -101,11 +101,9 @@ actor RecordingFinalizer {
             arguments: [
                 "-y",
                 "-i", inputURL.path,
-                "-ar", "16000",
-                "-ac", "1",
                 "-c:a", "flac",
                 "-compression_level", "8",
-                "-af", "highpass=f=80,afftdn=nf=-25,loudnorm=I=-20:TP=-3:LRA=7",
+                "-af", "highpass=f=80,loudnorm=I=-14:TP=-1:LRA=14",
                 "-metadata", "date=\(ISO8601DateFormatter().string(from: snapshot.date))",
                 "-metadata", "title=\(Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp))",
                 "-metadata", "duration_seconds=\(Int(snapshot.duration))",

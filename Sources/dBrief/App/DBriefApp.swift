@@ -300,7 +300,7 @@ struct MenuBarView: View {
             appState.queuedCount = recordingManager.discoverQueuedItems().count
         }
         .padding(12)
-        .frame(width: 300)
+        .frame(width: 360)
     }
 
     private var header: some View {

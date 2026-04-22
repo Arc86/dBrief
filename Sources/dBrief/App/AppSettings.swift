@@ -14,6 +14,7 @@ final class AppSettings {
         static let autoSummary = "autoSummary"
         static let autoActionItems = "autoActionItems"
         static let autoTags = "autoTags"
+        static let aiProcessingEnabled = "aiProcessingEnabled"
         static let callDetectionEnabled = "callDetectionEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let autoRecordCalls = "autoRecordCalls"
@@ -121,6 +122,10 @@ final class AppSettings {
 
     var autoTags: Bool {
         didSet { UserDefaults.standard.set(autoTags, forKey: Keys.autoTags) }
+    }
+
+    var aiProcessingEnabled: Bool {
+        didSet { UserDefaults.standard.set(aiProcessingEnabled, forKey: Keys.aiProcessingEnabled) }
     }
 
     // MARK: - Transcription Language
@@ -521,6 +526,7 @@ final class AppSettings {
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true
         self.autoActionItems = defaults.object(forKey: Keys.autoActionItems) as? Bool ?? true
         self.autoTags = defaults.object(forKey: Keys.autoTags) as? Bool ?? true
+        self.aiProcessingEnabled = defaults.object(forKey: Keys.aiProcessingEnabled) as? Bool ?? true
 
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
 

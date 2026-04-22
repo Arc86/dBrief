@@ -58,17 +58,24 @@ struct PostRecordingSheet: View {
                 .foregroundStyle(.secondary)
 
             Toggle("Transcribe audio", isOn: $transcribe)
-            Toggle("Generate summary", isOn: $summary)
-                .disabled(!transcribe)
-            Toggle("Extract action items", isOn: $actionItems)
-                .disabled(!transcribe)
-            Toggle("Analyze tags & sentiment", isOn: $tags)
-                .disabled(!transcribe)
 
-            if !transcribe {
-                Text("Transcription is required for AI analysis.")
+            if appSettings.aiProcessingEnabled {
+                Toggle("Generate summary", isOn: $summary)
+                    .disabled(!transcribe)
+                Toggle("Extract action items", isOn: $actionItems)
+                    .disabled(!transcribe)
+                Toggle("Analyze tags & sentiment", isOn: $tags)
+                    .disabled(!transcribe)
+
+                if !transcribe {
+                    Text("Transcription is required for AI analysis.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } else {
+                Text("AI processing is disabled in Settings.")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
             }
 
             if appSettings.effectiveTranscriptionEngine == .remoteEndpoint,
