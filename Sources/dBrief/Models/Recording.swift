@@ -19,6 +19,7 @@ final class Recording: Identifiable {
     var meetingTitleDraft: String
     /// Participant names entered by the user, mapped to diarization speakers in order of first appearance.
     var participants: [String] = []
+    var capturedTracks: CapturedTracks?
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?
