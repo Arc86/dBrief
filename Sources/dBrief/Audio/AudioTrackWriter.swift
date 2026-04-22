@@ -33,54 +33,52 @@ final class AudioTrackWriter: @unchecked Sendable {
     }
 
     func write(_ buffer: AVAudioPCMBuffer) throws {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if audioFile == nil {
-            let format = buffer.format
-            let settings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: format.sampleRate,
-                AVNumberOfChannelsKey: Int(format.channelCount),
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: !format.isInterleaved,
-            ]
-            do {
-                audioFile = try AVAudioFile(
-                    forWriting: url,
-                    settings: settings,
-                    commonFormat: .pcmFormatFloat32,
-                    interleaved: false
-                )
-                log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened \(self.url.lastPathComponent, privacy: .public) @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
-            } catch {
-                log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open: \(error.localizedDescription, privacy: .public)")
-                throw error
+        try lock.withLock {
+            if audioFile == nil {
+                let format = buffer.format
+                let settings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVSampleRateKey: format.sampleRate,
+                    AVNumberOfChannelsKey: Int(format.channelCount),
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsFloatKey: false,
+                    AVLinearPCMIsBigEndianKey: false,
+                    AVLinearPCMIsNonInterleaved: !format.isInterleaved,
+                ]
+                do {
+                    audioFile = try AVAudioFile(
+                        forWriting: url,
+                        settings: settings,
+                        commonFormat: .pcmFormatFloat32,
+                        interleaved: false
+                    )
+                    log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened \(self.url.lastPathComponent, privacy: .public) @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
+                } catch {
+                    log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open: \(error.localizedDescription, privacy: .public)")
+                    throw error
+                }
             }
-        }
 
-        guard let audioFile else { return }
+            // audioFile is guaranteed non-nil here (init threw if it failed, which re-throws)
+            let file = audioFile!
 
-        if buffer.format.sampleRate != audioFile.processingFormat.sampleRate
-            || buffer.format.channelCount != audioFile.processingFormat.channelCount
-        {
-            droppedCount += 1
-            if droppedCount == 1 {
-                log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] format mismatch — dropping buffer. Got \(buffer.format.sampleRate, privacy: .public)Hz \(buffer.format.channelCount, privacy: .public)ch, file is \(audioFile.processingFormat.sampleRate, privacy: .public)Hz \(audioFile.processingFormat.channelCount, privacy: .public)ch")
+            if buffer.format.sampleRate != file.processingFormat.sampleRate
+                || buffer.format.channelCount != file.processingFormat.channelCount
+            {
+                droppedCount += 1
+                if droppedCount == 1 {
+                    log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] format mismatch — dropping buffer. Got \(buffer.format.sampleRate, privacy: .public)Hz \(buffer.format.channelCount, privacy: .public)ch, file is \(file.processingFormat.sampleRate, privacy: .public)Hz \(file.processingFormat.channelCount, privacy: .public)ch")
+                }
+                return
             }
-            return
-        }
 
-        _peakLevel = Self.peakLevel(of: buffer)
-        try audioFile.write(from: buffer)
+            _peakLevel = Self.peakLevel(of: buffer)
+            try file.write(from: buffer)
+        }
     }
 
     func close() {
-        lock.lock()
-        defer { lock.unlock() }
-        audioFile = nil
+        lock.withLock { audioFile = nil }
     }
 
     private static func peakLevel(of buffer: AVAudioPCMBuffer) -> Float {

@@ -74,4 +74,16 @@ struct AudioTrackWriterTests {
         #expect(writer.peakLevel == 0.5)
         writer.close()
     }
+
+    @Test("write after close re-opens the file")
+    func writeAfterClose() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = AudioTrackWriter(url: url, role: .mic)
+        try writer.write(makeBuffer(sampleRate: 48000, channels: 1, frames: 256))
+        writer.close()
+        // Writing after close should not crash — it will re-open the file.
+        try writer.write(makeBuffer(sampleRate: 48000, channels: 1, frames: 256))
+        writer.close()
+    }
 }
