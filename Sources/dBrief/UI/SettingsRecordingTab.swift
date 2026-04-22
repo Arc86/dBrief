@@ -38,12 +38,12 @@ struct SettingsRecordingTab: View {
             if appSettings.powerUserMode {
                 Section("Audio Quality") {
                     LabeledContent("Recording profile:") {
-                        Text("Whisper optimized (16 kHz mono FLAC)")
+                        Text("Native rate FLAC (48 kHz stereo)")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     LabeledContent("Post-process:") {
-                        Text("80Hz high-pass, light denoise, AGC/echo cancel, -20 LUFS to -3dBTP")
+                        Text("80Hz high-pass, -14 LUFS to -1dBTP, AEC/echo cancel")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: .infinity, alignment: .trailing)

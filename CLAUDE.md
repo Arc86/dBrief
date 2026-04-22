@@ -74,12 +74,13 @@ Final file naming: `YYYY-MM-DD_HHMM_[meeting-title].flac`
 
 ### Transcription Engines (`Services/`)
 
-Three transcription backends selected via `AppSettings.transcriptionEngine`:
+Four transcription backends selected via `AppSettings.transcriptionEngine`:
 
 | Engine | Class | Backend |
 |--------|-------|---------|
 | Apple Speech | `LocalTranscriptionService` | On-device `SFSpeechRecognizer`. Converts `.ogg`/`.opus` to WAV via ffmpeg. |
-| Local Whisper | `WhisperKitTranscriptionService` (via `LocalAIPluginService`) | On-device CoreML Whisper via the `WhisperKit` package (0.18.0). Loads audio natively (FLAC/WAV/M4A via AVFoundation — no ffmpeg needed). Uses WhisperKit's per-component compute defaults (mel→GPU, encoder→ANE, decoder→ANE). VAD chunking enabled. Downloads models to `AppSupport/dBrief/LocalAIPlugin/WhisperKit/`. Supports progressive segment streaming via `segmentDiscoveryCallback`. Optional SpeakerKit diarization. |
+| Local Whisper | `WhisperKitTranscriptionService` (via `LocalAIPluginService`) | On-device CoreML Whisper via the `WhisperKit` package (0.18.0). Loads audio natively (FLAC/WAV/M4A via AVFoundation — no ffmpeg needed). Uses WhisperKit's per-component compute defaults (mel→GPU, encoder→ANE, decoder→ANE). VAD chunking enabled. Downloads models to `AppSupport/dBrief/LocalAIPlugin/WhisperKit/`. Supports progressive segment streaming via `segmentDiscoveryCallback`. Dynamic model picker fetches available models from HuggingFace at runtime with memory estimates; falls back to curated offline list. Optional SpeakerKit diarization. |
+| Parakeet TDT (Local) | `ParakeetTranscriptionService` (via `FluidAudio` framework) | On-device CoreML nvidia/parakeet-tdt-0.6b (v2 or v3). Downloads models from `argmaxinc/parakeetkit-coreml`. Handles long files natively (no segmentation). Does **not** support language selection or diarization. Reports download/load progress via the same `AsyncStream<LocalAIPluginState>` pattern as `LocalAIPluginService`. |
 | Remote Endpoint | `TranscriptionService` | Supports both OpenAI-compatible `/v1/audio/transcriptions` and `whisper-asr-webservice` `/asr` format (auto-detected via `Endpoint.isWhisperASR`). Handles chunked upload for large files via `AudioChunker`. |
 
 ### AI Processing (`Services/`)
@@ -89,10 +90,10 @@ Three AI backends selected via `AppSettings.aiEngine`:
 | Engine | Class | Backend |
 |--------|-------|---------|
 | Apple Intelligence | `LocalAIService` | On-device via `FoundationModels` framework. Guarded by `#if canImport(FoundationModels)` and `@available(macOS 26, *)`. Only available on Apple Silicon with macOS 26+. |
-| Qwen3 4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/Qwen3-4B-Instruct-2507-4bit` via the `mlx-swift-lm` package. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. |
+| Gemma 4 E4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/gemma-4-e4b-4bit` via `mlx-swift-lm` 3.x. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. Uses KV cache quantization (`kvBits: 8`). Strips `<think>…</think>` blocks before JSON parsing (model uses thinking mode). |
 | Remote Endpoint | `AIService` | OpenAI-compatible `/v1/chat/completions` |
 
-AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export.
+AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export. All AI steps can be skipped via `AppSettings.aiProcessingEnabled = false`.
 
 ### Local AI Plugin System (`Services/LocalAIPlugin*`)
 
@@ -143,7 +144,8 @@ Produces Markdown files with YAML frontmatter (title, date, tags, duration, audi
 ### Speaker Diarization (`Services/WhisperKitTranscriptionService.swift`)
 
 Optional SpeakerKit integration (Pyannote v4 models) for identifying who said what:
-- Enabled via `AppSettings.diarizationEnabled` toggle in Settings → Transcription
+
+- Enabled via `AppSettings.diarizationEnabled` toggle in Settings → Recording
 - Runs sequentially after WhisperKit transcription (not parallel — both compete for GPU/ANE)
 - `SpeakerKit(PyannoteConfig)` initialized on-demand, models downloaded to `AppSupport/dBrief/LocalAIPlugin/SpeakerKit/`
 - Results merged via `diarResult.addSpeakerInfo(to: wkResults, strategy: SpeakerInfoStrategy.subsegment)`
@@ -164,6 +166,36 @@ Progressive transcript output during WhisperKit transcription:
 - "Live Transcript" button appears in `TranscriptionProgressView` once segments start arriving
 - Separate `WindowGroup(id: "live-transcript")` scene in `DBriefApp`
 
+### YouTube / Video URL Transcription (`Services/YouTubeDownloadService.swift`)
+
+`YouTubeDownloadService` lets any yt-dlp-supported URL be transcribed without recording:
+
+- Locates the `yt-dlp` binary (PATH or Homebrew prefix), fetches the video title, and downloads best-quality audio as 16 kHz mono m4a via ffmpeg post-processor
+- `RecordingManager.loadYouTubeAudio()` sets `finalizedAudioURL` directly (skips `RecordingFinalizer`) and opens `PostRecordingSheet`
+- `YouTubeURLInputView` is an inline SwiftUI panel in the menu bar with URL field, progress indicator, error display, and a yt-dlp install hint
+- Requires `yt-dlp` (`brew install yt-dlp`)
+
+### Transcript Chat (`Services/TranscriptChatService.swift`)
+
+`TranscriptChatService` (`@MainActor @Observable`) provides conversational Q&A over a recording:
+
+- Holds a `[ChatMessage]` array and an `isStreaming` flag
+- Routes to Apple Intelligence, MLX (streaming), or remote endpoint based on `AppSettings.aiEngine`
+- Builds a system prompt from the full transcript text and speaker labels; each user turn appends context
+- `TranscriptChatView` renders the conversation with a command-palette layout and glass styling, embedded as a panel in `TranscriptWindowView`
+
+### Rich Transcript Viewer
+
+Glass-styled transcript window with word-level timestamps and audio sync:
+
+- **`TranscriptWindowView`** — root window; hosts `TranscriptSidePanel` (segment list) and `TranscriptChatView`
+- **`TranscriptPlayerBar`** — frosted-glass audio controls with seek and playback sync
+- **`SpeakerTurnCard`** — card per speaker turn, merges consecutive same-speaker segments
+- **`SpeakerPillView`** — colored speaker badge, tap to rename
+- **`TranscriptDesignTokens`** — shared color/spacing constants for the glass UI system
+- Persisted via `TranscriptStore` which writes `.richtranscript.json` sidecar files alongside Markdown output
+- Opened from `ResultsView` and `RecordingHistoryView`; hosted in a separate `WindowGroup(id: "transcript")` scene
+
 ### Other Services
 
 - **GlobalHotkeyService** — registers ⌘⇧R global hotkey for record/stop toggle
@@ -173,23 +205,26 @@ Progressive transcript output during WhisperKit transcription:
 
 ### UI Structure (`UI/`)
 
-- **MenuBarView** (in `DBriefApp.swift`) — main menu bar popover with header, recording controls, history, and settings access
+- **MenuBarView** (in `DBriefApp.swift`) — main menu bar popover with header, recording controls, history, YouTube URL input, and settings access
 - **RecordingControlsView** — record/pause/resume/stop buttons
-- **PostRecordingSheet** — post-recording options (transcribe, summary, action items, tags toggles; title edit; participants input for diarization)
+- **PostRecordingSheet** — post-recording options (transcribe, summary/AI toggles; title edit; participants input for diarization); AI options hidden when `aiProcessingEnabled` is false
 - **TranscriptionProgressView** — step-by-step progress display during processing with download progress bar and "Live Transcript" popup button
 - **LiveTranscriptView** — popup window showing progressive transcript segments as they arrive during transcription
-- **RecordingHistoryView** — list of past recordings with replay/delete/export
+- **RecordingHistoryView** — list of past recordings with action chips; opens transcript viewer
 - **OnboardingView** — initial setup wizard (permissions, engine selection, folder setup)
 - **FloatingMiniPlayer** — floating window showing real-time peak levels during recording
 - **CallDetectedPopup** / **CallDetectedOverlayController** — call detection prompt overlay
-- **SettingsView** — tab-based settings window with tabs: General, Transcription, AI, Integrations, Profiles, Permissions, About
+- **YouTubeURLInputView** — inline panel in the menu bar for YouTube/video URL input
+- **SettingsView** — sidebar-based settings window with tabs: General (includes permissions), Recording (transcription engines, diarization, vocabulary), AI & Models (AI engine, prompts, AI processing toggle), Integrations, Profiles (hidden unless `powerUserMode` is enabled)
 
 ## Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
 | [WhisperKit](https://github.com/argmaxinc/WhisperKit) | 0.18.0+ | CoreML-based on-device Whisper transcription (products: `WhisperKit`, `SpeakerKit`) |
-| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 2.29.1+ | On-device Qwen3 4B LLM via MLX (Apple Silicon) |
+| [FluidAudio](https://github.com/argmaxinc/FluidAudio) | — | CoreML-based Parakeet TDT transcription (`AsrManager`) |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 3.x | On-device Gemma 4 E4B LLM via MLX (Apple Silicon) |
+| [swift-transformers](https://github.com/huggingface/swift-transformers) | — | Tokenizer support for MLX (explicit dependency since mlx-swift-lm 3.x) |
 | [swift-testing](https://github.com/apple/swift-testing) | 0.6.0+ | Testing framework |
 
 ### Linked System Frameworks
@@ -212,5 +247,6 @@ Progressive transcript output during WhisperKit transcription:
 
 - macOS 14+ (Swift 6.2, swift-tools-version: 6.2)
 - Apple Intelligence features require macOS 26+ on Apple Silicon
-- MLX/Qwen features require Apple Silicon (Metal GPU)
+- MLX/Gemma 4 features require Apple Silicon (Metal GPU)
+- YouTube transcription requires `yt-dlp` (`brew install yt-dlp`)
 - Bundle identifier: `com.dbrief.app`
