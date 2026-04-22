@@ -73,18 +73,19 @@ final class RecordingManager {
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
 
     func startRecording(associatedApp: String? = nil) async throws {
-        let rawURL = Self.generateRawCaptureURL()
+        let baseURL = Self.generateRawCaptureBaseURL()
 
         let recording = Recording(
-            fileURL: rawURL,
+            fileURL: baseURL,
             associatedApp: associatedApp,
             meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
         )
         appState.currentRecording = recording
 
         try await audioCaptureManager.startRecording(
-            to: rawURL,
-            inputDeviceUID: appSettings.audioInputDeviceUID
+            to: baseURL,
+            inputDeviceUID: appSettings.audioInputDeviceUID,
+            acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
         )
         appState.recordingState = .recording
         miniPlayer?.show()
@@ -93,15 +94,11 @@ final class RecordingManager {
     }
 
     func stopRecording() async {
-        // Capture actual file URL before stopping (writer gets nilled)
-        let actualURL = audioCaptureManager.actualFileURL
         await audioCaptureManager.stopRecording()
 
         if let recording = appState.currentRecording {
-            // Update to actual capture URL from the writer.
-            if let actualURL, actualURL != recording.fileURL {
-                recording.fileURL = actualURL
-            }
+            // Capture track URLs written by the audio pipeline.
+            recording.capturedTracks = audioCaptureManager.trackURLs
             recording.duration = audioCaptureManager.duration
             recording.finalizedAudioURL = nil
             recording.segmentAudioURLs = []
@@ -1286,12 +1283,14 @@ final class RecordingManager {
         // Skip segmentation for local transcription engines (they handle long files natively)
         let segmentationEnabled = appSettings.effectiveTranscriptionEngine != .localWhisper
             && appSettings.effectiveTranscriptionEngine != .parakeetLocal
+        let tracks = recording.capturedTracks ?? CapturedTracks(systemURL: nil, micURL: recording.fileURL)
         let result = try await recordingFinalizer.finalize(
-            rawURL: recording.fileURL,
+            tracks: tracks,
             recording: recording,
             baseFolder: appSettings.effectiveRecordingFolderURL,
             segmentationEnabled: segmentationEnabled
         )
+        recording.capturedTracks = nil  // scratch files have been consumed
 
         recording.fileURL = result.masterAudioURL
         recording.finalizedAudioURL = result.masterAudioURL
@@ -1300,7 +1299,7 @@ final class RecordingManager {
         recording.finalizationWarnings = result.warnings
 
         if let attrs = try? FileManager.default.attributesOfItem(atPath: result.masterAudioURL.path),
-           let size = attrs[.size] as? Int64
+           let size = attrs[FileAttributeKey.size] as? Int64
         {
             recording.fileSize = size
         }
@@ -1356,9 +1355,9 @@ final class RecordingManager {
         }
     }
 
-    private static func generateRawCaptureURL() -> URL {
+    private static func generateRawCaptureBaseURL() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("dbrief-raw-\(UUID().uuidString).flac")
+            .appendingPathComponent("dbrief-raw-\(UUID().uuidString)")
     }
 
     private static func dateOnlyString(_ date: Date) -> String {
@@ -1415,8 +1414,14 @@ final class RecordingManager {
                   let item = try? JSONDecoder().decode(QueueItem.self, from: data) else { continue }
 
             let stem = fileURL.deletingPathExtension().deletingPathExtension()
-            let audioURL = stem.appendingPathExtension("flac")
-            guard FileManager.default.fileExists(atPath: audioURL.path) else { continue }
+            let audioURL: URL
+            if FileManager.default.fileExists(atPath: stem.appendingPathExtension("m4a").path) {
+                audioURL = stem.appendingPathExtension("m4a")
+            } else if FileManager.default.fileExists(atPath: stem.appendingPathExtension("flac").path) {
+                audioURL = stem.appendingPathExtension("flac")
+            } else {
+                continue
+            }
 
             let values = try? fileURL.resourceValues(forKeys: [.creationDateKey])
             let date = values?.creationDate ?? .distantPast
