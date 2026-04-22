@@ -28,16 +28,16 @@ struct WhisperPipelineTests {
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
 
-        let first = root.appendingPathComponent("2026-02-13_1445_meeting.flac")
+        let first = root.appendingPathComponent("2026-02-13_1445_meeting.m4a")
         try Data("x".utf8).write(to: first)
 
         let unique = try RecordingFinalizer.uniqueFileURL(
             folder: root,
             baseName: "2026-02-13_1445_meeting",
-            fileExtension: "flac",
+            fileExtension: "m4a",
             fileManager: fm
         )
-        #expect(unique.lastPathComponent == "2026-02-13_1445_meeting_2.flac")
+        #expect(unique.lastPathComponent == "2026-02-13_1445_meeting_2.m4a")
     }
 
     @Test
@@ -46,10 +46,10 @@ struct WhisperPipelineTests {
             dateISO8601: "2026-02-13T14:45:00Z",
             durationSeconds: 3900,
             meetingTitle: "team-sync",
-            masterFileName: "2026-02-13_1445_team-sync.flac",
+            masterFileName: "2026-02-13_1445_team-sync.m4a",
             segmentFileNames: [
-                "2026-02-13_1445_team-sync_part01.flac",
-                "2026-02-13_1445_team-sync_part02.flac",
+                "2026-02-13_1445_team-sync_part01.m4a",
+                "2026-02-13_1445_team-sync_part02.m4a",
             ],
             warnings: ["Segmentation produced no output files."]
         )
@@ -145,7 +145,7 @@ struct WhisperPipelineTests {
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
 
-        let flacURL = nested.appendingPathComponent("2026-02-13_1445_sync.flac")
+        let flacURL = nested.appendingPathComponent("2026-02-13_1445_sync.m4a")
         let m4aURL = root.appendingPathComponent("legacy.m4a")
         let txtURL = nested.appendingPathComponent("ignore.txt")
         try Data("a".utf8).write(to: flacURL)
@@ -154,7 +154,7 @@ struct WhisperPipelineTests {
 
         let found = RecordingDiscovery.discover(in: root, fileManager: fm)
         let names = Set(found.map { $0.url.lastPathComponent })
-        #expect(names.contains("2026-02-13_1445_sync.flac"))
+        #expect(names.contains("2026-02-13_1445_sync.m4a"))
         #expect(names.contains("legacy.m4a"))
         #expect(!names.contains("ignore.txt"))
     }
