@@ -26,8 +26,6 @@ final class AppSettings {
         static let aiEngine = "aiEngine"
         static let outputLanguageMode = "outputLanguageMode"
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
-        static let audioSampleRate = "audioSampleRate"
-        static let audioBitRate = "audioBitRate"
         static let audioInputDeviceUID = "audioInputDeviceUID"
         static let whisperPrompt = "whisperPrompt"
         static let transcriptionEndpoints = "transcriptionEndpoints"
@@ -53,6 +51,7 @@ final class AppSettings {
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
+        static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
     }
 
@@ -222,16 +221,6 @@ final class AppSettings {
         }
     }
 
-    /// Sample rate for output audio (default 16000 Hz, good for speech)
-    var audioSampleRate: Int {
-        didSet { UserDefaults.standard.set(audioSampleRate, forKey: Keys.audioSampleRate) }
-    }
-
-    /// AAC bit rate (default 128000 bps)
-    var audioBitRate: Int {
-        didSet { UserDefaults.standard.set(audioBitRate, forKey: Keys.audioBitRate) }
-    }
-
     /// Audio input device UID (empty string = system default)
     var audioInputDeviceUID: String {
         didSet { UserDefaults.standard.set(audioInputDeviceUID, forKey: Keys.audioInputDeviceUID) }
@@ -279,6 +268,11 @@ final class AppSettings {
     /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
     var diarizationEnabled: Bool {
         didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
+    }
+
+    /// Enable Acoustic Echo Cancellation on the microphone input.
+    var acousticEchoCancellation: Bool {
+        didSet { UserDefaults.standard.set(acousticEchoCancellation, forKey: Keys.acousticEchoCancellation) }
     }
 
     /// Parakeet CoreML model variant to use for local Parakeet transcription.
@@ -553,8 +547,6 @@ final class AppSettings {
             self.outputLanguage = .matchInput
         }
 
-        self.audioSampleRate = defaults.object(forKey: Keys.audioSampleRate) as? Int ?? 16000
-        self.audioBitRate = defaults.object(forKey: Keys.audioBitRate) as? Int ?? 128000
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
         self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
@@ -576,6 +568,7 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
+        self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
