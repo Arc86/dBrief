@@ -10,4 +10,20 @@ struct AppSettingsTests {
         let settings = AppSettings()
         #expect(settings.aiProcessingEnabled == true)
     }
+
+    @Test func acousticEchoCancellationDefaultsToTrue() {
+        UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
+        let settings = AppSettings()
+        #expect(settings.acousticEchoCancellation == true)
+    }
+
+    @Test func acousticEchoCancellationPersists() {
+        UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
+        let settings = AppSettings()
+        settings.acousticEchoCancellation = false
+        #expect(UserDefaults.standard.bool(forKey: "acousticEchoCancellation") == false)
+        let reloaded = AppSettings()
+        #expect(reloaded.acousticEchoCancellation == false)
+        UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
+    }
 }
