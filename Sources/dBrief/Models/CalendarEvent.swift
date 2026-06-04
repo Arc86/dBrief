@@ -13,4 +13,14 @@ struct CalendarEvent: Sendable, Equatable {
     var participantsText: String {
         attendees.joined(separator: ", ")
     }
+
+    /// Prepends this event's agenda to a base AI system prompt. Returns the base prompt
+    /// unchanged when `event` is nil or its body is blank.
+    static func augment(prompt basePrompt: String, with event: CalendarEvent?) -> String {
+        guard let body = event?.body,
+              !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return basePrompt
+        }
+        return "Meeting context from calendar:\n\(body)\n\n\(basePrompt)"
+    }
 }
