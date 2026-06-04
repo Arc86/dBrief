@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import EventKit
 import Speech
 import SwiftUI
 
@@ -8,6 +9,7 @@ struct SettingsPermissionsTab: View {
     @State private var micStatus: AVAuthorizationStatus = .notDetermined
     @State private var screenRecordingGranted = false
     @State private var speechStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    @State private var calendarStatus: EKAuthorizationStatus = .notDetermined
 
     var body: some View {
         Form {
@@ -35,6 +37,14 @@ struct SettingsPermissionsTab: View {
                     actionTitle: speechActionTitle,
                     action: requestSpeechRecognition
                 )
+
+                PermissionRow(
+                    title: "Calendar",
+                    statusText: calendarStatusText,
+                    statusStyle: calendarStatusStyle,
+                    actionTitle: calendarActionTitle,
+                    action: requestCalendar
+                )
             }
             .listRowBackground(Color.clear)
 
@@ -51,6 +61,10 @@ struct SettingsPermissionsTab: View {
                         .buttonStyle(.bordered)
                         Button("Speech") {
                             openSystemSettingsPane("Privacy_SpeechRecognition")
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Calendar") {
+                            openSystemSettingsPane("Privacy_Calendars")
                         }
                         .buttonStyle(.bordered)
                     }
@@ -123,11 +137,31 @@ struct SettingsPermissionsTab: View {
         speechStatus == .authorized ? "Granted" : "Request"
     }
 
+    private var calendarStatusText: String {
+        switch calendarStatus {
+        case .fullAccess: "Granted"
+        case .writeOnly: "Write-only"
+        case .denied: "Denied"
+        case .restricted: "Restricted"
+        case .notDetermined: "Not determined"
+        @unknown default: "Unknown"
+        }
+    }
+
+    private var calendarStatusStyle: Color {
+        calendarStatus == .fullAccess ? .green : .orange
+    }
+
+    private var calendarActionTitle: String {
+        calendarStatus == .fullAccess ? "Granted" : "Request"
+    }
+
     @MainActor
     private func refreshStatuses() {
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         screenRecordingGranted = CGPreflightScreenCaptureAccess()
         speechStatus = SFSpeechRecognizer.authorizationStatus()
+        calendarStatus = EKEventStore.authorizationStatus(for: .event)
     }
 
     private func requestMicrophone() {
@@ -160,6 +194,17 @@ struct SettingsPermissionsTab: View {
                     continuation.resume(returning: status)
                 }
             }
+            await MainActor.run {
+                refreshStatuses()
+            }
+        }
+    }
+
+    private func requestCalendar() {
+        guard calendarStatus != .fullAccess else { return }
+        Task.detached {
+            let store = EKEventStore()
+            _ = try? await store.requestFullAccessToEvents()
             await MainActor.run {
                 refreshStatuses()
             }
