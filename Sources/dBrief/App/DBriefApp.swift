@@ -223,7 +223,7 @@ struct MenuBarView: View {
                     ResultsView()
                 }
 
-                if appState.isIdle, !appState.hasProcessingResults {
+                if appState.isIdle, !appState.hasProcessingResults, !appState.showPostRecordingSheet {
                     Divider()
                     RecordingHistoryView()
                 }

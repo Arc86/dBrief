@@ -147,8 +147,8 @@ private struct MiniPlayerView: View {
                     controller.toggleCollapse()
                 } label: {
                     Image(systemName: controller.isCollapsed ? "chevron.down" : "chevron.up")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
                 }
                 .buttonStyle(.borderless)
             }
@@ -202,8 +202,8 @@ private struct MiniPlayerView: View {
         }
         .padding(12)
         .frame(width: 220)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
     }
 
     private var formattedDuration: String {
