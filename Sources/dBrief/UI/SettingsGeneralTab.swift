@@ -66,17 +66,10 @@ struct SettingsGeneralTab: View {
             .listRowBackground(Color.clear)
 
             Section("Calendar") {
-                Toggle("Pre-fill meeting info from Calendar", isOn: $settings.calendarIntegrationEnabled)
-                    .disabled(!calendarGranted)
-
-                if !calendarGranted {
-                    Text("Grant Calendar access in the Permissions tab to enable this.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Picker("Source", selection: $settings.calendarSource) {
+                    Text("Off").tag(CalendarSource.disabled)
+                    Text("iCal").tag(CalendarSource.iCal)
+                    Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
                 }
             }
             .listRowBackground(Color.clear)

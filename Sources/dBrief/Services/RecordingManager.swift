@@ -83,7 +83,7 @@ final class RecordingManager {
         )
         appState.currentRecording = recording
 
-        if appSettings.calendarIntegrationEnabled {
+        if appSettings.calendarSource == .iCal {
             let started = recording.date
             Task { [weak recording] in
                 let event = await calendarService.findCurrentEvent(at: started)

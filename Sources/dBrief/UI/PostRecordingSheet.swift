@@ -179,7 +179,7 @@ struct PostRecordingSheet: View {
             if let recording = appState.currentRecording {
                 if let event = recording.calendarEvent {
                     applyCalendarEvent(event, to: recording)
-                } else if appSettings.calendarIntegrationEnabled {
+                } else if appSettings.calendarSource == .iCal {
                     let started = recording.date
                     Task { [weak recording] in
                         guard let event = await calendarService.findCurrentEvent(at: started) else { return }
