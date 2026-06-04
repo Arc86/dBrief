@@ -43,6 +43,7 @@ final class FloatingMiniPlayerController {
         let content = MiniPlayerView()
             .environment(appState)
             .environment(recordingManager)
+            .environment(self)
 
         let hosting = NSHostingView(rootView: content)
         panel.contentView = hosting
@@ -66,16 +67,39 @@ final class FloatingMiniPlayerController {
     func dismiss() {
         window?.close()
         window = nil
+        isCollapsed = false
     }
 
     var isVisible: Bool {
         window != nil
+    }
+
+    // --- collapse support ---
+    var isCollapsed: Bool = false
+
+    func toggleCollapse() {
+        isCollapsed.toggle()
+        Task { @MainActor [weak self] in
+            self?.updatePanelSize()
+        }
+    }
+
+    private func updatePanelSize() {
+        guard let window, let screen = NSScreen.main else { return }
+        let fittingHeight = window.contentView?.fittingSize.height ?? 0
+        let newSize = CGSize(width: Self.panelWidth, height: fittingHeight)
+        let screenFrame = screen.visibleFrame
+        let x = screenFrame.maxX - Self.panelWidth - Self.screenMargin
+        let y = screenFrame.maxY - fittingHeight - Self.screenMargin
+        window.setContentSize(newSize)
+        window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
 
 private struct MiniPlayerView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(FloatingMiniPlayerController.self) private var controller
 
     private static let cachedIcon: Image = {
         if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
@@ -118,8 +142,18 @@ private struct MiniPlayerView: View {
                 Text(formattedDuration)
                     .font(.system(.caption, design: .monospaced, weight: .semibold))
                     .foregroundStyle(.primary)
+
+                Button {
+                    controller.toggleCollapse()
+                } label: {
+                    Image(systemName: controller.isCollapsed ? "chevron.down" : "chevron.up")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
             }
 
+            if !controller.isCollapsed {
             // Waveform
             MiniWaveform(level: appState.peakLevel)
                 .frame(height: 20)
@@ -164,6 +198,7 @@ private struct MiniPlayerView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.red.opacity(0.8))
             }
+            } // end if !controller.isCollapsed
         }
         .padding(12)
         .frame(width: 220)
