@@ -187,6 +187,33 @@ struct SettingsGeneralTab: View {
                         }
                     }
                 }
+                LabeledContent("Calendar:") {
+                    HStack {
+                        Image(systemName: calendarStatus == .fullAccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(calendarStatus == .fullAccess ? .green : .red)
+                        Text(calendarStatus == .fullAccess ? "Granted" : "Not granted")
+                            .foregroundStyle(.secondary)
+                        if calendarStatus != .fullAccess {
+                            if calendarStatus == .denied || calendarStatus == .restricted {
+                                Button("Open Settings") {
+                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            } else {
+                                Button("Request") {
+                                    Task { @MainActor in
+                                        let store = EKEventStore()
+                                        _ = try? await store.requestFullAccessToEvents()
+                                        calendarStatus = EKEventStore.authorizationStatus(for: .event)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                    }
+                }
             }
             .listRowBackground(Color.clear)
         }
