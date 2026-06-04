@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(MicrosoftAuthService.self) private var microsoftAuthService
+
+    @State private var outlookSignInError: String?
 
     var body: some View {
         let calendarGranted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
@@ -70,6 +73,59 @@ struct SettingsGeneralTab: View {
                     Text("Off").tag(CalendarSource.disabled)
                     Text("iCal").tag(CalendarSource.iCal)
                     Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+                }
+
+                switch settings.calendarSource {
+                case .iCal:
+                    if !calendarGranted {
+                        Text("Grant Calendar access in the Permissions tab to enable this.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                case .outlook:
+                    if microsoftAuthService.isSignedIn {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(microsoftAuthService.accountInfo?.displayName ?? "Microsoft Account")
+                                    .fontWeight(.medium)
+                                Text(microsoftAuthService.accountInfo?.email ?? "")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Sign out") {
+                                microsoftAuthService.signOut()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button("Sign in with Microsoft") {
+                                outlookSignInError = nil
+                                Task { @MainActor in
+                                    do {
+                                        try await microsoftAuthService.signIn()
+                                    } catch {
+                                        outlookSignInError = error.localizedDescription
+                                    }
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            if let error = outlookSignInError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                    }
+
+                case .disabled:
+                    EmptyView()
                 }
             }
             .listRowBackground(Color.clear)
