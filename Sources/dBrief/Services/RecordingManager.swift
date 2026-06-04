@@ -27,6 +27,7 @@ final class RecordingManager {
     private let transcriptStore: TranscriptStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
+    private let calendarService = CalendarService()
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
@@ -81,6 +82,14 @@ final class RecordingManager {
             meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
         )
         appState.currentRecording = recording
+
+        if appSettings.calendarIntegrationEnabled {
+            let started = recording.date
+            Task { [weak recording] in
+                let event = await calendarService.findCurrentEvent(at: started)
+                await MainActor.run { recording?.calendarEvent = event }
+            }
+        }
 
         try await audioCaptureManager.startRecording(
             to: baseURL,
@@ -846,7 +855,7 @@ final class RecordingManager {
             do {
                 recording.summary = try await LocalAIService().generateSummary(
                     transcription: transcription,
-                    systemPrompt: appSettings.effectiveSummaryPrompt
+                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent)
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -858,7 +867,7 @@ final class RecordingManager {
             do {
                 recording.actionItems = try await LocalAIService().extractActionItems(
                     transcription: transcription,
-                    systemPrompt: appSettings.effectiveActionItemsPrompt
+                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent)
                 )
                 markCompleted(actionStepIndex)
             } catch {
@@ -895,10 +904,11 @@ final class RecordingManager {
         recording: Recording
     ) async {
         guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
         do {
             let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
                 let stream = await self.localAIPluginService.analyzeTranscriptStream(
-                    transcription,
+                    contextualTranscription,
                     outputLanguage: self.appSettings.outputLanguage
                 )
                 
@@ -979,7 +989,7 @@ final class RecordingManager {
                 recording.summary = try await aiService.generateSummary(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.effectiveSummaryPrompt
+                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent)
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -992,7 +1002,7 @@ final class RecordingManager {
                 recording.actionItems = try await aiService.extractActionItems(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.effectiveActionItemsPrompt
+                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent)
                 )
                 markCompleted(actionStepIndex)
             } catch {
