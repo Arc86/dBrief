@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import EventKit
 import Speech
 import SwiftUI
 
@@ -8,6 +9,7 @@ struct OnboardingView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @State private var step = 0
     @State private var hasSpeechPermission = false
+    @State private var hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
 
     var body: some View {
         VStack(spacing: 16) {
@@ -27,6 +29,7 @@ struct OnboardingView: View {
         .animation(.easeInOut(duration: 0.2), value: step)
         .task {
             hasSpeechPermission = SFSpeechRecognizer.authorizationStatus() == .authorized
+            hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         }
     }
 
@@ -102,6 +105,13 @@ struct OnboardingView: View {
                     subtitle: "For built-in transcription",
                     required: false
                 )
+
+                permissionRow(
+                    granted: hasCalendarPermission,
+                    title: "Calendar",
+                    subtitle: "To pre-fill meeting title and participants",
+                    required: false
+                )
             }
 
             Text("Grant permissions in System Settings > Privacy & Security.")
@@ -126,10 +136,23 @@ struct OnboardingView: View {
                 .controlSize(.small)
                 .disabled(hasSpeechPermission)
 
+                if !hasCalendarPermission {
+                    Button("Calendar") {
+                        Task {
+                            let store = EKEventStore()
+                            _ = try? await store.requestFullAccessToEvents()
+                            hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
                 Button("Refresh") {
                     Task {
                         await recordingManager.checkPermissions()
                         hasSpeechPermission = SFSpeechRecognizer.authorizationStatus() == .authorized
+                        hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
                     }
                 }
                 .buttonStyle(.bordered)
