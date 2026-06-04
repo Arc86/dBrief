@@ -108,6 +108,7 @@ struct RecordingControlsView: View {
                     .tint(.red)
                 }
             }
+            .environment(\.controlActiveState, .active)
 
             // Audio source chips
             if appState.isRecording || appState.isPaused {
