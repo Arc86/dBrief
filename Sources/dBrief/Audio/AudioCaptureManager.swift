@@ -238,7 +238,7 @@ final class AudioCaptureManager {
             Task { @MainActor [weak self] in
                 guard let self, let startTime = self.startTime else { return }
                 self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
-                self.peakLevel = self.micWriter?.peakLevel ?? self.systemWriter?.peakLevel ?? 0
+                self.peakLevel = max(self.micWriter?.peakLevel ?? 0, self.systemWriter?.peakLevel ?? 0)
             }
         }
     }
