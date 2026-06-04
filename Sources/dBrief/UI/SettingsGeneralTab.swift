@@ -8,9 +8,9 @@ struct SettingsGeneralTab: View {
     @Environment(MicrosoftAuthService.self) private var microsoftAuthService
 
     @State private var outlookSignInError: String?
+    @State private var calendarStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
 
     var body: some View {
-        let calendarGranted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         @Bindable var settings = appSettings
         Form {
             Section("Appearance") {
@@ -77,14 +77,37 @@ struct SettingsGeneralTab: View {
 
                 switch settings.calendarSource {
                 case .iCal:
-                    if !calendarGranted {
-                        Text("Grant Calendar access in the Permissions tab to enable this.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
+                    switch calendarStatus {
+                    case .fullAccess:
                         Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    case .denied, .restricted:
+                        HStack(spacing: 8) {
+                            Text(calendarStatus == .denied ? "Calendar access denied." : "Calendar access restricted.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button("Open System Settings") {
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    case .notDetermined, .writeOnly:
+                        Button("Grant Calendar Access") {
+                            Task { @MainActor in
+                                let store = EKEventStore()
+                                _ = try? await store.requestFullAccessToEvents()
+                                calendarStatus = EKEventStore.authorizationStatus(for: .event)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    @unknown default:
+                        EmptyView()
                     }
 
                 case .outlook:
@@ -195,6 +218,14 @@ struct SettingsGeneralTab: View {
         .scrollBounceBehavior(.basedOnSize)
         .toggleStyle(.smallSwitch)
         .padding(.top, -20)
+        .onAppear {
+            calendarStatus = EKEventStore.authorizationStatus(for: .event)
+        }
+        .onChange(of: appSettings.calendarSource) { _, new in
+            if new == .iCal {
+                calendarStatus = EKEventStore.authorizationStatus(for: .event)
+            }
+        }
     }
 
     private func chooseFolder(completion: @escaping (URL) -> Void) {
