@@ -30,5 +30,7 @@
 	<string>dBrief needs screen recording permission to capture system audio during calls.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>dBrief uses speech recognition to transcribe your recordings on-device.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>dBrief accesses your calendar to pre-fill meeting title, participants, and agenda context at recording time.</string>
 </dict>
 </plist>
