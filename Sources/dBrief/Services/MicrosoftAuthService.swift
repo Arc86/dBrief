@@ -28,13 +28,16 @@ final class MicrosoftAuthService {
     private(set) var isSignedIn: Bool = false
     private(set) var accountInfo: AccountInfo?
     private var activeAuthSession: ASWebAuthenticationSession?
+    private let log = Logger.calendar
 
     init() {
-        let stored = KeychainHelper.get(for: .microsoftAccessToken)
-        isSignedIn = !stored.isEmpty
+        let accessToken = KeychainHelper.get(for: .microsoftAccessToken)
+        let refreshToken = KeychainHelper.get(for: .microsoftRefreshToken)
+        isSignedIn = !accessToken.isEmpty || !refreshToken.isEmpty
     }
 
     func signIn() async throws {
+        guard activeAuthSession == nil else { return }
         let codeVerifier = makeCodeVerifier()
         let codeChallenge = makeCodeChallenge(from: codeVerifier)
 
@@ -80,9 +83,11 @@ final class MicrosoftAuthService {
         storeTokens(tokens)
         isSignedIn = true
         accountInfo = try? await fetchAccountInfo(accessToken: tokens.accessToken)
+        log.info("Microsoft sign-in succeeded for \(self.accountInfo?.email ?? "unknown")")
     }
 
     func signOut() {
+        log.info("Microsoft sign-out")
         KeychainHelper.set("", for: .microsoftAccessToken)
         KeychainHelper.set("", for: .microsoftRefreshToken)
         KeychainHelper.set("", for: .microsoftTokenExpiry)
@@ -200,7 +205,11 @@ final class MicrosoftAuthService {
         components.queryItems = [URLQueryItem(name: "$select", value: "displayName,mail,userPrincipalName")]
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            log.error("Failed to fetch account info: HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+            throw MicrosoftAuthError.refreshFailed
+        }
         let me = try JSONDecoder().decode(MeResponse.self, from: data)
         return AccountInfo(
             displayName: me.displayName ?? "",
@@ -212,7 +221,9 @@ final class MicrosoftAuthService {
 
     private func urlEncodeParams(_ params: [String: String]) -> Data? {
         params.map { k, v in
-            let encoded = v.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? v
+            var allowed = CharacterSet.urlQueryAllowed
+            allowed.remove(charactersIn: "=&+")
+            let encoded = v.addingPercentEncoding(withAllowedCharacters: allowed) ?? v
             return "\(k)=\(encoded)"
         }
         .joined(separator: "&")
