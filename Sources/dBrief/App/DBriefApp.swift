@@ -15,6 +15,7 @@ final class AppContext {
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
     let audioPlayer = AudioPlayer()
+    let microsoftAuthService = MicrosoftAuthService()
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
@@ -23,7 +24,7 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         registerFontAwesomeBrands()
-        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore)
+        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, microsoftAuthService: microsoftAuthService)
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -121,6 +122,7 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.audioPlayer)
+                .environment(context.microsoftAuthService)
         } label: {
             if context.appState.isRecording || context.appState.isPaused {
                 HStack(spacing: 4) {
@@ -156,6 +158,7 @@ struct DBriefApp: App {
             SettingsView()
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
+                .environment(context.microsoftAuthService)
                 .frame(minWidth: 800, minHeight: 550)
         }
         .windowResizability(.contentSize)
