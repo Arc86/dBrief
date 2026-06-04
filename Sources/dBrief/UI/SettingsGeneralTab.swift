@@ -77,37 +77,14 @@ struct SettingsGeneralTab: View {
 
                 switch settings.calendarSource {
                 case .iCal:
-                    switch calendarStatus {
-                    case .fullAccess:
+                    if calendarStatus == .fullAccess {
                         Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                    case .denied, .restricted:
-                        HStack(spacing: 8) {
-                            Text(calendarStatus == .denied ? "Calendar access denied." : "Calendar access restricted.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Button("Open System Settings") {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
+                    } else {
+                        Text("Grant Calendar access in the Permissions tab to enable this.")
                             .font(.caption)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    case .notDetermined, .writeOnly:
-                        Button("Grant Calendar Access") {
-                            Task { @MainActor in
-                                let store = EKEventStore()
-                                _ = try? await store.requestFullAccessToEvents()
-                                calendarStatus = EKEventStore.authorizationStatus(for: .event)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    @unknown default:
-                        EmptyView()
+                            .foregroundStyle(.secondary)
                     }
 
                 case .outlook:
@@ -220,11 +197,6 @@ struct SettingsGeneralTab: View {
         .padding(.top, -20)
         .onAppear {
             calendarStatus = EKEventStore.authorizationStatus(for: .event)
-        }
-        .onChange(of: appSettings.calendarSource) { _, new in
-            if new == .iCal {
-                calendarStatus = EKEventStore.authorizationStatus(for: .event)
-            }
         }
     }
 
