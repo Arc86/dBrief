@@ -53,7 +53,7 @@ final class AppSettings {
         static let diarizationEnabled = "diarizationEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
-        static let calendarIntegrationEnabled = "calendarIntegrationEnabled"
+        static let calendarSource = "calendarSource"
     }
 
     // MARK: - Recording
@@ -437,8 +437,8 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(callDetectionEnabled, forKey: Keys.callDetectionEnabled) }
     }
 
-    var calendarIntegrationEnabled: Bool {
-        didSet { UserDefaults.standard.set(calendarIntegrationEnabled, forKey: Keys.calendarIntegrationEnabled) }
+    var calendarSource: CalendarSource {
+        didSet { UserDefaults.standard.set(calendarSource.rawValue, forKey: Keys.calendarSource) }
     }
 
     var autoRecordCalls: Bool {
@@ -588,7 +588,14 @@ final class AppSettings {
         self.remoteChunkRetryCount = max(0, defaults.object(forKey: Keys.remoteChunkRetryCount) as? Int ?? 2)
 
         self.callDetectionEnabled = defaults.object(forKey: Keys.callDetectionEnabled) as? Bool ?? true
-        self.calendarIntegrationEnabled = defaults.object(forKey: Keys.calendarIntegrationEnabled) as? Bool ?? true
+        if let raw = defaults.string(forKey: Keys.calendarSource),
+           let source = CalendarSource(rawValue: raw) {
+            self.calendarSource = source
+        } else if let legacy = defaults.object(forKey: "calendarIntegrationEnabled") as? Bool {
+            self.calendarSource = legacy ? .iCal : .disabled
+        } else {
+            self.calendarSource = .iCal
+        }
         self.autoRecordCalls = defaults.object(forKey: Keys.autoRecordCalls) as? Bool ?? false
         self.disabledCallApps = Set(defaults.stringArray(forKey: Keys.disabledCallApps) ?? [])
 
