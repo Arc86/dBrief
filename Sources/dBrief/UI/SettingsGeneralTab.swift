@@ -7,6 +7,7 @@ struct SettingsGeneralTab: View {
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
+        let calendarGranted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         @Bindable var settings = appSettings
         Form {
             Section("Appearance") {
@@ -66,9 +67,9 @@ struct SettingsGeneralTab: View {
 
             Section("Calendar") {
                 Toggle("Pre-fill meeting info from Calendar", isOn: $settings.calendarIntegrationEnabled)
-                    .disabled(EKEventStore.authorizationStatus(for: .event) != .fullAccess)
+                    .disabled(!calendarGranted)
 
-                if EKEventStore.authorizationStatus(for: .event) != .fullAccess {
+                if !calendarGranted {
                     Text("Grant Calendar access in the Permissions tab to enable this.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
