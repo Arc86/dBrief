@@ -11,6 +11,7 @@ struct PostRecordingSheet: View {
     @State private var tags = true
     @State private var meetingTitle = ""
     @State private var participantsText = ""
+    private let calendarService = CalendarService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -175,6 +176,21 @@ struct PostRecordingSheet: View {
             } else {
                 meetingTitle = "meeting"
             }
+            if let recording = appState.currentRecording {
+                if let event = recording.calendarEvent {
+                    applyCalendarEvent(event, to: recording)
+                } else if appSettings.calendarIntegrationEnabled {
+                    let started = recording.date
+                    Task { [weak recording] in
+                        guard let event = await calendarService.findCurrentEvent(at: started) else { return }
+                        await MainActor.run {
+                            guard let recording else { return }
+                            recording.calendarEvent = event
+                            applyCalendarEvent(event, to: recording)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -213,5 +229,19 @@ struct PostRecordingSheet: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+
+    private func applyCalendarEvent(_ event: CalendarEvent, to recording: Recording) {
+        let current = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isFallback = current.isEmpty
+            || current == "meeting"
+            || current == fallbackMeetingTitle(recording: recording)
+        if isFallback, !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            meetingTitle = event.title
+        }
+        if participantsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !event.participantsText.isEmpty {
+            participantsText = event.participantsText
+        }
     }
 }
