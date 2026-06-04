@@ -35,4 +35,4 @@
 
 - [x] **Calendar integration (Phase 1 — iCal)** — `CalendarService` actor + `CalendarMatcher` (pure, TDD); `Recording.calendarEvent`; pre-fills title/participants in `PostRecordingSheet`; injects agenda into AI prompts (Apple Intelligence, remote, MLX paths). Settings: Calendar permission row + toggle. `NSCalendarsFullAccessUsageDescription` added. Spec: `docs/superpowers/specs/2026-06-04-ical-calendar-integration-design.md`.
 
-- [ ] **Calendar integration (Phase 2 — Outlook/Exchange)** — Microsoft Graph API (`/v1/me/events`), OAuth flow, account picker in Settings. Builds on the existing `CalendarService` + `CalendarMatcher` infrastructure from Phase 1.
+- [x] **Calendar integration (Phase 2 — Outlook/Exchange)** — Microsoft Graph API (`/v1/me/events`), OAuth flow, account picker in Settings. Builds on the existing `CalendarService` + `CalendarMatcher` infrastructure from Phase 1.
