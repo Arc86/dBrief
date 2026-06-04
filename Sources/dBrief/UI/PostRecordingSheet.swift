@@ -4,6 +4,7 @@ struct PostRecordingSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(MicrosoftAuthService.self) private var microsoftAuthService
 
     @State private var transcribe = true
     @State private var summary = true
@@ -183,6 +184,17 @@ struct PostRecordingSheet: View {
                     let started = recording.date
                     Task { [weak recording] in
                         guard let event = await calendarService.findCurrentEvent(at: started) else { return }
+                        await MainActor.run {
+                            guard let recording else { return }
+                            recording.calendarEvent = event
+                            applyCalendarEvent(event, to: recording)
+                        }
+                    }
+                } else if appSettings.calendarSource == .outlook {
+                    let started = recording.date
+                    let outlookService = OutlookCalendarService(authService: microsoftAuthService)
+                    Task { [weak recording] in
+                        guard let event = await outlookService.findCurrentEvent(at: started) else { return }
                         await MainActor.run {
                             guard let recording else { return }
                             recording.calendarEvent = event
