@@ -12,4 +12,5 @@ extension Logger {
     static let hotkey = Logger(subsystem: "com.dbrief.app", category: "hotkey")
     static let player = Logger(subsystem: "com.dbrief.app", category: "player")
     static let localTranscription = Logger(subsystem: "com.dbrief.app", category: "localtranscription")
+    static let calendar = Logger(subsystem: "com.dbrief.app", category: "calendar")
 }
