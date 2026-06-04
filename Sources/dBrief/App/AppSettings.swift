@@ -53,6 +53,7 @@ final class AppSettings {
         static let diarizationEnabled = "diarizationEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
+        static let calendarIntegrationEnabled = "calendarIntegrationEnabled"
     }
 
     // MARK: - Recording
@@ -436,6 +437,10 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(callDetectionEnabled, forKey: Keys.callDetectionEnabled) }
     }
 
+    var calendarIntegrationEnabled: Bool {
+        didSet { UserDefaults.standard.set(calendarIntegrationEnabled, forKey: Keys.calendarIntegrationEnabled) }
+    }
+
     var autoRecordCalls: Bool {
         didSet { UserDefaults.standard.set(autoRecordCalls, forKey: Keys.autoRecordCalls) }
     }
@@ -583,6 +588,7 @@ final class AppSettings {
         self.remoteChunkRetryCount = max(0, defaults.object(forKey: Keys.remoteChunkRetryCount) as? Int ?? 2)
 
         self.callDetectionEnabled = defaults.object(forKey: Keys.callDetectionEnabled) as? Bool ?? true
+        self.calendarIntegrationEnabled = defaults.object(forKey: Keys.calendarIntegrationEnabled) as? Bool ?? true
         self.autoRecordCalls = defaults.object(forKey: Keys.autoRecordCalls) as? Bool ?? false
         self.disabledCallApps = Set(defaults.stringArray(forKey: Keys.disabledCallApps) ?? [])
 
