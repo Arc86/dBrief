@@ -19,6 +19,9 @@ final class Recording: Identifiable {
     var meetingTitleDraft: String
     /// Participant names entered by the user, mapped to diarization speakers in order of first appearance.
     var participants: [String] = []
+    /// Calendar event matched at record-start time, used to pre-fill fields and AI context.
+    /// Not persisted to disk — only valid for the current session's processing run.
+    var calendarEvent: CalendarEvent?
     var capturedTracks: CapturedTracks?
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
