@@ -6,6 +6,9 @@ enum KeychainSecretKey: String, CaseIterable, Sendable {
     case evernote = "integration.evernote.token"
     case googleKeep = "integration.googlekeep.token"
     case oneNote = "integration.onenote.token"
+    case microsoftAccessToken = "microsoft.accessToken"
+    case microsoftRefreshToken = "microsoft.refreshToken"
+    case microsoftTokenExpiry = "microsoft.tokenExpiry"
 }
 
 enum KeychainHelper {
