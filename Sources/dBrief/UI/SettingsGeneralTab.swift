@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import SwiftUI
 
 struct SettingsGeneralTab: View {
@@ -59,6 +60,22 @@ struct SettingsGeneralTab: View {
 
                 if appSettings.callDetectionEnabled {
                     Toggle("Auto-start recording when call detected", isOn: $settings.autoRecordCalls)
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Calendar") {
+                Toggle("Pre-fill meeting info from Calendar", isOn: $settings.calendarIntegrationEnabled)
+                    .disabled(EKEventStore.authorizationStatus(for: .event) != .fullAccess)
+
+                if EKEventStore.authorizationStatus(for: .event) != .fullAccess {
+                    Text("Grant Calendar access in the Permissions tab to enable this.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .listRowBackground(Color.clear)
