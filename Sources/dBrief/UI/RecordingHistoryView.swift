@@ -23,10 +23,27 @@ struct RecordingHistoryView: View {
         let hasRichTranscript: Bool
 
         var formattedDate: String {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            formatter.timeStyle = .short
-            return formatter.string(from: date)
+            let cal = Calendar.current
+            let now = Date.now
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            let timeStr = timeFormatter.string(from: date)
+
+            if cal.isDateInToday(date) {
+                return "Today \(timeStr)"
+            } else if cal.isDateInYesterday(date) {
+                return "Yesterday \(timeStr)"
+            } else if let days = cal.dateComponents([.day], from: date, to: now).day, days < 7 {
+                let dayFormatter = DateFormatter()
+                dayFormatter.dateFormat = "EEE"
+                return "\(dayFormatter.string(from: date)) \(timeStr)"
+            } else {
+                let shortFormatter = DateFormatter()
+                let year = cal.component(.year, from: date)
+                let currentYear = cal.component(.year, from: now)
+                shortFormatter.dateFormat = year == currentYear ? "MMM d" : "MMM d, yyyy"
+                return shortFormatter.string(from: date)
+            }
         }
 
         var formattedSize: String {
@@ -44,6 +61,12 @@ struct RecordingHistoryView: View {
         var markdownURL: URL? {
             let candidate = url.deletingPathExtension().appendingPathExtension("md")
             return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+        }
+
+        var displayName: String {
+            let parts = name.split(separator: "_", maxSplits: 2)
+            guard parts.count == 3 else { return name }
+            return String(parts[2]).replacingOccurrences(of: "-", with: " ")
         }
     }
 
@@ -76,7 +99,7 @@ struct RecordingHistoryView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 260)
+                .frame(height: 200)
             }
 
             // Mini player
@@ -113,7 +136,7 @@ struct RecordingHistoryView: View {
                     .onTapGesture {}  // prevent row tap propagation
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(item.name)
+                        Text(item.displayName)
                             .font(.callout)
                             .lineLimit(1)
                             .foregroundStyle(.primary)
