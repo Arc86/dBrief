@@ -338,9 +338,15 @@ struct RecordingHistoryView: View {
         }
     }
 
+    private static let segmentSuffix = try! NSRegularExpression(pattern: "_part\\d+$")
+
     private func loadRecordings() {
         let folder = appSettings.effectiveRecordingFolderURL
-        let all = RecordingDiscovery.discover(in: folder)
+        let all = RecordingDiscovery.discover(in: folder).filter { entry in
+            let stem = entry.url.deletingPathExtension().lastPathComponent
+            let range = NSRange(stem.startIndex..., in: stem)
+            return Self.segmentSuffix.firstMatch(in: stem, range: range) == nil
+        }
         recordings = Array(all.prefix(20)).map { entry in
             let base = entry.url.deletingPathExtension()
             let transcriptURL = base.appendingPathExtension("transcript.json")

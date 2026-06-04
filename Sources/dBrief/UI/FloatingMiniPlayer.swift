@@ -134,7 +134,7 @@ private struct MiniPlayerView: View {
 
                     Text(appState.isRecording ? "Recording" : "Paused")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                 }
 
                 Spacer()
@@ -202,8 +202,8 @@ private struct MiniPlayerView: View {
         }
         .padding(12)
         .frame(width: 220)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
     }
 
     private var formattedDuration: String {
