@@ -28,16 +28,20 @@ final class RecordingManager {
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
     private let calendarService = CalendarService()
+    private let microsoftAuthService: MicrosoftAuthService
+    private let outlookCalendarService: OutlookCalendarService
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, microsoftAuthService: MicrosoftAuthService) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
+        self.microsoftAuthService = microsoftAuthService
+        self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -83,12 +87,20 @@ final class RecordingManager {
         )
         appState.currentRecording = recording
 
-        if appSettings.calendarSource == .iCal {
-            let started = recording.date
+        let started = recording.date
+        switch appSettings.calendarSource {
+        case .iCal:
             Task { [weak recording] in
                 let event = await calendarService.findCurrentEvent(at: started)
                 await MainActor.run { recording?.calendarEvent = event }
             }
+        case .outlook:
+            Task { [weak recording] in
+                let event = await outlookCalendarService.findCurrentEvent(at: started)
+                await MainActor.run { recording?.calendarEvent = event }
+            }
+        case .disabled:
+            break
         }
 
         try await audioCaptureManager.startRecording(
