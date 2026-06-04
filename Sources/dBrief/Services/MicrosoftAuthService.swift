@@ -13,6 +13,7 @@ enum MicrosoftAuthError: Error {
     case tokenExchangeFailed
     case refreshFailed
     case missingAuthCode
+    case accountInfoFailed
 }
 
 @MainActor
@@ -34,6 +35,9 @@ final class MicrosoftAuthService {
         let accessToken = KeychainHelper.get(for: .microsoftAccessToken)
         let refreshToken = KeychainHelper.get(for: .microsoftRefreshToken)
         isSignedIn = !accessToken.isEmpty || !refreshToken.isEmpty
+        if isSignedIn {
+            accountInfo = loadPersistedAccountInfo()
+        }
     }
 
     func signIn() async throws {
@@ -82,17 +86,23 @@ final class MicrosoftAuthService {
         let tokens = try await exchangeCode(code, codeVerifier: codeVerifier)
         storeTokens(tokens)
         isSignedIn = true
-        accountInfo = try? await fetchAccountInfo(accessToken: tokens.accessToken)
+        let info = try? await fetchAccountInfo(accessToken: tokens.accessToken)
+        accountInfo = info
+        if let info { persistAccountInfo(info) }
         log.info("Microsoft sign-in succeeded for \(self.accountInfo?.email ?? "unknown")")
     }
 
     func signOut() {
         log.info("Microsoft sign-out")
+        activeAuthSession?.cancel()
+        activeAuthSession = nil
         KeychainHelper.set("", for: .microsoftAccessToken)
         KeychainHelper.set("", for: .microsoftRefreshToken)
         KeychainHelper.set("", for: .microsoftTokenExpiry)
         isSignedIn = false
         accountInfo = nil
+        UserDefaults.standard.removeObject(forKey: Self.displayNameKey)
+        UserDefaults.standard.removeObject(forKey: Self.emailKey)
     }
 
     /// Returns a valid access token, refreshing automatically if expired.
@@ -192,6 +202,21 @@ final class MicrosoftAuthService {
         KeychainHelper.set(ISO8601DateFormatter().string(from: expiry), for: .microsoftTokenExpiry)
     }
 
+    private static let displayNameKey = "microsoft.accountDisplayName"
+    private static let emailKey = "microsoft.accountEmail"
+
+    private func persistAccountInfo(_ info: AccountInfo) {
+        UserDefaults.standard.set(info.displayName, forKey: Self.displayNameKey)
+        UserDefaults.standard.set(info.email, forKey: Self.emailKey)
+    }
+
+    private func loadPersistedAccountInfo() -> AccountInfo? {
+        let name = UserDefaults.standard.string(forKey: Self.displayNameKey) ?? ""
+        let email = UserDefaults.standard.string(forKey: Self.emailKey) ?? ""
+        guard !name.isEmpty || !email.isEmpty else { return nil }
+        return AccountInfo(displayName: name, email: email)
+    }
+
     // MARK: - Account info
 
     private struct MeResponse: Decodable {
@@ -208,7 +233,7 @@ final class MicrosoftAuthService {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             log.error("Failed to fetch account info: HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-            throw MicrosoftAuthError.refreshFailed
+            throw MicrosoftAuthError.accountInfoFailed
         }
         let me = try JSONDecoder().decode(MeResponse.self, from: data)
         return AccountInfo(
