@@ -43,25 +43,25 @@ actor IntegrationDispatchService {
             }
         }
 
-        if snapshot.config.notion.enabled {
+        if IntegrationDestination.available.contains(.notion), snapshot.config.notion.enabled {
             results.append(await perform(.notion) {
                 try await self.sendToNotion(bundle: bundle, config: snapshot.config.notion, token: snapshot.notionToken)
             })
         }
 
-        if snapshot.config.evernote.enabled {
+        if IntegrationDestination.available.contains(.evernote), snapshot.config.evernote.enabled {
             results.append(await perform(.evernote) {
                 try await self.sendToEvernote(bundle: bundle, config: snapshot.config.evernote, token: snapshot.evernoteToken)
             })
         }
 
-        if snapshot.config.googleKeep.enabled {
+        if IntegrationDestination.available.contains(.googleKeep), snapshot.config.googleKeep.enabled {
             results.append(await perform(.googleKeep) {
                 try await self.sendToGoogleKeep(bundle: bundle, config: snapshot.config.googleKeep, token: snapshot.googleKeepToken)
             })
         }
 
-        if snapshot.config.oneNote.enabled {
+        if IntegrationDestination.available.contains(.oneNote), snapshot.config.oneNote.enabled {
             results.append(await perform(.oneNote) {
                 try await self.sendToOneNote(bundle: bundle, config: snapshot.config.oneNote, token: snapshot.oneNoteToken)
             })
