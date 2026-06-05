@@ -211,10 +211,6 @@ struct PostRecordingSheet: View {
         let i = appSettings.integrations
         if i.appleNotes.enabled { values.append(IntegrationDestination.appleNotes.displayName) }
         if i.appleReminders.enabled { values.append(IntegrationDestination.appleReminders.displayName) }
-        if i.notion.enabled { values.append(IntegrationDestination.notion.displayName) }
-        if i.evernote.enabled { values.append(IntegrationDestination.evernote.displayName) }
-        if i.googleKeep.enabled { values.append(IntegrationDestination.googleKeep.displayName) }
-        if i.oneNote.enabled { values.append(IntegrationDestination.oneNote.displayName) }
         if i.webhook.enabled { values.append(IntegrationDestination.webhook.displayName) }
         return values
     }
