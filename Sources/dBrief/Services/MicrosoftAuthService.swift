@@ -9,6 +9,7 @@ struct AccountInfo: Sendable, Equatable {
 }
 
 enum MicrosoftAuthError: Error {
+    case notConfigured
     case notSignedIn
     case tokenExchangeFailed
     case refreshFailed
@@ -50,6 +51,7 @@ final class MicrosoftAuthService {
     }
 
     func signIn() async throws {
+        guard Self.isConfigured else { throw MicrosoftAuthError.notConfigured }
         guard activeAuthSession == nil else { return }
         let codeVerifier = makeCodeVerifier()
         let codeChallenge = makeCodeChallenge(from: codeVerifier)
