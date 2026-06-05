@@ -27,4 +27,24 @@ struct IntegrationVisibilityTests {
     func testIsConfiguredTrueForRealID() {
         #expect(MicrosoftAuthService.isConfigured(clientID: "11111111-2222-3333-4444-555555555555") == true)
     }
+
+    @Test("resolveCalendarSource coerces outlook to disabled when unconfigured")
+    @MainActor
+    func testResolveOutlookUnconfigured() {
+        #expect(AppSettings.resolveCalendarSource(.outlook, outlookConfigured: false) == .disabled)
+    }
+
+    @Test("resolveCalendarSource keeps outlook when configured")
+    @MainActor
+    func testResolveOutlookConfigured() {
+        #expect(AppSettings.resolveCalendarSource(.outlook, outlookConfigured: true) == .outlook)
+    }
+
+    @Test("resolveCalendarSource passes iCal and disabled through unchanged")
+    @MainActor
+    func testResolvePassThrough() {
+        #expect(AppSettings.resolveCalendarSource(.iCal, outlookConfigured: false) == .iCal)
+        #expect(AppSettings.resolveCalendarSource(.iCal, outlookConfigured: true) == .iCal)
+        #expect(AppSettings.resolveCalendarSource(.disabled, outlookConfigured: true) == .disabled)
+    }
 }
