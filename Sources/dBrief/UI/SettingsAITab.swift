@@ -61,6 +61,8 @@ struct SettingsAITab: View {
                         }
                     }
                     if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
+                        ModelDownloadButton(kind: .gemma)
+
                         Button("Purge local Gemma model") {
                             Task {
                                 do {
