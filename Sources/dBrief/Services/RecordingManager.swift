@@ -82,6 +82,11 @@ final class RecordingManager {
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
 
     func startRecording(associatedApp: String? = nil) async throws {
+        // A recording takes priority over any in-flight model download: cancel
+        // active downloads so the recording pipeline is the sole consumer of the
+        // services' state streams (and the GPU mutex is free).
+        cancelAllActiveDownloads()
+
         let baseURL = Self.generateRawCaptureBaseURL()
 
         let recording = Recording(
@@ -836,7 +841,6 @@ final class RecordingManager {
 
         downloadTasks[kind] = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.downloadObservers[kind]?.cancel() }
             do {
                 if forceRedownload {
                     try? await self.purgeModel(kind)
@@ -854,10 +858,18 @@ final class RecordingManager {
                 case .gemma:
                     try await self.localAIPluginService.downloadLLMModel()
                 }
+                // Tear down the observer before writing the terminal state so a
+                // late stream element can't overwrite it.
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
                 self.modelDownloads[kind] = .idle
             } catch is CancellationError {
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
                 self.modelDownloads[kind] = .idle
             } catch {
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
                 self.modelDownloads[kind] = .failed(error.localizedDescription)
             }
         }
@@ -870,6 +882,15 @@ final class RecordingManager {
         downloadTasks[kind]?.cancel()
         downloadTasks[kind] = nil
         modelDownloads[kind] = .idle
+    }
+
+    /// Cancel every in-flight model download (e.g. when a recording starts).
+    func cancelAllActiveDownloads() {
+        for kind in LocalModelKind.allCases {
+            if case .downloading = modelDownloads[kind] ?? .idle {
+                cancelDownload(kind)
+            }
+        }
     }
 
     private func purgeModel(_ kind: LocalModelKind) async throws {

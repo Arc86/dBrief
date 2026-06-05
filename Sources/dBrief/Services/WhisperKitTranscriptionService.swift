@@ -198,8 +198,15 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     /// Best-effort on-disk check for whether the named model is cached.
+    /// Computes the path without creating directories (unlike
+    /// `whisperDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded(name: String) -> Bool {
-        guard let base = try? whisperDownloadBaseURL() else { return false }
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
+        let base = appSupport
+            .appendingPathComponent(bundle, isDirectory: true)
+            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+            .appendingPathComponent("WhisperKit", isDirectory: true)
         return isModelCached(name: name, downloadBase: base)
     }
 

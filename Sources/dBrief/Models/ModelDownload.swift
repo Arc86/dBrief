@@ -1,7 +1,7 @@
 import Foundation
 
 /// The three local models that can be explicitly downloaded from Settings.
-enum LocalModelKind: Hashable, Sendable {
+enum LocalModelKind: Hashable, Sendable, CaseIterable {
     case whisper
     case parakeet
     case gemma

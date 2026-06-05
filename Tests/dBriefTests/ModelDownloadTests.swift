@@ -22,6 +22,7 @@ struct ModelDownloadTests {
         #expect(ModelDownloadPhase.from(pluginState: .transcribing) == nil)
         #expect(ModelDownloadPhase.from(pluginState: .analyzing) == nil)
         #expect(ModelDownloadPhase.from(pluginState: .diarizing) == nil)
+        #expect(ModelDownloadPhase.from(pluginState: .newSegments([])) == nil)
     }
 
     @Test("engine guide lists all six engines with non-empty content")
