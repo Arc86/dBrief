@@ -37,6 +37,15 @@ actor MLXInsightsService {
         await unload()
     }
 
+    /// Coarse on-disk check: the MLX model cache directory is non-empty.
+    func isModelDownloaded() -> Bool {
+        guard let dir = try? llmDownloadBaseURL() else { return false }
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: dir.path) else {
+            return false
+        }
+        return !contents.isEmpty
+    }
+
     func analyzeTranscriptStream(
         _ text: String,
         outputLanguage: AppSettings.OutputLanguage

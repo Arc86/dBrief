@@ -185,6 +185,24 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         await unload()
     }
 
+    /// Download + verify the given (user-selected) model, then unload so it
+    /// does not stay resident in memory. Unloads on failure too.
+    func prepareModel(config: WhisperRuntimeConfig) async throws {
+        do {
+            _ = try await loadWhisperKit(config: config)
+            await unload()
+        } catch {
+            await unload()
+            throw error
+        }
+    }
+
+    /// Best-effort on-disk check for whether the named model is cached.
+    func isModelDownloaded(name: String) -> Bool {
+        guard let base = try? whisperDownloadBaseURL() else { return false }
+        return isModelCached(name: name, downloadBase: base)
+    }
+
     func unload() async {
         guard let whisperKit else { return }
         await whisperKit.unloadModels()
