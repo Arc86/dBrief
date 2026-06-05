@@ -72,7 +72,9 @@ struct SettingsGeneralTab: View {
                 Picker("Source", selection: $settings.calendarSource) {
                     Text("Off").tag(CalendarSource.disabled)
                     Text("iCal").tag(CalendarSource.iCal)
-                    Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+                    if MicrosoftAuthService.isConfigured {
+                        Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+                    }
                 }
 
                 switch settings.calendarSource {
