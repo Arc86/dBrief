@@ -144,6 +144,32 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         }
     }
 
+    /// Download the user-selected WhisperKit model (under the GPU mutex).
+    func downloadWhisperModel(config: WhisperRuntimeConfig) async throws {
+        try await mutex.withLock {
+            defer { stateContinuation.yield(.idle) }
+            await insightsService.unload()
+            try await whisperService.prepareModel(config: config)
+        }
+    }
+
+    /// Download the local Gemma LLM (under the GPU mutex).
+    func downloadLLMModel() async throws {
+        try await mutex.withLock {
+            defer { stateContinuation.yield(.idle) }
+            await whisperService.unload()
+            try await insightsService.prepareModelIfNeeded()
+        }
+    }
+
+    func isWhisperModelCached(name: String) async -> Bool {
+        await whisperService.isModelDownloaded(name: name)
+    }
+
+    func isLLMModelCached() async -> Bool {
+        await insightsService.isModelDownloaded()
+    }
+
     func purgeModels() async throws {
         try await mutex.withLock {
             defer { stateContinuation.yield(.idle) }

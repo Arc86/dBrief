@@ -185,6 +185,31 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         await unload()
     }
 
+    /// Download + verify the given (user-selected) model, then unload so it
+    /// does not stay resident in memory. Unloads on failure too.
+    func prepareModel(config: WhisperRuntimeConfig) async throws {
+        do {
+            _ = try await loadWhisperKit(config: config)
+            await unload()
+        } catch {
+            await unload()
+            throw error
+        }
+    }
+
+    /// Best-effort on-disk check for whether the named model is cached.
+    /// Computes the path without creating directories (unlike
+    /// `whisperDownloadBaseURL()`), so a read-only check has no side effects.
+    func isModelDownloaded(name: String) -> Bool {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
+        let base = appSupport
+            .appendingPathComponent(bundle, isDirectory: true)
+            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+            .appendingPathComponent("WhisperKit", isDirectory: true)
+        return isModelCached(name: name, downloadBase: base)
+    }
+
     func unload() async {
         guard let whisperKit else { return }
         await whisperKit.unloadModels()

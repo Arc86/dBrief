@@ -177,6 +177,8 @@ struct SettingsTranscriptionTab: View {
                         .help("Refresh model list from HuggingFace")
                     }
 
+                    ModelDownloadButton(kind: .whisper)
+
                     Button("Purge local WhisperKit model") {
                         Task {
                             do {
@@ -201,6 +203,8 @@ struct SettingsTranscriptionTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            TranscriptionEngineGuideView()
         }
     }
 
@@ -228,6 +232,8 @@ struct SettingsTranscriptionTab: View {
             Text("On-device transcription via FluidAudio and CoreML. Audio never leaves your Mac. Model is downloaded once from HuggingFace (~1.5–1.8 GB). v2 is English-only; v3 supports 25 European languages. Language selection has no effect. Speaker diarization is not supported.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            ModelDownloadButton(kind: .parakeet)
 
             Button("Purge local Parakeet model") {
                 Task {

@@ -20,6 +20,10 @@ final class RecordingManager {
     var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
     private var processingTask: Task<Void, Never>?
+    /// Observable per-model download state, read by the Settings download buttons.
+    var modelDownloads: [LocalModelKind: ModelDownloadPhase] = [:]
+    private var downloadTasks: [LocalModelKind: Task<Void, Never>] = [:]
+    private var downloadObservers: [LocalModelKind: Task<Void, Never>] = [:]
     private let aiService = AIService()
     private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
@@ -78,6 +82,11 @@ final class RecordingManager {
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
 
     func startRecording(associatedApp: String? = nil) async throws {
+        // A recording takes priority over any in-flight model download: cancel
+        // active downloads so the recording pipeline is the sole consumer of the
+        // services' state streams (and the GPU mutex is free).
+        cancelAllActiveDownloads()
+
         let baseURL = Self.generateRawCaptureBaseURL()
 
         let recording = Recording(
@@ -787,6 +796,109 @@ final class RecordingManager {
 
     func purgeLocalParakeetModel() async throws {
         try await parakeetService.purgeModels()
+    }
+
+    /// True when models may be downloaded (no active recording/processing that
+    /// would contend for the GPU mutex and the shared state stream).
+    var canDownloadModels: Bool {
+        appState.recordingState == .idle
+    }
+
+    /// Best-effort check for whether the model selected for `kind` is cached.
+    func isModelCached(_ kind: LocalModelKind) async -> Bool {
+        switch kind {
+        case .whisper:
+            return await localAIPluginService.isWhisperModelCached(name: appSettings.whisperModelName)
+        case .parakeet:
+            return parakeetService.isModelDownloaded()
+        case .gemma:
+            return await localAIPluginService.isLLMModelCached()
+        }
+    }
+
+    /// Start downloading the selected model for `kind`. When `forceRedownload`
+    /// is true the engine's cache is purged first so the model is re-fetched.
+    func downloadModel(_ kind: LocalModelKind, forceRedownload: Bool = false) {
+        guard canDownloadModels else { return }
+
+        downloadObservers[kind]?.cancel()
+        downloadTasks[kind]?.cancel()
+        modelDownloads[kind] = .downloading(progress: nil, label: "Starting…")
+
+        let stream = (kind == .parakeet)
+            ? parakeetService.stateStream
+            : localAIPluginService.stateStream
+
+        downloadObservers[kind] = Task { @MainActor [weak self] in
+            for await state in stream {
+                guard let self else { return }
+                if Task.isCancelled { return }
+                if let phase = ModelDownloadPhase.from(pluginState: state) {
+                    self.modelDownloads[kind] = phase
+                }
+            }
+        }
+
+        downloadTasks[kind] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                if forceRedownload {
+                    try? await self.purgeModel(kind)
+                }
+                switch kind {
+                case .whisper:
+                    let config = WhisperRuntimeConfig(
+                        modelName: self.appSettings.whisperModelName,
+                        language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
+                        diarizationEnabled: false
+                    )
+                    try await self.localAIPluginService.downloadWhisperModel(config: config)
+                case .parakeet:
+                    try await self.parakeetService.prepareModel(variant: self.appSettings.parakeetModelVariant)
+                case .gemma:
+                    try await self.localAIPluginService.downloadLLMModel()
+                }
+                // Tear down the observer before writing the terminal state so a
+                // late stream element can't overwrite it.
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
+                self.modelDownloads[kind] = .idle
+            } catch is CancellationError {
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
+                self.modelDownloads[kind] = .idle
+            } catch {
+                self.downloadObservers[kind]?.cancel()
+                self.downloadObservers[kind] = nil
+                self.modelDownloads[kind] = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Cancel an in-flight download and reset its row to idle.
+    func cancelDownload(_ kind: LocalModelKind) {
+        downloadObservers[kind]?.cancel()
+        downloadObservers[kind] = nil
+        downloadTasks[kind]?.cancel()
+        downloadTasks[kind] = nil
+        modelDownloads[kind] = .idle
+    }
+
+    /// Cancel every in-flight model download (e.g. when a recording starts).
+    func cancelAllActiveDownloads() {
+        for kind in LocalModelKind.allCases {
+            if case .downloading = modelDownloads[kind] ?? .idle {
+                cancelDownload(kind)
+            }
+        }
+    }
+
+    private func purgeModel(_ kind: LocalModelKind) async throws {
+        switch kind {
+        case .whisper: try await purgeLocalWhisperModel()
+        case .parakeet: try await purgeLocalParakeetModel()
+        case .gemma: try await purgeLocalQwenModel()
+        }
     }
 
     /// Called by MemoryPressureMonitor when system memory pressure is detected.
