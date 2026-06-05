@@ -180,7 +180,7 @@ struct PostRecordingSheet: View {
             if let recording = appState.currentRecording {
                 if let event = recording.calendarEvent {
                     applyCalendarEvent(event, to: recording)
-                } else if appSettings.calendarSource == .iCal {
+                } else if appSettings.effectiveCalendarSource == .iCal {
                     let started = recording.date
                     Task { [weak recording] in
                         guard let event = await calendarService.findCurrentEvent(at: started) else { return }
@@ -190,7 +190,7 @@ struct PostRecordingSheet: View {
                             applyCalendarEvent(event, to: recording)
                         }
                     }
-                } else if appSettings.calendarSource == .outlook {
+                } else if appSettings.effectiveCalendarSource == .outlook {
                     let started = recording.date
                     let outlookService = OutlookCalendarService(authService: microsoftAuthService)
                     Task { [weak recording] in
