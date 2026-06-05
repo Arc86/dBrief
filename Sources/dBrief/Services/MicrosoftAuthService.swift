@@ -9,6 +9,7 @@ struct AccountInfo: Sendable, Equatable {
 }
 
 enum MicrosoftAuthError: Error {
+    case notConfigured
     case notSignedIn
     case tokenExchangeFailed
     case refreshFailed
@@ -19,7 +20,16 @@ enum MicrosoftAuthError: Error {
 @MainActor
 @Observable
 final class MicrosoftAuthService {
-    static let clientID = "YOUR-AZURE-CLIENT-ID"
+    static let placeholderClientID = "YOUR-AZURE-CLIENT-ID"
+    static let clientID = placeholderClientID
+
+    /// Testable predicate: a client ID is usable when it is non-empty and not the placeholder.
+    static func isConfigured(clientID: String) -> Bool {
+        !clientID.isEmpty && clientID != placeholderClientID
+    }
+
+    /// True when a real Azure client ID has been set (placeholder/empty = not configured).
+    static var isConfigured: Bool { isConfigured(clientID: clientID) }
     private static let redirectURI = "dbrief://oauth/callback"
     private static let scopes = "Calendars.Read offline_access"
     private static let authorizeURL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -41,6 +51,7 @@ final class MicrosoftAuthService {
     }
 
     func signIn() async throws {
+        guard Self.isConfigured else { throw MicrosoftAuthError.notConfigured }
         guard activeAuthSession == nil else { return }
         let codeVerifier = makeCodeVerifier()
         let codeChallenge = makeCodeChallenge(from: codeVerifier)

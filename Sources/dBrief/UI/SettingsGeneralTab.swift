@@ -69,13 +69,21 @@ struct SettingsGeneralTab: View {
             .listRowBackground(Color.clear)
 
             Section("Calendar") {
-                Picker("Source", selection: $settings.calendarSource) {
+                // Display the coerced value so the selection always matches a rendered
+                // row (a stale `.outlook` shows as Off while Outlook is hidden); writes
+                // persist the raw choice and self-restore once a client ID is configured.
+                Picker("Source", selection: Binding(
+                    get: { settings.effectiveCalendarSource },
+                    set: { settings.calendarSource = $0 }
+                )) {
                     Text("Off").tag(CalendarSource.disabled)
                     Text("iCal").tag(CalendarSource.iCal)
-                    Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+                    if MicrosoftAuthService.isConfigured {
+                        Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+                    }
                 }
 
-                switch settings.calendarSource {
+                switch settings.effectiveCalendarSource {
                 case .iCal:
                     if calendarStatus == .fullAccess {
                         Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
