@@ -77,7 +77,7 @@ struct SettingsGeneralTab: View {
                     }
                 }
 
-                switch settings.calendarSource {
+                switch settings.effectiveCalendarSource {
                 case .iCal:
                     if calendarStatus == .fullAccess {
                         Text("Looks up the matching calendar event when recording starts and pre-fills title, participants, and agenda context.")
