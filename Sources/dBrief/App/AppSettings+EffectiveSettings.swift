@@ -105,4 +105,17 @@ extension AppSettings {
     var effectiveObsidianDefaultFolderRelativePath: String {
         activeProfile.overrides.obsidianDefaultFolderRelativePath ?? obsidianDefaultFolderRelativePath
     }
+
+    /// Pure coercion: a persisted `.outlook` selection is treated as `.disabled`
+    /// when no real Azure client ID is configured, so it cannot drive lookups
+    /// against the placeholder. Other sources pass through unchanged.
+    static func resolveCalendarSource(_ source: CalendarSource, outlookConfigured: Bool) -> CalendarSource {
+        if source == .outlook && !outlookConfigured { return .disabled }
+        return source
+    }
+
+    /// Calendar source to actually use for lookups (coerces stale `.outlook` when unconfigured).
+    var effectiveCalendarSource: CalendarSource {
+        AppSettings.resolveCalendarSource(calendarSource, outlookConfigured: MicrosoftAuthService.isConfigured)
+    }
 }
