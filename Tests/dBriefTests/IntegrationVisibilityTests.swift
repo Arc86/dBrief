@@ -14,4 +14,17 @@ struct IntegrationVisibilityTests {
         #expect(!IntegrationDestination.available.contains(.googleKeep))
         #expect(!IntegrationDestination.available.contains(.oneNote))
     }
+
+    @Test("isConfigured is false for placeholder and empty client IDs")
+    @MainActor
+    func testIsConfiguredFalseForPlaceholder() {
+        #expect(MicrosoftAuthService.isConfigured(clientID: "YOUR-AZURE-CLIENT-ID") == false)
+        #expect(MicrosoftAuthService.isConfigured(clientID: "") == false)
+    }
+
+    @Test("isConfigured is true for a real client ID")
+    @MainActor
+    func testIsConfiguredTrueForRealID() {
+        #expect(MicrosoftAuthService.isConfigured(clientID: "11111111-2222-3333-4444-555555555555") == true)
+    }
 }
