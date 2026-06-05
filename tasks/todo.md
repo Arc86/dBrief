@@ -17,13 +17,13 @@
 
 ### Bugs
 
-- [ ] **Waveform not responding to system audio** — the waveform visualizer in both the popup window and the menu bar item only reacts to mic audio; system audio captured via ScreenCaptureKit is not feeding the peak/level meter. Likely the level tap is only wired to the `AVAudioEngine` mic path, not the `SystemAudioCapture` / `AudioMixer` output. Fix: derive waveform levels from the mixed output buffer in `AudioFileWriter` or `AudioMixer` rather than the raw mic tap.
+- [x] **Waveform not responding to system audio** — the waveform visualizer in both the popup window and the menu bar item only reacts to mic audio; system audio captured via ScreenCaptureKit is not feeding the peak/level meter. Likely the level tap is only wired to the `AVAudioEngine` mic path, not the `SystemAudioCapture` / `AudioMixer` output. Fix: derive waveform levels from the mixed output buffer in `AudioFileWriter` or `AudioMixer` rather than the raw mic tap. _(Done: `ecd4ac1` — level meter reflects max(mic, system) in mixed mode.)_
 
-- [ ] **Record/Stop button inconsistently red** — the button appears grey instead of red in some states. Likely a SwiftUI state observation issue or a conditional tint modifier that is not re-evaluated when recording state changes. Investigate `RecordingControlsView` button styling and ensure `.tint`/`.foregroundStyle` reacts to `AppState.recordingState`.
+- [x] **Record/Stop button inconsistently red** — the button appears grey instead of red in some states. Likely a SwiftUI state observation issue or a conditional tint modifier that is not re-evaluated when recording state changes. Investigate `RecordingControlsView` button styling and ensure `.tint`/`.foregroundStyle` reacts to `AppState.recordingState`. _(Done: `c8e470a` — force active control state so tint renders in menu bar extra.)_
 
 ### Enhancements
 
-- [ ] **Minimize floating mini-player / popup window** — recording popup window has no minimize/collapse control. Add a minimize button that collapses to a slim title-bar-only strip (or hides to menu bar) without stopping the recording.
+- [x] **Minimize floating mini-player / popup window** — recording popup window has no minimize/collapse control. Add a minimize button that collapses to a slim title-bar-only strip (or hides to menu bar) without stopping the recording. _(Done: `848364f` — collapse/expand toggle on floating mini-player.)_
 
 - [ ] **VAD with remote transcription engines** — VAD (Voice Activity Detection) is currently gated to local engines (WhisperKit). Investigate whether VAD can be applied as a pre-processing step before uploading to remote endpoints: strip silent segments client-side, then send the trimmed audio. If feasible, expose the toggle for remote engines too.
 
@@ -36,3 +36,13 @@
 - [x] **Calendar integration (Phase 1 — iCal)** — `CalendarService` actor + `CalendarMatcher` (pure, TDD); `Recording.calendarEvent`; pre-fills title/participants in `PostRecordingSheet`; injects agenda into AI prompts (Apple Intelligence, remote, MLX paths). Settings: Calendar permission row + toggle. `NSCalendarsFullAccessUsageDescription` added. Spec: `docs/superpowers/specs/2026-06-04-ical-calendar-integration-design.md`.
 
 - [x] **Calendar integration (Phase 2 — Outlook/Exchange)** — Microsoft Graph API (`/v1/me/events`), OAuth flow, account picker in Settings. Builds on the existing `CalendarService` + `CalendarMatcher` infrastructure from Phase 1.
+
+### Planned sub-projects (decomposed 2026-06-05; doing "Visibility toggles" first, rest deferred here)
+
+- [ ] **Model settings UX** — (a) explicit "Download model" button in Settings so a model can be fetched before the first transcription (today download is lazy on first use via `WhisperKitTranscriptionService.loadWhisperKit()`); (b) subtle "Need some help?" disclosure in the transcription settings revealing per-engine model guidance (Whisper Large v3 Turbo = recommended multilingual; Tiny = low-memory/less accurate; Distil = English-only; Parakeet = low-jargon; Apple Speech = built-in only; Remote = bring-your-own). Files: `SettingsTranscriptionTab.swift`, `LocalAIPluginService.prepareModelsIfNeeded()`.
+
+- [ ] **Diarization everywhere** — SpeakerKit/Pyannote runs on the audio independently of the ASR engine, so: (a) add speaker diarization to **Parakeet** output (FluidAudio is ASR-only — diarize the audio via SpeakerKit and align to Parakeet word timestamps), and (b) add an **after-the-fact** "re-detect speakers" action on existing recordings (same mechanism, triggered from history/viewer). Both merge via timestamp alignment into the existing `RichTranscript.speakerLabels`. Files: `ParakeetTranscriptionService.swift`, `WhisperKitTranscriptionService.swift` (diarization template, lines ~85-146), new after-the-fact service, `TranscriptStore`, `RecordingHistoryView`.
+
+- [ ] **Transcript library + viewer redesign** — (a) add a menu-bar entry point to a browsable library of ALL past transcripts (today only reachable post-recording or via the 20-item history; no scan for `.richtranscript.json` exists yet); (b) redesign the viewer to remove redundant segment/turn duplication (the `.segments` picker mode is a dead stub — only merged turns render); (c) polish `TranscriptChatView` to a modern AI-chat appearance (currently plain system-color bubbles). Files: `TranscriptWindowView.swift`, `TranscriptChatView.swift`, `TranscriptDesignTokens.swift`, `MenuBarView` in `DBriefApp.swift`, `RecordingDiscovery`/`TranscriptStore`.
+
+- [ ] **Voice library (cross-recording speaker recognition)** — persistent voice fingerprints so a recognized voice is auto-named in future recordings. **Needs a feasibility spike first**: SpeakerKit's public `diarize()` returns only segments; speaker **embeddings** appear to live in internal SpeakerKit types, not the public API. Spike must determine whether embeddings can be extracted (or a separate speaker-embedding model added) before this can be designed concretely. Depends on "Diarization everywhere". New `SpeakerLibraryStore` + matching (cosine similarity) if feasible.
