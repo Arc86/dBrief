@@ -180,7 +180,7 @@ struct PostRecordingSheet: View {
             if let recording = appState.currentRecording {
                 if let event = recording.calendarEvent {
                     applyCalendarEvent(event, to: recording)
-                } else if appSettings.calendarSource == .iCal {
+                } else if appSettings.effectiveCalendarSource == .iCal {
                     let started = recording.date
                     Task { [weak recording] in
                         guard let event = await calendarService.findCurrentEvent(at: started) else { return }
@@ -190,7 +190,7 @@ struct PostRecordingSheet: View {
                             applyCalendarEvent(event, to: recording)
                         }
                     }
-                } else if appSettings.calendarSource == .outlook {
+                } else if appSettings.effectiveCalendarSource == .outlook {
                     let started = recording.date
                     let outlookService = OutlookCalendarService(authService: microsoftAuthService)
                     Task { [weak recording] in
@@ -211,10 +211,6 @@ struct PostRecordingSheet: View {
         let i = appSettings.integrations
         if i.appleNotes.enabled { values.append(IntegrationDestination.appleNotes.displayName) }
         if i.appleReminders.enabled { values.append(IntegrationDestination.appleReminders.displayName) }
-        if i.notion.enabled { values.append(IntegrationDestination.notion.displayName) }
-        if i.evernote.enabled { values.append(IntegrationDestination.evernote.displayName) }
-        if i.googleKeep.enabled { values.append(IntegrationDestination.googleKeep.displayName) }
-        if i.oneNote.enabled { values.append(IntegrationDestination.oneNote.displayName) }
         if i.webhook.enabled { values.append(IntegrationDestination.webhook.displayName) }
         return values
     }

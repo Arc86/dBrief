@@ -88,7 +88,7 @@ final class RecordingManager {
         appState.currentRecording = recording
 
         let started = recording.date
-        switch appSettings.calendarSource {
+        switch appSettings.effectiveCalendarSource {
         case .iCal:
             Task { [weak recording] in
                 let event = await calendarService.findCurrentEvent(at: started)
@@ -1490,10 +1490,6 @@ final class RecordingManager {
         let integrations = appSettings.integrations
         return integrations.appleNotes.enabled
             || integrations.appleReminders.enabled
-            || integrations.notion.enabled
-            || integrations.evernote.enabled
-            || integrations.googleKeep.enabled
-            || integrations.oneNote.enabled
             || integrations.webhook.enabled
     }
 
