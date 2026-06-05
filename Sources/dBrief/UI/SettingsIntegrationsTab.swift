@@ -6,22 +6,11 @@ struct SettingsIntegrationsTab: View {
     @State private var isTesting: Set<IntegrationDestination> = []
     private let integrationService = IntegrationDispatchService()
 
-    private let integrationOrder: [IntegrationDestination] = [
-        .obsidian,
-        .appleNotes,
-        .appleReminders,
-        .notion,
-        .evernote,
-        .googleKeep,
-        .oneNote,
-        .webhook,
-    ]
-
     var body: some View {
         NavigationStack {
             Form {
                 Section("Integrations") {
-                    ForEach(integrationOrder, id: \.self) { destination in
+                    ForEach(IntegrationDestination.available, id: \.self) { destination in
                         NavigationLink(value: destination) {
                             integrationRow(for: destination)
                         }
