@@ -24,6 +24,13 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
         case .webhook: "Webhook"
         }
     }
+
+    /// Destinations currently exposed to users. Untested integrations
+    /// (Notion, Evernote, Google Keep, OneNote) are omitted until verified.
+    /// Re-enable one by adding its case back to this list.
+    static let available: [IntegrationDestination] = [
+        .obsidian, .appleNotes, .appleReminders, .webhook,
+    ]
 }
 
 enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
