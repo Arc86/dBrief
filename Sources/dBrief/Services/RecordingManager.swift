@@ -1490,10 +1490,6 @@ final class RecordingManager {
         let integrations = appSettings.integrations
         return integrations.appleNotes.enabled
             || integrations.appleReminders.enabled
-            || integrations.notion.enabled
-            || integrations.evernote.enabled
-            || integrations.googleKeep.enabled
-            || integrations.oneNote.enabled
             || integrations.webhook.enabled
     }
 

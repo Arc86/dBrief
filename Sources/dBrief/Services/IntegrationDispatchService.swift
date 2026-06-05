@@ -77,6 +77,9 @@ actor IntegrationDispatchService {
     }
 
     func testConnection(destination: IntegrationDestination, settings: AppSettings) async throws {
+        guard IntegrationDestination.available.contains(destination) else {
+            throw IntegrationError.unsupported("\(destination.displayName) is not available")
+        }
         let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
 
         switch destination {
