@@ -38,8 +38,15 @@ actor MLXInsightsService {
     }
 
     /// Coarse on-disk check: the MLX model cache directory is non-empty.
+    /// Computes the path without creating directories (unlike
+    /// `llmDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded() -> Bool {
-        guard let dir = try? llmDownloadBaseURL() else { return false }
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
+        let dir = appSupport
+            .appendingPathComponent(bundle, isDirectory: true)
+            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+            .appendingPathComponent("MLX", isDirectory: true)
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dir.path) else {
             return false
         }
