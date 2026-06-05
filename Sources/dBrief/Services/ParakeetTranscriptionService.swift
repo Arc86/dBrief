@@ -85,6 +85,37 @@ actor ParakeetTranscriptionService {
         Logger.localAI.info("Parakeet: model cache purged")
     }
 
+    func unload() {
+        asrManager = nil
+        loadedVariant = nil
+    }
+
+    /// Download + load the given variant, then unload. Emits download progress
+    /// on `stateStream`. Unloads on failure too.
+    func prepareModel(variant: String) async throws {
+        defer { stateContinuation.yield(.idle) }
+        do {
+            _ = try await loadManager(for: variant)
+            unload()
+        } catch {
+            unload()
+            throw error
+        }
+    }
+
+    /// Coarse on-disk check: the FluidAudio model cache directory is non-empty.
+    nonisolated func isModelDownloaded() -> Bool {
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
+        guard let contents = try? fm.contentsOfDirectory(atPath: modelsDir.path) else {
+            return false
+        }
+        return !contents.isEmpty
+    }
+
     // MARK: - Private
 
     private func loadManager(for variant: String) async throws -> AsrManager {
