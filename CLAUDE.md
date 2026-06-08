@@ -95,13 +95,22 @@ Three AI backends selected via `AppSettings.aiEngine`:
 
 AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export. All AI steps can be skipped via `AppSettings.aiProcessingEnabled = false`.
 
-### Local AI Plugin System (`Services/LocalAIPlugin*`)
+### Local AI Plugin System — Crash-Isolated Helper Process
 
-The `LocalAIPluginService` actor orchestrates WhisperKit, SpeakerKit, and MLX models behind the `LocalAIPluginProtocol` interface:
-- **AsyncMutex** serializes GPU-resident model access (prevents concurrent allocation)
-- **State stream** (`AsyncStream<LocalAIPluginState>`) provides real-time UI feedback: `idle`, `downloading(progress, stage)`, `transcribing`, `newSegments(...)`, `diarizing`, `analyzing`
-- **Download stages**: `.whisperModel` (downloading from HuggingFace), `.whisperModelLoading` (cached model loading into CoreML), `.llmModel`, `.speakerKitModel`
-- Methods: `transcribe()`, `analyzeTranscript()`, `analyzeTranscriptStream()`, `prepareModelsIfNeeded()`, `purgeModels()`, `purgeSpeakerKitModel()`
+All self-loaded local ML (WhisperKit transcription, SpeakerKit diarization, MLX/Gemma insights & chat, and Parakeet/FluidAudio transcription) runs in a **separate helper process**, so a CoreML/WhisperKit trap (e.g. WhisperKit's `decoderOutput.logits!` force-unwrap) kills only the helper, not the menu-bar app. Apple Speech and Apple Intelligence stay in-process (OS-managed).
+
+**Three SPM targets:**
+- **`dBriefWire`** (library, no ML deps) — the shared contract linked by both executables: the wire `Envelope`/`MLRequest`/`MLEvent`/`WireError` types, the `FrameCodec`/`FrameReader`, `LocalAIPluginProtocol`, the `Codable`/`Sendable` model structs (`TranscriptionResult`, `LocalInsightsResult`, `DiarizedTurn`, `LiveTranscriptSegment`, `LocalAIPluginState`, `WhisperRuntimeConfig`, `WhisperComputeUnits`, `OutputLanguage`), and shared utilities (`Logger` extensions, `WhisperModelInfo`, `ParakeetModelInfo`, `SystemMemory`, `LocalInsightsDecoder`).
+- **`dBriefMLHost`** (executable) — links the heavy ML packages and hosts the real `WhisperKitTranscriptionService`, `MLXInsightsService`, `ParakeetTranscriptionService`, the `AsyncMutex` GPU serialization, `MLOrchestrator` (the in-helper backend, formerly the in-process `LocalAIPluginService`), and a stdin/stdout `RequestLoop`. `main.swift` parses `--support-base` so the helper resolves the **same** model-cache dir as the app (its own `Bundle.main.bundleIdentifier` differs), and frees Metal buffers on SIGTERM/EOF.
+- **`dBrief`** (app) — depends only on `dBriefWire`; the proxies `LocalAIPluginService` and `ParakeetTranscriptionService` forward every call over a shared `MLHostConnection`.
+
+**Transport — `MLHostConnection` (`Services/MLHostConnection.swift`):** owns the child `Process` and its pipes, frames messages (4-byte big-endian length prefix + JSON `Envelope`), correlates replies by request `id`, demuxes `.state` events to per-`MLChannel` (`.plugin` / `.parakeet`) `AsyncStream<LocalAIPluginState>`, forwards `.token` frames to streaming `AsyncThrowingStream`s, and detects crashes via `terminationHandler` (a request in flight when the process dies throws `MLHostError.helperCrashed`). The helper is persistent, lazily spawned, and auto-relaunched on the next call after a crash. Audio is passed by file path (never over the pipe).
+
+**Crash recovery:** `LocalAIPluginService.transcribeWithRetry` retries **once in safe mode** (`concurrentWorkerCount = 1`, decoder off the ANE via `.cpuAndGPU`) when the helper crashes; a second crash surfaces a clean `TranscriptionServiceError`. A normal `.error` frame (insufficient memory, audio load) propagates without retry. Because crashes are recoverable, the normal-path `concurrentWorkerCount` (8) can be raised toward WhisperKit's default of 16 with benchmarking.
+
+The orchestrator keeps the prior behavior: **AsyncMutex** serializes GPU access; **per-op model unload** keeps an idle helper model-free; the **state stream** drives UI feedback (`idle`, `downloading(progress, stage)`, `transcribing`, `newSegments(...)`, `diarizing`, `analyzing`).
+
+**Build/packaging:** `make app` builds all executables and copies `dBriefMLHost` into `Contents/MacOS/` beside the MLX `default.metallib`. A test-only `dBriefMLHostStub` target (env `STUB_MODE=echo|crash-once|crash-always|error`) drives the connection/retry tests deterministically without real models.
 
 ### Endpoint Model (`Models/Endpoint.swift`)
 
