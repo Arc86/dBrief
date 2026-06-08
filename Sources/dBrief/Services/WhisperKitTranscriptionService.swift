@@ -93,8 +93,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // worker count, model, and audio length so the record is self-explanatory.
             let audioSeconds = Double(audioArray.count) / 16_000.0
             let speedFactor = audioSeconds > 0 ? audioSeconds / transcribeDuration : 0
+            // os_log redacts interpolated strings as <private> by default; mark the
+            // (non-sensitive) timing values .public so they appear in the log.
+            let durationStr = String(format: "%.1f", transcribeDuration)
+            let speedStr = String(format: "%.1f", speedFactor)
+            let audioStr = String(format: "%.1f", audioSeconds)
             Logger.localAI.notice(
-                "Transcription completed in \(String(format: "%.1f", transcribeDuration))s (\(String(format: "%.1f", speedFactor))x realtime) — model=\(whisperConfig.modelName, privacy: .public), workers=\(options.concurrentWorkerCount), audio=\(String(format: "%.1f", audioSeconds))s"
+                "Transcription completed in \(durationStr, privacy: .public)s (\(speedStr, privacy: .public)x realtime) — model=\(whisperConfig.modelName, privacy: .public), workers=\(options.concurrentWorkerCount), audio=\(audioStr, privacy: .public)s"
             )
 
             // --- Speaker diarization (optional) ---
