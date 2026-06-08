@@ -241,21 +241,17 @@ actor MLXInsightsService {
             return modelContainer
         }
 
-        // Light memory gate — only block when the system is critically low.
-        // MLX allocates via Metal on unified memory; macOS reclaims inactive/compressed
-        // pages on demand, so traditional free page counts underestimate availability.
+        // Memory advisory — no hard block. MLX allocates via Metal on unified
+        // memory; macOS reclaims inactive/compressed pages on demand, so traditional
+        // free page counts underestimate availability. We let the load proceed even
+        // when memory looks tight and only warn, since the OS may free pages under
+        // pressure. The user is also shown a preflight banner before processing.
         let requiredMemory: Int64 = 512_000_000 // 512MB truly free
         let hasSufficientMemory = await MainActor.run {
             MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
         }
-        guard hasSufficientMemory else {
-            throw NSError(
-                domain: "MLXInsightsService",
-                code: 4,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Insufficient memory to load Gemma 4 E4B model. Close other apps or use Remote AI engine instead."
-                ]
-            )
+        if !hasSufficientMemory {
+            Logger.ai.warning("Loading Gemma 4 E4B with low available memory (<512MB truly free). Proceeding anyway — this may be slow or fail under memory pressure. Close other apps or use the Remote AI engine if loading fails.")
         }
 
         // Best-effort release of any stale GPU buffers before allocating Gemma 4.
