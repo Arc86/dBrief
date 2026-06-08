@@ -200,6 +200,11 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
     }
 
+    /// Fetch the list of available model variant names from the given HuggingFace repo.
+    static func fetchAvailableModels(repo: String) async throws -> [String] {
+        try await WhisperKit.fetchAvailableModels(from: repo)
+    }
+
     func prepareModelIfNeeded() async throws {
         _ = try await loadWhisperKit(config: .default)
         await unload()

@@ -132,6 +132,9 @@ actor MLOrchestrator: MLBackend {
     func isWhisperCached(name: String) async -> Bool { whisperService.isModelDownloaded(name: name) }
     func isLLMCached() async -> Bool { await insightsService.isModelDownloaded() }
     func isParakeetCached() async -> Bool { parakeetService.isModelDownloaded() }
+    func fetchWhisperModels(repo: String) async throws -> [String] {
+        try await WhisperKitTranscriptionService.fetchAvailableModels(repo: repo)
+    }
 
     func purgeModels() async throws {
         try await mutex.withLock { [self] in

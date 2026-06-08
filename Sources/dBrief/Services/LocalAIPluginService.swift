@@ -86,6 +86,10 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     func downloadLLMModel() async throws { _ = try await connection.call(.downloadLLM) }
     func isWhisperModelCached(name: String) async -> Bool { (try? await connection.call(.isWhisperCached(name: name))).flatMap(Self.bool) ?? false }
     func isLLMModelCached() async -> Bool { (try? await connection.call(.isLLMCached)).flatMap(Self.bool) ?? false }
+    func fetchAvailableWhisperModels(repo: String) async -> [String] {
+        guard case let .stringsResult(names) = try? await connection.call(.fetchWhisperModels(repo: repo)) else { return [] }
+        return names
+    }
     func purgeModels() async throws { _ = try await connection.call(.purgeModels) }
     func purgeWhisperModel() async throws { _ = try await connection.call(.purgeWhisper) }
     func purgeSpeakerKitModel() async throws { _ = try await connection.call(.purgeSpeakerKit) }
