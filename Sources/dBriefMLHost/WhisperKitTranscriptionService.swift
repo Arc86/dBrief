@@ -18,7 +18,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> dBriefWire.TranscriptionResult {
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
@@ -58,13 +58,14 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.withoutTimestamps = false
         options.wordTimestamps = true
         options.chunkingStrategy = .vad
-        // Limit CoreML prediction concurrency. WhisperKit defaults to 16 workers,
-        // which with VAD chunking runs many encoder/decoder predictions on the GPU/ANE
-        // at once. On macOS 26 that concurrency intermittently yields a nil decoder
-        // output, which WhisperKit force-unwraps (`decoderOutput.logits!`) and crashes
-        // the whole app. 8 was validated as stable on macOS 26 (large-v3 turbo) while
-        // recovering most of the throughput; 16 (the default) crashes.
-        options.concurrentWorkerCount = 8
+        // CoreML prediction concurrency. WhisperKit defaults to 16 workers; with VAD
+        // chunking that runs many encoder/decoder predictions on the GPU/ANE at once,
+        // which on macOS 26 intermittently yields a nil decoder output that WhisperKit
+        // force-unwraps (`decoderOutput.logits!`) and traps. Now that transcription is
+        // process-isolated in dBriefMLHost the trap is recoverable, so the normal path
+        // uses higher concurrency for speed; the safe-mode retry serializes to survive
+        // a deterministic trap. (Normal-path value tuned in the concurrency-restore task.)
+        options.concurrentWorkerCount = safeMode ? 1 : 8
 
         do {
             let transcribeStart = Date()
