@@ -15,6 +15,9 @@ final class AppState {
     var peakLevel: Float = 0
     var currentRecording: Recording?
     var recentRecordings: [Recording] = []
+    /// Audio file URL the transcript browser should select when it opens
+    /// (deep-link from the menu-bar history or results view).
+    var pendingTranscriptSelectionURL: URL?
 
     var showPostRecordingSheet = false
     var showCallDetectedPopup = false {

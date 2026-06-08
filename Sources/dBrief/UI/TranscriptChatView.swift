@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct TranscriptChatView: View {
-    @State var chatService: TranscriptChatService
+    let chatService: TranscriptChatService
 
     @State private var inputText = ""
-    @State private var scrollToBottom = false
-    @Environment(\.colorScheme) private var colorScheme
+
+    private var sendEnabled: Bool {
+        !inputText.trimmingCharacters(in: .whitespaces).isEmpty && !chatService.isStreaming
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,9 +15,45 @@ struct TranscriptChatView: View {
                 promptTemplates
             } else {
                 messageList
+                promptChipsRow
             }
 
             inputBar
+        }
+    }
+
+    // MARK: - Prompt chips (shown above the input once a chat is underway)
+
+    private var promptChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ChatPromptTemplate.defaults) { template in
+                    Button {
+                        inputText = template.prompt
+                        submitMessage()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: template.systemIcon)
+                                .font(.caption2)
+                            Text(template.title)
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(
+                            Capsule().fill(Color(nsColor: .controlBackgroundColor))
+                        )
+                        .overlay(
+                            Capsule().stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(chatService.isStreaming)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
         }
     }
 
@@ -23,86 +61,64 @@ struct TranscriptChatView: View {
 
     private var promptTemplates: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                // Prominent input at top
-                HStack(spacing: 8) {
-                    Text("✦")
-                        .font(.system(size: 13))
-                        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-                    TextField("Ask anything about this transcript…", text: $inputText, axis: .vertical)
-                        .textFieldStyle(.plain)
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Chat with this transcript")
+                        .font(.title2.weight(.semibold))
+                    Text("Ask a question, or pick one of the example prompts below.")
                         .font(.callout)
-                        .lineLimit(1...4)
-                        .onSubmit { submitMessage() }
-                    Button { submitMessage() } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(
-                                inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                                    ? TranscriptDesignTokens.secondaryText(scheme: colorScheme)
-                                    : Color.accentColor
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
-                            .fill(.ultraThinMaterial)
-                        RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
-                            .fill(TranscriptDesignTokens.cardFill(scheme: colorScheme))
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
-                        .stroke(TranscriptDesignTokens.cardBorder(scheme: colorScheme), lineWidth: 1)
-                )
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
+                .padding(.horizontal, 20)
+                .padding(.top, 28)
 
-                // Section label
-                Text("QUICK TEMPLATES")
-                    .font(.system(size: 9, weight: .bold))
+                inputField
+                    .padding(.horizontal, 20)
+
+                Text("EXAMPLE PROMPTS")
+                    .font(.caption.weight(.bold))
                     .kerning(0.5)
-                    .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
-                    .padding(.horizontal, 14)
-                    .padding(.top, 4)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
 
-                // Chip grid
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 110), spacing: 6)],
-                    spacing: 6
+                    columns: [GridItem(.adaptive(minimum: 160), spacing: 10)],
+                    spacing: 10
                 ) {
                     ForEach(ChatPromptTemplate.defaults) { template in
                         Button {
                             inputText = template.prompt
                             submitMessage()
                         } label: {
-                            Text(template.title)
-                                .font(.system(size: 11))
-                                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-                                .padding(.vertical, 5)
-                                .padding(.horizontal, 10)
-                                .frame(maxWidth: .infinity)
-                                .background(
-                                    Capsule()
-                                        .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 0.5)
-                                )
+                            HStack(spacing: 8) {
+                                Image(systemName: template.systemIcon)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 18)
+                                Text(template.title)
+                                    .font(.callout)
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -146,53 +162,62 @@ struct TranscriptChatView: View {
         }
     }
 
-    // MARK: - Input bar
+    // MARK: - Input
 
-    private var inputBar: some View {
-        HStack(spacing: 8) {
-            if !chatService.messages.isEmpty {
-                Button {
-                    chatService.clearMessages()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.caption)
-                        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-                }
-                .buttonStyle(.borderless)
-                .help("Clear chat")
-            }
+    /// Large, bordered, obviously-clickable text field. Shared by the empty
+    /// state and the persistent bottom bar.
+    private var inputField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.body)
+                .foregroundStyle(.secondary)
 
-            TextField("Ask about this transcript…", text: $inputText, axis: .vertical)
+            TextField("Ask anything about this transcript…", text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.callout)
-                .lineLimit(1...4)
+                .font(.body)
+                .lineLimit(1...6)
                 .onSubmit { submitMessage() }
 
             Button {
                 submitMessage()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(
-                        inputText.trimmingCharacters(in: .whitespaces).isEmpty || chatService.isStreaming
-                            ? TranscriptDesignTokens.secondaryText(scheme: colorScheme)
-                            : Color.accentColor
-                    )
+                    .font(.title)
+                    .foregroundStyle(sendEnabled ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
-            .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || chatService.isStreaming)
+            .disabled(!sendEnabled)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .background(
-            TranscriptDesignTokens.structureFill(scheme: colorScheme)
-                .background(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .controlBackgroundColor))
         )
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(TranscriptDesignTokens.structureBorder(scheme: colorScheme))
-                .frame(height: 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            if !chatService.messages.isEmpty {
+                Button {
+                    chatService.clearMessages()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Clear chat")
+            }
+
+            inputField
         }
+        .padding(14)
     }
 
     // MARK: - Helpers
@@ -209,35 +234,104 @@ struct TranscriptChatView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    @State private var showReasoning = false
+
+    /// Splits an assistant message into its `<think>…</think>` reasoning and the
+    /// visible answer. Handles the still-streaming case where `</think>` hasn't
+    /// arrived yet.
+    private var parts: (reasoning: String?, answer: String) {
+        let content = message.content
+        guard message.role == .assistant,
+              let open = content.range(of: "<think>") else {
+            return (nil, content)
+        }
+        let before = String(content[content.startIndex..<open.lowerBound])
+        let afterOpen = content[open.upperBound...]
+        if let close = afterOpen.range(of: "</think>") {
+            let reasoning = String(afterOpen[afterOpen.startIndex..<close.lowerBound])
+            let answer = before + String(afterOpen[close.upperBound...])
+            return (trimmed(reasoning), answer.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            // Reasoning is still streaming; no answer text yet.
+            return (trimmed(String(afterOpen)), before.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    private func trimmed(_ s: String) -> String? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        let parts = parts
+        return HStack(alignment: .top, spacing: 0) {
             if message.role == .user { Spacer(minLength: 40) }
 
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
                 Text(message.role == .user ? "You" : "Assistant")
                     .font(.caption2.bold())
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
 
-                Text(message.content.isEmpty ? " " : message.content)
-                    .font(.callout)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(message.role == .user
-                        ? Color.accentColor.opacity(0.12)
-                        : Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
-                    )
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+                if let reasoning = parts.reasoning {
+                    reasoningView(reasoning)
+                }
+
+                if !parts.answer.isEmpty || parts.reasoning == nil {
+                    bubble(parts.answer.isEmpty ? " " : parts.answer)
+                }
             }
 
             if message.role == .assistant { Spacer(minLength: 40) }
         }
         .padding(.horizontal, 12)
+    }
+
+    private func bubble(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(message.role == .user
+                ? Color.accentColor.opacity(0.12)
+                : Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
+            )
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    }
+
+    private func reasoningView(_ reasoning: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showReasoning.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("Reasoning")
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            if showReasoning {
+                Text(reasoning)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

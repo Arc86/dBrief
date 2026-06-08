@@ -11,6 +11,7 @@ final class AppContext {
     let appState = AppState()
     let appSettings = AppSettings()
     let transcriptStore = TranscriptStore()
+    let transcriptChatStore = TranscriptChatStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
@@ -187,6 +188,7 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.audioPlayer)
                 .environment(context.recordingManager)
+                .environment(context.transcriptChatStore)
         }
         .defaultSize(width: 1100, height: 720)
 

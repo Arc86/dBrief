@@ -3,14 +3,15 @@ import os
 
 private let log = Logger.hotkey
 
-/// Registers a global keyboard shortcut (⌘⇧R) to toggle recording.
+/// Registers a user-configurable global keyboard shortcut to toggle recording.
 @MainActor
 final class GlobalHotkeyService {
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
     private var onToggle: (() -> Void)?
 
-    func register(onToggle: @escaping () -> Void) {
+    /// Installs the event handler and registers the given shortcut.
+    func register(hotkey: RecordHotkey, onToggle: @escaping () -> Void) {
         self.onToggle = onToggle
 
         var eventType = EventTypeSpec(
@@ -40,14 +41,27 @@ final class GlobalHotkeyService {
             return
         }
 
-        // Register ⌘⇧R
+        apply(hotkey)
+    }
+
+    /// Re-registers with a new shortcut, e.g. after the user changes it in Settings.
+    func update(hotkey: RecordHotkey) {
+        guard eventHandler != nil else { return }
+        apply(hotkey)
+    }
+
+    /// (Re)registers just the hot key, leaving the installed handler in place.
+    private func apply(_ hotkey: RecordHotkey) {
+        if let hotkeyRef {
+            UnregisterEventHotKey(hotkeyRef)
+            self.hotkeyRef = nil
+        }
+
         let hotkeyID = EventHotKeyID(signature: OSType(0x5652_4543), id: 1) // "VREC"
-        let modifiers = UInt32(cmdKey | shiftKey)
-        let keyCode = UInt32(kVK_ANSI_R)
 
         let registerResult = RegisterEventHotKey(
-            keyCode,
-            modifiers,
+            hotkey.keyCode,
+            hotkey.carbonModifiers,
             hotkeyID,
             GetApplicationEventTarget(),
             0,
@@ -55,9 +69,9 @@ final class GlobalHotkeyService {
         )
 
         if registerResult == noErr {
-            log.info("Global hotkey ⌘⇧R registered")
+            log.info("Global hotkey \(hotkey.displayString, privacy: .public) registered")
         } else {
-            log.error("Failed to register hotkey: \(registerResult)")
+            log.error("Failed to register hotkey \(hotkey.displayString, privacy: .public): \(registerResult)")
         }
     }
 

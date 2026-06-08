@@ -207,15 +207,8 @@ struct RecordingHistoryView: View {
 
                     if item.hasRichTranscript {
                         actionChip(title: "Transcript", systemImage: "doc.text") {
-                            let rec = Recording(
-                                fileURL: item.url,
-                                fileSize: item.size,
-                                meetingTitleDraft: item.name,
-                                finalizedAudioURL: item.url
-                            )
-                            appState.recentRecordings.removeAll { $0.id == rec.id }
-                            appState.recentRecordings.append(rec)
-                            openWindow(value: rec.id)
+                            appState.pendingTranscriptSelectionURL = item.url
+                            openWindow(id: "transcript")
                             NSApp.activate(ignoringOtherApps: true)
                         }
                     }
