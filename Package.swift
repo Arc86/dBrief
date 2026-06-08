@@ -57,5 +57,13 @@ let package = Package(
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),
+        .testTarget(
+            name: "dBriefMLHostTests",
+            dependencies: [
+                "dBriefMLHost",
+                "dBriefWire",
+                .product(name: "Testing", package: "swift-testing"),
+            ]
+        ),
     ]
 )
