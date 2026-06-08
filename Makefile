@@ -19,6 +19,7 @@ app: build
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(MACOS) $(RESOURCES) $(MACOS_RESOURCES)
 	cp $(BUILD_DIR)/$(EXECUTABLE_NAME) $(MACOS)/$(EXECUTABLE_NAME)
+	cp $(BUILD_DIR)/dBriefMLHost $(MACOS)/dBriefMLHost
 	if ls $(BUILD_DIR)/*.bundle >/dev/null 2>&1; then cp -R $(BUILD_DIR)/*.bundle $(RESOURCES)/; fi
 	cp Sources/dBrief/Resources/Info.plist $(CONTENTS)/Info.plist
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
