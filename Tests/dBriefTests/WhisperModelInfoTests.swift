@@ -1,5 +1,6 @@
 import Testing
 @testable import dBrief
+import dBriefWire
 
 struct WhisperModelInfoTests {
     @Test("Parse basic model: openai_whisper-small")

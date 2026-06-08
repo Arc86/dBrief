@@ -30,6 +30,10 @@ let package = Package(
             ]
         ),
         .executableTarget(
+            name: "dBriefMLHostStub",
+            dependencies: ["dBriefWire"]
+        ),
+        .executableTarget(
             name: "dBrief",
             dependencies: [
                 "dBriefWire",
