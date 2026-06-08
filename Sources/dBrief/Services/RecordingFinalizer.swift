@@ -106,6 +106,73 @@ actor RecordingFinalizer {
         )
     }
 
+    /// Relocate an already-encoded audio file (e.g. a YouTube/yt-dlp download) into
+    /// the dated recordings folder so it becomes discoverable by history and the
+    /// transcript viewer. Unlike `finalize`, this performs no DSP or AAC re-encode —
+    /// the source is assumed to already be a finished audio file.
+    func importExistingAudio(
+        sourceURL: URL,
+        recording: Recording,
+        baseFolder: URL,
+        segmentationEnabled: Bool = true
+    ) async throws -> RecordingFinalizationResult {
+        let snapshot = await MainActor.run { Snapshot(recording: recording) }
+        let normalizedTitle = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
+        let targetFolder = try Self.datedFolder(baseFolder: baseFolder, date: snapshot.date, fileManager: fileManager)
+        let baseName = Self.baseFileName(date: snapshot.date, title: normalizedTitle)
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
+        let masterURL = try Self.uniqueFileURL(
+            folder: targetFolder,
+            baseName: baseName,
+            fileExtension: fileExtension,
+            fileManager: fileManager
+        )
+
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            throw RecordingFinalizerError.ffmpegFailed("Imported audio file is missing: \(sourceURL.lastPathComponent)")
+        }
+        do {
+            try fileManager.moveItem(at: sourceURL, to: masterURL)
+        } catch {
+            try fileManager.copyItem(at: sourceURL, to: masterURL)
+        }
+
+        var warnings: [String] = []
+        var segmentURLs: [URL] = []
+        if segmentationEnabled && snapshot.duration > 1800 {
+            if let ffmpegPath = resolveFFmpegPath() {
+                do {
+                    segmentURLs = try createSegments(ffmpegPath: ffmpegPath, masterURL: masterURL)
+                    if segmentURLs.isEmpty {
+                        warnings.append("Segmentation produced no output files.")
+                    }
+                } catch {
+                    warnings.append("Segmentation failed. \(error.localizedDescription)")
+                }
+            } else {
+                warnings.append("Segmentation skipped because ffmpeg is unavailable.")
+            }
+        }
+
+        let metadataPayload = RecordingMetadataPayload(
+            dateISO8601: ISO8601DateFormatter().string(from: snapshot.date),
+            durationSeconds: snapshot.duration,
+            meetingTitle: normalizedTitle,
+            masterFileName: masterURL.lastPathComponent,
+            segmentFileNames: segmentURLs.map(\.lastPathComponent),
+            warnings: warnings
+        )
+        let metadataURL = masterURL.deletingPathExtension().appendingPathExtension("json")
+        try writeMetadata(metadataPayload, to: metadataURL)
+
+        return RecordingFinalizationResult(
+            masterAudioURL: masterURL,
+            segmentAudioURLs: segmentURLs,
+            metadataURL: metadataURL,
+            warnings: warnings
+        )
+    }
+
     private func transcodeWithFFmpeg(
         ffmpegPath: String,
         tracks: CapturedTracks,

@@ -23,6 +23,9 @@ final class Recording: Identifiable {
     /// Not persisted to disk — only valid for the current session's processing run.
     var calendarEvent: CalendarEvent?
     var capturedTracks: CapturedTracks?
+    /// Pre-encoded audio (e.g. a YouTube/yt-dlp download) awaiting relocation into the
+    /// recordings folder during finalization. Session-only; never persisted to disk.
+    var importSourceURL: URL?
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?

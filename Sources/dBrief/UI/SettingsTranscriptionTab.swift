@@ -150,6 +150,22 @@ struct SettingsTranscriptionTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    HStack {
+                        Text("Compute units")
+                        Spacer()
+                        Picker("", selection: $settings.whisperComputeUnits) {
+                            ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { unit in
+                                Text(unit.displayName).tag(unit)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 280, alignment: .trailing)
+                    }
+                    Text("Where the model runs. Neural Engine and All are fastest; switch to Metal GPU if transcription crashes or fails on large models (e.g. Large V3 Turbo).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     if let error = whisperModelFetchError {
                         Label(error, systemImage: "wifi.slash")
                             .font(.caption)

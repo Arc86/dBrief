@@ -13,6 +13,30 @@ struct WhisperPipelineTests {
     }
 
     @Test
+    @MainActor
+    func totalTrackFileSizeSumsExistingTrackFiles() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("dbrief-test-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let systemURL = root.appendingPathComponent("a.system.caf")
+        let micURL = root.appendingPathComponent("a.mic.caf")
+        try Data(count: 1000).write(to: systemURL)
+        try Data(count: 2500).write(to: micURL)
+
+        // Both tracks present → sizes summed.
+        #expect(RecordingManager.totalTrackFileSize(CapturedTracks(systemURL: systemURL, micURL: micURL)) == 3500)
+
+        // A missing track contributes 0 rather than failing the whole read.
+        let missing = root.appendingPathComponent("gone.caf")
+        #expect(RecordingManager.totalTrackFileSize(CapturedTracks(systemURL: missing, micURL: micURL)) == 2500)
+
+        // No tracks → 0.
+        #expect(RecordingManager.totalTrackFileSize(nil) == 0)
+    }
+
+    @Test
     func baseFileNameUsesExpectedFormat() {
         let formatter = ISO8601DateFormatter()
         let date = formatter.date(from: "2026-02-13T14:45:00Z")!
@@ -135,6 +159,44 @@ struct WhisperPipelineTests {
         #expect(decoded.summary == true)
         #expect(decoded.actionItems == false)
         #expect(decoded.tags == true)
+    }
+
+    @Test
+    @MainActor
+    func importExistingAudioRelocatesIntoDatedFolderWithMetadata() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("dbrief-import-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        // A pre-encoded download sitting in a scratch directory (mirrors yt-dlp output).
+        let downloadDir = root.appendingPathComponent("download", isDirectory: true)
+        try fm.createDirectory(at: downloadDir, withIntermediateDirectories: true)
+        let source = downloadDir.appendingPathComponent("audio.m4a")
+        try Data("fake-audio".utf8).write(to: source)
+
+        let recordsFolder = root.appendingPathComponent("Recordings", isDirectory: true)
+        let date = ISO8601DateFormatter().date(from: "2026-02-13T14:45:00Z")!
+        let recording = Recording(date: date, fileURL: source, meetingTitleDraft: "My Video")
+
+        let finalizer = RecordingFinalizer()
+        let result = try await finalizer.importExistingAudio(
+            sourceURL: source,
+            recording: recording,
+            baseFolder: recordsFolder,
+            segmentationEnabled: false
+        )
+
+        // Master audio is relocated into the dated recordings folder with the standard name.
+        #expect(result.masterAudioURL.path.contains("/2026/02/"))
+        #expect(result.masterAudioURL.lastPathComponent.contains("My-Video"))
+        #expect(result.masterAudioURL.pathExtension == "m4a")
+        #expect(fm.fileExists(atPath: result.masterAudioURL.path))
+        // The scratch source is consumed, not left behind.
+        #expect(!fm.fileExists(atPath: source.path))
+        // A metadata sidecar is written so discovery/history can read it.
+        #expect(fm.fileExists(atPath: result.metadataURL.path))
+        #expect(result.metadataURL.pathExtension == "json")
     }
 
     @Test
