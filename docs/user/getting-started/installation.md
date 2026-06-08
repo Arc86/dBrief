@@ -17,6 +17,16 @@ Double-click dBrief in Applications. Because dBrief is not yet distributed throu
 
 The dBrief icon appears in your menu bar.
 
+## Updating dBrief
+
+dBrief checks GitHub for new versions so you don't have to watch the releases page.
+
+- **Automatic checks** — by default, dBrief checks once when it launches (at most once a day). It stays quiet unless a newer version exists. You can turn this off in **Settings → General → Updates**.
+- **Check manually** — open **Settings → General → Updates** and click **Check Now**. The last-checked time is shown there.
+- **When an update is available** — an orange ⬇︎ badge appears in the menu bar header, and the Updates section shows the new version number. Click the badge (or **View Release**) to open the release page in your browser.
+
+dBrief does not install updates for you. Download the new `dBrief.app` from the release page and replace the copy in `/Applications` (the same steps as [First launch](#first-launch) the first time after replacing). Your recordings and settings are stored separately and are kept across updates.
+
 ## Permissions
 
 dBrief will ask for permissions as you use it. You can also review and grant them in **Settings → General → Permissions**.
