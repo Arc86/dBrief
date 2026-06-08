@@ -10,6 +10,7 @@ dBrief is a macOS menu bar app that records your meetings and calls, then automa
 | **[Quick Start](getting-started/quick-start.md)** | Make your first recording in 5 minutes |
 | **[Transcription](transcription/transcription-overview.md)** | Choose how your recordings get transcribed |
 | **[AI Analysis](ai-analysis/ai-overview.md)** | Summaries, action items, tags, and transcript chat |
+| **[Local vs Remote AI](ai-analysis/local-vs-remote.md)** | Privacy, quality, and cost trade-offs |
 | **[Integrations](integrations/integrations-overview.md)** | Send your notes to Obsidian, Apple Notes, and more |
 
 ## Recording

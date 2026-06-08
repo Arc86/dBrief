@@ -26,6 +26,8 @@ Go to **Settings → AI & Models** and select your engine. dBrief offers three o
 | **Gemma 4 E4B Local** | On your Mac | Apple Silicon + model download |
 | **Remote Endpoint** | Your server | OpenAI-compatible server |
 
+Not sure whether to run AI on your Mac or on a server? See [Local vs Remote AI](local-vs-remote.md) for the privacy, quality, and cost trade-offs.
+
 ## Processing order
 
 AI analysis runs after transcription completes. The steps run sequentially: summary → action items → tags/sentiment → title generation → Markdown export → integrations.
