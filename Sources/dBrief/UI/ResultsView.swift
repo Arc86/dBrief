@@ -244,7 +244,7 @@ struct ResultsView: View {
                 Text("Low available memory")
                     .font(.caption)
                     .fontWeight(.semibold)
-                Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB. Only \(String(format: "%.1f", warning.availableGB)) GB available.")
+                Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB but only \(String(format: "%.1f", warning.availableGB)) GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps\(warning.hasRemoteEndpoint ? " or retry with a remote endpoint" : "") if it stalls.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
