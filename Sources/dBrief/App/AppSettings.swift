@@ -54,6 +54,9 @@ final class AppSettings {
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
+        static let recordHotkey = "recordHotkey"
+        static let autoCheckUpdates = "autoCheckUpdates"
+        static let lastUpdateCheckTime = "lastUpdateCheckTime"
     }
 
     // MARK: - Recording
@@ -238,6 +241,31 @@ final class AppSettings {
     /// Reveals advanced settings and features across all tabs
     var powerUserMode: Bool {
         didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
+    }
+
+    /// Automatically check GitHub for app updates on launch (throttled to once/24h)
+    var autoCheckUpdates: Bool {
+        didSet { UserDefaults.standard.set(autoCheckUpdates, forKey: Keys.autoCheckUpdates) }
+    }
+
+    /// Last time the app checked for updates; persisted as seconds since 1970
+    var lastUpdateCheckTime: Date? {
+        didSet {
+            if let date = lastUpdateCheckTime {
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Keys.lastUpdateCheckTime)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.lastUpdateCheckTime)
+            }
+        }
+    }
+
+    /// Global keyboard shortcut for toggling recording (user-configurable in Settings → General)
+    var recordHotkey: RecordHotkey {
+        didSet {
+            if let data = try? JSONEncoder().encode(recordHotkey) {
+                UserDefaults.standard.set(data, forKey: Keys.recordHotkey)
+            }
+        }
     }
 
     /// Include full transcript in Obsidian/Markdown output (default off to keep notes concise)
@@ -555,6 +583,20 @@ final class AppSettings {
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
         self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
+        self.autoCheckUpdates = defaults.object(forKey: Keys.autoCheckUpdates) as? Bool ?? true
+        if let interval = defaults.object(forKey: Keys.lastUpdateCheckTime) as? TimeInterval {
+            self.lastUpdateCheckTime = Date(timeIntervalSince1970: interval)
+        } else {
+            self.lastUpdateCheckTime = nil
+        }
+        self.recordHotkey = {
+            if let data = defaults.data(forKey: Keys.recordHotkey),
+               let hotkey = try? JSONDecoder().decode(RecordHotkey.self, from: data)
+            {
+                return hotkey
+            }
+            return .default
+        }()
         self.obsidianIncludeTranscript = defaults.object(forKey: Keys.obsidianIncludeTranscript) as? Bool ?? false
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
