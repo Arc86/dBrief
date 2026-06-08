@@ -1,4 +1,5 @@
 import SwiftUI
+import dBriefWire
 import WhisperKit
 
 struct SettingsTranscriptionTab: View {

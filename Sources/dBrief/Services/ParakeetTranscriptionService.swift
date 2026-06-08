@@ -1,4 +1,5 @@
 import AVFoundation
+import dBriefWire
 @preconcurrency import FluidAudio
 import Foundation
 import OSLog
@@ -39,7 +40,7 @@ actor ParakeetTranscriptionService {
         fileURL: URL,
         language: String?,
         modelVariant: String
-    ) async throws -> dBrief.TranscriptionResult {
+    ) async throws -> dBriefWire.TranscriptionResult {
         defer { stateContinuation.yield(.idle) }
 
         let modelInfo = ParakeetModelInfo.find(modelVariant)
@@ -64,8 +65,8 @@ actor ParakeetTranscriptionService {
             duration = 0
         }
 
-        let segment = dBrief.TranscriptionResult.Segment(start: 0, end: duration, text: result.text)
-        return dBrief.TranscriptionResult(
+        let segment = dBriefWire.TranscriptionResult.Segment(start: 0, end: duration, text: result.text)
+        return dBriefWire.TranscriptionResult(
             text: result.text,
             segments: [segment],
             language: language ?? "en"

@@ -1,5 +1,6 @@
 
 import Foundation
+import dBriefWire
 import AppKit
 import AVFoundation
 import UserNotifications

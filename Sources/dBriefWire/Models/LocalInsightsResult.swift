@@ -1,11 +1,11 @@
 import Foundation
 
-struct LocalInsightsResult: Codable, Sendable {
-    let titleConcept: String
-    let summary: String
-    let actionItems: [String]
-    let tags: [String]
-    let sentiment: String
+public struct LocalInsightsResult: Codable, Sendable {
+    public let titleConcept: String
+    public let summary: String
+    public let actionItems: [String]
+    public let tags: [String]
+    public let sentiment: String
 
     enum CodingKeys: String, CodingKey {
         case titleConcept = "title_concept"
@@ -19,7 +19,7 @@ struct LocalInsightsResult: Codable, Sendable {
         case legacyTitleConcept = "titleConcept"
     }
 
-    init(
+    public init(
         titleConcept: String = "",
         summary: String,
         actionItems: [String],
@@ -33,7 +33,7 @@ struct LocalInsightsResult: Codable, Sendable {
         self.sentiment = sentiment
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let newTitleConcept = try container.decodeIfPresent(String.self, forKey: .titleConcept)
         let legacyTitleConcept = try container.decodeIfPresent(String.self, forKey: .legacyTitleConcept)
@@ -46,7 +46,7 @@ struct LocalInsightsResult: Codable, Sendable {
         self.sentiment = try container.decodeIfPresent(String.self, forKey: .sentiment) ?? "Neutral"
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(titleConcept, forKey: .titleConcept)
         try container.encode(summary, forKey: .summary)

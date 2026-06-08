@@ -1,20 +1,20 @@
 import Foundation
 
-struct TranscriptionResult: Codable, Sendable {
-    let text: String
-    let segments: [Segment]
-    let language: String?
-    let warnings: [String]?
-    let speakerCount: Int?
+public struct TranscriptionResult: Codable, Sendable {
+    public let text: String
+    public let segments: [Segment]
+    public let language: String?
+    public let warnings: [String]?
+    public let speakerCount: Int?
 
-    struct Segment: Codable, Sendable {
-        let start: Double
-        let end: Double
-        let text: String
-        var words: [Word]?
-        var speaker: String?
+    public struct Segment: Codable, Sendable {
+        public let start: Double
+        public let end: Double
+        public let text: String
+        public var words: [Word]?
+        public var speaker: String?
 
-        init(
+        public init(
             start: Double,
             end: Double,
             text: String,
@@ -29,14 +29,14 @@ struct TranscriptionResult: Codable, Sendable {
         }
     }
 
-    struct Word: Codable, Sendable {
-        let word: String
-        let start: Double
-        let end: Double
-        let probability: Double?
-        var speaker: String?
+    public struct Word: Codable, Sendable {
+        public let word: String
+        public let start: Double
+        public let end: Double
+        public let probability: Double?
+        public var speaker: String?
 
-        init(word: String, start: Double, end: Double, probability: Double? = nil, speaker: String? = nil) {
+        public init(word: String, start: Double, end: Double, probability: Double? = nil, speaker: String? = nil) {
             self.word = word
             self.start = start
             self.end = end
@@ -45,7 +45,7 @@ struct TranscriptionResult: Codable, Sendable {
         }
     }
 
-    init(
+    public init(
         text: String,
         segments: [Segment] = [],
         language: String? = nil,
@@ -59,7 +59,7 @@ struct TranscriptionResult: Codable, Sendable {
         self.speakerCount = speakerCount
     }
 
-    var textForLLM: String {
+    public var textForLLM: String {
         if segments.isEmpty {
             return text.replacingOccurrences(of: #"\*\*\[\d{2}:\d{2}:\d{2}\]\*\*"#, with: "", options: .regularExpression)
         }

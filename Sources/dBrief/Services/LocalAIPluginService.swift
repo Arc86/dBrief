@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 #if canImport(AppKit)
 import AppKit
 #endif
