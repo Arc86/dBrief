@@ -15,9 +15,14 @@ final class RecordingManager {
     private let audioCaptureManager = AudioCaptureManager()
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
-    private let localAIPluginService = LocalAIPluginService()
-    private let parakeetService = ParakeetTranscriptionService()
-    /// Exposed for TranscriptChatService — read-only reference, access serialized through actor's AsyncMutex.
+    /// One supervised helper process backs both local-ML proxies, so they share
+    /// the GPU-serializing orchestrator inside dBriefMLHost.
+    private let mlHost = MLHostConnection(
+        binaryURL: MLHostLocator.binaryURL(),
+        supportBase: MLHostLocator.supportBase())
+    private let localAIPluginService: LocalAIPluginService
+    private let parakeetService: ParakeetTranscriptionService
+    /// Exposed for TranscriptChatService — read-only reference; access serialized by the helper's AsyncMutex.
     var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
     private var processingTask: Task<Void, Never>?
@@ -47,6 +52,8 @@ final class RecordingManager {
         self.transcriptStore = transcriptStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
+        self.localAIPluginService = LocalAIPluginService(connection: mlHost)
+        self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -833,7 +840,7 @@ final class RecordingManager {
         case .whisper:
             return await localAIPluginService.isWhisperModelCached(name: appSettings.whisperModelName)
         case .parakeet:
-            return parakeetService.isModelDownloaded()
+            return await parakeetService.isModelDownloaded()
         case .gemma:
             return await localAIPluginService.isLLMModelCached()
         }
@@ -1082,7 +1089,7 @@ final class RecordingManager {
                 // here could blank the view after a single flash.
                 await MainActor.run { self.appState.liveInferenceText = fullJSON }
 
-                return try MLXInsightsService.decodeAndNormalize(fullJSON)
+                return try LocalInsightsDecoder.decodeAndNormalize(fullJSON)
             }
 
             if let summaryStepIndex {

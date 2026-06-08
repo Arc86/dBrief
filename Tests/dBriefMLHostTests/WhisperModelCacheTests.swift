@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import dBrief
+@testable import dBriefMLHost
+import dBriefWire
 
 @Suite("WhisperKit model cache path")
 struct WhisperModelCacheTests {
