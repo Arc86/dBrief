@@ -6,6 +6,7 @@ struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(MicrosoftAuthService.self) private var microsoftAuthService
+    @Environment(UpdateService.self) private var updateService
 
     @State private var outlookSignInError: String?
     @State private var calendarStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
@@ -21,6 +22,67 @@ struct SettingsGeneralTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Updates") {
+                LabeledContent("Check for updates") {
+                    HStack(spacing: 8) {
+                        if updateService.isChecking {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Button("Check Now") {
+                            Task {
+                                await updateService.checkForUpdates(manual: true)
+                                settings.lastUpdateCheckTime = Date()
+                            }
+                        }
+                        .disabled(updateService.isChecking)
+                    }
+                }
+
+                Toggle("Automatically check for updates", isOn: $settings.autoCheckUpdates)
+
+                if updateService.updateAvailable {
+                    HStack {
+                        Label(
+                            "New version \(updateService.latestVersion ?? "") available",
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                        .foregroundStyle(.orange)
+                        Spacer()
+                        Button("View Release") {
+                            updateService.openReleasePage()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                } else if let error = updateService.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if updateService.latestVersion != nil {
+                    Text("You're up to date.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastCheck = appSettings.lastUpdateCheckTime {
+                    Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Shortcuts") {
+                LabeledContent("Start/stop recording:") {
+                    ShortcutRecorderView(hotkey: $settings.recordHotkey)
+                }
+                Text("Global shortcut to toggle recording from anywhere. Defaults to ⌃⌥⌘R.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)
 

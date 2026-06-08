@@ -14,6 +14,7 @@ final class AppContext {
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
+    let updateService = UpdateService()
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
     let miniPlayer = FloatingMiniPlayerController()
@@ -63,10 +64,20 @@ final class AppContext {
             NSApp.setActivationPolicy(.regular)
         }
 
-        // Register global hotkey ⌘⇧R
-        hotkeyService.register { [weak self] in
+        // Register the user-configured global hotkey for record toggle
+        hotkeyService.register(hotkey: appSettings.recordHotkey) { [weak self] in
             guard let self else { return }
             self.toggleRecording()
+        }
+
+        // Silent update check on launch, throttled to once per 24h
+        if appSettings.autoCheckUpdates {
+            let last = appSettings.lastUpdateCheckTime
+            let due = last == nil || Date().timeIntervalSince(last!) >= 24 * 60 * 60
+            if due {
+                await updateService.checkForUpdates(manual: false)
+                appSettings.lastUpdateCheckTime = Date()
+            }
         }
 
         log.info("Ready")
@@ -123,6 +134,7 @@ struct DBriefApp: App {
                 .environment(context.recordingManager)
                 .environment(context.audioPlayer)
                 .environment(context.microsoftAuthService)
+                .environment(context.updateService)
         } label: {
             if context.appState.isRecording || context.appState.isPaused {
                 HStack(spacing: 4) {
@@ -159,18 +171,24 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
+                .environment(context.updateService)
                 .frame(minWidth: 800, minHeight: 550)
+                .onChange(of: context.appSettings.recordHotkey) { _, newValue in
+                    context.hotkeyService.update(hotkey: newValue)
+                }
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
 
-        WindowGroup(for: UUID.self) { recordingId in
-            TranscriptWindowView(recordingId: recordingId)
+        WindowGroup(id: "transcript") {
+            TranscriptBrowserView()
                 .environment(context)
                 .environment(context.appState)
                 .environment(context.appSettings)
                 .environment(context.audioPlayer)
+                .environment(context.recordingManager)
         }
+        .defaultSize(width: 1100, height: 720)
 
         WindowGroup(id: "live-transcript") {
             LiveTranscriptView()
@@ -198,6 +216,7 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(UpdateService.self) private var updateService
 
     @State private var showYouTubeInput = false
 
@@ -325,6 +344,17 @@ struct MenuBarView: View {
                 .font(.headline)
 
             Spacer()
+
+            if updateService.updateAvailable {
+                Button {
+                    updateService.openReleasePage()
+                } label: {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("Update available\(updateService.latestVersion.map { " — version \($0)" } ?? "")")
+            }
 
             statusPill
         }
