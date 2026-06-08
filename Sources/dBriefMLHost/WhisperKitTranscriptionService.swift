@@ -61,10 +61,17 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // CoreML prediction concurrency. WhisperKit defaults to 16 workers; with VAD
         // chunking that runs many encoder/decoder predictions on the GPU/ANE at once,
         // which on macOS 26 intermittently yields a nil decoder output that WhisperKit
-        // force-unwraps (`decoderOutput.logits!`) and traps. Now that transcription is
-        // process-isolated in dBriefMLHost the trap is recoverable, so the normal path
-        // uses higher concurrency for speed; the safe-mode retry serializes to survive
-        // a deterministic trap. (Normal-path value tuned in the concurrency-restore task.)
+        // force-unwraps (`decoderOutput.logits!`) and traps.
+        //
+        // This now runs inside the isolated dBriefMLHost process, so such a trap kills
+        // only the helper (the app auto-retries once in safe mode) instead of the whole
+        // app. The normal path therefore uses higher concurrency for speed; the
+        // safe-mode retry serializes to survive a deterministic trap.
+        //
+        // 8 is the value validated as stable on macOS 26 (large-v3 turbo). Because a
+        // trap is now recoverable, this ceiling can be raised (toward WhisperKit's
+        // default of 16) — benchmark on the target hardware and weigh added throughput
+        // against how often a higher value forces a crash+safe-mode retry.
         options.concurrentWorkerCount = safeMode ? 1 : 8
 
         do {
