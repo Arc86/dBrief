@@ -300,14 +300,12 @@ struct ResultsView: View {
             .controlSize(.small)
             .disabled(markdownURL == nil)
 
-            if let transcript = recording.richTranscript, !transcript.segments.isEmpty {
+            if let transcript = recording.richTranscript, !transcript.segments.isEmpty,
+               let audioURL = recording.finalizedAudioURL {
                 Button("View Transcript") {
-                    if let id = recording.id as UUID? {
-                        appState.recentRecordings = appState.recentRecordings.filter { $0.id != id }
-                        appState.recentRecordings.append(recording)
-                        openWindow(value: id)
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
+                    appState.pendingTranscriptSelectionURL = audioURL
+                    openWindow(id: "transcript")
+                    NSApp.activate(ignoringOtherApps: true)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

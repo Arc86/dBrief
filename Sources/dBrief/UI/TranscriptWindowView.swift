@@ -1,231 +1,231 @@
 import SwiftUI
+import AppKit
 import OSLog
 
-enum TranscriptViewMode: String, CaseIterable {
-    case transcript = "Transcript"
-    case segments = "Segments"
-    case chat = "Chat"
-}
-
-struct TranscriptWindowView: View {
-    @Binding var recordingId: UUID?
+/// Right-hand detail pane of the transcript browser: a single flat transcript
+/// (speaker label + line), a speaker-chip bar, a waveform player, and a toolbar
+/// whose chat toggle swaps the transcript for the AI chat view.
+struct TranscriptDetailView: View {
+    let recording: Recording
+    /// Called after the recording's files are deleted, so the browser can drop
+    /// it from the sidebar and clear selection.
+    var onDeleted: () -> Void = {}
 
     @Environment(AppContext.self) private var context
-    @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audioPlayer
+    @Environment(TranscriptChatStore.self) private var chatStore
     @Environment(\.colorScheme) private var colorScheme
 
     // Persisted display preferences
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
     @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
-    @AppStorage("showTranscriptSidePanel") private var showSidePanel: Bool = true
 
-    // Per-window state
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
-    @State private var viewMode: TranscriptViewMode = .transcript
-    @State private var searchText = ""
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
+    @State private var showChat = false
     @State private var copied = false
+    @State private var showDeleteConfirm = false
 
-    private var recording: Recording? {
-        guard let id = recordingId else { return nil }
-        if let r = appState.currentRecording, r.id == id { return r }
-        return appState.recording(for: id)
-    }
-
-    private var displayedSegments: [RichSegment] {
-        guard let t = richTranscript else { return [] }
-        let segments = t.segments
-        guard !searchText.isEmpty else { return segments }
-        let q = searchText.lowercased()
-        return segments.filter { $0.text.lowercased().contains(q) }
-    }
+    // Speaker rename
+    @State private var renamingSpeakerId: String?
+    @State private var speakerRenameText = ""
 
     private var displayedTurns: [SpeakerTurn] {
+        richTranscript?.speakerTurns() ?? []
+    }
+
+    private var uniqueSpeakerIds: [String] {
         guard let t = richTranscript else { return [] }
-        let turns = t.speakerTurns()
-        guard !searchText.isEmpty else { return turns }
-        let q = searchText.lowercased()
-        return turns.filter { turn in
-            turn.text.lowercased().contains(q)
+        var seen = Set<String>()
+        var result: [String] = []
+        for seg in t.segments {
+            if let id = seg.speakerId, !seen.contains(id) {
+                seen.insert(id)
+                result.append(id)
+            }
         }
+        return result
     }
 
     var body: some View {
-        if let recording {
-            ZStack {
-                TranscriptDesignTokens.windowBackground(scheme: colorScheme)
-                    .ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    toolbar
-
+        VStack(spacing: 0) {
+            if loadFailed {
+                failedState
+            } else if showChat {
+                chatContent
+            } else if richTranscript != nil {
+                if showSpeakerNames, !uniqueSpeakerIds.isEmpty {
+                    speakerChipBar
                     Divider()
-
-                    HStack(spacing: 0) {
-                        mainContent(for: recording)
-
-                        if showSidePanel, let _ = richTranscript {
-                            Divider()
-                            sidePanelPane(for: recording)
-                        }
-                    }
                 }
+                transcriptList
+                Divider()
+                playerBar
+            } else {
+                loadingState
             }
-            .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
-            .frame(minWidth: 700, minHeight: 500)
-            .task(id: recordingId) {
-                await loadTranscript(for: recording)
-            }
-            .onChange(of: viewMode) { _, newMode in
-                if newMode == .chat, chatService == nil {
-                    buildChatService(for: recording)
-                }
-            }
-        } else {
-            Text("No recording selected")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
+        .toolbar { toolbarContent }
+        .task { await loadTranscript() }
+        .confirmationDialog("Delete this recording?",
+                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deleteRecording() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)” and its audio will be permanently removed.")
+        }
+        .sheet(item: Binding(
+            get: { renamingSpeakerId.map { IdentifiedString(value: $0) } },
+            set: { renamingSpeakerId = $0?.value })) { boxed in
+            speakerRenameSheet(for: boxed.value)
         }
     }
 
     // MARK: - Toolbar
 
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            // Mode picker
-            Picker("Mode", selection: $viewMode) {
-                ForEach(TranscriptViewMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                toggleChat()
+            } label: {
+                Image(systemName: "bubble.left")
+                    .symbolVariant(showChat ? .fill : .none)
+                    .foregroundStyle(showChat ? Color.accentColor : Color.secondary)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 230)
+            .help(showChat ? "Show transcript" : "Chat with transcript")
 
-            // Search (only for transcript/segments)
-            if viewMode != .chat {
-                HStack(spacing: 4) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("Search", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .font(.callout)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6).fill(.ultraThinMaterial)
-                        RoundedRectangle(cornerRadius: 6).fill(TranscriptDesignTokens.cardFill(scheme: colorScheme))
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .frame(width: 180)
-            }
-
-            Spacer()
-
-            // Copy transcript
             Button {
                 copyTranscript()
             } label: {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .foregroundStyle(copied ? Color.green : Color.secondary)
             }
-            .buttonStyle(.borderless)
             .disabled(richTranscript == nil)
             .help("Copy full transcript")
 
-            // Toggle sidebar
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showSidePanel.toggle()
+            Menu {
+                Stepper(value: $fontSize, in: 12...24) {
+                    Text("Font Size: \(fontSize) pt")
                 }
+                Toggle("Speaker Names", isOn: $showSpeakerNames)
             } label: {
-                Image(systemName: showSidePanel ? "sidebar.right" : "sidebar.right")
-                    .symbolVariant(showSidePanel ? .fill : .none)
-                    .foregroundStyle(showSidePanel ? Color.accentColor : Color.secondary)
+                Image(systemName: "textformat.size")
             }
-            .buttonStyle(.borderless)
-            .help(showSidePanel ? "Hide sidebar" : "Show sidebar")
+            .help("Display options")
+
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .help("Delete recording")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            TranscriptDesignTokens.structureFill(scheme: colorScheme)
-                .background(.ultraThinMaterial)
-        )
     }
 
-    // MARK: - Main content
+    // MARK: - Speaker chip bar
 
-    @ViewBuilder
-    private func mainContent(for recording: Recording) -> some View {
-        VStack(spacing: 0) {
-            if loadFailed {
-                failedState(for: recording)
-            } else if viewMode == .chat {
-                chatContent(for: recording)
-            } else if let _ = richTranscript {
-                segmentScrollView(for: recording)
-                Divider()
-                if let audioURL = recording.finalizedAudioURL {
-                    TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
-                } else {
-                    Text("Audio file not found")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(8)
+    private var speakerChipBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(uniqueSpeakerIds, id: \.self) { id in
+                    SpeakerPillView(speakerId: id, displayName: displayName(for: id)) {
+                        speakerRenameText = displayName(for: id)
+                        renamingSpeakerId = id
+                    }
                 }
-            } else {
-                loadingState
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
+        .background(.bar)
     }
 
-    private func segmentScrollView(for recording: Recording) -> some View {
+    // MARK: - Transcript
+
+    private var transcriptList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: TranscriptDesignTokens.cardGap) {
-                    ForEach(displayedTurns) { turn in
-                        SpeakerTurnCard(
-                            turn: turn,
-                            speakerLabels: richTranscript?.speakerLabels ?? [],
-                            isActive: isTurnActive(turn),
-                            showSpeakerNames: showSpeakerNames,
-                            fontSize: fontSize,
-                            onSeek: { time in seek(to: time, in: recording) },
-                            onRenameSpeaker: { id, name in
-                                renameSpeaker(speakerId: id, displayName: name, in: recording)
-                            }
+            List {
+                ForEach(displayedTurns) { turn in
+                    transcriptRow(turn)
+                        .listRowBackground(
+                            isTurnActive(turn)
+                                ? Color.accentColor.opacity(0.12)
+                                : Color.clear
                         )
                         .id(turn.id)
-                    }
-
-                    if displayedTurns.isEmpty && !searchText.isEmpty {
-                        Text("No results for \"\(searchText)\"")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .padding(24)
-                    }
                 }
-                .padding(TranscriptDesignTokens.scrollPadding)
             }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
-                guard viewMode != .chat,
-                      let active = displayedTurns.first(where: { newTime >= $0.startTime && newTime < $0.endTime })
-                else { return }
+                guard let active = displayedTurns.first(where: {
+                    newTime >= $0.startTime && newTime < $0.endTime
+                }) else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
             }
         }
     }
 
     @ViewBuilder
-    private func chatContent(for recording: Recording) -> some View {
+    private func transcriptRow(_ turn: SpeakerTurn) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if showSpeakerNames, let id = turn.speakerId {
+                speakerLabel(id: id)
+            }
+            Text(turn.text)
+                .font(.system(size: CGFloat(fontSize)))
+                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+                .lineSpacing(CGFloat(fontSize) * 0.4)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { seek(to: turn.startTime) }
+    }
+
+    private func speakerLabel(id: String) -> some View {
+        Menu {
+            Button("Rename…") {
+                speakerRenameText = displayName(for: id)
+                renamingSpeakerId = id
+            }
+        } label: {
+            Text(displayName(for: id))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TranscriptDesignTokens.speakerColor(for: id))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func displayName(for id: String) -> String {
+        richTranscript?.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
+    }
+
+    // MARK: - Player
+
+    @ViewBuilder
+    private var playerBar: some View {
+        if let audioURL = recording.finalizedAudioURL {
+            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
+        } else {
+            Text("Audio file not found")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(8)
+        }
+    }
+
+    // MARK: - Chat
+
+    @ViewBuilder
+    private var chatContent: some View {
         if let chatService {
             TranscriptChatView(chatService: chatService)
         } else {
@@ -238,9 +238,11 @@ struct TranscriptWindowView: View {
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task { buildChatService(for: recording) }
+            .task { buildChatService() }
         }
     }
+
+    // MARK: - Placeholder states
 
     private var loadingState: some View {
         VStack {
@@ -251,54 +253,65 @@ struct TranscriptWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private func failedState(for recording: Recording) -> some View {
+    private var failedState: some View {
         VStack(spacing: 12) {
             Spacer()
             Text("Transcript unavailable")
                 .foregroundStyle(.secondary)
-            Button("Rebuild") { rebuildTranscript(for: recording) }
+            Button("Rebuild") { rebuildTranscript() }
                 .buttonStyle(.bordered)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Side panel
+    // MARK: - Speaker rename sheet
 
-    @ViewBuilder
-    private func sidePanelPane(for recording: Recording) -> some View {
-        if richTranscript != nil {
-            TranscriptSidePanel(
-                richTranscript: Binding(
-                    get: { richTranscript ?? RichTranscript(segments: []) },
-                    set: { updated in
-                        richTranscript = updated
-                        saveTranscript(updated, for: recording)
-                    }
-                ),
-                recording: recording,
-                fontSize: $fontSize,
-                showSpeakerNames: $showSpeakerNames
-            )
-            .frame(width: 220)
-            .transition(.move(edge: .trailing))
+    private func speakerRenameSheet(for speakerId: String) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Rename Speaker").font(.headline)
+            TextField("Name", text: $speakerRenameText)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 240)
+                .onSubmit { commitSpeakerRename(speakerId) }
+            HStack {
+                Spacer()
+                Button("Cancel") { renamingSpeakerId = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { commitSpeakerRename(speakerId) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(speakerRenameText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
+        .padding(20)
+    }
+
+    private func commitSpeakerRename(_ speakerId: String) {
+        let name = speakerRenameText.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty {
+            renameSpeaker(speakerId: speakerId, displayName: name)
+        }
+        renamingSpeakerId = nil
     }
 
     // MARK: - Actions
+
+    private func toggleChat() {
+        showChat.toggle()
+        if showChat, chatService == nil { buildChatService() }
+    }
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
         currentTime >= turn.startTime && currentTime < turn.endTime
     }
 
-    private func seek(to time: TimeInterval, in recording: Recording) {
+    private func seek(to time: TimeInterval) {
         guard let audioURL = recording.finalizedAudioURL else { return }
         if audioPlayer.currentFileURL != audioURL { audioPlayer.play(url: audioURL) }
         audioPlayer.seek(to: time)
     }
 
-    private func renameSpeaker(speakerId: String, displayName: String, in recording: Recording) {
+    private func renameSpeaker(speakerId: String, displayName: String) {
         guard var transcript = richTranscript else { return }
         if let idx = transcript.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
             transcript.speakerLabels[idx].displayName = displayName
@@ -306,7 +319,7 @@ struct TranscriptWindowView: View {
             transcript.speakerLabels.append(SpeakerLabel(id: speakerId, displayName: displayName))
         }
         richTranscript = transcript
-        saveTranscript(transcript, for: recording)
+        saveTranscript(transcript)
     }
 
     private func copyTranscript() {
@@ -321,43 +334,74 @@ struct TranscriptWindowView: View {
         }
     }
 
-    private func buildChatService(for recording: Recording) {
-        guard chatService == nil else { return }
-        let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n") ?? recording.transcription?.text ?? ""
+    private func buildChatService() {
+        // Reuse an existing session for this recording so the conversation
+        // survives switching recordings and coming back.
+        if let existing = chatStore.session(for: recording.fileURL) {
+            chatService = existing
+            return
+        }
+        let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+            ?? recording.transcription?.text ?? ""
         let labels = richTranscript?.speakerLabels ?? []
-        chatService = TranscriptChatService(
+        let service = TranscriptChatService(
             transcriptText: text,
             speakerLabels: labels,
             appSettings: context.appSettings,
             localPlugin: context.recordingManager.localPlugin
         )
+        chatStore.set(service, for: recording.fileURL)
+        chatService = service
+    }
+
+    private func deleteRecording() {
+        guard let audioURL = recording.finalizedAudioURL else { return }
+        let base = audioURL.deletingPathExtension()
+        let candidates = [
+            audioURL,
+            base.appendingPathExtension("md"),
+            base.appendingPathExtension("transcript.json"),
+            base.appendingPathExtension("richtranscript.json"),
+            base.appendingPathExtension("json"),
+        ]
+        for url in candidates {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if audioPlayer.currentFileURL == audioURL { audioPlayer.stop() }
+        onDeleted()
     }
 
     // MARK: - Persistence
 
-    private func saveTranscript(_ transcript: RichTranscript, for recording: Recording) {
+    private func saveTranscript(_ transcript: RichTranscript) {
         let store = context.transcriptStore
         Task {
             do {
                 try await store.save(transcript, for: recording)
             } catch {
-                Logger.recording.error("TranscriptWindowView: failed to save: \(error.localizedDescription, privacy: .public)")
+                Logger.recording.error("TranscriptDetailView: failed to save: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    private func loadTranscript(for recording: Recording) async {
+    private func loadTranscript() async {
         richTranscript = nil
         loadFailed = false
-        chatService = nil
+
+        // Restore any in-progress chat session for this recording.
+        if let existing = chatStore.session(for: recording.fileURL) {
+            chatService = existing
+            if !existing.messages.isEmpty { showChat = true }
+        } else {
+            chatService = nil
+        }
 
         if let cached = recording.richTranscript {
             richTranscript = cached
             return
         }
         do {
-            let loaded = try await context.transcriptStore.load(for: recording)
-            richTranscript = loaded
+            richTranscript = try await context.transcriptStore.load(for: recording)
         } catch {
             if let result = recording.transcription {
                 richTranscript = RichTranscriptBuilder().build(from: result)
@@ -367,28 +411,17 @@ struct TranscriptWindowView: View {
         }
     }
 
-    private func rebuildTranscript(for recording: Recording) {
+    private func rebuildTranscript() {
         guard let result = recording.transcription else { return }
         let built = RichTranscriptBuilder().build(from: result)
         richTranscript = built
         loadFailed = false
-        saveTranscript(built, for: recording)
+        saveTranscript(built)
     }
 }
 
-private struct TranscriptFilterButtonStyle: ButtonStyle {
-    let isActive: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
-            .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isActive ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor), lineWidth: 1)
-            )
-    }
+/// Small Identifiable wrapper so a `String` speaker id can drive `.sheet(item:)`.
+private struct IdentifiedString: Identifiable {
+    let value: String
+    var id: String { value }
 }

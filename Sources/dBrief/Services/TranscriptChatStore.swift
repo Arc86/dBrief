@@ -1,0 +1,23 @@
+import Foundation
+
+/// Keeps chat sessions alive across recording switches. The transcript detail
+/// view is recreated whenever the selected recording changes, so the chat
+/// service can't live in that view's `@State`. This store caches one session
+/// per recording (keyed by audio file URL) for the lifetime of the app run.
+@MainActor
+@Observable
+final class TranscriptChatStore {
+    private var sessions: [URL: TranscriptChatService] = [:]
+
+    func session(for url: URL) -> TranscriptChatService? {
+        sessions[url]
+    }
+
+    func set(_ service: TranscriptChatService, for url: URL) {
+        sessions[url] = service
+    }
+
+    func hasMessages(for url: URL) -> Bool {
+        !(sessions[url]?.messages.isEmpty ?? true)
+    }
+}
