@@ -45,7 +45,7 @@ actor ParakeetTranscriptionService {
 
         let modelInfo = ParakeetModelInfo.find(modelVariant)
         let requiredBytes = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
-        guard MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredBytes) else {
+        guard SystemMemory.hasSufficientMemory(requiredBytes: requiredBytes) else {
             throw ParakeetError.insufficientMemory(
                 model: modelInfo.displayName,
                 requiredGB: String(format: "%.1f", Double(requiredBytes) / 1_000_000_000)

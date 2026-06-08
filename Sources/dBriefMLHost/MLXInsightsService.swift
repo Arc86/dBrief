@@ -42,11 +42,7 @@ actor MLXInsightsService {
     /// Computes the path without creating directories (unlike
     /// `llmDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded() -> Bool {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+        let dir = SupportPaths.localAIPluginBase
             .appendingPathComponent("MLX", isDirectory: true)
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dir.path) else {
             return false
@@ -56,7 +52,7 @@ actor MLXInsightsService {
 
     func analyzeTranscriptStream(
         _ text: String,
-        outputLanguage: AppSettings.OutputLanguage
+        outputLanguage: OutputLanguage
     ) -> AsyncThrowingStream<String, Error> {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let fallback = emptyFallbackJSON()
@@ -111,7 +107,7 @@ actor MLXInsightsService {
 
     func analyzeTranscript(
         _ text: String,
-        outputLanguage: AppSettings.OutputLanguage
+        outputLanguage: OutputLanguage
     ) async throws -> LocalInsightsResult {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return LocalInsightsResult(
@@ -248,9 +244,7 @@ actor MLXInsightsService {
         // when memory looks tight and only warn, since the OS may free pages under
         // pressure. The user is also shown a preflight banner before processing.
         let requiredMemory: Int64 = 512_000_000 // 512MB truly free
-        let hasSufficientMemory = await MainActor.run {
-            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
-        }
+        let hasSufficientMemory = SystemMemory.hasSufficientMemory(requiredBytes: requiredMemory)
         if !hasSufficientMemory {
             Logger.ai.warning("Loading Gemma 4 E4B with low available memory (<512MB truly free). Proceeding anyway — this may be slow or fail under memory pressure. Close other apps or use the Remote AI engine if loading fails.")
         }
@@ -286,14 +280,7 @@ actor MLXInsightsService {
     }
 
     private func llmDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("MLX", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("MLX")
     }
 
     private func buildUserPrompt(transcript: String) -> String {
@@ -308,7 +295,7 @@ actor MLXInsightsService {
         """
     }
 
-    private func buildSystemPrompt(outputLanguage: AppSettings.OutputLanguage) -> String {
+    private func buildSystemPrompt(outputLanguage: OutputLanguage) -> String {
         let languageInstruction: String = {
             switch outputLanguage {
             case .english:
