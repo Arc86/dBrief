@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 @preconcurrency import WhisperKit
 import SpeakerKit
 import OSLog
@@ -17,7 +18,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> dBrief.TranscriptionResult {
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
@@ -122,15 +123,15 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     let speakerSegments = diarResult.addSpeakerInfo(to: wkResults, strategy: SpeakerInfoStrategy.subsegment)
                     await speakerKit.unloadModels()
 
-                    var allSegments: [dBrief.TranscriptionResult.Segment] = []
+                    var allSegments: [dBriefWire.TranscriptionResult.Segment] = []
                     var fullTextParts: [String] = []
 
                     for group in speakerSegments {
                         for seg in group {
                             let speakerId = speakerInfoString(seg.speaker)
-                            let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
+                            let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
                                 seg.speakerWords.map { sw in
-                                    dBrief.TranscriptionResult.Word(
+                                    dBriefWire.TranscriptionResult.Word(
                                         word: sw.wordTiming.word,
                                         start: Double(sw.wordTiming.start),
                                         end: Double(sw.wordTiming.end),
@@ -142,7 +143,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                             let segText = cleanTranscriptArtifacts(seg.text)
                             guard !segText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else { continue }
 
-                            allSegments.append(dBrief.TranscriptionResult.Segment(
+                            allSegments.append(dBriefWire.TranscriptionResult.Segment(
                                 start: Double(seg.startTime),
                                 end: Double(seg.endTime),
                                 text: segText,
@@ -155,7 +156,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
                     let fullText = fullTextParts.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     await unload()
-                    return dBrief.TranscriptionResult(
+                    return dBriefWire.TranscriptionResult(
                         text: fullText,
                         segments: allSegments,
                         speakerCount: diarResult.speakerCount
@@ -167,16 +168,16 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             // --- Map WhisperKit results to our type (no diarization or diarization failed) ---
             let mappedSegments = wkResults.flatMap { result in
-                result.segments.map { seg -> dBrief.TranscriptionResult.Segment in
-                    let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.words?.map {
-                        dBrief.TranscriptionResult.Word(
+                result.segments.map { seg -> dBriefWire.TranscriptionResult.Segment in
+                    let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.words?.map {
+                        dBriefWire.TranscriptionResult.Word(
                             word: $0.word,
                             start: Double($0.start),
                             end: Double($0.end),
                             probability: Double($0.probability)
                         )
                     }
-                    return dBrief.TranscriptionResult.Segment(
+                    return dBriefWire.TranscriptionResult.Segment(
                         start: Double(seg.start),
                         end: Double(seg.end),
                         text: cleanTranscriptArtifacts(seg.text),
@@ -193,7 +194,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
             await unload()
-            return dBrief.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
+            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
         } catch {
             await unload()
             throw error

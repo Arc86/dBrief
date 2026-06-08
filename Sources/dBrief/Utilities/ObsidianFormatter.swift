@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 enum ObsidianFormatter {
     private static let defaultConcept = "Meeting Notes"

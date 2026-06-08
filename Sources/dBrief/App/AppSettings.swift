@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CoreML
+import dBriefWire
 
 @MainActor
 @Observable
@@ -151,28 +152,7 @@ final class AppSettings {
     }
 
 
-    enum WhisperComputeUnits: String, CaseIterable, Codable, Hashable, Sendable {
-        case cpuAndNeuralEngine
-        case cpuAndGPU
-        case all
-
-        var displayName: String {
-            switch self {
-            case .cpuAndNeuralEngine: "Neural Engine"
-            case .cpuAndGPU: "Metal GPU"
-            case .all: "All (GPU + Neural Engine)"
-            }
-        }
-
-        /// Maps to the CoreML compute units WhisperKit applies per model component.
-        var mlComputeUnits: MLComputeUnits {
-            switch self {
-            case .cpuAndNeuralEngine: .cpuAndNeuralEngine
-            case .cpuAndGPU: .cpuAndGPU
-            case .all: .all
-            }
-        }
-    }
+    typealias WhisperComputeUnits = dBriefWire.WhisperComputeUnits
 
     enum AIEngine: String, CaseIterable, Codable, Hashable, Sendable {
         case appleIntelligence
@@ -188,30 +168,7 @@ final class AppSettings {
         }
     }
 
-    enum OutputLanguage: Sendable, Equatable {
-        case matchInput
-        case english
-        case dutch
-        case custom(String)
-
-        var displayName: String {
-            switch self {
-            case .matchInput: "Match Transcript"
-            case .english: "English"
-            case .dutch: "Dutch"
-            case .custom(let code): "Custom (\(code.uppercased()))"
-            }
-        }
-
-        fileprivate var modeStorageValue: String {
-            switch self {
-            case .matchInput: "matchInput"
-            case .english: "english"
-            case .dutch: "dutch"
-            case .custom: "custom"
-            }
-        }
-    }
+    typealias OutputLanguage = dBriefWire.OutputLanguage
 
     /// Preferred transcription engine (Apple Speech, Local Whisper, or remote endpoint).
     var transcriptionEngine: TranscriptionEngine {
@@ -696,5 +653,18 @@ final class AppSettings {
 
         self.profiles = loadedProfiles
         self.activeProfileId = resolvedActiveProfileId
+    }
+}
+
+extension OutputLanguage {
+    /// Stable storage discriminator for the language mode, used by
+    /// `AppSettings` UserDefaults persistence.
+    var modeStorageValue: String {
+        switch self {
+        case .matchInput: "matchInput"
+        case .english: "english"
+        case .dutch: "dutch"
+        case .custom: "custom"
+        }
     }
 }

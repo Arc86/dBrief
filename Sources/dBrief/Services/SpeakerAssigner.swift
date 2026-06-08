@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 /// Assigns speaker IDs from a standalone diarization pass onto an existing
 /// transcript by time overlap. Each segment is attributed to the diarized turn

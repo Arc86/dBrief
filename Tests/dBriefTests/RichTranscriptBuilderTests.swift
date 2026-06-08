@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 @testable import dBrief
 import Testing
 

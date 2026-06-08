@@ -13,9 +13,13 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.13.6"),
     ],
     targets: [
+        .target(
+            name: "dBriefWire"
+        ),
         .executableTarget(
             name: "dBrief",
             dependencies: [
+                "dBriefWire",
                 "WhisperKit",
                 .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
@@ -36,6 +40,7 @@ let package = Package(
             name: "dBriefTests",
             dependencies: [
                 "dBrief",
+                "dBriefWire",
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),

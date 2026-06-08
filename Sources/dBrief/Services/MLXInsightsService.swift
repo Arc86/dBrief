@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 import Darwin
 import Hub
 import MLXLMCommon

@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 @MainActor
 @Observable
@@ -59,15 +60,6 @@ struct ProcessingStep: Identifiable {
         case completed
         case failed(String)
     }
-}
-
-// MARK: - Live transcript
-
-struct LiveTranscriptSegment: Identifiable, Sendable {
-    let id = UUID()
-    let start: Double
-    let end: Double
-    let text: String
 }
 
 // MARK: - Memory pressure
