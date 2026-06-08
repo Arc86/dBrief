@@ -46,7 +46,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let whisper = try await loadWhisperKit(config: whisperConfig)
         stateHandler(.transcribing)
 
-        // Build decoding options — WhisperKit manages compute units and worker count internally
+        // Build decoding options. Compute units come from the user's setting (applied
+        // at model load); here we pin worker count.
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
         var options = DecodingOptions()
         options.language = whisperConfig.language
@@ -58,6 +59,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.withoutTimestamps = false
         options.wordTimestamps = true
         options.chunkingStrategy = .vad
+        // Limit CoreML prediction concurrency. WhisperKit defaults to 16 workers,
+        // which with VAD chunking runs many encoder/decoder predictions on the GPU/ANE
+        // at once. On macOS 26 that concurrency intermittently yields a nil decoder
+        // output, which WhisperKit force-unwraps (`decoderOutput.logits!`) and crashes
+        // the whole app. Capping workers trades throughput for stability; tuning the
+        // value to find the safe ceiling on macOS 26.
+        options.concurrentWorkerCount = 4
 
         do {
             let transcribeStart = Date()
@@ -265,9 +273,18 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             modelFolder = downloadedURL.path
         }
 
-        // Phase 2: Init WhisperKit with pre-downloaded model (no download, no load)
+        // Phase 2: Init WhisperKit with pre-downloaded model (no download, no load).
+        // Apply the user's compute-unit choice to the audio encoder and text decoder.
+        // WhisperKit otherwise defaults the decoder to the Neural Engine, where some
+        // large models (e.g. large-v3 turbo) return nil logits and crash; selecting
+        // "Metal GPU" keeps the decoder off the ANE.
+        let units = config.computeUnits.mlComputeUnits
         let wkConfig = WhisperKitConfig(
             modelFolder: modelFolder,
+            computeOptions: ModelComputeOptions(
+                audioEncoderCompute: units,
+                textDecoderCompute: units
+            ),
             verbose: true,
             logLevel: .info,
             load: false,

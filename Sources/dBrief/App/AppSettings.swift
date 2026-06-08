@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CoreML
 
 @MainActor
 @Observable
@@ -160,6 +161,15 @@ final class AppSettings {
             case .cpuAndNeuralEngine: "Neural Engine"
             case .cpuAndGPU: "Metal GPU"
             case .all: "All (GPU + Neural Engine)"
+            }
+        }
+
+        /// Maps to the CoreML compute units WhisperKit applies per model component.
+        var mlComputeUnits: MLComputeUnits {
+            switch self {
+            case .cpuAndNeuralEngine: .cpuAndNeuralEngine
+            case .cpuAndGPU: .cpuAndGPU
+            case .all: .all
             }
         }
     }

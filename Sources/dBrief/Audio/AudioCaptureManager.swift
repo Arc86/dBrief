@@ -90,6 +90,18 @@ final class AudioCaptureManager {
         guard isCapturing else { return }
         stopTimer()
 
+        // Compute the final duration directly from the wall clock rather than
+        // trusting the last value the live timer happened to write — the timer
+        // can be starved if the run loop is busy, leaving `duration` at 0.
+        if let startTime {
+            let now = Date()
+            var elapsed = now.timeIntervalSince(startTime) - pauseAccumulator
+            if let pauseStart = pauseStartTime {
+                elapsed -= now.timeIntervalSince(pauseStart)
+            }
+            duration = max(0, elapsed)
+        }
+
         if let systemCapture {
             try? await systemCapture.stop()
             self.systemCapture = nil
@@ -234,13 +246,18 @@ final class AudioCaptureManager {
     }
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // Add the timer in `.common` modes so it keeps firing while the run loop
+        // is in a tracking mode (e.g. the menu-bar popover is open) — otherwise
+        // the live duration/peak readout freezes during recording.
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let startTime = self.startTime else { return }
                 self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
                 self.peakLevel = max(self.micWriter?.peakLevel ?? 0, self.systemWriter?.peakLevel ?? 0)
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func stopTimer() {

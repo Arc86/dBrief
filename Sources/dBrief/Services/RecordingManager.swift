@@ -128,17 +128,28 @@ final class RecordingManager {
 
         if let recording = appState.currentRecording {
             // Capture track URLs written by the audio pipeline.
-            recording.capturedTracks = audioCaptureManager.trackURLs
-            recording.duration = audioCaptureManager.duration
+            let tracks = audioCaptureManager.trackURLs
+            recording.capturedTracks = tracks
             recording.finalizedAudioURL = nil
             recording.segmentAudioURLs = []
             recording.metadataURL = nil
             recording.finalizationWarnings = []
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: recording.fileURL.path),
-               let size = attrs[.size] as? Int64
-            {
-                recording.fileSize = size
+
+            // File size: the M4A master doesn't exist until finalization, and
+            // `recording.fileURL` is an extension-less scratch base that's never
+            // written to disk — so sum the per-track CAF files that do exist.
+            recording.fileSize = Self.totalTrackFileSize(tracks)
+
+            // Duration: probe the captured audio so the value is authoritative
+            // rather than relying on the live-update timer having fired (it can
+            // be starved while the menu-bar popover holds the run loop). Fall
+            // back to the timer's last value if probing fails.
+            var probedDuration: Double = 0
+            if let probeURL = tracks?.micURL ?? tracks?.systemURL {
+                probedDuration = await durationSeconds(for: probeURL)
             }
+            recording.duration = probedDuration > 0 ? probedDuration : audioCaptureManager.duration
+
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
@@ -681,6 +692,13 @@ final class RecordingManager {
         )
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true
+
+        // Probe the picked file's duration asynchronously and update the
+        // observable recording so the sheet shows a real time instead of 0:00.
+        Task { @MainActor in
+            let probed = await durationSeconds(for: url)
+            if probed > 0 { recording.duration = probed }
+        }
     }
 
     // MARK: - YouTube
@@ -700,9 +718,13 @@ final class RecordingManager {
         let recording = Recording(
             fileURL: audioURL,
             fileSize: size,
-            meetingTitleDraft: sanitizedTitle,
-            finalizedAudioURL: audioURL          // skip re-finalization; file is already ready
+            meetingTitleDraft: sanitizedTitle
         )
+        // Relocate the downloaded file into the recordings folder during finalization
+        // (no DSP re-encode — it's already a finished m4a) so it lands in history and
+        // the transcript viewer like a normal recording.
+        recording.importSourceURL = audioURL
+        recording.duration = await durationSeconds(for: audioURL)
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true
     }
@@ -1353,7 +1375,8 @@ final class RecordingManager {
             let whisperConfig = WhisperRuntimeConfig(
                 modelName: appSettings.whisperModelName,
                 language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage,
-                diarizationEnabled: appSettings.diarizationEnabled
+                diarizationEnabled: appSettings.diarizationEnabled,
+                computeUnits: appSettings.whisperComputeUnits
             )
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
                 try await self.localAIPluginService.transcribe(
@@ -1417,6 +1440,31 @@ final class RecordingManager {
         // Skip segmentation for local transcription engines (they handle long files natively)
         let segmentationEnabled = appSettings.effectiveTranscriptionEngine != .localWhisper
             && appSettings.effectiveTranscriptionEngine != .parakeetLocal
+
+        // Pre-encoded imports (e.g. YouTube downloads) are already finished audio;
+        // relocate them into the recordings folder instead of running capture DSP,
+        // so they appear in history and the transcript viewer like any recording.
+        if let importSource = recording.importSourceURL {
+            let result = try await recordingFinalizer.importExistingAudio(
+                sourceURL: importSource,
+                recording: recording,
+                baseFolder: appSettings.effectiveRecordingFolderURL,
+                segmentationEnabled: segmentationEnabled
+            )
+            recording.importSourceURL = nil
+            recording.fileURL = result.masterAudioURL
+            recording.finalizedAudioURL = result.masterAudioURL
+            recording.segmentAudioURLs = result.segmentAudioURLs
+            recording.metadataURL = result.metadataURL
+            recording.finalizationWarnings = result.warnings
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: result.masterAudioURL.path),
+               let size = attrs[FileAttributeKey.size] as? Int64
+            {
+                recording.fileSize = size
+            }
+            return
+        }
+
         let tracks = recording.capturedTracks ?? CapturedTracks(systemURL: nil, micURL: recording.fileURL)
         let result = try await recordingFinalizer.finalize(
             tracks: tracks,
@@ -1438,6 +1486,30 @@ final class RecordingManager {
         {
             recording.fileSize = size
         }
+
+        // Re-probe the encoded master for the authoritative duration so exported
+        // markdown, integrations, and the results view reflect the real length
+        // even if the stop-time estimate was off (or never captured).
+        let masterDuration = await durationSeconds(for: result.masterAudioURL)
+        if masterDuration > 0 {
+            recording.duration = masterDuration
+        }
+    }
+
+    /// Sum of the on-disk sizes of the captured per-track CAF files. Missing
+    /// files contribute 0 so a single absent track never zeroes the total.
+    static func totalTrackFileSize(_ tracks: CapturedTracks?) -> Int64 {
+        guard let tracks else { return 0 }
+        let urls = [tracks.systemURL, tracks.micURL].compactMap { $0 }
+        var total: Int64 = 0
+        for url in urls {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attrs[.size] as? Int64
+            {
+                total += size
+            }
+        }
+        return total
     }
 
     private func durationSeconds(for fileURL: URL) async -> Double {

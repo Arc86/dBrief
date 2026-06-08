@@ -24,6 +24,10 @@ struct WhisperRuntimeConfig: Sendable, Equatable {
     let modelName: String
     let language: String?
     let diarizationEnabled: Bool
+    /// CoreML compute units applied to WhisperKit's audio encoder and text decoder.
+    /// Keeping the decoder off the Neural Engine (`.cpuAndGPU`) avoids nil-logits
+    /// crashes that some large models (e.g. large-v3 turbo) hit on the ANE.
+    var computeUnits: AppSettings.WhisperComputeUnits = .all
 
     static let `default` = WhisperRuntimeConfig(
         modelName: "openai_whisper-small",
