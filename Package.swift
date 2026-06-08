@@ -17,6 +17,19 @@ let package = Package(
             name: "dBriefWire"
         ),
         .executableTarget(
+            name: "dBriefMLHost",
+            dependencies: [
+                "dBriefWire",
+                "WhisperKit",
+                .product(name: "SpeakerKit", package: "WhisperKit"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                "FluidAudio",
+                .product(name: "Hub", package: "swift-transformers"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
+            ]
+        ),
+        .executableTarget(
             name: "dBrief",
             dependencies: [
                 "dBriefWire",

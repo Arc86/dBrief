@@ -24,9 +24,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // Memory gate before loading the model
         let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
         let requiredMemory: Int64 = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
-        let hasSufficientMemory = await MainActor.run {
-            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
-        }
+        let hasSufficientMemory = SystemMemory.hasSufficientMemory(requiredBytes: requiredMemory)
         guard hasSufficientMemory else {
             throw TranscriptionServiceError.insufficientMemory(
                 model: modelInfo.displayName,
@@ -222,11 +220,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     /// Computes the path without creating directories (unlike
     /// `whisperDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded(name: String) -> Bool {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let base = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+        let base = SupportPaths.localAIPluginBase
             .appendingPathComponent("WhisperKit", isDirectory: true)
         return isModelCached(name: name, downloadBase: base)
     }
@@ -343,14 +337,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     private func whisperDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("WhisperKit", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("WhisperKit")
     }
 
     /// Standalone speaker diarization for an already-transcribed recording.
@@ -387,14 +374,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     private func speakerKitDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("SpeakerKit", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("SpeakerKit")
     }
 
     private func speakerInfoString(_ speaker: SpeakerInfo) -> String? {

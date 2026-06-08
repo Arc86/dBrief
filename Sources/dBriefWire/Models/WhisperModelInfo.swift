@@ -7,17 +7,17 @@ import Foundation
 /// - `openai_whisper-large-v3_turbo_954MB` → displayName: "Whisper Large V3 Turbo (954 MB)", isTurbo: true, quantizedSizeMB: 954
 /// - `distil-whisper_distil-large-v3_turbo_600MB` → displayName: "Distil Large V3 Turbo (600 MB)"
 /// - `openai_whisper-large-v3-v20240930_626MB` → displayName: "Whisper Large V3 Sep24 (626 MB)"
-struct WhisperModelInfo: Sendable {
-    let originalName: String
-    let displayName: String
-    let family: String
-    let isEnglishOnly: Bool
-    let isTurbo: Bool
-    let quantizedSizeMB: Int?
-    let estimatedMemoryMB: Int
+public struct WhisperModelInfo: Sendable {
+    public let originalName: String
+    public let displayName: String
+    public let family: String
+    public let isEnglishOnly: Bool
+    public let isTurbo: Bool
+    public let quantizedSizeMB: Int?
+    public let estimatedMemoryMB: Int
 
     /// Parse a HuggingFace model folder name into structured metadata.
-    static func parse(_ modelName: String) -> WhisperModelInfo {
+    public static func parse(_ modelName: String) -> WhisperModelInfo {
         let originalName = modelName
 
         // Extract components
@@ -191,7 +191,7 @@ struct WhisperModelInfo: Sendable {
     }
 
     /// Fallback list of core Whisper models for offline use.
-    static let fallbackModels: [WhisperModelInfo] = [
+    public static let fallbackModels: [WhisperModelInfo] = [
         parse("openai_whisper-tiny"),
         parse("openai_whisper-tiny.en"),
         parse("openai_whisper-base"),
@@ -211,13 +211,13 @@ struct WhisperModelInfo: Sendable {
     ]
 
     /// Fallback list of model names (without parsed metadata).
-    static let fallbackModelNames: [String] = fallbackModels.map { $0.originalName }
+    public static let fallbackModelNames: [String] = fallbackModels.map { $0.originalName }
 }
 
 // MARK: - Identifiable
 
 extension WhisperModelInfo: Identifiable {
-    var id: String { originalName }
+    public var id: String { originalName }
 }
 
 // MARK: - Comparable
@@ -234,7 +234,7 @@ extension WhisperModelInfo: Comparable {
         "distil-large-v3": 7,
     ]
 
-    static func < (lhs: WhisperModelInfo, rhs: WhisperModelInfo) -> Bool {
+    public static func < (lhs: WhisperModelInfo, rhs: WhisperModelInfo) -> Bool {
         // 1. Compare by family order
         let lhsFamilyOrder = familyOrder[lhs.family] ?? 99
         let rhsFamilyOrder = familyOrder[rhs.family] ?? 99
@@ -270,7 +270,7 @@ extension WhisperModelInfo: Comparable {
         return lhs.originalName < rhs.originalName
     }
 
-    static func == (lhs: WhisperModelInfo, rhs: WhisperModelInfo) -> Bool {
+    public static func == (lhs: WhisperModelInfo, rhs: WhisperModelInfo) -> Bool {
         return lhs.originalName == rhs.originalName
     }
 }
