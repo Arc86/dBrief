@@ -251,7 +251,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let modelFolder: String
         if isCached {
             stateHandler(.downloading(progress: nil, stage: .whisperModelLoading))
-            modelFolder = downloadBase.appendingPathComponent(config.modelName).path
+            modelFolder = Self.cachedModelFolder(name: config.modelName, downloadBase: downloadBase, repo: Self.modelRepo).path
         } else {
             stateHandler(.downloading(progress: 0.0, stage: .whisperModel))
             let downloadedURL = try await WhisperKit.download(
@@ -296,8 +296,19 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         return whisper
     }
 
+    /// The on-disk folder a WhisperKit model is downloaded to. WhisperKit uses the
+    /// HuggingFace Hub snapshot layout `<downloadBase>/models/<repo>/<variant>`, not
+    /// `<downloadBase>/<variant>` — so the cache check must look there.
+    nonisolated static func cachedModelFolder(name: String, downloadBase: URL, repo: String) -> URL {
+        var url = downloadBase.appendingPathComponent("models")
+        for component in repo.split(separator: "/") {
+            url = url.appendingPathComponent(String(component))
+        }
+        return url.appendingPathComponent(name)
+    }
+
     private func isModelCached(name: String, downloadBase: URL) -> Bool {
-        let modelDir = downloadBase.appendingPathComponent(name)
+        let modelDir = Self.cachedModelFolder(name: name, downloadBase: downloadBase, repo: Self.modelRepo)
         return fileManager.fileExists(atPath: modelDir.path)
     }
 
