@@ -72,10 +72,20 @@ struct RecordingHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Recent Recordings")
                     .font(.headline)
                 Spacer()
+                Button {
+                    openWindow(id: "transcript")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("Open Viewer", systemImage: "rectangle.split.2x1")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Open the transcript viewer")
+
                 Button {
                     loadRecordings()
                 } label: {
@@ -83,6 +93,7 @@ struct RecordingHistoryView: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
+                .help("Refresh")
             }
 
             if recordings.isEmpty {
@@ -169,7 +180,7 @@ struct RecordingHistoryView: View {
 
             // Expanded action chips
             if isExpanded {
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6) {
                     if item.hasTranscript {
                         actionChip(
                             title: loadedSummaries[item.id] != nil ? "Copy Summary" : "Copy Transcript",
