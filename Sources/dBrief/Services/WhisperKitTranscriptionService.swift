@@ -323,6 +323,39 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         return dir
     }
 
+    /// Standalone speaker diarization for an already-transcribed recording.
+    /// Runs SpeakerKit on the audio and returns raw speaker turns; the caller
+    /// maps these onto existing transcript segments by time overlap. Independent
+    /// of WhisperKit transcription, so it never touches WhisperKit's
+    /// `TranscriptionResult` and avoids the module/class name collision — it only
+    /// reads SpeakerKit's own `DiarizationResult.segments`.
+    func diarize(fileURL: URL) async throws -> [DiarizedTurn] {
+        Logger.localAI.info("Standalone diarization for \(fileURL.lastPathComponent, privacy: .public)")
+        let audioArray: [Float]
+        do {
+            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
+        } catch {
+            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
+        }
+
+        let downloadBase = try speakerKitDownloadBaseURL()
+        let skConfig = PyannoteConfig(
+            downloadBase: downloadBase.path,
+            download: true,
+            load: true,
+            verbose: true
+        )
+        let speakerKit = try await SpeakerKit(skConfig)
+        let diarResult = try await speakerKit.diarize(audioArray: audioArray)
+        await speakerKit.unloadModels()
+        Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
+
+        return diarResult.segments.compactMap { seg in
+            guard let id = speakerInfoString(seg.speaker) else { return nil }
+            return DiarizedTurn(speakerId: id, start: Double(seg.startTime), end: Double(seg.endTime))
+        }
+    }
+
     private func speakerKitDownloadBaseURL() throws -> URL {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let bundle = Bundle.main.bundleIdentifier ?? "dBrief"

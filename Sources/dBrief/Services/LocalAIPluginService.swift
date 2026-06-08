@@ -34,6 +34,15 @@ actor LocalAIPluginService: LocalAIPluginProtocol {
         }
     }
 
+    /// Run a standalone speaker-diarization pass on an existing recording's audio
+    /// (serialized on the GPU mutex, like transcription).
+    func diarize(fileURL: URL) async throws -> [DiarizedTurn] {
+        try await mutex.withLock {
+            await insightsService.unload()
+            return try await whisperService.diarize(fileURL: fileURL)
+        }
+    }
+
     func analyzeTranscriptStream(
         _ text: String,
         outputLanguage: AppSettings.OutputLanguage

@@ -32,6 +32,11 @@ struct TranscriptDetailView: View {
     @State private var renamingSpeakerId: String?
     @State private var speakerRenameText = ""
 
+    // Diarization (after-the-fact speaker detection)
+    @State private var isDiarizing = false
+    @State private var showDiarizeConfirm = false
+    @State private var diarizeError: String?
+
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
     }
@@ -70,6 +75,7 @@ struct TranscriptDetailView: View {
         .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .overlay { if isDiarizing { diarizingOverlay } }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteRecording() }
@@ -77,10 +83,42 @@ struct TranscriptDetailView: View {
         } message: {
             Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)” and its audio will be permanently removed.")
         }
+        .confirmationDialog("Detect speakers?",
+                            isPresented: $showDiarizeConfirm, titleVisibility: .visible) {
+            Button("Detect Speakers") { Task { await runDiarization() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Runs on-device speaker detection for this recording and assigns speakers to the transcript. This replaces any current speakers and custom names. The first run downloads the speaker model.")
+        }
+        .alert("Speaker detection failed", isPresented: Binding(
+            get: { diarizeError != nil },
+            set: { if !$0 { diarizeError = nil } })) {
+            Button("OK", role: .cancel) { diarizeError = nil }
+        } message: {
+            Text(diarizeError ?? "")
+        }
         .sheet(item: Binding(
             get: { renamingSpeakerId.map { IdentifiedString(value: $0) } },
             set: { renamingSpeakerId = $0?.value })) { boxed in
             speakerRenameSheet(for: boxed.value)
+        }
+    }
+
+    private var diarizingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35).ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Detecting speakers…")
+                    .font(.callout)
+                Text("First run downloads the speaker model, which can take a while.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: 320)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         }
     }
 
@@ -106,6 +144,15 @@ struct TranscriptDetailView: View {
             }
             .disabled(richTranscript == nil)
             .help("Copy full transcript")
+
+            Button {
+                showDiarizeConfirm = true
+            } label: {
+                Image(systemName: "person.2.wave.2")
+                    .foregroundStyle(Color.secondary)
+            }
+            .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
+            .help("Detect speakers")
 
             Menu {
                 Stepper(value: $fontSize, in: 12...24) {
@@ -320,6 +367,26 @@ struct TranscriptDetailView: View {
         }
         richTranscript = transcript
         saveTranscript(transcript)
+    }
+
+    private func runDiarization() async {
+        guard let audioURL = recording.finalizedAudioURL,
+              let transcript = richTranscript else { return }
+        isDiarizing = true
+        defer { isDiarizing = false }
+        do {
+            let turns = try await context.recordingManager.localPlugin.diarize(fileURL: audioURL)
+            guard !turns.isEmpty else {
+                diarizeError = "No speakers were detected in this recording."
+                return
+            }
+            let updated = SpeakerAssigner.assign(turns, to: transcript)
+            richTranscript = updated
+            if !showSpeakerNames { showSpeakerNames = true }
+            saveTranscript(updated)
+        } catch {
+            diarizeError = error.localizedDescription
+        }
     }
 
     private func copyTranscript() {
