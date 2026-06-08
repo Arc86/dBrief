@@ -4,6 +4,7 @@ import SwiftUI
 /// Reads its state from `RecordingManager.modelDownloads[kind]`.
 struct ModelDownloadButton: View {
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSettings.self) private var appSettings
     let kind: LocalModelKind
 
     @State private var cached = false
@@ -20,6 +21,16 @@ struct ModelDownloadButton: View {
         }
     }
 
+    /// Identifies which concrete model this button targets, so the cache check
+    /// re-runs when the user picks a different model (not just on phase changes).
+    private var modelIdentity: String {
+        switch kind {
+        case .whisper: return appSettings.whisperModelName
+        case .parakeet: return appSettings.parakeetModelVariant
+        case .gemma: return "gemma"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             switch phase {
@@ -31,7 +42,7 @@ struct ModelDownloadButton: View {
                 failedRow(message)
             }
         }
-        .task(id: phaseKey) {
+        .task(id: "\(phaseKey):\(modelIdentity)") {
             cached = await recordingManager.isModelCached(kind)
         }
     }
