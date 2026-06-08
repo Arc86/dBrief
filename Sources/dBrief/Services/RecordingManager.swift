@@ -834,6 +834,12 @@ final class RecordingManager {
         appState.recordingState == .idle
     }
 
+    /// Fetch the list of available WhisperKit model variants from HuggingFace,
+    /// routed through the helper process. Returns [] on failure (caller falls back).
+    func fetchAvailableWhisperModels() async -> [String] {
+        await localAIPluginService.fetchAvailableWhisperModels(repo: "argmaxinc/whisperkit-coreml")
+    }
+
     /// Best-effort check for whether the model selected for `kind` is cached.
     func isModelCached(_ kind: LocalModelKind) async -> Bool {
         switch kind {

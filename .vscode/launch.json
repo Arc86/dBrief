@@ -39,6 +39,26 @@
             "target": "dBriefMLHost",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release dBriefMLHost"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:dBrief}",
+            "name": "Debug dBriefMLHostStub",
+            "target": "dBriefMLHostStub",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug dBriefMLHostStub"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:dBrief}",
+            "name": "Release dBriefMLHostStub",
+            "target": "dBriefMLHostStub",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release dBriefMLHostStub"
         }
     ]
 }

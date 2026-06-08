@@ -21,6 +21,7 @@ actor MockBackend: MLBackend {
     func isWhisperCached(name: String) async -> Bool { true }
     func isLLMCached() async -> Bool { false }
     func isParakeetCached() async -> Bool { true }
+    func fetchWhisperModels(repo: String) async throws -> [String] { ["openai_whisper-small"] }
     func purgeModels() async throws {}
     func purgeWhisper() async throws {}
     func purgeSpeakerKit() async throws {}

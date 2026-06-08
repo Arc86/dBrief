@@ -19,6 +19,7 @@ public enum MLRequest: Sendable, Codable {
     case isWhisperCached(name: String)
     case isLLMCached
     case isParakeetCached
+    case fetchWhisperModels(repo: String)
     case purgeModels
     case purgeWhisper
     case purgeSpeakerKit
@@ -36,6 +37,7 @@ public enum MLEvent: Sendable, Codable {
     case diarizeResult([DiarizedTurn])
     case insightsResult(LocalInsightsResult)
     case boolResult(Bool)
+    case stringsResult([String])
     case voidResult                             // terminal success for no-value ops
     case error(WireError)                       // terminal thrown (non-crash) error
     case finished                               // terminal marker for streaming ops

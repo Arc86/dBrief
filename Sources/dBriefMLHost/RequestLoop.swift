@@ -17,6 +17,7 @@ protocol MLBackend: Sendable {
     func isWhisperCached(name: String) async -> Bool
     func isLLMCached() async -> Bool
     func isParakeetCached() async -> Bool
+    func fetchWhisperModels(repo: String) async throws -> [String]
     func purgeModels() async throws
     func purgeWhisper() async throws
     func purgeSpeakerKit() async throws
@@ -83,6 +84,8 @@ final class RequestRouter: Sendable {
                 send(.boolResult(await backend.isLLMCached())); send(.finished)
             case .isParakeetCached:
                 send(.boolResult(await backend.isParakeetCached())); send(.finished)
+            case let .fetchWhisperModels(repo):
+                send(.stringsResult(try await backend.fetchWhisperModels(repo: repo))); send(.finished)
             case .purgeModels: try await backend.purgeModels(); send(.voidResult); send(.finished)
             case .purgeWhisper: try await backend.purgeWhisper(); send(.voidResult); send(.finished)
             case .purgeSpeakerKit: try await backend.purgeSpeakerKit(); send(.voidResult); send(.finished)
