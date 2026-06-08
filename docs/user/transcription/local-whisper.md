@@ -32,6 +32,8 @@ Use the **Download model** button to fetch a model ahead of time. Downloads show
 
 Turn on **Speaker diarization** in the same section to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
 
+You can also run speaker detection **after the fact** on an already-transcribed recording with the **Detect Speakers** button in the [transcript viewer](../history/transcript-viewer.md) — no need to re-transcribe.
+
 ## Deleting the model
 
 To free up disk space, go to **Settings → AI & Models → Transcription** and use **Purge local WhisperKit model**. You can re-download it at any time.

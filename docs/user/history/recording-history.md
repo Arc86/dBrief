@@ -6,6 +6,8 @@ The history list in the dBrief menu bar window shows your recent recordings.
 
 Click the dBrief menu bar icon to open the main window. Your recordings appear in the history list, sorted by most recent first. dBrief keeps up to 20 recordings in the list.
 
+The header has an **Open Viewer** button that opens the full [transcript viewer](transcript-viewer.md) — a two-pane window listing all your recordings — without having to expand a row first.
+
 ## Expanding a recording
 
 Click a row to expand it. You'll see:
