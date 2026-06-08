@@ -88,7 +88,14 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 }
             )
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
-            Logger.localAI.info("Transcription completed in \(String(format: "%.1f", transcribeDuration))s")
+            // Logged at .notice so it persists to the unified log (unlike .info), making
+            // transcription speed comparable across runs/settings via `log show`. Includes
+            // worker count, model, and audio length so the record is self-explanatory.
+            let audioSeconds = Double(audioArray.count) / 16_000.0
+            let speedFactor = audioSeconds > 0 ? audioSeconds / transcribeDuration : 0
+            Logger.localAI.notice(
+                "Transcription completed in \(String(format: "%.1f", transcribeDuration))s (\(String(format: "%.1f", speedFactor))x realtime) — model=\(whisperConfig.modelName, privacy: .public), workers=\(options.concurrentWorkerCount), audio=\(String(format: "%.1f", audioSeconds))s"
+            )
 
             // --- Speaker diarization (optional) ---
             // Diarization must be inlined here because wkResults type can only be inferred
