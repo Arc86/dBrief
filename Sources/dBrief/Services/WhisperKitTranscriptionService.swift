@@ -63,9 +63,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // which with VAD chunking runs many encoder/decoder predictions on the GPU/ANE
         // at once. On macOS 26 that concurrency intermittently yields a nil decoder
         // output, which WhisperKit force-unwraps (`decoderOutput.logits!`) and crashes
-        // the whole app. Capping workers trades throughput for stability; tuning the
-        // value to find the safe ceiling on macOS 26.
-        options.concurrentWorkerCount = 4
+        // the whole app. 8 was validated as stable on macOS 26 (large-v3 turbo) while
+        // recovering most of the throughput; 16 (the default) crashes.
+        options.concurrentWorkerCount = 8
 
         do {
             let transcribeStart = Date()
