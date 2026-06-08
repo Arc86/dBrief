@@ -4,14 +4,18 @@ Integrations send your recording outputs to external apps and services automatic
 
 ## Available integrations
 
+These integrations are available in **Settings → Integrations**:
+
 | Integration | What it does |
 |---|---|
+| [Obsidian](obsidian.md) | Writes a Markdown file to your vault |
 | [Apple Notes](apple-notes.md) | Creates a note with your selected content |
 | [Apple Reminders](apple-reminders.md) | Creates one reminder per action item |
-| [Notion](notion.md) | Adds a page to a Notion database |
-| [Obsidian](obsidian.md) | Writes a Markdown file to your vault |
 | [Webhook](webhook.md) | HTTP POST to any URL |
-| [Evernote, Google Keep, OneNote](other-integrations.md) | Sends content via each service's API |
+
+## Not yet available
+
+Support for [Notion, Evernote, Google Keep, and Microsoft OneNote](other-integrations.md) is built but currently hidden from the Settings UI while it's being verified. These don't appear in **Settings → Integrations** yet.
 
 ## Field selection
 

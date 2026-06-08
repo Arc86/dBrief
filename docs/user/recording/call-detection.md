@@ -1,10 +1,10 @@
 # Call Detection
 
-dBrief can watch for meeting apps and automatically prompt you to start recording — or start automatically without asking.
+dBrief can watch for meeting apps and automatically start recording — or just be ready when a call begins.
 
 ## Supported apps
 
-dBrief detects the following apps when they launch:
+dBrief recognises these meeting apps:
 
 - Zoom
 - Microsoft Teams (classic and new)
@@ -15,20 +15,19 @@ dBrief detects the following apps when they launch:
 
 ## How it works
 
-When a supported app launches (or is already running when dBrief starts), dBrief checks whether your microphone is active. If it is, call detection fires.
+When a supported app is running and your microphone becomes active, call detection fires.
 
-## Response options
+## Settings
 
-In **Settings → Recording**, you can choose what happens when a call is detected:
+In **Settings → General → Call Detection**:
 
-- **Ask me** — a small popup appears asking if you want to start recording. You can dismiss it if you don't want to record this call.
-- **Start automatically** — dBrief starts recording immediately without asking.
-- **Off** — call detection is disabled.
+- **Enable call detection** — turn the feature on or off.
+- **Auto-start recording when call detected** — when on, dBrief starts recording automatically as soon as a call is detected. When off, detection still runs but won't start a recording on its own.
 
-## Blocking specific apps
+## Choosing which apps to watch
 
-If you use an app in the supported list but don't want dBrief to react to it, add it to the blocklist in **Settings → Recording**. Blocked apps are ignored by call detection.
+With call detection enabled, a **Call Platforms** list appears in **Settings → General**. Toggle off any app you don't want dBrief to react to — for example, if you use Slack for messages but never for calls.
 
-## Dismissing the popup
+## Calendar context
 
-If you choose **Ask me**, the call detected popup appears as a small overlay. Click **Start Recording** to begin, or dismiss it to skip this call.
+When a call is detected (or you start recording manually), dBrief can pull the matching event from your calendar to pre-fill the meeting title and participants. See [Calendar Integration](calendar.md).

@@ -1,8 +1,6 @@
 # Local Whisper
 
-On-device transcription using OpenAI's Whisper model, running via WhisperKit on Apple Silicon.
-
-> **Requires:** Mac with Apple Silicon (M1 or later).
+On-device transcription using OpenAI's Whisper model, running via WhisperKit. Runs best on Apple Silicon.
 
 ## What it is
 
@@ -10,7 +8,7 @@ Local Whisper uses WhisperKit to run a Whisper speech recognition model directly
 
 ## First use: model download
 
-The first time you select Local Whisper, dBrief downloads the model (~150 MB). This happens once and the model is stored at:
+The first time you use Local Whisper, dBrief downloads a model. The default model is **Whisper Small** (~2 GB). Models are stored at:
 
 ```
 ~/Library/Application Support/dBrief/LocalAIPlugin/WhisperKit/
@@ -18,15 +16,25 @@ The first time you select Local Whisper, dBrief downloads the model (~150 MB). T
 
 You need a working internet connection for the initial download. After that, transcription works fully offline.
 
+## Choosing a model
+
+In **Settings → AI & Models → Transcription**, the model picker lists available Whisper models with their approximate memory use. Smaller models (Tiny, Small) are faster and lighter; larger models (Medium, Large v3, Distil Large v3) are more accurate but need more memory and disk space. Enable **Show all models** (Power User Mode) to see the full list fetched from Hugging Face.
+
+Use the **Download model** button to fetch a model ahead of time. Downloads show progress and can be cancelled. A green checkmark indicates a model is already on disk.
+
 ## Setup
 
-1. Go to **Settings → Recording**
+1. Go to **Settings → AI & Models → Transcription**
 2. Select **Local Whisper** as your transcription engine
-3. dBrief will prompt you to download the model if it isn't already on your Mac
+3. Pick a model and click **Download model** (or just start a recording — dBrief downloads the model on demand)
+
+## Speaker diarization
+
+Turn on **Speaker diarization** in the same section to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
 
 ## Deleting the model
 
-To free up disk space, go to **Settings → AI & Models** and use the option to remove the Whisper model. You can re-download it at any time.
+To free up disk space, go to **Settings → AI & Models → Transcription** and use **Purge local WhisperKit model**. You can re-download it at any time.
 
 ## Accuracy
 
@@ -35,6 +43,8 @@ Local Whisper is significantly more accurate than Apple Speech, especially for:
 - Technical vocabulary
 - Multiple speakers
 - Non-native accents
+
+Larger models improve accuracy further at the cost of speed and memory.
 
 ## Privacy
 

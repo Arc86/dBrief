@@ -4,32 +4,34 @@ Where dBrief stores your recordings, exports, models, and settings.
 
 ## Recordings
 
-Audio files are saved in dated subfolders inside your output folder (set during onboarding or in **Settings → Recording**):
+Audio files are saved in dated subfolders inside your output folder (set in **Settings → General → Folders**):
 
 ```
 ~/Documents/Recordings/
 └── 2026/
     └── 04/
-        └── 2026-04-06_1430_team-standup.flac
+        └── 2026-04-06_1430_team-standup.m4a
 ```
 
-You can change the output folder in **Settings → Recording**.
+Recordings are saved as **M4A / AAC**. You can change the output folder in **Settings → General → Folders**.
 
 ## Markdown exports
 
-Markdown files are saved in the same dated subfolder as the audio file, unless you've configured an Obsidian vault folder — in which case they go there instead.
+Markdown files are saved in the same dated subfolder as the audio file, unless you've configured an Obsidian vault folder — in which case they go there instead. A `.richtranscript.json` sidecar (storing speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)) is written next to the Markdown file.
 
-## AI models
+## AI and transcription models
 
-Local AI models (Whisper and Qwen) are stored in Application Support:
+On-device models are stored in Application Support:
 
 ```
 ~/Library/Application Support/dBrief/LocalAIPlugin/
-├── WhisperKit/    ← Local Whisper model (~150 MB)
-└── MLX/           ← Qwen3 4B model (~2–3 GB)
+├── WhisperKit/    ← Local Whisper model (size depends on chosen model)
+├── SpeakerKit/    ← Speaker diarization model
+├── FluidAudio/    ← Parakeet model (~1.5–1.8 GB)
+└── MLX/           ← Gemma 4 E4B model
 ```
 
-To remove models, use the options in **Settings → AI & Models**.
+To remove models, use the **Purge** options in **Settings → AI & Models** (Power User Mode for the Gemma model).
 
 ## Settings
 

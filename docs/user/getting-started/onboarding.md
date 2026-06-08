@@ -4,35 +4,36 @@ A walkthrough of the setup wizard that appears when you first launch dBrief.
 
 ## What the wizard covers
 
-The onboarding wizard walks you through four steps:
+The onboarding wizard walks you through four short steps.
 
-### 1. Permissions
+### 1. Welcome
 
-dBrief asks for Microphone access. This is required for all recording. You can grant Screen Recording and Speech Recognition here too — or skip them and grant them later.
+A quick introduction. You're reminded that you can press the global record shortcut (**⌃⌥⌘R** by default) to start and stop recording from anywhere on your Mac.
 
-### 2. Transcription engine
+### 2. Permissions
 
-Choose how your recordings get converted to text:
+dBrief asks for the permissions it uses. You can grant them here or skip and grant them later:
 
-- **Apple Speech** — on-device, no download, works on any Mac
-- **Local Whisper** — on-device Whisper model, higher accuracy, requires Apple Silicon and a one-time model download
-- **Remote Endpoint** — your own transcription server (OpenAI-compatible)
+- **Microphone** — required for all recording. You can't continue past this step without it.
+- **Screen Recording** — for capturing system audio (what your Mac plays out loud) alongside your mic.
+- **Speech Recognition** — for the built-in Apple Speech transcription engine.
+- **Calendar** — lets dBrief pre-fill the meeting title and participants from your calendar when a recording starts.
 
-You can change this later in **Settings → Recording**.
+### 3. Endpoints
 
-### 3. AI engine
+If you plan to use your own transcription or AI server, this step points you to where you configure external endpoints. You can skip it and set endpoints up later in **Settings → AI & Models**. The on-device engines work without any endpoint configuration.
 
-Choose how dBrief generates summaries and action items:
+### 4. Ready
 
-- **Apple Intelligence** — on-device, requires macOS 26+ on Apple Silicon
-- **Qwen3 4B Local** — on-device LLM, requires Apple Silicon and a one-time model download
-- **Remote Endpoint** — your own AI server (OpenAI-compatible)
+You're all set. dBrief lives in your menu bar — click the icon any time to record or open Settings.
 
-You can change this later in **Settings → AI & Models**.
+## Choosing engines and folders
 
-### 4. Output folder
+The wizard no longer asks you to pick engines or an output folder up front. dBrief ships with sensible defaults, and you can change everything later:
 
-Choose where dBrief saves your recordings and Markdown files. The default is `~/Documents/Recordings`. You can pick any folder you have write access to.
+- **Transcription engine** — **Settings → AI & Models → Transcription**
+- **AI engine** — **Settings → AI & Models → AI Analysis**
+- **Output folders** — **Settings → General → Folders**
 
 ## Revisiting the wizard
 

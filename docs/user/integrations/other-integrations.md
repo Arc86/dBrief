@@ -2,6 +2,8 @@
 
 dBrief can also send recordings to Evernote, Google Keep, and Microsoft OneNote.
 
+> **Not currently available.** These three integrations are built into dBrief but temporarily hidden from **Settings → Integrations** while they're being verified. The steps below describe how they work for when they're re-enabled.
+
 ---
 
 ## Evernote

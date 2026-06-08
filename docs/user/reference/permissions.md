@@ -26,6 +26,14 @@ Without this permission, Apple Speech is unavailable. Local Whisper and remote e
 
 **To grant:** Open **System Settings → Privacy & Security → Speech Recognition** and enable dBrief.
 
+## Calendar
+
+**Required for:** Calendar integration — pre-filling the meeting title and participants from your calendar when a recording starts.
+
+Without this permission, dBrief still records normally; it just can't pull in calendar details. See [Calendar Integration](../recording/calendar.md).
+
+**To grant:** Open **System Settings → Privacy & Security → Calendars** and enable dBrief, or use the **Request** button in **Settings → General → Permissions**.
+
 ## Reminders
 
 **Required for:** The Apple Reminders integration.
@@ -34,4 +42,4 @@ Without this permission, Apple Speech is unavailable. Local Whisper and remote e
 
 ---
 
-> **Tip:** You can review all permissions from inside dBrief at **Settings → General**, where each permission shows its current status.
+> **Tip:** **Settings → General → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, each with a button to request access or open the right System Settings pane. Speech Recognition and Reminders are requested on demand the first time you use the feature that needs them.

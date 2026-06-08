@@ -17,10 +17,11 @@ Click a row to expand it. You'll see:
 
 | Chip | What it does |
 |---|---|
-| **Play** | Play back the recording audio |
-| **View** | Open the transcript, summary, and AI results |
-| **Export** | Open the Markdown file in Finder |
-| **Re-run** | Run transcription or AI analysis again |
+| **Play** | Play back the recording audio in the inline mini player |
+| **Transcript** | Open the [transcript viewer](transcript-viewer.md) — transcript, speakers, audio sync, and chat |
+| **Copy** | Copy the summary or transcript to the clipboard |
+| **Show in Finder** | Reveal the recording and Markdown files on disk |
+| **Re-run AI** | Run AI analysis again |
 | **Delete** | Remove the recording and its files |
 
 ## Re-running transcription or AI analysis

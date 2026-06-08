@@ -23,7 +23,7 @@ Go to **Settings → AI & Models** and select your engine. dBrief offers three o
 | Engine | Where it runs | Requirements |
 |---|---|---|
 | **Apple Intelligence** | On your Mac | macOS 26+, Apple Silicon |
-| **Qwen3 4B Local** | On your Mac | Apple Silicon + model download |
+| **Gemma 4 E4B Local** | On your Mac | Apple Silicon + model download |
 | **Remote Endpoint** | Your server | OpenAI-compatible server |
 
 ## Processing order
@@ -33,3 +33,11 @@ AI analysis runs after transcription completes. The steps run sequentially: summ
 ## Customising prompts
 
 You can edit the prompts dBrief uses for each AI task in **Settings → AI & Models** (requires Power User Mode). Profiles can also override prompts on a per-meeting basis — see [Meeting Profiles](../profiles/what-are-profiles.md).
+
+## Turning AI off
+
+If you only want transcripts, turn off **Enable AI processing** in **Settings → AI & Models → AI Analysis**. Recordings are then transcribed only — no summary, action items, or tags — and the AI options are hidden from the post-recording sheet.
+
+## Chatting with a transcript
+
+Beyond the automatic outputs, you can ask follow-up questions about any recording. See [Transcript Chat](transcript-chat.md).

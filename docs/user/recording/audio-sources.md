@@ -1,29 +1,24 @@
 # Audio Sources
 
-dBrief can record from your microphone alone, or mix your microphone with system audio (the sound your Mac plays out loud).
+dBrief records your microphone, and — when it can — mixes in your Mac's system audio (the sound your Mac plays out loud) so remote participants on a call are captured too.
 
-## Mic-only mode
+## How dBrief picks sources
 
-Records only your microphone input. Works with just the Microphone permission. Use this when:
+There's no manual "mic vs. mixed" switch. dBrief chooses automatically based on permissions:
 
-- You're in a room with other people and you want to capture the conversation through your mic
-- You don't have or don't want to grant Screen Recording permission
+- **Microphone + system audio (mixed)** — used when **Screen Recording** permission is granted. macOS requires this permission to capture system audio. This captures both your voice and everything your Mac plays, including remote participants, shared audio, and video playback.
+- **Microphone only** — used as a fallback when Screen Recording permission isn't granted.
 
-## Mixed mode (system audio + mic)
+To capture remote participants on a Zoom, Teams, or other call, grant **Screen Recording** permission (see [Permissions](../reference/permissions.md)).
 
-Records both your microphone and everything your Mac plays through its speakers — including remote participants on a call, shared audio in a meeting, or video playback.
+## Input device
 
-> **Requires:** Screen Recording permission. macOS uses this permission to capture system audio.
+Choose which microphone dBrief records from in **Settings → Recording → Audio Input**. Leave it on **System Default** to follow your Mac's current input device, or pick a specific one. Use **Refresh device list** if you've just plugged in a new device.
 
-Use this when:
+## Echo cancellation
 
-- You're on a Zoom, Teams, or other remote call and want to capture what the other participants say
-- You want to capture audio from a video or webinar
-
-## Choosing your audio source
-
-Open **Settings → Recording** and look for the audio source option. If you haven't granted Screen Recording permission, mixed mode is unavailable and dBrief falls back to mic-only automatically.
+**Settings → Recording → Echo Cancellation** has a **Remove meeting audio from microphone** toggle. It's recommended when using laptop speakers: it uses the captured system audio as a reference to suppress speaker bleed picked up by your mic. When recording mic-only, it falls back to macOS real-time voice processing.
 
 ## Technical details
 
-Recordings are captured at 16 kHz mono and saved as FLAC. This format is optimised for speech transcription.
+Recordings are captured per track (mic and system audio separately) and mixed down to a single **M4A / AAC** file at 48 kHz stereo, with light post-processing (high-pass filtering, ducking, and loudness normalization). You can review these details under **Settings → Recording → Audio Quality** with Power User Mode enabled.

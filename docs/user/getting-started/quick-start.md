@@ -15,13 +15,13 @@ Click the dBrief icon in the menu bar. The main window appears.
 
 Click **Record**. dBrief starts capturing audio from your microphone.
 
-> **Tip:** You can also press **⌘⇧R** anywhere on your Mac to start or stop recording without touching the menu bar.
+> **Tip:** You can also press **⌃⌥⌘R** anywhere on your Mac to start or stop recording without touching the menu bar. This shortcut is configurable in **Settings → General → Shortcuts**.
 
 A floating level meter appears on your screen while recording is active — this confirms audio is being captured.
 
 ## Step 3: Stop recording
 
-Click **Stop** (or press **⌘⇧R** again). A sheet appears asking what you'd like to do next.
+Click **Stop** (or press **⌃⌥⌘R** again). A sheet appears asking what you'd like to do next.
 
 ## Step 4: Transcribe
 

@@ -2,6 +2,8 @@
 
 Add a page to a Notion database for each recording.
 
+> **Not currently available.** Notion support is built into dBrief but temporarily hidden from **Settings → Integrations** while it's being verified. The steps below describe how it works for when it's re-enabled.
+
 ## Setup
 
 ### 1. Create a Notion integration

@@ -53,24 +53,24 @@ Sources/dBrief/
 ### Audio Capture (`Audio/`)
 
 `AudioCaptureManager` handles two recording modes:
-- **Mixed mode** (system audio + mic): uses `ScreenCaptureKit` for system audio via `SystemAudioCapture`, mic via `AVAudioEngine` through `MicrophoneCapture`, mixed through `AudioMixer`, written by `AudioFileWriter`
-- **Mic-only mode**: falls back to plain `AVAudioEngine` input tap when screen recording permission is denied
+- **Mixed mode** (system audio + mic): uses `ScreenCaptureKit` for system audio via `SystemAudioCapture`, mic via `AVAudioEngine` through `MicrophoneCapture`. The two sources are captured to **separate per-track CAF/LPCM files** (`*.system.caf`, `*.mic.caf`) and mixed at finalization, not in real time.
+- **Mic-only mode**: falls back to plain `AVAudioEngine` input tap when screen recording permission is denied (no system CAF is written).
 
 **Important concurrency note**: Audio tap handlers must be created with `nonisolated static` methods to avoid inheriting `@MainActor` isolation, which would crash on the real-time audio thread. See `makeTapHandler()` and `makeMicTapHandler()` in `AudioCaptureManager`.
 
-Output format is FLAC. Capture is 16 kHz mono.
+The recording mode is chosen automatically by permission (mixed when Screen Recording is granted, mic-only otherwise) — there is no user-facing source toggle. Capture is per-track CAF/LPCM; the finalized master is **M4A/AAC (~96 kbps, 48 kHz stereo)**. The audio source toggle (mic vs. mixed) is not exposed in Settings; the **Settings → Recording** tab exposes input device, an acoustic echo cancellation toggle (`acousticEchoCancellation`), and a read-only Audio Quality summary (Power User Mode).
 
 ### Recording Finalization (`Services/RecordingFinalizer.swift`)
 
-After recording stops:
+`finalize(tracks:…)` takes the separate captured CAF tracks (`CapturedTracks`) and, after recording stops:
 1. Normalizes meeting title (sanitizes special chars)
 2. Creates dated folder structure (`Recordings/YYYY/MM`)
-3. Transcodes FLAC via ffmpeg with DSP normalization and compression
-4. Auto-segments files >30 minutes into 30-minute chunks
-5. Writes JSON metadata with duration, warnings, and segment file names
-6. Falls back to raw FLAC if ffmpeg is unavailable
+3. Merges + transcodes the per-track CAFs to an M4A/AAC master via ffmpeg, applying DSP per track (mic: 80 Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm; system: 40 Hz HPF, 12 kHz LPF; mix: `amix` normalize). Acoustic echo cancellation (`echoSuppressionEnabled`) ducks mic against the system reference.
+4. Auto-segments files >30 minutes into 30-minute chunks (`_partNN.m4a`)
+5. Writes JSON metadata sidecar with duration, warnings, and segment file names
+6. If ffmpeg is unavailable (or merge fails), falls back to promoting a raw CAF track to the master path (no AAC encode); segmentation is then skipped
 
-Final file naming: `YYYY-MM-DD_HHMM_[meeting-title].flac`
+Final file naming: `YYYY-MM-DD_HHMM_[meeting-title].m4a`
 
 ### Transcription Engines (`Services/`)
 
@@ -90,7 +90,7 @@ Three AI backends selected via `AppSettings.aiEngine`:
 | Engine | Class | Backend |
 |--------|-------|---------|
 | Apple Intelligence | `LocalAIService` | On-device via `FoundationModels` framework. Guarded by `#if canImport(FoundationModels)` and `@available(macOS 26, *)`. Only available on Apple Silicon with macOS 26+. |
-| Gemma 4 E4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/gemma-4-e4b-4bit` via `mlx-swift-lm` 3.x. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. Uses KV cache quantization (`kvBits: 8`). Strips `<think>…</think>` blocks before JSON parsing (model uses thinking mode). |
+| Gemma 4 E4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/gemma-4-e4b-4bit` via `mlx-swift-lm` 3.x. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. Uses KV cache quantization (`kvBits: 8`). Strips `<think>…</think>` blocks before JSON parsing (model uses thinking mode). **Note**: the enum case is historically named `AIEngine.qwenLocal` (UI display name "Gemma 4 E4B Local") — it now loads Gemma, not Qwen. |
 | Remote Endpoint | `AIService` | OpenAI-compatible `/v1/chat/completions` |
 
 AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export. All AI steps can be skipped via `AppSettings.aiProcessingEnabled = false`.
@@ -118,11 +118,19 @@ Profile system for per-meeting configuration overrides:
 
 ### Call Detection (`Services/CallDetectionService.swift`)
 
-`CallDetectionService` monitors for known meeting apps (Zoom, Teams, Slack, Google Meet, etc.) via `NSWorkspace` notifications and microphone activity via CoreAudio `kAudioDevicePropertyDeviceIsRunningSomewhere`. Can auto-start recording or show a popup prompt. Supports per-app blocklist.
+`CallDetectionService` monitors for known meeting apps (`knownCallApps`: Zoom, Teams classic/new, Slack, Webex, FaceTime, Google Meet) via `NSWorkspace` notifications and microphone activity via CoreAudio `kAudioDevicePropertyDeviceIsRunningSomewhere`. Can auto-start recording (`autoRecordCalls`) or show a popup prompt. Per-app enable/disable via `AppSettings.disabledCallApps`. Configured in **Settings → General → Call Detection**.
+
+### Calendar Integration (`Services/CalendarService.swift`, `OutlookCalendarService.swift`)
+
+On recording start, `RecordingManager` looks up the matching calendar event to pre-fill the meeting title, participants (used as diarization speaker names), and agenda context for AI prompts. Two sources behind `AppSettings.calendarSource` (`CalendarSource`: `.disabled`/`.iCal`/`.outlook`):
+- **iCal** — `CalendarService.findCurrentEvent()` via EventKit (`EKEventStore`), needs Calendar permission
+- **Outlook** — `OutlookCalendarService.findCurrentEvent()` via Microsoft Graph; auth through `MicrosoftAuthService` (OAuth2, Keychain-stored). The Outlook option only appears when `MicrosoftAuthService.isConfigured` (a real Azure client ID is compiled in, not the placeholder).
+
+Both search a ±2h window and pick the best candidate via `CalendarMatcher.selectBestMatch()`. `AppSettings.effectiveCalendarSource` coerces `.outlook` → `.disabled` when Outlook isn't configured, so a stale selection never renders sign-in UI. Configured in **Settings → General → Calendar**.
 
 ### Integration Dispatch (`Services/IntegrationDispatchService.swift`)
 
-Routes post-recording content to eight destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown):
+Routes post-recording content to eight implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — currently only Obsidian, Apple Notes, Apple Reminders, and Webhook. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
 
 | Destination | Method |
 |-------------|--------|
@@ -198,7 +206,7 @@ Glass-styled transcript window with word-level timestamps and audio sync:
 
 ### Other Services
 
-- **GlobalHotkeyService** — registers ⌘⇧R global hotkey for record/stop toggle
+- **GlobalHotkeyService** — registers a user-configurable global hotkey (default ⌃⌥⌘R) for record/stop toggle via Carbon Event Manager. The hotkey is stored as a `RecordHotkey` (`Models/RecordHotkey.swift`) and edited with `ShortcutRecorderView` in **Settings → General → Shortcuts**; `update()` re-registers on change
 - **AudioPlayer** — playback control for past recordings
 - **WebhookPayloadBuilder** — builds multipart/form-data payloads for webhook delivery
 - **AudioChunker** — segments large audio files for chunked remote transcription
@@ -215,7 +223,12 @@ Glass-styled transcript window with word-level timestamps and audio sync:
 - **FloatingMiniPlayer** — floating window showing real-time peak levels during recording
 - **CallDetectedPopup** / **CallDetectedOverlayController** — call detection prompt overlay
 - **YouTubeURLInputView** — inline panel in the menu bar for YouTube/video URL input
-- **SettingsView** — sidebar-based settings window with tabs: General (includes permissions), Recording (transcription engines, diarization, vocabulary), AI & Models (AI engine, prompts, AI processing toggle), Integrations, Profiles (hidden unless `powerUserMode` is enabled)
+- **SettingsView** — sidebar-based settings window with tabs:
+  - **General** — appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, call detection, calendar source (iCal/Outlook), and permissions (mic, screen recording, calendar)
+  - **Recording** (`SettingsRecordingTab`) — audio input device, acoustic echo cancellation, and a read-only Audio Quality summary (Power User Mode)
+  - **AI & Models** (`SettingsAIModelsTab`) — two sub-tabs: **Transcription** (`SettingsTranscriptionTab`: engine, Whisper/Parakeet model picker + `ModelDownloadButton`, diarization, language, custom vocabulary, endpoints, chunking) and **AI Analysis** (`SettingsAITab`: AI engine, Gemma model download, prompts, AI processing toggle, output language, endpoints)
+  - **Integrations** (`SettingsIntegrationsTab`) — only `IntegrationDestination.available` destinations
+  - **Profiles** (`SettingsProfilesTab`) — hidden unless `powerUserMode` is enabled
 
 ## Dependencies
 

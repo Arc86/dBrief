@@ -26,7 +26,10 @@ dBrief will ask for permissions as you use it. You can also review and grant the
 | **Microphone** | Required for all recording |
 | **Screen Recording** | Required for mixed audio (system sound + mic) |
 | **Speech Recognition** | Required if you use the Apple Speech transcription engine |
+| **Calendar** | Optional — lets dBrief pre-fill the meeting title and participants from your calendar |
 | **Reminders** | Required if you use the Apple Reminders integration |
+
+**Settings → General → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, with buttons to request or open the relevant System Settings pane.
 
 If you accidentally denied a permission, open **System Settings → Privacy & Security**, find the relevant section, and enable dBrief there.
 

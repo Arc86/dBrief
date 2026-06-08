@@ -6,7 +6,7 @@ How to start, pause, resume, and stop a recording.
 
 Click the dBrief icon in the menu bar, then click **Record**.
 
-Or press **⌘⇧R** from anywhere on your Mac — you don't need to open dBrief first.
+Or press **⌃⌥⌘R** from anywhere on your Mac — you don't need to open dBrief first. (You can change this shortcut in **Settings → General → Shortcuts**.)
 
 ## Pausing and resuming
 
@@ -16,11 +16,12 @@ Click **Pause** to pause the recording. The timer stops and audio capture halts.
 
 ## Stopping a recording
 
-Click **Stop** (or press **⌘⇧R**). A sheet appears where you can:
+Click **Stop** (or press **⌃⌥⌘R**). A sheet appears where you can:
 
-- Edit the recording title
+- Edit the recording title (pre-filled from your calendar if a matching event is found)
 - Choose what to process (transcribe, summarise, generate action items, tags)
-- Select a meeting profile
+- Enter participant names (used to label speakers when diarization is on)
+- Select a meeting profile (with Power User Mode)
 
 Click **Done** to start processing, or **Discard** to delete the recording.
 
@@ -29,7 +30,7 @@ Click **Done** to start processing, or **Discard** to delete the recording.
 When you stop, you can give the recording a title. This becomes part of the filename:
 
 ```
-2026-04-06_1430_team-standup.flac
+2026-04-06_1430_team-standup.m4a
 ```
 
 Titles are sanitised automatically — special characters and spaces are replaced.
@@ -44,4 +45,4 @@ Titles are sanitised automatically — special characters and spaces are replace
 
 ## Settings
 
-Recording settings are in **Settings → Recording**.
+Audio settings (input device, echo cancellation) are in **Settings → Recording**. Output folders, the record shortcut, call detection, and calendar are in **Settings → General**. Transcription and AI engines are in **Settings → AI & Models**.

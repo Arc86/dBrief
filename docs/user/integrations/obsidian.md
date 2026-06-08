@@ -20,7 +20,7 @@ title: Team Standup
 date: 2026-04-06
 tags: [engineering, standup]
 duration: 12m 34s
-audio: 2026-04-06_1430_team-standup.flac
+audio: 2026-04-06_1430_team-standup.m4a
 ---
 ```
 
@@ -34,6 +34,8 @@ Files are named by date and title:
 2026-04-06_1430_team-standup.md
 ```
 
+The `audio:` field in the frontmatter links to the matching `.m4a` recording.
+
 ## What gets sent
 
-The Obsidian integration always writes the full Markdown export. Field selection for other integrations doesn't affect what goes into the Obsidian file.
+Each note includes the summary, action items, and tags. A separate **Include transcript in notes** toggle controls whether the full transcript is written into the file as well.

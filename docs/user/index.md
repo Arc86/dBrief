@@ -9,4 +9,18 @@ dBrief is a macOS menu bar app that records your meetings and calls, then automa
 | **[Installation](getting-started/installation.md)** | Download the app and grant permissions |
 | **[Quick Start](getting-started/quick-start.md)** | Make your first recording in 5 minutes |
 | **[Transcription](transcription/transcription-overview.md)** | Choose how your recordings get transcribed |
-| **[Integrations](integrations/integrations-overview.md)** | Send your notes to Notion, Obsidian, and more |
+| **[AI Analysis](ai-analysis/ai-overview.md)** | Summaries, action items, tags, and transcript chat |
+| **[Integrations](integrations/integrations-overview.md)** | Send your notes to Obsidian, Apple Notes, and more |
+
+## Recording
+
+- **[Recording basics](recording/recording-basics.md)** — start, pause, stop, and what happens next
+- **[Audio sources](recording/audio-sources.md)** — mic and system audio
+- **[Call detection](recording/call-detection.md)** — auto-detect meeting apps
+- **[Calendar integration](recording/calendar.md)** — pre-fill titles and participants
+- **[Transcribe a video URL](recording/youtube-urls.md)** — YouTube and other links
+
+## After recording
+
+- **[Recording history](history/recording-history.md)** — find and re-process past recordings
+- **[Transcript viewer](history/transcript-viewer.md)** — read, sync, rename speakers, and chat
