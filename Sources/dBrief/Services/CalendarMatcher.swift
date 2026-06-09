@@ -5,6 +5,13 @@ enum CalendarMatcher {
     /// Window for the "starting soon" fallback when an event does not overlap the recording.
     static let fallbackWindow: TimeInterval = 15 * 60  // 15 minutes
 
+    /// Score bonus when the event was active at the moment recording began.
+    private static let activeAtStartBonus: Double = 0.10
+    /// Score bonus for events that have attendees (real meetings vs. solo blocks).
+    private static let hasAttendeesBonus: Double = 0.15
+    /// Score multiplier that sinks all-day blocks beneath any timed event.
+    private static let allDayPenalty: Double = 0.10
+
     /// Candidate events that plausibly belong to the recording span `[recordingStart, recordingEnd]`,
     /// ranked best-first. An event qualifies if it overlaps the recording or starts within
     /// ±`fallbackWindow` of the recording start. Scoring favors a tight fit (intersection-over-union),
@@ -26,9 +33,9 @@ enum CalendarMatcher {
             let evLen = max(0, ee.timeIntervalSince(es))
             let union = recLen + evLen - overlap
             var score = union > 0 ? overlap / union : 0          // intersection-over-union
-            if es <= rs && rs <= ee { score += 0.10 }            // active when recording began
-            if !event.attendees.isEmpty { score += 0.15 }        // real meetings have invitees
-            if event.isAllDay { score *= 0.10 }                  // sink personal/all-day blocks
+            if es <= rs && rs <= ee { score += activeAtStartBonus }   // active when recording began
+            if !event.attendees.isEmpty { score += hasAttendeesBonus } // real meetings have invitees
+            if event.isAllDay { score *= allDayPenalty }              // sink personal/all-day blocks
             return (event, score, overlap)
         }
 
