@@ -13,9 +13,13 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.13.6"),
     ],
     targets: [
+        .target(
+            name: "dBriefWire"
+        ),
         .executableTarget(
-            name: "dBrief",
+            name: "dBriefMLHost",
             dependencies: [
+                "dBriefWire",
                 "WhisperKit",
                 .product(name: "SpeakerKit", package: "WhisperKit"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
@@ -23,6 +27,16 @@ let package = Package(
                 "FluidAudio",
                 .product(name: "Hub", package: "swift-transformers"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
+            ]
+        ),
+        .executableTarget(
+            name: "dBriefMLHostStub",
+            dependencies: ["dBriefWire"]
+        ),
+        .executableTarget(
+            name: "dBrief",
+            dependencies: [
+                "dBriefWire",
             ],
             exclude: ["Resources", "Images"],
             linkerSettings: [
@@ -36,6 +50,15 @@ let package = Package(
             name: "dBriefTests",
             dependencies: [
                 "dBrief",
+                "dBriefWire",
+                .product(name: "Testing", package: "swift-testing"),
+            ]
+        ),
+        .testTarget(
+            name: "dBriefMLHostTests",
+            dependencies: [
+                "dBriefMLHost",
+                "dBriefWire",
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),

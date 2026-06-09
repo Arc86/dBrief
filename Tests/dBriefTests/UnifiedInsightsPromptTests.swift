@@ -1,5 +1,6 @@
 import Testing
 @testable import dBrief
+import dBriefWire
 
 /// The unified-JSON insights contract is shared by the Gemma (MLX) and Local CLI
 /// engines. These tests lock the schema/markers both engines depend on and confirm
@@ -56,7 +57,7 @@ struct UnifiedInsightsPromptTests {
           "sentiment": "Positive"
         }
         """
-        let result = try MLXInsightsService.decodeAndNormalize(json)
+        let result = try LocalInsightsDecoder.decodeAndNormalize(json)
         #expect(result.titleConcept == "Budget Planning Sync")
         #expect(result.summary.contains("Q3 budget"))
         #expect(result.actionItems == ["Alice to finalize the budget by Friday"])
@@ -76,7 +77,7 @@ struct UnifiedInsightsPromptTests {
           "sentiment": "Neutral"
         }
         """
-        let result = try MLXInsightsService.decodeAndNormalize(raw)
+        let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
         #expect(result.titleConcept == "Standup")
         #expect(result.actionItems.isEmpty)
     }

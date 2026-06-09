@@ -1,5 +1,6 @@
 import Foundation
 import os
+import dBriefWire
 
 /// AI engine that shells out to a user-configured command-line tool (e.g.
 /// `claude -p "$DBRIEF_FULL_PROMPT"`, `ollama run …`, `llm …`) to produce the
@@ -41,7 +42,7 @@ actor LocalCLIService {
         guard !cleaned.isEmpty else { throw LocalCLIServiceError.emptyOutput }
 
         do {
-            return try MLXInsightsService.decodeAndNormalize(cleaned)
+            return try LocalInsightsDecoder.decodeAndNormalize(cleaned)
         } catch {
             throw LocalCLIServiceError.invalidJSON(String(cleaned.prefix(500)))
         }

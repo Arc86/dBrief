@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 /// The three local models that can be explicitly downloaded from Settings.
 enum LocalModelKind: Hashable, Sendable, CaseIterable {

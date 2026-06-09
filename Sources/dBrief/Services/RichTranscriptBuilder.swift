@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 struct RichTranscriptBuilder {
     func build(from result: TranscriptionResult, participants: [String] = []) -> RichTranscript {

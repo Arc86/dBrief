@@ -1,5 +1,5 @@
 import SwiftUI
-import WhisperKit
+import dBriefWire
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
@@ -28,15 +28,13 @@ struct SettingsTranscriptionTab: View {
         isFetchingWhisperModels = true
         whisperModelFetchError = nil
         Task {
-            do {
-                let modelNames = try await WhisperKit.fetchAvailableModels(
-                    from: "argmaxinc/whisperkit-coreml"
-                )
-                whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
-            } catch {
+            let modelNames = await recordingManager.fetchAvailableWhisperModels()
+            if modelNames.isEmpty {
                 whisperModels = WhisperModelInfo.fallbackModelNames
                     .map { WhisperModelInfo.parse($0) }.sorted()
                 whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
+            } else {
+                whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
             }
             isFetchingWhisperModels = false
         }

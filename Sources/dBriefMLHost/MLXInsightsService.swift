@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 import Darwin
 import Hub
 import MLXLMCommon
@@ -33,11 +34,7 @@ actor MLXInsightsService {
     /// Computes the path without creating directories (unlike
     /// `llmDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded() -> Bool {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+        let dir = SupportPaths.localAIPluginBase
             .appendingPathComponent("MLX", isDirectory: true)
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dir.path) else {
             return false
@@ -47,7 +44,7 @@ actor MLXInsightsService {
 
     func analyzeTranscriptStream(
         _ text: String,
-        outputLanguage: AppSettings.OutputLanguage
+        outputLanguage: OutputLanguage
     ) -> AsyncThrowingStream<String, Error> {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let fallback = emptyFallbackJSON()
@@ -80,7 +77,7 @@ actor MLXInsightsService {
                     }
                     self.isInferencing = false
 
-                    _ = try Self.decodeAndNormalize(output)
+                    _ = try LocalInsightsDecoder.decodeAndNormalize(output)
                     #if canImport(MLX)
                     Logger.ai.info("MLX memory after inference (stream): \(MLX.Memory.snapshot().description)")
                     #endif
@@ -102,7 +99,7 @@ actor MLXInsightsService {
 
     func analyzeTranscript(
         _ text: String,
-        outputLanguage: AppSettings.OutputLanguage
+        outputLanguage: OutputLanguage
     ) async throws -> LocalInsightsResult {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return LocalInsightsResult(
@@ -132,7 +129,7 @@ actor MLXInsightsService {
                 raw += chunk
             }
             isInferencing = false
-            let result = try Self.decodeAndNormalize(raw)
+            let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
             #if canImport(MLX)
             Logger.ai.info("MLX memory after inference: \(MLX.Memory.snapshot().description)")
             #endif
@@ -239,9 +236,7 @@ actor MLXInsightsService {
         // when memory looks tight and only warn, since the OS may free pages under
         // pressure. The user is also shown a preflight banner before processing.
         let requiredMemory: Int64 = 512_000_000 // 512MB truly free
-        let hasSufficientMemory = await MainActor.run {
-            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
-        }
+        let hasSufficientMemory = SystemMemory.hasSufficientMemory(requiredBytes: requiredMemory)
         if !hasSufficientMemory {
             Logger.ai.warning("Loading Gemma 4 E4B with low available memory (<512MB truly free). Proceeding anyway — this may be slow or fail under memory pressure. Close other apps or use the Remote AI engine if loading fails.")
         }
@@ -277,14 +272,7 @@ actor MLXInsightsService {
     }
 
     private func llmDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("MLX", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("MLX")
     }
 
     // System and user prompts share a single JSON contract with the Local CLI
@@ -293,7 +281,7 @@ actor MLXInsightsService {
         UnifiedInsightsPrompt.userPrompt(transcript: transcript)
     }
 
-    private func buildSystemPrompt(outputLanguage: AppSettings.OutputLanguage) -> String {
+    private func buildSystemPrompt(outputLanguage: OutputLanguage) -> String {
         UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage)
     }
 
@@ -319,110 +307,6 @@ actor MLXInsightsService {
         UnifiedInsightsPrompt.truncate(transcript)
     }
 
-    static func decodeAndNormalize(_ raw: String) throws -> LocalInsightsResult {
-        guard let jsonPayload = extractFirstJSONObject(raw) else {
-            let preview = String(raw.prefix(500))
-            Logger.ai.error("MLX JSON parse failed. Raw output prefix: \(preview, privacy: .public)")
-            throw NSError(domain: "MLXInsightsService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model output did not contain valid JSON object."])
-        }
-        guard let data = jsonPayload.data(using: .utf8) else {
-            throw NSError(domain: "MLXInsightsService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to decode model JSON text as UTF-8."])
-        }
-
-        let decoded = try JSONDecoder().decode(LocalInsightsResult.self, from: data)
-        let normalizedTags = normalizeTags(decoded.tags)
-        let normalizedSentiment = normalizeSentiment(decoded.sentiment)
-        let normalizedActionItems = decoded.actionItems.map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.filter { !$0.isEmpty }
-
-        return LocalInsightsResult(
-            titleConcept: decoded.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines),
-            summary: decoded.summary.trimmingCharacters(in: .whitespacesAndNewlines),
-            actionItems: normalizedActionItems,
-            tags: normalizedTags,
-            sentiment: normalizedSentiment
-        )
-    }
-
-    private static func extractFirstJSONObject(_ input: String) -> String? {
-        // Reasoning models (Gemma 4) emit <think>…</think> before the answer.
-        // Search for JSON only after the last closing tag to avoid partial matches
-        // inside the thinking block.
-        let searchIn: String
-        if let thinkEnd = input.range(of: "</think>", options: .backwards) {
-            searchIn = String(input[thinkEnd.upperBound...])
-        } else {
-            searchIn = input
-        }
-
-        guard let start = searchIn.firstIndex(of: "{") else { return nil }
-        var depth = 0
-        var inString = false
-        var isEscaped = false
-
-        for idx in searchIn[start...].indices {
-            let char = searchIn[idx]
-
-            if inString {
-                if isEscaped {
-                    isEscaped = false
-                    continue
-                }
-                if char == "\\" {
-                    isEscaped = true
-                } else if char == "\"" {
-                    inString = false
-                }
-                continue
-            }
-
-            if char == "\"" {
-                inString = true
-                continue
-            }
-
-            if char == "{" {
-                depth += 1
-            } else if char == "}" {
-                depth -= 1
-                if depth == 0 {
-                    return String(searchIn[start...idx])
-                }
-            }
-        }
-
-        return nil
-    }
-
-    private static func normalizeTags(_ tags: [String]) -> [String] {
-        var unique: [String] = []
-        var seen = Set<String>()
-        for tag in tags {
-            let cleaned = tag
-                .replacingOccurrences(of: #"^#+"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleaned.isEmpty else { continue }
-            let lowered = cleaned.lowercased()
-            if !seen.contains(lowered) {
-                seen.insert(lowered)
-                unique.append(cleaned)
-            }
-            if unique.count == 10 { break }
-        }
-        return unique
-    }
-
-    private static func normalizeSentiment(_ sentiment: String) -> String {
-        switch sentiment.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "positive":
-            return "Positive"
-        case "negative":
-            return "Negative"
-        default:
-            return "Neutral"
-        }
-    }
 
     private func clearGPUCacheIfAvailable() {
         guard metalLibraryAvailable else { return }

@@ -1,28 +1,28 @@
 import Foundation
 
 /// Shared prompt contract for the "unified JSON" insights path used by both the
-/// local Gemma (MLX) engine and the Local CLI engine. Both ask a model to return a
-/// single JSON object (`title_concept`, `summary`, `action_items`, `tags`,
-/// `sentiment`) which is parsed by `MLXInsightsService.decodeAndNormalize`. Keeping
-/// the schema in one place ensures the two engines stay in lockstep.
-enum UnifiedInsightsPrompt {
+/// local Gemma (MLX) engine (in the helper) and the Local CLI engine (in the app).
+/// Both ask a model to return a single JSON object (`title_concept`, `summary`,
+/// `action_items`, `tags`, `sentiment`) parsed by `LocalInsightsDecoder`. Lives in
+/// `dBriefWire` so both targets share one schema and stay in lockstep.
+public enum UnifiedInsightsPrompt {
     // Transcript budgeting. Gemma 4 E4B has a 128K context (~25K input tokens at
     // ~4 chars/token); agentic CLIs are typically large-context too. Keep a small
     // intro slice for context, then the full tail — meetings load substance in the
     // middle and end, so dropping the head preserves detail.
-    static let transcriptCharLimit = 100_000
-    static let transcriptHeadChars = 5_000
-    static let transcriptTailChars = 95_000
-    static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
+    public static let transcriptCharLimit = 100_000
+    public static let transcriptHeadChars = 5_000
+    public static let transcriptTailChars = 95_000
+    public static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
 
-    static func truncate(_ transcript: String) -> String {
+    public static func truncate(_ transcript: String) -> String {
         guard transcript.count > transcriptCharLimit else { return transcript }
         let head = String(transcript.prefix(transcriptHeadChars))
         let tail = String(transcript.suffix(transcriptTailChars))
         return head + truncationSeparator + tail
     }
 
-    static func userPrompt(transcript: String) -> String {
+    public static func userPrompt(transcript: String) -> String {
         """
         Analyze this transcript and produce the JSON response exactly as required by the system instructions.
         Do not copy template phrases. Use only factual details present in the transcript.
@@ -34,7 +34,7 @@ enum UnifiedInsightsPrompt {
         """
     }
 
-    static func systemPrompt(outputLanguage: AppSettings.OutputLanguage) -> String {
+    public static func systemPrompt(outputLanguage: OutputLanguage) -> String {
         let languageInstruction: String = {
             switch outputLanguage {
             case .english:

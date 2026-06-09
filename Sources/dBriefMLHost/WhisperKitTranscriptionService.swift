@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 @preconcurrency import WhisperKit
 import SpeakerKit
 import OSLog
@@ -17,15 +18,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> dBrief.TranscriptionResult {
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
         let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
         let requiredMemory: Int64 = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
-        let hasSufficientMemory = await MainActor.run {
-            MemoryPressureMonitor.hasSufficientMemory(requiredBytes: requiredMemory)
-        }
+        let hasSufficientMemory = SystemMemory.hasSufficientMemory(requiredBytes: requiredMemory)
         guard hasSufficientMemory else {
             throw TranscriptionServiceError.insufficientMemory(
                 model: modelInfo.displayName,
@@ -46,6 +45,27 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let whisper = try await loadWhisperKit(config: whisperConfig)
         stateHandler(.transcribing)
 
+        // Live-segment streaming. WhisperKit only forwards the `segmentCallback:`
+        // *parameter* of transcribe() on its non-chunked (single ~30s window) path.
+        // With VAD chunking — which we always enable — it instead consults the
+        // instance `segmentDiscoveryCallback` (see WhisperKit.transcribeWithOptions,
+        // which uses `self.segmentDiscoveryCallback` for each chunk). So the parameter
+        // is silently dropped for any recording longer than one window, which is why
+        // the "Live Transcript" button only ever appeared for very short clips.
+        // Setting the instance property here makes live segments fire at any length.
+        whisper.segmentDiscoveryCallback = { [stateHandler] segments in
+            let liveSegments = segments.map { seg in
+                LiveTranscriptSegment(
+                    start: Double(seg.start),
+                    end: Double(seg.end),
+                    text: seg.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                )
+            }
+            if !liveSegments.isEmpty {
+                stateHandler(.newSegments(liveSegments))
+            }
+        }
+
         // Build decoding options. Compute units come from the user's setting (applied
         // at model load); here we pin worker count.
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
@@ -59,13 +79,28 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         options.withoutTimestamps = false
         options.wordTimestamps = true
         options.chunkingStrategy = .vad
-        // Limit CoreML prediction concurrency. WhisperKit defaults to 16 workers,
-        // which with VAD chunking runs many encoder/decoder predictions on the GPU/ANE
-        // at once. On macOS 26 that concurrency intermittently yields a nil decoder
-        // output, which WhisperKit force-unwraps (`decoderOutput.logits!`) and crashes
-        // the whole app. Capping workers trades throughput for stability; tuning the
-        // value to find the safe ceiling on macOS 26.
-        options.concurrentWorkerCount = 4
+        // CoreML prediction concurrency. WhisperKit defaults to 16 workers; with VAD
+        // chunking that runs many encoder/decoder predictions on the GPU/ANE at once,
+        // which on macOS 26 intermittently yields a nil decoder output that WhisperKit
+        // force-unwraps (`decoderOutput.logits!`) and traps.
+        //
+        // This now runs inside the isolated dBriefMLHost process, so such a trap kills
+        // only the helper (the app auto-retries once in safe mode) instead of the whole
+        // app. The normal path therefore uses higher concurrency for speed; the
+        // safe-mode retry serializes to survive a deterministic trap.
+        //
+        // 8 is the value validated as stable on macOS 26 (large-v3 turbo). Because a
+        // trap is now recoverable, this ceiling can be raised (toward WhisperKit's
+        // default of 16) — benchmark on the target hardware and weigh added throughput
+        // against how often a higher value forces a crash+safe-mode retry.
+        //
+        // Safe mode (post-crash retry) keeps the decoder off the ANE via
+        // `.cpuAndGPU` (set by the caller), which is where the nil-logits trap
+        // lives. With the ANE out of the picture the trap doesn't recur, so the
+        // retry no longer needs to serialize to a single worker: 4 workers makes
+        // recovery ~2–3× faster (field data: 1 worker = 1.6× realtime vs ~4× at 8)
+        // while staying well clear of the concurrency that triggers the trap.
+        options.concurrentWorkerCount = safeMode ? 4 : 8
 
         do {
             let transcribeStart = Date()
@@ -73,22 +108,22 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // the module/class name collision when naming the type in function signatures.
             let wkResults = try await whisper.transcribe(
                 audioArray: audioArray,
-                decodeOptions: options,
-                segmentCallback: { [stateHandler] segments in
-                    let liveSegments = segments.map { seg in
-                        LiveTranscriptSegment(
-                            start: Double(seg.start),
-                            end: Double(seg.end),
-                            text: seg.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                        )
-                    }
-                    if !liveSegments.isEmpty {
-                        stateHandler(.newSegments(liveSegments))
-                    }
-                }
+                decodeOptions: options
             )
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
-            Logger.localAI.info("Transcription completed in \(String(format: "%.1f", transcribeDuration))s")
+            // Logged at .notice so it persists to the unified log (unlike .info), making
+            // transcription speed comparable across runs/settings via `log show`. Includes
+            // worker count, model, and audio length so the record is self-explanatory.
+            let audioSeconds = Double(audioArray.count) / 16_000.0
+            let speedFactor = audioSeconds > 0 ? audioSeconds / transcribeDuration : 0
+            // os_log redacts interpolated strings as <private> by default; mark the
+            // (non-sensitive) timing values .public so they appear in the log.
+            let durationStr = String(format: "%.1f", transcribeDuration)
+            let speedStr = String(format: "%.1f", speedFactor)
+            let audioStr = String(format: "%.1f", audioSeconds)
+            Logger.localAI.notice(
+                "Transcription completed in \(durationStr, privacy: .public)s (\(speedStr, privacy: .public)x realtime) — model=\(whisperConfig.modelName, privacy: .public), workers=\(options.concurrentWorkerCount), audio=\(audioStr, privacy: .public)s"
+            )
 
             // --- Speaker diarization (optional) ---
             // Diarization must be inlined here because wkResults type can only be inferred
@@ -110,15 +145,15 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     let speakerSegments = diarResult.addSpeakerInfo(to: wkResults, strategy: SpeakerInfoStrategy.subsegment)
                     await speakerKit.unloadModels()
 
-                    var allSegments: [dBrief.TranscriptionResult.Segment] = []
+                    var allSegments: [dBriefWire.TranscriptionResult.Segment] = []
                     var fullTextParts: [String] = []
 
                     for group in speakerSegments {
                         for seg in group {
                             let speakerId = speakerInfoString(seg.speaker)
-                            let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
+                            let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
                                 seg.speakerWords.map { sw in
-                                    dBrief.TranscriptionResult.Word(
+                                    dBriefWire.TranscriptionResult.Word(
                                         word: sw.wordTiming.word,
                                         start: Double(sw.wordTiming.start),
                                         end: Double(sw.wordTiming.end),
@@ -130,7 +165,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                             let segText = cleanTranscriptArtifacts(seg.text)
                             guard !segText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else { continue }
 
-                            allSegments.append(dBrief.TranscriptionResult.Segment(
+                            allSegments.append(dBriefWire.TranscriptionResult.Segment(
                                 start: Double(seg.startTime),
                                 end: Double(seg.endTime),
                                 text: segText,
@@ -143,7 +178,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
                     let fullText = fullTextParts.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     await unload()
-                    return dBrief.TranscriptionResult(
+                    return dBriefWire.TranscriptionResult(
                         text: fullText,
                         segments: allSegments,
                         speakerCount: diarResult.speakerCount
@@ -155,16 +190,16 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             // --- Map WhisperKit results to our type (no diarization or diarization failed) ---
             let mappedSegments = wkResults.flatMap { result in
-                result.segments.map { seg -> dBrief.TranscriptionResult.Segment in
-                    let wordTimings: [dBrief.TranscriptionResult.Word]? = seg.words?.map {
-                        dBrief.TranscriptionResult.Word(
+                result.segments.map { seg -> dBriefWire.TranscriptionResult.Segment in
+                    let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.words?.map {
+                        dBriefWire.TranscriptionResult.Word(
                             word: $0.word,
                             start: Double($0.start),
                             end: Double($0.end),
                             probability: Double($0.probability)
                         )
                     }
-                    return dBrief.TranscriptionResult.Segment(
+                    return dBriefWire.TranscriptionResult.Segment(
                         start: Double(seg.start),
                         end: Double(seg.end),
                         text: cleanTranscriptArtifacts(seg.text),
@@ -181,11 +216,16 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
             await unload()
-            return dBrief.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
+            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
         } catch {
             await unload()
             throw error
         }
+    }
+
+    /// Fetch the list of available model variant names from the given HuggingFace repo.
+    static func fetchAvailableModels(repo: String) async throws -> [String] {
+        try await WhisperKit.fetchAvailableModels(from: repo)
     }
 
     func prepareModelIfNeeded() async throws {
@@ -209,11 +249,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     /// Computes the path without creating directories (unlike
     /// `whisperDownloadBaseURL()`), so a read-only check has no side effects.
     func isModelDownloaded(name: String) -> Bool {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let base = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+        let base = SupportPaths.localAIPluginBase
             .appendingPathComponent("WhisperKit", isDirectory: true)
         return isModelCached(name: name, downloadBase: base)
     }
@@ -330,14 +366,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     private func whisperDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("WhisperKit", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("WhisperKit")
     }
 
     /// Standalone speaker diarization for an already-transcribed recording.
@@ -374,14 +403,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     private func speakerKitDownloadBaseURL() throws -> URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let bundle = Bundle.main.bundleIdentifier ?? "dBrief"
-        let dir = appSupport
-            .appendingPathComponent(bundle, isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
-            .appendingPathComponent("SpeakerKit", isDirectory: true)
-        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try SupportPaths.subdirectory("SpeakerKit")
     }
 
     private func speakerInfoString(_ speaker: SpeakerInfo) -> String? {

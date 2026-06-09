@@ -18,13 +18,14 @@ In the post-recording sheet (the window that appears after you stop), you can to
 
 ## Choosing an AI engine
 
-Go to **Settings → AI & Models** and select your engine. dBrief offers three options:
+Go to **Settings → AI & Models** and select your engine. dBrief offers four options:
 
 | Engine | Where it runs | Requirements |
 |---|---|---|
-| **Apple Intelligence** | On your Mac | macOS 26+, Apple Silicon |
-| **Gemma 4 E4B Local** | On your Mac | Apple Silicon + model download |
-| **Remote Endpoint** | Your server | OpenAI-compatible server |
+| **[Apple Intelligence](apple-intelligence.md)** | On your Mac | macOS 26+, Apple Silicon |
+| **[Gemma 4 E4B Local](local-gemma.md)** | On your Mac | Apple Silicon + model download |
+| **[Remote Endpoint](remote-endpoint.md)** | Your server | OpenAI-compatible server |
+| **[Local CLI](local-cli.md)** | A command-line tool on your Mac | A CLI such as `claude`, `ollama`, or `llm` installed |
 
 Not sure whether to run AI on your Mac or on a server? See [Local vs Remote AI](local-vs-remote.md) for the privacy, quality, and cost trade-offs.
 

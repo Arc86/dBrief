@@ -4,7 +4,7 @@
 */
 
 (() => {
-  // Sidebar structure — mirrors the docs/user/ folder exactly.
+  // Sidebar structure — mirrors the site/docs/ folder exactly.
   // Order matters: this is the order shown in the sidebar.
   const NAV = [
     {
@@ -42,7 +42,7 @@
         { slug: "ai-analysis/ai-overview",        title: "Overview" },
         { slug: "ai-analysis/apple-intelligence", title: "Apple Intelligence" },
         { slug: "ai-analysis/local-gemma",        title: "Local Gemma 4" },
-        { slug: "ai-analysis/local-qwen",         title: "Local Qwen3 4B" },
+        { slug: "ai-analysis/local-cli",          title: "Local CLI" },
         { slug: "ai-analysis/local-vs-remote",    title: "Local vs Remote" },
         { slug: "ai-analysis/transcript-chat",    title: "Transcript Chat" },
         { slug: "ai-analysis/remote-endpoint",    title: "Remote Endpoint" },
@@ -55,7 +55,6 @@
         { slug: "integrations/obsidian",              title: "Obsidian" },
         { slug: "integrations/apple-notes",           title: "Apple Notes" },
         { slug: "integrations/apple-reminders",       title: "Apple Reminders" },
-        { slug: "integrations/notion",                title: "Notion" },
         { slug: "integrations/webhook",               title: "Webhook" },
         { slug: "integrations/other-integrations",    title: "Other Integrations" },
       ],
