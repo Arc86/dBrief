@@ -204,7 +204,7 @@ struct SettingsTranscriptionTab: View {
                     (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
                 }
 
-                HStack(alignment: .center) {
+                HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 8) {
                             Text(selectedModel?.displayName ?? settings.whisperModelName)
@@ -250,7 +250,7 @@ struct SettingsTranscriptionTab: View {
                 }
 
                 // — Large-model safety warning —
-                if let selectedModel, selectedModel.estimatedMemoryMB > 4_096 {
+                if let selectedModel, selectedModel.estimatedMemoryMB >= 4_096 {
                     Label("Large models run best with other apps closed", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -258,6 +258,13 @@ struct SettingsTranscriptionTab: View {
 
                 // — Download status / action (wired) —
                 ModelDownloadButton(kind: .whisper)
+            }
+
+            // — Offline fetch error (shown at top level so it's visible without expanding Advanced) —
+            if let error = whisperModelFetchError {
+                Label(error, systemImage: "wifi.slash")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
             // — Diarization (plain label, jargon in caption) —
@@ -270,7 +277,7 @@ struct SettingsTranscriptionTab: View {
             }
 
             // — Advanced (collapsed) —
-            DisclosureGroup("Advanced") {
+            DisclosureGroup {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -308,11 +315,6 @@ struct SettingsTranscriptionTab: View {
                         .help("Refresh model list from HuggingFace")
                         Spacer()
                     }
-                    if let error = whisperModelFetchError {
-                        Label(error, systemImage: "wifi.slash")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
 
                     Button("Purge local WhisperKit model") {
                         Task {
@@ -333,8 +335,9 @@ struct SettingsTranscriptionTab: View {
                     }
                 }
                 .padding(.top, 6)
+            } label: {
+                Text("Advanced").font(.subheadline)
             }
-            .font(.subheadline)
         }
         .onAppear { fetchWhisperModels() }
     }
