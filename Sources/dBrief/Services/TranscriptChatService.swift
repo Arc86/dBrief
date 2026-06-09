@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -136,8 +137,18 @@ final class TranscriptChatService {
     }
 
     private func buildSystemPrompt() -> String {
+        let engine = appSettings.effectiveAIEngine == .localCLI
+            ? appSettings.chatFallbackEngine
+            : appSettings.effectiveAIEngine
+        // Apple Intelligence (FoundationModels) has a ~4096-token context window — a full
+        // transcript in the instructions overflows it and chat errors out immediately.
+        // Truncate for that engine; Gemma (128K) and remote endpoints keep the full text.
+        let transcript = engine == .appleIntelligence
+            ? UnifiedInsightsPrompt.truncateForFoundationModels(transcriptText)
+            : transcriptText
+
         var prompt = "You are an intelligent assistant helping analyze a meeting transcript.\n\n"
-        prompt += "TRANSCRIPT:\n\(transcriptText)\n"
+        prompt += "TRANSCRIPT:\n\(transcript)\n"
         if !speakerLabels.isEmpty {
             prompt += "\nSPEAKER LEGEND:\n"
             for label in speakerLabels {
