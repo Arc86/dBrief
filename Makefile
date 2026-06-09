@@ -17,16 +17,11 @@ VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString
 CODESIGN_IDENTITY ?= -
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
-# Extra flags passed to `swift build`. The Homebrew formula sets
-# SWIFT_BUILD_FLAGS=--disable-sandbox because SwiftPM cannot apply its own
-# sandbox while already running inside Homebrew's build sandbox (nested
-# sandbox-exec fails). Empty for normal local builds.
-SWIFT_BUILD_FLAGS ?=
 
 .PHONY: app run clean build sign dmg
 
 build:
-	swift build -c release --arch arm64 $(SWIFT_BUILD_FLAGS)
+	swift build -c release --arch arm64
 
 app: build
 	rm -rf $(APP_BUNDLE)

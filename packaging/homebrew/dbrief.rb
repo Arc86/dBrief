@@ -30,9 +30,11 @@ class Dbrief < Formula
   depends_on "yt-dlp" => :recommended
 
   def install
-    # --disable-sandbox: SwiftPM can't nest its own sandbox inside Homebrew's
-    # build sandbox (sandbox-exec: sandbox_apply: Operation not permitted).
-    system "make", "app", "SWIFT_BUILD_FLAGS=--disable-sandbox"
+    # SwiftPM cannot apply its own sandbox while running inside Homebrew's build
+    # sandbox (sandbox-exec: sandbox_apply: Operation not permitted), so patch the
+    # build command to pass --disable-sandbox.
+    inreplace "Makefile", "--arch arm64", "--arch arm64 --disable-sandbox"
+    system "make", "app"
     prefix.install "dBrief.app"
   end
 
