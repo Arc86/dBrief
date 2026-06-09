@@ -20,7 +20,7 @@ This choice applies in two places, and you can mix them — for example, transcr
 
 ## Local AI
 
-Local engines run entirely on your Mac. Apple Intelligence and Apple Speech use built-in models; Local Whisper, Parakeet, and Gemma download a model once and then run on your Apple Silicon GPU and Neural Engine.
+Local engines run entirely on your Mac. Apple Intelligence and Apple Speech use built-in models (on macOS 26+, Apple Speech downloads a small language model the first time you use a given language); Local Whisper, Parakeet, and Gemma download a model once and then run on your Apple Silicon GPU and Neural Engine.
 
 **Benefits**
 

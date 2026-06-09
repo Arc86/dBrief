@@ -14,7 +14,7 @@ Go to **Settings → AI & Models → Transcription** and select your transcripti
 
 | Engine | Where it runs | Setup required | Notes |
 |---|---|---|---|
-| **Apple Speech** | On your Mac | None | Works on any Mac; lower accuracy for technical content |
+| **Apple Speech** | On your Mac | None | Works on any Mac. On macOS 26+ uses Apple's modern model — much better accuracy plus word-level timing in the transcript viewer; older macOS uses the classic recognizer (lower accuracy for technical content) |
 | **Local Whisper** | On your Mac | Model download | Higher accuracy; choose from many model sizes; optional speaker diarization |
 | **Parakeet (Local)** | On your Mac | Model download | Fast on-device transcription; no language selection or diarization |
 | **Remote Endpoint** | Your server | Server URL + optional API key | Best accuracy with large models; requires a running server |
