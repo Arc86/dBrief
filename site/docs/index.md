@@ -24,4 +24,4 @@ dBrief is a macOS menu bar app that records your meetings and calls, then automa
 ## After recording
 
 - **[Recording history](history/recording-history.md)** — find and re-process past recordings
-- **[Transcript viewer](history/transcript-viewer.md)** — read, sync, rename speakers, and chat
+- **[Transcript viewer](history/transcript-viewer.md)** — browse recordings, read and sync, detect and rename speakers, and chat

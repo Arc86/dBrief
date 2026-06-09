@@ -8,11 +8,11 @@ Transcript Chat lets you have a back-and-forth conversation about a recording â€
 
 ## Opening the chat
 
-Open a recording in the [transcript viewer](../history/transcript-viewer.md) (the **View** / transcript action in [Recording History](../history/recording-history.md)). The chat panel is built into the viewer window.
+Open a recording in the [transcript viewer](../history/transcript-viewer.md), then click the **chat** button (speech-bubble icon) in the toolbar. This swaps the detail pane from the transcript to the chat; click it again to switch back. The transcript stays loaded behind it, and each recording keeps its own conversation while the app is open.
 
-## Quick templates
+## Example prompts
 
-The chat offers one-tap templates to get you started, including:
+When you first open the chat you'll see a set of one-tap example prompts to get you started, including:
 
 - Bullet points
 - Action items
@@ -23,7 +23,7 @@ The chat offers one-tap templates to get you started, including:
 - Extract statistics
 - Identify emotions
 
-You can also type any freeform question.
+Once a conversation is underway, the same prompts stay available as a compact row just above the input box. You can also type any freeform question in the input field.
 
 ## Which AI engine it uses
 
