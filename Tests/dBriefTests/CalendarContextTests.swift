@@ -9,7 +9,8 @@ struct CalendarContextTests {
             attendees: ["Alice", "Bob"],
             body: body,
             startDate: Date(),
-            endDate: Date()
+            endDate: Date(),
+            isAllDay: false
         )
     }
 
