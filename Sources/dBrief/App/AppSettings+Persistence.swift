@@ -110,6 +110,21 @@ extension AppSettings {
         return endpoints
     }
 
+    // MARK: Local CLI Config Persistence
+
+    func saveLocalCLIConfig(_ config: LocalCLIConfig) {
+        if let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: Keys.localCLIConfig)
+        }
+    }
+
+    static func loadLocalCLIConfig(forKey key: String) -> LocalCLIConfig {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let config = try? JSONDecoder().decode(LocalCLIConfig.self, from: data)
+        else { return .default }
+        return config
+    }
+
     // MARK: Integration Settings Persistence
 
     func saveIntegrationSettings(_ settings: IntegrationSettings) {
