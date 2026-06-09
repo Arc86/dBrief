@@ -4,7 +4,6 @@ struct PostRecordingSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(MicrosoftAuthService.self) private var microsoftAuthService
 
     @State private var transcribe = true
     @State private var summary = true
@@ -273,10 +272,10 @@ struct PostRecordingSheet: View {
     }
 
     private func pickerLabel(_ event: CalendarEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
         let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "(untitled)" : event.title
-        return "\(title)  \(formatter.string(from: event.startDate))–\(formatter.string(from: event.endDate))"
+        let start = event.startDate.formatted(date: .omitted, time: .shortened)
+        let end = event.endDate.formatted(date: .omitted, time: .shortened)
+        return "\(title)  \(start)–\(end)"
     }
 }
