@@ -10,10 +10,18 @@ MLX_PREBUILT_VERSION = 0.31.3
 MLX_PREBUILT_ZIP = .build/mlx-prebuilt/Cmlx-$(MLX_PREBUILT_VERSION).xcframework.zip
 MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/Versions/A/Resources/default.metallib
 
-.PHONY: app run clean build
+# Version is the single source of truth in Info.plist; never hardcode it here.
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/dBrief/Resources/Info.plist)
+# Ad-hoc signing by default (we are not in the Apple Developer Program).
+# Override with a Developer ID if you ever enroll: make app CODESIGN_IDENTITY="Developer ID Application: …"
+CODESIGN_IDENTITY ?= -
+DMG_STAGING = .build/dmg
+DMG_NAME = $(APP_NAME)-$(VERSION).dmg
+
+.PHONY: app run clean build sign dmg
 
 build:
-	swift build -c release
+	swift build -c release --arch arm64
 
 app: build
 	rm -rf $(APP_BUNDLE)
@@ -44,7 +52,27 @@ app: build
 	cp $(RESOURCES)/default.metallib $(MACOS)/mlx.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/default.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/mlx.metallib
-	@echo "Built $(APP_BUNDLE)"
+	@$(MAKE) sign
+	@echo "Built $(APP_BUNDLE) ($(VERSION))"
+
+# Ad-hoc sign the bundle. --deep also signs the nested dBriefMLHost helper executable.
+# Strip extended attributes / resource forks first (icns and copied resources can
+# carry them), which codesign rejects as "detritus".
+sign:
+	@echo "Signing $(APP_BUNDLE) with identity: $(CODESIGN_IDENTITY)"
+	chmod -R u+w "$(APP_BUNDLE)"
+	xattr -cr "$(APP_BUNDLE)"
+	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" "$(APP_BUNDLE)"
+	codesign --verify --deep --strict --verbose=2 "$(APP_BUNDLE)"
+
+# Build a distributable, compressed DMG with a drag-to-Applications target.
+dmg: app
+	rm -rf "$(DMG_STAGING)" "$(DMG_NAME)"
+	mkdir -p "$(DMG_STAGING)"
+	cp -R "$(APP_BUNDLE)" "$(DMG_STAGING)/"
+	ln -s /Applications "$(DMG_STAGING)/Applications"
+	hdiutil create -volname "$(APP_NAME)" -srcfolder "$(DMG_STAGING)" -ov -format UDZO "$(DMG_NAME)"
+	@echo "Built $(DMG_NAME)"
 
 run: app
 	pkill -f "$(PWD)/$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE_NAME)" || true
@@ -53,4 +81,4 @@ run: app
 
 clean:
 	swift package clean
-	rm -rf $(APP_BUNDLE)
+	rm -rf $(APP_BUNDLE) $(DMG_STAGING) $(APP_NAME)-*.dmg

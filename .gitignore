@@ -13,6 +13,9 @@ DerivedData/
 # Built app bundle (reproduce with `make app`; distribute via GitHub Releases)
 /dBrief.app/
 
+# Built DMG (reproduce with `make dmg`; upload to GitHub Releases)
+/dBrief-*.dmg
+
 # Editor / AI-assistant tooling
 .vscode/
 .claude/

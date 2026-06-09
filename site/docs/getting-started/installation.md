@@ -2,20 +2,44 @@
 
 How to install dBrief and grant the permissions it needs to work.
 
-> **Requires:** macOS 14 or later.
+> **Requires:** macOS 14 or later, Apple Silicon.
 
-## Download
+dBrief is distributed outside the Apple Developer Program, so it is unsigned and un-notarized. That changes only how you open it the first time — pick whichever install path you prefer.
 
-Download the latest release from the dBrief releases page and move `dBrief.app` to your `/Applications` folder.
+## Install with Homebrew (recommended)
 
-## First launch
+Homebrew builds dBrief from source on your Mac, so the app is never quarantined and macOS opens it normally — no Gatekeeper step.
 
-Double-click dBrief in Applications. Because dBrief is not yet distributed through the Mac App Store, macOS may show a security warning. To open it:
+```bash
+brew install Arc86/dbrief/dbrief
+ln -sf "$(brew --prefix)/opt/dbrief/dBrief.app" /Applications/dBrief.app
+```
 
-1. Open **System Settings → Privacy & Security**
-2. Scroll down to the security section and click **Open Anyway**
+Requires the Xcode command-line tools (`xcode-select --install`).
 
-The dBrief icon appears in your menu bar.
+## Download the .dmg
+
+Download the latest `.dmg` from the dBrief releases page, open it, and drag `dBrief.app` into `/Applications`.
+
+Because the download is un-notarized, macOS blocks it on first launch. Clear it **once**, either way:
+
+- Open **System Settings → Privacy & Security**, scroll to the security note about dBrief, and click **Open Anyway**, **or**
+- Run this in **Terminal** (most reliable — the `-r` flag also clears the bundled `dBriefMLHost` helper):
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/dBrief.app
+  ```
+
+After that, dBrief launches normally and its icon appears in your menu bar.
+
+## Build from source
+
+```bash
+git clone https://github.com/Arc86/dBrief.git
+cd dBrief
+make run
+```
+
+Locally built apps aren't quarantined, so there's no Gatekeeper step.
 
 ## Updating dBrief
 
@@ -25,7 +49,7 @@ dBrief checks GitHub for new versions so you don't have to watch the releases pa
 - **Check manually** — open **Settings → General → Updates** and click **Check Now**. The last-checked time is shown there.
 - **When an update is available** — an orange ⬇︎ badge appears in the menu bar header, and the Updates section shows the new version number. Click the badge (or **View Release**) to open the release page in your browser.
 
-dBrief does not install updates for you. Download the new `dBrief.app` from the release page and replace the copy in `/Applications` (the same steps as [First launch](#first-launch) the first time after replacing). Your recordings and settings are stored separately and are kept across updates.
+dBrief does not install updates for you. Download the new `.dmg` from the release page and replace the copy in `/Applications` — you'll clear quarantine again the same way as in [Download the .dmg](#download-the-dmg). (On Homebrew, `brew upgrade dbrief` rebuilds the new version with no Gatekeeper step.) Your recordings and settings are stored separately and are kept across updates.
 
 ## Permissions
 

@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct AboutTab: View {
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -24,7 +28,7 @@ struct AboutTab: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("Version 1.1.0")
+                Text("Version \(appVersion)")
                     .font(.headline)
                     .foregroundStyle(.secondary)
             }
@@ -36,9 +40,9 @@ struct AboutTab: View {
                 .frame(maxWidth: 400)
 
             HStack(spacing: 16) {
-                Link("Check for Updates", destination: URL(string: "https://example.com")!)
-                Link("Support", destination: URL(string: "https://example.com")!)
-                Link("Documentation", destination: URL(string: "https://example.com")!)
+                Link("Check for Updates", destination: URL(string: "https://github.com/Arc86/dBrief/releases/latest")!)
+                Link("Support", destination: URL(string: "https://github.com/Arc86/dBrief/issues")!)
+                Link("Documentation", destination: URL(string: "https://github.com/Arc86/dBrief")!)
             }
             .controlSize(.small)
 

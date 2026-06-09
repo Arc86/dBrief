@@ -99,9 +99,33 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 
 ---
 
-## Quick start
+## Install
 
-### Build from source
+dBrief is **Apple Silicon only** and distributed **outside the Apple Developer Program**, so it is unsigned and un-notarized. That doesn't make it unsafe — it just changes how you open it the first time. Pick whichever path you prefer:
+
+### 1. Homebrew — recommended, no Gatekeeper prompt
+
+```bash
+brew install Arc86/dbrief/dbrief
+ln -sf "$(brew --prefix)/opt/dbrief/dBrief.app" /Applications/dBrief.app
+```
+
+Homebrew builds dBrief from source on your Mac, so the app is never quarantined and macOS opens it normally. Requires the Xcode command-line toolchain (`xcode-select --install`).
+
+### 2. Download the `.dmg`
+
+Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page, open it, and drag **dBrief** into Applications. Because the download is un-notarized, macOS blocks it on first launch. Clear it **once**, either way:
+
+- **System Settings** → **Privacy & Security** → scroll to the security note about dBrief → **Open Anyway**, or
+- **Terminal** (most reliable):
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/dBrief.app
+  ```
+  The `-r` flag is important — it also clears the bundled `dBriefMLHost` helper inside the app.
+
+After that, dBrief launches normally and appears in your menu bar.
+
+### 3. Build from source
 
 ```bash
 git clone https://github.com/Arc86/dBrief.git
@@ -109,11 +133,7 @@ cd dBrief
 make run
 ```
 
-This builds the app bundle in release mode and launches it. First launch walks you through the onboarding wizard — granting permissions and picking your transcription engine.
-
-### Or download a release
-
-Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page and drag dBrief into Applications.
+This builds the app bundle in release mode and launches it. Locally built apps aren't quarantined either, so there's no Gatekeeper step. First launch walks you through the onboarding wizard — granting permissions and picking your transcription engine.
 
 ### First recording
 
