@@ -13,7 +13,7 @@ actor MockBackend: MLBackend {
     }
     func analyzeStream(text: String, outputLanguage: OutputLanguage, emitToken: @Sendable (String) -> Void) async throws { emitToken("a"); emitToken("b") }
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws { emitToken("hi") }
-    func parakeetTranscribe(path: String, modelVariant: String) async throws -> TranscriptionResult { TranscriptionResult(text: "pk") }
+    func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult { TranscriptionResult(text: "pk") }
     func prepareModels() async {}
     func downloadWhisper(config: WhisperRuntimeConfig) async throws {}
     func downloadLLM() async throws {}
@@ -61,7 +61,7 @@ actor MockBackend: MLBackend {
         let collected = EventCollector()
         let router = RequestRouter(backend: MockBackend()) { env in collected.append(env) }
         await router.handle(RequestEnvelope(id: UUID(),
-            request: .parakeetTranscribe(path: "/p.m4a", modelVariant: "v2")))
+            request: .parakeetTranscribe(path: "/p.m4a", modelVariant: "v2", diarize: false)))
         #expect(collected.events.allSatisfy { $0.channel == .parakeet })
     }
 }

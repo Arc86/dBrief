@@ -243,7 +243,12 @@ struct SettingsTranscriptionTab: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("On-device transcription via FluidAudio and CoreML. Audio never leaves your Mac. Model is downloaded once from HuggingFace (~1.5–1.8 GB). v2 is English-only; v3 supports 25 European languages. Language selection has no effect. Speaker diarization is not supported.")
+            Text("On-device transcription via FluidAudio and CoreML. Audio never leaves your Mac. Model is downloaded once from HuggingFace (~1.5–1.8 GB). v2 is English-only; v3 supports 25 European languages. Language selection has no effect.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Speaker diarization", isOn: $settings.diarizationEnabled)
+            Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

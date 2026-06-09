@@ -19,7 +19,7 @@ let writer = StdoutWriter(.standardOutput)
 // routes them by channel, so the id is a fixed sentinel.
 let stateEventID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 let orchestrator = MLOrchestrator { channel, state in
-    Task { await writer.send(EventEnvelope(id: stateEventID, channel: channel, event: .state(state))) }
+    writer.send(EventEnvelope(id: stateEventID, channel: channel, event: .state(state)))
 }
 
 // Free Metal/GPU buffers before exit on SIGTERM (parent quitting).

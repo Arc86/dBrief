@@ -16,6 +16,11 @@ actor MLHostConnection {
     private var process: Process?
     private var stdinHandle: FileHandle?
     private var reader = FrameReader()
+    // Ordered hand-off of stdout chunks to `ingest`. The readability handler can
+    // fire faster than `ingest` runs; feeding a single serial consumer (instead
+    // of one Task per chunk) keeps frames — and thus a request's result vs its
+    // trailing `.finished` — in order, so replies are never dropped.
+    private var ingestContinuation: AsyncStream<Data>.Continuation?
 
     // Per-request inboxes. A terminal event (result/error/finished) completes the call.
     private struct Pending {
@@ -94,6 +99,8 @@ actor MLHostConnection {
         process?.terminate()
         process = nil
         stdinHandle = nil
+        ingestContinuation?.finish()
+        ingestContinuation = nil
     }
 
     // MARK: process lifecycle
@@ -112,10 +119,17 @@ actor MLHostConnection {
         proc.standardOutput = stdoutPipe
         // stderr inherited so the helper's OSLog/stderr surfaces.
 
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        // Serial consumer: chunks are ingested strictly in arrival order.
+        ingestContinuation?.finish()
+        let (stream, continuation) = AsyncStream<Data>.makeStream()
+        self.ingestContinuation = continuation
+        Task { [weak self] in
+            for await data in stream { await self?.ingest(data) }
+        }
+        stdoutPipe.fileHandleForReading.readabilityHandler = { [continuation] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            Task { await self?.ingest(data) }
+            continuation.yield(data)
         }
         proc.terminationHandler = { [weak self] _ in
             Task { await self?.handleTermination() }

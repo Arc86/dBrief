@@ -17,9 +17,9 @@ final class ParakeetTranscriptionService: Sendable {
         broadcaster.pump { await connection.stateStream(for: .parakeet) }
     }
 
-    func transcribe(fileURL: URL, language: String?, modelVariant: String) async throws -> TranscriptionResult {
+    func transcribe(fileURL: URL, language: String?, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
         guard case let .transcriptionResult(r) = try await connection.call(
-            .parakeetTranscribe(path: fileURL.path, modelVariant: modelVariant)
+            .parakeetTranscribe(path: fileURL.path, modelVariant: modelVariant, diarize: diarize)
         ) else { throw WireError(kind: .generic, message: "no transcription") }
         return r
     }

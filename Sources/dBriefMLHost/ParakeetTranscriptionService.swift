@@ -65,12 +65,106 @@ actor ParakeetTranscriptionService {
             duration = 0
         }
 
-        let segment = dBriefWire.TranscriptionResult.Segment(start: 0, end: duration, text: result.text)
+        let segments = Self.buildSegments(from: result.tokenTimings, fullText: result.text, duration: duration)
         return dBriefWire.TranscriptionResult(
             text: result.text,
-            segments: [segment],
+            segments: segments,
             language: language ?? "en"
         )
+    }
+
+    // MARK: - Segment / word reconstruction
+
+    /// Pause gap (seconds) between words that starts a new segment.
+    private static let segmentPauseThreshold = 1.0
+    /// Upper bound on a single segment's duration, so long monologues still split.
+    private static let maxSegmentDuration = 30.0
+
+    /// Build word-level segments from Parakeet's token timings. Falls back to a
+    /// single full-file segment when timings are unavailable (e.g. some
+    /// streaming/disk-backed paths), preserving the prior behavior. Word-level
+    /// timing is what makes overlap-based speaker diarization meaningful.
+    static func buildSegments(
+        from tokenTimings: [TokenTiming]?,
+        fullText: String,
+        duration: Double
+    ) -> [dBriefWire.TranscriptionResult.Segment] {
+        guard let tokenTimings, !tokenTimings.isEmpty else {
+            return [dBriefWire.TranscriptionResult.Segment(start: 0, end: duration, text: fullText)]
+        }
+        let words = buildWords(from: tokenTimings)
+        guard !words.isEmpty else {
+            return [dBriefWire.TranscriptionResult.Segment(start: 0, end: duration, text: fullText)]
+        }
+
+        var segments: [dBriefWire.TranscriptionResult.Segment] = []
+        var bucket: [dBriefWire.TranscriptionResult.Word] = []
+
+        func flush() {
+            guard let first = bucket.first, let last = bucket.last else { return }
+            segments.append(
+                dBriefWire.TranscriptionResult.Segment(
+                    start: first.start,
+                    end: last.end,
+                    text: bucket.map(\.word).joined(separator: " "),
+                    words: bucket
+                )
+            )
+            bucket = []
+        }
+
+        for word in words {
+            if let last = bucket.last, let first = bucket.first {
+                let gap = word.start - last.end
+                let segDuration = word.end - first.start
+                if gap > segmentPauseThreshold || segDuration > maxSegmentDuration {
+                    flush()
+                }
+            }
+            bucket.append(word)
+        }
+        flush()
+        return segments
+    }
+
+    /// Group SentencePiece tokens into words on the `▁`/space boundary, mirroring
+    /// FluidAudio's own word reconstruction (`isWordBoundary` /
+    /// `stripWordBoundaryPrefix` are public helpers in FluidAudio).
+    static func buildWords(from tokenTimings: [TokenTiming]) -> [dBriefWire.TranscriptionResult.Word] {
+        var words: [dBriefWire.TranscriptionResult.Word] = []
+        var current = ""
+        var wordStart = 0.0
+        var wordEnd = 0.0
+        var confidences: [Float] = []
+
+        func flush() {
+            let trimmed = current.trimmingCharacters(in: .whitespaces)
+            current = ""
+            defer { confidences = [] }
+            guard !trimmed.isEmpty else { return }
+            let avg = confidences.isEmpty ? nil : Double(confidences.reduce(0, +) / Float(confidences.count))
+            words.append(
+                dBriefWire.TranscriptionResult.Word(word: trimmed, start: wordStart, end: wordEnd, probability: avg)
+            )
+        }
+
+        for timing in tokenTimings {
+            let token = timing.token
+            if token.isEmpty || token == "<blank>" || token == "<pad>" { continue }
+            let startsNewWord = isWordBoundary(token) || current.isEmpty
+            if startsNewWord, !current.isEmpty { flush() }
+            if startsNewWord {
+                current = stripWordBoundaryPrefix(token)
+                wordStart = timing.startTime
+                confidences = [timing.confidence]
+            } else {
+                current += token
+                confidences.append(timing.confidence)
+            }
+            wordEnd = timing.endTime
+        }
+        flush()
+        return words
     }
 
     func purgeModels() throws {

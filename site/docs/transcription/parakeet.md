@@ -4,7 +4,11 @@ On-device transcription using NVIDIA's Parakeet TDT model, running via the Fluid
 
 ## What it is
 
-Parakeet is a fast, accurate on-device speech recognition model. Like Local Whisper, it runs entirely on your Mac — no audio leaves your device — but it handles long recordings natively without splitting them into chunks.
+Parakeet is a fast, accurate on-device speech recognition model. Like Local Whisper, it runs entirely on your Mac — no audio leaves your device — but it handles long recordings natively without splitting them into chunks. It produces word-level timestamps, and can optionally label who said what.
+
+## Speaker diarization
+
+Turn on **Speaker diarization** in **Settings → AI & Models → Transcription** to label who said what. After Parakeet transcribes, dBrief runs SpeakerKit on the same audio and assigns each word the speaker who was talking at that moment, then groups the transcript into speaker turns. This adds processing time and ~500 MB of memory, and downloads the SpeakerKit model on first use. Speaker labels flow into the transcript viewer, markdown export, and integrations, just like with Local Whisper. As with any recording, you can rename speakers afterward by clicking a speaker badge.
 
 ## Model variants
 
@@ -28,7 +32,6 @@ Use the **Download model** button to fetch it ahead of time, with progress and a
 ## Limitations
 
 - **No language picker** — the language is determined by which variant you choose (v2 English or v3 multilingual). The general language setting has no effect.
-- **No speaker diarization** — Parakeet doesn't identify who said what. If you need speaker labels, use [Local Whisper](local-whisper.md) with diarization enabled.
 
 ## Setup
 

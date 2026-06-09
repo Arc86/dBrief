@@ -1315,6 +1315,8 @@ final class RecordingManager {
             case .parakeetModelLoading:
                 appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
                 appState.processingSteps[stepIndex].progress = nil
+            case .speakerKitModel:
+                appState.processingSteps[stepIndex].name = "Downloading speaker model…"
             default:
                 break
             }
@@ -1481,7 +1483,8 @@ final class RecordingManager {
                 try await self.parakeetService.transcribe(
                     fileURL: url,
                     language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
-                    modelVariant: self.appSettings.parakeetModelVariant
+                    modelVariant: self.appSettings.parakeetModelVariant,
+                    diarize: self.appSettings.diarizationEnabled
                 )
             }
         case .remoteEndpoint:

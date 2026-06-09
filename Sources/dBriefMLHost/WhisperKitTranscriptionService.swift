@@ -375,7 +375,15 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     /// of WhisperKit transcription, so it never touches WhisperKit's
     /// `TranscriptionResult` and avoids the module/class name collision — it only
     /// reads SpeakerKit's own `DiarizationResult.segments`.
-    func diarize(fileURL: URL) async throws -> [DiarizedTurn] {
+    /// - Parameter onState: progress sink. Defaults to the service's own
+    ///   `stateHandler` (`.plugin` channel); the Parakeet path passes a sink that
+    ///   routes to the `.parakeet` channel so the SpeakerKit model download is
+    ///   visible there instead of looking frozen on "Identifying speakers".
+    func diarize(
+        fileURL: URL,
+        onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
+    ) async throws -> [DiarizedTurn] {
+        let emitState = onState ?? stateHandler
         Logger.localAI.info("Standalone diarization for \(fileURL.lastPathComponent, privacy: .public)")
         let audioArray: [Float]
         do {
@@ -385,6 +393,12 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
 
         let downloadBase = try speakerKitDownloadBaseURL()
+        // SpeakerKit downloads Pyannote models on first use with no progress
+        // callback of its own; surface an indeterminate "downloading" state when
+        // the cache is empty so the UI doesn't appear stuck during the fetch.
+        if !speakerKitModelsPresent(at: downloadBase) {
+            emitState(.downloading(progress: nil, stage: .speakerKitModel))
+        }
         let skConfig = PyannoteConfig(
             downloadBase: downloadBase.path,
             download: true,
@@ -392,6 +406,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             verbose: true
         )
         let speakerKit = try await SpeakerKit(skConfig)
+        emitState(.diarizing)
         let diarResult = try await speakerKit.diarize(audioArray: audioArray)
         await speakerKit.unloadModels()
         Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
@@ -404,6 +419,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     private func speakerKitDownloadBaseURL() throws -> URL {
         try SupportPaths.subdirectory("SpeakerKit")
+    }
+
+    /// Coarse check that SpeakerKit models have been downloaded: the cache
+    /// directory exists and is non-empty.
+    private func speakerKitModelsPresent(at base: URL) -> Bool {
+        let contents = try? FileManager.default.contentsOfDirectory(atPath: base.path)
+        return !(contents?.isEmpty ?? true)
     }
 
     private func speakerInfoString(_ speaker: SpeakerInfo) -> String? {

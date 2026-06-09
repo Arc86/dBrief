@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import dBriefWire
 
 /// Owns the three ML services inside the helper process, serializes GPU access
@@ -47,15 +48,33 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
-    func parakeetTranscribe(path: String, modelVariant: String) async throws -> TranscriptionResult {
+    func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
         try await mutex.withLock { [self] in
             await whisperService.unload()
             await insightsService.unload()
-            return try await parakeetService.transcribe(
-                fileURL: URL(fileURLWithPath: path),
+            let fileURL = URL(fileURLWithPath: path)
+            let result = try await parakeetService.transcribe(
+                fileURL: fileURL,
                 language: nil,
                 modelVariant: modelVariant
             )
+            guard diarize else { return result }
+
+            // Free the Parakeet model before loading SpeakerKit, then run the
+            // shared standalone diarization pass and merge speakers by overlap.
+            // Route SpeakerKit's download/diarizing progress to the parakeet
+            // channel so a first-time model fetch is visible, not a frozen step.
+            await parakeetService.unload()
+            do {
+                let turns = try await whisperService.diarize(
+                    fileURL: fileURL,
+                    onState: { [emit] state in emit(.parakeet, state) }
+                )
+                return SpeakerMerge.merge(result, turns: turns)
+            } catch {
+                Logger.localAI.error("Parakeet diarization failed: \(error.localizedDescription, privacy: .public) — returning transcript without speakers")
+                return result
+            }
         }
     }
 
