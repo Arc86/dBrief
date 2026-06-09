@@ -533,6 +533,8 @@ final class RecordingManager {
 
         // Step 3: Generate title & write Markdown
         let engine = appSettings.effectiveAIEngine
+        // Skip the separate title call for the unified-JSON engines (Gemma, Local CLI,
+        // Apple Intelligence) — they produce `title_concept` inline.
         if engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
            let transcriptionText = recording.transcription?.textForLLM,
            !transcriptionText.isEmpty {
@@ -554,36 +556,36 @@ final class RecordingManager {
                 // Title generation is non-critical — fall back to text extraction
                 appState.processingSteps[titleStepIndex].status = .completed
             }
+        }
 
-            let stepIndex = appState.processingSteps.count
-            appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
-
-            do {
-                let outputFolder = resolveMarkdownOutputFolder(for: recording)
-                let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
-                case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
-                case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
-                case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
-                }
-                let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
-                case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
-                case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
-                case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
-                }
-                generatedMarkdownURL = try markdownGenerator.generate(
-                    recording: recording,
-                    outputFolder: outputFolder,
-                    transcriptionEndpoint: transcriptionEndpoint,
-                    aiEndpoint: aiEndpoint,
-                    includeTranscript: appSettings.obsidianIncludeTranscript
-                )
-                appState.processingSteps[stepIndex].status = .completed
-                await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
-            } catch {
-                appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+        // Write Markdown for every engine (the unified engines set the title inline above).
+        let markdownStepIndex = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
+        do {
+            let outputFolder = resolveMarkdownOutputFolder(for: recording)
+            let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
+            case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
+            case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
+            case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
+            case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
             }
+            let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
+            case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
+            case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
+            case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+            case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
+            }
+            generatedMarkdownURL = try markdownGenerator.generate(
+                recording: recording,
+                outputFolder: outputFolder,
+                transcriptionEndpoint: transcriptionEndpoint,
+                aiEndpoint: aiEndpoint,
+                includeTranscript: appSettings.obsidianIncludeTranscript
+            )
+            appState.processingSteps[markdownStepIndex].status = .completed
+            await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
+        } catch {
+            appState.processingSteps[markdownStepIndex].status = .failed(error.localizedDescription)
         }
 
         // Step 4: Integration dispatch
@@ -1035,6 +1037,11 @@ final class RecordingManager {
                 recording.sentiment = insights.sentiment
                 markCompleted(tagsStepIndex)
             }
+        } catch is CancellationError {
+            let message = "Cancelled by user"
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
         } catch {
             let message = error.localizedDescription
             markFailed(summaryStepIndex, message)

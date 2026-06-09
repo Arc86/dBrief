@@ -77,7 +77,7 @@ actor LocalAIService {
             let insights = response.content
             log.info("Apple Intelligence analysis complete: \(insights.summary.prefix(80), privacy: .public)...")
             return LocalInsightsResult(
-                titleConcept: insights.titleConcept.trimmingCharacters(in: .whitespacesAndNewlines),
+                titleConcept: insights.titleConcept,
                 summary: insights.summary,
                 actionItems: insights.actionItems,
                 tags: insights.tags,
