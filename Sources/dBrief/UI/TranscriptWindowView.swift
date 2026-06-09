@@ -25,6 +25,8 @@ struct TranscriptDetailView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
     @State private var showChat = false
+    @State private var showAnalysis = false
+    @State private var insights: RecordingInsights?
     @State private var copied = false
     @State private var showDeleteConfirm = false
 
@@ -58,6 +60,10 @@ struct TranscriptDetailView: View {
         VStack(spacing: 0) {
             if loadFailed {
                 failedState
+            } else if showAnalysis {
+                TranscriptAnalysisView(insights: insights) { updated in
+                    await saveInsights(updated)
+                }
             } else if showChat {
                 chatContent
             } else if richTranscript != nil {
@@ -127,6 +133,15 @@ struct TranscriptDetailView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                toggleAnalysis()
+            } label: {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .symbolVariant(showAnalysis ? .fill : .none)
+                    .foregroundStyle(showAnalysis ? Color.accentColor : Color.secondary)
+            }
+            .help(showAnalysis ? "Show transcript" : "Show AI analysis")
+
             Button {
                 toggleChat()
             } label: {
@@ -345,7 +360,15 @@ struct TranscriptDetailView: View {
 
     private func toggleChat() {
         showChat.toggle()
-        if showChat, chatService == nil { buildChatService() }
+        if showChat {
+            showAnalysis = false
+            if chatService == nil { buildChatService() }
+        }
+    }
+
+    private func toggleAnalysis() {
+        showAnalysis.toggle()
+        if showAnalysis { showChat = false }
     }
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
@@ -429,6 +452,7 @@ struct TranscriptDetailView: View {
             base.appendingPathExtension("md"),
             base.appendingPathExtension("transcript.json"),
             base.appendingPathExtension("richtranscript.json"),
+            base.appendingPathExtension("insights.json"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
@@ -451,9 +475,33 @@ struct TranscriptDetailView: View {
         }
     }
 
+    private func loadInsights() async {
+        insights = (try? await context.insightsStore.load(for: recording)) ?? nil
+    }
+
+    private func saveInsights(_ updated: RecordingInsights) async {
+        do {
+            try await context.insightsStore.save(updated, for: recording)
+            insights = updated
+            if let path = updated.markdownPath {
+                let url = URL(fileURLWithPath: path)
+                if FileManager.default.fileExists(atPath: url.path),
+                   let existing = try? String(contentsOf: url, encoding: .utf8) {
+                    let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: updated)
+                    try? rewritten.write(to: url, atomically: true, encoding: .utf8)
+                }
+            }
+        } catch {
+            Logger.recording.error("Failed to save insights: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func loadTranscript() async {
         richTranscript = nil
         loadFailed = false
+        showAnalysis = false
+        insights = nil
+        await loadInsights()
 
         // Restore any in-progress chat session for this recording.
         if let existing = chatStore.session(for: recording.fileURL) {
