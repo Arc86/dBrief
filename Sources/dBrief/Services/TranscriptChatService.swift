@@ -104,7 +104,6 @@ final class TranscriptChatService {
                     Task {
                         do {
                             let session = LanguageModelSession(instructions: systemPrompt)
-                            session.prewarm()
                             let options = GenerationOptions(temperature: 0.5)
                             let response = try await session.respond(to: userMessage, options: options)
                             continuation.yield(response.content)

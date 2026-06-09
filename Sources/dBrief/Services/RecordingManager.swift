@@ -226,6 +226,16 @@ final class RecordingManager {
             return
         }
 
+        // Warm the Apple Intelligence model during transcription so the AI step starts
+        // without first-call load latency. Fire-and-forget; no-op for other engines.
+        if appSettings.aiProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence {
+            #if canImport(FoundationModels)
+            if #available(macOS 26, *) {
+                Task { await LocalAIService().prewarm() }
+            }
+            #endif
+        }
+
         // Step 1: Transcription
         guard !Task.isCancelled else { return }
         if transcribe {
