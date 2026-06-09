@@ -649,7 +649,7 @@ final class AppSettings {
             switch defaults.string(forKey: "whisperModelSize") ?? "" {
             case "small":  return "openai_whisper-small"
             case "medium": return "openai_whisper-medium"
-            default:       return "openai_whisper-small"
+            default:       return WhisperModelInfo.recommendedModelID
             }
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
