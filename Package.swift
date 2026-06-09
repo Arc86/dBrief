@@ -60,6 +60,7 @@ let package = Package(
             dependencies: [
                 "dBriefMLHost",
                 "dBriefWire",
+                "FluidAudio",
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),

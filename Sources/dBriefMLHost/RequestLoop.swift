@@ -9,7 +9,7 @@ protocol MLBackend: Sendable {
     func analyze(text: String, outputLanguage: OutputLanguage) async throws -> LocalInsightsResult
     func analyzeStream(text: String, outputLanguage: OutputLanguage, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
-    func parakeetTranscribe(path: String, modelVariant: String) async throws -> TranscriptionResult
+    func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
     func downloadWhisper(config: WhisperRuntimeConfig) async throws
@@ -69,8 +69,8 @@ final class RequestRouter: Sendable {
             case let .chatStream(system, user):
                 try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)
                 send(.finished)
-            case let .parakeetTranscribe(path, variant):
-                send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant))); send(.finished)
+            case let .parakeetTranscribe(path, variant, diarize):
+                send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
             case let .synthesizeSpeech(text, outputPath, voice, language):
                 let r = try await backend.synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language)
                 send(.speechResult(r)); send(.finished)
@@ -107,14 +107,28 @@ final class RequestRouter: Sendable {
     }
 }
 
-/// Serializes writes to the output pipe so concurrent request tasks never
-/// interleave their frames.
-actor StdoutWriter {
-    private let handle: FileHandle
-    init(_ handle: FileHandle) { self.handle = handle }
+/// Serializes writes to the output pipe AND preserves emission order. Events are
+/// drained by a single task from an ordered queue, so a request's result frame
+/// can never be overtaken on the wire by the trailing `.finished` (which would
+/// make the parent drop the reply and leak its awaiting continuation). `send` is
+/// synchronous and order-preserving, so callers must NOT wrap it in a `Task`.
+final class StdoutWriter: @unchecked Sendable {
+    private let continuation: AsyncStream<EventEnvelope>.Continuation
+    private let drain: Task<Void, Never>
+
+    init(_ handle: FileHandle) {
+        let (stream, continuation) = AsyncStream<EventEnvelope>.makeStream(bufferingPolicy: .unbounded)
+        self.continuation = continuation
+        self.drain = Task {
+            for await envelope in stream {
+                guard let payload = try? JSONEncoder().encode(envelope) else { continue }
+                handle.write(FrameCodec.encode(payload))
+            }
+        }
+    }
+
     func send(_ envelope: EventEnvelope) {
-        guard let payload = try? JSONEncoder().encode(envelope) else { return }
-        handle.write(FrameCodec.encode(payload))
+        continuation.yield(envelope)
     }
 }
 
@@ -127,7 +141,7 @@ final class RequestLoop: @unchecked Sendable {
 
     init(backend: MLBackend, writer: StdoutWriter) {
         self.router = RequestRouter(backend: backend) { env in
-            Task { await writer.send(env) }
+            writer.send(env)
         }
     }
 

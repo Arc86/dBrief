@@ -11,7 +11,7 @@ public enum MLRequest: Sendable, Codable {
     case analyze(text: String, outputLanguage: OutputLanguage)
     case analyzeStream(text: String, outputLanguage: OutputLanguage)
     case chatStream(systemPrompt: String, userMessage: String)
-    case parakeetTranscribe(path: String, modelVariant: String)
+    case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)

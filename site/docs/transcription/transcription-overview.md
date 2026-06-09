@@ -16,14 +16,14 @@ Go to **Settings → AI & Models → Transcription** and select your transcripti
 |---|---|---|---|
 | **Apple Speech** | On your Mac | None | Works on any Mac. On macOS 26+ uses Apple's modern model — much better accuracy plus word-level timing in the transcript viewer; older macOS uses the classic recognizer (lower accuracy for technical content) |
 | **Local Whisper** | On your Mac | Model download | Higher accuracy; choose from many model sizes; optional speaker diarization |
-| **Parakeet (Local)** | On your Mac | Model download | Fast on-device transcription; no language selection or diarization |
+| **Parakeet (Local)** | On your Mac | Model download | Fast on-device transcription with optional speaker diarization; no language selection |
 | **Remote Endpoint** | Your server | Server URL + optional API key | Best accuracy with large models; requires a running server |
 
 The two on-device model engines (Local Whisper and Parakeet) run best on Apple Silicon. Each downloads its model on first use — see the individual pages for sizes and details.
 
 ## Speaker diarization (who said what)
 
-When using **Local Whisper**, you can enable **Speaker diarization** in **Settings → AI & Models → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. It isn't available for Apple Speech, Parakeet, or remote endpoints.
+When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker diarization** in **Settings → AI & Models → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. It isn't available for Apple Speech or remote endpoints.
 
 ## Long recordings
 
