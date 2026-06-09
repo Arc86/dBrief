@@ -208,6 +208,7 @@ public struct WhisperModelInfo: Sendable {
         parse("distil-whisper_distil-large-v3_turbo_600MB"),
         parse("distil-whisper_distil-large-v3_turbo_600MB.en"),
         parse("openai_whisper-large-v3-v20240930_626MB"),
+        parse("openai_whisper-large-v3-v20240930_turbo_632MB"),
     ]
 
     /// Fallback list of model names (without parsed metadata).
@@ -272,5 +273,44 @@ extension WhisperModelInfo: Comparable {
 
     public static func == (lhs: WhisperModelInfo, rhs: WhisperModelInfo) -> Bool {
         return lhs.originalName == rhs.originalName
+    }
+}
+
+// MARK: - Recommendation & plain-language copy
+
+extension WhisperModelInfo {
+    /// The model dBrief recommends by default: the Sep-2024 large-v3 turbo,
+    /// quantized to ~632 MB. Much faster than full large-v3 with comparable accuracy.
+    public static let recommendedModelID = "openai_whisper-large-v3-v20240930_turbo_632MB"
+
+    /// Whether this model is dBrief's recommended default.
+    public var isRecommended: Bool { originalName == Self.recommendedModelID }
+
+    /// One-line, jargon-free description shown under the model card so a
+    /// non-technical user can choose a model without knowing model internals.
+    public var plainDescription: String {
+        if isRecommended {
+            return "Best balance of speed and accuracy for most Macs. Audio never leaves your device."
+        }
+        switch family {
+        case "tiny", "base":
+            return "Fastest and lightest. Good for quick notes; less accurate on tricky audio."
+        case "small":
+            return "Light and quick, with solid everyday accuracy and a small memory footprint."
+        case "medium":
+            return "More accurate than Small, a little slower and heavier."
+        case "large-v3-v20240930":
+            return isTurbo
+                ? "High accuracy with good speed. Uses more memory than the smaller models."
+                : "High-accuracy Sep-2024 snapshot. Slower and more memory-hungry than turbo variants."
+        case "large-v2", "large-v3", "large":
+            return isTurbo
+                ? "High accuracy with good speed. Uses more memory than the smaller models."
+                : "Highest accuracy. Slowest and most memory-hungry — best with other apps closed."
+        case "distil-large-v3":
+            return "Distilled large model: near-large accuracy, lighter and faster."
+        default:
+            return "On-device Whisper model. Audio never leaves your Mac."
+        }
     }
 }
