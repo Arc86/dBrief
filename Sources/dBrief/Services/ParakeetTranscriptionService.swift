@@ -6,15 +6,15 @@ import dBriefWire
 /// the `language` argument is accepted (to match the call site) but not sent.
 final class ParakeetTranscriptionService: Sendable {
     private let connection: MLHostConnection
-    nonisolated let stateStream: AsyncStream<LocalAIPluginState>
+    private let broadcaster = StateBroadcaster()
+
+    /// Fresh subscriber stream per access; survives re-subscription across ops
+    /// (see `StateBroadcaster`).
+    nonisolated var stateStream: AsyncStream<LocalAIPluginState> { broadcaster.subscribe() }
 
     init(connection: MLHostConnection) {
         self.connection = connection
-        let box = UnsafeStreamBox()
-        let sem = DispatchSemaphore(value: 0)
-        Task { box.stream = await connection.stateStream(for: .parakeet); sem.signal() }
-        sem.wait()
-        self.stateStream = box.stream!
+        broadcaster.pump { await connection.stateStream(for: .parakeet) }
     }
 
     func transcribe(fileURL: URL, language: String?, modelVariant: String) async throws -> TranscriptionResult {

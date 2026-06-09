@@ -28,17 +28,16 @@ enum MLHostLocator {
 /// supervised child process.
 final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     let connection: MLHostConnection
-    nonisolated let stateStream: AsyncStream<LocalAIPluginState>
+    private let broadcaster = StateBroadcaster()
+
+    /// A fresh subscriber stream each access. The app iterates this once per op
+    /// (cancelling it when the op ends), so it must survive re-subscription —
+    /// see `StateBroadcaster`.
+    nonisolated var stateStream: AsyncStream<LocalAIPluginState> { broadcaster.subscribe() }
 
     init(connection: MLHostConnection) {
         self.connection = connection
-        // Capture the .plugin channel state stream synchronously at init so
-        // `stateStream` can be a stored `let` matching the protocol.
-        let box = UnsafeStreamBox()
-        let sem = DispatchSemaphore(value: 0)
-        Task { box.stream = await connection.stateStream(for: .plugin); sem.signal() }
-        sem.wait()
-        self.stateStream = box.stream!
+        broadcaster.pump { await connection.stateStream(for: .plugin) }
     }
 
     convenience init() {
@@ -121,9 +120,4 @@ extension LocalAIPluginService {
         ) else { throw WireError(kind: .generic, message: "no transcription") }
         return r
     }
-}
-
-/// Bridges an actor-vended `AsyncStream` out to a synchronous initializer.
-final class UnsafeStreamBox: @unchecked Sendable {
-    var stream: AsyncStream<LocalAIPluginState>?
 }
