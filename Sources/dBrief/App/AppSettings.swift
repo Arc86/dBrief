@@ -151,6 +151,21 @@ final class AppSettings {
             case .remoteEndpoint: "Remote Endpoint"
             }
         }
+
+        /// One-line plain-language summary, shown under the picker in onboarding
+        /// and Settings to help users choose.
+        var shortDescription: String {
+            switch self {
+            case .appleSpeech: "Built in, no download. Fast, but lower accuracy than Whisper."
+            case .localWhisper: "On-device Whisper. Best accuracy, multilingual. Downloads a model once."
+            case .parakeetLocal: "On-device, great for clear English speech. No speaker labels."
+            case .remoteEndpoint: "Send audio to your own Whisper server or API."
+            }
+        }
+
+        /// The engine we steer new users toward — private, on-device, and accurate.
+        static let recommended: TranscriptionEngine = .localWhisper
+        var isRecommended: Bool { self == Self.recommended }
     }
 
 
@@ -170,6 +185,20 @@ final class AppSettings {
             case .localCLI: "Local CLI"
             }
         }
+
+        /// One-line plain-language summary, shown under the picker in onboarding
+        /// and Settings to help users choose.
+        var shortDescription: String {
+            switch self {
+            case .appleIntelligence: "On-device and private. Requires macOS 26 on Apple Silicon."
+            case .qwenLocal: "On-device Gemma model. Private, downloads once."
+            case .remoteEndpoint: "Use an OpenAI-compatible LLM endpoint (e.g. your own server)."
+            case .localCLI: "Run your own command (claude, ollama, llm…)."
+            }
+        }
+
+        /// Whether this is the suggested zero-config choice for the current Mac.
+        var isRecommended: Bool { self == Self.defaultOnDeviceFallback }
 
         /// A sensible zero-config on-device engine to fall back to (used for the
         /// transcript chat window when the active engine is `.localCLI`, which
@@ -561,7 +590,9 @@ final class AppSettings {
             self.aiEngine = engine
         } else {
             let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInAI)
-            self.aiEngine = legacyBuiltIn ? .appleIntelligence : .remoteEndpoint
+            // Fresh installs default to a private, on-device engine that works
+            // without configuring a remote endpoint.
+            self.aiEngine = legacyBuiltIn ? .appleIntelligence : .defaultOnDeviceFallback
         }
 
         if let rawValue = defaults.string(forKey: Keys.chatFallbackEngine),
@@ -670,7 +701,9 @@ final class AppSettings {
             self.transcriptionEngine = engine
         } else {
             let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInTranscription)
-            self.transcriptionEngine = legacyBuiltIn ? .appleSpeech : .remoteEndpoint
+            // Fresh installs default to on-device Whisper rather than an
+            // unconfigured remote endpoint.
+            self.transcriptionEngine = legacyBuiltIn ? .appleSpeech : .recommended
         }
 
         var loadedProfiles = Self.loadProfiles(forKey: Keys.profiles)

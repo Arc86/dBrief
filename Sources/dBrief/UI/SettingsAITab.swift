@@ -31,7 +31,7 @@ struct SettingsAITab: View {
                 Section("Engine") {
                     Picker("AI engine", selection: $settings.aiEngine) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
-                            Text(engine.displayName).tag(engine)
+                            Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
                         }
                     }
                     .pickerStyle(.menu)

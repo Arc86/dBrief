@@ -83,7 +83,7 @@ struct SettingsTranscriptionTab: View {
             LabeledContent("Transcription engine:") {
                 Picker("", selection: $settings.transcriptionEngine) {
                     ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                        Text(engine.displayName).tag(engine)
+                        Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
                     }
                 }
                 .labelsHidden()

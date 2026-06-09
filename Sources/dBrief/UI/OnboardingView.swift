@@ -11,21 +11,29 @@ struct OnboardingView: View {
     @State private var hasSpeechPermission = false
     @State private var hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
 
+    private let stepCount = 4
+
     var body: some View {
-        VStack(spacing: 16) {
-            switch step {
-            case 0:
-                welcomeStep
-            case 1:
-                permissionsStep
-            case 2:
-                endpointStep
-            default:
-                readyStep
+        VStack(spacing: 18) {
+            Group {
+                switch step {
+                case 0:
+                    welcomeStep
+                case 1:
+                    permissionsStep
+                case 2:
+                    endpointStep
+                default:
+                    readyStep
+                }
             }
+            .transition(.opacity)
+
+            stepIndicator
         }
-        .padding()
-        .frame(width: 300)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: step)
         .task {
             hasSpeechPermission = SFSpeechRecognizer.authorizationStatus() == .authorized
@@ -33,37 +41,75 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: - Shared chrome
+
+    private var stepIndicator: some View {
+        HStack(spacing: 6) {
+            ForEach(0 ..< stepCount, id: \.self) { index in
+                Capsule()
+                    .fill(index == step ? Color.accentColor : Color.secondary.opacity(0.25))
+                    .frame(width: index == step ? 18 : 6, height: 6)
+                    .animation(.easeInOut(duration: 0.2), value: step)
+            }
+        }
+    }
+
+    /// A consistent multi-line body text style that wraps instead of truncating.
+    private func bodyText(_ string: LocalizedStringKey) -> some View {
+        Text(string)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+    }
+
+    private func iconBadge(_ systemName: String, tint: Color) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 30, weight: .medium))
+            .foregroundStyle(tint)
+            .frame(width: 64, height: 64)
+            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: - Step 0: Welcome
+
     private var welcomeStep: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             if let appIcon = appIconImage() {
                 Image(nsImage: appIcon)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: 72, height: 72)
+                    .frame(width: 76, height: 76)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.blue)
+                iconBadge("waveform", tint: .accentColor)
             }
 
             Text("Welcome to dBrief")
-                .font(.headline)
+                .font(.title3.weight(.semibold))
 
-            Text("Record, transcribe, and analyze voice recordings right from your menu bar.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            bodyText("Record, transcribe, and analyze meetings and voice notes — right from your menu bar.")
 
-            Text("Use **\u{2318}\u{21E7}R** to start/stop recording from anywhere.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            HStack(spacing: 6) {
+                Image(systemName: "command")
+                Text("Press **\u{2318}\u{21E7}R** anytime to start or stop recording.")
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Button("Get Started") {
                 step = 1
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
     }
 
@@ -75,79 +121,60 @@ struct OnboardingView: View {
         return NSImage(named: "AppIcon")
     }
 
+    // MARK: - Step 1: Permissions
+
     private var permissionsStep: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 36))
-                .foregroundStyle(.orange)
+        VStack(spacing: 14) {
+            iconBadge("lock.shield.fill", tint: .orange)
 
             Text("Permissions")
-                .font(.headline)
+                .font(.title3.weight(.semibold))
 
-            VStack(alignment: .leading, spacing: 8) {
+            bodyText("dBrief needs a microphone to record. The rest are optional and unlock more features.")
+
+            VStack(spacing: 8) {
                 permissionRow(
                     granted: recordingManager.hasMicrophonePermission,
                     title: "Microphone",
-                    subtitle: nil,
-                    required: true
+                    subtitle: "Required to record audio",
+                    required: true,
+                    action: nil
                 )
 
                 permissionRow(
                     granted: recordingManager.hasSystemAudioPermission,
                     title: "Screen Recording",
-                    subtitle: "For system audio capture",
-                    required: false
+                    subtitle: "Captures system audio (other people on calls)",
+                    required: false,
+                    action: recordingManager.hasSystemAudioPermission ? nil : { CGRequestScreenCaptureAccess() }
                 )
 
                 permissionRow(
                     granted: hasSpeechPermission,
                     title: "Speech Recognition",
-                    subtitle: "For built-in transcription",
-                    required: false
+                    subtitle: "For built-in Apple transcription",
+                    required: false,
+                    action: hasSpeechPermission ? nil : {
+                        Task { hasSpeechPermission = await LocalTranscriptionService.requestAccess() }
+                    }
                 )
 
                 permissionRow(
                     granted: hasCalendarPermission,
                     title: "Calendar",
-                    subtitle: "To pre-fill meeting title and participants",
-                    required: false
-                )
-            }
-
-            Text("Grant permissions in System Settings > Privacy & Security.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            HStack(spacing: 6) {
-                Button("Screen Recording") {
-                    CGRequestScreenCaptureAccess()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(recordingManager.hasSystemAudioPermission)
-
-                Button("Speech") {
-                    Task {
-                        hasSpeechPermission = await LocalTranscriptionService.requestAccess()
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(hasSpeechPermission)
-
-                if !hasCalendarPermission {
-                    Button("Calendar") {
+                    subtitle: "Pre-fills meeting title and participants",
+                    required: false,
+                    action: hasCalendarPermission ? nil : {
                         Task {
                             let store = EKEventStore()
                             _ = try? await store.requestFullAccessToEvents()
                             hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
                         }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
+                )
+            }
 
+            HStack(spacing: 10) {
                 Button("Refresh") {
                     Task {
                         await recordingManager.checkPermissions()
@@ -156,104 +183,169 @@ struct OnboardingView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+                .controlSize(.large)
 
-            Button("Continue") {
-                step = 2
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!recordingManager.hasMicrophonePermission)
-        }
-    }
-
-    private func permissionRow(granted: Bool, title: String, subtitle: String?, required: Bool) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(granted ? .green : (required ? .red : .orange))
-            VStack(alignment: .leading) {
-                Text(title)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Button("Continue") {
+                    step = 2
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!recordingManager.hasMicrophonePermission)
             }
         }
     }
+
+    private func permissionRow(
+        granted: Bool,
+        title: String,
+        subtitle: String,
+        required: Bool,
+        action: (() -> Void)?
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: granted ? "checkmark.circle.fill" : (required ? "exclamationmark.circle.fill" : "circle"))
+                .font(.system(size: 18))
+                .foregroundStyle(granted ? .green : (required ? .red : .secondary))
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(title).font(.callout.weight(.medium))
+                    if required {
+                        Text("Required")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.red)
+                    }
+                }
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 4)
+
+            if granted {
+                Text("On")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+            } else if let action {
+                Button("Grant", action: action)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: - Step 2: Engines
 
     private var endpointStep: some View {
         @Bindable var settings = appSettings
-        return VStack(spacing: 12) {
-            Image(systemName: "cpu")
-                .font(.system(size: 36))
-                .foregroundStyle(.blue)
+        let needsEndpoint = appSettings.transcriptionEngine == .remoteEndpoint || appSettings.aiEngine == .remoteEndpoint
+        return VStack(spacing: 14) {
+            iconBadge("cpu", tint: .accentColor)
 
-            Text("Processing Engine")
-                .font(.headline)
+            Text("Transcription & AI")
+                .font(.title3.weight(.semibold))
 
-            Text("Choose how to transcribe and analyze your recordings.")
-                .font(.callout)
+            bodyText("Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed.")
+
+            VStack(spacing: 12) {
+                enginePicker(
+                    title: "Transcription",
+                    selection: $settings.transcriptionEngine,
+                    cases: AppSettings.TranscriptionEngine.allCases,
+                    label: { $0.displayName },
+                    recommended: { $0.isRecommended },
+                    description: appSettings.transcriptionEngine.shortDescription
+                )
+
+                enginePicker(
+                    title: "AI Analysis",
+                    selection: $settings.aiEngine,
+                    cases: AppSettings.AIEngine.allCases,
+                    label: { $0.displayName },
+                    recommended: { $0.isRecommended },
+                    description: appSettings.aiEngine.shortDescription
+                )
+            }
+
+            if needsEndpoint {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                    Text("Add your server URL and key in Settings before recording.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    SettingsLink { Text("Settings") }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("Transcription engine", selection: $settings.transcriptionEngine) {
-                    ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                        Text(engine.displayName).tag(engine)
-                    }
-                }
-                .labelsHidden()
-                .font(.callout)
-
-                Picker("AI engine", selection: $settings.aiEngine) {
-                    ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
-                        Text(engine.displayName).tag(engine)
-                    }
-                }
-                .labelsHidden()
-                .font(.callout)
-            }
-            .padding(.horizontal, 4)
-
-            if appSettings.transcriptionEngine == .remoteEndpoint || appSettings.aiEngine == .remoteEndpoint {
-                Text("Configure external endpoints in Settings for Whisper / LLM services.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                SettingsLink {
-                    Text("Open Settings")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .padding(10)
+                .frame(maxWidth: .infinity)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
-            Button("Finish Setup") {
+            Button("Continue") {
                 step = 3
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
     }
 
-    private var readyStep: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-
-            Text("You're All Set!")
-                .font(.headline)
-
-            Text("Click the waveform icon in the menu bar to start recording, or press **\u{2318}\u{21E7}R**.")
-                .font(.callout)
+    private func enginePicker<T: Hashable>(
+        title: String,
+        selection: Binding<T>,
+        cases: [T],
+        label: @escaping (T) -> String,
+        recommended: @escaping (T) -> Bool,
+        description: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
 
-            Button("Done") {
+            Picker(title, selection: selection) {
+                ForEach(cases, id: \.self) { item in
+                    Text(recommended(item) ? "\(label(item))  ·  Recommended" : label(item))
+                        .tag(item)
+                }
+            }
+            .labelsHidden()
+
+            Text(description)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: - Step 3: Ready
+
+    private var readyStep: some View {
+        VStack(spacing: 14) {
+            iconBadge("checkmark.circle.fill", tint: .green)
+
+            Text("You're all set!")
+                .font(.title3.weight(.semibold))
+
+            bodyText("Click the dB icon in your menu bar to record, or press **\u{2318}\u{21E7}R** from anywhere. You can change anything later in Settings.")
+
+            Button("Start Using dBrief") {
                 appSettings.hasCompletedOnboarding = true
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
     }
 }

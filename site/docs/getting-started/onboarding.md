@@ -19,17 +19,22 @@ dBrief asks for the permissions it uses. You can grant them here or skip and gra
 - **Speech Recognition** — for the built-in Apple Speech transcription engine.
 - **Calendar** — lets dBrief pre-fill the meeting title and participants from your calendar when a recording starts.
 
-### 3. Endpoints
+### 3. Transcription & AI
 
-If you plan to use your own transcription or AI server, this step points you to where you configure external endpoints. You can skip it and set endpoints up later in **Settings → AI & Models**. The on-device engines work without any endpoint configuration.
+Pick how recordings are turned into text and summaries. Each option shows a one-line description, and the **Recommended** choice is labelled for you:
+
+- **Transcription** defaults to **Local Whisper** — accurate, multilingual, and fully on-device (it downloads a model the first time you transcribe).
+- **AI Analysis** defaults to the best on-device option for your Mac — **Apple Intelligence** on macOS 26+, otherwise the local **Gemma** model.
+
+Both defaults run entirely on your Mac with no account or server to set up. If you choose **Remote Endpoint** for either, the wizard reminds you to add your server URL and key in **Settings → AI & Models** before recording.
 
 ### 4. Ready
 
-You're all set. dBrief lives in your menu bar — click the icon any time to record or open Settings.
+You're all set. dBrief lives in your menu bar — click the **dB** icon any time to record or open Settings.
 
-## Choosing engines and folders
+## Changing your choices later
 
-The wizard no longer asks you to pick engines or an output folder up front. dBrief ships with sensible defaults, and you can change everything later:
+Everything the wizard covers can be changed at any time:
 
 - **Transcription engine** — **Settings → AI & Models → Transcription**
 - **AI engine** — **Settings → AI & Models → AI Analysis**
