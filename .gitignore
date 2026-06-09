@@ -1,4 +1,7 @@
+# macOS
 .DS_Store
+
+# Swift Package Manager / Xcode build output
 /.build
 /Packages
 xcuserdata/
@@ -6,10 +9,19 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
-.worktrees/
-.superpowers/
+
+# Built app bundle (reproduce with `make app`; distribute via GitHub Releases)
+/dBrief.app/
+
+# Editor / AI-assistant tooling
+.vscode/
 .claude/
 .kilo/
-.vscode/
-/dBrief.app/
-dBrief.app/Contents/MacOS/dBrief
+.superpowers/
+.worktrees/
+
+# Internal development artifacts (not for the public repo)
+docs/
+tasks/
+MEMORY_FIXES_SUMMARY.md
+monitor_inference.sh
