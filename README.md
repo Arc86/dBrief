@@ -179,7 +179,7 @@ Sources/dBrief/
 
 Key dependencies (all via SPM):
 
-- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device Whisper (and SpeakerKit diarization)
+- [argmax-oss-swift](https://github.com/argmaxinc/argmax-oss-swift) — the Argmax Open-Source SDK: on-device Whisper (WhisperKit), speaker diarization (SpeakerKit), and text-to-speech (TTSKit)
 - [FluidAudio](https://github.com/argmaxinc/FluidAudio) — on-device Parakeet TDT
 - [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) — local Gemma 4 via MLX
 - [swift-transformers](https://github.com/huggingface/swift-transformers) — tokenizer support for MLX
