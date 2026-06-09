@@ -116,4 +116,30 @@ struct WhisperModelInfoTests {
         #expect(WhisperModelInfo.fallbackModels.count == 16)
         #expect(WhisperModelInfo.fallbackModels.first?.family == "tiny")
     }
+
+    @Test("Recommended model ID is present in the fallback list")
+    func testRecommendedModelInFallback() {
+        #expect(WhisperModelInfo.fallbackModels.contains { $0.originalName == WhisperModelInfo.recommendedModelID })
+    }
+
+    @Test("Recommended model is flagged isRecommended; others are not")
+    func testRecommendedFlag() {
+        let rec = WhisperModelInfo.parse(WhisperModelInfo.recommendedModelID)
+        #expect(rec.isRecommended)
+        let small = WhisperModelInfo.parse("openai_whisper-small")
+        #expect(!small.isRecommended)
+    }
+
+    @Test("Every fallback model has a non-empty plain description")
+    func testPlainDescriptionNonEmpty() {
+        for model in WhisperModelInfo.fallbackModels {
+            #expect(!model.plainDescription.isEmpty)
+        }
+    }
+
+    @Test("Recommended model's plain description mentions privacy")
+    func testRecommendedDescriptionCopy() {
+        let rec = WhisperModelInfo.parse(WhisperModelInfo.recommendedModelID)
+        #expect(rec.plainDescription.contains("never leaves your device"))
+    }
 }
