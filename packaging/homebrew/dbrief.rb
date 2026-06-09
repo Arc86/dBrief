@@ -23,11 +23,10 @@ class Dbrief < Formula
   license "MIT"
   head "https://github.com/Arc86/dBrief.git", branch: "main"
 
-  depends_on arch: :arm64
-  depends_on macos: :sonoma # macOS 14+
   depends_on xcode: ["16.0", :build]
-
+  depends_on arch: :arm64
   depends_on "ffmpeg"
+  depends_on macos: :sonoma # macOS 14+
   depends_on "yt-dlp" => :recommended
 
   def install
