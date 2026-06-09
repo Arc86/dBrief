@@ -25,6 +25,7 @@ DerivedData/
 
 # Internal development artifacts (not for the public repo)
 docs/
+docs/superpowers/
 tasks/
 MEMORY_FIXES_SUMMARY.md
 monitor_inference.sh
