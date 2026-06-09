@@ -127,13 +127,13 @@ struct WhisperModelInfoTests {
         let rec = WhisperModelInfo.parse(WhisperModelInfo.recommendedModelID)
         #expect(rec.isRecommended)
         let small = WhisperModelInfo.parse("openai_whisper-small")
-        #expect(!small.isRecommended)
+        #expect(small.isRecommended == false)
     }
 
     @Test("Every fallback model has a non-empty plain description")
     func testPlainDescriptionNonEmpty() {
         for model in WhisperModelInfo.fallbackModels {
-            #expect(!model.plainDescription.isEmpty)
+            #expect(!model.plainDescription.isEmpty, "plainDescription empty for \(model.originalName)")
         }
     }
 

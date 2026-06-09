@@ -278,12 +278,12 @@ extension WhisperModelInfo: Comparable {
 // MARK: - Recommendation & plain-language copy
 
 extension WhisperModelInfo {
-    /// The model dBrief recommends by default: the Sep-2024 large-v3 turbo,
+    /// The model dBrief recommends by default: the Sep-2024 snapshot of large-v3,
     /// quantized to ~626 MB. Much faster than full large-v3 with comparable accuracy.
     public static let recommendedModelID = "openai_whisper-large-v3-v20240930_626MB"
 
     /// Whether this model is dBrief's recommended default.
-    public var isRecommended: Bool { originalName == WhisperModelInfo.recommendedModelID }
+    public var isRecommended: Bool { originalName == Self.recommendedModelID }
 
     /// One-line, jargon-free description shown under the model card so a
     /// non-technical user can choose a model without knowing model internals.
@@ -298,7 +298,9 @@ extension WhisperModelInfo {
             return "Light and quick, with solid everyday accuracy and a small memory footprint."
         case "medium":
             return "More accurate than Small, a little slower and heavier."
-        case "large-v2", "large-v3", "large-v3-v20240930", "large":
+        case "large-v3-v20240930":
+            return "High-accuracy Sep-2024 snapshot. Slower and more memory-hungry than turbo variants."
+        case "large-v2", "large-v3", "large":
             return isTurbo
                 ? "High accuracy with good speed. Uses more memory than the smaller models."
                 : "Highest accuracy. Slowest and most memory-hungry — best with other apps closed."
