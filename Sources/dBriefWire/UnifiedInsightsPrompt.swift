@@ -15,6 +15,20 @@ public enum UnifiedInsightsPrompt {
     public static let transcriptTailChars = 95_000
     public static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
 
+    // Apple Intelligence (FoundationModels) has a ~4096-token context window — far
+    // smaller than Gemma's 128K. It needs its own tight budget; the 100K-char
+    // `truncate` above would overflow the window.
+    public static let foundationModelsCharLimit = 12_000
+    public static let foundationModelsHeadChars = 6_000
+    public static let foundationModelsTailChars = 6_000
+
+    public static func truncateForFoundationModels(_ transcript: String) -> String {
+        guard transcript.count > foundationModelsCharLimit else { return transcript }
+        let head = String(transcript.prefix(foundationModelsHeadChars))
+        let tail = String(transcript.suffix(foundationModelsTailChars))
+        return head + truncationSeparator + tail
+    }
+
     public static func truncate(_ transcript: String) -> String {
         guard transcript.count > transcriptCharLimit else { return transcript }
         let head = String(transcript.prefix(transcriptHeadChars))
@@ -34,7 +48,11 @@ public enum UnifiedInsightsPrompt {
         """
     }
 
-    public static func systemPrompt(outputLanguage: OutputLanguage) -> String {
+    /// Shared analysis rules + output-language instruction, WITHOUT any output-format
+    /// section. Used directly by the FoundationModels guided-generation path (where the
+    /// `@Generable` schema defines the shape) and composed with the JSON block for the
+    /// Gemma/Local-CLI text path.
+    public static func systemPromptForGuidedGeneration(outputLanguage: OutputLanguage) -> String {
         let languageInstruction: String = {
             switch outputLanguage {
             case .english:
@@ -62,6 +80,12 @@ public enum UnifiedInsightsPrompt {
         6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
         7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
         8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
+        """
+    }
+
+    public static func systemPrompt(outputLanguage: OutputLanguage) -> String {
+        systemPromptForGuidedGeneration(outputLanguage: outputLanguage) + """
+
 
         ### OUTPUT FORMAT (Strict JSON Only)
         {

@@ -81,4 +81,40 @@ struct UnifiedInsightsPromptTests {
         #expect(result.titleConcept == "Standup")
         #expect(result.actionItems.isEmpty)
     }
+
+    @Test("Guided-generation prompt keeps the shared rules but omits the JSON schema block")
+    func guidedPromptOmitsJSONBlock() {
+        let guided = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .matchInput)
+        // Shared rules are present
+        #expect(guided.contains("NO REPETITION"))
+        #expect(guided.contains("ACTION ITEMS"))
+        // The strict-JSON output section must NOT be present (the @Generable schema replaces it)
+        #expect(!guided.contains("OUTPUT FORMAT"))
+        #expect(!guided.contains("\"title_concept\""))
+        #expect(!guided.contains("Strict JSON"))
+    }
+
+    @Test("Guided-generation prompt still varies output language")
+    func guidedPromptLanguageVaries() {
+        #expect(UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .english).contains("ENGLISH"))
+        #expect(UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .dutch).contains("DUTCH"))
+    }
+
+    @Test("FoundationModels truncation leaves short transcripts untouched")
+    func fmShortTranscriptUntouched() {
+        let text = "A brief transcript."
+        #expect(UnifiedInsightsPrompt.truncateForFoundationModels(text) == text)
+    }
+
+    @Test("FoundationModels truncation keeps head and tail within the small budget")
+    func fmLongTranscriptTruncated() {
+        let text = String(repeating: "x", count: UnifiedInsightsPrompt.foundationModelsCharLimit + 5_000)
+        let result = UnifiedInsightsPrompt.truncateForFoundationModels(text)
+        #expect(result.count < text.count)
+        #expect(result.contains(UnifiedInsightsPrompt.truncationSeparator))
+        // Far smaller than the Gemma 100K-char budget — must fit the ~4K-token window.
+        #expect(result.count <= UnifiedInsightsPrompt.foundationModelsHeadChars
+            + UnifiedInsightsPrompt.foundationModelsTailChars
+            + UnifiedInsightsPrompt.truncationSeparator.count)
+    }
 }
