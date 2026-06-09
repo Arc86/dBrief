@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Docs — dBrief</title>
+  <meta name="description" content="The dBrief user manual. Install, record, transcribe, analyze, export." />
+  <meta name="theme-color" content="#0a0a0f" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="docs.css" />
+
+  <link rel="icon" type="image/png" href="logo.png" />
+</head>
+<body class="docs-body">
+  <!-- Ambient background (lighter for docs) -->
+  <div class="ambient docs-ambient" aria-hidden="true">
+    <div class="orb orb-violet"></div>
+    <div class="orb orb-cyan"></div>
+  </div>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="dBrief home">
+      <img src="logo.png" alt="dBrief logo" class="brand-mark" />
+      <span class="brand-name">dBrief</span>
+    </a>
+    <nav class="nav">
+      <a href="index.html#how">How it works</a>
+      <a href="index.html#privacy">Privacy</a>
+      <a href="index.html#integrations">Integrations</a>
+      <a class="nav-cta" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">GitHub &nearr;</a>
+    </nav>
+  </header>
+
+  <main class="docs-main">
+    <!-- Sidebar -->
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <div class="docs-search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="docs-search" type="search" placeholder="Search docs…" autocomplete="off" />
+        </div>
+        <nav class="docs-nav" id="docs-nav"><!-- populated by JS --></nav>
+      </div>
+    </aside>
+
+    <!-- Content -->
+    <article class="docs-content">
+      <div class="docs-breadcrumb" id="docs-breadcrumb"></div>
+      <div class="docs-prose" id="docs-prose">
+        <div class="docs-loading">
+          <div class="docs-spinner" aria-hidden="true"></div>
+          <span>Loading…</span>
+        </div>
+      </div>
+      <nav class="docs-pager" id="docs-pager"></nav>
+    </article>
+  </main>
+
+  <!-- Mobile sidebar toggle -->
+  <button class="docs-menu-toggle" id="docs-menu-toggle" aria-label="Open docs menu" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    <span>Menu</span>
+  </button>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@13.0.3/marked.min.js" defer></script>
+  <script src="docs.js?v=2" defer></script>
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>dBrief — Your meetings, remembered.</title>
+  <meta name="description" content="dBrief quietly records your meetings, transcribes them on-device, and turns them into summaries, action items, and a second brain you can actually search. Local-first. Yours." />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta property="og:title" content="dBrief — Your meetings, remembered." />
+  <meta property="og:description" content="The local-first meeting recorder that listens, writes, and thinks — so you walk out with the brief, not the homework." />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <link rel="icon" type="image/png" href="logo.png" />
+</head>
+<body>
+  <!-- Ambient background -->
+  <div class="ambient" aria-hidden="true">
+    <div class="orb orb-coral"></div>
+    <div class="orb orb-violet"></div>
+    <div class="orb orb-cyan"></div>
+    <div class="grid"></div>
+  </div>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="dBrief home">
+      <img src="logo.png" alt="dBrief logo" class="brand-mark" />
+      <span class="brand-name">dBrief</span>
+    </a>
+    <nav class="nav">
+      <a href="#how">How it works</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#integrations">Integrations</a>
+      <a href="docs.html">Docs</a>
+      <a class="nav-cta" href="#download">Download</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">
+          <span class="dot"></span>
+          <span>Local-first · macOS 14+ · Open source</span>
+        </div>
+        <h1 class="title">
+          Your meetings,<br />
+          <span class="gradient-text">remembered.</span>
+        </h1>
+        <p class="lede">
+          dBrief listens so you don't have to scribble. It captures every call, transcribes
+          it on your Mac, and hands you the brief &mdash; summary, action items, who said
+          what &mdash; before you've left the room.
+        </p>
+
+        <div class="cta-row">
+          <a id="download" class="btn primary" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            <span>Get dBrief free</span>
+          </a>
+          <a class="btn ghost" href="#how">
+            <span>Take the 30-second tour</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+          </a>
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-pill">&#9679; Apple Speech</span>
+          <span class="meta-pill">&#9679; Local Whisper</span>
+          <span class="meta-pill">&#9679; Parakeet TDT</span>
+          <span class="meta-pill">&#9679; Apple Intelligence</span>
+          <span class="meta-pill">&#9679; Local Gemma 4</span>
+          <a class="meta-pill meta-pill-link" href="docs.html">Read the docs &rarr;</a>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="logo-glow">
+          <img src="logo.png" alt="" class="hero-logo" />
+          <div class="logo-pulse"></div>
+        </div>
+        <div class="floating-card card-1">
+          <div class="card-head">
+            <span class="rec-dot"></span>
+            <span>Recording &middot; 0:42</span>
+          </div>
+          <div class="wave">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="floating-card card-2">
+          <div class="card-line"><span class="tag tag-summary">Summary</span> Q4 plan focuses on local AI and second-brain workflows.</div>
+          <div class="card-line"><span class="tag tag-action">Action</span> Jesper ships dBrief v1.0 by end of sprint.</div>
+          <div class="card-line"><span class="tag tag-tag">Tag</span> product · launch</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHAT IT DOES -->
+    <section id="how" class="section">
+      <div class="section-head">
+        <span class="kicker">How it works</span>
+        <h2 class="section-title">Hit record.<br/>Walk out with the brief.</h2>
+        <p class="section-sub">No setup, no bots in your calls, no "I'll review the recording later." You talk. dBrief handles the rest.</p>
+      </div>
+
+      <div class="steps">
+        <article class="step">
+          <div class="step-num">01</div>
+          <div class="step-icon step-icon-coral">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/><path d="M8 22h8"/></svg>
+          </div>
+          <h3>Show up. Press one key.</h3>
+          <p class="step-lead">One keystroke starts everything. No dock clutter, no bot joins the call.</p>
+          <ul class="step-bullets">
+            <li><strong>Ctrl + Option + Cmd + R</strong> from anywhere on your Mac</li>
+            <li>Captures mic <em>and</em> system audio &mdash; both sides of the call</li>
+            <li>Auto-starts when Zoom, Meet, Teams, Slack or Discord rings in</li>
+            <li>Chosen specifically to avoid Chrome's hard-refresh and Slack's mark-as-read</li>
+          </ul>
+        </article>
+
+        <article class="step">
+          <div class="step-num">02</div>
+          <div class="step-icon step-icon-violet">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"/><path d="M5 12h14"/><path d="M7 17h10"/></svg>
+          </div>
+          <h3>Read every word, instantly.</h3>
+          <p class="step-lead">Minutes, not hours. On your Mac, not in a stranger's data center.</p>
+          <ul class="step-bullets">
+            <li>Apple Speech, on-device Whisper, or Parakeet TDT</li>
+            <li>Speakers labeled, word-level timestamps, 15+ languages</li>
+            <li>Paste a YouTube link &mdash; skip the meeting entirely</li>
+          </ul>
+        </article>
+
+        <article class="step">
+          <div class="step-num">03</div>
+          <div class="step-icon step-icon-cyan">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6Z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h3>Get the brief. Keep the brain.</h3>
+          <p class="step-lead">AI writes the summary, your second brain keeps the receipts.</p>
+          <ul class="step-bullets">
+            <li>Summary, action items, tags, sentiment &mdash; generated for you</li>
+            <li>Title and attendees pulled straight from your calendar</li>
+            <li>Clean Markdown lands in Obsidian, Apple Notes, or wherever</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <!-- PRIVACY -->
+    <section id="privacy" class="section section-split">
+      <div class="split-copy">
+        <span class="kicker">Private by default</span>
+        <h2 class="section-title">Your meetings<br/>never leave your Mac.</h2>
+        <p class="section-sub">No dBrief cloud. No account. No "trust us." The transcript is yours, the audio is yours, and the AI can be too &mdash; running on Apple Silicon, or pointed at a model you control.</p>
+        <ul class="check-list">
+          <li><span class="check"></span> Transcribe with Apple Speech, Whisper or Parakeet &mdash; all on-device</li>
+          <li><span class="check"></span> Summarize with Apple Intelligence or local Gemma 4</li>
+          <li><span class="check"></span> Want a remote model? Bring your own key &mdash; we never see it</li>
+          <li><span class="check"></span> Zero telemetry. Zero analytics. Zero dark patterns.</li>
+        </ul>
+      </div>
+      <div class="split-visual">
+        <div class="device-card">
+          <div class="device-head">
+            <span class="dot d1"></span>
+            <span class="dot d2"></span>
+            <span class="dot d3"></span>
+            <span class="device-title">On this Mac</span>
+          </div>
+          <div class="device-row">
+            <span class="row-label">Audio capture</span>
+            <span class="row-tag row-tag-coral">local</span>
+          </div>
+          <div class="device-row">
+            <span class="row-label">Transcription</span>
+            <span class="row-tag row-tag-violet">local Whisper</span>
+          </div>
+          <div class="device-row">
+            <span class="row-label">AI analysis</span>
+            <span class="row-tag row-tag-cyan">Apple Intelligence</span>
+          </div>
+          <div class="device-row">
+            <span class="row-label">Notes export</span>
+            <span class="row-tag row-tag-coral">Obsidian vault</span>
+          </div>
+          <div class="device-foot">
+            <span class="lock">&#128274;</span>
+            <span>Nothing uploaded. Ever.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTEGRATIONS -->
+    <section id="integrations" class="section">
+      <div class="section-head">
+        <span class="kicker">Plays well with your stack</span>
+        <h2 class="section-title">It already knows<br/>what the meeting is about.</h2>
+        <p class="section-sub">dBrief reads your calendar &mdash; then lands the brief wherever you keep your thinking.</p>
+      </div>
+
+      <div class="featured-integration">
+        <div class="featured-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+        </div>
+        <div class="featured-body">
+          <div class="featured-tag">
+            <span class="dot d-live"></span>
+            <span>New for launch</span>
+          </div>
+          <h3>Apple Calendar (iCal) integration</h3>
+          <p>dBrief reads your calendar event the moment you start recording &mdash; so the meeting title, attendees, and time are already filled in. No typing, no guessing, no "Untitled meeting 47."</p>
+        </div>
+      </div>
+
+      <div class="logo-row">
+        <div class="logo-chip">Apple Calendar</div>
+        <div class="logo-chip">Obsidian</div>
+        <div class="logo-chip">Apple Notes</div>
+        <div class="logo-chip">Apple Reminders</div>
+        <div class="logo-chip">Webhook</div>
+      </div>
+
+      <div class="pair-note">
+        <div class="pair-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.71"/></svg>
+        </div>
+        <div class="pair-body">
+          <strong>Don't want to run AI yourself?</strong>
+          <span>Save transcripts to a folder an agent watches &mdash; Notion AI, Google Cloud, an OpenAI Assistant &mdash; and let <em>it</em> do the summarizing. dBrief writes the file; the agent does the rest.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+      <h2 class="cta-title">Stop taking notes.<br/><span class="gradient-text">Start taking meetings.</span></h2>
+      <p class="cta-sub">Free, open source, and ready in under a minute. macOS 14+, Apple Silicon recommended.</p>
+      <a class="btn primary big" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span>Get dBrief on GitHub</span>
+      </a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="foot-l">
+      <img src="logo.png" alt="" class="foot-mark" />
+      <span>dBrief &middot; the meeting recorder that respects your attention</span>
+    </div>
+    <div class="foot-r">
+      <a href="#how">How</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#integrations">Integrations</a>
+      <a href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">GitHub &nearr;</a>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
