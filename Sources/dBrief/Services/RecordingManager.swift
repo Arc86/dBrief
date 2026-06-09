@@ -1458,9 +1458,29 @@ final class RecordingManager {
     ) async throws -> TranscriptionResult {
         switch appSettings.effectiveTranscriptionEngine {
         case .appleSpeech:
+            let language = appSettings.effectiveTranscriptionLanguage
+            // macOS 26+ uses the modern SpeechAnalyzer (better accuracy, word-level
+            // timestamps); older systems and unsupported locales fall back to the
+            // legacy SFSpeechRecognizer-based service.
+            if #available(macOS 26, *) {
+                let locale = language.isEmpty ? Locale.current : Locale(identifier: language)
+                if await AppleSpeechAnalyzerService.supports(locale: locale) {
+                    return try await AppleSpeechAnalyzerService().transcribe(
+                        fileURL: url,
+                        language: language,
+                        status: { [weak self] statusText in
+                            guard let self else { return }
+                            Task { @MainActor in
+                                guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
+                                self.appState.processingSteps[stepIndex].name = statusText
+                            }
+                        }
+                    )
+                }
+            }
             return try await localTranscriptionService.transcribe(
                 fileURL: url,
-                language: appSettings.effectiveTranscriptionLanguage
+                language: language
             )
         case .localWhisper:
             let whisperConfig = WhisperRuntimeConfig(

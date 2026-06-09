@@ -156,7 +156,7 @@ final class AppSettings {
         /// and Settings to help users choose.
         var shortDescription: String {
             switch self {
-            case .appleSpeech: "Built in, no download. Fast, but lower accuracy than Whisper."
+            case .appleSpeech: "Built in, no download. Uses Apple's latest on-device model on macOS 26; older systems use the classic recognizer."
             case .localWhisper: "On-device Whisper. Best accuracy, multilingual. Downloads a model once."
             case .parakeetLocal: "On-device, great for clear English speech. No speaker labels."
             case .remoteEndpoint: "Send audio to your own Whisper server or API."

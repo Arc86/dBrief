@@ -26,6 +26,7 @@ Tests live in `Tests/dBriefTests/` and use the `swift-testing` framework (v0.6.0
 - **WhisperPipelineTests.swift** — Recording finalization, title normalization, segment merging, file discovery
 - **RichTranscriptBuilderTests.swift** — Word timestamp propagation, speaker ID propagation, filler word defaults
 - **WhisperModelInfoTests.swift** — Model name parsing, memory estimation, turbo/quantized variants, sort ordering
+- **AppleSpeechResultMapperTests.swift** — `SpeechAnalyzer` chunk→`TranscriptionResult` mapping: word-level timestamps, empty-run/chunk dropping, language normalization
 
 ## Architecture
 
@@ -82,8 +83,8 @@ Four transcription backends selected via `AppSettings.transcriptionEngine`:
 
 | Engine | Class | Backend |
 |--------|-------|---------|
-| Apple Speech | `LocalTranscriptionService` | On-device `SFSpeechRecognizer`. Converts `.ogg`/`.opus` to WAV via ffmpeg. |
-| Local Whisper | `WhisperKitTranscriptionService` (via `LocalAIPluginService`) | On-device CoreML Whisper via the `WhisperKit` package (0.18.0). Loads audio natively (FLAC/WAV/M4A via AVFoundation — no ffmpeg needed). Uses WhisperKit's per-component compute defaults (mel→GPU, encoder→ANE, decoder→ANE). VAD chunking enabled. Downloads models to `AppSupport/dBrief/LocalAIPlugin/WhisperKit/`. Supports progressive segment streaming via `segmentDiscoveryCallback`. Dynamic model picker fetches available models from HuggingFace at runtime with memory estimates; falls back to curated offline list. Optional SpeakerKit diarization. |
+| Apple Speech | `AppleSpeechAnalyzerService` (macOS 26+) / `LocalTranscriptionService` (older) | Auto-selects per machine — one "Apple Speech" engine, no extra picker entry. macOS 26+ uses the modern `SpeechAnalyzer`/`SpeechTranscriber` (native `AVAudioFile` loading, word-level timestamps from the `audioTimeRange` run attribute, on-demand language-asset download via `AssetInventory` surfaced as a "Preparing language…" step); macOS 14–25, or a locale `SpeechTranscriber` doesn't support, falls back to the legacy `SFSpeechRecognizer`. Both share `OggOpusConverter` for `.ogg`/`.opus`→WAV via ffmpeg. The result→`TranscriptionResult` mapping is the pure, unit-tested `AppleSpeechResultMapper` in `dBriefWire`. |
+| Local Whisper | `WhisperKitTranscriptionService` (via `LocalAIPluginService`) | On-device CoreML Whisper via the `WhisperKit` product of the `argmax-oss-swift` SDK (1.0.0). Loads audio natively (FLAC/WAV/M4A via AVFoundation — no ffmpeg needed). Uses WhisperKit's per-component compute defaults (mel→GPU, encoder→ANE, decoder→ANE). VAD chunking enabled. Downloads models to `AppSupport/dBrief/LocalAIPlugin/WhisperKit/`. Supports progressive segment streaming via `segmentDiscoveryCallback`. Dynamic model picker fetches available models from HuggingFace at runtime with memory estimates; falls back to curated offline list. Optional SpeakerKit diarization. |
 | Parakeet TDT (Local) | `ParakeetTranscriptionService` (via `FluidAudio` framework) | On-device CoreML nvidia/parakeet-tdt-0.6b (v2 or v3). Downloads models from `argmaxinc/parakeetkit-coreml`. Handles long files natively (no segmentation). Does **not** support language selection or diarization. Reports download/load progress via the same `AsyncStream<LocalAIPluginState>` pattern as `LocalAIPluginService`. |
 | Remote Endpoint | `TranscriptionService` | Supports both OpenAI-compatible `/v1/audio/transcriptions` and `whisper-asr-webservice` `/asr` format (auto-detected via `Endpoint.isWhisperASR`). Handles chunked upload for large files via `AudioChunker`. |
 
@@ -108,7 +109,7 @@ All self-loaded local ML (WhisperKit transcription, SpeakerKit diarization, MLX/
 
 **Three SPM targets:**
 - **`dBriefWire`** (library, no ML deps) — the shared contract linked by both executables: the wire `Envelope`/`MLRequest`/`MLEvent`/`WireError` types, the `FrameCodec`/`FrameReader`, `LocalAIPluginProtocol`, the `Codable`/`Sendable` model structs (`TranscriptionResult`, `LocalInsightsResult`, `DiarizedTurn`, `LiveTranscriptSegment`, `LocalAIPluginState`, `WhisperRuntimeConfig`, `WhisperComputeUnits`, `OutputLanguage`), and shared utilities (`Logger` extensions, `WhisperModelInfo`, `ParakeetModelInfo`, `SystemMemory`, `LocalInsightsDecoder`).
-- **`dBriefMLHost`** (executable) — links the heavy ML packages and hosts the real `WhisperKitTranscriptionService`, `MLXInsightsService`, `ParakeetTranscriptionService`, the `AsyncMutex` GPU serialization, `MLOrchestrator` (the in-helper backend, formerly the in-process `LocalAIPluginService`), and a stdin/stdout `RequestLoop`. `main.swift` parses `--support-base` so the helper resolves the **same** model-cache dir as the app (its own `Bundle.main.bundleIdentifier` differs), and frees Metal buffers on SIGTERM/EOF.
+- **`dBriefMLHost`** (executable) — links the heavy ML packages and hosts the real `WhisperKitTranscriptionService`, `MLXInsightsService`, `ParakeetTranscriptionService`, `TTSService` (TTSKit/Qwen3-TTS scaffold — see below), the `AsyncMutex` GPU serialization, `MLOrchestrator` (the in-helper backend, formerly the in-process `LocalAIPluginService`), and a stdin/stdout `RequestLoop`. `main.swift` parses `--support-base` so the helper resolves the **same** model-cache dir as the app (its own `Bundle.main.bundleIdentifier` differs), and frees Metal buffers on SIGTERM/EOF.
 - **`dBrief`** (app) — depends only on `dBriefWire`; the proxies `LocalAIPluginService` and `ParakeetTranscriptionService` forward every call over a shared `MLHostConnection`.
 
 **Transport — `MLHostConnection` (`Services/MLHostConnection.swift`):** owns the child `Process` and its pipes, frames messages (4-byte big-endian length prefix + JSON `Envelope`), correlates replies by request `id`, demuxes `.state` events to per-`MLChannel` (`.plugin` / `.parakeet`) `AsyncStream<LocalAIPluginState>`, forwards `.token` frames to streaming `AsyncThrowingStream`s, and detects crashes via `terminationHandler` (a request in flight when the process dies throws `MLHostError.helperCrashed`). The helper is persistent, lazily spawned, and auto-relaunched on the next call after a crash. Audio is passed by file path (never over the pipe).
@@ -118,6 +119,13 @@ All self-loaded local ML (WhisperKit transcription, SpeakerKit diarization, MLX/
 The orchestrator keeps the prior behavior: **AsyncMutex** serializes GPU access; **per-op model unload** keeps an idle helper model-free; the **state stream** drives UI feedback (`idle`, `downloading(progress, stage)`, `transcribing`, `newSegments(...)`, `diarizing`, `analyzing`).
 
 **Build/packaging:** `make app` builds all executables and copies `dBriefMLHost` into `Contents/MacOS/` beside the MLX `default.metallib`. A test-only `dBriefMLHostStub` target (env `STUB_MODE=echo|crash-once|crash-always|error`) drives the connection/retry tests deterministically without real models.
+
+### Text-to-Speech Scaffold (`Services/TTSService.swift` in `dBriefMLHost`)
+
+The `argmax-oss-swift` 1.0 SDK bundles `TTSKit` (Qwen3-TTS). dBrief wires a **minimal, no-UI scaffold** so a future read-aloud feature has a foundation:
+- `TTSService` (in the helper) wraps `TTSKit`, loads the model lazily, writes synthesized mono PCM to a WAV file via `AVAudioFile` (audio passed by path, never over the pipe), and unloads on memory-pressure / force-unload. Models download to `AppSupport/dBrief/LocalAIPlugin/TTS/`.
+- Wire path: `MLRequest.synthesizeSpeech(text:outputPath:voice:language:)` → `RequestRouter` → `MLOrchestrator.synthesizeSpeech` (serialized via the same `AsyncMutex`) → `MLEvent.speechResult(SpeechSynthesisResult)`. The app proxy is `LocalAIPluginService.synthesizeSpeech(...)`.
+- **Not surfaced in any view** — no settings, no model-download button, no read-aloud action yet. `DownloadStage` gained `.ttsModel` / `.ttsModelLoading` for progress.
 
 ### Endpoint Model (`Models/Endpoint.swift`)
 
@@ -260,7 +268,7 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| [WhisperKit](https://github.com/argmaxinc/WhisperKit) | 0.18.0+ | CoreML-based on-device Whisper transcription (products: `WhisperKit`, `SpeakerKit`) |
+| [argmax-oss-swift](https://github.com/argmaxinc/argmax-oss-swift) (Argmax OSS SDK) | 1.0.0+ | CoreML on-device speech AI (products: `WhisperKit` transcription, `SpeakerKit` diarization, `TTSKit` Qwen3-TTS text-to-speech). Formerly the `argmaxinc/WhisperKit` package (≤0.18); renamed and unified at v1.0. Vendors its own copy of `Hub`/`Tokenizers`, so it coexists with the separate `swift-transformers` dependency below. |
 | [FluidAudio](https://github.com/argmaxinc/FluidAudio) | — | CoreML-based Parakeet TDT transcription (`AsrManager`) |
 | [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | 3.x | On-device Gemma 4 E4B LLM via MLX (Apple Silicon) |
 | [swift-transformers](https://github.com/huggingface/swift-transformers) | — | Tokenizer support for MLX (explicit dependency since mlx-swift-lm 3.x) |

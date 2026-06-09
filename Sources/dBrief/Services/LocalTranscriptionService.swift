@@ -8,7 +8,7 @@ private let log = Logger.localTranscription
 /// On-device transcription using Apple's SFSpeechRecognizer.
 actor LocalTranscriptionService {
     func transcribe(fileURL: URL, language: String) async throws -> TranscriptionResult {
-        let preparedURL = try prepareTranscriptionURL(for: fileURL)
+        let preparedURL = try OggOpusConverter.preparedURL(for: fileURL)
         let locale: Locale
         if language.isEmpty {
             locale = .current
@@ -98,69 +98,6 @@ actor LocalTranscriptionService {
             segments: segments,
             language: language.isEmpty ? nil : language
         )
-    }
-
-    private func prepareTranscriptionURL(for fileURL: URL) throws -> URL {
-        let ext = fileURL.pathExtension.lowercased()
-        guard ext == "ogg" || ext == "opus" else {
-            return fileURL
-        }
-
-        // Convert OGG/Opus to WAV using ffmpeg for on-device transcription.
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("debrief-transcription-\(UUID().uuidString).wav")
-
-        let ffmpegPaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-
-        let resolvedPath = ffmpegPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
-        let process = Process()
-        if let resolvedPath {
-            process.executableURL = URL(fileURLWithPath: resolvedPath)
-            process.arguments = [
-                "-y",
-                "-i", fileURL.path,
-                "-ac", "1",
-                "-ar", "16000",
-                "-f", "wav",
-                outputURL.path,
-            ]
-        } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [
-                "ffmpeg",
-                "-y",
-                "-i", fileURL.path,
-                "-ac", "1",
-                "-ar", "16000",
-                "-f", "wav",
-                outputURL.path,
-            ]
-            process.environment = [
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            ]
-        }
-
-        let stdErr = Pipe()
-        process.standardError = stdErr
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw LocalTranscriptionError.ffmpegNotFound
-        }
-
-        guard process.terminationStatus == 0 else {
-            let data = stdErr.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "ffmpeg failed"
-            throw LocalTranscriptionError.conversionFailed(message)
-        }
-
-        return outputURL
     }
 
     static func requestAccess() async -> Bool {
