@@ -226,7 +226,8 @@ struct SettingsTranscriptionTab: View {
                     Spacer()
                     Picker("", selection: $settings.whisperModelName) {
                         if modelsToShow.isEmpty {
-                            Text("openai_whisper-small").tag("openai_whisper-small")
+                            Text(WhisperModelInfo.parse(WhisperModelInfo.recommendedModelID).displayName)
+                                .tag(WhisperModelInfo.recommendedModelID)
                         } else {
                             ForEach(modelsToShow, id: \.id) { model in
                                 Text(model.isRecommended ? "\(model.displayName)  ·  Recommended" : model.displayName)
