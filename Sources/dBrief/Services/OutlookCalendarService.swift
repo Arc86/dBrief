@@ -27,7 +27,7 @@ actor OutlookCalendarService {
         components.queryItems = [
             URLQueryItem(name: "startDateTime", value: graphDateString(date.addingTimeInterval(-searchWindow))),
             URLQueryItem(name: "endDateTime",   value: graphDateString(date.addingTimeInterval(searchWindow))),
-            URLQueryItem(name: "$select",       value: "subject,bodyPreview,attendees,start,end"),
+            URLQueryItem(name: "$select",       value: "subject,bodyPreview,attendees,start,end,isAllDay"),
         ]
 
         var request = URLRequest(url: components.url!)
@@ -56,6 +56,7 @@ actor OutlookCalendarService {
         let attendees: [GraphAttendee]?
         let start: GraphDateTimeZone?
         let end: GraphDateTimeZone?
+        let isAllDay: Bool?
     }
 
     private struct GraphAttendee: Decodable {
@@ -82,7 +83,8 @@ actor OutlookCalendarService {
             attendees: names,
             body: event.bodyPreview ?? "",
             startDate: parseGraphDate(event.start?.dateTime),
-            endDate: parseGraphDate(event.end?.dateTime)
+            endDate: parseGraphDate(event.end?.dateTime),
+            isAllDay: event.isAllDay ?? false
         )
     }
 

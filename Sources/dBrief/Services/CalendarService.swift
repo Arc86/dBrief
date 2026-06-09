@@ -54,7 +54,8 @@ actor CalendarService {
             attendees: names,
             body: ekEvent.notes ?? "",
             startDate: ekEvent.startDate ?? Date(),
-            endDate: ekEvent.endDate ?? Date()
+            endDate: ekEvent.endDate ?? Date(),
+            isAllDay: ekEvent.isAllDay
         )
     }
 }
