@@ -93,8 +93,8 @@ struct OnboardingView: View {
             bodyText("Record, transcribe, and analyze meetings and voice notes — right from your menu bar.")
 
             HStack(spacing: 6) {
-                Image(systemName: "command")
-                Text("Press **\u{2318}\u{21E7}R** anytime to start or stop recording.")
+                Image(systemName: "keyboard")
+                Text("Press **\(appSettings.recordHotkey.displayString)** anytime to start or stop recording.")
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -339,7 +339,7 @@ struct OnboardingView: View {
             Text("You're all set!")
                 .font(.title3.weight(.semibold))
 
-            bodyText("Click the dB icon in your menu bar to record, or press **\u{2318}\u{21E7}R** from anywhere. You can change anything later in Settings.")
+            bodyText("Click the dB icon in your menu bar to record, or press **\(appSettings.recordHotkey.displayString)** from anywhere. You can change anything later in Settings.")
 
             Button("Start Using dBrief") {
                 appSettings.hasCompletedOnboarding = true
