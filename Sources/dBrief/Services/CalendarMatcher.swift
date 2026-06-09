@@ -55,17 +55,4 @@ enum CalendarMatcher {
         rankedMatches(from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd).first
     }
 
-    /// Legacy instant-based match. Still used by the calendar services until they migrate to
-    /// `findCandidates`. Removed in the same change that migrates them.
-    static func selectBestMatch(from candidates: [CalendarEvent], at date: Date) -> CalendarEvent? {
-        let active = candidates.filter { $0.startDate <= date && date <= $0.endDate }
-        if !active.isEmpty {
-            return active.max { lhs, rhs in
-                lhs.endDate.timeIntervalSince(lhs.startDate) < rhs.endDate.timeIntervalSince(rhs.startDate)
-            }
-        }
-        return candidates
-            .filter { abs($0.startDate.timeIntervalSince(date)) <= fallbackWindow }
-            .min { abs($0.startDate.timeIntervalSince(date)) < abs($1.startDate.timeIntervalSince(date)) }
-    }
 }

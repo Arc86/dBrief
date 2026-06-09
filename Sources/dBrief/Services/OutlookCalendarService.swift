@@ -10,16 +10,6 @@ actor OutlookCalendarService {
         self.authService = authService
     }
 
-    func findCurrentEvent(at date: Date) async -> CalendarEvent? {
-        do {
-            let token = try await authService.getValidAccessToken()
-            return try await fetchEvents(at: date, token: token)
-        } catch {
-            Logger.calendar.error("Outlook calendar fetch failed: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
     /// Ranked calendar events plausibly matching the recording span, best-first. Empty on failure.
     func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
         do {
@@ -59,30 +49,6 @@ actor OutlookCalendarService {
         return CalendarMatcher.rankedMatches(
             from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
         )
-    }
-
-    // MARK: - Private
-
-    private func fetchEvents(at date: Date, token: String) async throws -> CalendarEvent? {
-        var components = URLComponents(string: Self.calendarViewURL)!
-        components.queryItems = [
-            URLQueryItem(name: "startDateTime", value: graphDateString(date.addingTimeInterval(-searchWindow))),
-            URLQueryItem(name: "endDateTime",   value: graphDateString(date.addingTimeInterval(searchWindow))),
-            URLQueryItem(name: "$select",       value: "subject,bodyPreview,attendees,start,end,isAllDay"),
-        ]
-
-        var request = URLRequest(url: components.url!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("outlook.timezone=\"UTC\"", forHTTPHeaderField: "Prefer")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-
-        let result = try JSONDecoder().decode(CalendarViewResponse.self, from: data)
-        let candidates = result.value.map { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.selectBestMatch(from: candidates, at: date)
     }
 
     // MARK: - JSON types

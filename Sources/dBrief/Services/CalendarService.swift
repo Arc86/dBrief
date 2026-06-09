@@ -26,23 +26,6 @@ actor CalendarService {
         }
     }
 
-    /// Finds the calendar event best matching `date`, or nil if none matches or access is denied.
-    func findCurrentEvent(at date: Date) async -> CalendarEvent? {
-        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-            return nil
-        }
-
-        let predicate = store.predicateForEvents(
-            withStart: date.addingTimeInterval(-searchWindow),
-            end: date.addingTimeInterval(searchWindow),
-            calendars: nil
-        )
-
-        let ekEvents = store.events(matching: predicate)
-        let candidates = ekEvents.map { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.selectBestMatch(from: candidates, at: date)
-    }
-
     /// Ranked calendar events plausibly matching the recording span, best-first. Empty if access denied.
     func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
