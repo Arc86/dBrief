@@ -1,0 +1,76 @@
+import Foundation
+
+/// Shared prompt contract for the "unified JSON" insights path used by both the
+/// local Gemma (MLX) engine and the Local CLI engine. Both ask a model to return a
+/// single JSON object (`title_concept`, `summary`, `action_items`, `tags`,
+/// `sentiment`) which is parsed by `MLXInsightsService.decodeAndNormalize`. Keeping
+/// the schema in one place ensures the two engines stay in lockstep.
+enum UnifiedInsightsPrompt {
+    // Transcript budgeting. Gemma 4 E4B has a 128K context (~25K input tokens at
+    // ~4 chars/token); agentic CLIs are typically large-context too. Keep a small
+    // intro slice for context, then the full tail — meetings load substance in the
+    // middle and end, so dropping the head preserves detail.
+    static let transcriptCharLimit = 100_000
+    static let transcriptHeadChars = 5_000
+    static let transcriptTailChars = 95_000
+    static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
+
+    static func truncate(_ transcript: String) -> String {
+        guard transcript.count > transcriptCharLimit else { return transcript }
+        let head = String(transcript.prefix(transcriptHeadChars))
+        let tail = String(transcript.suffix(transcriptTailChars))
+        return head + truncationSeparator + tail
+    }
+
+    static func userPrompt(transcript: String) -> String {
+        """
+        Analyze this transcript and produce the JSON response exactly as required by the system instructions.
+        Do not copy template phrases. Use only factual details present in the transcript.
+
+        TRANSCRIPT:
+        \(transcript)
+
+        INSTRUCTION: Focus on extracting specific names, projects, tools, and deadlines mentioned in the text. Ensure the summary is thorough and covers all discussion topics.
+        """
+    }
+
+    static func systemPrompt(outputLanguage: AppSettings.OutputLanguage) -> String {
+        let languageInstruction: String = {
+            switch outputLanguage {
+            case .english:
+                return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
+            case .dutch:
+                return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
+            case .custom(let code):
+                return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
+            case .matchInput:
+                return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
+            }
+        }()
+
+        return """
+        You are an expert Senior Executive Assistant. Your goal is to extract structured meeting data from a transcript.
+
+        \(languageInstruction)
+
+        ### RULES
+        1. **NO REPETITION:** If a point is made twice, record it once.
+        2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
+        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics.
+        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]".
+        5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept.
+        6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
+        7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
+        8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
+
+        ### OUTPUT FORMAT (Strict JSON Only)
+        {
+          "title_concept": "Short Descriptive Title",
+          "summary": "A detailed, multi-paragraph summary covering all key topics discussed...",
+          "action_items": ["[Person] to [task] [context]", "..."],
+          "tags": ["Tag1", "Tag2", "Tag3", "..."],
+          "sentiment": "Positive" | "Neutral" | "Negative"
+        }
+        """
+    }
+}
