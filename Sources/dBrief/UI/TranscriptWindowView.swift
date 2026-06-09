@@ -442,6 +442,7 @@ struct TranscriptDetailView: View {
         )
         chatStore.set(service, for: recording.fileURL)
         chatService = service
+        service.prewarm()
     }
 
     private func deleteRecording() {

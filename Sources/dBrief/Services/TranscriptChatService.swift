@@ -63,6 +63,20 @@ final class TranscriptChatService {
         streamingError = nil
     }
 
+    /// Warms the on-device model when the chat panel opens so the first answer streams
+    /// sooner. No-op unless Apple Intelligence is the active (or fallback) chat engine.
+    func prewarm() {
+        let engine = appSettings.effectiveAIEngine == .localCLI
+            ? appSettings.chatFallbackEngine
+            : appSettings.effectiveAIEngine
+        guard engine == .appleIntelligence else { return }
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) {
+            LanguageModelSession().prewarm()
+        }
+        #endif
+    }
+
     // MARK: - Private
 
     private func buildStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
@@ -90,7 +104,9 @@ final class TranscriptChatService {
                     Task {
                         do {
                             let session = LanguageModelSession(instructions: systemPrompt)
-                            let response = try await session.respond(to: userMessage)
+                            session.prewarm()
+                            let options = GenerationOptions(temperature: 0.5)
+                            let response = try await session.respond(to: userMessage, options: options)
                             continuation.yield(response.content)
                             continuation.finish()
                         } catch {
