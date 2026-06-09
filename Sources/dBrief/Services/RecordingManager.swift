@@ -298,7 +298,7 @@ final class RecordingManager {
 
             switch aiEngine {
             case .appleIntelligence:
-                await runAppleIntelligenceTasks(
+                await runAppleIntelligenceUnifiedTasks(
                     transcription: transcription.textForLLM,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
@@ -343,7 +343,7 @@ final class RecordingManager {
             // separate title call for them so a remote endpoint — if configured —
             // doesn't override the inline title.
             let engine = appSettings.effectiveAIEngine
-            if engine != .qwenLocal, engine != .localCLI,
+            if engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
                let transcriptionText = recording.transcription?.textForLLM,
                !transcriptionText.isEmpty {
                 let language = recording.transcription?.language
@@ -353,21 +353,6 @@ final class RecordingManager {
                 let titleStepIndex = appState.processingSteps.count
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
-                    #if canImport(FoundationModels)
-                    if engine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
-                        recording.generatedTitle = try await LocalAIService().generateTitle(
-                            transcription: titleInput,
-                            language: language
-                        )
-                    } else if engine == .remoteEndpoint,
-                              let endpoint = appSettings.effectiveDefaultAIEndpoint {
-                        recording.generatedTitle = try await aiService.generateTitle(
-                            transcription: titleInput,
-                            language: language,
-                            endpoint: endpoint
-                        )
-                    }
-                    #else
                     if engine == .remoteEndpoint,
                        let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         recording.generatedTitle = try await aiService.generateTitle(
@@ -376,7 +361,6 @@ final class RecordingManager {
                             endpoint: endpoint
                         )
                     }
-                    #endif
                     appState.processingSteps[titleStepIndex].status = .completed
                 } catch {
                     // Title generation is non-critical — fall back to text extraction
@@ -509,7 +493,7 @@ final class RecordingManager {
 
             switch aiEngine {
             case .appleIntelligence:
-                await runAppleIntelligenceTasks(
+                await runAppleIntelligenceUnifiedTasks(
                     transcription: transcription.textForLLM,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
@@ -549,7 +533,7 @@ final class RecordingManager {
 
         // Step 3: Generate title & write Markdown
         let engine = appSettings.effectiveAIEngine
-        if engine != .qwenLocal,
+        if engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
            let transcriptionText = recording.transcription?.textForLLM,
            !transcriptionText.isEmpty {
             let language = recording.transcription?.language
@@ -557,21 +541,6 @@ final class RecordingManager {
             let titleStepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
             do {
-                #if canImport(FoundationModels)
-                if engine == .appleIntelligence, #available(macOS 26, *), localAIAvailable {
-                    recording.generatedTitle = try await LocalAIService().generateTitle(
-                        transcription: titleInput,
-                        language: language
-                    )
-                } else if engine == .remoteEndpoint,
-                          let endpoint = appSettings.effectiveDefaultAIEndpoint {
-                    recording.generatedTitle = try await aiService.generateTitle(
-                        transcription: titleInput,
-                        language: language,
-                        endpoint: endpoint
-                    )
-                }
-                #else
                 if engine == .remoteEndpoint,
                    let endpoint = appSettings.effectiveDefaultAIEndpoint {
                     recording.generatedTitle = try await aiService.generateTitle(
@@ -580,7 +549,6 @@ final class RecordingManager {
                         endpoint: endpoint
                     )
                 }
-                #endif
                 appState.processingSteps[titleStepIndex].status = .completed
             } catch {
                 // Title generation is non-critical — fall back to text extraction
@@ -1014,7 +982,10 @@ final class RecordingManager {
         }
     }
 
-    private func runAppleIntelligenceTasks(
+    /// One guided-generation call producing summary, action items, tags, sentiment, and
+    /// an inline title. Mirrors `runLocalQwenTasks`: the three step indices are all
+    /// completed by the single call, so the progress UI stays consistent across engines.
+    private func runAppleIntelligenceUnifiedTasks(
         transcription: String,
         localAvailable: Bool,
         summaryStepIndex: Int?,
@@ -1037,43 +1008,38 @@ final class RecordingManager {
             markFailed(tagsStepIndex, message)
             return
         }
+        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
 
-        if let summaryStepIndex {
-            do {
-                recording.summary = try await LocalAIService().generateSummary(
-                    transcription: transcription,
-                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent)
-                )
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
+        do {
+            let insights = try await LocalAIService().analyzeTranscript(
+                contextualTranscription,
+                outputLanguage: appSettings.outputLanguage
+            )
+
+            if let summaryStepIndex {
+                recording.summary = insights.summary
                 markCompleted(summaryStepIndex)
-            } catch {
-                markFailed(summaryStepIndex, error.localizedDescription)
             }
-        }
-
-        if let actionStepIndex {
-            do {
-                recording.actionItems = try await LocalAIService().extractActionItems(
-                    transcription: transcription,
-                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent)
-                )
+            let trimmedTitle = insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            if !trimmedTitle.isEmpty {
+                let datePrefix = Self.dateOnlyString(recording.date)
+                recording.generatedTitle = "\(datePrefix) - \(trimmedTitle)"
+            }
+            if let actionStepIndex {
+                recording.actionItems = insights.actionItems
                 markCompleted(actionStepIndex)
-            } catch {
-                markFailed(actionStepIndex, error.localizedDescription)
             }
-        }
-
-        if let tagsStepIndex {
-            do {
-                let result = try await LocalAIService().analyzeTags(
-                    transcription: transcription,
-                    systemPrompt: appSettings.effectiveTagsPrompt
-                )
-                recording.tags = result.tags
-                recording.sentiment = result.sentiment
+            if let tagsStepIndex {
+                recording.tags = insights.tags
+                recording.sentiment = insights.sentiment
                 markCompleted(tagsStepIndex)
-            } catch {
-                markFailed(tagsStepIndex, error.localizedDescription)
             }
+        } catch {
+            let message = error.localizedDescription
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
         }
         #else
         let message = "Apple Intelligence is unavailable in this build."

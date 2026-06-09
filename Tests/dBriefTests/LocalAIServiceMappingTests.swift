@@ -8,11 +8,11 @@ import FoundationModels
 /// sentiment-canonicalization and availability-message helpers WITHOUT invoking the
 /// on-device model (which needs entitlement + hardware). Gated to macOS 26 because
 /// the helpers reference FoundationModels types.
-@available(macOS 26, *)
 struct LocalAIServiceMappingTests {
 
     @Test("Sentiment maps to the canonical capitalized strings")
     func sentimentCanonical() {
+        guard #available(macOS 26, *) else { return }
         #expect(LocalAIService.Sentiment.positive.canonical == "Positive")
         #expect(LocalAIService.Sentiment.neutral.canonical == "Neutral")
         #expect(LocalAIService.Sentiment.negative.canonical == "Negative")
@@ -20,6 +20,7 @@ struct LocalAIServiceMappingTests {
 
     @Test("Each unavailable reason produces a distinct, specific message")
     func availabilityMessages() {
+        guard #available(macOS 26, *) else { return }
         let eligible = LocalAIService.message(for: .deviceNotEligible)
         let notEnabled = LocalAIService.message(for: .appleIntelligenceNotEnabled)
         let notReady = LocalAIService.message(for: .modelNotReady)
