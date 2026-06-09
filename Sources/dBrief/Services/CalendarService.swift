@@ -43,6 +43,24 @@ actor CalendarService {
         return CalendarMatcher.selectBestMatch(from: candidates, at: date)
     }
 
+    /// Ranked calendar events plausibly matching the recording span, best-first. Empty if access denied.
+    func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            return []
+        }
+
+        let predicate = store.predicateForEvents(
+            withStart: recordingStart.addingTimeInterval(-searchWindow),
+            end: recordingEnd.addingTimeInterval(searchWindow),
+            calendars: nil
+        )
+
+        let candidates = store.events(matching: predicate).map { Self.makeCalendarEvent(from: $0) }
+        return CalendarMatcher.rankedMatches(
+            from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
+        )
+    }
+
     /// Maps an EKEvent into our Sendable value type, extracting attendee display names.
     private static func makeCalendarEvent(from ekEvent: EKEvent) -> CalendarEvent {
         let names: [String] = (ekEvent.attendees ?? []).compactMap { participant in

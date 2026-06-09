@@ -96,22 +96,6 @@ final class RecordingManager {
         )
         appState.currentRecording = recording
 
-        let started = recording.date
-        switch appSettings.effectiveCalendarSource {
-        case .iCal:
-            Task { [weak recording] in
-                let event = await calendarService.findCurrentEvent(at: started)
-                await MainActor.run { recording?.calendarEvent = event }
-            }
-        case .outlook:
-            Task { [weak recording] in
-                let event = await outlookCalendarService.findCurrentEvent(at: started)
-                await MainActor.run { recording?.calendarEvent = event }
-            }
-        case .disabled:
-            break
-        }
-
         try await audioCaptureManager.startRecording(
             to: baseURL,
             inputDeviceUID: appSettings.audioInputDeviceUID,
@@ -152,6 +136,38 @@ final class RecordingManager {
 
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
+            }
+
+            // Match calendar events now that the recording's true span is known. The lookup
+            // runs detached so the sheet appears immediately; `recording` is @Observable, so
+            // the picker populates reactively when the (possibly networked) fetch returns.
+            let calendarStart = recording.date
+            let calendarEnd = recording.date.addingTimeInterval(recording.duration)
+            switch appSettings.effectiveCalendarSource {
+            case .iCal:
+                Task { [weak recording] in
+                    let ranked = await calendarService.findCandidates(
+                        recordingStart: calendarStart, recordingEnd: calendarEnd
+                    )
+                    await MainActor.run {
+                        guard let recording else { return }
+                        recording.calendarCandidates = ranked
+                        recording.calendarEvent = ranked.first
+                    }
+                }
+            case .outlook:
+                Task { [weak recording] in
+                    let ranked = await outlookCalendarService.findCandidates(
+                        recordingStart: calendarStart, recordingEnd: calendarEnd
+                    )
+                    await MainActor.run {
+                        guard let recording else { return }
+                        recording.calendarCandidates = ranked
+                        recording.calendarEvent = ranked.first
+                    }
+                }
+            case .disabled:
+                break
             }
         }
 
