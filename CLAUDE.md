@@ -85,15 +85,18 @@ Four transcription backends selected via `AppSettings.transcriptionEngine`:
 
 ### AI Processing (`Services/`)
 
-Three AI backends selected via `AppSettings.aiEngine`:
+Four AI backends selected via `AppSettings.aiEngine`:
 
 | Engine | Class | Backend |
 |--------|-------|---------|
 | Apple Intelligence | `LocalAIService` | On-device via `FoundationModels` framework. Guarded by `#if canImport(FoundationModels)` and `@available(macOS 26, *)`. Only available on Apple Silicon with macOS 26+. |
 | Gemma 4 E4B Local | `MLXInsightsService` (via `LocalAIPluginService`) | On-device `mlx-community/gemma-4-e4b-4bit` via `mlx-swift-lm` 3.x. Downloads models to `AppSupport/dBrief/LocalAIPlugin/MLX/`. Supports streaming output. Uses KV cache quantization (`kvBits: 8`). Strips `<think>…</think>` blocks before JSON parsing (model uses thinking mode). **Note**: the enum case is historically named `AIEngine.qwenLocal` (UI display name "Gemma 4 E4B Local") — it now loads Gemma, not Qwen. |
 | Remote Endpoint | `AIService` | OpenAI-compatible `/v1/chat/completions` |
+| Local CLI | `LocalCLIService` | Shells out to a user-configured command (e.g. `claude -p "$DBRIEF_FULL_PROMPT"`, `ollama run …`, `llm …`) via a login shell (`/bin/zsh -l -c`) so PATH tools resolve. One unified call per recording returning the same JSON contract as Gemma. Prompts are exported as `DBRIEF_SYSTEM_PROMPT` / `DBRIEF_USER_PROMPT` / `DBRIEF_FULL_PROMPT` env vars and piped to stdin; output parsed via `LocalInsightsDecoder.decodeAndNormalize` (in `dBriefWire`). Config (`LocalCLIConfig`: command + timeout) is global, persisted as JSON in UserDefaults. |
 
 AI tasks run sequentially after transcription: summary → action items → tags/sentiment → title generation → markdown export. All AI steps can be skipped via `AppSettings.aiProcessingEnabled = false`.
+
+**Unified-JSON engines** (Gemma local and Local CLI) share one prompt/JSON schema via `UnifiedInsightsPrompt` (system + user prompt + transcript truncation, in `dBriefWire` so both the app and the helper can use it) and produce a `LocalInsightsResult` (with an inline `title_concept`, so they skip the separate title-generation call). **Local CLI cannot stream**, so the transcript chat window falls back to `AppSettings.chatFallbackEngine` (never `.localCLI`) when the active engine is Local CLI. The default fallback is `AIEngine.defaultOnDeviceFallback` — Apple Intelligence if available, otherwise local Gemma — so chat works without configuring a remote endpoint.
 
 ### Local AI Plugin System — Crash-Isolated Helper Process
 

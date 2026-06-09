@@ -31,6 +31,7 @@ final class RecordingManager {
     private var downloadTasks: [LocalModelKind: Task<Void, Never>] = [:]
     private var downloadObservers: [LocalModelKind: Task<Void, Never>] = [:]
     private let aiService = AIService()
+    private let localCLIService = LocalCLIService()
     private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
     private let recordingFinalizer = RecordingFinalizer()
@@ -68,7 +69,7 @@ final class RecordingManager {
         case .qwenLocal:
             required = MemoryThreshold.gemma4_e4b
             modelName = "Gemma 4 E4B (Local)"
-        case .appleIntelligence, .remoteEndpoint:
+        case .appleIntelligence, .remoteEndpoint, .localCLI:
             return nil   // no local model loaded
         }
         guard !MemoryPressureMonitor.hasSufficientMemory(requiredBytes: required) else { return nil }
@@ -320,6 +321,14 @@ final class RecordingManager {
                     tagsStepIndex: tagsStepIndex,
                     recording: recording
                 )
+            case .localCLI:
+                await runLocalCLITasks(
+                    transcription: transcription.textForLLM,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
             }
         }
 
@@ -327,11 +336,12 @@ final class RecordingManager {
 
         // Step 3: Generate title & write Markdown
         if transcribe || summary || actionItems || tags {
-            // Gemma local generates `title_concept` inline in the JSON analysis
-            // (see runLocalQwenTasks). Skip the separate title call for it so a
-            // remote endpoint — if configured — doesn't override Gemma's title.
+            // Gemma local and the Local CLI generate `title_concept` inline in the
+            // JSON analysis (see runLocalQwenTasks / runLocalCLITasks). Skip the
+            // separate title call for them so a remote endpoint — if configured —
+            // doesn't override the inline title.
             let engine = appSettings.effectiveAIEngine
-            if engine != .qwenLocal,
+            if engine != .qwenLocal, engine != .localCLI,
                let transcriptionText = recording.transcription?.textForLLM,
                !transcriptionText.isEmpty {
                 let language = recording.transcription?.language
@@ -387,6 +397,7 @@ final class RecordingManager {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
                 case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+                case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
@@ -520,6 +531,14 @@ final class RecordingManager {
                     tagsStepIndex: tagsStepIndex,
                     recording: recording
                 )
+            case .localCLI:
+                await runLocalCLITasks(
+                    transcription: transcription.textForLLM,
+                    summaryStepIndex: summaryStepIndex,
+                    actionStepIndex: actionStepIndex,
+                    tagsStepIndex: tagsStepIndex,
+                    recording: recording
+                )
             }
         }
 
@@ -580,6 +599,7 @@ final class RecordingManager {
                 case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
                 case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
                 case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+                case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
                 }
                 generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
@@ -968,6 +988,7 @@ final class RecordingManager {
         case .appleIntelligence: "Generating summary (Apple Intelligence)"
         case .qwenLocal: "Generating summary (Gemma 4 E4B local)"
         case .remoteEndpoint: "Generating summary"
+        case .localCLI: "Generating summary (Local CLI)"
         }
     }
 
@@ -976,6 +997,7 @@ final class RecordingManager {
         case .appleIntelligence: "Extracting action items (Apple Intelligence)"
         case .qwenLocal: "Extracting action items (Gemma 4 E4B local)"
         case .remoteEndpoint: "Extracting action items"
+        case .localCLI: "Extracting action items (Local CLI)"
         }
     }
 
@@ -984,6 +1006,7 @@ final class RecordingManager {
         case .appleIntelligence: "Analyzing tags (Apple Intelligence)"
         case .qwenLocal: "Analyzing tags & sentiment (Gemma 4 E4B local)"
         case .remoteEndpoint: "Analyzing tags & sentiment"
+        case .localCLI: "Analyzing tags & sentiment (Local CLI)"
         }
     }
 
@@ -1097,6 +1120,56 @@ final class RecordingManager {
 
                 return try LocalInsightsDecoder.decodeAndNormalize(fullJSON)
             }
+
+            if let summaryStepIndex {
+                recording.summary = insights.summary
+                markCompleted(summaryStepIndex)
+            }
+            if !insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                let datePrefix = Self.dateOnlyString(recording.date)
+                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))"
+            }
+            if let actionStepIndex {
+                recording.actionItems = insights.actionItems
+                markCompleted(actionStepIndex)
+            }
+            if let tagsStepIndex {
+                recording.tags = insights.tags
+                recording.sentiment = insights.sentiment
+                markCompleted(tagsStepIndex)
+            }
+        } catch is CancellationError {
+            let message = "Cancelled by user"
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+        } catch {
+            let message = error.localizedDescription
+            markFailed(summaryStepIndex, message)
+            markFailed(actionStepIndex, message)
+            markFailed(tagsStepIndex, message)
+        }
+    }
+
+    /// Runs the unified-JSON analysis through the user-configured Local CLI command.
+    /// Mirrors `runLocalQwenTasks` (one call producing summary, action items, tags,
+    /// sentiment, and an inline title) but invokes a subprocess instead of MLX and
+    /// does not stream.
+    private func runLocalCLITasks(
+        transcription: String,
+        summaryStepIndex: Int?,
+        actionStepIndex: Int?,
+        tagsStepIndex: Int?,
+        recording: Recording
+    ) async {
+        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
+        do {
+            let insights = try await localCLIService.analyze(
+                transcript: contextualTranscription,
+                outputLanguage: appSettings.outputLanguage,
+                config: appSettings.localCLIConfig
+            )
 
             if let summaryStepIndex {
                 recording.summary = insights.summary
