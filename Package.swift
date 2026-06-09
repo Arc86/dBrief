@@ -6,7 +6,7 @@ let package = Package(
     name: "dBrief",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.18.0"),
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.0.0"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.0.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
@@ -20,8 +20,9 @@ let package = Package(
             name: "dBriefMLHost",
             dependencies: [
                 "dBriefWire",
-                "WhisperKit",
-                .product(name: "SpeakerKit", package: "WhisperKit"),
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "SpeakerKit", package: "argmax-oss-swift"),
+                .product(name: "TTSKit", package: "argmax-oss-swift"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 "FluidAudio",

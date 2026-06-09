@@ -14,6 +14,9 @@ actor MockBackend: MLBackend {
     func analyzeStream(text: String, outputLanguage: OutputLanguage, emitToken: @Sendable (String) -> Void) async throws { emitToken("a"); emitToken("b") }
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws { emitToken("hi") }
     func parakeetTranscribe(path: String, modelVariant: String) async throws -> TranscriptionResult { TranscriptionResult(text: "pk") }
+    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult {
+        SpeechSynthesisResult(outputPath: outputPath, durationSeconds: 1.0, sampleRate: 24000)
+    }
     func prepareModels() async {}
     func downloadWhisper(config: WhisperRuntimeConfig) async throws {}
     func downloadLLM() async throws {}

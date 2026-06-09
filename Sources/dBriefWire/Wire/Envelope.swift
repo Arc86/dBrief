@@ -12,6 +12,7 @@ public enum MLRequest: Sendable, Codable {
     case analyzeStream(text: String, outputLanguage: OutputLanguage)
     case chatStream(systemPrompt: String, userMessage: String)
     case parakeetTranscribe(path: String, modelVariant: String)
+    case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)
     case downloadLLM
@@ -35,6 +36,7 @@ public enum MLEvent: Sendable, Codable {
     case token(String)                          // one chunk of a streaming response
     case transcriptionResult(TranscriptionResult)
     case diarizeResult([DiarizedTurn])
+    case speechResult(SpeechSynthesisResult)
     case insightsResult(LocalInsightsResult)
     case boolResult(Bool)
     case stringsResult([String])

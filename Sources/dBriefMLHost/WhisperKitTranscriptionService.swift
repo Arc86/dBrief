@@ -411,6 +411,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         case .speakerId(let id): return "Speaker \(id + 1)"
         case .multiple(let ids): return ids.isEmpty ? nil : "Speaker \(ids[0] + 1)"
         case .noMatch: return nil
+        @unknown default: return nil
         }
     }
 

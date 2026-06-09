@@ -80,6 +80,16 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return markdown
     }
 
+    /// Synthesize speech to a WAV at `outputPath` via TTSKit in the helper.
+    /// Scaffold only — not yet surfaced in any view. Returns the written file's
+    /// path plus duration/sample-rate metadata.
+    func synthesizeSpeech(text: String, outputPath: String, voice: String? = nil, language: String? = nil) async throws -> SpeechSynthesisResult {
+        guard case let .speechResult(r) = try await connection.call(
+            .synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language)
+        ) else { throw WireError(kind: .generic, message: "no speech result") }
+        return r
+    }
+
     func prepareModelsIfNeeded() async { _ = try? await connection.call(.prepareModels) }
     func downloadWhisperModel(config: WhisperRuntimeConfig) async throws { _ = try await connection.call(.downloadWhisper(config: config)) }
     func downloadLLMModel() async throws { _ = try await connection.call(.downloadLLM) }

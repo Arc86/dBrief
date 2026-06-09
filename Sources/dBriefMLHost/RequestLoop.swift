@@ -10,6 +10,7 @@ protocol MLBackend: Sendable {
     func analyzeStream(text: String, outputLanguage: OutputLanguage, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
     func parakeetTranscribe(path: String, modelVariant: String) async throws -> TranscriptionResult
+    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
     func downloadWhisper(config: WhisperRuntimeConfig) async throws
     func downloadLLM() async throws
@@ -70,6 +71,9 @@ final class RequestRouter: Sendable {
                 send(.finished)
             case let .parakeetTranscribe(path, variant):
                 send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant))); send(.finished)
+            case let .synthesizeSpeech(text, outputPath, voice, language):
+                let r = try await backend.synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language)
+                send(.speechResult(r)); send(.finished)
             case .prepareModels:
                 await backend.prepareModels(); send(.voidResult); send(.finished)
             case let .downloadWhisper(config):

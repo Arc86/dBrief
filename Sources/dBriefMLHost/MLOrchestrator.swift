@@ -11,12 +11,14 @@ actor MLOrchestrator: MLBackend {
     private let whisperService: WhisperKitTranscriptionService
     private let insightsService: MLXInsightsService
     private let parakeetService: ParakeetTranscriptionService
+    private let ttsService: TTSService
     private var parakeetStateTask: Task<Void, Never>?
 
     init(emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
         self.emit = emit
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
+        self.ttsService = TTSService { state in emit(.plugin, state) }
         let parakeet = ParakeetTranscriptionService()
         self.parakeetService = parakeet
         self.parakeetStateTask = Task {
@@ -56,6 +58,19 @@ actor MLOrchestrator: MLBackend {
                 language: nil,
                 modelVariant: modelVariant
             )
+        }
+    }
+
+    // MARK: - Text-to-speech (scaffold)
+
+    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult {
+        try await mutex.withLock { [self] in
+            defer { emit(.plugin, .idle) }
+            await whisperService.unload()
+            await insightsService.unload()
+            let result = try await ttsService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language)
+            await ttsService.unload()
+            return result
         }
     }
 
@@ -175,6 +190,7 @@ actor MLOrchestrator: MLBackend {
         await whisperService.unload()
         await insightsService.unload()
         await parakeetService.unload()
+        await ttsService.unload()
         emit(.plugin, .idle)
     }
 
@@ -182,6 +198,7 @@ actor MLOrchestrator: MLBackend {
         await insightsService.forceUnload()
         await whisperService.unload()
         await parakeetService.unload()
+        await ttsService.unload()
         emit(.plugin, .idle)
     }
 }

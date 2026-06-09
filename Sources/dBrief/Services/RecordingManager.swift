@@ -1352,6 +1352,11 @@ final class RecordingManager {
             case .parakeetModelLoading:
                 appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
                 appState.processingSteps[stepIndex].progress = nil
+            case .ttsModel:
+                appState.processingSteps[stepIndex].name = "Downloading TTS model…"
+            case .ttsModelLoading:
+                appState.processingSteps[stepIndex].name = "Loading TTS model…"
+                appState.processingSteps[stepIndex].progress = nil
             }
         }
     }
