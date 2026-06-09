@@ -100,119 +100,7 @@ struct SettingsTranscriptionTab: View {
             case .parakeetLocal:
                 parakeetSection
             case .localWhisper:
-                VStack(alignment: .leading, spacing: 8) {
-                    LabeledContent("Model:") {
-                        if isFetchingWhisperModels && whisperModels.isEmpty {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(width: 280, alignment: .trailing)
-                        } else {
-                            let modelsToShow = showAllWhisperModels ? whisperModels : whisperModels.filter { model in
-                                model.family == "tiny" || model.family == "small" || model.family == "medium" ||
-                                (model.family == "large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                                (model.family == "large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                                (model.family == "distil-large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                                (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
-                            }
-
-                            Picker("", selection: $settings.whisperModelName) {
-                                if modelsToShow.isEmpty {
-                                    Text("openai_whisper-small").tag("openai_whisper-small")
-                                } else {
-                                    ForEach(modelsToShow, id: \.id) { model in
-                                        Text(model.displayName).tag(model.id)
-                                    }
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 280, alignment: .trailing)
-                        }
-
-                        if let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName }) {
-                            Text("~\(formatMemory(selectedModel.estimatedMemoryMB)) required")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName }) {
-                        if selectedModel.estimatedMemoryMB > 4_096 {
-                            Label("Large models require closing other apps", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-
-                    Toggle("Speaker diarization", isOn: $settings.diarizationEnabled)
-                    Text("Identifies who said what. Adds processing time and ~500 MB memory. Requires word timestamps.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        Text("Compute units")
-                        Spacer()
-                        Picker("", selection: $settings.whisperComputeUnits) {
-                            ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { unit in
-                                Text(unit.displayName).tag(unit)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 280, alignment: .trailing)
-                    }
-                    Text("Where the model runs. Neural Engine and All are fastest; switch to Metal GPU if transcription crashes or fails on large models (e.g. Large V3 Turbo).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if let error = whisperModelFetchError {
-                        Label(error, systemImage: "wifi.slash")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-
-                    HStack {
-                        Text("Show all models").font(.caption).foregroundStyle(.secondary)
-                        Toggle("", isOn: $showAllWhisperModels)
-                            .controlSize(.small)
-                    }
-
-                    HStack {
-                        Text("On-device transcription using WhisperKit. Audio never leaves your Mac. Models downloaded once from HuggingFace. Large V3 Turbo recommended for Apple Silicon Macs.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            fetchWhisperModels()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
-                        .help("Refresh model list from HuggingFace")
-                    }
-
-                    ModelDownloadButton(kind: .whisper)
-
-                    Button("Purge local WhisperKit model") {
-                        Task {
-                            do {
-                                try await recordingManager.purgeLocalWhisperModel()
-                                purgeMessage = "Local WhisperKit model cache removed."
-                            } catch {
-                                purgeMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    if let purgeMessage {
-                        Text(purgeMessage)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onAppear { fetchWhisperModels() }
+                whisperSection
             case .remoteEndpoint:
                 Text("Use a remote Whisper API or server. Requires an endpoint.")
                     .font(.caption)
@@ -268,6 +156,187 @@ struct SettingsTranscriptionTab: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var whisperSection: some View {
+        @Bindable var settings = appSettings
+        let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName })
+
+        VStack(alignment: .leading, spacing: 10) {
+            // — Model group header with help popover —
+            HStack(spacing: 6) {
+                Text("Model")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button {
+                    showModelHelp.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .popover(isPresented: $showModelHelp, arrowEdge: .bottom) {
+                    Text("Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. When in doubt, keep the recommended one.")
+                        .font(.callout)
+                        .padding()
+                        .frame(width: 260)
+                }
+            }
+
+            // — Model card —
+            if isFetchingWhisperModels && whisperModels.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading models…").font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: .secondarySystemFill)))
+            } else {
+                let modelsToShow = showAllWhisperModels ? whisperModels : whisperModels.filter { model in
+                    model.isRecommended ||
+                    model.family == "tiny" || model.family == "small" || model.family == "medium" ||
+                    (model.family == "large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                    (model.family == "large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                    (model.family == "distil-large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
+                    (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
+                }
+
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Text(selectedModel?.displayName ?? settings.whisperModelName)
+                                .font(.body).fontWeight(.semibold)
+                            if selectedModel?.isRecommended == true {
+                                Text("Recommended")
+                                    .font(.caption2).fontWeight(.semibold)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.18))
+                                    .foregroundStyle(Color.accentColor)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                            }
+                        }
+                        if let selectedModel {
+                            Text("~\(formatMemory(selectedModel.estimatedMemoryMB)) memory")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Picker("", selection: $settings.whisperModelName) {
+                        if modelsToShow.isEmpty {
+                            Text("openai_whisper-small").tag("openai_whisper-small")
+                        } else {
+                            ForEach(modelsToShow, id: \.id) { model in
+                                Text(model.isRecommended ? "\(model.displayName)  ·  Recommended" : model.displayName)
+                                    .tag(model.id)
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: .secondarySystemFill)))
+
+                // — Per-model descriptor —
+                if let selectedModel {
+                    Text(selectedModel.plainDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // — Large-model safety warning —
+                if let selectedModel, selectedModel.estimatedMemoryMB > 4_096 {
+                    Label("Large models run best with other apps closed", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                // — Download status / action (wired) —
+                ModelDownloadButton(kind: .whisper)
+            }
+
+            // — Diarization (plain label, jargon in caption) —
+            Toggle(isOn: $settings.diarizationEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Identify different speakers")
+                    Text("Diarization — labels who said what. Slower, uses ~500 MB more memory.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // — Advanced (collapsed) —
+            DisclosureGroup("Advanced") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Where it runs")
+                            Text("Compute units. Leave on Automatic unless transcription fails on large models.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.whisperComputeUnits) {
+                            ForEach(AppSettings.WhisperComputeUnits.allCases, id: \.self) { unit in
+                                Text(unit.friendlyName).tag(unit)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 200)
+                    }
+
+                    Toggle(isOn: $showAllWhisperModels) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show all models")
+                            Text("Adds experimental, English-only, and quantized variants to the list.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    HStack {
+                        Button {
+                            fetchWhisperModels()
+                        } label: {
+                            Label("Refresh model list", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Refresh model list from HuggingFace")
+                        Spacer()
+                    }
+                    if let error = whisperModelFetchError {
+                        Label(error, systemImage: "wifi.slash")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Button("Purge local WhisperKit model") {
+                        Task {
+                            do {
+                                try await recordingManager.purgeLocalWhisperModel()
+                                purgeMessage = "Local WhisperKit model cache removed."
+                            } catch {
+                                purgeMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    if let purgeMessage {
+                        Text(purgeMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 6)
+            }
+            .font(.subheadline)
+        }
+        .onAppear { fetchWhisperModels() }
     }
 
     private var languageSection: some View {
