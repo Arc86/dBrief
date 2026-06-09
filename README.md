@@ -31,22 +31,22 @@ No bots in your calls. No "I'll review the recording later." No upload to a stra
 
 Most meeting recorders send your conversations to someone else's GPU. dBrief doesn't have to.
 
-- 🎙️ **Local-first by default** — Apple Silicon? Apple Intelligence and local Gemma 4 mean nothing leaves your Mac
-- 🔒 **Your meetings, your machine** — no dBrief cloud, no account, no telemetry
-- 🔌 **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
-- 📅 **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
-- 📝 **Eight destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook, and more
+- **Local-first by default** — Apple Silicon? Apple Intelligence and local Gemma 4 mean nothing leaves your Mac
+- **Your meetings, your machine** — no dBrief cloud, no account, no telemetry
+- **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
+- **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
+- **Four destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook
 
 ---
 
 ## Features
 
 ### Capture
-- 🎯 **Menu bar native** — no dock icon, no clutter
-- 🪟 **Floating mini-player** — translucent overlay with waveform and controls
-- ⌨️ **Global hotkey** — `⌃ ⌥ ⌘ R` from anywhere on your Mac
-- 🎧 **Mic + system audio** — both sides of the call, captured via ScreenCaptureKit
-- 📞 **Call detection** — auto-starts when Zoom, Teams, Meet, Slack, FaceTime or Discord fires up
+- **Menu bar native** — no dock icon, no clutter
+- **Floating mini-player** — translucent overlay with waveform and controls
+- **Global hotkey** — `⌃ ⌥ ⌘ R` from anywhere on your Mac
+- **Mic + system audio** — both sides of the call, captured via ScreenCaptureKit
+- **Call detection** — auto-starts when Zoom, Teams, Meet, Slack, Webex or FaceTime fires up
 
 ### Transcribe
 Four engines to choose from — privacy and quality your call:
@@ -61,12 +61,13 @@ Four engines to choose from — privacy and quality your call:
 Plus word-level timestamps, speaker labels, custom vocabulary, and YouTube URL transcription (paste a link, get the transcript).
 
 ### Analyze
-Three AI backends — local-first, remote optional:
+Four AI backends — local-first, remote optional:
 
 | Engine | Privacy | Requirements |
 | --- | --- | --- |
 | **Apple Intelligence** | Fully on-device | macOS 26+, Apple Silicon |
 | **Gemma 4 E4B Local (MLX)** | Fully on-device | Apple Silicon, ~4 GB model |
+| **Local CLI** | Depends on the tool | Any CLI you configure (`claude`, `ollama`, `llm`…) |
 | **Remote Endpoint** | Network | OpenAI-compatible server |
 
 Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript.
@@ -80,12 +81,12 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 - **Webhook** (HTTP POST, optional multipart audio upload)
 
 ### Workflow
-- 🎛️ **Meeting profiles** — save different configurations for team meetings, sales calls, custom workflows
-- 📂 **Smart file naming** — `YYYY-MM-DD_HHMM_[meeting-title].flac`
-- ⏱️ **Auto-segmentation** — recordings over 30 minutes split into chunks for better accuracy
-- 🔍 **Rich transcript viewer** — word-level timing, audio sync, speaker rename
-- 💬 **Transcript chat** — ask follow-up questions about a recording using your configured AI
-- 🎥 **YouTube / video URL** — transcribe any `yt-dlp`-supported URL without recording
+- **Meeting profiles** — save different configurations for team meetings, sales calls, custom workflows
+- **Smart file naming** — `YYYY-MM-DD_HHMM_[meeting-title].m4a`
+- **Auto-segmentation** — recordings over 30 minutes split into chunks for better accuracy
+- **Rich transcript viewer** — word-level timing, audio sync, speaker rename
+- **Transcript chat** — ask follow-up questions about a recording using your configured AI
+- **YouTube / video URL** — transcribe any `yt-dlp`-supported URL without recording
 
 ---
 
@@ -133,11 +134,11 @@ dBrief asks for the minimum it needs. You can manage any of these in **Settings 
 
 | Permission | Why | Required? |
 | --- | --- | --- |
-| 🎤 Microphone | Recording your voice | Yes |
-| 🖥️ Screen Recording | Capturing system audio (both sides of the call) | Recommended |
-| 🗣️ Speech Recognition | Apple Speech transcription | Only if using Apple Speech |
-| 🔔 Notifications | Completion alerts | Optional |
-| ✅ Reminders | Apple Reminders integration | Only if using Reminders |
+| Microphone | Recording your voice | Yes |
+| Screen Recording | Capturing system audio (both sides of the call) | Recommended |
+| Speech Recognition | Apple Speech transcription | Only if using Apple Speech |
+| Notifications | Completion alerts | Optional |
+| Reminders | Apple Reminders integration | Only if using Reminders |
 
 ---
 
@@ -148,7 +149,7 @@ dBrief is built as a **Swift Package Manager executable** (not an Xcode project)
 ```
 Sources/dBrief/
 ├── App/            # @main, AppContext, AppState, AppSettings
-├── Audio/          # ScreenCaptureKit, AVAudioEngine, mixing, FLAC writer
+├── Audio/          # ScreenCaptureKit, AVAudioEngine, mixing, M4A/AAC master
 ├── Models/         # Endpoint, Recording, MeetingProfile, Integrations
 ├── Services/       # Recording, transcription, AI, integrations
 ├── UI/             # SwiftUI views (menu bar, settings, overlays)
@@ -158,9 +159,10 @@ Sources/dBrief/
 
 Key dependencies (all via SPM):
 
-- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device Whisper
+- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device Whisper (and SpeakerKit diarization)
 - [FluidAudio](https://github.com/argmaxinc/FluidAudio) — on-device Parakeet TDT
 - [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) — local Gemma 4 via MLX
+- [swift-transformers](https://github.com/huggingface/swift-transformers) — tokenizer support for MLX
 
 Tests use [`swift-testing`](https://github.com/apple/swift-testing). Run with `swift test`.
 
@@ -208,6 +210,6 @@ MIT — see [LICENSE](LICENSE).
 
 Made for people who forget what was decided on Tuesday.
 
-**[⭐ Star this repo](https://github.com/Arc86/dBrief)** if dBrief saves your brain once.
+**[Star this repo](https://github.com/Arc86/dBrief)** if dBrief saves your brain once.
 
 </div>
