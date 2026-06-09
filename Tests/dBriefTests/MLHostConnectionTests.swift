@@ -29,10 +29,9 @@ private func stubURL() -> URL {
     }
 
     @Test func crashSurfacesHelperCrashedError() async {
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("stub_crashed"))
         let conn = MLHostConnection(binaryURL: stubURL(),
                                     supportBase: URL(fileURLWithPath: "/tmp"),
-                                    environment: ["STUB_MODE": "crash-once"])
+                                    environment: ["STUB_MODE": "crash-once", "STUB_FLAG_1": uniqueFlagPath()])
         await #expect(throws: MLHostError.helperCrashed) {
             _ = try await conn.call(.transcribe(path: "/a.m4a", initialPrompt: nil, config: .default, safeMode: false))
         }

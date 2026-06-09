@@ -93,7 +93,14 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // trap is now recoverable, this ceiling can be raised (toward WhisperKit's
         // default of 16) — benchmark on the target hardware and weigh added throughput
         // against how often a higher value forces a crash+safe-mode retry.
-        options.concurrentWorkerCount = safeMode ? 1 : 8
+        //
+        // Safe mode (post-crash retry) keeps the decoder off the ANE via
+        // `.cpuAndGPU` (set by the caller), which is where the nil-logits trap
+        // lives. With the ANE out of the picture the trap doesn't recur, so the
+        // retry no longer needs to serialize to a single worker: 4 workers makes
+        // recovery ~2–3× faster (field data: 1 worker = 1.6× realtime vs ~4× at 8)
+        // while staying well clear of the concurrency that triggers the trap.
+        options.concurrentWorkerCount = safeMode ? 4 : 8
 
         do {
             let transcribeStart = Date()
