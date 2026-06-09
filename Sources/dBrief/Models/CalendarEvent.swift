@@ -13,7 +13,7 @@ struct CalendarEvent: Sendable, Equatable, Identifiable {
     /// Stable identity for SwiftUI selection. Calendar sources don't expose a uid here,
     /// so derive it from the fields that distinguish overlapping events.
     var id: String {
-        "\(title)|\(startDate.timeIntervalSince1970)|\(endDate.timeIntervalSince1970)"
+        "\(title)|\(startDate.timeIntervalSince1970)|\(endDate.timeIntervalSince1970)|\(attendees.joined(separator: ","))"
     }
 
     /// Comma-separated attendee names, for pre-filling the participants field.
