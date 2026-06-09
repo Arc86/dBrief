@@ -36,6 +36,7 @@ final class RecordingManager {
     private let integrationDispatchService = IntegrationDispatchService()
     private let recordingFinalizer = RecordingFinalizer()
     private let transcriptStore: TranscriptStore
+    private let insightsStore: InsightsStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
     private let calendarService = CalendarService()
@@ -47,10 +48,11 @@ final class RecordingManager {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, microsoftAuthService: MicrosoftAuthService) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, microsoftAuthService: MicrosoftAuthService) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
+        self.insightsStore = insightsStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
@@ -407,6 +409,7 @@ final class RecordingManager {
                     includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
+                await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
             } catch {
                 appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
             }
@@ -609,6 +612,7 @@ final class RecordingManager {
                     includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
+                await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
             } catch {
                 appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
             }
@@ -1658,6 +1662,24 @@ final class RecordingManager {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
+    }
+
+    /// Persist AI analysis to `<base>.insights.json` so the transcript window can
+    /// display and edit it later. No-op when there is no summary to save.
+    private func writeInsightsSidecar(for recording: Recording, markdownURL: URL?) async {
+        guard let summary = recording.summary, !summary.isEmpty else { return }
+        let insights = RecordingInsights(
+            summary: summary,
+            actionItems: recording.actionItems ?? [],
+            tags: recording.tags ?? [],
+            sentiment: recording.sentiment ?? "",
+            markdownPath: markdownURL?.path
+        )
+        do {
+            try await insightsStore.save(insights, for: recording)
+        } catch {
+            Logger.recording.error("Failed to write insights sidecar: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func resolveMarkdownOutputFolder(for recording: Recording) -> URL {
