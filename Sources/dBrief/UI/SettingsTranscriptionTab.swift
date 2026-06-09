@@ -89,7 +89,8 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 200, alignment: .trailing)
+                .fixedSize()
+                .frame(minWidth: 200, alignment: .trailing)
             }
 
             switch settings.transcriptionEngine {
@@ -204,11 +205,12 @@ struct SettingsTranscriptionTab: View {
                     (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
                 }
 
-                HStack {
+                HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 8) {
                             Text(selectedModel?.displayName ?? settings.whisperModelName)
                                 .font(.body).fontWeight(.semibold)
+                                .lineLimit(1)
                             if selectedModel?.isRecommended == true {
                                 Text("Recommended")
                                     .font(.caption2).fontWeight(.semibold)
@@ -216,6 +218,7 @@ struct SettingsTranscriptionTab: View {
                                     .background(Color.accentColor.opacity(0.18))
                                     .foregroundStyle(Color.accentColor)
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .fixedSize()
                             }
                         }
                         if let selectedModel {
@@ -223,21 +226,26 @@ struct SettingsTranscriptionTab: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Spacer()
-                    Picker("", selection: $settings.whisperModelName) {
-                        if modelsToShow.isEmpty {
-                            Text(WhisperModelInfo.parse(WhisperModelInfo.recommendedModelID).displayName)
-                                .tag(WhisperModelInfo.recommendedModelID)
-                        } else {
-                            ForEach(modelsToShow, id: \.id) { model in
-                                Text(model.isRecommended ? "\(model.displayName)  ·  Recommended" : model.displayName)
-                                    .tag(model.id)
+                    Spacer(minLength: 8)
+                    Menu {
+                        ForEach(modelsToShow, id: \.id) { model in
+                            Button {
+                                settings.whisperModelName = model.id
+                            } label: {
+                                let title = model.isRecommended ? "\(model.displayName)  —  Recommended" : model.displayName
+                                if model.id == settings.whisperModelName {
+                                    Label(title, systemImage: "checkmark")
+                                } else {
+                                    Text(title)
+                                }
                             }
                         }
+                    } label: {
+                        Text("Change")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 200)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(modelsToShow.isEmpty)
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
