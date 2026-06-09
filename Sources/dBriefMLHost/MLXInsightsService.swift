@@ -11,16 +11,8 @@ import MLX
 
 actor MLXInsightsService {
     private static let modelID = "mlx-community/gemma-4-e4b-it-4bit"
-    // Gemma 4 E4B has a 128K context. With ~4 chars/token this budget is ~25K
-    // input tokens, leaving plenty of headroom for the system prompt (~1K) and
-    // the 8K output ceiling. Sized to fit a ~3-hour meeting without truncation.
-    private static let transcriptCharLimit = 100_000
-    // Keep a small intro slice for context, then the full tail. Meetings tend
-    // to load substance in the middle and end — truncating by dropping the
-    // head preserves that detail.
-    private static let transcriptHeadChars = 5_000
-    private static let transcriptTailChars = 95_000
-    private static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
+    // Transcript truncation budget lives in `UnifiedInsightsPrompt` (shared with
+    // the Local CLI engine).
 
     private let fileManager = FileManager.default
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
@@ -283,56 +275,14 @@ actor MLXInsightsService {
         try SupportPaths.subdirectory("MLX")
     }
 
+    // System and user prompts share a single JSON contract with the Local CLI
+    // engine — see `UnifiedInsightsPrompt`. Both produce a `LocalInsightsResult`.
     private func buildUserPrompt(transcript: String) -> String {
-        """
-        Analyze this transcript and produce the JSON response exactly as required by the system instructions.
-        Do not copy template phrases. Use only factual details present in the transcript.
-
-        TRANSCRIPT:
-        \(transcript)
-
-        INSTRUCTION: Focus on extracting specific names, projects, tools, and deadlines mentioned in the text. Ensure the summary is thorough and covers all discussion topics.
-        """
+        UnifiedInsightsPrompt.userPrompt(transcript: transcript)
     }
 
     private func buildSystemPrompt(outputLanguage: OutputLanguage) -> String {
-        let languageInstruction: String = {
-            switch outputLanguage {
-            case .english:
-                return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
-            case .dutch:
-                return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
-            case .custom(let code):
-                return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
-            case .matchInput:
-                return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
-            }
-        }()
-
-        return """
-        You are an expert Senior Executive Assistant. Your goal is to extract structured meeting data from a transcript.
-
-        \(languageInstruction)
-
-        ### RULES
-        1. **NO REPETITION:** If a point is made twice, record it once.
-        2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
-        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics.
-        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]".
-        5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept.
-        6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
-        7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
-        8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
-
-        ### OUTPUT FORMAT (Strict JSON Only)
-        {
-          "title_concept": "Short Descriptive Title",
-          "summary": "A detailed, multi-paragraph summary covering all key topics discussed...",
-          "action_items": ["[Person] to [task] [context]", "..."],
-          "tags": ["Tag1", "Tag2", "Tag3", "..."],
-          "sentiment": "Positive" | "Neutral" | "Negative"
-        }
-        """
+        UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage)
     }
 
     private func generationParameters() -> GenerateParameters {
@@ -354,10 +304,7 @@ actor MLXInsightsService {
     private static let gemma4ChatTemplate = "{%- set ns = namespace(prev_message_type=None) -%}{%- set loop_messages = messages -%}{{ bos_token }}{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}{{ '<|turn>system\\n' }}{%- if enable_thinking is defined and enable_thinking -%}{{ '<|think|>' }}{%- set ns.prev_message_type = 'think' -%}{%- endif -%}{%- if messages[0]['role'] in ['system', 'developer'] -%}{{ messages[0]['content'] | trim }}{%- set loop_messages = messages[1:] -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endif %}{%- for message in loop_messages -%}{%- set ns.prev_message_type = None -%}{%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}{{ '<|turn>' + role + '\\n' }}{%- if message['content'] is string -%}{%- if role == 'model' -%}{{ message['content'] | trim }}{%- else -%}{{ message['content'] | trim }}{%- endif -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endfor -%}{%- if add_generation_prompt -%}{{ '<|turn>model\\n' }}{%- endif -%}"
 
     private static func truncateTranscript(_ transcript: String) -> String {
-        guard transcript.count > transcriptCharLimit else { return transcript }
-        let head = String(transcript.prefix(transcriptHeadChars))
-        let tail = String(transcript.suffix(transcriptTailChars))
-        return head + truncationSeparator + tail
+        UnifiedInsightsPrompt.truncate(transcript)
     }
 
 

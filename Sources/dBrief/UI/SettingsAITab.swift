@@ -12,6 +12,9 @@ struct SettingsAITab: View {
     @State private var isLoadingModels = false
     @State private var expandedPrompt: String?
     @State private var purgeMessage: String?
+    @State private var isTestingCLI = false
+    @State private var cliTestSuccess: String?
+    @State private var cliTestError: String?
 
     var body: some View {
         if isEditing {
@@ -104,6 +107,16 @@ struct SettingsAITab: View {
                     }
                         .listRowBackground(Color.clear)
                 }
+                if appSettings.aiEngine == .localCLI {
+                    Section("Local CLI") {
+                        localCLISection
+                    }
+                        .listRowBackground(Color.clear)
+                    Section("Chat Fallback") {
+                        chatFallbackSection
+                    }
+                        .listRowBackground(Color.clear)
+                }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
@@ -121,6 +134,8 @@ struct SettingsAITab: View {
             "On-device MLX Gemma 4 E4B 4-bit model. Downloaded once from Hugging Face."
         case .remoteEndpoint:
             "Use a remote LLM endpoint configured below."
+        case .localCLI:
+            "Runs a local command-line tool once per recording to produce the analysis."
         }
     }
 
@@ -188,6 +203,115 @@ struct SettingsAITab: View {
                 NativeTextView(text: text)
                     .frame(height: 80)
             }
+        }
+    }
+
+    private var localCLICommandBinding: Binding<String> {
+        Binding(
+            get: { appSettings.localCLIConfig.command },
+            set: { appSettings.localCLIConfig.command = $0 }
+        )
+    }
+
+    private var localCLISection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Command")
+                Spacer()
+                Menu("Load Template") {
+                    ForEach(LocalCLIConfig.templates) { template in
+                        Button(template.name) {
+                            appSettings.localCLIConfig.command = template.command
+                            cliTestSuccess = nil
+                            cliTestError = nil
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            NativeTextView(text: localCLICommandBinding)
+                .frame(height: 70)
+
+            HStack {
+                Text("Timeout")
+                Spacer()
+                Picker("Timeout", selection: Binding(
+                    get: { appSettings.localCLIConfig.timeoutSeconds },
+                    set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
+                )) {
+                    ForEach([15, 30, 45, 60, 90, 120, 180, 300], id: \.self) { secs in
+                        Text("\(secs)s").tag(secs)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+
+            Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button("Test command") { testCLICommand() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isTestingCLI {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if let cliTestSuccess {
+                Text(cliTestSuccess.isEmpty ? "Command ran successfully (no output)." : "Output: \(cliTestSuccess)")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+            }
+            if let cliTestError {
+                Text(cliTestError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var chatFallbackSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Chat engine", selection: Binding(
+                get: { appSettings.chatFallbackEngine },
+                set: { appSettings.chatFallbackEngine = $0 }
+            )) {
+                ForEach(AppSettings.AIEngine.allCases.filter { $0 != .localCLI }, id: \.self) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            }
+            .pickerStyle(.menu)
+            Text("The Local CLI runs once per recording and can't stream, so the transcript chat window uses this engine instead.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func testCLICommand() {
+        guard !isTestingCLI else { return }
+        isTestingCLI = true
+        cliTestSuccess = nil
+        cliTestError = nil
+        let config = appSettings.localCLIConfig
+        Task {
+            do {
+                let output = try await LocalCLIService().runTest(config: config)
+                cliTestSuccess = String(output.prefix(500))
+            } catch {
+                cliTestError = error.localizedDescription
+            }
+            isTestingCLI = false
         }
     }
 

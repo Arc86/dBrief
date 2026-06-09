@@ -26,6 +26,8 @@ final class AppSettings {
         static let transcriptionEngine = "transcriptionEngine"
         static let useBuiltInAI = "useBuiltInAI"
         static let aiEngine = "aiEngine"
+        static let chatFallbackEngine = "chatFallbackEngine"
+        static let localCLIConfig = "localCLIConfig"
         static let outputLanguageMode = "outputLanguageMode"
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
         static let audioInputDeviceUID = "audioInputDeviceUID"
@@ -158,13 +160,28 @@ final class AppSettings {
         case appleIntelligence
         case qwenLocal
         case remoteEndpoint
+        case localCLI
 
         var displayName: String {
             switch self {
             case .appleIntelligence: "Apple Intelligence"
             case .qwenLocal: "Gemma 4 E4B Local"
             case .remoteEndpoint: "Remote Endpoint"
+            case .localCLI: "Local CLI"
             }
+        }
+
+        /// A sensible zero-config on-device engine to fall back to (used for the
+        /// transcript chat window when the active engine is `.localCLI`, which
+        /// can't stream). Prefers Apple Intelligence when available, otherwise the
+        /// local Gemma model — both run on-device with no remote endpoint to set up.
+        static var defaultOnDeviceFallback: AIEngine {
+            #if canImport(FoundationModels)
+            if #available(macOS 26, *), LocalAIService.isAvailable {
+                return .appleIntelligence
+            }
+            #endif
+            return .qwenLocal
         }
     }
 
@@ -175,9 +192,23 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(transcriptionEngine.rawValue, forKey: Keys.transcriptionEngine) }
     }
 
-    /// Preferred AI engine (Apple Intelligence, local Qwen model, or remote endpoint).
+    /// Preferred AI engine (Apple Intelligence, local Qwen model, remote endpoint, or local CLI).
     var aiEngine: AIEngine {
         didSet { UserDefaults.standard.set(aiEngine.rawValue, forKey: Keys.aiEngine) }
+    }
+
+    /// Engine used for the transcript chat window when the active AI engine is `.localCLI`
+    /// (a one-shot CLI can't stream). Never `.localCLI` itself — coerced on assignment.
+    var chatFallbackEngine: AIEngine {
+        didSet {
+            if chatFallbackEngine == .localCLI { chatFallbackEngine = AIEngine.defaultOnDeviceFallback; return }
+            UserDefaults.standard.set(chatFallbackEngine.rawValue, forKey: Keys.chatFallbackEngine)
+        }
+    }
+
+    /// Configuration for the Local CLI AI engine (command template + timeout).
+    var localCLIConfig: LocalCLIConfig {
+        didSet { saveLocalCLIConfig(localCLIConfig) }
     }
 
     /// Preferred language for local Qwen insights output.
@@ -532,6 +563,16 @@ final class AppSettings {
             let legacyBuiltIn = defaults.bool(forKey: Keys.useBuiltInAI)
             self.aiEngine = legacyBuiltIn ? .appleIntelligence : .remoteEndpoint
         }
+
+        if let rawValue = defaults.string(forKey: Keys.chatFallbackEngine),
+           let engine = AIEngine(rawValue: rawValue), engine != .localCLI
+        {
+            self.chatFallbackEngine = engine
+        } else {
+            self.chatFallbackEngine = AIEngine.defaultOnDeviceFallback
+        }
+
+        self.localCLIConfig = AppSettings.loadLocalCLIConfig(forKey: Keys.localCLIConfig)
 
         let outputLanguageMode = defaults.string(forKey: Keys.outputLanguageMode) ?? "matchInput"
         switch outputLanguageMode {
