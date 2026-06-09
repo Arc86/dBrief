@@ -45,6 +45,27 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         let whisper = try await loadWhisperKit(config: whisperConfig)
         stateHandler(.transcribing)
 
+        // Live-segment streaming. WhisperKit only forwards the `segmentCallback:`
+        // *parameter* of transcribe() on its non-chunked (single ~30s window) path.
+        // With VAD chunking — which we always enable — it instead consults the
+        // instance `segmentDiscoveryCallback` (see WhisperKit.transcribeWithOptions,
+        // which uses `self.segmentDiscoveryCallback` for each chunk). So the parameter
+        // is silently dropped for any recording longer than one window, which is why
+        // the "Live Transcript" button only ever appeared for very short clips.
+        // Setting the instance property here makes live segments fire at any length.
+        whisper.segmentDiscoveryCallback = { [stateHandler] segments in
+            let liveSegments = segments.map { seg in
+                LiveTranscriptSegment(
+                    start: Double(seg.start),
+                    end: Double(seg.end),
+                    text: seg.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                )
+            }
+            if !liveSegments.isEmpty {
+                stateHandler(.newSegments(liveSegments))
+            }
+        }
+
         // Build decoding options. Compute units come from the user's setting (applied
         // at model load); here we pin worker count.
         let promptTokens = buildPromptTokens(userPrompt: initialPrompt, whisper: whisper)
@@ -80,19 +101,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // the module/class name collision when naming the type in function signatures.
             let wkResults = try await whisper.transcribe(
                 audioArray: audioArray,
-                decodeOptions: options,
-                segmentCallback: { [stateHandler] segments in
-                    let liveSegments = segments.map { seg in
-                        LiveTranscriptSegment(
-                            start: Double(seg.start),
-                            end: Double(seg.end),
-                            text: seg.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                        )
-                    }
-                    if !liveSegments.isEmpty {
-                        stateHandler(.newSegments(liveSegments))
-                    }
-                }
+                decodeOptions: options
             )
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
             // Logged at .notice so it persists to the unified log (unlike .info), making
