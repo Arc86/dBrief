@@ -66,7 +66,16 @@ final class TranscriptChatService {
     // MARK: - Private
 
     private func buildStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
-        switch appSettings.effectiveAIEngine {
+        // The Local CLI is one-shot and can't stream chat, so route to the
+        // user-selected fallback engine instead.
+        let engine = appSettings.effectiveAIEngine == .localCLI
+            ? appSettings.chatFallbackEngine
+            : appSettings.effectiveAIEngine
+
+        switch engine {
+
+        case .localCLI:
+            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI & Models.")
 
         case .qwenLocal:
             guard let plugin = localPlugin else {

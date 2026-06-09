@@ -11,6 +11,22 @@ struct AppSettingsTests {
         #expect(settings.aiProcessingEnabled == true)
     }
 
+    @Test func chatFallbackEngineDefaultsToOnDeviceEngine() {
+        // The Local CLI chat fallback should default to a zero-config on-device
+        // engine — never Remote Endpoint (usually unconfigured) or Local CLI itself.
+        UserDefaults.standard.removeObject(forKey: "chatFallbackEngine")
+        let settings = AppSettings()
+        #expect(settings.chatFallbackEngine != .localCLI)
+        #expect(settings.chatFallbackEngine != .remoteEndpoint)
+        #expect([.appleIntelligence, .qwenLocal].contains(settings.chatFallbackEngine))
+    }
+
+    @Test func chatFallbackEngineCoercesAwayFromLocalCLI() {
+        let settings = AppSettings()
+        settings.chatFallbackEngine = .localCLI
+        #expect(settings.chatFallbackEngine != .localCLI)
+    }
+
     @Test func acousticEchoCancellationDefaultsToTrue() {
         UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
         let settings = AppSettings()
