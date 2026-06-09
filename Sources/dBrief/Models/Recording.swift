@@ -22,6 +22,10 @@ final class Recording: Identifiable {
     /// Calendar event matched at record-start time, used to pre-fill fields and AI context.
     /// Not persisted to disk — only valid for the current session's processing run.
     var calendarEvent: CalendarEvent?
+    /// All calendar events that plausibly match this recording, ranked best-first by
+    /// `CalendarMatcher`. Drives the override picker in the post-recording sheet.
+    /// Not persisted to disk — session-only.
+    var calendarCandidates: [CalendarEvent] = []
     var capturedTracks: CapturedTracks?
     /// Pre-encoded audio (e.g. a YouTube/yt-dlp download) awaiting relocation into the
     /// recordings folder during finalization. Session-only; never persisted to disk.
