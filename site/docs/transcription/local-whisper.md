@@ -8,7 +8,7 @@ Local Whisper uses WhisperKit to run a Whisper speech recognition model directly
 
 ## First use: model download
 
-The first time you use Local Whisper, dBrief downloads a model. The recommended default is **Whisper Large V3 Sep24** (~626 MB) — a fast, accurate, quantized model light enough for most Macs. Models are stored at:
+The first time you use Local Whisper, dBrief downloads a model. The recommended default is **Whisper Large V3 Sep24 Turbo** (~632 MB) — a fast, accurate, quantized model light enough for most Macs. Models are stored at:
 
 ```
 ~/Library/Application Support/dBrief/LocalAIPlugin/WhisperKit/

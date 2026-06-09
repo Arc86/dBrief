@@ -113,7 +113,7 @@ struct WhisperModelInfoTests {
 
     @Test("Fallback models list has expected count")
     func testFallbackList() {
-        #expect(WhisperModelInfo.fallbackModels.count == 16)
+        #expect(WhisperModelInfo.fallbackModels.count == 17)
         #expect(WhisperModelInfo.fallbackModels.first?.family == "tiny")
     }
 
