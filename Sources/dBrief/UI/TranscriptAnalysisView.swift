@@ -29,7 +29,17 @@ struct TranscriptAnalysisView: View {
                 emptyState
             }
         }
-        .background(TranscriptDesignTokens.windowBackground(scheme: colorScheme))
+        .onAppear { syncFromInsights() }
+        .onChange(of: insights) { _, _ in syncFromInsights() }
+    }
+
+    /// Seed the editable working copies from the loaded sidecar so the read-only
+    /// cards display values without requiring the user to enter edit mode.
+    private func syncFromInsights() {
+        guard !isEditing, let insights else { return }
+        summary = insights.summary
+        actionItems = insights.actionItems
+        tags = insights.tags
     }
 
     private var emptyState: some View {
