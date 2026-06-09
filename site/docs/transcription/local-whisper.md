@@ -8,7 +8,7 @@ Local Whisper uses WhisperKit to run a Whisper speech recognition model directly
 
 ## First use: model download
 
-The first time you use Local Whisper, dBrief downloads a model. The default model is **Whisper Small** (~2 GB). Models are stored at:
+The first time you use Local Whisper, dBrief downloads a model. The recommended default is **Whisper Large V3 Sep24** (~626 MB) — a fast, accurate, quantized model light enough for most Macs. Models are stored at:
 
 ```
 ~/Library/Application Support/dBrief/LocalAIPlugin/WhisperKit/
@@ -18,7 +18,7 @@ You need a working internet connection for the initial download. After that, tra
 
 ## Choosing a model
 
-In **Settings → AI & Models → Transcription**, the model picker lists available Whisper models with their approximate memory use. Smaller models (Tiny, Small) are faster and lighter; larger models (Medium, Large v3, Distil Large v3) are more accurate but need more memory and disk space. Enable **Show all models** (Power User Mode) to see the full list fetched from Hugging Face.
+In **Settings → AI & Models → Transcription**, the selected model appears as a card showing its name, approximate memory use, and a **Recommended** badge on the suggested model. A one-line description under the card explains the trade-off, and the **ⓘ** button next to *Model* gives a plain-language overview. Smaller models (Tiny, Small) are faster and lighter; larger models are more accurate but need more memory. Open **Advanced** to switch where the model runs (compute units), enable **Show all models** to see every variant fetched from Hugging Face, refresh the list, or purge the cached model.
 
 Use the **Download model** button to fetch a model ahead of time. Downloads show progress and can be cancelled. A green checkmark indicates a model is already on disk.
 
