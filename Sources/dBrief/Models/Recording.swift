@@ -80,4 +80,9 @@ final class Recording: Identifiable {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("richtranscript.json")
     }
+
+    var insightsSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("insights.json")
+    }
 }

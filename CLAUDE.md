@@ -213,8 +213,18 @@ Glass-styled transcript window with word-level timestamps and audio sync:
 - **`SpeakerTurnCard`** — card per speaker turn, merges consecutive same-speaker segments
 - **`SpeakerPillView`** — colored speaker badge, tap to rename
 - **`TranscriptDesignTokens`** — shared color/spacing constants for the glass UI system
+- **`TranscriptAnalysisView`** — "AI Analysis" toolbar toggle (mutually exclusive with chat) showing Summary / Action Items / Tags+Sentiment in three editable glass cards, mirroring `ResultsView`. Read-only by default; an Edit button enables editing, Save persists. Sentiment is display-only. Recordings processed before this feature (no sidecar) show an empty state.
 - Persisted via `TranscriptStore` which writes `.richtranscript.json` sidecar files alongside Markdown output
 - Opened from `ResultsView` and `RecordingHistoryView`; hosted in a separate `WindowGroup(id: "transcript")` scene
+
+### AI Analysis Sidecar (`Models/RecordingInsights.swift`, `Services/InsightsStore.swift`)
+
+AI output (summary, action items, tags, sentiment) is persisted to a `<base>.insights.json` sidecar next to the audio, in addition to the Markdown file:
+
+- `RecordingInsights` — `Codable`/`Sendable` model (summary, actionItems, tags, sentiment, `markdownPath`, version) with `plainTextForCopy()` for the panel's Copy button. `Recording.insightsSidecarURL` locates it.
+- `InsightsStore` — actor mirroring `TranscriptStore` (atomic load/save; `load` returns `nil` when absent).
+- Written by `RecordingManager.writeInsightsSidecar(for:markdownURL:)` right after Markdown generation during processing (both the initial and retry-AI paths). No-op when there is no summary.
+- `TranscriptAnalysisView` loads it on open and, on Save, rewrites the sidecar **and** surgically updates the existing Markdown via `MarkdownInsightsUpdater.update(markdown:with:)` — replacing only the `## 📝 Summary` / `## ✅ Action Items` / `## 🏷️ Tags` sections and the frontmatter `tags:` list, leaving the transcript and other content untouched. Integrations are **not** re-dispatched (avoids duplicate notes/reminders).
 
 ### Other Services
 
