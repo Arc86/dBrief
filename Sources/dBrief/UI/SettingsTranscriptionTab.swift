@@ -16,6 +16,7 @@ struct SettingsTranscriptionTab: View {
     @State private var isFetchingWhisperModels = false
     @State private var whisperModelFetchError: String?
     @State private var showAllWhisperModels = false
+    @State private var showModelHelp = false
 
     enum TestResult {
         case testing
