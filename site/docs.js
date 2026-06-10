@@ -80,6 +80,7 @@
         { slug: "reference/keyboard-shortcuts", title: "Keyboard Shortcuts" },
         { slug: "reference/permissions",        title: "Permissions" },
         { slug: "reference/file-locations",     title: "File Locations" },
+        { slug: "reference/benchmark",          title: "Benchmark & Performance" },
       ],
     },
   ];

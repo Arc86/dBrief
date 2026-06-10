@@ -58,7 +58,7 @@ Four engines to choose from — privacy and quality your call:
 | **Parakeet TDT** | Fully on-device | Long sessions, no segmentation |
 | **Remote Endpoint** | Network | BYO Whisper-compatible server |
 
-Plus word-level timestamps, speaker labels, custom vocabulary, and YouTube URL transcription (paste a link, get the transcript).
+Plus word-level timestamps, speaker labels, custom vocabulary, and YouTube URL transcription (paste a link, get the transcript). On Apple Silicon the local Whisper model is **prewarmed while you record**, so transcription starts the moment you hit Stop instead of waiting on a model load.
 
 ### Analyze
 Four AI backends — local-first, remote optional:
@@ -87,6 +87,7 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 - **Rich transcript viewer** — word-level timing, audio sync, speaker rename
 - **Transcript chat** — ask follow-up questions about a recording using your configured AI
 - **YouTube / video URL** — transcribe any `yt-dlp`-supported URL without recording
+- **Performance benchmark** — a Power User panel showing transcription and AI speed per model (pure model vs. end-to-end realtime), plus a running total of how many minutes dBrief has transcribed for you
 
 ---
 
