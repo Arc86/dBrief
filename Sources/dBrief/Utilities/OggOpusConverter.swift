@@ -16,13 +16,8 @@ enum OggOpusConverter {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("debrief-transcription-\(UUID().uuidString).wav")
 
-        let ffmpegPaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-
-        let resolvedPath = ffmpegPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+        // Prefer the bundled binary (Contents/MacOS/ffmpeg), then Homebrew/system paths.
+        let resolvedPath = FFmpegLocator.resolve()
         let process = Process()
         let conversionArgs = [
             "-y",
@@ -32,10 +27,12 @@ enum OggOpusConverter {
             "-f", "wav",
             outputURL.path,
         ]
-        if let resolvedPath {
+        if let resolvedPath, resolvedPath != "/usr/bin/env" {
             process.executableURL = URL(fileURLWithPath: resolvedPath)
             process.arguments = conversionArgs
         } else {
+            // Not found directly, or resolver returned the env sentinel: invoke via env
+            // with an explicit PATH so PATH-installed ffmpeg still resolves.
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["ffmpeg"] + conversionArgs
             process.environment = [

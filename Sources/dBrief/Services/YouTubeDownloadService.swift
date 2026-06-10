@@ -174,7 +174,7 @@ actor YouTubeDownloadService {
 
         // Download best audio and re-encode to m4a 16 kHz mono via ffmpeg post-processor
         let outputTemplate = tempDir.appendingPathComponent("audio.%(ext)s").path
-        let args: [String] = [
+        var args: [String] = [
             "--no-playlist",
             "-f", "bestaudio[ext=m4a]/bestaudio/best",
             "--extract-audio",
@@ -182,8 +182,16 @@ actor YouTubeDownloadService {
             "--postprocessor-args", "ffmpeg:-ac 1 -ar 16000",
             "-o", outputTemplate,
             "--no-progress",
-            trimmed,
         ]
+
+        // Point yt-dlp at the bundled (or system) ffmpeg so post-processing works on
+        // machines without Homebrew. Skip the `/usr/bin/env` sentinel — yt-dlp wants a
+        // directory or binary path, not the env shim.
+        if let ffmpeg = FFmpegLocator.resolve(), ffmpeg != "/usr/bin/env" {
+            args.append(contentsOf: ["--ffmpeg-location", ffmpeg])
+        }
+
+        args.append(trimmed)
 
         Self.log.info("Starting yt-dlp audio download: \(trimmed, privacy: .public)")
 
