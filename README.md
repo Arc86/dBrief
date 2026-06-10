@@ -97,6 +97,8 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 - **~4–8 GB free disk** for local models (downloaded on first use)
 - **`yt-dlp`** (optional, `brew install yt-dlp`) for YouTube transcription
 
+Audio mixing, filtering, normalization, and encoding use [FFmpeg](https://ffmpeg.org). The `.dmg` ships a bundled `ffmpeg`, so no separate install is needed; the Homebrew formula uses the system `ffmpeg` it depends on. FFmpeg is invoked as a subprocess and is licensed separately (see `Contents/Resources/FFMPEG-NOTICE.txt`).
+
 ---
 
 ## Install

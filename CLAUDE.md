@@ -9,7 +9,7 @@ dBrief is a macOS menu bar app (SwiftUI `MenuBarExtra`) for recording microphone
 ## Build Commands
 
 - **Build**: `swift build` (debug) or `swift build -c release`
-- **Build app bundle**: `make app` (builds release `--arch arm64`, assembles `dBrief.app/` with Info.plist, icons, and Metal shaders, then ad-hoc signs it)
+- **Build app bundle**: `make app` (builds release `--arch arm64`, assembles `dBrief.app/` with Info.plist, icons, Metal shaders, and a bundled static `ffmpeg` in `Contents/MacOS/`, then ad-hoc signs it)
 - **Run**: `swift run` or `make run` (builds and launches the app bundle)
 - **Sign**: `make sign` (ad-hoc `codesign --deep`; we are not in the Apple Developer Program — override `CODESIGN_IDENTITY` only if you ever enroll)
 - **Build DMG**: `make dmg` (builds the app, then a compressed `dBrief-<version>.dmg` with a drag-to-Applications symlink, for GitHub Releases)

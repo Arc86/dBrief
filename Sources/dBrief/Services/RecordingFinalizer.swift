@@ -29,7 +29,7 @@ actor RecordingFinalizer {
         )
 
         var warnings: [String] = []
-        let ffmpegPath = resolveFFmpegPath()
+        let ffmpegPath = FFmpegLocator.resolve()
 
         if let ffmpegPath {
             // Only pass tracks that actually exist and have audio data.
@@ -140,7 +140,7 @@ actor RecordingFinalizer {
         var warnings: [String] = []
         var segmentURLs: [URL] = []
         if segmentationEnabled && snapshot.duration > 1800 {
-            if let ffmpegPath = resolveFFmpegPath() {
+            if let ffmpegPath = FFmpegLocator.resolve() {
                 do {
                     segmentURLs = try createSegments(ffmpegPath: ffmpegPath, masterURL: masterURL)
                     if segmentURLs.isEmpty {
@@ -328,28 +328,6 @@ actor RecordingFinalizer {
         } catch {
             try fileManager.copyItem(at: source, to: targetURL)
         }
-    }
-
-    private func resolveFFmpegPath() -> String? {
-        let knownPaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-        for path in knownPaths where fileManager.isExecutableFile(atPath: path) {
-            return path
-        }
-
-        let envProbe = runProcess(executable: "/usr/bin/env", arguments: ["ffmpeg", "-version"])
-        if envProbe.status == 0 {
-            return "/usr/bin/env"
-        }
-
-        let whichProbe = runProcess(executable: "/usr/bin/which", arguments: ["ffmpeg"])
-        guard whichProbe.status == 0 else { return nil }
-        let trimmed = whichProbe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, fileManager.isExecutableFile(atPath: trimmed) else { return nil }
-        return trimmed
     }
 
     private func runFFmpeg(ffmpegPath: String, arguments: [String]) -> ProcessResult {
