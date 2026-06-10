@@ -37,6 +37,7 @@ final class RecordingManager {
     private let recordingFinalizer = RecordingFinalizer()
     private let transcriptStore: TranscriptStore
     private let insightsStore: InsightsStore
+    private let modelPerformanceStore: ModelPerformanceStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
     private let calendarService = CalendarService()
@@ -48,11 +49,12 @@ final class RecordingManager {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, microsoftAuthService: MicrosoftAuthService) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, modelPerformanceStore: ModelPerformanceStore, microsoftAuthService: MicrosoftAuthService) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
         self.insightsStore = insightsStore
+        self.modelPerformanceStore = modelPerformanceStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
@@ -206,6 +208,13 @@ final class RecordingManager {
         appState.liveTranscriptSegments = []
         appState.liveInferenceText = nil
 
+        // Measured performance for this session (logged at the end).
+        var perfTranscriptionModel: String?
+        var perfTranscriptionTime: TimeInterval?
+        var perfAudioDuration: TimeInterval?
+        var perfAIModel: String?
+        var perfAITime: TimeInterval?
+
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
         do {
@@ -257,7 +266,11 @@ final class RecordingManager {
                 }()
                 appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
                 do {
+                    let txStart = Date()
                     let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
+                    perfTranscriptionTime = Date().timeIntervalSince(txStart)
+                    perfTranscriptionModel = transcriptionModelDisplayName
+                    perfAudioDuration = recording.duration
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                     if let warnings = result.warnings, !warnings.isEmpty {
@@ -306,6 +319,7 @@ final class RecordingManager {
                 labelForTags(engine: aiEngine)
             ) : nil
 
+            let aiStart = Date()
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceUnifiedTasks(
@@ -342,7 +356,21 @@ final class RecordingManager {
                     recording: recording
                 )
             }
+            // Only log AI timing when at least one task produced output, so a
+            // failed/unreachable engine doesn't pollute the averages.
+            if recording.summary != nil || recording.actionItems != nil || recording.tags != nil {
+                perfAITime = Date().timeIntervalSince(aiStart)
+                perfAIModel = aiModelDisplayName
+            }
         }
+
+        logModelPerformance(
+            transcriptionModel: perfTranscriptionModel,
+            audioDuration: perfAudioDuration,
+            transcriptionTime: perfTranscriptionTime,
+            aiModel: perfAIModel,
+            aiTime: perfAITime
+        )
 
         var generatedMarkdownURL: URL?
 
@@ -484,6 +512,10 @@ final class RecordingManager {
         appState.processingSteps = []
         appState.liveInferenceText = nil
 
+        // Measured AI performance for this retry session (logged below).
+        var perfAIModel: String?
+        var perfAITime: TimeInterval?
+
         // Step 2: AI tasks (same as processRecording)
         if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
@@ -501,6 +533,7 @@ final class RecordingManager {
             let actionStepIndex = appendAIStep(labelForActionItems(engine: aiEngine))
             let tagsStepIndex = appendAIStep(labelForTags(engine: aiEngine))
 
+            let aiStart = Date()
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceUnifiedTasks(
@@ -537,7 +570,19 @@ final class RecordingManager {
                     recording: recording
                 )
             }
+            if recording.summary != nil || recording.actionItems != nil || recording.tags != nil {
+                perfAITime = Date().timeIntervalSince(aiStart)
+                perfAIModel = aiModelDisplayName
+            }
         }
+
+        logModelPerformance(
+            transcriptionModel: nil,
+            audioDuration: nil,
+            transcriptionTime: nil,
+            aiModel: perfAIModel,
+            aiTime: perfAITime
+        )
 
         var generatedMarkdownURL: URL?
 
@@ -1363,6 +1408,61 @@ final class RecordingManager {
     private func markFailed(_ stepIndex: Int?, _ message: String) {
         guard let stepIndex, appState.processingSteps.indices.contains(stepIndex) else { return }
         appState.processingSteps[stepIndex].status = .failed(message)
+    }
+
+    // MARK: - Model performance logging
+
+    /// Friendly name of the transcription model for the active engine, matching
+    /// the names shown in the Model Performance panel.
+    private var transcriptionModelDisplayName: String {
+        switch appSettings.effectiveTranscriptionEngine {
+        case .appleSpeech:
+            return "Apple Speech"
+        case .localWhisper:
+            return WhisperModelInfo.parse(appSettings.whisperModelName).displayName
+        case .parakeetLocal:
+            return ParakeetModelInfo.find(appSettings.parakeetModelVariant).displayName
+        case .remoteEndpoint:
+            let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint
+            let name = endpoint?.modelName.trimmingCharacters(in: .whitespaces) ?? ""
+            return name.isEmpty ? "Remote Endpoint" : name
+        }
+    }
+
+    /// Friendly name of the AI-analysis model for the active engine.
+    private var aiModelDisplayName: String {
+        switch appSettings.effectiveAIEngine {
+        case .appleIntelligence:
+            return "Apple Intelligence"
+        case .qwenLocal:
+            return "Gemma 4 E4B Local"
+        case .remoteEndpoint:
+            let endpoint = appSettings.effectiveDefaultAIEndpoint
+            let name = endpoint?.modelName.trimmingCharacters(in: .whitespaces) ?? ""
+            return name.isEmpty ? "Remote Endpoint" : name
+        case .localCLI:
+            return "Local CLI"
+        }
+    }
+
+    /// Append a performance record for the session, if either pass produced
+    /// timing. Fire-and-forget — never blocks or fails the pipeline.
+    private func logModelPerformance(
+        transcriptionModel: String?,
+        audioDuration: TimeInterval?,
+        transcriptionTime: TimeInterval?,
+        aiModel: String?,
+        aiTime: TimeInterval?
+    ) {
+        guard transcriptionTime != nil || aiTime != nil else { return }
+        let record = ModelPerformanceRecord(
+            transcriptionModel: transcriptionTime != nil ? transcriptionModel : nil,
+            audioDuration: transcriptionTime != nil ? audioDuration : nil,
+            transcriptionTime: transcriptionTime,
+            aiModel: aiTime != nil ? aiModel : nil,
+            aiTime: aiTime
+        )
+        Task { await modelPerformanceStore.append(record) }
     }
 
     private func transcribeRecordingAudio(
