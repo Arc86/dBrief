@@ -324,8 +324,21 @@ struct MenuBarView: View {
         .task {
             appState.queuedCount = recordingManager.discoverQueuedItems().count
         }
+        .onChange(of: appState.shouldOpenTranscriptForReview) { _, newValue in
+            if newValue { openTranscriptForReview() }
+        }
+        .onAppear {
+            if appState.shouldOpenTranscriptForReview { openTranscriptForReview() }
+        }
         .padding(12)
         .frame(width: 360)
+    }
+
+    private func openTranscriptForReview() {
+        appState.shouldOpenTranscriptForReview = false
+        closeMenuBarExtraWindow()
+        openWindow(id: "transcript")
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var header: some View {

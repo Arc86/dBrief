@@ -43,6 +43,14 @@ struct SettingsRecordingTab: View {
             }
             .listRowBackground(Color.clear)
 
+            Section("Processing") {
+                Toggle("Review speaker names before processing", isOn: $settings.holdForReviewBeforeProcessing)
+                Text("After transcription, the transcript opens so you can rename speakers and fix the analysis before AI analysis and export run. A “Process now” button then writes the output and sends to integrations — so your edits are included the first (and only) time.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowBackground(Color.clear)
+
             if appSettings.powerUserMode {
                 Section("Audio Quality") {
                     LabeledContent("Capture:") {

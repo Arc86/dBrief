@@ -282,6 +282,23 @@ final class RecordingManager {
             }
         }
 
+        // Hold for review: park the recording and stop before any AI / Markdown /
+        // integration output, so the user can rename speakers in the transcript viewer
+        // first. "Process now" later resumes via retryAIAnalysis, making the single
+        // dispatch already reflect the edits (no duplicate notes). A dedicated
+        // `.review.json` marker is used (not `.queue.json`) so the batch "Process Queue"
+        // path never picks up a recording that still needs review.
+        if appSettings.holdForReviewBeforeProcessing,
+           transcribe,
+           recording.transcription != nil,
+           summary || actionItems || tags {
+            writeReviewMarker(QueueItem(transcribe: false, summary: summary, actionItems: actionItems, tags: tags), for: recording)
+            appState.pendingTranscriptSelectionURL = recording.finalizedAudioURL
+            appState.shouldOpenTranscriptForReview = true
+            appState.recordingState = .idle
+            return
+        }
+
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         guard !Task.isCancelled else { return }
         if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
@@ -383,23 +400,12 @@ final class RecordingManager {
 
             do {
                 let outputFolder = resolveMarkdownOutputFolder(for: recording)
-                let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
-                case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
-                case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
-                case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
-                }
-                let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
-                case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
-                case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
-                case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
-                }
+                let endpoints = currentModelEndpoints()
                 generatedMarkdownURL = try markdownGenerator.generate(
                     recording: recording,
                     outputFolder: outputFolder,
-                    transcriptionEndpoint: transcriptionEndpoint,
-                    aiEndpoint: aiEndpoint,
+                    transcriptionEndpoint: endpoints.transcription,
+                    aiEndpoint: endpoints.ai,
                     includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
@@ -457,6 +463,11 @@ final class RecordingManager {
         if recording.transcription == nil {
             guard let saved = loadSavedTranscript(for: recording) else { return }
             recording.transcription = saved
+        }
+        // Pull in any speaker renames saved to the rich-transcript sidecar so they
+        // reach the regenerated Markdown (benefits Re-run AI and review processing).
+        if recording.richTranscript == nil {
+            recording.richTranscript = try? await transcriptStore.load(for: recording)
         }
 
         // Clear previous AI results and any stale memory warning
@@ -573,23 +584,12 @@ final class RecordingManager {
         appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
         do {
             let outputFolder = resolveMarkdownOutputFolder(for: recording)
-            let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
-            case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-            case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
-            case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
-            case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
-            }
-            let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
-            case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-            case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
-            case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
-            case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
-            }
+            let endpoints = currentModelEndpoints()
             generatedMarkdownURL = try markdownGenerator.generate(
                 recording: recording,
                 outputFolder: outputFolder,
-                transcriptionEndpoint: transcriptionEndpoint,
-                aiEndpoint: aiEndpoint,
+                transcriptionEndpoint: endpoints.transcription,
+                aiEndpoint: endpoints.ai,
                 includeTranscript: appSettings.obsidianIncludeTranscript
             )
             appState.processingSteps[markdownStepIndex].status = .completed
@@ -634,6 +634,81 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+    }
+
+    /// Pushes the current edited state from the transcript viewer back out to disk and
+    /// every enabled integration. Regenerates the Markdown **in place** (overwriting the
+    /// previously generated file at `insights.markdownPath`) so the monitored/Obsidian
+    /// path stays stable, then re-dispatches. Returns per-destination results for the UI.
+    ///
+    /// Note: integrations create *new* entries (no update-in-place), so callers should
+    /// confirm with the user before invoking this on an already-dispatched recording.
+    @MainActor
+    func reexport(
+        recording: Recording,
+        richTranscript: RichTranscript?,
+        insights: RecordingInsights
+    ) async -> [IntegrationDispatchResult] {
+        // 1. Apply edited state so MarkdownGenerator + the dispatch snapshot read it.
+        if let richTranscript {
+            recording.richTranscript = richTranscript
+        }
+        recording.summary = insights.summary
+        recording.actionItems = insights.actionItems
+        recording.tags = insights.tags
+        recording.sentiment = insights.sentiment.isEmpty ? nil : insights.sentiment
+
+        // 2. Regenerate Markdown, overwriting the existing path when known.
+        let outputURL = insights.markdownPath.map { URL(fileURLWithPath: $0) }
+            ?? defaultMarkdownURL(for: recording)
+        var generatedMarkdownURL: URL?
+        do {
+            let endpoints = currentModelEndpoints()
+            generatedMarkdownURL = try markdownGenerator.write(
+                recording: recording,
+                to: outputURL,
+                transcriptionEndpoint: endpoints.transcription,
+                aiEndpoint: endpoints.ai,
+                includeTranscript: appSettings.obsidianIncludeTranscript
+            )
+            await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
+        } catch {
+            Logger.recording.error("Re-export markdown failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        // 3. Re-dispatch to all enabled integrations.
+        guard hasEnabledIntegrations else { return [] }
+        return await integrationDispatchService.dispatch(
+            recording: recording,
+            settings: appSettings,
+            generatedMarkdownURL: generatedMarkdownURL
+        )
+    }
+
+    private static func reviewMarkerURL(for recording: Recording) -> URL? {
+        guard let audioURL = recording.finalizedAudioURL else { return nil }
+        return audioURL.deletingPathExtension().appendingPathExtension("review.json")
+    }
+
+    private func writeReviewMarker(_ item: QueueItem, for recording: Recording) {
+        guard let url = Self.reviewMarkerURL(for: recording),
+              let data = try? JSONEncoder().encode(item) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// Whether a recording is parked awaiting review (a `.review.json` marker exists).
+    func isAwaitingReview(recording: Recording) -> Bool {
+        guard let url = Self.reviewMarkerURL(for: recording) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    /// Resumes a recording held for review: clears the marker and runs AI → Markdown →
+    /// a single integration dispatch on the (now edited) transcript.
+    func processNowAfterReview(for recording: Recording) async {
+        if let url = Self.reviewMarkerURL(for: recording) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        await retryAIAnalysis(for: recording)
     }
 
     func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
@@ -1701,6 +1776,30 @@ final class RecordingManager {
             return obsidianFolder
         }
         return appSettings.effectiveTranscriptionFolderURL
+    }
+
+    /// Pseudo-endpoints describing the active transcription/AI models, used to fill in
+    /// the Markdown frontmatter (`transcription_model` / `ai_model`).
+    private func currentModelEndpoints() -> (transcription: Endpoint?, ai: Endpoint?) {
+        let transcription: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
+        case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
+        case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
+        case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
+        case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
+        }
+        let ai: Endpoint? = switch appSettings.effectiveAIEngine {
+        case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
+        case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
+        case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
+        case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
+        }
+        return (transcription, ai)
+    }
+
+    /// The default Markdown output URL for a recording, used as the fallback when no
+    /// previously generated `markdownPath` is recorded in the insights sidecar.
+    private func defaultMarkdownURL(for recording: Recording) -> URL {
+        markdownGenerator.defaultOutputURL(for: recording, in: resolveMarkdownOutputFolder(for: recording))
     }
 
     // MARK: - Queue Persistence

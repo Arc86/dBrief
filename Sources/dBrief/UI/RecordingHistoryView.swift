@@ -203,15 +203,13 @@ struct RecordingHistoryView: View {
                     }
 
                     if item.hasTranscript {
-                        actionChip(title: "Re-run AI", systemImage: "arrow.trianglehead.2.clockwise") {
-                            Task {
-                                let recording = Recording(
-                                    fileURL: item.url,
-                                    fileSize: item.size,
-                                    meetingTitleDraft: item.name,
-                                    finalizedAudioURL: item.url
-                                )
-                                await recordingManager.retryAIAnalysis(for: recording)
+                        if recordingManager.isAwaitingReview(recording: recordingForItem(item)) {
+                            actionChip(title: "Process now", systemImage: "play.fill") {
+                                Task { await recordingManager.processNowAfterReview(for: recordingForItem(item)) }
+                            }
+                        } else {
+                            actionChip(title: "Re-run AI", systemImage: "arrow.trianglehead.2.clockwise") {
+                                Task { await recordingManager.retryAIAnalysis(for: recordingForItem(item)) }
                             }
                         }
                     }
@@ -248,6 +246,15 @@ struct RecordingHistoryView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.mini)
+    }
+
+    private func recordingForItem(_ item: HistoryItem) -> Recording {
+        Recording(
+            fileURL: item.url,
+            fileSize: item.size,
+            meetingTitleDraft: item.name,
+            finalizedAudioURL: item.url
+        )
     }
 
     @MainActor

@@ -1,6 +1,8 @@
 import Foundation
 
 struct MarkdownGenerator {
+    /// Writes the recording's Markdown into `outputFolder`, deriving the file name
+    /// from the title + date. Used by the initial processing pipeline.
     @MainActor
     func generate(
         recording: Recording,
@@ -9,22 +11,64 @@ struct MarkdownGenerator {
         aiEndpoint: Endpoint?,
         includeTranscript: Bool = false
     ) throws -> URL {
-        try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
-
-        let title = generatedTitle(for: recording)
-        let datePrefix = formatDateOnly(recording.date)
-        let outputURL = outputFolder.appendingPathComponent("\(datePrefix) - \(title).md")
-
-        let content = buildMarkdown(
+        let outputURL = defaultOutputURL(for: recording, in: outputFolder)
+        return try write(
             recording: recording,
-            title: title,
+            to: outputURL,
             transcriptionEndpoint: transcriptionEndpoint,
             aiEndpoint: aiEndpoint,
             includeTranscript: includeTranscript
         )
+    }
 
+    /// The title+date-derived Markdown file URL inside `outputFolder`.
+    @MainActor
+    func defaultOutputURL(for recording: Recording, in outputFolder: URL) -> URL {
+        let title = generatedTitle(for: recording)
+        let datePrefix = formatDateOnly(recording.date)
+        return outputFolder.appendingPathComponent("\(datePrefix) - \(title).md")
+    }
+
+    /// Renders and writes the Markdown to a *specific* URL, overwriting any existing
+    /// file. Used by re-export so the output path stays stable even if the title changed.
+    @MainActor
+    func write(
+        recording: Recording,
+        to outputURL: URL,
+        transcriptionEndpoint: Endpoint?,
+        aiEndpoint: Endpoint?,
+        includeTranscript: Bool
+    ) throws -> URL {
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let content = render(
+            recording: recording,
+            transcriptionEndpoint: transcriptionEndpoint,
+            aiEndpoint: aiEndpoint,
+            includeTranscript: includeTranscript
+        )
         try content.write(to: outputURL, atomically: true, encoding: .utf8)
         return outputURL
+    }
+
+    /// Pure content builder — the testable seam. Reads only `recording.*` fields,
+    /// including `recording.richTranscript?.speakerLabels` for speaker display names.
+    @MainActor
+    func render(
+        recording: Recording,
+        transcriptionEndpoint: Endpoint?,
+        aiEndpoint: Endpoint?,
+        includeTranscript: Bool
+    ) -> String {
+        buildMarkdown(
+            recording: recording,
+            title: generatedTitle(for: recording),
+            transcriptionEndpoint: transcriptionEndpoint,
+            aiEndpoint: aiEndpoint,
+            includeTranscript: includeTranscript
+        )
     }
 
     @MainActor

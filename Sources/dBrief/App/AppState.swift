@@ -19,6 +19,9 @@ final class AppState {
     /// Audio file URL the transcript browser should select when it opens
     /// (deep-link from the menu-bar history or results view).
     var pendingTranscriptSelectionURL: URL?
+    /// Set when a recording is held for review so the root scene opens the transcript
+    /// window for the user to edit speaker names before processing continues.
+    var shouldOpenTranscriptForReview = false
 
     var showPostRecordingSheet = false
     var showCallDetectedPopup = false {

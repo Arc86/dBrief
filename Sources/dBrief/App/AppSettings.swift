@@ -61,6 +61,7 @@ final class AppSettings {
         static let recordHotkey = "recordHotkey"
         static let autoCheckUpdates = "autoCheckUpdates"
         static let lastUpdateCheckTime = "lastUpdateCheckTime"
+        static let holdForReviewBeforeProcessing = "holdForReviewBeforeProcessing"
     }
 
     // MARK: - Recording
@@ -133,6 +134,13 @@ final class AppSettings {
 
     var aiProcessingEnabled: Bool {
         didSet { UserDefaults.standard.set(aiProcessingEnabled, forKey: Keys.aiProcessingEnabled) }
+    }
+
+    /// When enabled, the pipeline pauses after transcription and opens the transcript
+    /// viewer so the user can rename speakers before AI analysis and output run. A
+    /// "Process now" action then resumes, so the single export/dispatch reflects edits.
+    var holdForReviewBeforeProcessing: Bool {
+        didSet { UserDefaults.standard.set(holdForReviewBeforeProcessing, forKey: Keys.holdForReviewBeforeProcessing) }
     }
 
     // MARK: - Transcription Language
@@ -581,6 +589,7 @@ final class AppSettings {
         self.autoActionItems = defaults.object(forKey: Keys.autoActionItems) as? Bool ?? true
         self.autoTags = defaults.object(forKey: Keys.autoTags) as? Bool ?? true
         self.aiProcessingEnabled = defaults.object(forKey: Keys.aiProcessingEnabled) as? Bool ?? true
+        self.holdForReviewBeforeProcessing = defaults.object(forKey: Keys.holdForReviewBeforeProcessing) as? Bool ?? false
 
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
 

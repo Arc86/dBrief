@@ -39,6 +39,15 @@ struct TranscriptDetailView: View {
     @State private var showDiarizeConfirm = false
     @State private var diarizeError: String?
 
+    // Re-export to file + integrations
+    @State private var showReexportConfirm = false
+    @State private var isReexporting = false
+    @State private var reexportResults: ReexportResults?
+
+    // Hold-for-review processing
+    @State private var awaitingReview = false
+    @State private var isProcessingReview = false
+
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
     }
@@ -102,6 +111,16 @@ struct TranscriptDetailView: View {
             Button("OK", role: .cancel) { diarizeError = nil }
         } message: {
             Text(diarizeError ?? "")
+        }
+        .confirmationDialog("Re-export this recording?",
+                            isPresented: $showReexportConfirm, titleVisibility: .visible) {
+            Button("Re-export") { Task { await performReexport() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This overwrites the Markdown file and re-sends to all enabled integrations. Apple Notes, Notion, and Reminders create NEW entries — they can't be updated in place.")
+        }
+        .sheet(item: $reexportResults) { results in
+            reexportResultsSheet(results.value)
         }
         .sheet(item: Binding(
             get: { renamingSpeakerId.map { IdentifiedString(value: $0) } },
@@ -168,6 +187,34 @@ struct TranscriptDetailView: View {
             }
             .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
             .help("Detect speakers")
+
+            if awaitingReview {
+                Button {
+                    Task { await processReview() }
+                } label: {
+                    if isProcessingReview {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Process now", systemImage: "play.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isProcessingReview)
+                .help("Run AI analysis and write output using your edits")
+            } else {
+                Button {
+                    showReexportConfirm = true
+                } label: {
+                    if isReexporting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "square.and.arrow.up.on.square")
+                            .foregroundStyle(Color.secondary)
+                    }
+                }
+                .disabled(isReexporting || richTranscript == nil || insights == nil)
+                .help("Re-export to file and integrations")
+            }
 
             Menu {
                 Stepper(value: $fontSize, in: 12...24) {
@@ -454,6 +501,7 @@ struct TranscriptDetailView: View {
             base.appendingPathExtension("transcript.json"),
             base.appendingPathExtension("richtranscript.json"),
             base.appendingPathExtension("insights.json"),
+            base.appendingPathExtension("review.json"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
@@ -480,6 +528,76 @@ struct TranscriptDetailView: View {
         insights = (try? await context.insightsStore.load(for: recording)) ?? nil
     }
 
+    // MARK: - Re-export
+
+    private func performReexport() async {
+        guard let insights else { return }
+        isReexporting = true
+        defer { isReexporting = false }
+        // Persist current edits to the sidecars first so disk matches what we push.
+        if let transcript = richTranscript {
+            saveTranscript(transcript)
+        }
+        try? await context.insightsStore.save(insights, for: recording)
+        let results = await context.recordingManager.reexport(
+            recording: recording,
+            richTranscript: richTranscript,
+            insights: insights
+        )
+        reexportResults = ReexportResults(value: results)
+    }
+
+    private func processReview() async {
+        isProcessingReview = true
+        defer { isProcessingReview = false }
+        // Persist current speaker edits so the regenerated Markdown picks them up.
+        if let transcript = richTranscript {
+            saveTranscript(transcript)
+        }
+        await context.recordingManager.processNowAfterReview(for: recording)
+        awaitingReview = context.recordingManager.isAwaitingReview(recording: recording)
+        await loadInsights()
+    }
+
+    @ViewBuilder
+    private func reexportResultsSheet(_ results: [IntegrationDispatchResult]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Re-export complete")
+                .font(.headline)
+            if results.isEmpty {
+                Text("Markdown file updated. No integrations are enabled.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(results.enumerated()), id: \.offset) { _, result in
+                        HStack(alignment: .top, spacing: 8) {
+                            switch result.status {
+                            case .success, .skipped:
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            case .failed:
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(result.destination.displayName).fontWeight(.medium)
+                                Text(result.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Done") { reexportResults = nil }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 360)
+    }
+
     private func saveInsights(_ updated: RecordingInsights) async {
         do {
             try await context.insightsStore.save(updated, for: recording)
@@ -502,6 +620,7 @@ struct TranscriptDetailView: View {
         loadFailed = false
         showAnalysis = false
         insights = nil
+        awaitingReview = context.recordingManager.isAwaitingReview(recording: recording)
         await loadInsights()
 
         // Restore any in-progress chat session for this recording.
@@ -540,4 +659,10 @@ struct TranscriptDetailView: View {
 private struct IdentifiedString: Identifiable {
     let value: String
     var id: String { value }
+}
+
+/// Identifiable wrapper so re-export results can drive `.sheet(item:)`.
+private struct ReexportResults: Identifiable {
+    let id = UUID()
+    let value: [IntegrationDispatchResult]
 }
