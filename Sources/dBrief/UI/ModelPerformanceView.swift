@@ -198,30 +198,7 @@ struct ModelPerformanceView: View {
     }
 
     private var transcriptionStats: [TranscriptionStat] {
-        let grouped = Dictionary(grouping: filtered.filter { $0.hasTranscription }) {
-            $0.transcriptionModel ?? "Unknown"
-        }
-        return grouped.map { model, recs -> TranscriptionStat in
-            let audios = recs.compactMap { $0.audioDuration }
-            let procs = recs.compactMap { $0.transcriptionTime }
-            let avgAudio = audios.isEmpty ? 0 : audios.reduce(0, +) / Double(audios.count)
-            let avgProc = procs.isEmpty ? 0 : procs.reduce(0, +) / Double(procs.count)
-            // Average of per-session realtime ratios (more representative than the
-            // ratio of averages when audio lengths vary widely).
-            let ratios = recs.compactMap { r -> Double? in
-                guard let a = r.audioDuration, let p = r.transcriptionTime, p > 0 else { return nil }
-                return a / p
-            }
-            let speed = ratios.isEmpty ? 0 : ratios.reduce(0, +) / Double(ratios.count)
-            return TranscriptionStat(
-                model: model,
-                sessions: recs.count,
-                avgAudio: avgAudio,
-                avgProcessing: avgProc,
-                speedup: speed
-            )
-        }
-        .sorted { $0.sessions > $1.sessions }
+        TranscriptionStat.aggregate(filtered)
     }
 
     private var aiStats: [AIStat] {
@@ -254,13 +231,56 @@ struct ModelPerformanceView: View {
 
 // MARK: - Aggregated stat types
 
-private struct TranscriptionStat: Identifiable {
+struct TranscriptionStat: Identifiable {
     let model: String
     let sessions: Int
     let avgAudio: TimeInterval
     let avgProcessing: TimeInterval
+    /// Average end-to-end realtime ratio (audio / total transcription step time).
     let speedup: Double
+    /// Average pure-inference realtime ratio, or nil when no record reported it.
+    let inferenceSpeedup: Double?
+    /// Average (transcriptionTime − inferenceTime) over records with both, or nil.
+    let avgOverhead: TimeInterval?
     var id: String { model }
+
+    /// Pure aggregation over already-filtered records, grouped by model.
+    static func aggregate(_ records: [ModelPerformanceRecord]) -> [TranscriptionStat] {
+        let grouped = Dictionary(grouping: records.filter { $0.hasTranscription }) {
+            $0.transcriptionModel ?? "Unknown"
+        }
+        return grouped.map { model, recs -> TranscriptionStat in
+            let audios = recs.compactMap { $0.audioDuration }
+            let procs = recs.compactMap { $0.transcriptionTime }
+            let avgAudio = audios.isEmpty ? 0 : audios.reduce(0, +) / Double(audios.count)
+            let avgProc = procs.isEmpty ? 0 : procs.reduce(0, +) / Double(procs.count)
+
+            let e2eRatios = recs.compactMap { r -> Double? in
+                guard let a = r.audioDuration, let p = r.transcriptionTime, p > 0 else { return nil }
+                return a / p
+            }
+            let speed = e2eRatios.isEmpty ? 0 : e2eRatios.reduce(0, +) / Double(e2eRatios.count)
+
+            let infRatios = recs.compactMap { r -> Double? in
+                guard let a = r.audioDuration, let i = r.inferenceTime, i > 0 else { return nil }
+                return a / i
+            }
+            let infSpeed = infRatios.isEmpty ? nil : infRatios.reduce(0, +) / Double(infRatios.count)
+
+            let overheads = recs.compactMap { r -> TimeInterval? in
+                guard let p = r.transcriptionTime, let i = r.inferenceTime else { return nil }
+                return p - i
+            }
+            let avgOverhead = overheads.isEmpty ? nil : overheads.reduce(0, +) / Double(overheads.count)
+
+            return TranscriptionStat(
+                model: model, sessions: recs.count,
+                avgAudio: avgAudio, avgProcessing: avgProc,
+                speedup: speed, inferenceSpeedup: infSpeed, avgOverhead: avgOverhead
+            )
+        }
+        .sorted { $0.sessions > $1.sessions }
+    }
 }
 
 private struct AIStat: Identifiable {
