@@ -181,7 +181,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     return dBriefWire.TranscriptionResult(
                         text: fullText,
                         segments: allSegments,
-                        speakerCount: diarResult.speakerCount
+                        speakerCount: diarResult.speakerCount,
+                        inferenceTime: transcribeDuration
                     )
                 } catch {
                     Logger.localAI.error("Diarization failed: \(error.localizedDescription, privacy: .public) — continuing without speaker labels")
@@ -216,7 +217,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
             await unload()
-            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
+            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage, inferenceTime: transcribeDuration)
         } catch {
             await unload()
             throw error
