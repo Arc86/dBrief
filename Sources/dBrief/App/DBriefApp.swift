@@ -82,7 +82,34 @@ final class AppContext {
             }
         }
 
+        // Purge recordings/transcripts past their retention window.
+        await runRetentionCleanupIfNeeded()
+
         log.info("Ready")
+    }
+
+    /// Runs the enabled auto-delete sweeps off the main thread. Folder URLs are
+    /// resolved here (on the main actor) and the file work hops to a background task.
+    private func runRetentionCleanupIfNeeded() async {
+        let recordingsFolder = appSettings.effectiveRecordingFolderURL
+        let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
+
+        if appSettings.autoDeleteRecordingsEnabled {
+            let days = appSettings.autoDeleteRecordingsDays
+            await Task.detached(priority: .utility) {
+                RetentionCleanup.cleanup(category: .recordings, olderThanDays: days, in: [recordingsFolder])
+            }.value
+        }
+        if appSettings.autoDeleteTranscriptsEnabled {
+            let days = appSettings.autoDeleteTranscriptsDays
+            await Task.detached(priority: .utility) {
+                RetentionCleanup.cleanup(
+                    category: .transcripts,
+                    olderThanDays: days,
+                    in: [recordingsFolder, transcriptionFolder]
+                )
+            }.value
+        }
     }
 
     private func toggleRecording() {
