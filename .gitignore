@@ -24,8 +24,8 @@ DerivedData/
 .worktrees/
 
 # Internal development artifacts (not for the public repo)
-docs/
-docs/superpowers/
+# Anchored to the repo root so it does NOT match the published site/docs/.
+/docs/
 tasks/
 MEMORY_FIXES_SUMMARY.md
 monitor_inference.sh
