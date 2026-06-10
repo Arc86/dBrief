@@ -7,6 +7,7 @@ struct SettingsView: View {
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general      = "General"
+        case permissions  = "Permissions"
         case recording    = "Recording"
         case aiAndModels  = "AI & Models"
         case integrations = "Integrations"
@@ -15,6 +16,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general:      "gear"
+            case .permissions:  "lock.shield"
             case .recording:    "mic"
             case .aiAndModels:  "brain"
             case .integrations: "puzzlepiece.extension"
@@ -55,6 +57,7 @@ struct SettingsView: View {
             if let tab = selectedTab {
                 switch tab {
                 case .general:      SettingsGeneralTab()
+                case .permissions:  SettingsPermissionsTab()
                 case .recording:    SettingsRecordingTab()
                 case .aiAndModels:  SettingsAIModelsTab()
                 case .integrations: SettingsIntegrationsTab()
