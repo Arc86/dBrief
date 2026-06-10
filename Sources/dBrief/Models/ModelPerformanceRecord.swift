@@ -17,6 +17,9 @@ struct ModelPerformanceRecord: Codable, Identifiable, Sendable {
     var audioDuration: TimeInterval?
     /// Wall-clock time the transcription pass took, in seconds.
     var transcriptionTime: TimeInterval?
+    /// Pure model-inference time (seconds), excluding model load/prewarm, IPC,
+    /// audio decode and diarization. Nil for engines that don't report it.
+    var inferenceTime: TimeInterval?
 
     /// Display name of the AI analysis model used (e.g. "gemini-2.5-flash-lite",
     /// "Apple Intelligence"), or nil when AI analysis didn't run.
@@ -30,6 +33,7 @@ struct ModelPerformanceRecord: Codable, Identifiable, Sendable {
         transcriptionModel: String? = nil,
         audioDuration: TimeInterval? = nil,
         transcriptionTime: TimeInterval? = nil,
+        inferenceTime: TimeInterval? = nil,
         aiModel: String? = nil,
         aiTime: TimeInterval? = nil
     ) {
@@ -38,6 +42,7 @@ struct ModelPerformanceRecord: Codable, Identifiable, Sendable {
         self.transcriptionModel = transcriptionModel
         self.audioDuration = audioDuration
         self.transcriptionTime = transcriptionTime
+        self.inferenceTime = inferenceTime
         self.aiModel = aiModel
         self.aiTime = aiTime
     }

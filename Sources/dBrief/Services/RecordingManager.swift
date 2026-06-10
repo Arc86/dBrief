@@ -211,6 +211,7 @@ final class RecordingManager {
         // Measured performance for this session (logged at the end).
         var perfTranscriptionModel: String?
         var perfTranscriptionTime: TimeInterval?
+        var perfInferenceTime: TimeInterval?
         var perfAudioDuration: TimeInterval?
         var perfAIModel: String?
         var perfAITime: TimeInterval?
@@ -269,6 +270,7 @@ final class RecordingManager {
                     let txStart = Date()
                     let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
                     perfTranscriptionTime = Date().timeIntervalSince(txStart)
+                    perfInferenceTime = result.inferenceTime
                     perfTranscriptionModel = transcriptionModelDisplayName
                     perfAudioDuration = recording.duration
                     recording.transcription = result
@@ -368,6 +370,7 @@ final class RecordingManager {
             transcriptionModel: perfTranscriptionModel,
             audioDuration: perfAudioDuration,
             transcriptionTime: perfTranscriptionTime,
+            inferenceTime: perfInferenceTime,
             aiModel: perfAIModel,
             aiTime: perfAITime
         )
@@ -580,6 +583,7 @@ final class RecordingManager {
             transcriptionModel: nil,
             audioDuration: nil,
             transcriptionTime: nil,
+            inferenceTime: nil,
             aiModel: perfAIModel,
             aiTime: perfAITime
         )
@@ -1451,6 +1455,7 @@ final class RecordingManager {
         transcriptionModel: String?,
         audioDuration: TimeInterval?,
         transcriptionTime: TimeInterval?,
+        inferenceTime: TimeInterval?,
         aiModel: String?,
         aiTime: TimeInterval?
     ) {
@@ -1459,6 +1464,7 @@ final class RecordingManager {
             transcriptionModel: transcriptionTime != nil ? transcriptionModel : nil,
             audioDuration: transcriptionTime != nil ? audioDuration : nil,
             transcriptionTime: transcriptionTime,
+            inferenceTime: transcriptionTime != nil ? inferenceTime : nil,
             aiModel: aiTime != nil ? aiModel : nil,
             aiTime: aiTime
         )
