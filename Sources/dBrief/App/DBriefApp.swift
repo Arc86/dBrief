@@ -13,6 +13,7 @@ final class AppContext {
     let transcriptStore = TranscriptStore()
     let insightsStore = InsightsStore()
     let transcriptChatStore = TranscriptChatStore()
+    let speakerRecognition: SpeakerRecognitionService
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
@@ -27,7 +28,9 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         registerFontAwesomeBrands()
-        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, insightsStore: insightsStore, microsoftAuthService: microsoftAuthService)
+        let speakerRecognition = SpeakerRecognitionService(appSettings: appSettings)
+        self.speakerRecognition = speakerRecognition
+        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, insightsStore: insightsStore, microsoftAuthService: microsoftAuthService, speakerRecognition: speakerRecognition)
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -174,6 +177,7 @@ struct DBriefApp: App {
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
                 .environment(context.updateService)
+                .environment(context.speakerRecognition)
                 .frame(minWidth: 800, minHeight: 550)
                 .onChange(of: context.appSettings.recordHotkey) { _, newValue in
                     context.hotkeyService.update(hotkey: newValue)

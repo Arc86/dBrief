@@ -55,6 +55,8 @@ final class AppSettings {
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
+        static let speakerRecognitionEnabled = "speakerRecognitionEnabled"
+        static let speakerMatchThreshold = "speakerMatchThreshold"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -324,6 +326,20 @@ final class AppSettings {
     /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
     var diarizationEnabled: Bool {
         didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
+    }
+
+    /// Enable the persistent speaker-recognition library: match diarized speakers
+    /// against enrolled voiceprints and auto-apply known people's names. Requires
+    /// diarization; routes diarization through FluidAudio (which yields voice
+    /// embeddings). Opt-in — voiceprints are biometric data stored on-device only.
+    var speakerRecognitionEnabled: Bool {
+        didSet { UserDefaults.standard.set(speakerRecognitionEnabled, forKey: Keys.speakerRecognitionEnabled) }
+    }
+
+    /// Minimum cosine similarity to accept a voiceprint match (power-user). Higher
+    /// is stricter (fewer false matches); lower recognizes more readily.
+    var speakerMatchThreshold: Double {
+        didSet { UserDefaults.standard.set(speakerMatchThreshold, forKey: Keys.speakerMatchThreshold) }
     }
 
     /// Enable Acoustic Echo Cancellation on the microphone input.
@@ -654,6 +670,8 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
+        self.speakerRecognitionEnabled = defaults.object(forKey: Keys.speakerRecognitionEnabled) as? Bool ?? false
+        self.speakerMatchThreshold = defaults.object(forKey: Keys.speakerMatchThreshold) as? Double ?? 0.7
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 

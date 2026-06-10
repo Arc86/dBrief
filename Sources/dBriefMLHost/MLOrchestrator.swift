@@ -13,6 +13,7 @@ actor MLOrchestrator: MLBackend {
     private let insightsService: MLXInsightsService
     private let parakeetService: ParakeetTranscriptionService
     private let ttsService: TTSService
+    private let fluidDiarizationService: FluidAudioDiarizationService
     private var parakeetStateTask: Task<Void, Never>?
 
     init(emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
@@ -20,6 +21,7 @@ actor MLOrchestrator: MLBackend {
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
         self.ttsService = TTSService { state in emit(.plugin, state) }
+        self.fluidDiarizationService = FluidAudioDiarizationService { state in emit(.plugin, state) }
         let parakeet = ParakeetTranscriptionService()
         self.parakeetService = parakeet
         self.parakeetStateTask = Task {
@@ -47,6 +49,21 @@ actor MLOrchestrator: MLBackend {
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             return try await whisperService.diarize(fileURL: URL(fileURLWithPath: path))
+        }
+    }
+
+    /// Diarize via FluidAudio, returning turns that carry voice embeddings for
+    /// the speaker-recognition library. Frees the other models first (the
+    /// diarizer competes for GPU/ANE) and unloads itself after.
+    func diarizeWithEmbeddings(path: String) async throws -> [DiarizedTurn] {
+        try await mutex.withLock { [self] in
+            defer { emit(.plugin, .idle) }
+            await whisperService.unload()
+            await insightsService.unload()
+            await parakeetService.unload()
+            let turns = try await fluidDiarizationService.diarize(fileURL: URL(fileURLWithPath: path))
+            await fluidDiarizationService.unload()
+            return turns
         }
     }
 
@@ -189,6 +206,7 @@ actor MLOrchestrator: MLBackend {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             try await whisperService.purgeSpeakerKitModels()
+            try await fluidDiarizationService.purgeModels()
         }
     }
 
@@ -210,6 +228,7 @@ actor MLOrchestrator: MLBackend {
         await insightsService.unload()
         await parakeetService.unload()
         await ttsService.unload()
+        await fluidDiarizationService.unload()
         emit(.plugin, .idle)
     }
 
@@ -218,6 +237,7 @@ actor MLOrchestrator: MLBackend {
         await whisperService.unload()
         await parakeetService.unload()
         await ttsService.unload()
+        await fluidDiarizationService.unload()
         emit(.plugin, .idle)
     }
 }

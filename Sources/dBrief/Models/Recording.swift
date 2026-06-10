@@ -33,6 +33,10 @@ final class Recording: Identifiable {
     var transcriptURL: URL?
     var finalizationWarnings: [String]
     var richTranscript: RichTranscript?
+    /// Per-speaker voice embeddings from the recognition diarization pass, kept
+    /// in memory so the user can enroll a named speaker into the library. Session
+    /// only — never written to disk (biometric data lives solely in the library).
+    var pendingEnrollmentTurns: [DiarizedTurn] = []
 
     init(
         id: UUID = UUID(),

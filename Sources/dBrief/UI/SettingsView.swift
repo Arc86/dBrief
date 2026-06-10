@@ -6,26 +6,28 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab? = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general      = "General"
-        case recording    = "Recording"
-        case aiAndModels  = "AI & Models"
-        case integrations = "Integrations"
-        case profiles     = "Profiles"
+        case general        = "General"
+        case recording      = "Recording"
+        case aiAndModels    = "AI & Models"
+        case integrations   = "Integrations"
+        case speakerLibrary = "Speaker Library"
+        case profiles       = "Profiles"
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .general:      "gear"
-            case .recording:    "mic"
-            case .aiAndModels:  "brain"
-            case .integrations: "puzzlepiece.extension"
-            case .profiles:     "person.3"
+            case .general:        "gear"
+            case .recording:      "mic"
+            case .aiAndModels:    "brain"
+            case .integrations:   "puzzlepiece.extension"
+            case .speakerLibrary: "person.wave.2"
+            case .profiles:       "person.3"
             }
         }
     }
 
     private var visibleTabs: [SettingsTab] {
         SettingsTab.allCases.filter { tab in
-            if tab == .profiles { return appSettings.powerUserMode }
+            if tab == .profiles || tab == .speakerLibrary { return appSettings.powerUserMode }
             return true
         }
     }
@@ -54,11 +56,12 @@ struct SettingsView: View {
         } detail: {
             if let tab = selectedTab {
                 switch tab {
-                case .general:      SettingsGeneralTab()
-                case .recording:    SettingsRecordingTab()
-                case .aiAndModels:  SettingsAIModelsTab()
-                case .integrations: SettingsIntegrationsTab()
-                case .profiles:     SettingsProfilesTab()
+                case .general:        SettingsGeneralTab()
+                case .recording:      SettingsRecordingTab()
+                case .aiAndModels:    SettingsAIModelsTab()
+                case .integrations:   SettingsIntegrationsTab()
+                case .speakerLibrary: SettingsSpeakerLibraryTab()
+                case .profiles:       SettingsProfilesTab()
                 }
             } else {
                 SettingsGeneralTab()

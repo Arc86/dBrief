@@ -55,6 +55,15 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return turns
     }
 
+    /// Diarize via FluidAudio, returning turns that carry voice embeddings for
+    /// speaker recognition. Used only when the speaker-recognition library is
+    /// enabled; the plain `diarize` path (SpeakerKit, no embeddings) stays the
+    /// default for "who said what" without a library.
+    func diarizeWithEmbeddings(fileURL: URL) async throws -> [DiarizedTurn] {
+        guard case let .diarizeResult(turns) = try await connection.call(.diarizeWithEmbeddings(path: fileURL.path)) else { return [] }
+        return turns
+    }
+
     func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage) async throws -> LocalInsightsResult {
         guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage)) else {
             throw WireError(kind: .generic, message: "no insights")

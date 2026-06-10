@@ -8,6 +8,10 @@ public enum MLChannel: String, Sendable, Codable {
 public enum MLRequest: Sendable, Codable {
     case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool)
     case diarize(path: String)
+    /// Diarize via FluidAudio and return turns that carry per-speaker voice
+    /// embeddings, for the speaker-recognition library. Result is delivered as
+    /// `.diarizeResult` like `.diarize`, but the turns include `embedding`.
+    case diarizeWithEmbeddings(path: String)
     case analyze(text: String, outputLanguage: OutputLanguage)
     case analyzeStream(text: String, outputLanguage: OutputLanguage)
     case chatStream(systemPrompt: String, userMessage: String)

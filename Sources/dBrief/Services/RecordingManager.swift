@@ -42,18 +42,20 @@ final class RecordingManager {
     private let calendarService = CalendarService()
     private let microsoftAuthService: MicrosoftAuthService
     private let outlookCalendarService: OutlookCalendarService
+    private let speakerRecognition: SpeakerRecognitionService
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, microsoftAuthService: MicrosoftAuthService) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, microsoftAuthService: MicrosoftAuthService, speakerRecognition: SpeakerRecognitionService) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
         self.insightsStore = insightsStore
         self.microsoftAuthService = microsoftAuthService
+        self.speakerRecognition = speakerRecognition
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
         self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
@@ -257,8 +259,7 @@ final class RecordingManager {
                 }()
                 appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
                 do {
-                    let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
-                    recording.transcription = result
+                    var result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
                     appState.processingSteps[stepIndex].status = .completed
                     if let warnings = result.warnings, !warnings.isEmpty {
                         appState.processingSteps.append(
@@ -268,10 +269,16 @@ final class RecordingManager {
                             )
                         )
                     }
+                    // Optional speaker-recognition pass: diarize with voice
+                    // embeddings, merge speakers onto the transcript, and resolve
+                    // known people to names. Replaces in-engine diarization (gated
+                    // off above) so speaker ids and embeddings stay consistent.
+                    let recognizedNames = await applySpeakerRecognition(recording: recording, result: &result)
+                    recording.transcription = result
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
                     // Build and save rich transcript with word-level sync (pass participant names for speaker mapping)
-                    let rich = richTranscriptBuilder.build(from: result, participants: recording.participants)
+                    let rich = richTranscriptBuilder.build(from: result, participants: recording.participants, recognizedNames: recognizedNames)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
                 } catch {
@@ -1365,6 +1372,39 @@ final class RecordingManager {
         appState.processingSteps[stepIndex].status = .failed(message)
     }
 
+    /// Run the speaker-recognition diarization pass (FluidAudio, with voice
+    /// embeddings) when enabled, merge speakers onto `result`, stash the
+    /// embedding turns on the recording for enrollment, and return recognized
+    /// `speakerId -> name`. No-op (returns `[:]`) when recognition is off or no
+    /// audio/speakers are available; failures degrade gracefully.
+    private func applySpeakerRecognition(
+        recording: Recording,
+        result: inout TranscriptionResult
+    ) async -> [String: String] {
+        guard appSettings.diarizationEnabled,
+              appSettings.speakerRecognitionEnabled,
+              let audioURL = recording.finalizedAudioURL else { return [:] }
+
+        let stepIndex = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: "Recognizing speakers", status: .inProgress))
+        do {
+            let turns = try await localAIPluginService.diarizeWithEmbeddings(fileURL: audioURL)
+            guard !turns.isEmpty else {
+                appState.processingSteps[stepIndex].status = .completed
+                return [:]
+            }
+            result = SpeakerMerge.merge(result, turns: turns)
+            recording.pendingEnrollmentTurns = turns
+            let recognized = speakerRecognition.recognizedNames(for: turns)
+            appState.processingSteps[stepIndex].status = .completed
+            return recognized
+        } catch {
+            Logger.transcription.error("Speaker recognition failed: \(error.localizedDescription, privacy: .public)")
+            appState.processingSteps[stepIndex].status = .completed
+            return [:]
+        }
+    }
+
     private func transcribeRecordingAudio(
         recording: Recording,
         stepIndex: Int
@@ -1476,7 +1516,7 @@ final class RecordingManager {
             let whisperConfig = WhisperRuntimeConfig(
                 modelName: appSettings.whisperModelName,
                 language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage,
-                diarizationEnabled: appSettings.diarizationEnabled,
+                diarizationEnabled: appSettings.diarizationEnabled && !appSettings.speakerRecognitionEnabled,
                 computeUnits: appSettings.whisperComputeUnits
             )
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
@@ -1492,7 +1532,7 @@ final class RecordingManager {
                     fileURL: url,
                     language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
                     modelVariant: self.appSettings.parakeetModelVariant,
-                    diarize: self.appSettings.diarizationEnabled
+                    diarize: self.appSettings.diarizationEnabled && !self.appSettings.speakerRecognitionEnabled
                 )
             }
         case .remoteEndpoint:

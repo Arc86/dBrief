@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import OSLog
+import dBriefWire
 
 /// Right-hand detail pane of the transcript browser: a single flat transcript
 /// (speaker label + line), a speaker-chip bar, a waveform player, and a toolbar
@@ -38,6 +39,16 @@ struct TranscriptDetailView: View {
     @State private var isDiarizing = false
     @State private var showDiarizeConfirm = false
     @State private var diarizeError: String?
+    /// Voice-embedding turns from the most recent recognition diarization pass,
+    /// kept in memory so a named speaker can be enrolled into the library.
+    @State private var recognitionTurns: [DiarizedTurn] = []
+    @State private var enrolledMessage: String?
+
+    /// Embedding turns available for enrollment: the last manual recognition pass,
+    /// falling back to those captured during automatic processing.
+    private var enrollmentTurns: [DiarizedTurn] {
+        recognitionTurns.isEmpty ? recording.pendingEnrollmentTurns : recognitionTurns
+    }
 
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
@@ -102,6 +113,13 @@ struct TranscriptDetailView: View {
             Button("OK", role: .cancel) { diarizeError = nil }
         } message: {
             Text(diarizeError ?? "")
+        }
+        .alert("Speaker library", isPresented: Binding(
+            get: { enrolledMessage != nil },
+            set: { if !$0 { enrolledMessage = nil } })) {
+            Button("OK", role: .cancel) { enrolledMessage = nil }
+        } message: {
+            Text(enrolledMessage ?? "")
         }
         .sheet(item: Binding(
             get: { renamingSpeakerId.map { IdentifiedString(value: $0) } },
@@ -330,12 +348,27 @@ struct TranscriptDetailView: View {
     // MARK: - Speaker rename sheet
 
     private func speakerRenameSheet(for speakerId: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let canEnroll = context.appSettings.speakerRecognitionEnabled
+            && context.speakerRecognition.hasEmbedding(for: speakerId, in: enrollmentTurns)
+        return VStack(alignment: .leading, spacing: 16) {
             Text("Rename Speaker").font(.headline)
             TextField("Name", text: $speakerRenameText)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 240)
                 .onSubmit { commitSpeakerRename(speakerId) }
+            if canEnroll {
+                Button {
+                    rememberSpeaker(speakerId)
+                } label: {
+                    Label("Remember this person", systemImage: "person.crop.circle.badge.plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(speakerRenameText.trimmingCharacters(in: .whitespaces).isEmpty)
+                Text("Saves this voice to your on-device speaker library so this person is named automatically in future recordings.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { renamingSpeakerId = nil }
@@ -398,18 +431,44 @@ struct TranscriptDetailView: View {
         isDiarizing = true
         defer { isDiarizing = false }
         do {
-            let turns = try await context.recordingManager.localPlugin.diarize(fileURL: audioURL)
+            // Use the embedding-producing pass when recognition is on, so known
+            // people are auto-named and speakers can be enrolled afterwards.
+            let recognitionOn = context.appSettings.speakerRecognitionEnabled
+            let turns = recognitionOn
+                ? try await context.recordingManager.localPlugin.diarizeWithEmbeddings(fileURL: audioURL)
+                : try await context.recordingManager.localPlugin.diarize(fileURL: audioURL)
             guard !turns.isEmpty else {
                 diarizeError = "No speakers were detected in this recording."
                 return
             }
-            let updated = SpeakerAssigner.assign(turns, to: transcript)
+            recognitionTurns = turns
+            var updated = SpeakerAssigner.assign(turns, to: transcript)
+            // Apply recognized names from the library (no-op when recognition off).
+            let recognized = context.speakerRecognition.recognizedNames(for: turns)
+            updated.speakerLabels = RichTranscriptBuilder.speakerLabels(
+                for: updated.segments.compactMap(\.speakerId),
+                participants: [],
+                recognizedNames: recognized
+            )
             richTranscript = updated
             if !showSpeakerNames { showSpeakerNames = true }
             saveTranscript(updated)
         } catch {
             diarizeError = error.localizedDescription
         }
+    }
+
+    /// Enroll the named speaker's voiceprint into the recognition library.
+    private func rememberSpeaker(_ speakerId: String) {
+        let name = speakerRenameText.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let turns = enrollmentTurns
+        Task {
+            await context.speakerRecognition.enroll(speakerId: speakerId, name: name, from: turns)
+            enrolledMessage = "Added \(name) to your speaker library."
+        }
+        renameSpeaker(speakerId: speakerId, displayName: name)
+        renamingSpeakerId = nil
     }
 
     private func copyTranscript() {

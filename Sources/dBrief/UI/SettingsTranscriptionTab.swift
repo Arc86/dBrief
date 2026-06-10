@@ -24,6 +24,23 @@ struct SettingsTranscriptionTab: View {
         case failure(String)
     }
 
+    /// Speaker-recognition toggle shown under either diarization toggle. Only
+    /// meaningful with diarization on, so it's hidden otherwise. Manage the
+    /// enrolled people in Settings → Speaker Library (Power User Mode).
+    @ViewBuilder
+    private func speakerRecognitionRow() -> some View {
+        @Bindable var settings = appSettings
+        if settings.diarizationEnabled {
+            Toggle(isOn: $settings.speakerRecognitionEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recognize known speakers")
+                    Text("Matches voices against your on-device speaker library and applies known people's names automatically. Uses FluidAudio for diarization. Voiceprints are biometric and never leave your Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private func fetchWhisperModels() {
         guard !isFetchingWhisperModels else { return }
         isFetchingWhisperModels = true
@@ -141,6 +158,8 @@ struct SettingsTranscriptionTab: View {
             Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            speakerRecognitionRow()
 
             ModelDownloadButton(kind: .parakeet)
 
@@ -289,6 +308,8 @@ struct SettingsTranscriptionTab: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+
+            speakerRecognitionRow()
 
             // — Advanced (collapsed) —
             DisclosureGroup {
