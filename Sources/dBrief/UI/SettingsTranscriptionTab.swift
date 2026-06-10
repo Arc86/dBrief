@@ -50,6 +50,8 @@ struct SettingsTranscriptionTab: View {
                     .listRowBackground(Color.clear)
                 Section("Language") { languageSection }
                     .listRowBackground(Color.clear)
+                Section("Live Transcription") { liveTranscriptionSection }
+                    .listRowBackground(Color.clear)
                 if appSettings.powerUserMode {
                     if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
                         Section("Custom Vocabulary") { vocabularySection }
@@ -76,6 +78,17 @@ struct SettingsTranscriptionTab: View {
     private func formatMemory(_ mb: Int) -> String {
         let gb = Double(mb) / 1_024
         return String(format: "%.1f GB", gb)
+    }
+
+    private var liveTranscriptionSection: some View {
+        @Bindable var settings = appSettings
+        return Toggle(isOn: $settings.liveTranscriptionEnabled) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Transcribe live while recording")
+                Text("Real-time preview (and live chat) using Apple's on-device speech, with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var engineSection: some View {

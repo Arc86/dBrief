@@ -62,4 +62,37 @@ public enum AppleSpeechResultMapper {
             language: language?.isEmpty == false ? language : nil
         )
     }
+
+    /// Maps finalized SpeechAnalyzer chunks to live transcript segments, tagging each
+    /// with the supplied speaker label (e.g. "You" / "Participant"). Whitespace-only
+    /// chunks are dropped. Used by the real-time two-channel live transcription path.
+    public static func liveSegments(from chunks: [AppleSpeechChunk], speaker: String?) -> [LiveTranscriptSegment] {
+        chunks.compactMap { chunk in
+            let text = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return LiveTranscriptSegment(start: chunk.start, end: chunk.end, text: text, speaker: speaker)
+        }
+    }
+}
+
+/// Pure, OS-independent helper for ordering live transcript segments arriving
+/// out-of-order from two concurrent recognizers (mic + system). Kept testable.
+public enum LiveSegmentMerge {
+    /// Inserts `segment` into `segments` keeping ascending `start` order (stable for
+    /// equal starts — the new segment goes after existing ones at the same time).
+    public static func insert(_ segment: LiveTranscriptSegment, into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
+        var result = segments
+        let index = result.firstIndex { $0.start > segment.start } ?? result.count
+        result.insert(segment, at: index)
+        return result
+    }
+
+    /// Inserts several new segments, keeping ascending `start` order.
+    public static func insert(_ newSegments: [LiveTranscriptSegment], into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
+        var result = segments
+        for segment in newSegments {
+            result = insert(segment, into: result)
+        }
+        return result
+    }
 }

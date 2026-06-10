@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import os
 
 private let log = Logger.recording
@@ -7,6 +8,7 @@ struct RecordingControlsView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var settings = appSettings
@@ -122,6 +124,18 @@ struct RecordingControlsView: View {
                             .foregroundStyle(.green)
                     }
                     Spacer()
+                    if appState.isLiveTranscribing {
+                        Button {
+                            appState.pendingLiveTranscriptSelection = true
+                            openWindow(id: "transcript")
+                            NSApp.activate(ignoringOtherApps: true)
+                        } label: {
+                            Label("Live Transcript", systemImage: "text.viewfinder")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
             }
 

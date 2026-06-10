@@ -22,6 +22,13 @@ struct TranscriptBrowserView: View {
         return items.first { $0.url == selection }
     }
 
+    /// The in-progress recording (recording or processing), pinned at the top of
+    /// the sidebar so it can be viewed live. `nil` when idle.
+    private var liveRecording: Recording? {
+        guard appState.recordingState != .idle else { return nil }
+        return appState.currentRecording
+    }
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -62,6 +69,7 @@ struct TranscriptBrowserView: View {
         .onAppear {
             reload()
             applyPendingSelection()
+            applyPendingLiveSelection()
             rebuildDetailRecording()
         }
         .onChange(of: selection) { _, _ in
@@ -70,21 +78,41 @@ struct TranscriptBrowserView: View {
         .onChange(of: appState.pendingTranscriptSelectionURL) { _, _ in
             applyPendingSelection()
         }
+        .onChange(of: appState.pendingLiveTranscriptSelection) { _, _ in
+            applyPendingLiveSelection()
+        }
+        .onChange(of: appState.recordingState) { _, newState in
+            // Reload once a recording finishes so it appears as a normal entry.
+            if newState == .idle { reload() }
+            rebuildDetailRecording()
+        }
     }
 
     // MARK: - Sidebar
 
     @ViewBuilder
     private var sidebar: some View {
-        if items.isEmpty {
+        if items.isEmpty && liveRecording == nil {
             ContentUnavailableView(
                 "No Recordings",
                 systemImage: "waveform.slash",
                 description: Text("Recordings you capture will appear here."))
         } else {
-            List(items, selection: $selection) { item in
-                RecordingBrowserRow(item: item)
-                    .tag(item.url)
+            List(selection: $selection) {
+                if let live = liveRecording {
+                    Section("In Progress") {
+                        LiveBrowserRow(recording: live, recordingState: appState.recordingState)
+                            .tag(live.fileURL)
+                    }
+                }
+                if !items.isEmpty {
+                    Section(liveRecording == nil ? "" : "Recordings") {
+                        ForEach(items) { item in
+                            RecordingBrowserRow(item: item)
+                                .tag(item.url)
+                        }
+                    }
+                }
             }
         }
     }
@@ -99,6 +127,11 @@ struct TranscriptBrowserView: View {
     }
 
     private func rebuildDetailRecording() {
+        // Selecting the pinned live entry shows the live `currentRecording` directly.
+        if let live = liveRecording, selection == live.fileURL {
+            if detailRecording?.fileURL != live.fileURL { detailRecording = live }
+            return
+        }
         if let item = selectedItem {
             if detailRecording?.fileURL != item.url {
                 detailRecording = makeRecording(from: item)
@@ -115,6 +148,12 @@ struct TranscriptBrowserView: View {
         appState.pendingTranscriptSelectionURL = nil
     }
 
+    private func applyPendingLiveSelection() {
+        guard appState.pendingLiveTranscriptSelection else { return }
+        if let live = liveRecording { selection = live.fileURL }
+        appState.pendingLiveTranscriptSelection = false
+    }
+
     private func handleDeleted(_ url: URL) {
         items.removeAll { $0.url == url }
         if selection == url { selection = nil }
@@ -129,6 +168,34 @@ struct TranscriptBrowserView: View {
             meetingTitleDraft: item.title,
             finalizedAudioURL: item.url
         )
+    }
+}
+
+/// Pinned sidebar row for the in-progress recording — a pulsing status dot plus
+/// "Recording…" / "Processing…" caption.
+private struct LiveBrowserRow: View {
+    let recording: Recording
+    let recordingState: AppState.RecordingState
+
+    private var statusText: String {
+        recordingState == .processing ? "Processing…" : "Recording…"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(recording.generatedTitle ?? recording.meetingTitleDraft)
+                .font(.body)
+                .lineLimit(1)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(recordingState == .processing ? Color.orange : Color.red)
+                    .frame(width: 7, height: 7)
+                Text(statusText)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 }
 

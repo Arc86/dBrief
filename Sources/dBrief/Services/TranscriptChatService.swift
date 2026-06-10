@@ -11,22 +11,40 @@ final class TranscriptChatService {
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
 
-    private let transcriptText: String
+    /// Provides the transcript text at send-time. A closure (rather than a stored
+    /// string) so the chat can read a *live, growing* transcript during recording —
+    /// each `send()` rebuilds the prompt from the current snapshot.
+    private let transcriptProvider: @MainActor () -> String
     private let speakerLabels: [SpeakerLabel]
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService = AIService()
 
     init(
+        transcriptProvider: @escaping @MainActor () -> String,
+        speakerLabels: [SpeakerLabel],
+        appSettings: AppSettings,
+        localPlugin: LocalAIPluginService?
+    ) {
+        self.transcriptProvider = transcriptProvider
+        self.speakerLabels = speakerLabels
+        self.appSettings = appSettings
+        self.localPlugin = localPlugin
+    }
+
+    /// Convenience init for a fixed (completed-recording) transcript.
+    convenience init(
         transcriptText: String,
         speakerLabels: [SpeakerLabel],
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?
     ) {
-        self.transcriptText = transcriptText
-        self.speakerLabels = speakerLabels
-        self.appSettings = appSettings
-        self.localPlugin = localPlugin
+        self.init(
+            transcriptProvider: { transcriptText },
+            speakerLabels: speakerLabels,
+            appSettings: appSettings,
+            localPlugin: localPlugin
+        )
     }
 
     func send(_ userText: String) async {
@@ -143,6 +161,7 @@ final class TranscriptChatService {
         // Apple Intelligence (FoundationModels) has a ~4096-token context window — a full
         // transcript in the instructions overflows it and chat errors out immediately.
         // Truncate for that engine; Gemma (128K) and remote endpoints keep the full text.
+        let transcriptText = transcriptProvider()
         let transcript = engine == .appleIntelligence
             ? UnifiedInsightsPrompt.truncateForFoundationModels(transcriptText)
             : transcriptText

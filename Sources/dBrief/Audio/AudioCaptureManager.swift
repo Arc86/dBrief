@@ -30,6 +30,30 @@ final class AudioCaptureManager {
     /// Cleared only by the next `startRecording`.
     private(set) var trackURLs: CapturedTracks?
 
+    /// Live audio sinks for real-time transcription. Non-nil only while live
+    /// transcription is enabled for the current recording. The tap handlers
+    /// yield deep-copied buffers here in addition to writing the CAF tracks.
+    private var micLiveContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private var systemLiveContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+
+    /// Creates fresh live audio streams (mic + system) for real-time transcription.
+    /// MUST be called *before* `startRecording` so the tap handlers capture the sinks.
+    /// The streams stay open across pause/resume and are finished by `stopRecording`.
+    func makeLiveAudioStreams() -> (mic: AsyncStream<AVAudioPCMBuffer>, system: AsyncStream<AVAudioPCMBuffer>) {
+        let mic = AsyncStream<AVAudioPCMBuffer> { continuation in
+            self.micLiveContinuation = continuation
+        }
+        let system = AsyncStream<AVAudioPCMBuffer> { continuation in
+            self.systemLiveContinuation = continuation
+        }
+        return (mic, system)
+    }
+
+    private func finishLiveStreams() {
+        micLiveContinuation?.finish(); micLiveContinuation = nil
+        systemLiveContinuation?.finish(); systemLiveContinuation = nil
+    }
+
     func checkPermissions() async {
         hasMicrophonePermission = await Self.requestMicAccess()
         hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
@@ -115,6 +139,8 @@ final class AudioCaptureManager {
         systemWriter?.close(); systemWriter = nil
         micWriter?.close(); micWriter = nil
 
+        finishLiveStreams()
+
         isCapturing = false
         peakLevel = 0
         log.info("Recording stopped")
@@ -162,14 +188,15 @@ final class AudioCaptureManager {
     private func restartSystemCapture(writer: AudioTrackWriter) async throws {
         let filter = try await SystemAudioCapture.createContentFilter()
         let capture = try SystemAudioCapture(filter: filter)
-        capture.audioBufferHandler = Self.makeSystemHandler(writer: writer)
+        capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: systemLiveContinuation)
         self.systemCapture = capture
         try await capture.start()
         log.info("System capture started")
     }
 
     private nonisolated static func makeSystemHandler(
-        writer: AudioTrackWriter
+        writer: AudioTrackWriter,
+        liveSink: AsyncStream<AVAudioPCMBuffer>.Continuation?
     ) -> @Sendable (CMSampleBuffer) -> Void {
         return { sampleBuffer in
             guard let pcm = sampleBuffer.toPCMBuffer() else { return }
@@ -178,6 +205,9 @@ final class AudioCaptureManager {
             } catch {
                 log.error("System write error: \(error.localizedDescription, privacy: .public)")
             }
+            // `pcm` is freshly created by `toPCMBuffer()`, but copy anyway so the
+            // live consumer's lifetime is fully independent of the writer.
+            if let liveSink, let copy = pcm.deepCopy() { liveSink.yield(copy) }
         }
     }
 
@@ -216,7 +246,7 @@ final class AudioCaptureManager {
         }
         log.info("Mic format: \(inputFormat.sampleRate, privacy: .public)Hz \(inputFormat.channelCount, privacy: .public)ch")
 
-        let handler = Self.makeMicHandler(writer: writer)
+        let handler = Self.makeMicHandler(writer: writer, liveSink: micLiveContinuation)
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: handler)
 
         try engine.start()
@@ -224,7 +254,8 @@ final class AudioCaptureManager {
     }
 
     private nonisolated static func makeMicHandler(
-        writer: AudioTrackWriter
+        writer: AudioTrackWriter,
+        liveSink: AsyncStream<AVAudioPCMBuffer>.Continuation?
     ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         return { buffer, _ in
             do {
@@ -232,6 +263,9 @@ final class AudioCaptureManager {
             } catch {
                 log.error("Mic write error: \(error.localizedDescription, privacy: .public)")
             }
+            // AVAudioEngine reuses the tap buffer's storage across callbacks, so
+            // deep-copy before handing it to the live transcriber.
+            if let liveSink, let copy = buffer.deepCopy() { liveSink.yield(copy) }
         }
     }
 
@@ -263,5 +297,24 @@ final class AudioCaptureManager {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// Allocates a new buffer with the same format and copies the raw frame data,
+    /// so the copy can safely outlive a tap's reused storage. Handles both
+    /// interleaved and non-interleaved layouts by copying each audio buffer.
+    func deepCopy() -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else { return nil }
+        copy.frameLength = frameLength
+        let src = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
+        let dst = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        guard src.count == dst.count else { return nil }
+        for i in 0..<src.count {
+            guard let s = src[i].mData, let d = dst[i].mData else { continue }
+            memcpy(d, s, Int(src[i].mDataByteSize))
+            dst[i].mDataByteSize = src[i].mDataByteSize
+        }
+        return copy
     }
 }

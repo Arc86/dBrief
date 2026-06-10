@@ -55,6 +55,7 @@ final class AppSettings {
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
+        static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -324,6 +325,13 @@ final class AppSettings {
     /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
     var diarizationEnabled: Bool {
         didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
+    }
+
+    /// Enable real-time transcription (and live chat) during recording using Apple's
+    /// in-process Speech framework. A preview only — the authoritative transcript is
+    /// still produced post-recording.
+    var liveTranscriptionEnabled: Bool {
+        didSet { UserDefaults.standard.set(liveTranscriptionEnabled, forKey: Keys.liveTranscriptionEnabled) }
     }
 
     /// Enable Acoustic Echo Cancellation on the microphone input.
@@ -654,6 +662,7 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
+        self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
