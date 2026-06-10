@@ -181,7 +181,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     return dBriefWire.TranscriptionResult(
                         text: fullText,
                         segments: allSegments,
-                        speakerCount: diarResult.speakerCount
+                        speakerCount: diarResult.speakerCount,
+                        inferenceTime: transcribeDuration
                     )
                 } catch {
                     Logger.localAI.error("Diarization failed: \(error.localizedDescription, privacy: .public) — continuing without speaker labels")
@@ -216,7 +217,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
             await unload()
-            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage)
+            return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage, inferenceTime: transcribeDuration)
         } catch {
             await unload()
             throw error
@@ -243,6 +244,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             await unload()
             throw error
         }
+    }
+
+    /// Load the given model and KEEP it resident (no trailing unload). Used to
+    /// warm the model ahead of transcription. Reuses the cached instance when the
+    /// config already matches (`loadWhisperKit` no-ops).
+    func prewarm(config: WhisperRuntimeConfig) async throws {
+        _ = try await loadWhisperKit(config: config)
     }
 
     /// Best-effort on-disk check for whether the named model is cached.

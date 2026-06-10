@@ -56,6 +56,8 @@ final class AppSettings {
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
+        static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
+        static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
         static let recordHotkey = "recordHotkey"
@@ -357,6 +359,19 @@ final class AppSettings {
     /// Enable Acoustic Echo Cancellation on the microphone input.
     var acousticEchoCancellation: Bool {
         didSet { UserDefaults.standard.set(acousticEchoCancellation, forKey: Keys.acousticEchoCancellation) }
+    }
+
+    /// Warm the local Whisper model ~3 s after launch and on wake, so the first
+    /// transcription starts instantly. Off by default — it holds the model in
+    /// memory while idle, which competes with a local analysis LLM.
+    var prewarmWhisperOnLaunch: Bool {
+        didSet { UserDefaults.standard.set(prewarmWhisperOnLaunch, forKey: Keys.prewarmWhisperOnLaunch) }
+    }
+
+    /// Lifetime total of audio seconds dBrief has transcribed to text. A
+    /// monotonically-increasing odometer that survives "Clear benchmark stats".
+    var lifetimeTranscribedSeconds: Double {
+        didSet { UserDefaults.standard.set(lifetimeTranscribedSeconds, forKey: Keys.lifetimeTranscribedSeconds) }
     }
 
     /// Parakeet CoreML model variant to use for local Parakeet transcription.
@@ -688,6 +703,8 @@ final class AppSettings {
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
+        self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
+        self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt

@@ -92,6 +92,14 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
 
     func prepareModelsIfNeeded() async { _ = try? await connection.call(.prepareModels) }
     func downloadWhisperModel(config: WhisperRuntimeConfig) async throws { _ = try await connection.call(.downloadWhisper(config: config)) }
+
+    /// Warm the Whisper model in the helper ahead of transcription. Best-effort:
+    /// failures (including a helper crash/OOM) are swallowed; the normal load runs
+    /// at transcription time. `refresh` forces an unload+reload to refresh GPU
+    /// state after sleep.
+    func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool = false) async {
+        _ = try? await connection.call(.prewarmWhisper(config: config, refresh: refresh))
+    }
     func downloadLLMModel() async throws { _ = try await connection.call(.downloadLLM) }
     func isWhisperModelCached(name: String) async -> Bool { (try? await connection.call(.isWhisperCached(name: name))).flatMap(Self.bool) ?? false }
     func isLLMModelCached() async -> Bool { (try? await connection.call(.isLLMCached)).flatMap(Self.bool) ?? false }

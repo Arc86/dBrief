@@ -131,6 +131,17 @@ final class RecordingManager {
             acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
         )
         appState.recordingState = .recording
+
+        // Warm the local Whisper model while the user records, so the model
+        // load+prewarm cost hides behind the (typically minutes-long) recording
+        // instead of being paid at transcription time. Fire-and-forget; the
+        // helper reuses this warm model when transcription starts. Only local
+        // Whisper benefits — other engines no-op via the engine guard.
+        if appSettings.effectiveTranscriptionEngine == .localWhisper {
+            let cfg = appSettings.whisperRuntimeConfig
+            Task { await localAIPluginService.prewarmWhisper(config: cfg, refresh: false) }
+        }
+
         miniPlayer?.show()
 
         observeAudioState()
@@ -211,6 +222,7 @@ final class RecordingManager {
         // Measured performance for this session (logged at the end).
         var perfTranscriptionModel: String?
         var perfTranscriptionTime: TimeInterval?
+        var perfInferenceTime: TimeInterval?
         var perfAudioDuration: TimeInterval?
         var perfAIModel: String?
         var perfAITime: TimeInterval?
@@ -269,8 +281,11 @@ final class RecordingManager {
                     let txStart = Date()
                     let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
                     perfTranscriptionTime = Date().timeIntervalSince(txStart)
+                    perfInferenceTime = result.inferenceTime
                     perfTranscriptionModel = transcriptionModelDisplayName
                     perfAudioDuration = recording.duration
+                    // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
+                    appSettings.lifetimeTranscribedSeconds += recording.duration
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                     if let warnings = result.warnings, !warnings.isEmpty {
@@ -368,6 +383,7 @@ final class RecordingManager {
             transcriptionModel: perfTranscriptionModel,
             audioDuration: perfAudioDuration,
             transcriptionTime: perfTranscriptionTime,
+            inferenceTime: perfInferenceTime,
             aiModel: perfAIModel,
             aiTime: perfAITime
         )
@@ -580,6 +596,7 @@ final class RecordingManager {
             transcriptionModel: nil,
             audioDuration: nil,
             transcriptionTime: nil,
+            inferenceTime: nil,
             aiModel: perfAIModel,
             aiTime: perfAITime
         )
@@ -1451,6 +1468,7 @@ final class RecordingManager {
         transcriptionModel: String?,
         audioDuration: TimeInterval?,
         transcriptionTime: TimeInterval?,
+        inferenceTime: TimeInterval?,
         aiModel: String?,
         aiTime: TimeInterval?
     ) {
@@ -1459,6 +1477,7 @@ final class RecordingManager {
             transcriptionModel: transcriptionTime != nil ? transcriptionModel : nil,
             audioDuration: transcriptionTime != nil ? audioDuration : nil,
             transcriptionTime: transcriptionTime,
+            inferenceTime: transcriptionTime != nil ? inferenceTime : nil,
             aiModel: aiTime != nil ? aiModel : nil,
             aiTime: aiTime
         )
@@ -1573,12 +1592,7 @@ final class RecordingManager {
                 language: language
             )
         case .localWhisper:
-            let whisperConfig = WhisperRuntimeConfig(
-                modelName: appSettings.whisperModelName,
-                language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage,
-                diarizationEnabled: appSettings.diarizationEnabled,
-                computeUnits: appSettings.whisperComputeUnits
-            )
+            let whisperConfig = appSettings.whisperRuntimeConfig
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
                 try await self.localAIPluginService.transcribe(
                     fileURL: url,

@@ -23,6 +23,7 @@ final class AppContext {
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
+    let whisperPrewarmCoordinator: WhisperPrewarmCoordinator
     private var permissionsChecked = false
 
     init() {
@@ -34,6 +35,9 @@ final class AppContext {
             appSettings: appSettings,
             recordingManager: recordingManager
         )
+
+        self.whisperPrewarmCoordinator = WhisperPrewarmCoordinator(
+            appSettings: appSettings, plugin: recordingManager.localPlugin)
 
         // Start power state monitoring for queue processing nudge
         self.powerStateMonitor = PowerStateMonitor(appState: appState, recordingManager: recordingManager)
@@ -85,6 +89,8 @@ final class AppContext {
 
         // Purge recordings/transcripts past their retention window.
         await runRetentionCleanupIfNeeded()
+
+        whisperPrewarmCoordinator.scheduleLaunchPrewarm()
 
         log.info("Ready")
     }
@@ -198,6 +204,7 @@ struct DBriefApp: App {
 
         WindowGroup(id: "settings") {
             SettingsView()
+                .environment(context)
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)

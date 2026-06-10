@@ -26,7 +26,6 @@ struct TranscriptDetailView: View {
     @State private var chatService: TranscriptChatService?
     @State private var showChat = false
     @State private var showAnalysis = false
-    @State private var showPerformance = false
     @State private var insights: RecordingInsights?
     @State private var copied = false
     @State private var showDeleteConfirm = false
@@ -59,9 +58,7 @@ struct TranscriptDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if showPerformance {
-                ModelPerformanceView(store: context.modelPerformanceStore)
-            } else if loadFailed {
+            if loadFailed {
                 failedState
             } else if showAnalysis {
                 TranscriptAnalysisView(insights: insights) { updated in
@@ -144,14 +141,6 @@ struct TranscriptDetailView: View {
                     .foregroundStyle(showAnalysis ? Color.accentColor : Color.secondary)
             }
             .help(showAnalysis ? "Show transcript" : "Show AI analysis")
-
-            Button {
-                togglePerformance()
-            } label: {
-                Image(systemName: "speedometer")
-                    .foregroundStyle(showPerformance ? Color.accentColor : Color.secondary)
-            }
-            .help(showPerformance ? "Show transcript" : "Show model performance")
 
             Button {
                 toggleChat()
@@ -373,7 +362,6 @@ struct TranscriptDetailView: View {
         showChat.toggle()
         if showChat {
             showAnalysis = false
-            showPerformance = false
             if chatService == nil { buildChatService() }
         }
     }
@@ -382,15 +370,6 @@ struct TranscriptDetailView: View {
         showAnalysis.toggle()
         if showAnalysis {
             showChat = false
-            showPerformance = false
-        }
-    }
-
-    private func togglePerformance() {
-        showPerformance.toggle()
-        if showPerformance {
-            showChat = false
-            showAnalysis = false
         }
     }
 
@@ -524,7 +503,6 @@ struct TranscriptDetailView: View {
         richTranscript = nil
         loadFailed = false
         showAnalysis = false
-        showPerformance = false
         insights = nil
         await loadInsights()
 

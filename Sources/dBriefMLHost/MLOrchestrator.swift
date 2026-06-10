@@ -147,6 +147,17 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
+    func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool) async throws {
+        try await mutex.withLock { [self] in
+            defer { emit(.plugin, .idle) }
+            // Refresh re-loads to recompile GPU/ANE state after sleep eviction.
+            if refresh { await whisperService.unload() }
+            // Best-effort: do NOT unload the LLM here — prewarm must not evict an
+            // in-use insights/chat model just to warm Whisper.
+            try await whisperService.prewarm(config: config)
+        }
+    }
+
     func downloadLLM() async throws {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }

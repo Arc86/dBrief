@@ -32,6 +32,7 @@ actor MockBackend: MLBackend {
     func purgeParakeet() async throws {}
     func memoryPressurePurge() async {}
     func forceUnload() async {}
+    func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool) async throws {}
 }
 
 @Suite struct RequestRoutingTests {
@@ -58,6 +59,16 @@ actor MockBackend: MLBackend {
         let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
         #expect(tokens == ["a", "b"])
         #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+    }
+
+    @Test func prewarmEmitsVoidThenFinishedOnPluginChannel() async {
+        let collected = EventCollector()
+        let router = RequestRouter(backend: MockBackend()) { collected.append($0) }
+        await router.handle(RequestEnvelope(id: UUID(),
+            request: .prewarmWhisper(config: .default, refresh: false)))
+        #expect(collected.events.contains { if case .voidResult = $0.event { true } else { false } })
+        #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+        #expect(collected.events.allSatisfy { $0.channel == .plugin })
     }
 
     @Test func parakeetUsesParakeetChannel() async throws {

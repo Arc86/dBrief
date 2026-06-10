@@ -13,6 +13,7 @@ protocol MLBackend: Sendable {
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
     func downloadWhisper(config: WhisperRuntimeConfig) async throws
+    func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool) async throws
     func downloadLLM() async throws
     func downloadParakeet(variant: String) async throws
     func isWhisperCached(name: String) async -> Bool
@@ -78,6 +79,8 @@ final class RequestRouter: Sendable {
                 await backend.prepareModels(); send(.voidResult); send(.finished)
             case let .downloadWhisper(config):
                 try await backend.downloadWhisper(config: config); send(.voidResult); send(.finished)
+            case let .prewarmWhisper(config, refresh):
+                try await backend.prewarmWhisper(config: config, refresh: refresh); send(.voidResult); send(.finished)
             case .downloadLLM:
                 try await backend.downloadLLM(); send(.voidResult); send(.finished)
             case let .downloadParakeet(variant):

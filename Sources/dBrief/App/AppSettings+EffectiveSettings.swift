@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 // MARK: - Profile-Resolved Effective Settings
 
@@ -104,6 +105,19 @@ extension AppSettings {
 
     var effectiveObsidianDefaultFolderRelativePath: String {
         activeProfile.overrides.obsidianDefaultFolderRelativePath ?? obsidianDefaultFolderRelativePath
+    }
+
+    /// The Whisper helper config for the *current raw* settings, built identically
+    /// to the transcription path so a prewarmed model satisfies `loadedConfig ==
+    /// config` in the helper and is reused (not reloaded). Mirrors the construction
+    /// in `RecordingManager.transcribeRecordingAudio` — keep the two in lockstep.
+    var whisperRuntimeConfig: WhisperRuntimeConfig {
+        WhisperRuntimeConfig(
+            modelName: whisperModelName,
+            language: transcriptionLanguage.isEmpty ? nil : transcriptionLanguage,
+            diarizationEnabled: diarizationEnabled,
+            computeUnits: whisperComputeUnits
+        )
     }
 
     /// Pure coercion: a persisted `.outlook` selection is treated as `.disabled`

@@ -28,6 +28,23 @@ Use the **Download model** button to fetch a model ahead of time. Downloads show
 2. Select **Local Whisper** as your transcription engine
 3. Pick a model and click **Download model** (or just start a recording — dBrief downloads the model on demand)
 
+## Instant starts: model prewarming
+
+Loading the Whisper model into the Neural Engine takes a few seconds. To keep that
+out of your way, dBrief **prewarms the model while you record** — as soon as a
+recording starts, the model loads in the background, so transcription begins the
+moment you hit **Stop** instead of waiting on a load.
+
+For an even snappier first transcription, open **Settings → AI & Models →
+Transcription → Advanced** and enable **Keep model warm**. This loads the model
+shortly after the app launches and again after your Mac wakes from sleep, so it's
+ready before you even start recording. It's **off by default** because it holds the
+model in memory while idle, which competes with a local analysis model (Gemma) —
+leave it off unless you transcribe often and have memory to spare.
+
+See [Benchmark & Performance](../reference/benchmark.md) to measure the difference
+between pure model speed and the full end-to-end time.
+
 ## Speaker diarization
 
 Turn on **Speaker diarization** in the same section to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
