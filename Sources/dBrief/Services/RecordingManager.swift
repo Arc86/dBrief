@@ -131,6 +131,17 @@ final class RecordingManager {
             acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
         )
         appState.recordingState = .recording
+
+        // Warm the local Whisper model while the user records, so the model
+        // load+prewarm cost hides behind the (typically minutes-long) recording
+        // instead of being paid at transcription time. Fire-and-forget; the
+        // helper reuses this warm model when transcription starts. Only local
+        // Whisper benefits — other engines no-op via the engine guard.
+        if appSettings.effectiveTranscriptionEngine == .localWhisper {
+            let cfg = appSettings.whisperRuntimeConfig
+            Task { await localAIPluginService.prewarmWhisper(config: cfg, refresh: false) }
+        }
+
         miniPlayer?.show()
 
         observeAudioState()
