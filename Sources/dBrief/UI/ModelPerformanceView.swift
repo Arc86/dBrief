@@ -119,9 +119,18 @@ struct ModelPerformanceView: View {
                 Text(String(format: "%.1fx", stat.speedup))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(hex: "30d158"))
-                Text("Faster than Real-time")
+                Text("End-to-end · faster than real-time")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if let inf = stat.inferenceSpeedup {
+                    Text(stat.avgOverhead.map {
+                        String(format: "%.1fx model · +%@ load/overhead", inf, Self.formatDuration($0))
+                    } ?? String(format: "%.1fx model inference", inf))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
 
                 Divider().padding(.vertical, 2)
 
