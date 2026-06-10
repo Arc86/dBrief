@@ -246,6 +246,13 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
     }
 
+    /// Load the given model and KEEP it resident (no trailing unload). Used to
+    /// warm the model ahead of transcription. Reuses the cached instance when the
+    /// config already matches (`loadWhisperKit` no-ops).
+    func prewarm(config: WhisperRuntimeConfig) async throws {
+        _ = try await loadWhisperKit(config: config)
+    }
+
     /// Best-effort on-disk check for whether the named model is cached.
     /// Computes the path without creating directories (unlike
     /// `whisperDownloadBaseURL()`), so a read-only check has no side effects.

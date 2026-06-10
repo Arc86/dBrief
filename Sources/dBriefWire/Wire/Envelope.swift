@@ -15,6 +15,7 @@ public enum MLRequest: Sendable, Codable {
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)
+    case prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool)
     case downloadLLM
     case downloadParakeet(variant: String)
     case isWhisperCached(name: String)
