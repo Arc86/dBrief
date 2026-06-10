@@ -8,7 +8,7 @@
 
 A macOS menu bar app that quietly records your meetings, transcribes them on-device, and hands you the brief — summary, action items, who said what — before you've left the room.
 
-[Download for macOS](https://github.com/Arc86/dBrief/releases) · [Roadmap](https://github.com/Arc86/dBrief/issues) · [Report a bug](https://github.com/Arc86/dBrief/issues/new)
+[Download for macOS](https://github.com/Arc86/dBrief/releases) · [Docs](https://get.dbrief.nl/docs.html) · [Roadmap](https://github.com/Arc86/dBrief/issues) · [Report a bug](https://github.com/Arc86/dBrief/issues/new)
 
 </div>
 
