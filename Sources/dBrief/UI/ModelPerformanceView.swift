@@ -7,10 +7,12 @@ struct ModelPerformanceView: View {
     let store: ModelPerformanceStore
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppSettings.self) private var appSettings
 
     @State private var records: [ModelPerformanceRecord] = []
     @State private var loaded = false
     @State private var range: PerformanceRange = .last30Days
+    @State private var showClearConfirm = false
 
     private let columns = [GridItem(.adaptive(minimum: 220), spacing: TranscriptDesignTokens.cardGap)]
 
@@ -24,14 +26,31 @@ struct ModelPerformanceView: View {
             records = await store.load()
             loaded = true
         }
+        .confirmationDialog("Clear benchmark stats?",
+                            isPresented: $showClearConfirm, titleVisibility: .visible) {
+            Button("Clear Stats", role: .destructive) {
+                Task {
+                    await store.clear()
+                    records = []
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes all per-model benchmark history. The total minutes transcribed is kept.")
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("Model Performance")
-                .font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Model Performance")
+                    .font(.headline)
+                Text("\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             Picker("", selection: $range) {
                 ForEach(PerformanceRange.allCases) { r in
@@ -41,6 +60,13 @@ struct ModelPerformanceView: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
+            Button(role: .destructive) {
+                showClearConfirm = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .help("Clear benchmark stats")
+            .disabled(records.isEmpty)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -116,20 +142,26 @@ struct ModelPerformanceView: View {
             VStack(spacing: 6) {
                 modelTitle(stat.model, sessions: stat.sessions)
 
-                Text(String(format: "%.1fx", stat.speedup))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(hex: "30d158"))
-                Text("End-to-end · faster than real-time")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 if let inf = stat.inferenceSpeedup {
+                    Text(String(format: "%.1fx", inf))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(hex: "30d158"))
+                    Text("Model · faster than real-time")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(stat.avgOverhead.map {
-                        String(format: "%.1fx model · +%@ load/overhead", inf, Self.formatDuration(max(0, $0)))
-                    } ?? String(format: "%.1fx model inference", inf))
+                        String(format: "%.1fx end-to-end · +%@ load/overhead", stat.speedup, Self.formatDuration(max(0, $0)))
+                    } ?? String(format: "%.1fx end-to-end", stat.speedup))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
+                } else {
+                    Text(String(format: "%.1fx", stat.speedup))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(hex: "30d158"))
+                    Text("End-to-end · faster than real-time")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Divider().padding(.vertical, 2)
@@ -223,6 +255,15 @@ struct ModelPerformanceView: View {
     }
 
     // MARK: - Formatting
+
+    /// Compact lifetime total: "0m", "45m", or "12h 34m".
+    static func formatTotalDuration(_ s: TimeInterval) -> String {
+        let totalMinutes = Int(s / 60)
+        if totalMinutes >= 60 {
+            return "\(totalMinutes / 60)h \(totalMinutes % 60)m"
+        }
+        return "\(totalMinutes)m"
+    }
 
     /// "31s", "3.10s", or "2:29 mins" depending on magnitude.
     static func formatDuration(_ s: TimeInterval) -> String {

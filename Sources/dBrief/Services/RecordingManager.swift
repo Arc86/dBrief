@@ -284,6 +284,8 @@ final class RecordingManager {
                     perfInferenceTime = result.inferenceTime
                     perfTranscriptionModel = transcriptionModelDisplayName
                     perfAudioDuration = recording.duration
+                    // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
+                    appSettings.lifetimeTranscribedSeconds += recording.duration
                     recording.transcription = result
                     appState.processingSteps[stepIndex].status = .completed
                     if let warnings = result.warnings, !warnings.isEmpty {

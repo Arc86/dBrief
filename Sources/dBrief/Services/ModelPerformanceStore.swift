@@ -51,6 +51,12 @@ actor ModelPerformanceStore {
         save(records)
     }
 
+    /// Remove all recorded sessions (the "Clear stats" action). Does NOT touch
+    /// the lifetime transcribed-minutes odometer, which lives in `AppSettings`.
+    func clear() {
+        try? fileManager.removeItem(at: url)
+    }
+
     private func save(_ records: [ModelPerformanceRecord]) {
         do {
             try fileManager.createDirectory(
