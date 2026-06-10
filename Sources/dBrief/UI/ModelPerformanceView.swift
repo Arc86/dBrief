@@ -125,7 +125,7 @@ struct ModelPerformanceView: View {
 
                 if let inf = stat.inferenceSpeedup {
                     Text(stat.avgOverhead.map {
-                        String(format: "%.1fx model · +%@ load/overhead", inf, Self.formatDuration($0))
+                        String(format: "%.1fx model · +%@ load/overhead", inf, Self.formatDuration(max(0, $0)))
                     } ?? String(format: "%.1fx model inference", inf))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
