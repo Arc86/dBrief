@@ -318,6 +318,14 @@ struct SettingsTranscriptionTab: View {
                         }
                     }
 
+                    Toggle(isOn: $settings.prewarmWhisperOnLaunch) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Keep model warm")
+                            Text("Loads the Whisper model shortly after launch and after the Mac wakes, so the first transcription starts instantly. Uses extra memory while idle.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
                     HStack {
                         Button {
                             fetchWhisperModels()
