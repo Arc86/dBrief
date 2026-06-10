@@ -248,6 +248,7 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
 - **AudioPlayer** — playback control for past recordings
 - **WebhookPayloadBuilder** — builds multipart/form-data payloads for webhook delivery
 - **AudioChunker** — segments large audio files for chunked remote transcription
+- **RetentionCleanup** (`Services/RetentionCleanup.swift`) — stateless, age-based auto-delete for the output folders. `cleanup(category:olderThanDays:in:)` enumerates the given folders and removes files older than the cutoff (judged by each file's own creation date). Two independent policies driven by `AppSettings.autoDeleteRecordings*`/`autoDeleteTranscripts*`: **recordings** sweeps audio (`m4a/wav/flac/mp3/aac`) + their non-transcript `.json`/`.queue.json` sidecars from the recordings folder; **transcripts** sweeps `.md` + `.transcript.json`/`.richtranscript.json`/`.insights.json` from the recordings and transcription folders. Runs on launch via `AppContext.runRetentionCleanupIfNeeded()` (off-main) and on demand from the Settings → General "Run Cleanup Now" buttons.
 
 ### UI Structure (`UI/`)
 
@@ -262,6 +263,7 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
 - **CallDetectedPopup** / **CallDetectedOverlayController** — call detection prompt overlay
 - **YouTubeURLInputView** — inline panel in the menu bar for YouTube/video URL input
 - **SettingsView** — sidebar-based settings window with tabs:
+  - **General** — appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, a **Privacy** section (independent auto-delete of recordings and transcripts after a chosen age, each with a "Run Cleanup Now" button), call detection, calendar source (iCal/Outlook), and permissions (mic, screen recording, calendar)
   - **General** — start-at-login toggle (`LoginItemManager`/`SMAppService`), appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, call detection, calendar source (iCal/Outlook), and a Reset Onboarding button (flips `hasCompletedOnboarding` to re-show the setup guide)
   - **Permissions** (`SettingsPermissionsTab`) — top-level page consolidating all permission status/requests (microphone, screen recording, speech recognition, calendar) with "Open System Settings" deep links; moved here out of General
   - **Recording** (`SettingsRecordingTab`) — audio input device, acoustic echo cancellation, and a read-only Audio Quality summary (Power User Mode)

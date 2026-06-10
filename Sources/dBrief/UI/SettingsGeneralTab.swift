@@ -11,6 +11,13 @@ struct SettingsGeneralTab: View {
     @State private var calendarStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
     @State private var startAtLogin: Bool = LoginItemManager.isEnabled
 
+    // Retention / auto-delete UI state
+    @State private var runningCleanup: RetentionCategory?
+    @State private var cleanupMessage: [RetentionCategory: String] = [:]
+    @State private var pendingCleanup: RetentionCategory?
+
+    private let retentionDayOptions = [1, 7, 14, 30, 60, 90, 180, 365]
+
     var body: some View {
         @Bindable var settings = appSettings
         Form {
@@ -128,6 +135,33 @@ struct SettingsGeneralTab: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Privacy") {
+                retentionControls(
+                    title: "Auto-delete recordings",
+                    help: "Removes audio files older than the selected age from the recordings folder. Transcripts and notes are kept.",
+                    enabled: $settings.autoDeleteRecordingsEnabled,
+                    days: $settings.autoDeleteRecordingsDays,
+                    category: .recordings
+                )
+
+                Divider()
+
+                retentionControls(
+                    title: "Auto-delete transcripts",
+                    help: "Removes transcript, insights, and Markdown note files older than the selected age. Audio recordings are kept.",
+                    enabled: $settings.autoDeleteTranscriptsEnabled,
+                    days: $settings.autoDeleteTranscriptsDays,
+                    category: .transcripts
+                )
+
+                if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
+                    Text("Cleanup also runs automatically when dBrief launches.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .listRowBackground(Color.clear)
@@ -255,8 +289,99 @@ struct SettingsGeneralTab: View {
         .scrollBounceBehavior(.basedOnSize)
         .toggleStyle(.smallSwitch)
         .padding(.top, -20)
+        .confirmationDialog(
+            "Delete \(pendingCleanup?.displayName ?? "files") older than the selected age?",
+            isPresented: Binding(
+                get: { pendingCleanup != nil },
+                set: { if !$0 { pendingCleanup = nil } }
+            ),
+            presenting: pendingCleanup
+        ) { category in
+            Button("Delete", role: .destructive) { runCleanup(category) }
+            Button("Cancel", role: .cancel) { pendingCleanup = nil }
+        } message: { _ in
+            Text("This permanently deletes matching files. This can't be undone.")
+        }
         .onAppear {
             calendarStatus = EKEventStore.authorizationStatus(for: .event)
+        }
+    }
+
+    @ViewBuilder
+    private func retentionControls(
+        title: String,
+        help: String,
+        enabled: Binding<Bool>,
+        days: Binding<Int>,
+        category: RetentionCategory
+    ) -> some View {
+        Toggle(title, isOn: enabled)
+
+        if enabled.wrappedValue {
+            Picker("Delete after", selection: days) {
+                ForEach(retentionDayOptions, id: \.self) { value in
+                    Text(retentionLabel(value)).tag(value)
+                }
+            }
+            .pickerStyle(.menu)
+
+            HStack(spacing: 8) {
+                Button("Run Cleanup Now") { pendingCleanup = category }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(runningCleanup != nil)
+
+                if runningCleanup == category {
+                    ProgressView().controlSize(.small)
+                }
+
+                Spacer()
+
+                if let message = cleanupMessage[category] {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(help)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func retentionLabel(_ days: Int) -> String {
+        switch days {
+        case 1: "1 day"
+        case 7: "1 week"
+        case 14: "2 weeks"
+        case 365: "1 year"
+        default: "\(days) days"
+        }
+    }
+
+    private func runCleanup(_ category: RetentionCategory) {
+        pendingCleanup = nil
+        guard runningCleanup == nil else { return }
+        runningCleanup = category
+
+        let days: Int
+        let folders: [URL]
+        switch category {
+        case .recordings:
+            days = appSettings.autoDeleteRecordingsDays
+            folders = [appSettings.effectiveRecordingFolderURL]
+        case .transcripts:
+            days = appSettings.autoDeleteTranscriptsDays
+            folders = [appSettings.effectiveRecordingFolderURL, appSettings.effectiveTranscriptionFolderURL]
+        }
+
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                RetentionCleanup.cleanup(category: category, olderThanDays: days, in: folders)
+            }.value
+            cleanupMessage[category] = result.summary
+            runningCleanup = nil
         }
     }
 

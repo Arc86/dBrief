@@ -61,6 +61,10 @@ final class AppSettings {
         static let recordHotkey = "recordHotkey"
         static let autoCheckUpdates = "autoCheckUpdates"
         static let lastUpdateCheckTime = "lastUpdateCheckTime"
+        static let autoDeleteRecordingsEnabled = "autoDeleteRecordingsEnabled"
+        static let autoDeleteRecordingsDays = "autoDeleteRecordingsDays"
+        static let autoDeleteTranscriptsEnabled = "autoDeleteTranscriptsEnabled"
+        static let autoDeleteTranscriptsDays = "autoDeleteTranscriptsDays"
     }
 
     // MARK: - Recording
@@ -71,6 +75,30 @@ final class AppSettings {
 
     var transcriptionFolderURL: URL {
         didSet { saveBookmark(for: transcriptionFolderURL, key: Keys.transcriptionFolderBookmark) }
+    }
+
+    // MARK: - Privacy / Retention
+
+    /// Automatically delete audio recordings older than `autoDeleteRecordingsDays`.
+    /// Transcripts and notes are left in place.
+    var autoDeleteRecordingsEnabled: Bool {
+        didSet { UserDefaults.standard.set(autoDeleteRecordingsEnabled, forKey: Keys.autoDeleteRecordingsEnabled) }
+    }
+
+    /// Age (in days) after which recordings are auto-deleted.
+    var autoDeleteRecordingsDays: Int {
+        didSet { UserDefaults.standard.set(autoDeleteRecordingsDays, forKey: Keys.autoDeleteRecordingsDays) }
+    }
+
+    /// Automatically delete transcript / insights / Markdown files older than
+    /// `autoDeleteTranscriptsDays`. Audio recordings are left in place.
+    var autoDeleteTranscriptsEnabled: Bool {
+        didSet { UserDefaults.standard.set(autoDeleteTranscriptsEnabled, forKey: Keys.autoDeleteTranscriptsEnabled) }
+    }
+
+    /// Age (in days) after which transcripts are auto-deleted.
+    var autoDeleteTranscriptsDays: Int {
+        didSet { UserDefaults.standard.set(autoDeleteTranscriptsDays, forKey: Keys.autoDeleteTranscriptsDays) }
     }
 
     // MARK: - Integrations (Obsidian)
@@ -565,6 +593,11 @@ final class AppSettings {
             ?? Self.defaultRecordingFolder()
         self.transcriptionFolderURL = Self.loadBookmarkURL(key: Keys.transcriptionFolderBookmark)
             ?? Self.defaultTranscriptionFolder()
+        self.autoDeleteRecordingsEnabled = defaults.object(forKey: Keys.autoDeleteRecordingsEnabled) as? Bool ?? false
+        self.autoDeleteRecordingsDays = max(1, defaults.object(forKey: Keys.autoDeleteRecordingsDays) as? Int ?? 30)
+        self.autoDeleteTranscriptsEnabled = defaults.object(forKey: Keys.autoDeleteTranscriptsEnabled) as? Bool ?? false
+        self.autoDeleteTranscriptsDays = max(1, defaults.object(forKey: Keys.autoDeleteTranscriptsDays) as? Int ?? 30)
+
         self.obsidianVaultURL = Self.loadBookmarkURL(key: Keys.obsidianVaultBookmark)
         self.obsidianEnabled = defaults.object(forKey: Keys.obsidianEnabled) as? Bool ?? false
         self.obsidianDefaultFolderRelativePath = defaults.string(
