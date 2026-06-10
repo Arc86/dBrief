@@ -1,0 +1,22 @@
+dBrief bundles a static build of FFmpeg (https://ffmpeg.org) in
+Contents/MacOS/ffmpeg to mix, filter, normalize, encode, and segment recorded
+audio.
+
+FFmpeg is free software licensed under the GNU General Public License (GPL)
+version 3 (or, for some configurations, the GNU Lesser General Public License).
+The exact license depends on the build's enabled components; see the FFmpeg
+project for the full license text:
+
+    https://www.ffmpeg.org/legal.html
+    https://www.gnu.org/licenses/gpl-3.0.html
+
+dBrief invokes ffmpeg only as a separate command-line subprocess (via
+Foundation's Process); it does not link against FFmpeg libraries. dBrief's own
+source remains under the MIT license.
+
+The bundled binary is an unmodified upstream build. Source code corresponding to
+the bundled FFmpeg version is available from the FFmpeg project and from the
+build provider:
+
+    https://github.com/FFmpeg/FFmpeg
+    https://ffmpeg.martin-riedl.de/
