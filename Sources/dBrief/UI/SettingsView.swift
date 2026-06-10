@@ -7,11 +7,12 @@ struct SettingsView: View {
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general      = "General"
-        case permissions  = "Permissions"
         case recording    = "Recording"
         case aiAndModels  = "AI & Models"
         case integrations = "Integrations"
         case profiles     = "Profiles"
+        case benchmark    = "Benchmark"
+        case permissions  = "Permissions"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -21,13 +22,14 @@ struct SettingsView: View {
             case .aiAndModels:  "brain"
             case .integrations: "puzzlepiece.extension"
             case .profiles:     "person.3"
+            case .benchmark:    "speedometer"
             }
         }
     }
 
     private var visibleTabs: [SettingsTab] {
         SettingsTab.allCases.filter { tab in
-            if tab == .profiles { return appSettings.powerUserMode }
+            if tab == .profiles || tab == .benchmark { return appSettings.powerUserMode }
             return true
         }
     }
@@ -62,6 +64,7 @@ struct SettingsView: View {
                 case .aiAndModels:  SettingsAIModelsTab()
                 case .integrations: SettingsIntegrationsTab()
                 case .profiles:     SettingsProfilesTab()
+                case .benchmark:    SettingsBenchmarkTab()
                 }
             } else {
                 SettingsGeneralTab()

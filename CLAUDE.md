@@ -265,11 +265,12 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
 - **SettingsView** — sidebar-based settings window with tabs:
   - **General** — appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, a **Privacy** section (independent auto-delete of recordings and transcripts after a chosen age, each with a "Run Cleanup Now" button), call detection, calendar source (iCal/Outlook), and permissions (mic, screen recording, calendar)
   - **General** — start-at-login toggle (`LoginItemManager`/`SMAppService`), appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, call detection, calendar source (iCal/Outlook), and a Reset Onboarding button (flips `hasCompletedOnboarding` to re-show the setup guide)
-  - **Permissions** (`SettingsPermissionsTab`) — top-level page consolidating all permission status/requests (microphone, screen recording, speech recognition, calendar) with "Open System Settings" deep links; moved here out of General
+  - **Permissions** (`SettingsPermissionsTab`) — top-level page consolidating all permission status/requests (microphone, screen recording, speech recognition, calendar) with "Open System Settings" deep links; moved here out of General. Pinned to the **bottom** of the sidebar (last `SettingsTab` case).
   - **Recording** (`SettingsRecordingTab`) — audio input device, acoustic echo cancellation, and a read-only Audio Quality summary (Power User Mode)
   - **AI & Models** (`SettingsAIModelsTab`) — two sub-tabs: **Transcription** (`SettingsTranscriptionTab`: engine; for Local Whisper a model **card** with Recommended badge + per-model plain-language descriptor + `ModelDownloadButton`, a help popover, diarization, and an **Advanced** disclosure holding compute units, "Show all models", refresh, and purge; plus language, custom vocabulary, endpoints, chunking) and **AI Analysis** (`SettingsAITab`: AI engine, Gemma model download, prompts, AI processing toggle, output language, endpoints)
   - **Integrations** (`SettingsIntegrationsTab`) — only `IntegrationDestination.available` destinations
   - **Profiles** (`SettingsProfilesTab`) — hidden unless `powerUserMode` is enabled
+  - **Benchmark** (`SettingsBenchmarkTab`) — hidden unless `powerUserMode` is enabled; hosts `ModelPerformanceView` (the global per-model timing aggregate from `ModelPerformanceStore`). Lives here because the data is overall, not tied to a single transcript — it is **not** in the transcript window toolbar. Reads the store via `@Environment(AppContext.self)` (the settings window injects `context`).
 
 ## Dependencies
 

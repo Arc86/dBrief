@@ -198,6 +198,7 @@ struct DBriefApp: App {
 
         WindowGroup(id: "settings") {
             SettingsView()
+                .environment(context)
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)

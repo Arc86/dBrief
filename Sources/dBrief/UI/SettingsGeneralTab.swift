@@ -148,7 +148,9 @@ struct SettingsGeneralTab: View {
                     category: .recordings
                 )
 
-                Divider()
+                if settings.autoDeleteRecordingsEnabled {
+                    Divider()
+                }
 
                 retentionControls(
                     title: "Auto-delete transcripts",
