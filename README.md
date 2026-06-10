@@ -33,6 +33,7 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 
 - **Local-first by default** — Apple Silicon? Apple Intelligence and local Gemma 4 mean nothing leaves your Mac
 - **Your meetings, your machine** — no dBrief cloud, no account, no telemetry
+- **Auto-delete** — optionally purge old recordings and/or transcripts after a chosen age (off by default)
 - **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
 - **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
 - **Four destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook
@@ -42,7 +43,7 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 ## Features
 
 ### Capture
-- **Menu bar native** — no dock icon, no clutter
+- **Menu bar native** — no dock icon, no clutter; optionally **start at login**
 - **Floating mini-player** — translucent overlay with waveform and controls
 - **Global hotkey** — `⌃ ⌥ ⌘ R` from anywhere on your Mac
 - **Mic + system audio** — both sides of the call, captured via ScreenCaptureKit

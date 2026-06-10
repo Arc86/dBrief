@@ -53,7 +53,7 @@ dBrief does not install updates for you. Download the new `.dmg` from the releas
 
 ## Permissions
 
-dBrief will ask for permissions as you use it. You can also review and grant them in **Settings → General → Permissions**.
+dBrief will ask for permissions as you use it. You can also review and grant them in **Settings → Permissions**.
 
 | Permission | When it's needed |
 |---|---|
@@ -63,9 +63,13 @@ dBrief will ask for permissions as you use it. You can also review and grant the
 | **Calendar** | Optional — lets dBrief pre-fill the meeting title and participants from your calendar |
 | **Reminders** | Required if you use the Apple Reminders integration |
 
-**Settings → General → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, with buttons to request or open the relevant System Settings pane.
+**Settings → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, with buttons to request or open the relevant System Settings pane.
 
 If you accidentally denied a permission, open **System Settings → Privacy & Security**, find the relevant section, and enable dBrief there.
+
+## Start at login
+
+To have dBrief launch automatically when you log in, turn on **Start at login** in **Settings → General**. It runs quietly in the menu bar (no Dock icon), ready to record.
 
 ## Uninstalling
 

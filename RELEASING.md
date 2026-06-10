@@ -31,16 +31,18 @@ make dmg        # produces dBrief-<version>.dmg (e.g. dBrief-1.0.0.dmg)
 
 ## 4. Tag and publish the GitHub release
 
+First, curate the highlights for this version in [`RELEASE_NOTES.md`](RELEASE_NOTES.md) (headline user-facing changes — auto-generated commit lists read poorly on their own). Then:
+
 ```bash
 git push origin main
 git tag v1.0.0
 git push origin v1.0.0
 gh release create v1.0.0 dBrief-1.0.0.dmg \
   --title "dBrief 1.0.0" \
-  --generate-notes
+  --notes-file RELEASE_NOTES.md
 ```
 
-Add `--draft` if you want to review the notes before it goes live. Once published, existing installs detect it on their next check (auto, once/day) or via **Settings → General → Updates → Check Now**.
+`RELEASE_NOTES.md` is the curated body. Swap in `--generate-notes` instead if you'd rather GitHub list every commit/PR title, or pass both files by appending the auto-notes manually. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, once/day) or via **Settings → General → Updates → Check Now**.
 
 ## 5. Update the Homebrew tap
 

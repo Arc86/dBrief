@@ -32,7 +32,7 @@ Without this permission, Apple Speech is unavailable. Local Whisper and remote e
 
 Without this permission, dBrief still records normally; it just can't pull in calendar details. See [Calendar Integration](../recording/calendar.md).
 
-**To grant:** Open **System Settings → Privacy & Security → Calendars** and enable dBrief, or use the **Request** button in **Settings → General → Permissions**.
+**To grant:** Open **System Settings → Privacy & Security → Calendars** and enable dBrief, or use the **Request** button in **Settings → Permissions**.
 
 ## Reminders
 
@@ -42,4 +42,4 @@ Without this permission, dBrief still records normally; it just can't pull in ca
 
 ---
 
-> **Tip:** **Settings → General → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, each with a button to request access or open the right System Settings pane. Speech Recognition and Reminders are requested on demand the first time you use the feature that needs them.
+> **Tip:** **Settings → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, each with a button to request access or open the right System Settings pane. Speech Recognition and Reminders are requested on demand the first time you use the feature that needs them.

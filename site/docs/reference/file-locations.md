@@ -33,6 +33,15 @@ On-device models are stored in Application Support:
 
 To remove models, use the **Purge** options in **Settings → AI & Models** (Power User Mode for the Gemma model).
 
+## Auto-delete (retention)
+
+dBrief can automatically remove old files so your recordings folder doesn't grow forever. In **Settings → General → Privacy** there are two independent policies:
+
+- **Auto-delete recordings** — removes audio files older than the chosen age; transcripts and notes are kept.
+- **Auto-delete transcripts** — removes transcript, insights, and Markdown note files older than the chosen age; audio recordings are kept.
+
+Both are **off by default**. When enabled, you pick an age (1, 7, 14, 30, 60, 90, 180, or 365 days — 30 by default), and each file is judged by its own creation date. Cleanup runs automatically when dBrief launches, and you can trigger it immediately with **Run Cleanup Now**. Deletion is permanent and can't be undone.
+
 ## Settings
 
 App preferences are stored in `UserDefaults` under the `com.dbrief.app` domain. You can reset all settings by deleting this domain with `defaults delete com.dbrief.app` in Terminal — but this also resets your output folder path and engine choices.

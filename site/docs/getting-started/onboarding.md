@@ -42,4 +42,4 @@ Everything the wizard covers can be changed at any time:
 
 ## Revisiting the wizard
 
-You can't re-run the wizard, but every setting it covers is available in **Settings**. Open Settings from the dBrief menu bar window.
+Every setting the wizard covers is also available directly in **Settings** — open Settings from the dBrief menu bar window. To see the wizard itself again, use **Reset Onboarding** in **Settings → General**, which re-shows the setup guide on next launch.

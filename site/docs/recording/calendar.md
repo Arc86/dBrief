@@ -24,7 +24,7 @@ Configure this in **Settings → General → Calendar** with the **Source** pick
 
 ### iCal
 
-Pick **iCal** and grant **Calendar** access when prompted (or from **Settings → General → Permissions**). dBrief reads your local macOS Calendar events — nothing is sent anywhere.
+Pick **iCal** and grant **Calendar** access when prompted (or from **Settings → Permissions**). dBrief reads your local macOS Calendar events — nothing is sent anywhere.
 
 ### Outlook
 

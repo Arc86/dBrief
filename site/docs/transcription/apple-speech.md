@@ -15,7 +15,7 @@ This is automatic; there's a single **Apple Speech** option in Settings.
 
 ## Setup
 
-No download or configuration needed. Grant **Speech Recognition** permission when prompted (or in **Settings → General → Permissions**).
+No download or configuration needed. Grant **Speech Recognition** permission when prompted (or in **Settings → Permissions**).
 
 ## When to use it
 

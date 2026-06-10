@@ -6,7 +6,7 @@ Create a reminder for each action item extracted from your recording.
 
 1. Go to **Settings → Integrations**
 2. Enable **Apple Reminders**
-3. Grant the **Reminders** permission when prompted (or in **Settings → General → Permissions**)
+3. Grant the **Reminders** permission when prompted (or in **Settings → Permissions**)
 
 ## How it works
 
