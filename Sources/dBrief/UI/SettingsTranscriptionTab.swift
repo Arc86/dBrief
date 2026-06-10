@@ -95,9 +95,10 @@ struct SettingsTranscriptionTab: View {
 
             switch settings.transcriptionEngine {
             case .appleSpeech:
-                Text("On-device, no server needed. Quality may be lower than Whisper.")
+                Text("Built in, no download needed. Quality may be lower than Whisper.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                ApplePrivacyBadge()
             case .parakeetLocal:
                 parakeetSection
             case .localWhisper:

@@ -4,17 +4,28 @@ import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(RecordingManager.self) private var recordingManager
     @Environment(MicrosoftAuthService.self) private var microsoftAuthService
     @Environment(UpdateService.self) private var updateService
 
     @State private var outlookSignInError: String?
     @State private var calendarStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
+    @State private var startAtLogin: Bool = LoginItemManager.isEnabled
 
     var body: some View {
         @Bindable var settings = appSettings
         Form {
             Section("Appearance") {
+                Toggle("Start at login", isOn: Binding(
+                    get: { startAtLogin },
+                    set: { newValue in
+                        if LoginItemManager.setEnabled(newValue) {
+                            startAtLogin = newValue
+                        } else {
+                            // Re-read the real state if the OS rejected the change.
+                            startAtLogin = LoginItemManager.isEnabled
+                        }
+                    }
+                ))
                 Toggle("Show dock icon", isOn: $settings.showDockIcon)
                 Toggle("Power user mode", isOn: $settings.powerUserMode)
                 if appSettings.powerUserMode {
@@ -226,64 +237,16 @@ struct SettingsGeneralTab: View {
                 .listRowBackground(Color.clear)
             }
 
-            Section("Permissions") {
-                LabeledContent("Microphone:") {
-                    HStack {
-                        Image(systemName: recordingManager.hasMicrophonePermission ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .red)
-                        Text(recordingManager.hasMicrophonePermission ? "Granted" : "Not granted")
-                            .foregroundStyle(.secondary)
-                        if !recordingManager.hasMicrophonePermission {
-                            Button("Request") {
-                                Task { await recordingManager.checkPermissions() }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
+            Section("Onboarding") {
+                LabeledContent("Setup guide") {
+                    Button("Reset Onboarding") {
+                        appSettings.hasCompletedOnboarding = false
                     }
+                    .buttonStyle(.bordered)
                 }
-                LabeledContent("Screen Recording:") {
-                    HStack {
-                        Image(systemName: recordingManager.hasSystemAudioPermission ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(recordingManager.hasSystemAudioPermission ? .green : .red)
-                        Text(recordingManager.hasSystemAudioPermission ? "Granted" : "Not granted")
-                            .foregroundStyle(.secondary)
-                        if !recordingManager.hasSystemAudioPermission {
-                            Button("Open Settings") {
-                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                LabeledContent("Calendar:") {
-                    HStack {
-                        Image(systemName: calendarStatus == .fullAccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(calendarStatus == .fullAccess ? .green : .red)
-                        Text(calendarStatus == .fullAccess ? "Granted" : "Not granted")
-                            .foregroundStyle(.secondary)
-                        if calendarStatus != .fullAccess {
-                            if calendarStatus == .denied || calendarStatus == .restricted {
-                                Button("Open Settings") {
-                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            } else {
-                                Button("Request") {
-                                    Task { @MainActor in
-                                        let store = EKEventStore()
-                                        _ = try? await store.requestFullAccessToEvents()
-                                        calendarStatus = EKEventStore.authorizationStatus(for: .event)
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-                    }
-                }
+                Text("Shows the welcome and setup guide again the next time you open the menu bar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)
         }

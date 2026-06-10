@@ -45,6 +45,7 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("EventKit"),
                 .linkedFramework("Security"),
+                .linkedFramework("ServiceManagement"),
             ]
         ),
         .testTarget(

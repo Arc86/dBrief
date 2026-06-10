@@ -262,6 +262,10 @@ struct OnboardingView: View {
                     description: appSettings.transcriptionEngine.shortDescription
                 )
 
+                if appSettings.transcriptionEngine == .appleSpeech {
+                    ApplePrivacyBadge()
+                }
+
                 enginePicker(
                     title: "AI Analysis",
                     selection: $settings.aiEngine,
