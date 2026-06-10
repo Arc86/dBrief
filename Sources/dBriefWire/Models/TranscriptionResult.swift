@@ -6,6 +6,10 @@ public struct TranscriptionResult: Codable, Sendable {
     public let language: String?
     public let warnings: [String]?
     public let speakerCount: Int?
+    /// Pure model-inference wall-clock (seconds) for the engine's core transcribe
+    /// call, excluding model load/prewarm, IPC, audio decode, and diarization.
+    /// Populated by the local Whisper helper; nil for engines that can't separate it.
+    public var inferenceTime: TimeInterval?
 
     public struct Segment: Codable, Sendable {
         public let start: Double
@@ -50,13 +54,15 @@ public struct TranscriptionResult: Codable, Sendable {
         segments: [Segment] = [],
         language: String? = nil,
         warnings: [String]? = nil,
-        speakerCount: Int? = nil
+        speakerCount: Int? = nil,
+        inferenceTime: TimeInterval? = nil
     ) {
         self.text = text
         self.segments = segments
         self.language = language
         self.warnings = warnings
         self.speakerCount = speakerCount
+        self.inferenceTime = inferenceTime
     }
 
     public var textForLLM: String {
