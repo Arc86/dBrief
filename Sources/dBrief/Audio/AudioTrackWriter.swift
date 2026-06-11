@@ -36,22 +36,23 @@ final class AudioTrackWriter: @unchecked Sendable {
         try lock.withLock {
             if audioFile == nil {
                 let format = buffer.format
+                // Capture losslessly compressed (Apple Lossless) instead of raw
+                // 16-bit LPCM. ALAC is bit-exact, so the finalized AAC master is
+                // identical to what raw PCM would have produced, but the on-disk
+                // per-track files are ~2x smaller during recording. ffmpeg decodes
+                // ALAC transparently at finalization, so the sidechain DSP is
+                // unaffected. We must use the settings-only initializer here — the
+                // commonFormat:/interleaved: variant is LPCM-only; for a compressed
+                // file AVAudioFile derives a float32 processingFormat that accepts
+                // these buffers via write(from:).
                 let settings: [String: Any] = [
-                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVFormatIDKey: kAudioFormatAppleLossless,
                     AVSampleRateKey: format.sampleRate,
                     AVNumberOfChannelsKey: Int(format.channelCount),
-                    AVLinearPCMBitDepthKey: 16,
-                    AVLinearPCMIsFloatKey: false,
-                    AVLinearPCMIsBigEndianKey: false,
-                    AVLinearPCMIsNonInterleaved: !format.isInterleaved,
+                    AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue,
                 ]
                 do {
-                    audioFile = try AVAudioFile(
-                        forWriting: url,
-                        settings: settings,
-                        commonFormat: .pcmFormatFloat32,
-                        interleaved: false
-                    )
+                    audioFile = try AVAudioFile(forWriting: url, settings: settings)
                     log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened \(self.url.lastPathComponent, privacy: .public) @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
                 } catch {
                     log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open: \(error.localizedDescription, privacy: .public)")
