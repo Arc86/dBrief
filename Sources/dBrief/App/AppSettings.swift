@@ -58,6 +58,7 @@ final class AppSettings {
         static let diarizationEnabled = "diarizationEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
+        static let autoProcessAfterStop = "autoProcessAfterStop"
         static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -380,6 +381,14 @@ final class AppSettings {
     /// memory while idle, which competes with a local analysis LLM.
     var prewarmWhisperOnLaunch: Bool {
         didSet { UserDefaults.standard.set(prewarmWhisperOnLaunch, forKey: Keys.prewarmWhisperOnLaunch) }
+    }
+
+    /// Skip the post-recording options sheet and immediately start processing
+    /// (transcription + AI) with the effective default options when a recording
+    /// stops. Off by default. While processing runs the Mac must stay awake —
+    /// see the warning in Settings → General.
+    var autoProcessAfterStop: Bool {
+        didSet { UserDefaults.standard.set(autoProcessAfterStop, forKey: Keys.autoProcessAfterStop) }
     }
 
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
@@ -719,6 +728,7 @@ final class AppSettings {
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
+        self.autoProcessAfterStop = defaults.object(forKey: Keys.autoProcessAfterStop) as? Bool ?? false
         self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 

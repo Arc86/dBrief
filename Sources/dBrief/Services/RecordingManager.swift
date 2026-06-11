@@ -180,8 +180,24 @@ final class RecordingManager {
         }
 
         appState.recordingState = .idle
-        appState.showPostRecordingSheet = true
         miniPlayer?.dismiss()
+
+        // Auto-process: skip the post-recording options sheet and immediately
+        // transcribe + analyze using the effective default options. The meeting
+        // title default is already filled in above; participants (for
+        // diarization) are not collected in this unattended path.
+        if appSettings.autoProcessAfterStop, appState.currentRecording != nil {
+            let transcribe = appSettings.effectiveAutoTranscribe
+            startProcessing(
+                transcribe: transcribe,
+                summary: appSettings.effectiveAutoSummary && transcribe,
+                actionItems: appSettings.effectiveAutoActionItems && transcribe,
+                tags: appSettings.effectiveAutoTags && transcribe
+            )
+            return
+        }
+
+        appState.showPostRecordingSheet = true
     }
 
     func pauseRecording() {

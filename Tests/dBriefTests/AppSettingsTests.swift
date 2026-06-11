@@ -42,4 +42,20 @@ struct AppSettingsTests {
         #expect(reloaded.acousticEchoCancellation == false)
         UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
     }
+
+    @Test func autoProcessAfterStopDefaultsToFalse() {
+        UserDefaults.standard.removeObject(forKey: "autoProcessAfterStop")
+        let settings = AppSettings()
+        #expect(settings.autoProcessAfterStop == false)
+    }
+
+    @Test func autoProcessAfterStopPersists() {
+        UserDefaults.standard.removeObject(forKey: "autoProcessAfterStop")
+        let settings = AppSettings()
+        settings.autoProcessAfterStop = true
+        #expect(UserDefaults.standard.bool(forKey: "autoProcessAfterStop") == true)
+        let reloaded = AppSettings()
+        #expect(reloaded.autoProcessAfterStop == true)
+        UserDefaults.standard.removeObject(forKey: "autoProcessAfterStop")
+    }
 }

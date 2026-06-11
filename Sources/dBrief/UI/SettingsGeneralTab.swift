@@ -104,6 +104,25 @@ struct SettingsGeneralTab: View {
             }
             .listRowBackground(Color.clear)
 
+            Section("Post-Recording") {
+                Toggle("Process automatically when recording stops", isOn: $settings.autoProcessAfterStop)
+
+                if appSettings.autoProcessAfterStop {
+                    Text("Skips the post-recording options sheet and immediately transcribes and analyzes using your default settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Label {
+                        Text("Keep your Mac awake until processing finishes. Closing the lid stops audio capture and it won't resume; processing pauses on sleep and continues on wake, but unsaved results are lost if your Mac powers off (e.g. the battery dies).")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            }
+            .listRowBackground(Color.clear)
+
             Section("Folders") {
                 LabeledContent("Recordings:") {
                     HStack {
