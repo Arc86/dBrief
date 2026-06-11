@@ -35,6 +35,7 @@ final class AppContext {
             appSettings: appSettings,
             recordingManager: recordingManager
         )
+        UpdateAvailableOverlayController.shared.configure(updateService: updateService)
 
         self.whisperPrewarmCoordinator = WhisperPrewarmCoordinator(
             appSettings: appSettings, plugin: recordingManager.localPlugin)
@@ -85,6 +86,15 @@ final class AppContext {
                 await updateService.checkForUpdates(manual: false)
                 appSettings.lastUpdateCheckTime = Date()
             }
+        }
+
+        // Surface the "Update available" popup once per new release. The menu-bar
+        // badge and Settings → Updates section remain as the persistent affordance.
+        if updateService.updateAvailable,
+           let latest = updateService.latestVersion,
+           latest != appSettings.lastNotifiedUpdateVersion {
+            appSettings.lastNotifiedUpdateVersion = latest
+            UpdateAvailableOverlayController.shared.show()
         }
 
         // Purge recordings/transcripts past their retention window.
