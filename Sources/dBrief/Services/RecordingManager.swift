@@ -194,6 +194,18 @@ final class RecordingManager {
         appState.recordingState = .recording
     }
 
+    /// Switch the microphone input device while recording (manual hot-swap). Persists
+    /// the selection and re-points the live mic engine at the new device, keeping the
+    /// in-progress mic track continuous.
+    func switchInputDevice(to uid: String?) {
+        appSettings.audioInputDeviceUID = uid ?? ""
+        do {
+            try audioCaptureManager.switchMicrophoneDevice(to: uid)
+        } catch {
+            appState.lastError = "Couldn't switch microphone: \(error.localizedDescription)"
+        }
+    }
+
     func processRecording(
         transcribe: Bool,
         summary: Bool,
