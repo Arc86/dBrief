@@ -22,9 +22,14 @@ FFMPEG_CACHE = .build/ffmpeg
 
 # Version is the single source of truth in Info.plist; never hardcode it here.
 VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/dBrief/Resources/Info.plist)
-# Ad-hoc signing by default (we are not in the Apple Developer Program).
-# Override with a Developer ID if you ever enroll: make app CODESIGN_IDENTITY="Developer ID Application: …"
-CODESIGN_IDENTITY ?= -
+# Signing identity. "auto" (default) creates/reuses a *stable* self-signed
+# code-signing certificate via scripts/ensure-signing-cert.sh. A stable identity
+# is what lets macOS TCC (Screen Recording, etc.) survive app updates instead of
+# silently invalidating the grant on every release (ad-hoc signing changes the
+# code hash each build). Override with "-" for pure ad-hoc, or with a
+# "Developer ID Application: …" if you ever enroll in the Apple Developer Program.
+CODESIGN_IDENTITY ?= auto
+SIGNING_CERT_NAME ?= dBrief Self-Signed
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
@@ -90,14 +95,26 @@ app: build
 	@$(MAKE) sign
 	@echo "Built $(APP_BUNDLE) ($(VERSION))"
 
-# Ad-hoc sign the bundle. --deep also signs the nested dBriefMLHost helper executable.
+# Sign the bundle. --deep also signs the nested dBriefMLHost helper executable.
 # Strip extended attributes / resource forks first (icns and copied resources can
 # carry them), which codesign rejects as "detritus".
+# When CODESIGN_IDENTITY is "auto" we resolve a stable self-signed cert (so TCC
+# permissions persist across releases), falling back to ad-hoc "-" if it can't
+# be created — the app still builds, it just resets permissions on each release.
 sign:
-	@echo "Signing $(APP_BUNDLE) with identity: $(CODESIGN_IDENTITY)"
-	chmod -R u+w "$(APP_BUNDLE)"
-	xattr -cr "$(APP_BUNDLE)"
-	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" "$(APP_BUNDLE)"
+	@set -e; \
+	IDENTITY="$(CODESIGN_IDENTITY)"; \
+	if [ "$$IDENTITY" = "auto" ]; then \
+		IDENTITY="$$(SIGNING_CERT_NAME='$(SIGNING_CERT_NAME)' ./scripts/ensure-signing-cert.sh)" || { \
+			echo "WARNING: could not create a stable self-signed cert; falling back to ad-hoc (-)." >&2; \
+			echo "         Screen Recording (and other restart-only permissions) will reset on each release." >&2; \
+			IDENTITY="-"; \
+		}; \
+	fi; \
+	echo "Signing $(APP_BUNDLE) with identity: $$IDENTITY"; \
+	chmod -R u+w "$(APP_BUNDLE)"; \
+	xattr -cr "$(APP_BUNDLE)"; \
+	codesign --force --deep --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
 	codesign --verify --deep --strict --verbose=2 "$(APP_BUNDLE)"
 
 # Build a distributable, compressed DMG with a drag-to-Applications target.

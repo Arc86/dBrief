@@ -4,7 +4,7 @@ How to install dBrief and grant the permissions it needs to work.
 
 > **Requires:** macOS 14 or later, Apple Silicon.
 
-dBrief is distributed outside the Apple Developer Program, so it is unsigned and un-notarized. That changes only how you open it the first time — pick whichever install path you prefer.
+dBrief is distributed outside the Apple Developer Program, so it is self-signed and un-notarized. That changes only how you open it the first time — pick whichever install path you prefer.
 
 ## Install with Homebrew (recommended)
 

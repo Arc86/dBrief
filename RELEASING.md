@@ -1,12 +1,14 @@
 # Releasing dBrief
 
-dBrief ships as an **Apple Silicon**, **unsigned / un-notarized** macOS app (we are not in the Apple Developer Program). Releases are built locally and uploaded to GitHub by hand. The in-app updater ([`UpdateService`](Sources/dBrief/Services/UpdateService.swift)) polls the GitHub Releases API, so publishing a release is what makes the update prompt appear for existing users.
+dBrief ships as an **Apple Silicon**, **self-signed / un-notarized** macOS app (we are not in the Apple Developer Program). Releases are built locally and uploaded to GitHub by hand. The in-app updater ([`UpdateService`](Sources/dBrief/Services/UpdateService.swift)) polls the GitHub Releases API, so publishing a release is what makes the update prompt appear for existing users.
+
+> **Why self-signed instead of ad-hoc.** macOS TCC (the Privacy database behind **Screen Recording**, etc.) pins each granted permission to the app's signing identity. Ad-hoc signing (`codesign --sign -`) produces a *different* identity on every build, so after each release the new binary no longer matches the stored grant — Screen Recording silently stops working even though its toggle still looks enabled, forcing a confusing toggle-off/on + restart. Signing every release with the **same self-signed certificate** gives TCC a stable identity to match, so permissions survive updates. `make app` handles this automatically (see [The signing certificate](#the-signing-certificate)). It does **not** affect Gatekeeper — the app is still un-notarized and quarantined on download.
 
 ## One-time prerequisites
 
 - Xcode command-line toolchain (`xcode-select --install`)
 - [GitHub CLI](https://cli.github.com) (`brew install gh`) authenticated to the `Arc86/dBrief` repo
-- `hdiutil`, `codesign`, `xattr`, `/usr/libexec/PlistBuddy` — all built into macOS
+- `hdiutil`, `codesign`, `security`, `openssl`, `xattr`, `/usr/libexec/PlistBuddy` — all built into macOS
 
 ## 1. Bump the version
 
@@ -19,9 +21,12 @@ The git tag must be the same number prefixed with `v` (e.g. `v1.0.0`); the updat
 ```bash
 make app
 /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" dBrief.app/Contents/Info.plist   # expect the new version
-codesign --verify --deep --strict --verbose=2 dBrief.app                                         # ad-hoc signature OK
+codesign --verify --deep --strict --verbose=2 dBrief.app                                         # self-signed signature OK
+codesign -dvv dBrief.app 2>&1 | grep Authority                                                   # expect "dBrief Self-Signed" (not "(unsigned)")
 make run                                                                                          # launch and click through About / Settings → Updates
 ```
+
+The first `make app` after adopting this creates the signing certificate (see below); later builds reuse it silently.
 
 ## 3. Build the DMG
 
@@ -74,6 +79,29 @@ ln -sf "$(brew --prefix)/opt/dbrief/dBrief.app" /Applications/dBrief.app
 ```
 
 Because Homebrew compiles on the user's machine, the app is never quarantined and launches without a Gatekeeper prompt.
+
+## The signing certificate
+
+`make app` signs with a stable self-signed code-signing identity named **`dBrief Self-Signed`**, created automatically by [`scripts/ensure-signing-cert.sh`](scripts/ensure-signing-cert.sh) on the first build. The cert lives in a dedicated keychain, `~/Library/Keychains/dbrief-signing.keychain-db` (separate from your login keychain, with its own password so signing stays non-interactive). Every later build reuses it — no prompts, nothing to do.
+
+> The very first build *may* show one macOS prompt — "codesign wants to sign using key … in your keychain." Click **Always Allow** once; it won't ask again.
+
+**Reuse the same certificate for every public release.** The cert's public half is embedded in each DMG we ship, and downloaders' Screen Recording grants are pinned to it. As long as every release is signed with this one cert, their permissions persist across updates. If the keychain is deleted or you build the next release on a **different Mac**, a *new* cert is generated and every existing downloader has to re-grant Screen Recording once. So when releasing from a new machine, copy the keychain over first:
+
+```bash
+# Back up (keep this file safe / in your password manager vault)
+cp ~/Library/Keychains/dbrief-signing.keychain-db ~/dbrief-signing.keychain-db.bak
+
+# Restore on another Mac, then `make app` picks it up automatically
+cp ~/dbrief-signing.keychain-db.bak ~/Library/Keychains/dbrief-signing.keychain-db
+```
+
+Escape hatches via `make app CODESIGN_IDENTITY=…`:
+
+- `CODESIGN_IDENTITY=-` — old ad-hoc behavior (permissions reset every release).
+- `CODESIGN_IDENTITY="Developer ID Application: …"` — if you ever enroll in the Apple Developer Program (also enables notarization).
+
+**Homebrew-from-source** users get the same protection automatically: the formula runs `make app`, which creates a stable per-machine cert on first install and reuses it on every `brew upgrade`, so their permissions survive rebuilds too.
 
 ## Installing the DMG (what end users do)
 

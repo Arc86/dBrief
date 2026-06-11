@@ -105,7 +105,7 @@ Audio mixing, filtering, normalization, and encoding use [FFmpeg](https://ffmpeg
 
 ## Install
 
-dBrief is **Apple Silicon only** and distributed **outside the Apple Developer Program**, so it is unsigned and un-notarized. That doesn't make it unsafe — it just changes how you open it the first time. Pick whichever path you prefer:
+dBrief is **Apple Silicon only** and distributed **outside the Apple Developer Program**, so it is self-signed and un-notarized. That doesn't make it unsafe — it just changes how you open it the first time. Pick whichever path you prefer:
 
 ### 1. Homebrew — recommended, no Gatekeeper prompt
 
