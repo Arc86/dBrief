@@ -64,6 +64,7 @@ final class AppSettings {
         static let recordHotkey = "recordHotkey"
         static let autoCheckUpdates = "autoCheckUpdates"
         static let lastUpdateCheckTime = "lastUpdateCheckTime"
+        static let lastNotifiedUpdateVersion = "lastNotifiedUpdateVersion"
         static let autoDeleteRecordingsEnabled = "autoDeleteRecordingsEnabled"
         static let autoDeleteRecordingsDays = "autoDeleteRecordingsDays"
         static let autoDeleteTranscriptsEnabled = "autoDeleteTranscriptsEnabled"
@@ -313,6 +314,18 @@ final class AppSettings {
                 UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Keys.lastUpdateCheckTime)
             } else {
                 UserDefaults.standard.removeObject(forKey: Keys.lastUpdateCheckTime)
+            }
+        }
+    }
+
+    /// The latest version the user was already shown an "Update available" popup for.
+    /// Used to surface the popup only once per new release (the menu-bar badge stays).
+    var lastNotifiedUpdateVersion: String? {
+        didSet {
+            if let version = lastNotifiedUpdateVersion {
+                UserDefaults.standard.set(version, forKey: Keys.lastNotifiedUpdateVersion)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.lastNotifiedUpdateVersion)
             }
         }
     }
@@ -677,6 +690,7 @@ final class AppSettings {
         } else {
             self.lastUpdateCheckTime = nil
         }
+        self.lastNotifiedUpdateVersion = defaults.string(forKey: Keys.lastNotifiedUpdateVersion)
         self.recordHotkey = {
             if let data = defaults.data(forKey: Keys.recordHotkey),
                let hotkey = try? JSONDecoder().decode(RecordHotkey.self, from: data)
