@@ -18,8 +18,8 @@
 class Dbrief < Formula
   desc "Menu bar app that records, transcribes, and AI-summarizes meetings"
   homepage "https://github.com/Arc86/dBrief"
-  url "https://github.com/Arc86/dBrief/archive/refs/tags/v1.1.1.tar.gz"
-  sha256 "5cac68911bca0871d48d274b6c475fc14e47ba976951c022be69dd530e7dc2f6"
+  url "https://github.com/Arc86/dBrief/archive/refs/tags/v1.1.2.tar.gz"
+  sha256 "92ffaa73492e0571a7dd2f26baf566b81e8503d99b39546dcf8fe418087458b9"
   license "MIT"
   head "https://github.com/Arc86/dBrief.git", branch: "main"
 
