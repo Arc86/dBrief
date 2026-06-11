@@ -73,6 +73,11 @@ struct MarkdownGenerator {
             lines.append("type: \"recording\"")
         }
 
+        // Calendar-derived meeting metadata (machine-readable for downstream agents).
+        if let event = recording.calendarEvent {
+            appendCalendarFrontmatter(event, to: &lines)
+        }
+
         lines.append("---")
         lines.append("")
 
@@ -82,6 +87,11 @@ struct MarkdownGenerator {
             lines.append("")
             lines.append(summary)
             lines.append("")
+        }
+
+        // Meeting context (attendees + agenda) from the matched calendar event
+        if let event = recording.calendarEvent {
+            appendCalendarSections(event, to: &lines)
         }
 
         // Action Items section
@@ -137,6 +147,80 @@ struct MarkdownGenerator {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    /// Appends calendar-derived YAML frontmatter keys. Only non-empty values are emitted so
+    /// recordings without a matched event are byte-for-byte unchanged.
+    private func appendCalendarFrontmatter(_ event: CalendarEvent, to lines: inout [String]) {
+        if let organizer = event.organizer {
+            lines.append("organizer: \"\(yamlEscape(organizer.name))\"")
+            if let email = organizer.email, !email.isEmpty {
+                lines.append("organizer_email: \"\(yamlEscape(email))\"")
+            }
+        }
+
+        if !event.attendees.isEmpty {
+            lines.append("attendees:")
+            for person in event.attendees {
+                lines.append("  - \"\(yamlEscape(person.name))\"")
+            }
+            let emails = event.attendees.compactMap(\.email).filter { !$0.isEmpty }
+            if !emails.isEmpty {
+                lines.append("attendee_emails:")
+                for email in emails {
+                    lines.append("  - \"\(yamlEscape(email))\"")
+                }
+            }
+        }
+
+        if event.modality != "unknown" {
+            lines.append("meeting_modality: \"\(event.modality)\"")
+        }
+        if let location = event.location, !location.isEmpty {
+            lines.append("location: \"\(yamlEscape(location))\"")
+        }
+        if event.organizer?.emailDomain != nil {
+            lines.append("external_participants: \(event.hasExternalParticipants)")
+        }
+        lines.append("scheduled_start: \(formatDate(event.startDate))")
+        lines.append("scheduled_end: \(formatDate(event.endDate))")
+    }
+
+    /// Appends human-readable Attendees and Agenda sections.
+    private func appendCalendarSections(_ event: CalendarEvent, to lines: inout [String]) {
+        if !event.attendees.isEmpty {
+            lines.append("## 👥 Attendees")
+            lines.append("")
+            let organizerEmail = event.organizer?.email
+            for person in event.attendees {
+                var line = "- \(person.name)"
+                if let email = person.email, !email.isEmpty {
+                    line += " — \(email)"
+                }
+                if person.email != nil, person.email == organizerEmail {
+                    line += " (organizer)"
+                } else if organizerEmail == nil, person.name == event.organizer?.name {
+                    line += " (organizer)"
+                }
+                lines.append(line)
+            }
+            lines.append("")
+        }
+
+        let agenda = event.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !agenda.isEmpty {
+            lines.append("## 📋 Agenda")
+            lines.append("")
+            lines.append(agenda)
+            lines.append("")
+        }
+    }
+
+    /// Escapes a value for use inside a double-quoted YAML scalar.
+    private func yamlEscape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     private func formatDate(_ date: Date) -> String {

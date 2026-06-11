@@ -78,8 +78,40 @@ struct WebhookPayloadBuilder {
         if fields.contains(.markdown), let markdown = bundle.markdown {
             payload["markdown"] = markdown
         }
+        if fields.contains(.meetingInfo), let event = bundle.calendarEvent {
+            payload["meeting"] = Self.meetingDictionary(event)
+        }
 
         return payload
+    }
+
+    /// Structured calendar metadata for webhook consumers: people (name + email),
+    /// organizer, agenda, modality, location, scheduled window, external-party flag.
+    private static func meetingDictionary(_ event: CalendarEvent) -> [String: Any] {
+        let iso = ISO8601DateFormatter()
+        var meeting: [String: Any] = [
+            "title": event.title,
+            "modality": event.modality,
+            "scheduled_start": iso.string(from: event.startDate),
+            "scheduled_end": iso.string(from: event.endDate),
+            "attendees": event.attendees.map { person -> [String: Any] in
+                var entry: [String: Any] = ["name": person.name]
+                if let email = person.email { entry["email"] = email }
+                return entry
+            },
+        ]
+        if let organizer = event.organizer {
+            var entry: [String: Any] = ["name": organizer.name]
+            if let email = organizer.email { entry["email"] = email }
+            meeting["organizer"] = entry
+        }
+        let agenda = event.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !agenda.isEmpty { meeting["agenda"] = agenda }
+        if let location = event.location, !location.isEmpty { meeting["location"] = location }
+        if event.organizer?.emailDomain != nil {
+            meeting["external_participants"] = event.hasExternalParticipants
+        }
+        return meeting
     }
 
     static func contentType(for url: URL) -> String {

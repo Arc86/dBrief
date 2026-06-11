@@ -6,7 +6,10 @@ struct CalendarContextTests {
     private func makeEvent(body: String) -> CalendarEvent {
         CalendarEvent(
             title: "Weekly Sync",
-            attendees: ["Alice", "Bob"],
+            attendees: [
+                CalendarEvent.Person(name: "Alice", email: nil),
+                CalendarEvent.Person(name: "Bob", email: nil),
+            ],
             body: body,
             startDate: Date(),
             endDate: Date()
