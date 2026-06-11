@@ -120,8 +120,24 @@ extension AppSettings {
 
     static func loadLocalCLIConfig(forKey key: String) -> LocalCLIConfig {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let config = try? JSONDecoder().decode(LocalCLIConfig.self, from: data)
+              var config = try? JSONDecoder().decode(LocalCLIConfig.self, from: data)
         else { return .default }
+
+        // One-time migration: the original 45s default was too short for agentic
+        // CLIs like `claude -p`, causing timeouts. Raise any persisted timeout
+        // below the new default up to it — but only once, so users who later set
+        // a low value on purpose are respected.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: Keys.didMigrateLocalCLITimeout) {
+            if config.timeoutSeconds < LocalCLIConfig.default.timeoutSeconds {
+                config.timeoutSeconds = LocalCLIConfig.default.timeoutSeconds
+                if let migrated = try? JSONEncoder().encode(config) {
+                    defaults.set(migrated, forKey: key)
+                }
+            }
+            defaults.set(true, forKey: Keys.didMigrateLocalCLITimeout)
+        }
+
         return config
     }
 
