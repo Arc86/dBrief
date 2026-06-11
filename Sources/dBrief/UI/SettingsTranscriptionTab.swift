@@ -449,16 +449,19 @@ struct SettingsTranscriptionTab: View {
             Divider()
 
             HStack {
-                Button {
-                    editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
-                    isNew = true
-                    testResult = nil
-                    availableModels = []
-                    isEditing = true
+                Menu {
+                    ForEach(ProviderPresets.transcription) { preset in
+                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
+                    }
+                    Divider()
+                    Button("Custom…") {
+                        beginAddEndpoint(Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1"))
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(.bordered)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 Button {
                     if let id = selectedEndpointId {
@@ -563,6 +566,14 @@ struct SettingsTranscriptionTab: View {
         }
     }
 
+    private func beginAddEndpoint(_ endpoint: Endpoint) {
+        editingEndpoint = endpoint
+        isNew = true
+        testResult = nil
+        availableModels = []
+        isEditing = true
+    }
+
     private var endpointEditor: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -570,6 +581,12 @@ struct SettingsTranscriptionTab: View {
             Text(isNew ? "Add Endpoint" : "Edit Endpoint")
                 .font(.title3)
                 .fontWeight(.medium)
+
+            if editingEndpoint.provider == .deepgram || editingEndpoint.provider == .elevenLabs {
+                Text("\(editingEndpoint.provider == .deepgram ? "Deepgram" : "ElevenLabs") native API. Enter your model and API key; long files and (Deepgram) diarization are handled server-side.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
                 GridRow {

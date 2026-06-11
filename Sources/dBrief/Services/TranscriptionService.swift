@@ -44,6 +44,7 @@ actor TranscriptionService {
         endpoint: Endpoint,
         language: String = "",
         initialPrompt: String = "",
+        diarize: Bool = false,
         chunking: ChunkingConfiguration = .default,
         progress: (@Sendable (ChunkProgress) -> Void)? = nil
     ) async throws -> TranscriptionResult {
@@ -53,6 +54,21 @@ actor TranscriptionService {
 
         let fileExtension = fileURL.pathExtension.lowercased()
         let contentType = Self.contentType(forExtension: fileExtension)
+
+        // Native cloud ASR providers accept long audio server-side — send whole file,
+        // no client-side chunking.
+        switch endpoint.provider {
+        case .deepgram:
+            let audioData = try Data(contentsOf: fileURL)
+            let data = try await sendDeepgramRequest(url: url, endpoint: endpoint, audioData: audioData, contentType: contentType, language: language, diarize: diarize)
+            return CloudASRMappers.parseDeepgram(data, language: language.isEmpty ? nil : language)
+        case .elevenLabs:
+            let audioData = try Data(contentsOf: fileURL)
+            let data = try await sendElevenLabsRequest(url: url, endpoint: endpoint, audioData: audioData, fileName: fileURL.lastPathComponent, contentType: contentType, language: language, diarize: diarize)
+            return CloudASRMappers.parseElevenLabs(data)
+        case .anthropic, .openAICompatible:
+            break
+        }
 
         if endpoint.isWhisperASR {
             let audioData = try Data(contentsOf: fileURL)
@@ -107,6 +123,11 @@ actor TranscriptionService {
     }
 
     func testConnection(endpoint: Endpoint) async throws -> Bool {
+        // Deepgram/ElevenLabs don't expose an OpenAI-style /v1/models list; treat a
+        // configured endpoint+key as usable (validated on first real transcription).
+        if endpoint.provider == .deepgram || endpoint.provider == .elevenLabs {
+            return !endpoint.apiKey.isEmpty
+        }
         if endpoint.isWhisperASR {
             _ = try await fetchWhisperASRHealth(endpoint: endpoint)
             return true
@@ -117,6 +138,9 @@ actor TranscriptionService {
     }
 
     func fetchAvailableModels(endpoint: Endpoint) async throws -> [String] {
+        if endpoint.provider == .deepgram || endpoint.provider == .elevenLabs {
+            return []
+        }
         if endpoint.isWhisperASR {
             // whisper-asr-webservice does not expose a model listing endpoint.
             _ = try await fetchWhisperASRHealth(endpoint: endpoint)
@@ -711,6 +735,84 @@ actor TranscriptionService {
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
             Logger.transcription.error("HTTP \(httpResponse.statusCode, privacy: .public) from \(url.host ?? "?", privacy: .public) (\(fileName, privacy: .public)): \(responseBody, privacy: .public)")
+            throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
+        }
+        return data
+    }
+
+    // MARK: - Deepgram
+
+    private func sendDeepgramRequest(
+        url: URL,
+        endpoint: Endpoint,
+        audioData: Data,
+        contentType: String,
+        language: String,
+        diarize: Bool
+    ) async throws -> Data {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        var queryItems = [
+            URLQueryItem(name: "model", value: endpoint.modelName.isEmpty ? "nova-3" : endpoint.modelName),
+            URLQueryItem(name: "smart_format", value: "true"),
+            URLQueryItem(name: "punctuate", value: "true"),
+        ]
+        if !language.isEmpty {
+            queryItems.append(URLQueryItem(name: "language", value: language))
+        } else {
+            queryItems.append(URLQueryItem(name: "detect_language", value: "true"))
+        }
+        if diarize { queryItems.append(URLQueryItem(name: "diarize", value: "true")) }
+        components.queryItems = queryItems
+
+        var request = URLRequest(url: components.url ?? url)
+        request.httpMethod = "POST"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        if !endpoint.apiKey.isEmpty {
+            request.setValue("Token \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = audioData
+        request.timeoutInterval = 300
+
+        return try await runDataRequest(request, providerName: "Deepgram")
+    }
+
+    // MARK: - ElevenLabs
+
+    private func sendElevenLabsRequest(
+        url: URL,
+        endpoint: Endpoint,
+        audioData: Data,
+        fileName: String,
+        contentType: String,
+        language: String,
+        diarize: Bool
+    ) async throws -> Data {
+        var form = MultipartFormData()
+        form.addField(name: "model_id", value: endpoint.modelName.isEmpty ? "scribe_v1" : endpoint.modelName)
+        if !language.isEmpty { form.addField(name: "language_code", value: language) }
+        if diarize { form.addField(name: "diarize", value: "true") }
+        form.addFile(name: "file", fileName: fileName, contentType: contentType, data: audioData)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        if !endpoint.apiKey.isEmpty {
+            request.setValue(endpoint.apiKey, forHTTPHeaderField: "xi-api-key")
+        }
+        request.httpBody = form.encode()
+        request.timeoutInterval = 300
+
+        return try await runDataRequest(request, providerName: "ElevenLabs")
+    }
+
+    private func runDataRequest(_ request: URLRequest, providerName: String) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw TranscriptionError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            Logger.transcription.error("\(providerName, privacy: .public) HTTP \(httpResponse.statusCode, privacy: .public): \(responseBody, privacy: .public)")
             throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
         }
         return data

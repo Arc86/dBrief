@@ -1639,6 +1639,7 @@ final class RecordingManager {
                 endpoint: endpoint,
                 language: appSettings.effectiveTranscriptionLanguage,
                 initialPrompt: appSettings.effectiveWhisperPrompt,
+                diarize: appSettings.diarizationEnabled,
                 chunking: .init(
                     enabled: appSettings.remoteChunkingEnabled,
                     maxUploadMB: appSettings.remoteChunkMaxUploadMB,
