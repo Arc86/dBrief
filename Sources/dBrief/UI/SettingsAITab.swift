@@ -241,7 +241,7 @@ struct SettingsAITab: View {
                     get: { appSettings.localCLIConfig.timeoutSeconds },
                     set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
                 )) {
-                    ForEach([15, 30, 45, 60, 90, 120, 180, 300], id: \.self) { secs in
+                    ForEach([15, 30, 45, 60, 90, 120, 180, 300, 600], id: \.self) { secs in
                         Text("\(secs)s").tag(secs)
                     }
                 }

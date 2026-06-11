@@ -15,7 +15,7 @@ struct LocalCLIConfig: Codable, Sendable, Equatable {
 
     static let `default` = LocalCLIConfig(
         command: "claude -p \"$DBRIEF_FULL_PROMPT\"",
-        timeoutSeconds: 45
+        timeoutSeconds: 180
     )
 
     /// Presets for the settings "Load Template" menu.
