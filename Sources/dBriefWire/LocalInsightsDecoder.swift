@@ -31,7 +31,11 @@ public enum LocalInsightsDecoder {
         )
     }
 
-    private static func extractFirstJSONObject(_ input: String) -> String? {
+    /// Extracts the first balanced top-level JSON object from arbitrary model
+    /// output, skipping any `<think>…</think>` reasoning block and tolerating
+    /// surrounding prose or Markdown code fences. Shared by the local insights
+    /// path and the remote `/v1/chat/completions` path.
+    public static func extractFirstJSONObject(_ input: String) -> String? {
         // Reasoning models (Gemma 4) emit <think>…</think> before the answer.
         // Search for JSON only after the last closing tag to avoid partial matches
         // inside the thinking block.

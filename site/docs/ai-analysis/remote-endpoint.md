@@ -27,7 +27,25 @@ dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endp
 
 ## Reasoning models
 
-For models that emit "thinking"/chain-of-thought (GPT-5, o-series, gpt-oss, Qwen3, Gemini Flash), dBrief automatically asks the provider to skip or hide it — this lowers latency and keeps the structured output clean. Plain models are sent unchanged.
+For models that emit "thinking"/chain-of-thought (GPT-5, o-series, gpt-oss, Qwen3, Gemini Flash, minimax, gemma, DeepSeek-R1-style), dBrief:
+
+- Asks the provider to skip or hide the reasoning where supported (lower latency, cleaner structured output). Plain models are sent unchanged.
+- Strips any `<think>…</think>` block that still comes back before parsing the summary, action items, and tags (so the JSON-based tags step doesn't choke on the reasoning).
+- Requests an output-token limit so a server with a tiny default doesn't truncate the answer.
+
+If a step fails with **"The model returned no answer — it likely ran out of output tokens while thinking"**, the model spent its whole output budget reasoning. Pick a non-reasoning model, or one with a larger output limit.
+
+## Context window (large transcripts)
+
+dBrief sends the **entire transcript** to your endpoint for analysis. Long meetings produce large transcripts (often 10,000–20,000+ tokens), and the request fails if it exceeds your server's configured context window.
+
+If an AI step fails with **"The transcript is larger than the model's context window…"**, increase the context your server allocates:
+
+- **llama.cpp / llama-server**: launch with a larger `--ctx-size` (e.g. `-c 32768`). Note the server may load a model far below its trained capacity by default — e.g. it logs `n_ctx_seq (8192) < n_ctx_train (262144)`, meaning the model supports 262K but is capped at 8K until you raise `--ctx-size`.
+- **vLLM**: raise `--max-model-len`.
+- **Ollama**: raise `num_ctx`.
+
+Alternatively, pick an endpoint/model with a larger context window.
 
 ## Privacy
 

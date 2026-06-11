@@ -1,6 +1,14 @@
 import Foundation
+import dBriefWire
 
 actor AIService {
+    /// Upper bound on generated tokens per call. Two opposing pressures:
+    /// some servers default to a tiny `max_tokens` (e.g. 16) which truncates the
+    /// answer, while strict servers (vLLM) reject when `prompt + max_tokens` exceeds
+    /// the model's context window. A moderate cap covers dBrief's short outputs
+    /// (summary/action-items/tags) plus a reasoning model's `<think>` block without
+    /// reserving so much context that it triggers overflow on small-context servers.
+    static let maxResponseTokens = 4096
     func generateSummary(transcription: String, endpoint: Endpoint, systemPrompt: String) async throws -> String {
         let response = try await chatCompletion(
             systemPrompt: systemPrompt,
@@ -16,11 +24,26 @@ actor AIService {
             userMessage: "Extract action items from this transcription:\n\n\(transcription)",
             endpoint: endpoint
         )
-        return response
+        return Self.parseActionItems(from: response)
+    }
+
+    /// Extracts action items from a raw model response, tolerating a leading
+    /// `<think>` reasoning block and `-`, `*`, `•`, or `1.` list markers.
+    nonisolated static func parseActionItems(from response: String) -> [String] {
+        cleanContent(response)
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { $0.hasPrefix("- ") || $0.hasPrefix("* ") }
-            .map { String($0.dropFirst(2)) }
+            .compactMap { line -> String? in
+                for marker in ["- ", "* ", "• "] where line.hasPrefix(marker) {
+                    return String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
+                }
+                // Numbered list: "1. ", "12) ", etc.
+                if let match = line.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) {
+                    return String(line[match.upperBound...]).trimmingCharacters(in: .whitespaces)
+                }
+                return nil
+            }
+            .filter { !$0.isEmpty }
     }
 
     struct TagsResult: Sendable {
@@ -35,8 +58,14 @@ actor AIService {
             endpoint: endpoint
         )
 
-        // Parse JSON response
-        guard let data = response.data(using: .utf8),
+        return Self.parseTags(from: response)
+    }
+
+    /// Parses the tags/sentiment JSON from a raw model response, skipping any
+    /// `<think>` block and surrounding prose or Markdown code fences.
+    nonisolated static func parseTags(from response: String) -> TagsResult {
+        guard let jsonText = LocalInsightsDecoder.extractFirstJSONObject(response),
+              let data = jsonText.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             return TagsResult(tags: [], sentiment: "neutral")
@@ -45,6 +74,34 @@ actor AIService {
         let tags = (json["tags"] as? [String]) ?? []
         let sentiment = (json["sentiment"] as? String) ?? "neutral"
         return TagsResult(tags: tags, sentiment: sentiment)
+    }
+
+    /// Detects a context-window-overflow error from a server error body, across the
+    /// common phrasings (llama.cpp: "exceeds the available context size"; vLLM/OpenAI:
+    /// "maximum context length"/"context_length_exceeded"; others: "context window").
+    nonisolated static func isContextOverflow(_ body: String) -> Bool {
+        let lowered = body.lowercased()
+        let needles = [
+            "context size",
+            "context length",
+            "context window",
+            "context_length_exceeded",
+            "maximum context",
+            "exceeds the available context",
+            "reduce the length",
+        ]
+        return needles.contains { lowered.contains($0) }
+    }
+
+    /// Removes complete `<think>…</think>` reasoning blocks that some models inline
+    /// in their `content`, leaving the trimmed answer.
+    nonisolated static func cleanContent(_ raw: String) -> String {
+        var s = raw
+        while let open = s.range(of: "<think>"),
+              let close = s.range(of: "</think>", range: open.upperBound..<s.endIndex) {
+            s.removeSubrange(open.lowerBound..<close.upperBound)
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func generateTitle(transcription: String, language: String?, endpoint: Endpoint) async throws -> String {
@@ -127,6 +184,7 @@ actor AIService {
                 ["role": "user", "content": userMessage],
             ],
             "temperature": 0.3,
+            "max_tokens": Self.maxResponseTokens,
             "stream": true,
         ]
         ReasoningConfig.apply(to: &body, model: endpoint.modelName)
@@ -280,6 +338,7 @@ actor AIService {
                 ["role": "user", "content": userMessage],
             ],
             "temperature": 0.3,
+            "max_tokens": Self.maxResponseTokens,
         ]
         ReasoningConfig.apply(to: &body, model: endpoint.modelName)
 
@@ -299,19 +358,35 @@ actor AIService {
         }
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            if Self.isContextOverflow(responseBody) {
+                throw AIServiceError.contextWindowExceeded
+            }
             throw AIServiceError.serverError(httpResponse.statusCode, responseBody)
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String
+              let message = firstChoice["message"] as? [String: Any]
         else {
             throw AIServiceError.invalidResponse
         }
 
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Reasoning models may put their answer in `content` and the chain-of-thought
+        // in `reasoning_content`. A null/empty `content` usually means the generation
+        // was truncated mid-thinking (finish_reason == "length") — surface that
+        // clearly instead of a generic "invalid response".
+        let cleaned = Self.cleanContent((message["content"] as? String) ?? "")
+        guard !cleaned.isEmpty else {
+            let finishReason = firstChoice["finish_reason"] as? String
+            let hasReasoning = (message["reasoning_content"] as? String)?.isEmpty == false
+            if finishReason == "length" || hasReasoning {
+                throw AIServiceError.truncatedResponse
+            }
+            throw AIServiceError.invalidResponse
+        }
+
+        return cleaned
     }
 
     // MARK: - Anthropic (native /v1/messages)
@@ -378,6 +453,8 @@ private extension String {
 enum AIServiceError: Error, LocalizedError {
     case invalidEndpoint
     case invalidResponse
+    case truncatedResponse
+    case contextWindowExceeded
     case noModelsFound
     case serverError(Int, String)
 
@@ -385,6 +462,8 @@ enum AIServiceError: Error, LocalizedError {
         switch self {
         case .invalidEndpoint: "Invalid AI endpoint URL."
         case .invalidResponse: "Invalid response from AI server."
+        case .truncatedResponse: "The model returned no answer — it likely ran out of output tokens while \"thinking\". Try a non-reasoning model or one with a larger output limit."
+        case .contextWindowExceeded: "The transcript is larger than the model's context window. Increase your server's context size (e.g. llama.cpp --ctx-size / vLLM --max-model-len) or use an endpoint with a larger context."
         case .noModelsFound: "Connected, but no models were returned by the provider."
         case .serverError(let code, let body): "Server error (\(code)): \(body)"
         }
