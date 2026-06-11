@@ -103,6 +103,36 @@ Escape hatches via `make app CODESIGN_IDENTITY=…`:
 
 **Homebrew-from-source** users get the same protection automatically: the formula runs `make app`, which creates a stable per-machine cert on first install and reuses it on every `brew upgrade`, so their permissions survive rebuilds too.
 
+## Notarized Developer ID release (optional)
+
+The self-signed cert above fixes the **TCC permission reset** for free, but the app is still un-notarized, so DMG users do the one-time quarantine workaround. If you enroll in the **Apple Developer Program** ($99/yr), you can sign with a **Developer ID** and **notarize**, which removes the Gatekeeper prompt *and* gives an even more robust TCC identity (anchored to your Team ID, so it survives cert renewal). This is purely additive — the `make notarize` flow and entitlements ([`packaging/dBrief.entitlements`](packaging/dBrief.entitlements)) are already wired and stay dormant until you pass a Developer ID identity.
+
+One-time setup:
+
+1. Enroll, then create a **Developer ID Application** certificate (Xcode → Settings → Accounts → Manage Certificates, or the Developer portal). It lands in your login keychain.
+2. Make an [app-specific password](https://support.apple.com/102654) for your Apple ID, then store notarytool credentials once:
+   ```bash
+   xcrun notarytool store-credentials dbrief \
+     --apple-id you@example.com --team-id TEAMID --password APP-SPECIFIC-PASSWORD
+   ```
+   `dbrief` is the profile name you'll pass as `NOTARY_PROFILE`.
+
+Each release — instead of `make dmg`, run:
+
+```bash
+make notarize \
+  CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  NOTARY_PROFILE=dbrief
+```
+
+This hardened-signs the app, notarizes & staples it, packages the DMG, then notarizes & staples the DMG (`xcrun notarytool … --wait` blocks until Apple finishes, usually a few minutes). The result is a `dBrief-<version>.dmg` that opens with no Gatekeeper prompt — you can drop the `xattr` step from the install docs for that release.
+
+Notes:
+
+- The hardened runtime needs the entitlements in `packaging/dBrief.entitlements` (JIT + library validation for the MLX/WhisperKit ML stack). If a notarization run is rejected, read the log with `xcrun notarytool log <submission-id> --keychain-profile dbrief` and add any flagged capability there.
+- Developer ID **supersedes** the self-signed cert; you no longer need to preserve `dbrief-signing.keychain-db`. Existing self-signed-build users re-grant Screen Recording once on the switch, then it's stable.
+- `make notarize` does **not** notarize the Homebrew-from-source path (those users still build self-signed locally) — it's only for the DMG you upload.
+
 ## Installing the DMG (what end users do)
 
 A downloaded `.dmg` is quarantined. After dragging `dBrief.app` to `/Applications`, clear it once:

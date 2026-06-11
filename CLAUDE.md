@@ -13,6 +13,7 @@ dBrief is a macOS menu bar app (SwiftUI `MenuBarExtra`) for recording microphone
 - **Run**: `swift run` or `make run` (builds and launches the app bundle)
 - **Sign**: `make sign` (`codesign --deep` with a stable self-signed identity `dBrief Self-Signed`, auto-created/reused by `scripts/ensure-signing-cert.sh` so macOS TCC permissions — Screen Recording, etc. — survive app updates instead of resetting each release; falls back to ad-hoc `-` if the cert can't be created. Override `CODESIGN_IDENTITY=-` for pure ad-hoc, or with a Developer ID if you enroll)
 - **Build DMG**: `make dmg` (builds the app, then a compressed `dBrief-<version>.dmg` with a drag-to-Applications symlink, for GitHub Releases)
+- **Notarize** (optional, requires Apple Developer Program): `make notarize CODESIGN_IDENTITY="Developer ID Application: …" NOTARY_PROFILE=<profile>` — hardened-signs with `packaging/dBrief.entitlements`, notarizes + staples the app and DMG (removes the Gatekeeper prompt). Dormant unless a Developer ID identity is passed; see [RELEASING.md](RELEASING.md)
 - **Clean**: `make clean` or `swift package clean`
 - **Run tests**: `swift test`
 
