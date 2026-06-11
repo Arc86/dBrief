@@ -44,7 +44,8 @@ actor MLXInsightsService {
 
     func analyzeTranscriptStream(
         _ text: String,
-        outputLanguage: OutputLanguage
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = ""
     ) -> AsyncThrowingStream<String, Error> {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let fallback = emptyFallbackJSON()
@@ -56,7 +57,7 @@ actor MLXInsightsService {
 
         let truncatedText = Self.truncateTranscript(text)
         let userPrompt = buildUserPrompt(transcript: truncatedText)
-        let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage)
+        let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -99,7 +100,8 @@ actor MLXInsightsService {
 
     func analyzeTranscript(
         _ text: String,
-        outputLanguage: OutputLanguage
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = ""
     ) async throws -> LocalInsightsResult {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return LocalInsightsResult(
@@ -115,7 +117,7 @@ actor MLXInsightsService {
             stateHandler(.analyzing)
             isInferencing = true
             let container = try await loadModelContainerIfNeeded()
-            let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage)
+            let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
             let session = ChatSession(
                 container,
                 instructions: systemPrompt,
@@ -281,8 +283,8 @@ actor MLXInsightsService {
         UnifiedInsightsPrompt.userPrompt(transcript: transcript)
     }
 
-    private func buildSystemPrompt(outputLanguage: OutputLanguage) -> String {
-        UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage)
+    private func buildSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String = "") -> String {
+        UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
     }
 
     private func generationParameters() -> GenerateParameters {

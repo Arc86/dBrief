@@ -33,6 +33,7 @@ final class AppSettings {
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
         static let audioInputDeviceUID = "audioInputDeviceUID"
         static let whisperPrompt = "whisperPrompt"
+        static let removeFillerWords = "removeFillerWords"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
         static let defaultTranscriptionEndpointId = "defaultTranscriptionEndpointId"
@@ -352,6 +353,13 @@ final class AppSettings {
     /// Custom vocabulary/context hint for Whisper (initial_prompt parameter). Helps with proper nouns, acronyms, etc.
     var whisperPrompt: String {
         didSet { UserDefaults.standard.set(whisperPrompt, forKey: Keys.whisperPrompt) }
+    }
+
+    /// When enabled, filler words (um, uh, …) are stripped from transcripts after
+    /// transcription. Off by default — meeting records often want verbatim text.
+    /// Hallucination/markup cleanup runs regardless of this toggle.
+    var removeFillerWords: Bool {
+        didSet { UserDefaults.standard.set(removeFillerWords, forKey: Keys.removeFillerWords) }
     }
 
     /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
@@ -703,6 +711,7 @@ final class AppSettings {
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
+        self.removeFillerWords = defaults.bool(forKey: Keys.removeFillerWords)
         self.whisperModelName = {
             // New key takes priority
             if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {

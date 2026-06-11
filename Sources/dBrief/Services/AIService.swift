@@ -65,31 +65,15 @@ actor AIService {
         userMessage: String,
         endpoint: Endpoint
     ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let isAnthropic = endpoint.provider == .anthropic
+        return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    guard let url = endpoint.chatCompletionsURL else {
-                        throw AIServiceError.invalidEndpoint
-                    }
-
-                    let body: [String: Any] = [
-                        "model": endpoint.modelName,
-                        "messages": [
-                            ["role": "system", "content": systemPrompt],
-                            ["role": "user", "content": userMessage],
-                        ],
-                        "temperature": 0.3,
-                        "stream": true,
-                    ]
-
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    if !endpoint.apiKey.isEmpty {
-                        request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
-                    }
-                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-                    request.timeoutInterval = 120
+                    let request: URLRequest = try {
+                        isAnthropic
+                            ? try Self.anthropicStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+                            : try Self.openAIStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+                    }()
 
                     let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse,
@@ -103,12 +87,23 @@ actor AIService {
                         let jsonStr = String(line.dropFirst(6))
                         if jsonStr.trimmingCharacters(in: .whitespaces) == "[DONE]" { break }
                         guard let data = jsonStr.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let choices = json["choices"] as? [[String: Any]],
-                              let delta = choices.first?["delta"] as? [String: Any],
-                              let content = delta["content"] as? String
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                         else { continue }
-                        continuation.yield(content)
+
+                        if isAnthropic {
+                            // Anthropic SSE: text arrives in content_block_delta events.
+                            guard (json["type"] as? String) == "content_block_delta",
+                                  let delta = json["delta"] as? [String: Any],
+                                  let text = delta["text"] as? String
+                            else { continue }
+                            continuation.yield(text)
+                        } else {
+                            guard let choices = json["choices"] as? [[String: Any]],
+                                  let delta = choices.first?["delta"] as? [String: Any],
+                                  let content = delta["content"] as? String
+                            else { continue }
+                            continuation.yield(content)
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -117,6 +112,59 @@ actor AIService {
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
+    }
+
+    private nonisolated static func openAIStreamRequest(
+        systemPrompt: String,
+        userMessage: String,
+        endpoint: Endpoint
+    ) throws -> URLRequest {
+        guard let url = endpoint.chatCompletionsURL else { throw AIServiceError.invalidEndpoint }
+        var body: [String: Any] = [
+            "model": endpoint.modelName,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userMessage],
+            ],
+            "temperature": 0.3,
+            "stream": true,
+        ]
+        ReasoningConfig.apply(to: &body, model: endpoint.modelName)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !endpoint.apiKey.isEmpty {
+            request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+        return request
+    }
+
+    private nonisolated static func anthropicStreamRequest(
+        systemPrompt: String,
+        userMessage: String,
+        endpoint: Endpoint
+    ) throws -> URLRequest {
+        guard let url = endpoint.messagesURL else { throw AIServiceError.invalidEndpoint }
+        let body: [String: Any] = [
+            "model": endpoint.modelName,
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "system": systemPrompt,
+            "messages": [["role": "user", "content": userMessage]],
+            "stream": true,
+        ]
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        if !endpoint.apiKey.isEmpty {
+            request.setValue(endpoint.apiKey, forHTTPHeaderField: "x-api-key")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+        return request
     }
 
     func testConnection(endpoint: Endpoint) async throws -> Bool {
@@ -210,11 +258,22 @@ actor AIService {
         userMessage: String,
         endpoint: Endpoint
     ) async throws -> String {
+        if endpoint.provider == .anthropic {
+            return try await anthropicCompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+        }
+        return try await openAICompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+    }
+
+    private func openAICompletion(
+        systemPrompt: String,
+        userMessage: String,
+        endpoint: Endpoint
+    ) async throws -> String {
         guard let url = endpoint.chatCompletionsURL else {
             throw AIServiceError.invalidEndpoint
         }
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": endpoint.modelName,
             "messages": [
                 ["role": "system", "content": systemPrompt],
@@ -222,6 +281,7 @@ actor AIService {
             ],
             "temperature": 0.3,
         ]
+        ReasoningConfig.apply(to: &body, model: endpoint.modelName)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -252,6 +312,59 @@ actor AIService {
         }
 
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Anthropic (native /v1/messages)
+
+    private func anthropicCompletion(
+        systemPrompt: String,
+        userMessage: String,
+        endpoint: Endpoint
+    ) async throws -> String {
+        guard let url = endpoint.messagesURL else {
+            throw AIServiceError.invalidEndpoint
+        }
+
+        let body: [String: Any] = [
+            "model": endpoint.modelName,
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "system": systemPrompt,
+            "messages": [["role": "user", "content": userMessage]],
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        if !endpoint.apiKey.isEmpty {
+            request.setValue(endpoint.apiKey, forHTTPHeaderField: "x-api-key")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIServiceError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AIServiceError.serverError(httpResponse.statusCode, responseBody)
+        }
+
+        return Self.parseAnthropicText(data).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extract the concatenated text from an Anthropic Messages response body.
+    /// Pure + static so it's unit-testable.
+    static func parseAnthropicText(_ data: Data) -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = json["content"] as? [[String: Any]]
+        else { return "" }
+        return content
+            .filter { ($0["type"] as? String) == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined()
     }
 }
 

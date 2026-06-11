@@ -24,7 +24,7 @@ Go to **Settings → AI & Models** and select your engine. dBrief offers four op
 |---|---|---|
 | **[Apple Intelligence](apple-intelligence.md)** | On your Mac | macOS 26+, Apple Silicon |
 | **[Gemma 4 E4B Local](local-gemma.md)** | On your Mac | Apple Silicon + model download |
-| **[Remote Endpoint](remote-endpoint.md)** | Your server | OpenAI-compatible server |
+| **[Remote Endpoint](remote-endpoint.md)** | A cloud provider or your server | OpenAI-compatible server, or an Anthropic/OpenAI/Gemini/Groq API key |
 | **[Local CLI](local-cli.md)** | A command-line tool on your Mac | A CLI such as `claude`, `ollama`, or `llm` installed |
 
 Not sure whether to run AI on your Mac or on a server? See [Local vs Remote AI](local-vs-remote.md) for the privacy, quality, and cost trade-offs.

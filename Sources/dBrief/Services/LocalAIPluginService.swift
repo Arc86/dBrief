@@ -55,15 +55,15 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return turns
     }
 
-    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage) async throws -> LocalInsightsResult {
-        guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage)) else {
+    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "") async throws -> LocalInsightsResult {
+        guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary)) else {
             throw WireError(kind: .generic, message: "no insights")
         }
         return r
     }
 
-    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage) async -> AsyncThrowingStream<String, Error> {
-        await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage))
+    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "") async -> AsyncThrowingStream<String, Error> {
+        await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary))
     }
 
     func chatStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {

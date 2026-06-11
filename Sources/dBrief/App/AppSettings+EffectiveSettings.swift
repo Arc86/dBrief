@@ -22,6 +22,12 @@ extension AppSettings {
         activeProfile.overrides.whisperPrompt ?? whisperPrompt
     }
 
+    /// Filler-word removal is a global preference (not currently profile-overridable).
+    /// Exposed as an `effective…` accessor so call sites stay uniform.
+    var effectiveRemoveFillerWords: Bool {
+        removeFillerWords
+    }
+
     var effectiveTranscriptionEngine: TranscriptionEngine {
         activeProfile.overrides.transcriptionEngine ?? transcriptionEngine
     }

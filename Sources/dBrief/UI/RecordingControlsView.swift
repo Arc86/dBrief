@@ -8,6 +8,8 @@ struct RecordingControlsView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
 
+    @State private var inputDevices: [AudioInputDevice] = []
+
     var body: some View {
         @Bindable var settings = appSettings
         VStack(spacing: 8) {
@@ -113,9 +115,29 @@ struct RecordingControlsView: View {
             // Audio source chips
             if appState.isRecording || appState.isPaused {
                 HStack(spacing: 8) {
-                    Label("Mic", systemImage: "mic.fill")
-                        .font(.caption2)
-                        .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .secondary)
+                    Menu {
+                        Button("System Default") { recordingManager.switchInputDevice(to: nil) }
+                        Divider()
+                        ForEach(inputDevices) { device in
+                            Button {
+                                recordingManager.switchInputDevice(to: device.uid)
+                            } label: {
+                                if device.uid == appSettings.audioInputDeviceUID {
+                                    Label(device.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(device.displayName)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Mic", systemImage: "mic.fill")
+                            .font(.caption2)
+                            .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .onAppear { inputDevices = AudioInputDeviceManager.availableInputDevices() }
+
                     if recordingManager.hasSystemAudioPermission {
                         Label("System Audio", systemImage: "speaker.wave.2.fill")
                             .font(.caption2)

@@ -32,6 +32,13 @@ final class AudioTrackWriter: @unchecked Sendable {
         lock.withLock { _peakLevel }
     }
 
+    /// The format the on-disk file was opened with (nil until the first buffer is
+    /// written). Used by live device hot-swap to convert a new device's buffers back
+    /// to this format so a single continuous track stays valid.
+    var establishedFormat: AVAudioFormat? {
+        lock.withLock { audioFile?.processingFormat }
+    }
+
     func write(_ buffer: AVAudioPCMBuffer) throws {
         try lock.withLock {
             if audioFile == nil {

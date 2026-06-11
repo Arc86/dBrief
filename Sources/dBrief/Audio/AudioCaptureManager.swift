@@ -235,6 +235,61 @@ final class AudioCaptureManager {
         }
     }
 
+    /// Tap handler that converts each buffer to the writer's established format before
+    /// writing — used after a live device switch when the new device's format differs.
+    private nonisolated static func makeConvertingMicHandler(
+        writer: AudioTrackWriter,
+        converter: MicFormatConverter
+    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        return { buffer, _ in
+            guard let converted = converter.convert(buffer) else { return }
+            do {
+                try writer.write(converted)
+            } catch {
+                log.error("Mic write error (converted): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Switch the microphone input device mid-recording without losing the in-progress
+    /// mic track. Pauses the engine, re-points it at the new device, re-installs the tap
+    /// (converting to the established file format if the new device's format differs),
+    /// and resumes. No-op when not recording or in a system-audio-only session.
+    func switchMicrophoneDevice(to newUID: String?) throws {
+        guard isCapturing, let engine = micEngine, let writer = micWriter else { return }
+
+        engine.pause()
+        let inputNode = engine.inputNode
+        inputNode.removeTap(onBus: 0)
+
+        do {
+            try AudioInputDeviceManager.applyInputDevice(uid: newUID, to: engine)
+        } catch {
+            log.warning("Hot-swap: failed to set input device: \(error.localizedDescription, privacy: .public)")
+        }
+
+        let newFormat = inputNode.outputFormat(forBus: 0)
+        guard newFormat.sampleRate > 0 else {
+            log.error("Hot-swap: new device reports invalid format; attempting to resume previous device")
+            try? engine.start()
+            throw AudioCaptureError.noMicrophoneAccess
+        }
+
+        let handler: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+        if let established = writer.establishedFormat,
+           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount),
+           let converter = MicFormatConverter(from: newFormat, to: established) {
+            log.info("Hot-swap: converting \(newFormat.sampleRate, privacy: .public)Hz/\(newFormat.channelCount, privacy: .public)ch → \(established.sampleRate, privacy: .public)Hz/\(established.channelCount, privacy: .public)ch")
+            handler = Self.makeConvertingMicHandler(writer: writer, converter: converter)
+        } else {
+            handler = Self.makeMicHandler(writer: writer)
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
+        try engine.start()
+        log.info("Hot-swap: switched mic input device")
+    }
+
     // MARK: - Helpers
 
     private static func requestMicAccess() async -> Bool {

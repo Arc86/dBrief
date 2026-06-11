@@ -329,16 +329,17 @@ struct SettingsAITab: View {
             }
 
             HStack {
-                Button {
-                    editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
-                    isNew = true
-                    testResult = nil
-                    availableModels = []
-                    isEditing = true
+                Menu {
+                    ForEach(ProviderPresets.ai) { preset in
+                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
+                    }
+                    Divider()
+                    Button("Custom…") { beginAddEndpoint(ProviderPresets.custom(modelPlaceholder: "llama3")) }
                 } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(.bordered)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 Button {
                     if let id = selectedEndpointId {
@@ -402,6 +403,14 @@ struct SettingsAITab: View {
         }
     }
 
+    private func beginAddEndpoint(_ endpoint: Endpoint) {
+        editingEndpoint = endpoint
+        isNew = true
+        testResult = nil
+        availableModels = []
+        isEditing = true
+    }
+
     private var endpointEditor: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -409,6 +418,12 @@ struct SettingsAITab: View {
             Text(isNew ? "Add Endpoint" : "Edit Endpoint")
                 .font(.title3)
                 .fontWeight(.medium)
+
+            if editingEndpoint.provider == .anthropic {
+                Text("Anthropic Messages API (native). Enter your model name and API key.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
                 GridRow {

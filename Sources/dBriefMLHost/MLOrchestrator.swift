@@ -95,21 +95,21 @@ actor MLOrchestrator: MLBackend {
 
     // MARK: - Analysis
 
-    func analyze(text: String, outputLanguage: OutputLanguage) async throws -> LocalInsightsResult {
+    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String) async throws -> LocalInsightsResult {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
-            let result = try await insightsService.analyzeTranscript(text, outputLanguage: outputLanguage)
+            let result = try await insightsService.analyzeTranscript(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary)
             await insightsService.unload()
             return result
         }
     }
 
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, emitToken: @Sendable (String) -> Void) async throws {
+    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, emitToken: @Sendable (String) -> Void) async throws {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
-            let upstream = await insightsService.analyzeTranscriptStream(text, outputLanguage: outputLanguage)
+            let upstream = await insightsService.analyzeTranscriptStream(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary)
             for try await chunk in upstream { emitToken(chunk) }
             await insightsService.unload()
         }
