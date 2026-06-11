@@ -1,15 +1,18 @@
-## dBrief 1.1.1
+## dBrief 1.1.2
 
 **Highlights**
 
-- **Bundled ffmpeg** — the `.dmg` now ships a static `ffmpeg` inside the app, so DMG users get full audio mixing, filtering, and AAC encoding with **no separate Homebrew install**. (Homebrew installs still use the system `ffmpeg` the formula depends on.)
-- **Faster transcription start** — on Apple Silicon the local Whisper model is now **prewarmed while you record** (plus opt-in launch/wake prewarm), so transcription begins the moment you hit Stop instead of waiting on a model load.
-- **Performance benchmark panel** (Power User) — per-model transcription/AI speed with **pure-inference vs end-to-end** realtime ratios, a **lifetime "transcribed by dBrief"** odometer, and a **Clear Stats** action.
+- **More transcription & AI providers** — native **Anthropic Claude** for AI analysis, plus **Deepgram** and **ElevenLabs Scribe** as cloud transcription engines (with word-level timestamps and diarization where supported). All added through the curated provider picker in Settings.
+- **More reliable remote AI analysis** — works gracefully with small-context and reasoning models: chain-of-thought output is suppressed and stripped, responses are capped to avoid context overflow on strict servers (vLLM/llama.cpp), and a context-window error now surfaces a clear "increase your server's context size" hint instead of a cryptic failure.
+- **Screen Recording permission now survives updates** — releases are signed with a stable certificate, so macOS no longer silently drops your Screen Recording grant after each update. Upgrading from 1.1.1 you'll re-grant once; it stays put from then on.
 
 **Improvements**
 
-- **Auto-delete (retention)** — independently purge old recordings and/or transcripts after a chosen age (off by default); runs at launch or on demand via **Run Cleanup Now**.
-- **Start at login** toggle.
-- **Permissions** consolidated into their own top-level Settings page.
-- **Reset Onboarding** to re-run the setup wizard.
-- Model Performance panel in the transcript viewer.
+- **Live microphone switching** — change input device mid-recording without stopping.
+- **Cleaner transcripts** — automatic removal of hallucinated tags/markup and non-speech annotations on every engine, plus an optional filler-word ("um", "uh") cleanup toggle.
+- **Custom vocabulary in AI analysis** — your domain-specific terms now bias the AI summaries and action items too, not just Whisper.
+- **Better Parakeet endings** — trailing-silence padding keeps sentence-final punctuation from being dropped.
+- **Calendar participants** flow into recordings — attendees pre-fill diarization speaker names and meeting metadata is saved alongside the output.
+- **In-app "Update available" popup** when a new version is published.
+- **Local CLI** AI engine — longer default timeout (180s, with a 600s option) and reliable login-shell PATH resolution so tools like `claude` are found in the DMG build.
+- Per-track capture now uses Apple Lossless; Settings, transcript, and live-transcript windows are singletons (no more duplicate windows).
