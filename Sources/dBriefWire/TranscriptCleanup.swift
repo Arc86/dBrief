@@ -8,8 +8,8 @@ import Foundation
 /// whitespace. Filler-word removal (um, uh, …) is opt-in and off by default — meeting
 /// records often want a verbatim transcript.
 ///
-/// Inspired by VoiceInk's `TranscriptionOutputFilter`, but conservative: it does **not**
-/// remove parenthesized `(…)` content, which in meetings is frequently real speech.
+/// Conservative by design: it does **not** remove parenthesized `(…)` content, which in
+/// meetings is frequently real speech.
 public enum TranscriptCleanup {
 
     /// Default filler tokens removed when filler removal is enabled. Lower-cased.

@@ -4,9 +4,9 @@ import Foundation
 /// OpenAI-compatible models that emit it. Reasoning tokens add latency and can leak
 /// into the JSON-shaped insights output, so we ask the model to skip or hide them.
 ///
-/// Inspired by VoiceInk's `ReasoningConfig`. Keyed by model-name substring so a plain
-/// model (e.g. `gpt-4o`, `llama-3.3`) gets `[:]` and its request is untouched — only
-/// recognized reasoning models, whose providers accept these fields, are modified.
+/// Keyed by model-name substring so a plain model (e.g. `gpt-4o`, `llama-3.3`) gets `[:]`
+/// and its request is untouched — only recognized reasoning models, whose providers
+/// accept these fields, are modified.
 enum ReasoningConfig {
 
     /// Extra request-body keys to merge into an OpenAI-compatible chat-completions body

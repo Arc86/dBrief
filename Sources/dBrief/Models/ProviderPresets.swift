@@ -1,9 +1,8 @@
 import Foundation
 
 /// A curated remote-provider preset that prefills the endpoint editor (name, base URL,
-/// default model, and API shape). Inspired by VoiceInk's provider registry — adding a
-/// provider is a one-line entry here plus, for non-OpenAI shapes, an adapter in the
-/// corresponding service.
+/// default model, and API shape). Adding a provider is a one-line entry here plus, for
+/// non-OpenAI shapes, an adapter in the corresponding service.
 struct ProviderPreset: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
