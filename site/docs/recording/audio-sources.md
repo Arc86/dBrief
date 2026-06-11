@@ -15,6 +15,10 @@ To capture remote participants on a Zoom, Teams, or other call, grant **Screen R
 
 Choose which microphone dBrief records from in **Settings → Recording → Audio Input**. Leave it on **System Default** to follow your Mac's current input device, or pick a specific one. Use **Refresh device list** if you've just plugged in a new device.
 
+### Switching device mid-recording
+
+You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. Click the **Mic** chip in the recording controls and pick a different input device. dBrief switches the live input without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed).
+
 ## Echo cancellation
 
 **Settings → Recording → Echo Cancellation** has a **Remove meeting audio from microphone** toggle. It's recommended when using laptop speakers: it uses the captured system audio as a reference to suppress speaker bleed picked up by your mic. When recording mic-only, it falls back to macOS real-time voice processing.

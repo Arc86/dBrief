@@ -23,7 +23,11 @@ The two on-device model engines (Local Whisper and Parakeet) run best on Apple S
 
 ## Speaker diarization (who said what)
 
-When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker diarization** in **Settings → AI & Models → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. It isn't available for Apple Speech or remote endpoints.
+When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker diarization** in **Settings → AI & Models → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. The **Deepgram** remote provider also returns speaker labels when diarization is on; Apple Speech and other remote endpoints don't support it.
+
+## Cleanup
+
+After transcription, dBrief always tidies the text — stripping stray markup and non-speech annotations (like `[BLANK_AUDIO]`) that speech models sometimes emit. Under **Settings → Transcription → Cleanup** you can also turn on **Remove filler words** (um, uh, …); it's off by default so meeting transcripts stay verbatim.
 
 ## Long recordings
 
@@ -35,4 +39,4 @@ For Apple Speech, Local Whisper, and remote endpoints, you can set the input lan
 
 ## Custom vocabulary
 
-With **Power User Mode** enabled, a **Custom Vocabulary** field (Local Whisper and remote endpoints) lets you list proper nouns, acronyms, and domain terms — e.g. *Acme Corp, JIRA, Kubernetes* — to improve recognition.
+With **Power User Mode** enabled, a **Custom Vocabulary** field (Local Whisper and remote endpoints) lets you list proper nouns, acronyms, and domain terms — e.g. *Acme Corp, JIRA, Kubernetes* — to improve recognition. The same terms are also passed to the AI analysis step, so summaries and action items spell your proper nouns correctly too.
