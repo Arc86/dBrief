@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements, applied ONLY on the Developer ID / notarization
+  path (`make notarize`, or `make app CODESIGN_IDENTITY="Developer ID …"`).
+  The ad-hoc and self-signed paths ignore this file.
+
+  dBrief is NOT App-Sandboxed, so TCC (mic, screen recording, calendar) is driven
+  by the Info.plist usage strings — no sandbox entitlements here. These flags
+  loosen the hardened runtime just enough for the on-device ML stack:
+
+  - allow-jit / allow-unsigned-executable-memory: MLX + Metal generate and run
+    JIT code on the GPU/CPU path.
+  - disable-library-validation: the app loads the separately-built dBriefMLHost
+    helper and dlopen's bundled frameworks/dylibs (MLX, WhisperKit, FluidAudio)
+    that aren't signed by the same Team ID.
+
+  If notarization later flags additional issues (e.g. the audit log mentions
+  another restricted capability), add the corresponding key here and re-run.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

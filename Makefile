@@ -22,13 +22,23 @@ FFMPEG_CACHE = .build/ffmpeg
 
 # Version is the single source of truth in Info.plist; never hardcode it here.
 VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/dBrief/Resources/Info.plist)
-# Ad-hoc signing by default (we are not in the Apple Developer Program).
-# Override with a Developer ID if you ever enroll: make app CODESIGN_IDENTITY="Developer ID Application: …"
-CODESIGN_IDENTITY ?= -
+# Signing identity. "auto" (default) creates/reuses a *stable* self-signed
+# code-signing certificate via scripts/ensure-signing-cert.sh. A stable identity
+# is what lets macOS TCC (Screen Recording, etc.) survive app updates instead of
+# silently invalidating the grant on every release (ad-hoc signing changes the
+# code hash each build). Override with "-" for pure ad-hoc, or with a
+# "Developer ID Application: …" if you ever enroll in the Apple Developer Program.
+CODESIGN_IDENTITY ?= auto
+SIGNING_CERT_NAME ?= dBrief Self-Signed
+# Hardened-runtime entitlements, applied only on the Developer ID path (needed
+# for notarization). Harmless/unused for the ad-hoc and self-signed paths.
+ENTITLEMENTS = packaging/dBrief.entitlements
+# notarytool keychain profile for `make notarize` (see RELEASING.md). Empty = off.
+NOTARY_PROFILE ?=
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
-.PHONY: app run clean build sign dmg
+.PHONY: app run clean build sign dmg package-dmg notarize
 
 build:
 	swift build -c release --arch arm64
@@ -90,24 +100,73 @@ app: build
 	@$(MAKE) sign
 	@echo "Built $(APP_BUNDLE) ($(VERSION))"
 
-# Ad-hoc sign the bundle. --deep also signs the nested dBriefMLHost helper executable.
+# Sign the bundle. --deep also signs the nested dBriefMLHost helper executable.
 # Strip extended attributes / resource forks first (icns and copied resources can
 # carry them), which codesign rejects as "detritus".
+# When CODESIGN_IDENTITY is "auto" we resolve a stable self-signed cert (so TCC
+# permissions persist across releases), falling back to ad-hoc "-" if it can't
+# be created — the app still builds, it just resets permissions on each release.
 sign:
-	@echo "Signing $(APP_BUNDLE) with identity: $(CODESIGN_IDENTITY)"
-	chmod -R u+w "$(APP_BUNDLE)"
-	xattr -cr "$(APP_BUNDLE)"
-	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" "$(APP_BUNDLE)"
+	@set -e; \
+	IDENTITY="$(CODESIGN_IDENTITY)"; \
+	if [ "$$IDENTITY" = "auto" ]; then \
+		IDENTITY="$$(SIGNING_CERT_NAME='$(SIGNING_CERT_NAME)' ./scripts/ensure-signing-cert.sh)" || { \
+			echo "WARNING: could not create a stable self-signed cert; falling back to ad-hoc (-)." >&2; \
+			echo "         Screen Recording (and other restart-only permissions) will reset on each release." >&2; \
+			IDENTITY="-"; \
+		}; \
+	fi; \
+	echo "Signing $(APP_BUNDLE) with identity: $$IDENTITY"; \
+	chmod -R u+w "$(APP_BUNDLE)"; \
+	xattr -cr "$(APP_BUNDLE)"; \
+	case "$$IDENTITY" in \
+	"Developer ID Application:"*) \
+		echo "Developer ID — hardened runtime + secure timestamp (notarization-ready)"; \
+		codesign --force --options runtime --timestamp --sign "$$IDENTITY" "$(MACOS)/ffmpeg"; \
+		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/dBriefMLHost"; \
+		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/$(EXECUTABLE_NAME)"; \
+		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
+		;; \
+	*) \
+		codesign --force --deep --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
+		;; \
+	esac; \
 	codesign --verify --deep --strict --verbose=2 "$(APP_BUNDLE)"
 
 # Build a distributable, compressed DMG with a drag-to-Applications target.
-dmg: app
+dmg: app package-dmg
+
+# Assemble the DMG from the *already-built* $(APP_BUNDLE) without rebuilding or
+# re-signing it. Split out so `notarize` can staple the app before packaging.
+package-dmg:
 	rm -rf "$(DMG_STAGING)" "$(DMG_NAME)"
 	mkdir -p "$(DMG_STAGING)"
 	cp -R "$(APP_BUNDLE)" "$(DMG_STAGING)/"
 	ln -s /Applications "$(DMG_STAGING)/Applications"
 	hdiutil create -volname "$(APP_NAME)" -srcfolder "$(DMG_STAGING)" -ov -format UDZO "$(DMG_NAME)"
 	@echo "Built $(DMG_NAME)"
+
+# Notarized Developer ID release (optional — requires Apple Developer Program
+# enrollment). Hardened-signs the app, notarizes & staples it, packages the DMG,
+# then notarizes & staples the DMG so download users skip the Gatekeeper prompt.
+# One-time setup + usage are documented in RELEASING.md. Run e.g.:
+#   make notarize CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=dbrief
+notarize:
+	@if [ -z "$(NOTARY_PROFILE)" ]; then \
+		echo "ERROR: set NOTARY_PROFILE=<notarytool keychain profile>; see RELEASING.md." >&2; exit 1; fi
+	@case "$(CODESIGN_IDENTITY)" in "Developer ID Application:"*) ;; \
+		*) echo "ERROR: set CODESIGN_IDENTITY=\"Developer ID Application: …\" to notarize." >&2; exit 1;; esac
+	$(MAKE) app CODESIGN_IDENTITY='$(CODESIGN_IDENTITY)'
+	@echo "Submitting $(APP_BUNDLE) for notarization…"
+	ditto -c -k --keepParent "$(APP_BUNDLE)" "$(BUILD_DIR)/$(APP_NAME)-notarize.zip"
+	xcrun notarytool submit "$(BUILD_DIR)/$(APP_NAME)-notarize.zip" --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun stapler staple "$(APP_BUNDLE)"
+	rm -f "$(BUILD_DIR)/$(APP_NAME)-notarize.zip"
+	$(MAKE) package-dmg
+	@echo "Submitting $(DMG_NAME) for notarization…"
+	xcrun notarytool submit "$(DMG_NAME)" --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun stapler staple "$(DMG_NAME)"
+	@echo "Notarized & stapled $(DMG_NAME)"
 
 run: app
 	pkill -f "$(PWD)/$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE_NAME)" || true

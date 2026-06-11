@@ -9,14 +9,15 @@ dBrief is a macOS menu bar app (SwiftUI `MenuBarExtra`) for recording microphone
 ## Build Commands
 
 - **Build**: `swift build` (debug) or `swift build -c release`
-- **Build app bundle**: `make app` (builds release `--arch arm64`, assembles `dBrief.app/` with Info.plist, icons, Metal shaders, and a bundled static `ffmpeg` in `Contents/MacOS/`, then ad-hoc signs it)
+- **Build app bundle**: `make app` (builds release `--arch arm64`, assembles `dBrief.app/` with Info.plist, icons, Metal shaders, and a bundled static `ffmpeg` in `Contents/MacOS/`, then signs it with a stable self-signed cert)
 - **Run**: `swift run` or `make run` (builds and launches the app bundle)
-- **Sign**: `make sign` (ad-hoc `codesign --deep`; we are not in the Apple Developer Program — override `CODESIGN_IDENTITY` only if you ever enroll)
+- **Sign**: `make sign` (`codesign --deep` with a stable self-signed identity `dBrief Self-Signed`, auto-created/reused by `scripts/ensure-signing-cert.sh` so macOS TCC permissions — Screen Recording, etc. — survive app updates instead of resetting each release; falls back to ad-hoc `-` if the cert can't be created. Override `CODESIGN_IDENTITY=-` for pure ad-hoc, or with a Developer ID if you enroll)
 - **Build DMG**: `make dmg` (builds the app, then a compressed `dBrief-<version>.dmg` with a drag-to-Applications symlink, for GitHub Releases)
+- **Notarize** (optional, requires Apple Developer Program): `make notarize CODESIGN_IDENTITY="Developer ID Application: …" NOTARY_PROFILE=<profile>` — hardened-signs with `packaging/dBrief.entitlements`, notarizes + staples the app and DMG (removes the Gatekeeper prompt). Dormant unless a Developer ID identity is passed; see [RELEASING.md](RELEASING.md)
 - **Clean**: `make clean` or `swift package clean`
 - **Run tests**: `swift test`
 
-The app version is the single source of truth in `Sources/dBrief/Resources/Info.plist` (`CFBundleShortVersionString`); the Makefile, About screen, and `UpdateService` all read it. Cutting a public release (version bump → DMG → GitHub tag → Homebrew tap) is documented in [RELEASING.md](RELEASING.md). dBrief is distributed unsigned/un-notarized, Apple Silicon only.
+The app version is the single source of truth in `Sources/dBrief/Resources/Info.plist` (`CFBundleShortVersionString`); the Makefile, About screen, and `UpdateService` all read it. Cutting a public release (version bump → DMG → GitHub tag → Homebrew tap) is documented in [RELEASING.md](RELEASING.md). dBrief is distributed self-signed (stable cert, for TCC permission persistence) but un-notarized, Apple Silicon only.
 
 ## Tests
 
