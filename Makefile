@@ -116,6 +116,7 @@ sign:
 			IDENTITY="-"; \
 		}; \
 	fi; \
+	IDENTITY="$${IDENTITY:--}"; \
 	echo "Signing $(APP_BUNDLE) with identity: $$IDENTITY"; \
 	chmod -R u+w "$(APP_BUNDLE)"; \
 	xattr -cr "$(APP_BUNDLE)"; \

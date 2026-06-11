@@ -52,11 +52,15 @@ add_to_search_list() {
     line="${line%\"}"; line="${line#\"}"        # strip surrounding quotes
     [ -n "$line" ] && existing+=("$line")
   done < <(security list-keychains -d user)
+  # NB: `${arr[@]+"${arr[@]}"}` — bash 3.2 (macOS /bin/bash) raises "unbound
+  # variable" under `set -u` for a plain "${arr[@]}" when the array is empty
+  # (e.g. an empty keychain search list in a Homebrew build sandbox). The `+`
+  # guard expands to nothing when unset/empty, otherwise to the quoted elements.
   local k
-  for k in "${existing[@]}"; do
+  for k in ${existing[@]+"${existing[@]}"}; do
     [ "$k" = "$kc" ] && return 0
   done
-  security list-keychains -d user -s "$kc" "${existing[@]}" >&2
+  security list-keychains -d user -s "$kc" ${existing[@]+"${existing[@]}"} >&2
 }
 
 # Fast path: identity already present and visible — just make sure it's usable.

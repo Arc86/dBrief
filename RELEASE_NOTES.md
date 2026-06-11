@@ -1,10 +1,16 @@
-## dBrief 1.1.2
+## dBrief 1.1.3
+
+Hotfix over 1.1.2: the **Homebrew-from-source** build failed at the code-signing
+step on a fresh machine (a `bash` 3.2 empty-array crash in the stable-cert
+script), so `brew install`/`upgrade` couldn't complete. Fixed, plus a fallback
+so a signing hiccup can never fail the build. The 1.1.2 **DMG** was unaffected;
+everything below is included.
 
 **Highlights**
 
 - **More transcription & AI providers** — native **Anthropic Claude** for AI analysis, plus **Deepgram** and **ElevenLabs Scribe** as cloud transcription engines (with word-level timestamps and diarization where supported). All added through the curated provider picker in Settings.
 - **More reliable remote AI analysis** — works gracefully with small-context and reasoning models: chain-of-thought output is suppressed and stripped, responses are capped to avoid context overflow on strict servers (vLLM/llama.cpp), and a context-window error now surfaces a clear "increase your server's context size" hint instead of a cryptic failure.
-- **Screen Recording permission now survives updates** — releases are signed with a stable certificate, so macOS no longer silently drops your Screen Recording grant after each update. Upgrading from 1.1.1 you'll re-grant once; it stays put from then on.
+- **Screen Recording permission now survives updates** — releases are signed with a stable certificate, so macOS no longer silently drops your Screen Recording grant after each update. Upgrading from an earlier build you'll re-grant once; it stays put from then on.
 
 **Improvements**
 
