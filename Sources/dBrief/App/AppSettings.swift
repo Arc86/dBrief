@@ -28,6 +28,7 @@ final class AppSettings {
         static let aiEngine = "aiEngine"
         static let chatFallbackEngine = "chatFallbackEngine"
         static let localCLIConfig = "localCLIConfig"
+        static let didMigrateLocalCLITimeout = "didMigrateLocalCLITimeout"
         static let outputLanguageMode = "outputLanguageMode"
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
         static let audioInputDeviceUID = "audioInputDeviceUID"

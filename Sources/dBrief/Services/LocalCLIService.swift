@@ -84,6 +84,15 @@ actor LocalCLIService {
                 process.arguments = ["-l", "-c", trimmedCommand]
 
                 var environment = ProcessInfo.processInfo.environment
+                // When launched from Finder/LaunchServices (e.g. the DMG build),
+                // a GUI app inherits only the minimal system PATH, so PATH-installed
+                // tools like `claude` (typically exported in `.zshrc`) aren't found.
+                // Resolve the interactive login shell's PATH once and inject it so
+                // resolution matches a real terminal. (`zsh -l -c` alone wouldn't
+                // help: it sources `.zprofile`/`.zshenv` but not `.zshrc`.)
+                if let loginPath = Self.loginShellPath(), !loginPath.isEmpty {
+                    environment["PATH"] = loginPath
+                }
                 environment["DBRIEF_SYSTEM_PROMPT"] = systemPrompt
                 environment["DBRIEF_USER_PROMPT"] = userPrompt
                 environment["DBRIEF_FULL_PROMPT"] = fullPrompt
@@ -164,6 +173,63 @@ actor LocalCLIService {
                 }
             }
         }
+    }
+
+    // MARK: - Login PATH resolution
+
+    nonisolated(unsafe) private static var cachedLoginPath: String?
+    private static let loginPathLock = NSLock()
+
+    /// Resolve the PATH an interactive login shell would build (sourcing
+    /// `.zshenv` → `.zprofile` → `.zshrc`), so PATH edits users make in `.zshrc`
+    /// are honored even when the app is launched from Finder with a minimal PATH.
+    /// Cached after the first lookup. Returns `nil` if the probe fails or times out.
+    nonisolated static func loginShellPath() -> String? {
+        loginPathLock.lock()
+        defer { loginPathLock.unlock() }
+        if let cached = cachedLoginPath { return cached.isEmpty ? nil : cached }
+
+        let resolved = probeLoginShellPath() ?? ""
+        cachedLoginPath = resolved
+        return resolved.isEmpty ? nil : resolved
+    }
+
+    /// Run an interactive login shell purely to print `$PATH`. Uses the last
+    /// non-empty stdout line so any `.zshrc` banner noise is discarded.
+    private static func probeLoginShellPath() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        // -i forces interactive so `.zshrc` is sourced; -l for login files too.
+        process.arguments = ["-ilc", "print -r -- $PATH"]
+
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = Pipe()
+        process.standardInput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let watchdog = DispatchWorkItem {
+            if process.isRunning { process.terminate() }
+        }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5, execute: watchdog)
+
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        watchdog.cancel()
+
+        guard process.terminationStatus == 0,
+              let output = String(data: data, encoding: .utf8) else { return nil }
+
+        let lastPath = output
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last(where: { $0.contains("/") })
+        return lastPath
     }
 }
 
