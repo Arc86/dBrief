@@ -1088,7 +1088,8 @@ final class RecordingManager {
         do {
             let insights = try await LocalAIService().analyzeTranscript(
                 contextualTranscription,
-                outputLanguage: appSettings.outputLanguage
+                outputLanguage: appSettings.outputLanguage,
+                customVocabulary: appSettings.effectiveWhisperPrompt
             )
 
             if let summaryStepIndex {
@@ -1141,7 +1142,8 @@ final class RecordingManager {
             let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
                 let stream = await self.localAIPluginService.analyzeTranscriptStream(
                     contextualTranscription,
-                    outputLanguage: self.appSettings.outputLanguage
+                    outputLanguage: self.appSettings.outputLanguage,
+                    customVocabulary: self.appSettings.effectiveWhisperPrompt
                 )
                 
                 var chunks: [String] = []
@@ -1217,7 +1219,8 @@ final class RecordingManager {
             let insights = try await localCLIService.analyze(
                 transcript: contextualTranscription,
                 outputLanguage: appSettings.outputLanguage,
-                config: appSettings.localCLIConfig
+                config: appSettings.localCLIConfig,
+                customVocabulary: appSettings.effectiveWhisperPrompt
             )
 
             if let summaryStepIndex {
@@ -1250,6 +1253,12 @@ final class RecordingManager {
         }
     }
 
+    /// Appends the user's custom-vocabulary "spell these exactly" block to a remote
+    /// per-task system prompt (no-op when no vocabulary is configured).
+    private func withVocabulary(_ prompt: String) -> String {
+        prompt + UnifiedInsightsPrompt.vocabularyBlock(appSettings.effectiveWhisperPrompt)
+    }
+
     private func runRemoteAITasks(
         transcription: String,
         endpoint: Endpoint?,
@@ -1271,7 +1280,7 @@ final class RecordingManager {
                 recording.summary = try await aiService.generateSummary(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent)
+                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent))
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -1284,7 +1293,7 @@ final class RecordingManager {
                 recording.actionItems = try await aiService.extractActionItems(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent)
+                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent))
                 )
                 markCompleted(actionStepIndex)
             } catch {
@@ -1297,7 +1306,7 @@ final class RecordingManager {
                 let result = try await aiService.analyzeTags(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: appSettings.effectiveTagsPrompt
+                    systemPrompt: withVocabulary(appSettings.effectiveTagsPrompt)
                 )
                 recording.tags = result.tags
                 recording.sentiment = result.sentiment
@@ -1488,15 +1497,20 @@ final class RecordingManager {
         recording: Recording,
         stepIndex: Int
     ) async throws -> TranscriptionResult {
+        let raw: TranscriptionResult
         if !recording.segmentAudioURLs.isEmpty {
-            return try await transcribeSegmentedAudio(recording: recording, stepIndex: stepIndex)
+            raw = try await transcribeSegmentedAudio(recording: recording, stepIndex: stepIndex)
+        } else {
+            raw = try await transcribeSingleAudioFile(
+                recording.fileURL,
+                stepIndex: stepIndex,
+                segmentIndex: nil,
+                segmentCount: nil
+            )
         }
-        return try await transcribeSingleAudioFile(
-            recording.fileURL,
-            stepIndex: stepIndex,
-            segmentIndex: nil,
-            segmentCount: nil
-        )
+        // Engine-agnostic cleanup: always strip hallucination/markup noise; strip filler
+        // words only when the user opted in. Applies uniformly across all engines.
+        return TranscriptCleanup.clean(raw, removeFillerWords: appSettings.effectiveRemoveFillerWords)
     }
 
     private func transcribeSegmentedAudio(

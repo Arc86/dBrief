@@ -56,7 +56,7 @@ actor ParakeetTranscriptionService {
         stateContinuation.yield(.transcribing)
 
         Logger.localAI.info("Parakeet: transcribing \(fileURL.lastPathComponent, privacy: .public) [\(modelVariant, privacy: .public)]")
-        let result = try await mgr.transcribe(fileURL)
+        let result = try await Self.transcribePadded(mgr, fileURL: fileURL)
 
         let duration: Double
         if let audioFile = try? AVAudioFile(forReading: fileURL) {
@@ -71,6 +71,29 @@ actor ParakeetTranscriptionService {
             segments: segments,
             language: language ?? "en"
         )
+    }
+
+    // MARK: - Trailing-silence padding
+
+    /// Trailing silence appended before ASR so the model emits sentence-final
+    /// punctuation it would otherwise drop at the sequence boundary (1 second).
+    private static let trailingSilenceSamples = 16_000
+    /// Above this many samples we skip in-memory padding and use FluidAudio's own
+    /// (possibly disk-backed) file path, to keep memory bounded on long audio.
+    /// 20 minutes @ 16 kHz.
+    private static let maxInMemorySamples = 16_000 * 60 * 20
+
+    /// Load the file to 16 kHz mono samples, append 1 s of silence, and transcribe
+    /// the padded buffer. Falls back to FluidAudio's file-based path on load failure
+    /// or for very long audio (preserving its memory-efficient disk-backed route).
+    private static func transcribePadded(_ mgr: AsrManager, fileURL: URL) async throws -> ASRResult {
+        guard var samples = try? AudioConverter().resampleAudioFile(fileURL),
+              samples.count <= maxInMemorySamples
+        else {
+            return try await mgr.transcribe(fileURL)
+        }
+        samples.append(contentsOf: repeatElement(Float(0), count: trailingSilenceSamples))
+        return try await mgr.transcribe(samples, source: .system)
     }
 
     // MARK: - Segment / word reconstruction

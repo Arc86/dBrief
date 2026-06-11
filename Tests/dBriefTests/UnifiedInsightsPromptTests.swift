@@ -117,4 +117,30 @@ struct UnifiedInsightsPromptTests {
             + UnifiedInsightsPrompt.foundationModelsTailChars
             + UnifiedInsightsPrompt.truncationSeparator.count)
     }
+
+    // MARK: - Custom vocabulary
+
+    @Test("vocabularyBlock is empty without configured vocabulary")
+    func vocabularyBlockEmpty() {
+        #expect(UnifiedInsightsPrompt.vocabularyBlock("") == "")
+        #expect(UnifiedInsightsPrompt.vocabularyBlock("   \n ") == "")
+    }
+
+    @Test("vocabularyBlock embeds the configured terms")
+    func vocabularyBlockEmbedsTerms() {
+        let block = UnifiedInsightsPrompt.vocabularyBlock("Acme, Kubernetes")
+        #expect(block.contains("DOMAIN-SPECIFIC TERMS"))
+        #expect(block.contains("Acme, Kubernetes"))
+    }
+
+    @Test("System prompts embed vocabulary when provided, omit it when empty")
+    func systemPromptsVocabulary() {
+        let guided = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .english, customVocabulary: "GraphQL")
+        #expect(guided.contains("GraphQL"))
+        let full = UnifiedInsightsPrompt.systemPrompt(outputLanguage: .english, customVocabulary: "GraphQL")
+        #expect(full.contains("GraphQL"))
+
+        let guidedEmpty = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .english)
+        #expect(!guidedEmpty.contains("DOMAIN-SPECIFIC TERMS"))
+    }
 }

@@ -50,6 +50,8 @@ struct SettingsTranscriptionTab: View {
                     .listRowBackground(Color.clear)
                 Section("Language") { languageSection }
                     .listRowBackground(Color.clear)
+                Section("Cleanup") { cleanupSection }
+                    .listRowBackground(Color.clear)
                 if appSettings.powerUserMode {
                     if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
                         Section("Custom Vocabulary") { vocabularySection }
@@ -404,6 +406,16 @@ struct SettingsTranscriptionTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var cleanupSection: some View {
+        @Bindable var settings = appSettings
+        return VStack(alignment: .leading, spacing: 8) {
+            Toggle("Remove filler words (um, uh, …)", isOn: $settings.removeFillerWords)
+            Text("Markup and hallucination artifacts are always cleaned. Filler removal is off by default so meeting transcripts stay verbatim.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

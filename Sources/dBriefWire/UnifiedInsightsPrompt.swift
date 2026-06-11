@@ -48,11 +48,25 @@ public enum UnifiedInsightsPrompt {
         """
     }
 
+    /// A "spell these exactly" domain-terms block for the system prompt, or "" when no
+    /// custom vocabulary is configured. Reuses the user's existing custom-vocabulary
+    /// string (the same one that biases Whisper) so proper nouns are spelled correctly
+    /// in AI output too. Also used by the remote per-task prompts.
+    public static func vocabularyBlock(_ customVocabulary: String) -> String {
+        let trimmed = customVocabulary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return """
+
+        ### DOMAIN-SPECIFIC TERMS
+        Spell the following proper nouns, acronyms, and product names exactly as written when they appear: \(trimmed)
+        """
+    }
+
     /// Shared analysis rules + output-language instruction, WITHOUT any output-format
     /// section. Used directly by the FoundationModels guided-generation path (where the
     /// `@Generable` schema defines the shape) and composed with the JSON block for the
     /// Gemma/Local-CLI text path.
-    public static func systemPromptForGuidedGeneration(outputLanguage: OutputLanguage) -> String {
+    public static func systemPromptForGuidedGeneration(outputLanguage: OutputLanguage, customVocabulary: String = "") -> String {
         let languageInstruction: String = {
             switch outputLanguage {
             case .english:
@@ -80,11 +94,12 @@ public enum UnifiedInsightsPrompt {
         6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
         7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
         8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
+        \(vocabularyBlock(customVocabulary))
         """
     }
 
-    public static func systemPrompt(outputLanguage: OutputLanguage) -> String {
-        systemPromptForGuidedGeneration(outputLanguage: outputLanguage) + """
+    public static func systemPrompt(outputLanguage: OutputLanguage, customVocabulary: String = "") -> String {
+        systemPromptForGuidedGeneration(outputLanguage: outputLanguage, customVocabulary: customVocabulary) + """
 
 
         ### OUTPUT FORMAT (Strict JSON Only)

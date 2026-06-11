@@ -8,8 +8,8 @@ public enum MLChannel: String, Sendable, Codable {
 public enum MLRequest: Sendable, Codable {
     case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool)
     case diarize(path: String)
-    case analyze(text: String, outputLanguage: OutputLanguage)
-    case analyzeStream(text: String, outputLanguage: OutputLanguage)
+    case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
+    case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
     case chatStream(systemPrompt: String, userMessage: String)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?)

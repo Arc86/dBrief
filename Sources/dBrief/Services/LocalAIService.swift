@@ -57,12 +57,13 @@ actor LocalAIService {
     /// sentiment, and an inline title concept).
     func analyzeTranscript(
         _ transcription: String,
-        outputLanguage: OutputLanguage
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = ""
     ) async throws -> LocalInsightsResult {
         try Self.ensureAvailable()
 
         let truncated = UnifiedInsightsPrompt.truncateForFoundationModels(transcription)
-        let instructions = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: outputLanguage)
+        let instructions = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
         let userPrompt = UnifiedInsightsPrompt.userPrompt(transcript: truncated)
 
         let session = LanguageModelSession(instructions: instructions)
