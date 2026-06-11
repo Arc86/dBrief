@@ -202,7 +202,7 @@ struct DBriefApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        WindowGroup(id: "settings") {
+        Window("Settings", id: "settings") {
             SettingsView()
                 .environment(context)
                 .environment(context.appSettings)
@@ -217,7 +217,7 @@ struct DBriefApp: App {
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
 
-        WindowGroup(id: "transcript") {
+        Window("Transcripts", id: "transcript") {
             TranscriptBrowserView()
                 .environment(context)
                 .environment(context.appState)
@@ -228,7 +228,7 @@ struct DBriefApp: App {
         }
         .defaultSize(width: 1100, height: 720)
 
-        WindowGroup(id: "live-transcript") {
+        Window("Live Transcript", id: "live-transcript") {
             LiveTranscriptView()
                 .environment(context.appState)
         }
