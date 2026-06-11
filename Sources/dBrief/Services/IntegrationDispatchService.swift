@@ -138,7 +138,8 @@ actor IntegrationDispatchService {
             actionItems: recording.actionItems,
             tags: recording.tags,
             sentiment: recording.sentiment,
-            markdown: markdown
+            markdown: markdown,
+            calendarEvent: recording.calendarEvent
         )
     }
 
@@ -520,11 +521,45 @@ actor IntegrationDispatchService {
         if fields.contains(.markdown), let markdown = bundle.markdown {
             parts.append("Markdown\n\(markdown)")
         }
+        if fields.contains(.meetingInfo), let event = bundle.calendarEvent {
+            if let meeting = Self.renderMeetingInfo(event) {
+                parts.append(meeting)
+            }
+        }
 
         if parts.isEmpty {
             return "No selected fields contained data."
         }
         return parts.joined(separator: "\n\n")
+    }
+
+    /// Renders calendar-derived meeting context (organizer, attendees + emails, modality,
+    /// location, agenda) as a plain-text block. Returns nil when there's nothing to show.
+    private static func renderMeetingInfo(_ event: CalendarEvent) -> String? {
+        var lines: [String] = []
+        if let organizer = event.organizer {
+            let email = organizer.email.map { " <\($0)>" } ?? ""
+            lines.append("Organizer: \(organizer.name)\(email)")
+        }
+        if !event.attendees.isEmpty {
+            let names = event.attendees.map { person -> String in
+                if let email = person.email, !email.isEmpty { return "\(person.name) <\(email)>" }
+                return person.name
+            }
+            lines.append("Attendees: \(names.joined(separator: ", "))")
+        }
+        if event.modality != "unknown" {
+            lines.append("Modality: \(event.modality)")
+        }
+        if let location = event.location, !location.isEmpty {
+            lines.append("Location: \(location)")
+        }
+        let agenda = event.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !agenda.isEmpty {
+            lines.append("Agenda:\n\(agenda)")
+        }
+        guard !lines.isEmpty else { return nil }
+        return "Meeting Info\n\(lines.joined(separator: "\n"))"
     }
 
     private func renderHTMLContent(bundle: IntegrationContentBundle, fields: [DeliveryField]) -> String {
@@ -596,6 +631,7 @@ private struct RecordingSnapshot: Sendable {
     let tags: [String]
     let sentiment: String?
     let fileName: String
+    let calendarEvent: CalendarEvent?
 
     @MainActor
     init(recording: Recording) {
@@ -610,5 +646,6 @@ private struct RecordingSnapshot: Sendable {
         self.tags = recording.tags ?? []
         self.sentiment = recording.sentiment
         self.fileName = recording.fileName
+        self.calendarEvent = recording.calendarEvent
     }
 }

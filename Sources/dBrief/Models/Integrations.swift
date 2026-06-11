@@ -41,6 +41,7 @@ enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifia
     case sentiment
     case actionItems
     case markdown
+    case meetingInfo
 
     var id: String { rawValue }
 
@@ -53,6 +54,7 @@ enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifia
         case .sentiment: "Sentiment"
         case .actionItems: "Action Items"
         case .markdown: "Markdown"
+        case .meetingInfo: "Meeting Info"
         }
     }
 }
@@ -61,7 +63,7 @@ struct AppleNotesConfig: Codable, Hashable, Sendable {
     var enabled: Bool = false
     var accountName: String = ""
     var folderName: String = ""
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct AppleRemindersConfig: Codable, Hashable, Sendable {
@@ -82,7 +84,7 @@ struct NotionConfig: Codable, Hashable, Sendable {
     var parentType: NotionParentType = .dataSource
     var parentID: String = ""
     var titlePropertyName: String = "Name"
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct EvernoteConfig: Codable, Hashable, Sendable {
@@ -90,14 +92,14 @@ struct EvernoteConfig: Codable, Hashable, Sendable {
     var tokenKeychainKey: String = KeychainSecretKey.evernote.rawValue
     var apiBaseURL: String = "https://api.evernote.com"
     var notebookID: String = ""
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct GoogleKeepConfig: Codable, Hashable, Sendable {
     var enabled: Bool = false
     var tokenKeychainKey: String = KeychainSecretKey.googleKeep.rawValue
     var apiBaseURL: String = "https://keep.googleapis.com/v1"
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct OneNoteConfig: Codable, Hashable, Sendable {
@@ -105,7 +107,7 @@ struct OneNoteConfig: Codable, Hashable, Sendable {
     var tokenKeychainKey: String = KeychainSecretKey.oneNote.rawValue
     var graphBaseURL: String = "https://graph.microsoft.com/v1.0"
     var sectionID: String = ""
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct WebhookHeader: Codable, Hashable, Sendable, Identifiable {
@@ -120,7 +122,7 @@ struct WebhookConfig: Codable, Hashable, Sendable {
     var headers: [WebhookHeader] = []
     var timeoutSeconds: Double = 30
     var retryCount: Int = 1
-    var fields: [DeliveryField] = [.transcript, .summary, .tags, .sentiment]
+    var fields: [DeliveryField] = [.transcript, .summary, .tags, .sentiment, .meetingInfo]
 }
 
 struct IntegrationSettings: Codable, Hashable, Sendable {
@@ -183,4 +185,6 @@ struct IntegrationContentBundle: Sendable {
     let tags: [String]
     let sentiment: String?
     let markdown: String?
+    /// Calendar event matched at record-start, carrying people/agenda/meeting metadata.
+    let calendarEvent: CalendarEvent?
 }

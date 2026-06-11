@@ -27,7 +27,7 @@ actor OutlookCalendarService {
         components.queryItems = [
             URLQueryItem(name: "startDateTime", value: graphDateString(date.addingTimeInterval(-searchWindow))),
             URLQueryItem(name: "endDateTime",   value: graphDateString(date.addingTimeInterval(searchWindow))),
-            URLQueryItem(name: "$select",       value: "subject,bodyPreview,attendees,start,end"),
+            URLQueryItem(name: "$select",       value: "subject,bodyPreview,body,attendees,organizer,location,isOnlineMeeting,start,end"),
         ]
 
         var request = URLRequest(url: components.url!)
@@ -53,7 +53,11 @@ actor OutlookCalendarService {
     private struct GraphEvent: Decodable {
         let subject: String?
         let bodyPreview: String?
+        let body: GraphItemBody?
         let attendees: [GraphAttendee]?
+        let organizer: GraphAttendee?
+        let location: GraphLocation?
+        let isOnlineMeeting: Bool?
         let start: GraphDateTimeZone?
         let end: GraphDateTimeZone?
     }
@@ -64,6 +68,16 @@ actor OutlookCalendarService {
 
     private struct GraphEmailAddress: Decodable {
         let name: String?
+        let address: String?
+    }
+
+    private struct GraphItemBody: Decodable {
+        let contentType: String?
+        let content: String?
+    }
+
+    private struct GraphLocation: Decodable {
+        let displayName: String?
     }
 
     private struct GraphDateTimeZone: Decodable {
@@ -73,17 +87,54 @@ actor OutlookCalendarService {
     // MARK: - Mapping
 
     private static func makeCalendarEvent(from event: GraphEvent) -> CalendarEvent {
-        let names: [String] = (event.attendees ?? []).compactMap { attendee in
-            let name = attendee.emailAddress?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return name.isEmpty ? nil : name
+        let attendees = (event.attendees ?? []).compactMap { makePerson(from: $0.emailAddress) }
+        let location = event.location?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Prefer the full body (verbatim agenda), stripping HTML; fall back to bodyPreview.
+        let agenda: String
+        if let body = event.body?.content, !body.isEmpty {
+            agenda = (event.body?.contentType?.lowercased() == "html") ? stripHTML(body) : body
+        } else {
+            agenda = event.bodyPreview ?? ""
         }
+
         return CalendarEvent(
             title: event.subject ?? "",
-            attendees: names,
-            body: event.bodyPreview ?? "",
+            attendees: attendees,
+            organizer: makePerson(from: event.organizer?.emailAddress),
+            body: agenda,
+            location: (location?.isEmpty == false) ? location : nil,
+            isOnline: event.isOnlineMeeting,
             startDate: parseGraphDate(event.start?.dateTime),
             endDate: parseGraphDate(event.end?.dateTime)
         )
+    }
+
+    private static func makePerson(from email: GraphEmailAddress?) -> CalendarEvent.Person? {
+        guard let email else { return nil }
+        let name = email.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let address = email.address?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanEmail = (address?.isEmpty == false) ? address : nil
+        if name.isEmpty, cleanEmail == nil { return nil }
+        return CalendarEvent.Person(name: name.isEmpty ? (cleanEmail ?? "") : name, email: cleanEmail)
+    }
+
+    /// Minimal HTML→text: drops tags, decodes a few common entities, collapses blank lines.
+    private static func stripHTML(_ html: String) -> String {
+        let withBreaks = html
+            .replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "(?i)</p>", with: "\n", options: .regularExpression)
+        let noTags = withBreaks.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        let decoded = noTags
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+        return decoded
+            .replacingOccurrences(of: "\n[ \\t]*\n[ \\t]*(\n[ \\t]*)+", with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Graph calendarView returns UTC dates without 'Z': "2026-06-04T10:00:00.0000000"
