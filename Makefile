@@ -129,7 +129,17 @@ sign:
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
 		;; \
 	*) \
-		codesign --force --deep --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
+		if ! codesign --force --deep --sign "$$IDENTITY" "$(APP_BUNDLE)"; then \
+			if [ "$$IDENTITY" != "-" ]; then \
+				echo "WARNING: codesign with '$$IDENTITY' failed (identity not usable in this" >&2; \
+				echo "         environment — e.g. a Homebrew build's keychain search list);" >&2; \
+				echo "         falling back to ad-hoc (-). Screen Recording (and other" >&2; \
+				echo "         restart-only permissions) may reset on each rebuild." >&2; \
+				codesign --force --deep --sign - "$(APP_BUNDLE)"; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
 		;; \
 	esac; \
 	codesign --verify --deep --strict --verbose=2 "$(APP_BUNDLE)"

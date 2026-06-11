@@ -1,10 +1,12 @@
-## dBrief 1.1.3
+## dBrief 1.1.4
 
-Hotfix over 1.1.2: the **Homebrew-from-source** build failed at the code-signing
-step on a fresh machine (a `bash` 3.2 empty-array crash in the stable-cert
-script), so `brew install`/`upgrade` couldn't complete. Fixed, plus a fallback
-so a signing hiccup can never fail the build. The 1.1.2 **DMG** was unaffected;
-everything below is included.
+Hotfix for **Homebrew-from-source** installs (1.1.2/1.1.3 failed to build at the
+code-signing step). The stable self-signed cert can't be resolved inside
+Homebrew's build environment, so signing now **falls back to ad-hoc** there
+instead of failing the build — `brew install`/`upgrade` completes again. DMG
+downloads are unaffected and keep the stable cert (so Screen Recording survives
+updates); Homebrew rebuilds sign ad-hoc, as they did before 1.1.2. Everything
+below (the 1.1.2 feature set) is included.
 
 **Highlights**
 
