@@ -80,45 +80,39 @@ struct SettingsTranscriptionTab: View {
         return String(format: "%.1f GB", gb)
     }
 
+    @ViewBuilder
     private var engineSection: some View {
         @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Transcription engine:") {
-                Picker("", selection: $settings.transcriptionEngine) {
-                    ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                        Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-                .frame(minWidth: 200, alignment: .trailing)
+        Picker("Transcription engine", selection: $settings.transcriptionEngine) {
+            ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
+                Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
             }
-
-            switch settings.transcriptionEngine {
-            case .appleSpeech:
-                Text("On-device, no server needed. Quality may be lower than Whisper.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            case .parakeetLocal:
-                parakeetSection
-            case .localWhisper:
-                whisperSection
-            case .remoteEndpoint:
-                Text("Use a remote Whisper API or server. Requires an endpoint.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            TranscriptionEngineGuideView()
         }
+        .pickerStyle(.menu)
+
+        switch settings.transcriptionEngine {
+        case .appleSpeech:
+            Text("On-device, no server needed. Quality may be lower than Whisper.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .parakeetLocal:
+            parakeetSection
+        case .localWhisper:
+            whisperSection
+        case .remoteEndpoint:
+            Text("Use a remote Whisper API or server. Requires an endpoint.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        TranscriptionEngineGuideView()
     }
 
     @ViewBuilder
     private var parakeetSection: some View {
         @Bindable var settings = appSettings
         VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Model:") {
+            LabeledContent("Model") {
                 Picker("", selection: $settings.parakeetModelVariant) {
                     ForEach(ParakeetModelInfo.variants) { model in
                         Text(model.displayName).tag(model.id)
@@ -126,7 +120,7 @@ struct SettingsTranscriptionTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 280, alignment: .trailing)
+                .fixedSize()
             }
 
             if let selected = ParakeetModelInfo.variants.first(where: { $0.id == settings.parakeetModelVariant }) {
@@ -366,46 +360,41 @@ struct SettingsTranscriptionTab: View {
         .onAppear { fetchWhisperModels() }
     }
 
+    @ViewBuilder
     private var languageSection: some View {
         @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Audio language:") {
-                Picker("", selection: $settings.transcriptionLanguage) {
-                    Text(settings.transcriptionEngine == .appleSpeech ? "Auto (System language)" : "Auto-detect").tag("")
-                    Divider()
-                    Text("English").tag("en")
-                    Text("Dutch").tag("nl")
-                    Text("German").tag("de")
-                    Text("French").tag("fr")
-                    Text("Spanish").tag("es")
-                    Text("Italian").tag("it")
-                    Text("Portuguese").tag("pt")
-                    Text("Japanese").tag("ja")
-                    Text("Chinese").tag("zh")
-                    Text("Korean").tag("ko")
-                    Text("Russian").tag("ru")
-                    Text("Arabic").tag("ar")
-                    Text("Hindi").tag("hi")
-                    Text("Polish").tag("pl")
-                    Text("Turkish").tag("tr")
-                    Text("Ukrainian").tag("uk")
-                    Text("Swedish").tag("sv")
-                    Text("Danish").tag("da")
-                    Text("Norwegian").tag("no")
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 200, alignment: .trailing)
-            }
-            if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
-                Text("Apple Speech uses the system language when set to Auto.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if settings.transcriptionEngine == .localWhisper && settings.transcriptionLanguage.isEmpty {
-                Text("WhisperKit auto-detects language when set to Auto-detect.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        Picker("Audio language", selection: $settings.transcriptionLanguage) {
+            Text(settings.transcriptionEngine == .appleSpeech ? "Auto (System language)" : "Auto-detect").tag("")
+            Divider()
+            Text("English").tag("en")
+            Text("Dutch").tag("nl")
+            Text("German").tag("de")
+            Text("French").tag("fr")
+            Text("Spanish").tag("es")
+            Text("Italian").tag("it")
+            Text("Portuguese").tag("pt")
+            Text("Japanese").tag("ja")
+            Text("Chinese").tag("zh")
+            Text("Korean").tag("ko")
+            Text("Russian").tag("ru")
+            Text("Arabic").tag("ar")
+            Text("Hindi").tag("hi")
+            Text("Polish").tag("pl")
+            Text("Turkish").tag("tr")
+            Text("Ukrainian").tag("uk")
+            Text("Swedish").tag("sv")
+            Text("Danish").tag("da")
+            Text("Norwegian").tag("no")
+        }
+        .pickerStyle(.menu)
+        if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
+            Text("Apple Speech uses the system language when set to Auto.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if settings.transcriptionEngine == .localWhisper && settings.transcriptionLanguage.isEmpty {
+            Text("WhisperKit auto-detects language when set to Auto-detect.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -422,11 +411,11 @@ struct SettingsTranscriptionTab: View {
     private var vocabularySection: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Helps Whisper recognize proper nouns, acronyms, and domain-specific terms.")
+            Text("Helps Whisper recognize proper nouns, acronyms, and domain-specific terms. Press return or comma to add a term.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            NativeTextField(placeholder: "e.g. Acme Corp, JIRA, Kubernetes, GraphQL", text: $settings.whisperPrompt)
-                .frame(height: 22)
+            TokenField(text: $settings.whisperPrompt, placeholder: "e.g. Acme Corp, JIRA, Kubernetes, GraphQL")
+                .frame(minHeight: 22)
         }
     }
 
@@ -491,7 +480,7 @@ struct SettingsTranscriptionTab: View {
             Toggle("Enable chunking for large files", isOn: $settings.remoteChunkingEnabled)
 
             if settings.remoteChunkingEnabled {
-                LabeledContent("Max upload size:") {
+                LabeledContent("Max upload size") {
                     Stepper(
                         "\(settings.remoteChunkMaxUploadMB) MB",
                         value: $settings.remoteChunkMaxUploadMB,
@@ -500,7 +489,7 @@ struct SettingsTranscriptionTab: View {
                     .frame(width: 180, alignment: .trailing)
                 }
 
-                LabeledContent("Overlap:") {
+                LabeledContent("Overlap") {
                     Stepper(
                         "\(Int(settings.remoteChunkOverlapSeconds)) sec",
                         value: $settings.remoteChunkOverlapSeconds,
@@ -510,7 +499,7 @@ struct SettingsTranscriptionTab: View {
                     .frame(width: 180, alignment: .trailing)
                 }
 
-                LabeledContent("Retry count:") {
+                LabeledContent("Retry count") {
                     Stepper(
                         "\(settings.remoteChunkRetryCount)",
                         value: $settings.remoteChunkRetryCount,
@@ -544,9 +533,10 @@ struct SettingsTranscriptionTab: View {
             if isDefault {
                 Text("Default")
                     .font(.caption)
+                    .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(.blue.opacity(0.2))
+                    .background(Color.accentColor.opacity(0.18))
                     .clipShape(Capsule())
             }
         }

@@ -4,11 +4,15 @@ import AppKit
 /// Multi-line NSTextView wrapper for editing prompts in Settings windows.
 struct NativeTextView: NSViewRepresentable {
     @Binding var text: String
+    /// Renders the text in a monospaced system font (e.g. for CLI commands).
+    var monospaced: Bool = false
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         let textView = scrollView.documentView as! NSTextView
-        textView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        textView.font = monospaced
+            ? .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+            : .systemFont(ofSize: NSFont.smallSystemFontSize)
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
