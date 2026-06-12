@@ -43,128 +43,13 @@ struct SettingsGeneralTab: View {
             }
             .listRowBackground(Color.clear)
 
-            Section("Updates") {
-                LabeledContent("Check for updates") {
-                    HStack(spacing: 8) {
-                        if updateService.isChecking {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Button("Check Now") {
-                            Task {
-                                await updateService.checkForUpdates(manual: true)
-                                settings.lastUpdateCheckTime = Date()
-                            }
-                        }
-                        .disabled(updateService.isChecking)
-                    }
-                }
-
-                Toggle("Automatically check for updates", isOn: $settings.autoCheckUpdates)
-
-                if updateService.updateAvailable {
-                    HStack {
-                        Label(
-                            "New version \(updateService.latestVersion ?? "") available",
-                            systemImage: "arrow.down.circle.fill"
-                        )
-                        .foregroundStyle(.orange)
-                        Spacer()
-                        Button("View Release") {
-                            updateService.openReleasePage()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-                } else if let error = updateService.lastError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                } else if updateService.latestVersion != nil {
-                    Text("You're up to date.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let lastCheck = appSettings.lastUpdateCheckTime {
-                    Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Shortcuts") {
+            Section("Shortcut") {
                 LabeledContent("Start/stop recording:") {
                     ShortcutRecorderView(hotkey: $settings.recordHotkey)
                 }
                 Text("Global shortcut to toggle recording from anywhere. Defaults to ⌃⌥⌘R.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Folders") {
-                LabeledContent("Recordings:") {
-                    HStack {
-                        Text(appSettings.recordingFolderURL.path(percentEncoded: false))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        Button("Choose...") {
-                            chooseFolder { url in
-                                appSettings.recordingFolderURL = url
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-
-                LabeledContent("Transcriptions:") {
-                    HStack {
-                        Text(appSettings.transcriptionFolderURL.path(percentEncoded: false))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        Button("Choose...") {
-                            chooseFolder { url in
-                                appSettings.transcriptionFolderURL = url
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Privacy") {
-                retentionControls(
-                    title: "Auto-delete recordings",
-                    help: "Removes audio files older than the selected age from the recordings folder. Transcripts and notes are kept.",
-                    enabled: $settings.autoDeleteRecordingsEnabled,
-                    days: $settings.autoDeleteRecordingsDays,
-                    category: .recordings
-                )
-
-                if settings.autoDeleteRecordingsEnabled {
-                    Divider()
-                }
-
-                retentionControls(
-                    title: "Auto-delete transcripts",
-                    help: "Removes transcript, insights, and Markdown note files older than the selected age. Audio recordings are kept.",
-                    enabled: $settings.autoDeleteTranscriptsEnabled,
-                    days: $settings.autoDeleteTranscriptsDays,
-                    category: .transcripts
-                )
-
-                if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
-                    Text("Cleanup also runs automatically when dBrief launches.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
             .listRowBackground(Color.clear)
 
@@ -176,6 +61,32 @@ struct SettingsGeneralTab: View {
                 }
             }
             .listRowBackground(Color.clear)
+
+            if appSettings.callDetectionEnabled {
+                Section("Call Platforms") {
+                    ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
+                        let isEnabled = !appSettings.disabledCallApps.contains(app.bundleId)
+                        Toggle(isOn: Binding(
+                            get: { isEnabled },
+                            set: { enabled in
+                                if enabled {
+                                    appSettings.disabledCallApps.remove(app.bundleId)
+                                } else {
+                                    appSettings.disabledCallApps.insert(app.bundleId)
+                                }
+                            }
+                        )) {
+                            HStack(spacing: 12) {
+                                callPlatformIcon(for: app)
+                                    .frame(width: 36, height: 36)
+
+                                Text(app.name)
+                            }
+                        }
+                    }
+                }
+                .listRowBackground(Color.clear)
+            }
 
             Section("Calendar") {
                 // Display the coerced value so the selection always matches a rendered
@@ -247,33 +158,97 @@ struct SettingsGeneralTab: View {
             }
             .listRowBackground(Color.clear)
 
-            if appSettings.callDetectionEnabled {
-                Section("Call Platforms") {
-                    ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
-                        let isEnabled = !appSettings.disabledCallApps.contains(app.bundleId)
-                        Toggle(isOn: Binding(
-                            get: { isEnabled },
-                            set: { enabled in
-                                if enabled {
-                                    appSettings.disabledCallApps.remove(app.bundleId)
-                                } else {
-                                    appSettings.disabledCallApps.insert(app.bundleId)
-                                }
-                            }
-                        )) {
-                            HStack(spacing: 12) {
-                                callPlatformIcon(for: app)
-                                    .frame(width: 36, height: 36)
+            Section("Storage & privacy") {
+                folderRow(title: "Recordings:", url: appSettings.recordingFolderURL) { url in
+                    appSettings.recordingFolderURL = url
+                }
 
-                                Text(app.name)
+                folderRow(title: "Transcriptions:", url: appSettings.transcriptionFolderURL) { url in
+                    appSettings.transcriptionFolderURL = url
+                }
+
+                Divider()
+
+                retentionControls(
+                    title: "Auto-delete recordings",
+                    help: "Removes audio files older than the selected age from the recordings folder. Transcripts and notes are kept.",
+                    enabled: $settings.autoDeleteRecordingsEnabled,
+                    days: $settings.autoDeleteRecordingsDays,
+                    category: .recordings
+                )
+
+                if settings.autoDeleteRecordingsEnabled {
+                    Divider()
+                }
+
+                retentionControls(
+                    title: "Auto-delete transcripts",
+                    help: "Removes transcript, insights, and Markdown note files older than the selected age. Audio recordings are kept.",
+                    enabled: $settings.autoDeleteTranscriptsEnabled,
+                    days: $settings.autoDeleteTranscriptsDays,
+                    category: .transcripts
+                )
+
+                if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
+                    Text("Cleanup also runs automatically when dBrief launches.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Software update") {
+                LabeledContent("Check for updates") {
+                    HStack(spacing: 8) {
+                        if updateService.isChecking {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Button("Check Now") {
+                            Task {
+                                await updateService.checkForUpdates(manual: true)
+                                settings.lastUpdateCheckTime = Date()
                             }
                         }
+                        .disabled(updateService.isChecking)
                     }
                 }
-                .listRowBackground(Color.clear)
-            }
 
-            Section("Onboarding") {
+                Toggle("Automatically check for updates", isOn: $settings.autoCheckUpdates)
+
+                if updateService.updateAvailable {
+                    HStack {
+                        Label(
+                            "New version \(updateService.latestVersion ?? "") available",
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                        .foregroundStyle(.orange)
+                        Spacer()
+                        Button("View Release") {
+                            updateService.openReleasePage()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                } else if let error = updateService.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if updateService.latestVersion != nil {
+                    Text("You're up to date.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastCheck = appSettings.lastUpdateCheckTime {
+                    Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listRowBackground(Color.clear)
+
+            Section("Setup guide") {
                 LabeledContent("Setup guide") {
                     Button("Reset Onboarding") {
                         appSettings.hasCompletedOnboarding = false
@@ -327,28 +302,46 @@ struct SettingsGeneralTab: View {
             }
             .pickerStyle(.menu)
 
-            HStack(spacing: 8) {
-                Button("Run Cleanup Now") { pendingCleanup = category }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(runningCleanup != nil)
+            LabeledContent("Clean up now") {
+                HStack(spacing: 8) {
+                    if let message = cleanupMessage[category] {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
-                if runningCleanup == category {
-                    ProgressView().controlSize(.small)
-                }
+                    if runningCleanup == category {
+                        ProgressView().controlSize(.small)
+                    }
 
-                Spacer()
-
-                if let message = cleanupMessage[category] {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Button("Run") { pendingCleanup = category }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(runningCleanup != nil)
                 }
             }
 
             Text(help)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func folderRow(
+        title: String,
+        url: URL,
+        onChoose: @escaping (URL) -> Void
+    ) -> some View {
+        LabeledContent(title) {
+            HStack(spacing: 8) {
+                FolderPathControl(url: url)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Button("Choose...") {
+                    chooseFolder(completion: onChoose)
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 
