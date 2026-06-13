@@ -15,6 +15,7 @@ struct SettingsAITab: View {
     @State private var isTestingCLI = false
     @State private var cliTestSuccess: String?
     @State private var cliTestError: String?
+    @State private var cliConfigExpanded = false
 
     var body: some View {
         if isEditing {
@@ -24,7 +25,8 @@ struct SettingsAITab: View {
             Form {
                 Section {
                     Toggle("Enable AI processing", isOn: $settings.aiProcessingEnabled)
-                    Text("When off, recordings are transcribed only — no summary, action items, or tag analysis.")
+                } footer: {
+                    Text("When off, recordings are transcribed only — no summary, action items, or tag analysis. This gates every AI feature below.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -214,69 +216,80 @@ struct SettingsAITab: View {
     }
 
     private var localCLISection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Command")
-                Spacer()
-                Menu("Load Template") {
-                    ForEach(LocalCLIConfig.templates) { template in
-                        Button(template.name) {
-                            appSettings.localCLIConfig.command = template.command
-                            cliTestSuccess = nil
-                            cliTestError = nil
+        DisclosureGroup(isExpanded: $cliConfigExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Command")
+                    Spacer()
+                    Menu("Load Template") {
+                        ForEach(LocalCLIConfig.templates) { template in
+                            Button(template.name) {
+                                appSettings.localCLIConfig.command = template.command
+                                cliTestSuccess = nil
+                                cliTestError = nil
+                            }
                         }
                     }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
 
-            NativeTextView(text: localCLICommandBinding)
-                .frame(height: 70)
+                NativeTextView(text: localCLICommandBinding, monospaced: true)
+                    .frame(height: 70)
 
-            HStack {
-                Text("Timeout")
-                Spacer()
-                Picker("Timeout", selection: Binding(
-                    get: { appSettings.localCLIConfig.timeoutSeconds },
-                    set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
-                )) {
-                    ForEach([15, 30, 45, 60, 90, 120, 180, 300, 600], id: \.self) { secs in
-                        Text("\(secs)s").tag(secs)
+                HStack {
+                    Text("Timeout")
+                    Spacer()
+                    Picker("Timeout", selection: Binding(
+                        get: { appSettings.localCLIConfig.timeoutSeconds },
+                        set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
+                    )) {
+                        ForEach([15, 30, 45, 60, 90, 120, 180, 300, 600], id: \.self) { secs in
+                            Text("\(secs)s").tag(secs)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+
+                Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout. The command runs with your login shell's PATH; if a tool still isn't found, use its absolute path (find it with `which <tool>` in Terminal).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button("Test command") { testCLICommand() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if isTestingCLI {
+                        ProgressView().controlSize(.small)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-            }
 
-            Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout. The command runs with your login shell's PATH; if a tool still isn't found, use its absolute path (find it with `which <tool>` in Terminal).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                Button("Test command") { testCLICommand() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if isTestingCLI {
-                    ProgressView().controlSize(.small)
+                if let cliTestSuccess {
+                    Text(cliTestSuccess.isEmpty ? "Command ran successfully (no output)." : "Output: \(cliTestSuccess)")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                }
+                if let cliTestError {
+                    Text(cliTestError)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
                 }
             }
-
-            if let cliTestSuccess {
-                Text(cliTestSuccess.isEmpty ? "Command ran successfully (no output)." : "Output: \(cliTestSuccess)")
-                    .font(.caption2)
-                    .foregroundStyle(.green)
-                    .lineLimit(4)
-                    .textSelection(.enabled)
-            }
-            if let cliTestError {
-                Text(cliTestError)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .lineLimit(4)
-                    .textSelection(.enabled)
+            .padding(.top, 6)
+        } label: {
+            Text("CLI configuration")
+        }
+        .onAppear {
+            // Open by default the first time, when nothing is configured yet.
+            if appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                cliConfigExpanded = true
             }
         }
     }
@@ -381,9 +394,10 @@ struct SettingsAITab: View {
             if isDefault {
                 Text("Default")
                     .font(.caption)
+                    .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(.blue.opacity(0.2))
+                    .background(Color.accentColor.opacity(0.18))
                     .clipShape(Capsule())
             }
         }

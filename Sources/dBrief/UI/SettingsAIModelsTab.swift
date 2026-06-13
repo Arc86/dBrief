@@ -1,5 +1,9 @@
 import SwiftUI
 
+// Decision D-2 (sub-navigation): Transcription vs AI Analysis stay under a single
+// "AI & Models" sidebar entry, switched by a native segmented Picker at the top of
+// the pane (rather than two separate sidebar rows). Keeps the already-busy Settings
+// sidebar compact while using a stock SwiftUI control.
 struct SettingsAIModelsTab: View {
     enum SubTab: String, CaseIterable {
         case transcription = "Transcription"
