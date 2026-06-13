@@ -167,8 +167,6 @@ struct SettingsGeneralTab: View {
                     appSettings.transcriptionFolderURL = url
                 }
 
-                Divider()
-
                 retentionControls(
                     title: "Auto-delete recordings",
                     help: "Removes audio files older than the selected age from the recordings folder. Transcripts and notes are kept.",
@@ -176,10 +174,6 @@ struct SettingsGeneralTab: View {
                     days: $settings.autoDeleteRecordingsDays,
                     category: .recordings
                 )
-
-                if settings.autoDeleteRecordingsEnabled {
-                    Divider()
-                }
 
                 retentionControls(
                     title: "Auto-delete transcripts",
