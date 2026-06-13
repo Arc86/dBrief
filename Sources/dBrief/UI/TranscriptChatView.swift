@@ -12,13 +12,14 @@ struct TranscriptChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             if chatService.messages.isEmpty {
+                // The empty state hosts its own single input field, so the bottom
+                // input bar is intentionally omitted here (avoids a duplicate box).
                 promptTemplates
             } else {
                 messageList
                 promptChipsRow
+                inputBar
             }
-
-            inputBar
         }
     }
 

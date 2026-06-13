@@ -78,22 +78,13 @@ enum TranscriptDesignTokens {
 
     // MARK: - Speaker accent colours
 
-    /// Fixed palette; index assigned round-robin by hashing the speaker ID.
-    static let speakerAccents: [Color] = [
-        Color(hex: "ff453a"), // red
-        Color(hex: "0a84ff"), // blue
-        Color(hex: "ff9f0a"), // orange
-        Color(hex: "30d158"), // green
-        Color(hex: "bf5af2"), // purple
-        Color(hex: "5ac8fa"), // teal
-    ]
+    /// Canonical speaker palette now lives in `Theme` so every surface (transcript
+    /// rails, owner avatars, header avatar stack) resolves the same colour map.
+    static var speakerAccents: [Color] { Theme.speakerPalette }
 
-    /// Deterministic colour for a speaker ID. Always returns the same colour
-    /// for the same ID within a session.
+    /// Deterministic colour for a speaker ID. Delegates to `Theme.speakerColor`.
     static func speakerColor(for speakerId: String?) -> Color {
-        guard let id = speakerId, !id.isEmpty else { return speakerAccents[0] }
-        let hash = abs(id.unicodeScalars.reduce(0) { $0 &+ Int($1.value) })
-        return speakerAccents[hash % speakerAccents.count]
+        Theme.speakerColor(for: speakerId)
     }
 
     // MARK: - Shape & spacing
