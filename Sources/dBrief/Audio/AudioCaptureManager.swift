@@ -30,6 +30,38 @@ final class AudioCaptureManager {
     /// Cleared only by the next `startRecording`.
     private(set) var trackURLs: CapturedTracks?
 
+    /// Live audio sinks for real-time transcription. Non-nil only while live
+    /// transcription is enabled for the current recording. The tap handlers
+    /// yield deep-copied buffers here in addition to writing the CAF tracks.
+    private var micLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
+    private var systemLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
+
+    /// Bound on buffered live audio. Live transcription is an explicitly lossy
+    /// preview, so we cap the queue and drop the oldest buffers rather than let
+    /// it grow without bound — e.g. while a first-run language asset downloads,
+    /// the consumer (`SpeechAnalyzer`) hasn't started yet and buffers would
+    /// otherwise accumulate in RAM until it does. ~64 tap buffers (≈ a few
+    /// seconds at 4096 frames) is plenty of slack for a real-time consumer.
+    private static let liveBufferLimit = 64
+
+    /// Creates fresh live audio streams (mic + system) for real-time transcription.
+    /// MUST be called *before* `startRecording` so the tap handlers capture the sinks.
+    /// The streams stay open across pause/resume and are finished by `stopRecording`.
+    func makeLiveAudioStreams() -> (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>) {
+        let mic = AsyncStream<LiveAudioBuffer>(bufferingPolicy: .bufferingNewest(Self.liveBufferLimit)) { continuation in
+            self.micLiveContinuation = continuation
+        }
+        let system = AsyncStream<LiveAudioBuffer>(bufferingPolicy: .bufferingNewest(Self.liveBufferLimit)) { continuation in
+            self.systemLiveContinuation = continuation
+        }
+        return (mic, system)
+    }
+
+    private func finishLiveStreams() {
+        micLiveContinuation?.finish(); micLiveContinuation = nil
+        systemLiveContinuation?.finish(); systemLiveContinuation = nil
+    }
+
     func checkPermissions() async {
         hasMicrophonePermission = await Self.requestMicAccess()
         hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
@@ -115,6 +147,8 @@ final class AudioCaptureManager {
         systemWriter?.close(); systemWriter = nil
         micWriter?.close(); micWriter = nil
 
+        finishLiveStreams()
+
         isCapturing = false
         peakLevel = 0
         log.info("Recording stopped")
@@ -162,14 +196,15 @@ final class AudioCaptureManager {
     private func restartSystemCapture(writer: AudioTrackWriter) async throws {
         let filter = try await SystemAudioCapture.createContentFilter()
         let capture = try SystemAudioCapture(filter: filter)
-        capture.audioBufferHandler = Self.makeSystemHandler(writer: writer)
+        capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: systemLiveContinuation)
         self.systemCapture = capture
         try await capture.start()
         log.info("System capture started")
     }
 
     private nonisolated static func makeSystemHandler(
-        writer: AudioTrackWriter
+        writer: AudioTrackWriter,
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (CMSampleBuffer) -> Void {
         return { sampleBuffer in
             guard let pcm = sampleBuffer.toPCMBuffer() else { return }
@@ -178,6 +213,11 @@ final class AudioCaptureManager {
             } catch {
                 log.error("System write error: \(error.localizedDescription, privacy: .public)")
             }
+            // `toPCMBuffer()` already allocates a fresh buffer each callback and the
+            // writer is done with it synchronously above, so it can be handed to the
+            // live consumer directly — no second copy needed (unlike the mic tap,
+            // whose buffer storage AVAudioEngine reuses across callbacks).
+            if let liveSink { liveSink.yield(LiveAudioBuffer(pcm)) }
         }
     }
 
@@ -216,7 +256,7 @@ final class AudioCaptureManager {
         }
         log.info("Mic format: \(inputFormat.sampleRate, privacy: .public)Hz \(inputFormat.channelCount, privacy: .public)ch")
 
-        let handler = Self.makeMicHandler(writer: writer)
+        let handler = Self.makeMicHandler(writer: writer, liveSink: micLiveContinuation)
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: handler)
 
         try engine.start()
@@ -224,7 +264,8 @@ final class AudioCaptureManager {
     }
 
     private nonisolated static func makeMicHandler(
-        writer: AudioTrackWriter
+        writer: AudioTrackWriter,
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         return { buffer, _ in
             do {
@@ -232,6 +273,9 @@ final class AudioCaptureManager {
             } catch {
                 log.error("Mic write error: \(error.localizedDescription, privacy: .public)")
             }
+            // AVAudioEngine reuses the tap buffer's storage across callbacks, so
+            // deep-copy before handing it to the live transcriber.
+            if let liveSink, let copy = buffer.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
         }
     }
 
@@ -239,7 +283,8 @@ final class AudioCaptureManager {
     /// writing — used after a live device switch when the new device's format differs.
     private nonisolated static func makeConvertingMicHandler(
         writer: AudioTrackWriter,
-        converter: MicFormatConverter
+        converter: MicFormatConverter,
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         return { buffer, _ in
             guard let converted = converter.convert(buffer) else { return }
@@ -248,6 +293,10 @@ final class AudioCaptureManager {
             } catch {
                 log.error("Mic write error (converted): \(error.localizedDescription, privacy: .public)")
             }
+            // Feed the converted (established-format) buffer to the live consumer too,
+            // so live transcription survives a mic hot-swap. Deep-copy because the
+            // converter reuses its output buffer across calls.
+            if let liveSink, let copy = converted.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
         }
     }
 
@@ -280,9 +329,9 @@ final class AudioCaptureManager {
            (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount),
            let converter = MicFormatConverter(from: newFormat, to: established) {
             log.info("Hot-swap: converting \(newFormat.sampleRate, privacy: .public)Hz/\(newFormat.channelCount, privacy: .public)ch → \(established.sampleRate, privacy: .public)Hz/\(established.channelCount, privacy: .public)ch")
-            handler = Self.makeConvertingMicHandler(writer: writer, converter: converter)
+            handler = Self.makeConvertingMicHandler(writer: writer, converter: converter, liveSink: micLiveContinuation)
         } else {
-            handler = Self.makeMicHandler(writer: writer)
+            handler = Self.makeMicHandler(writer: writer, liveSink: micLiveContinuation)
         }
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
@@ -318,5 +367,34 @@ final class AudioCaptureManager {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+}
+
+/// A deep-copied PCM buffer carried over the live-audio `AsyncStream`. Wrapping it
+/// makes the stream `Sendable` (so it can cross from the main actor into the
+/// transcription actor without `sending` gymnastics): the buffer is freshly
+/// allocated by `deepCopy()`, owned exclusively by the live consumer, and never
+/// mutated after the copy — so `@unchecked Sendable` is sound.
+struct LiveAudioBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+}
+
+extension AVAudioPCMBuffer {
+    /// Allocates a new buffer with the same format and copies the raw frame data,
+    /// so the copy can safely outlive a tap's reused storage. Handles both
+    /// interleaved and non-interleaved layouts by copying each audio buffer.
+    func deepCopy() -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else { return nil }
+        copy.frameLength = frameLength
+        let src = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
+        let dst = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        guard src.count == dst.count else { return nil }
+        for i in 0..<src.count {
+            guard let s = src[i].mData, let d = dst[i].mData else { continue }
+            memcpy(d, s, Int(src[i].mDataByteSize))
+            dst[i].mDataByteSize = src[i].mDataByteSize
+        }
+        return copy
     }
 }

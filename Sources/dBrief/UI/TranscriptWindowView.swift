@@ -25,6 +25,10 @@ struct TranscriptDetailView: View {
     private enum ViewerMode { case summary, transcript, chat }
     @State private var mode: ViewerMode = .transcript
 
+    /// In live mode, chat is a right-hand side panel (so the in-progress transcript
+    /// stays visible) rather than a full-screen swap like the finished-recording view.
+    @State private var showLiveChat = false
+
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
     @State private var currentTime: TimeInterval = 0
@@ -67,9 +71,37 @@ struct TranscriptDetailView: View {
         return !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// True while this view shows the in-progress (recording or processing)
+    /// recording — drives the real-time live transcript + chat mode.
+    private var isLive: Bool {
+        guard let current = context.appState.currentRecording else { return false }
+        return current.id == recording.id && context.appState.recordingState != .idle
+    }
+
+    /// Live transcript assembled on the fly from the growing `liveTranscriptSegments`.
+    private var liveRichTranscript: RichTranscript {
+        let segs = context.appState.liveTranscriptSegments.map { seg in
+            RichSegment(start: seg.start, end: seg.end, text: seg.text,
+                        originalText: seg.text, speakerId: seg.speaker)
+        }
+        return RichTranscript(segments: segs)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if loadFailed {
+            if isLive {
+                // In-progress recording: keep the real-time transcript visible and
+                // slide chat in as a right-hand side panel, so you can watch the
+                // transcript grow while chatting with it.
+                HStack(spacing: 0) {
+                    liveTranscriptContent
+                        .frame(maxWidth: .infinity)
+                    if showLiveChat {
+                        Divider()
+                        liveChatPanel
+                    }
+                }
+            } else if loadFailed {
                 failedState
             } else if richTranscript != nil {
                 documentHeader
@@ -86,6 +118,26 @@ struct TranscriptDetailView: View {
         .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .onChange(of: context.appState.recordingState) { _, newState in
+            // When the live recording finishes, swap the live preview for the
+            // authoritative on-disk transcript. Keep a non-empty live chat and
+            // re-point it at that transcript (so the Q&A history carries over);
+            // drop an empty one so a fresh chat is built against the final text.
+            guard newState == .idle, context.appState.currentRecording?.id == recording.id else { return }
+            showLiveChat = false
+            let liveChat = chatStore.session(for: recording.fileURL)
+            if liveChat?.hasHistory != true {
+                chatStore.remove(for: recording.fileURL)
+            }
+            Task {
+                await loadTranscript()
+                if let liveChat, liveChat.hasHistory {
+                    let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+                        ?? recording.transcription?.text ?? ""
+                    liveChat.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                }
+            }
+        }
         .overlay { if isDiarizing { diarizingOverlay } }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -175,9 +227,24 @@ struct TranscriptDetailView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .principal) {
-            modeButton(.summary, systemImage: "doc.text", help: "Summary")
-            modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
-            modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+            if isLive {
+                // Live recording: a single chat toggle that slides the chat panel in
+                // beside the transcript, instead of the summary/transcript/chat tabs.
+                Button {
+                    showLiveChat.toggle()
+                    if showLiveChat, chatService == nil { buildChatService() }
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .symbolVariant(showLiveChat ? .fill : .none)
+                        .foregroundStyle(showLiveChat ? Color.accentColor : Color.secondary)
+                }
+                .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
+                .accessibilityAddTraits(showLiveChat ? .isSelected : [])
+            } else {
+                modeButton(.summary, systemImage: "doc.text", help: "Summary")
+                modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
+                modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+            }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -389,6 +456,150 @@ struct TranscriptDetailView: View {
         }
     }
 
+    // MARK: - Live transcript
+
+    /// Chat as a right-hand side panel during live recording — reuses `chatContent`
+    /// (so it runs against the live transcript provider) inside a fixed-width column
+    /// with its own header + close button, keeping the live transcript visible.
+    private var liveChatPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .foregroundStyle(.secondary)
+                Text("Chat")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    showLiveChat = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Hide chat")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+            Divider()
+            chatContent
+        }
+        .frame(width: 360)
+    }
+
+    @ViewBuilder
+    private var liveTranscriptContent: some View {
+        VStack(spacing: 0) {
+            liveStatusBanner
+            Divider()
+            liveTranscriptList
+        }
+    }
+
+    private var liveStatusBanner: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(context.appState.recordingState == .processing ? Color.orange : Color.red)
+                .frame(width: 9, height: 9)
+            Text(context.appState.recordingState == .processing ? "Processing…" : "Recording — live transcript")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("\(context.appState.liveTranscriptSegments.count) segments")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var liveTranscriptList: some View {
+        let turns = liveRichTranscript.speakerTurns()
+        let mic = context.appState.liveVolatileMic
+        let system = context.appState.liveVolatileSystem
+        if turns.isEmpty && mic.isEmpty && system.isEmpty {
+            liveWaitingState
+        } else {
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(turns) { turn in
+                        liveTurnRow(turn).id(turn.id)
+                    }
+                    if !mic.isEmpty {
+                        liveVolatileRow(speaker: "You", text: mic).id("vol-mic")
+                    }
+                    if !system.isEmpty {
+                        liveVolatileRow(speaker: "Participant", text: system).id("vol-system")
+                    }
+                    Color.clear.frame(height: 1).id("live-bottom")
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .onChange(of: context.appState.liveTranscriptSegments.count) { _, _ in
+                    withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
+                }
+            }
+        }
+    }
+
+    private var liveWaitingState: some View {
+        // Surface live status (e.g. "Preparing language…" while a first-run speech
+        // asset downloads) when present; otherwise the default listening/preparing copy.
+        let status = context.appState.liveStatusMessage
+        let headline = !status.isEmpty
+            ? status
+            : (context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
+        return VStack(spacing: 12) {
+            Spacer()
+            ProgressView()
+            Text(headline)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("Spoken words appear here as you record.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func liveTurnRow(_ turn: SpeakerTurn) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if showSpeakerNames, let id = turn.speakerId {
+                Text(id)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TranscriptDesignTokens.speakerColor(for: id))
+            }
+            Text(turn.text)
+                .font(.system(size: CGFloat(fontSize)))
+                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+                .lineSpacing(CGFloat(fontSize) * 0.4)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func liveVolatileRow(speaker: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if showSpeakerNames {
+                Text(speaker)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TranscriptDesignTokens.speakerColor(for: speaker))
+            }
+            Text(text)
+                .font(.system(size: CGFloat(fontSize)).italic())
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .opacity(0.6)
+    }
+
     // MARK: - Placeholder states
 
     private var loadingState: some View {
@@ -520,18 +731,44 @@ struct TranscriptDetailView: View {
             chatService = existing
             return
         }
-        let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-            ?? recording.transcription?.text ?? ""
         let labels = richTranscript?.speakerLabels ?? []
-        let service = TranscriptChatService(
-            transcriptText: text,
-            speakerLabels: labels,
-            appSettings: context.appSettings,
-            localPlugin: context.recordingManager.localPlugin
-        )
+        let service: TranscriptChatService
+        if isLive {
+            // Chat against the live, growing transcript: the provider re-reads the
+            // current segments + volatile lines on each send().
+            let appState = context.appState
+            service = TranscriptChatService(
+                transcriptProvider: { Self.liveTranscriptText(appState: appState) },
+                speakerLabels: labels,
+                appSettings: context.appSettings,
+                localPlugin: context.recordingManager.localPlugin
+            )
+        } else {
+            let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+                ?? recording.transcription?.text ?? ""
+            service = TranscriptChatService(
+                transcriptText: text,
+                speakerLabels: labels,
+                appSettings: context.appSettings,
+                localPlugin: context.recordingManager.localPlugin
+            )
+        }
         chatStore.set(service, for: recording.fileURL)
         chatService = service
         service.prewarm()
+    }
+
+    /// Snapshot of the live transcript (finalized segments + in-progress lines),
+    /// speaker-prefixed, for the live chat provider.
+    @MainActor
+    private static func liveTranscriptText(appState: AppState) -> String {
+        var lines: [String] = appState.liveTranscriptSegments.map { seg in
+            if let speaker = seg.speaker { return "\(speaker): \(seg.text)" }
+            return seg.text
+        }
+        if !appState.liveVolatileMic.isEmpty { lines.append("You: \(appState.liveVolatileMic)") }
+        if !appState.liveVolatileSystem.isEmpty { lines.append("Participant: \(appState.liveVolatileSystem)") }
+        return lines.joined(separator: "\n")
     }
 
     private func deleteRecording() {
@@ -590,6 +827,14 @@ struct TranscriptDetailView: View {
         richTranscript = nil
         loadFailed = false
         insights = nil
+
+        // Live recording: nothing on disk yet — the view renders from the
+        // in-memory live segments, and chat uses the live provider.
+        if isLive {
+            chatService = chatStore.session(for: recording.fileURL)
+            return
+        }
+
         await loadInsights()
 
         // Restore any in-progress chat session for this recording.

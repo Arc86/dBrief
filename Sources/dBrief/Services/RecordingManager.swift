@@ -15,6 +15,8 @@ final class RecordingManager {
     private let audioCaptureManager = AudioCaptureManager()
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
+    /// Real-time, in-process Apple Speech transcription during recording (preview only).
+    private var liveTranscriptionService: LiveTranscriptionService?
     /// One supervised helper process backs both local-ML proxies, so they share
     /// the GPU-serializing orchestrator inside dBriefMLHost.
     private let mlHost = MLHostConnection(
@@ -113,6 +115,12 @@ final class RecordingManager {
         // is the true span [start, start+duration] known, which the span-aware CalendarMatcher
         // needs to rank events that overlap the recording.
 
+        // Create the live audio streams before the capture taps install so the
+        // tap handlers capture the sinks (no-op unless the feature is enabled).
+        let liveStreams = appSettings.liveTranscriptionEnabled
+            ? audioCaptureManager.makeLiveAudioStreams()
+            : nil
+
         try await audioCaptureManager.startRecording(
             to: baseURL,
             inputDeviceUID: appSettings.audioInputDeviceUID,
@@ -132,11 +140,72 @@ final class RecordingManager {
 
         miniPlayer?.show()
 
+        if let liveStreams {
+            startLiveTranscription(streams: liveStreams)
+        }
+
         observeAudioState()
+    }
+
+    private func startLiveTranscription(streams: (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>)) {
+        appState.liveTranscriptSegments = []
+        appState.liveVolatileMic = ""
+        appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
+        appState.isLiveTranscribing = true
+
+        // Only drive channels that actually have an audio source.
+        let micStream = audioCaptureManager.hasMicrophonePermission ? streams.mic : nil
+        let systemStream = audioCaptureManager.hasSystemAudioPermission ? streams.system : nil
+
+        let service = LiveTranscriptionService()
+        liveTranscriptionService = service
+        let language = appSettings.effectiveTranscriptionLanguage
+        let micLabel = LiveTranscriptionService.Channel.mic.rawValue
+
+        Task {
+            await service.start(
+                mic: micStream,
+                system: systemStream,
+                language: language,
+                onFinalized: { [weak self] segments in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        // First real output clears any "Preparing language…" status.
+                        self.appState.liveStatusMessage = ""
+                        self.appState.liveTranscriptSegments = LiveSegmentMerge.insert(segments, into: self.appState.liveTranscriptSegments)
+                    }
+                },
+                onVolatile: { [weak self] speaker, text in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if !text.isEmpty { self.appState.liveStatusMessage = "" }
+                        if speaker == micLabel { self.appState.liveVolatileMic = text }
+                        else { self.appState.liveVolatileSystem = text }
+                    }
+                },
+                onStatus: { [weak self] message in
+                    Task { @MainActor [weak self] in
+                        self?.appState.liveStatusMessage = message
+                    }
+                }
+            )
+        }
+    }
+
+    private func stopLiveTranscription() {
+        guard let service = liveTranscriptionService else { return }
+        liveTranscriptionService = nil
+        appState.isLiveTranscribing = false
+        appState.liveVolatileMic = ""
+        appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
+        Task { await service.stop() }
     }
 
     func stopRecording() async {
         await audioCaptureManager.stopRecording()
+        stopLiveTranscription()
 
         if let recording = appState.currentRecording {
             // Capture track URLs written by the audio pipeline.
@@ -250,6 +319,10 @@ final class RecordingManager {
         appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveTranscriptSegments = []
+        appState.liveVolatileMic = ""
+        appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
+        appState.isLiveTranscribing = false
         appState.liveInferenceText = nil
 
         // Make sure the calendar lookup started at stop has finished before the pipeline reads

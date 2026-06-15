@@ -34,6 +34,7 @@
         { slug: "transcription/local-whisper",          title: "Local Whisper" },
         { slug: "transcription/parakeet",               title: "Parakeet (Local)" },
         { slug: "transcription/remote-endpoint",        title: "Remote Endpoint" },
+        { slug: "transcription/live-transcription",     title: "Live Transcription" },
       ],
     },
     {

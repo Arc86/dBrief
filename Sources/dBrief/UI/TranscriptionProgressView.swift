@@ -124,7 +124,8 @@ struct TranscriptionProgressView: View {
 
                 if !appState.liveTranscriptSegments.isEmpty {
                     Button {
-                        openWindow(id: "live-transcript")
+                        appState.pendingLiveTranscriptSelection = true
+                        openWindow(id: "transcript")
                         NSApp.activate(ignoringOtherApps: true)
                     } label: {
                         Label("Live Transcript", systemImage: "text.viewfinder")

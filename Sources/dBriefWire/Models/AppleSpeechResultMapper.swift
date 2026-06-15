@@ -62,4 +62,50 @@ public enum AppleSpeechResultMapper {
             language: language?.isEmpty == false ? language : nil
         )
     }
+
+    /// Maps finalized SpeechAnalyzer chunks to live transcript segments, tagging each
+    /// with the supplied speaker label (e.g. "You" / "Participant"). Whitespace-only
+    /// chunks are dropped. Used by the real-time two-channel live transcription path.
+    public static func liveSegments(from chunks: [AppleSpeechChunk], speaker: String?) -> [LiveTranscriptSegment] {
+        chunks.compactMap { chunk in
+            let text = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return LiveTranscriptSegment(start: chunk.start, end: chunk.end, text: text, speaker: speaker)
+        }
+    }
+}
+
+/// Pure, OS-independent helper for ordering live transcript segments arriving
+/// out-of-order from two concurrent recognizers (mic + system). Kept testable.
+public enum LiveSegmentMerge {
+    /// Inserts `segment` into `segments` keeping ascending `start` order (stable for
+    /// equal starts — the new segment goes after existing ones at the same time).
+    public static func insert(_ segment: LiveTranscriptSegment, into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
+        var result = segments
+        insertInPlace(segment, into: &result)
+        return result
+    }
+
+    /// Inserts several new segments, keeping ascending `start` order. Mutates a single
+    /// array so a batch is one copy-on-write copy rather than one per segment.
+    public static func insert(_ newSegments: [LiveTranscriptSegment], into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
+        var result = segments
+        for segment in newSegments {
+            insertInPlace(segment, into: &result)
+        }
+        return result
+    }
+
+    /// Scans from the end for the insertion point, so the common case — finalized
+    /// segments arriving in ascending `start` order — is O(1) per insert (an append)
+    /// instead of the O(n) forward scan that made a full recording O(n²). Stops at the
+    /// first element whose `start` is `<=` the new one, preserving stable ordering for
+    /// equal starts.
+    private static func insertInPlace(_ segment: LiveTranscriptSegment, into result: inout [LiveTranscriptSegment]) {
+        var index = result.count
+        while index > 0, result[index - 1].start > segment.start {
+            index -= 1
+        }
+        result.insert(segment, at: index)
+    }
 }
