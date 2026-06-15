@@ -10,6 +10,8 @@ Transcript Chat lets you have a back-and-forth conversation about a recording â€
 
 Open a recording in the [transcript viewer](../history/transcript-viewer.md), then click the **chat** button (speech-bubble icon) in the toolbar. This swaps the detail pane from the transcript to the chat; click it again to switch back. The transcript stays loaded behind it, and each recording keeps its own conversation while the app is open.
 
+While a recording is still in progress with [Live Transcription](../transcription/live-transcription.md) on, the chat opens as a **side panel** next to the live transcript instead of replacing it â€” and the conversation carries over to the finished recording when you stop.
+
 ## Example prompts
 
 When you first open the chat you'll see a set of one-tap example prompts to get you started, including:

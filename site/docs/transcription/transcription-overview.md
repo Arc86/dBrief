@@ -6,6 +6,8 @@ Transcription converts your audio recording into text. dBrief offers four transc
 
 Transcription runs automatically after you stop a recording (if you have **Transcribe** checked in the post-recording sheet). You can also re-run transcription on any past recording from the [Recording History](../history/recording-history.md).
 
+Want to watch the words appear *while* you record? Turn on [Live Transcription](live-transcription.md) for a real-time on-device preview (the accurate transcript is still produced by your chosen engine when you stop).
+
 ## Choosing an engine
 
 Go to **Settings → AI & Models → Transcription** and select your transcription engine.
