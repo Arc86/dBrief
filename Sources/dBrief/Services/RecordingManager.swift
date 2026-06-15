@@ -28,6 +28,8 @@ final class RecordingManager {
     var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
     private var processingTask: Task<Void, Never>?
+    /// Auto-clears the transient `appState.recordingStatusNote` a few seconds after a switch.
+    private var statusNoteClearTask: Task<Void, Never>?
     /// Observable per-model download state, read by the Settings download buttons.
     var modelDownloads: [LocalModelKind: ModelDownloadPhase] = [:]
     private var downloadTasks: [LocalModelKind: Task<Void, Never>] = [:]
@@ -61,6 +63,23 @@ final class RecordingManager {
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
         self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
+        // Surface automatic mid-recording device/AEC switches to the user.
+        self.audioCaptureManager.statusNoteHandler = { [weak self] note in
+            self?.showRecordingStatusNote(note)
+        }
+    }
+
+    /// Briefly shows a status note (e.g. "Switched to MacBook Microphone") during
+    /// recording, auto-clearing after a few seconds.
+    private func showRecordingStatusNote(_ note: String) {
+        appState.recordingStatusNote = note
+        Logger.recording.info("Recording status note: \(note, privacy: .public)")
+        statusNoteClearTask?.cancel()
+        statusNoteClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.appState.recordingStatusNote = nil
+        }
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -120,6 +139,20 @@ final class RecordingManager {
         let liveStreams = appSettings.liveTranscriptionEnabled
             ? audioCaptureManager.makeLiveAudioStreams()
             : nil
+
+        // Echo cancellation only helps when sound from the speakers bleeds into the
+        // mic. With earphones/headphones (or any non-built-in output) there's no
+        // echo path, and Voice Processing would needlessly duck output + apply AGC,
+        // making the audio the user hears much quieter. The offline (mixed-mode)
+        // sidechain duck is an all-or-nothing ffmpeg filter, so freeze its decision
+        // at the start-time route. The live capture path receives the RAW setting and
+        // re-gates on the route dynamically (it can toggle VPIO mid-recording).
+        let echoCancellationActive = appSettings.acousticEchoCancellation
+            && AudioOutputRoute.currentOutputHasEchoPath()
+        recording.echoSuppressionApplied = echoCancellationActive
+        if appSettings.acousticEchoCancellation && !echoCancellationActive {
+            Logger.recording.info("Echo cancellation auto-disabled: output route has no speaker→mic echo path (headphones/external)")
+        }
 
         try await audioCaptureManager.startRecording(
             to: baseURL,
@@ -206,6 +239,8 @@ final class RecordingManager {
     func stopRecording() async {
         await audioCaptureManager.stopRecording()
         stopLiveTranscription()
+        statusNoteClearTask?.cancel()
+        appState.recordingStatusNote = nil
 
         if let recording = appState.currentRecording {
             // Capture track URLs written by the audio pipeline.
@@ -1899,7 +1934,7 @@ final class RecordingManager {
             recording: recording,
             baseFolder: appSettings.effectiveRecordingFolderURL,
             segmentationEnabled: segmentationEnabled,
-            echoSuppressionEnabled: appSettings.acousticEchoCancellation
+            echoSuppressionEnabled: recording.echoSuppressionApplied
         )
         recording.capturedTracks = nil  // scratch files have been consumed
 

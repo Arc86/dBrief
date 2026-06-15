@@ -34,6 +34,12 @@ final class Recording: Identifiable {
     /// Session-only; never persisted.
     @ObservationIgnored var calendarLookupTask: Task<Void, Never>?
     var capturedTracks: CapturedTracks?
+    /// Whether echo cancellation should be applied when finalizing this recording's
+    /// mic track. Captured at recording *start* (user setting AND a real speaker→mic
+    /// echo path existing) so the offline sidechain duck matches the route at the
+    /// time of recording, even if the user later unplugs their headphones.
+    /// Session-only; never persisted to disk.
+    var echoSuppressionApplied: Bool = true
     /// Pre-encoded audio (e.g. a YouTube/yt-dlp download) awaiting relocation into the
     /// recordings folder during finalization. Session-only; never persisted to disk.
     var importSourceURL: URL?

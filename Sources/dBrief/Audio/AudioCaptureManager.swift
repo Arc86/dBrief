@@ -21,7 +21,28 @@ final class AudioCaptureManager {
     private var startTime: Date?
     private var pauseAccumulator: TimeInterval = 0
     private var pauseStartTime: Date?
-    private var aecEnabled = true
+
+    /// Raw `AppSettings.acousticEchoCancellation` (route-independent). VPIO is gated
+    /// on this AND a real output echo path AND mic-only mode, recomputed on route change.
+    private var aecSettingEnabled = true
+
+    // MARK: - Mid-recording device/route reconfigure
+
+    /// The user's chosen input UID (`""` == System Default), as last passed to
+    /// `startRecording` / `switchMicrophoneDevice`. Drives the auto-follow decision.
+    private var selectedInputUID: String = ""
+    /// What the engine currently has applied — the idempotency snapshot fed to the planner.
+    private var appliedInputUID: String = ""
+    private var appliedVoiceProcessing = false
+
+    private var configChangeObserver: NSObjectProtocol?
+    private var outputMonitor: DefaultOutputDeviceMonitor?
+    private var reconfigureDebounceTask: Task<Void, Never>?
+    private static let reconfigureDebounceInterval: Duration = .milliseconds(400)
+
+    /// Invoked (on the main actor) after an automatic reconfigure with a short,
+    /// user-facing note (e.g. "Switched to MacBook Microphone"). Set by `RecordingManager`.
+    var statusNoteHandler: ((String) -> Void)?
 
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
@@ -92,7 +113,8 @@ final class AudioCaptureManager {
         let systemURL = stem.appendingPathExtension("system.caf")
         let micURL = stem.appendingPathExtension("mic.caf")
 
-        aecEnabled = acousticEchoCancellationEnabled
+        aecSettingEnabled = acousticEchoCancellationEnabled
+        selectedInputUID = inputDeviceUID ?? ""
         trackURLs = CapturedTracks(
             systemURL: hasSystemAudioPermission ? systemURL : nil,
             micURL: hasMicrophonePermission ? micURL : nil
@@ -121,6 +143,9 @@ final class AudioCaptureManager {
     func stopRecording() async {
         guard isCapturing else { return }
         stopTimer()
+        // Tear down observers before the engine is nilled (the config-change token
+        // is bound to `micEngine`).
+        removeChangeObservers()
 
         // Compute the final duration directly from the wall clock rather than
         // trusting the last value the live timer happened to write — the timer
@@ -149,6 +174,8 @@ final class AudioCaptureManager {
 
         finishLiveStreams()
 
+        appliedInputUID = ""
+        appliedVoiceProcessing = false
         isCapturing = false
         peakLevel = 0
         log.info("Recording stopped")
@@ -185,6 +212,8 @@ final class AudioCaptureManager {
             }
         }
         startTimer()
+        // Reconcile any device/route change that happened while paused.
+        scheduleReconfigure()
     }
 
     // MARK: - System pipeline
@@ -240,10 +269,16 @@ final class AudioCaptureManager {
         // system-audio buffers. Restrict it to mic-only recording, where
         // there's no SCStream to conflict with. In mixed mode we perform
         // echo suppression offline via the system-track sidechain in
-        // `RecordingFinalizer`.
-        if aecEnabled && !hasSystemAudioPermission {
+        // `RecordingFinalizer`. It's further gated on a real speaker→mic echo
+        // path (no-op on headphones, where it would just lower output volume).
+        let wantVoiceProcessing = aecSettingEnabled
+            && !hasSystemAudioPermission
+            && AudioOutputRoute.currentOutputHasEchoPath()
+        var achievedVoiceProcessing = false
+        if wantVoiceProcessing {
             do {
                 try inputNode.setVoiceProcessingEnabled(true)
+                achievedVoiceProcessing = true
                 log.info("Voice-processing AEC enabled (mic-only mode)")
             } catch {
                 log.warning("Voice-processing AEC unavailable: \(error.localizedDescription, privacy: .public)")
@@ -260,7 +295,30 @@ final class AudioCaptureManager {
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: handler)
 
         try engine.start()
+
+        // Record the state actually achieved (the device may differ if a pinned UID
+        // was missing) so the auto-reconfigure path is idempotent.
+        appliedInputUID = (AudioInputDeviceManager.deviceID(forUID: selectedInputUID) != nil) ? selectedInputUID : ""
+        appliedVoiceProcessing = achievedVoiceProcessing
+        installChangeObservers()
         log.info("Mic capture started")
+    }
+
+    /// Picks the converting tap handler when the live device format differs from
+    /// the file's established format, otherwise the plain handler. Shared by the
+    /// initial pipeline, the manual hot-swap, and the automatic reconfigure path.
+    private nonisolated static func selectMicHandler(
+        writer: AudioTrackWriter,
+        newFormat: AVAudioFormat,
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
+    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        if let established = writer.establishedFormat,
+           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount),
+           let converter = MicFormatConverter(from: newFormat, to: established) {
+            log.info("Reconfigure: converting \(newFormat.sampleRate, privacy: .public)Hz/\(newFormat.channelCount, privacy: .public)ch → \(established.sampleRate, privacy: .public)Hz/\(established.channelCount, privacy: .public)ch")
+            return makeConvertingMicHandler(writer: writer, converter: converter, liveSink: liveSink)
+        }
+        return makeMicHandler(writer: writer, liveSink: liveSink)
     }
 
     private nonisolated static func makeMicHandler(
@@ -301,42 +359,171 @@ final class AudioCaptureManager {
     }
 
     /// Switch the microphone input device mid-recording without losing the in-progress
-    /// mic track. Pauses the engine, re-points it at the new device, re-installs the tap
-    /// (converting to the established file format if the new device's format differs),
-    /// and resumes. No-op when not recording or in a system-audio-only session.
+    /// mic track. Routes through the shared reconfigure path (re-point device, keep the
+    /// established-format tap, optionally toggle VPIO). No-op when not recording or in a
+    /// system-audio-only session.
     func switchMicrophoneDevice(to newUID: String?) throws {
-        guard isCapturing, let engine = micEngine, let writer = micWriter else { return }
+        guard isCapturing, micEngine != nil, micWriter != nil else { return }
+        selectedInputUID = newUID ?? ""
+        // The user explicitly chose this device — treat it as present so a CoreAudio
+        // enumeration race can't trigger the "device gone → default" fallback.
+        try applyReconfigure(computeDecision(treatSelectedAsPresent: true))
+    }
 
-        engine.pause()
+    /// Bridges the impure CoreAudio state into the pure `MicReconfigurePlanner`.
+    private func computeDecision(treatSelectedAsPresent: Bool = false) -> MicReconfigureDecision {
+        var available = Set(AudioInputDeviceManager.availableInputDevices().map(\.uid))
+        if treatSelectedAsPresent, !selectedInputUID.isEmpty { available.insert(selectedInputUID) }
+        return MicReconfigurePlanner.decide(
+            selectedUID: selectedInputUID,
+            availableInputUIDs: available,
+            hasSystemAudioPermission: hasSystemAudioPermission,
+            aecSettingEnabled: aecSettingEnabled,
+            outputHasEchoPath: AudioOutputRoute.currentOutputHasEchoPath(),
+            currentlyAppliedUID: appliedInputUID,
+            currentlyVoiceProcessing: appliedVoiceProcessing
+        )
+    }
+
+    /// Re-point the mic engine and/or toggle VPIO to reach `decision`, keeping the
+    /// in-progress mic track continuous. Idempotent no-op unless a change is needed.
+    /// Throws (after attempting to restore) only on a hard invalid-format failure.
+    private func applyReconfigure(_ decision: MicReconfigureDecision) throws {
+        guard isCapturing, let engine = micEngine, let writer = micWriter else { return }
+        guard decision.needsReconfigure else { return }
+
+        // Whether the engine SHOULD be running after reconfigure — based on user
+        // pause state, NOT `engine.isRunning` (a config-change may have already
+        // stopped it, but we still want to restart unless the user paused).
+        let shouldRun = pauseStartTime == nil
+        let vpioChanged = decision.voiceProcessingEnabled != appliedVoiceProcessing
+
+        // Toggling VPIO requires a fully stopped engine; a device-only change can
+        // use the cheaper pause.
+        if vpioChanged { engine.stop() } else { engine.pause() }
+
         let inputNode = engine.inputNode
         inputNode.removeTap(onBus: 0)
 
+        let targetUIDOrNil = decision.targetDeviceUID.isEmpty ? nil : decision.targetDeviceUID
+        var deviceApplied = true
         do {
-            try AudioInputDeviceManager.applyInputDevice(uid: newUID, to: engine)
+            try AudioInputDeviceManager.applyInputDevice(uid: targetUIDOrNil, to: engine)
         } catch {
-            log.warning("Hot-swap: failed to set input device: \(error.localizedDescription, privacy: .public)")
+            deviceApplied = false
+            log.warning("Reconfigure: applyInputDevice failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        if vpioChanged {
+            do {
+                try inputNode.setVoiceProcessingEnabled(decision.voiceProcessingEnabled)
+            } catch {
+                log.warning("Reconfigure: setVoiceProcessingEnabled failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
 
         let newFormat = inputNode.outputFormat(forBus: 0)
         guard newFormat.sampleRate > 0 else {
-            log.error("Hot-swap: new device reports invalid format; attempting to resume previous device")
-            try? engine.start()
+            log.error("Reconfigure: new device reports invalid format; attempting to restore")
+            if shouldRun { try? engine.start() }
             throw AudioCaptureError.noMicrophoneAccess
         }
 
-        let handler: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
-        if let established = writer.establishedFormat,
-           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount),
-           let converter = MicFormatConverter(from: newFormat, to: established) {
-            log.info("Hot-swap: converting \(newFormat.sampleRate, privacy: .public)Hz/\(newFormat.channelCount, privacy: .public)ch → \(established.sampleRate, privacy: .public)Hz/\(established.channelCount, privacy: .public)ch")
-            handler = Self.makeConvertingMicHandler(writer: writer, converter: converter, liveSink: micLiveContinuation)
-        } else {
-            handler = Self.makeMicHandler(writer: writer, liveSink: micLiveContinuation)
+        let handler = Self.selectMicHandler(writer: writer, newFormat: newFormat, liveSink: micLiveContinuation)
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
+        if shouldRun { try engine.start() }
+
+        // Record the achieved state so the snapshot stays truthful AND the
+        // reconfigure converges — a snapshot that can never match the desired state
+        // would re-fire a full engine restart on every later benign config event.
+        //
+        // Device: only adopt the target if the switch actually took; on failure the
+        // engine kept its previous device, so leave the snapshot unchanged.
+        if deviceApplied { appliedInputUID = decision.targetDeviceUID }
+        // VPIO: if the toggle refused (the route can't do Voice Processing), record
+        // the DESIRED value rather than the stuck readback, so benign config events
+        // don't keep retrying an impossible toggle. A genuine route change recomputes
+        // a fresh target and retries then (turning VPIO *off* always succeeds).
+        let achievedVPIO = inputNode.isVoiceProcessingEnabled
+        if vpioChanged, achievedVPIO != decision.voiceProcessingEnabled {
+            log.warning("Reconfigure: VPIO stuck at \(achievedVPIO, privacy: .public); suppressing retry until route changes")
+        }
+        appliedVoiceProcessing = vpioChanged ? decision.voiceProcessingEnabled : achievedVPIO
+        log.info("Reconfigure: applied device=\(self.appliedInputUID.isEmpty ? "default" : self.appliedInputUID, privacy: .public) vpio=\(self.appliedVoiceProcessing, privacy: .public)")
+    }
+
+    // MARK: - Device/route change observers
+
+    private func installChangeObservers() {
+        guard let engine = micEngine else { return }
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.scheduleReconfigure() }
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
-        try engine.start()
-        log.info("Hot-swap: switched mic input device")
+        let monitor = DefaultOutputDeviceMonitor { [weak self] in
+            Task { @MainActor [weak self] in self?.scheduleReconfigure() }
+        }
+        monitor.start()
+        outputMonitor = monitor
+    }
+
+    private func removeChangeObservers() {
+        if let token = configChangeObserver {
+            NotificationCenter.default.removeObserver(token)
+            configChangeObserver = nil
+        }
+        outputMonitor?.stop()
+        outputMonitor = nil
+        reconfigureDebounceTask?.cancel()
+        reconfigureDebounceTask = nil
+    }
+
+    /// Coalesces the burst of events a single device connect/disconnect produces,
+    /// then reconfigures once if the desired state differs from what's applied.
+    private func scheduleReconfigure() {
+        reconfigureDebounceTask?.cancel()
+        reconfigureDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.reconfigureDebounceInterval)
+            guard !Task.isCancelled, let self else { return }
+            // Don't churn a paused engine — `resumeRecording` reconciles on resume.
+            guard self.isCapturing, self.pauseStartTime == nil else { return }
+            let decision = self.computeDecision()
+            guard decision.needsReconfigure else { return }
+            let previousUID = self.appliedInputUID
+            let previousVPIO = self.appliedVoiceProcessing
+            do {
+                try self.applyReconfigure(decision)
+                self.emitStatusNote(from: previousUID, previousVPIO: previousVPIO, decision: decision)
+            } catch {
+                log.error("Auto reconfigure failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func emitStatusNote(from previousUID: String, previousVPIO: Bool, decision: MicReconfigureDecision) {
+        let note: String
+        if decision.targetDeviceUID != previousUID {
+            note = "Switched to \(Self.deviceLabel(for: decision.targetDeviceUID))"
+        } else if decision.voiceProcessingEnabled != previousVPIO {
+            note = decision.voiceProcessingEnabled
+                ? "Echo cancellation re-enabled"
+                : "Echo cancellation off — headphones detected"
+        } else {
+            return
+        }
+        statusNoteHandler?(note)
+    }
+
+    /// Human label for a device UID; resolves the actual default device name when empty.
+    private static func deviceLabel(for uid: String) -> String {
+        if uid.isEmpty {
+            return AudioInputDeviceManager.defaultInputDeviceName() ?? "System Default"
+        }
+        return AudioInputDeviceManager.availableInputDevices().first { $0.uid == uid }?.displayName ?? "microphone"
     }
 
     // MARK: - Helpers
