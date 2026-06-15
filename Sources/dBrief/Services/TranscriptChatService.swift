@@ -13,9 +13,11 @@ final class TranscriptChatService {
 
     /// Provides the transcript text at send-time. A closure (rather than a stored
     /// string) so the chat can read a *live, growing* transcript during recording —
-    /// each `send()` rebuilds the prompt from the current snapshot.
-    private let transcriptProvider: @MainActor () -> String
-    private let speakerLabels: [SpeakerLabel]
+    /// each `send()` rebuilds the prompt from the current snapshot. Mutable so a live
+    /// chat can be re-pointed at the authoritative transcript when recording finishes
+    /// (see `rebindTranscript`).
+    private var transcriptProvider: @MainActor () -> String
+    private var speakerLabels: [SpeakerLabel]
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService = AIService()
@@ -81,6 +83,19 @@ final class TranscriptChatService {
         messages = []
         streamingError = nil
     }
+
+    /// Re-point this chat at a fixed transcript while keeping the conversation so far.
+    /// Used when a live recording finishes: the in-memory live preview is gone, so the
+    /// chat switches to the authoritative on-disk transcript, but the live Q&A history
+    /// is preserved (those earlier answers were grounded in the rough live preview).
+    func rebindTranscript(text: String, speakerLabels: [SpeakerLabel]) {
+        transcriptProvider = { text }
+        self.speakerLabels = speakerLabels
+    }
+
+    /// True once the conversation has at least one exchange — used to decide whether a
+    /// finished recording should preserve and reopen the carried-over live chat.
+    var hasHistory: Bool { !messages.isEmpty }
 
     /// Warms the on-device model when the chat panel opens so the first answer streams
     /// sooner. No-op unless Apple Intelligence is the active (or fallback) chat engine.

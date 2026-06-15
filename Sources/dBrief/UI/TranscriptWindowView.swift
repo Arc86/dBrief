@@ -25,6 +25,10 @@ struct TranscriptDetailView: View {
     private enum ViewerMode { case summary, transcript, chat }
     @State private var mode: ViewerMode = .transcript
 
+    /// In live mode, chat is a right-hand side panel (so the in-progress transcript
+    /// stays visible) rather than a full-screen swap like the finished-recording view.
+    @State private var showLiveChat = false
+
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
     @State private var currentTime: TimeInterval = 0
@@ -86,12 +90,16 @@ struct TranscriptDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             if isLive {
-                // In-progress recording: show the real-time live transcript, but let
-                // Chat mode reach the live chat (which reads the growing transcript).
-                if mode == .chat {
-                    chatContent
-                } else {
+                // In-progress recording: keep the real-time transcript visible and
+                // slide chat in as a right-hand side panel, so you can watch the
+                // transcript grow while chatting with it.
+                HStack(spacing: 0) {
                     liveTranscriptContent
+                        .frame(maxWidth: .infinity)
+                    if showLiveChat {
+                        Divider()
+                        liveChatPanel
+                    }
                 }
             } else if loadFailed {
                 failedState
@@ -111,11 +119,24 @@ struct TranscriptDetailView: View {
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
         .onChange(of: context.appState.recordingState) { _, newState in
-            // When the live recording finishes processing, swap the live preview
-            // for the authoritative on-disk transcript and drop the live chat session.
+            // When the live recording finishes, swap the live preview for the
+            // authoritative on-disk transcript. Keep a non-empty live chat and
+            // re-point it at that transcript (so the Q&A history carries over);
+            // drop an empty one so a fresh chat is built against the final text.
             guard newState == .idle, context.appState.currentRecording?.id == recording.id else { return }
-            chatStore.remove(for: recording.fileURL)
-            Task { await loadTranscript() }
+            showLiveChat = false
+            let liveChat = chatStore.session(for: recording.fileURL)
+            if liveChat?.hasHistory != true {
+                chatStore.remove(for: recording.fileURL)
+            }
+            Task {
+                await loadTranscript()
+                if let liveChat, liveChat.hasHistory {
+                    let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+                        ?? recording.transcription?.text ?? ""
+                    liveChat.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                }
+            }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
         .confirmationDialog("Delete this recording?",
@@ -206,9 +227,24 @@ struct TranscriptDetailView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .principal) {
-            modeButton(.summary, systemImage: "doc.text", help: "Summary")
-            modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
-            modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+            if isLive {
+                // Live recording: a single chat toggle that slides the chat panel in
+                // beside the transcript, instead of the summary/transcript/chat tabs.
+                Button {
+                    showLiveChat.toggle()
+                    if showLiveChat, chatService == nil { buildChatService() }
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .symbolVariant(showLiveChat ? .fill : .none)
+                        .foregroundStyle(showLiveChat ? Color.accentColor : Color.secondary)
+                }
+                .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
+                .accessibilityAddTraits(showLiveChat ? .isSelected : [])
+            } else {
+                modeButton(.summary, systemImage: "doc.text", help: "Summary")
+                modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
+                modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+            }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -421,6 +457,37 @@ struct TranscriptDetailView: View {
     }
 
     // MARK: - Live transcript
+
+    /// Chat as a right-hand side panel during live recording — reuses `chatContent`
+    /// (so it runs against the live transcript provider) inside a fixed-width column
+    /// with its own header + close button, keeping the live transcript visible.
+    private var liveChatPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .foregroundStyle(.secondary)
+                Text("Chat")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    showLiveChat = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Hide chat")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+            Divider()
+            chatContent
+        }
+        .frame(width: 360)
+    }
 
     @ViewBuilder
     private var liveTranscriptContent: some View {
