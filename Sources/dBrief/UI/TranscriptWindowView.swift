@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import OSLog
 
-/// Right-hand detail pane of the transcript browser: a single flat transcript
-/// (speaker label + line), a speaker-chip bar, a waveform player, and a toolbar
-/// whose chat toggle swaps the transcript for the AI chat view.
+/// Right-hand detail pane of the recording viewer. A calm shared document header
+/// sits above one of three views — Summary, Transcript, or Chat — switched from
+/// the toolbar. The active view is data-driven on open: Summary when a summary
+/// exists, otherwise Transcript.
 struct TranscriptDetailView: View {
     let recording: Recording
     /// Called after the recording's files are deleted, so the browser can drop
@@ -20,15 +21,18 @@ struct TranscriptDetailView: View {
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
     @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
 
+    /// Which of the three views is showing.
+    private enum ViewerMode { case summary, transcript, chat }
+    @State private var mode: ViewerMode = .transcript
+
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
-    @State private var showChat = false
-    @State private var showAnalysis = false
     @State private var insights: RecordingInsights?
     @State private var copied = false
     @State private var showDeleteConfirm = false
+    @State private var isGenerating = false
 
     // Speaker rename
     @State private var renamingSpeakerId: String?
@@ -56,24 +60,25 @@ struct TranscriptDetailView: View {
         return result
     }
 
+    private var meSpeakerId: String? { richTranscript?.meSpeakerId }
+
+    private var hasSummary: Bool {
+        guard let s = insights?.summary else { return false }
+        return !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if loadFailed {
                 failedState
-            } else if showAnalysis {
-                TranscriptAnalysisView(insights: insights) { updated in
-                    await saveInsights(updated)
-                }
-            } else if showChat {
-                chatContent
             } else if richTranscript != nil {
-                if showSpeakerNames, !uniqueSpeakerIds.isEmpty {
-                    speakerChipBar
-                    Divider()
-                }
-                transcriptList
+                documentHeader
                 Divider()
-                playerBar
+                switch mode {
+                case .summary:    summaryBody
+                case .transcript: transcriptBody
+                case .chat:       chatContent
+                }
             } else {
                 loadingState
             }
@@ -110,6 +115,43 @@ struct TranscriptDetailView: View {
         }
     }
 
+    // MARK: - Document header
+
+    private var documentHeader: some View {
+        RecordingDocumentHeader(
+            title: recording.generatedTitle ?? recording.meetingTitleDraft,
+            sentiment: insights?.sentiment,
+            speakers: headerSpeakers,
+            date: recording.date,
+            metrics: headerMetrics
+        )
+    }
+
+    private var headerSpeakers: [HeaderSpeaker] {
+        // Respect the "Speaker Names" display toggle: when off, the header avatar
+        // stack hides too, matching the transcript rows.
+        guard showSpeakerNames else { return [] }
+        return uniqueSpeakerIds.map { id in
+            HeaderSpeaker(id: id, name: displayName(for: id), isMe: id == meSpeakerId)
+        }
+    }
+
+    /// Borderless metric group, built as a filtered array so dividers are always
+    /// correct: a metric appears only when its data exists.
+    private var headerMetrics: [ViewerMetric] {
+        var metrics: [ViewerMetric] = []
+        if let insights, !insights.actionItems.isEmpty {
+            metrics.append(ViewerMetric(id: "actions", label: "Actions", value: "\(insights.actionItems.count)"))
+        }
+        if let insights, !insights.tags.isEmpty {
+            metrics.append(ViewerMetric(id: "tags", label: "Tags", value: "\(insights.tags.count)"))
+        }
+        if recording.duration > 0 {
+            metrics.append(ViewerMetric(id: "audio", label: "Audio", value: recording.formattedDuration))
+        }
+        return metrics
+    }
+
     private var diarizingOverlay: some View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
@@ -132,25 +174,13 @@ struct TranscriptDetailView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .principal) {
+            modeButton(.summary, systemImage: "doc.text", help: "Summary")
+            modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
+            modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+        }
+
         ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                toggleAnalysis()
-            } label: {
-                Image(systemName: "chart.bar.doc.horizontal")
-                    .symbolVariant(showAnalysis ? .fill : .none)
-                    .foregroundStyle(showAnalysis ? Color.accentColor : Color.secondary)
-            }
-            .help(showAnalysis ? "Show transcript" : "Show AI analysis")
-
-            Button {
-                toggleChat()
-            } label: {
-                Image(systemName: "bubble.left")
-                    .symbolVariant(showChat ? .fill : .none)
-                    .foregroundStyle(showChat ? Color.accentColor : Color.secondary)
-            }
-            .help(showChat ? "Show transcript" : "Chat with transcript")
-
             Button {
                 copyTranscript()
             } label: {
@@ -188,36 +218,48 @@ struct TranscriptDetailView: View {
         }
     }
 
-    // MARK: - Speaker chip bar
-
-    private var speakerChipBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(uniqueSpeakerIds, id: \.self) { id in
-                    SpeakerPillView(speakerId: id, displayName: displayName(for: id)) {
-                        speakerRenameText = displayName(for: id)
-                        renamingSpeakerId = id
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+    private func modeButton(_ target: ViewerMode, systemImage: String, help: String) -> some View {
+        let active = mode == target
+        return Button {
+            mode = target
+            if target == .chat, chatService == nil { buildChatService() }
+        } label: {
+            Image(systemName: systemImage)
+                .symbolVariant(active ? .fill : .none)
+                .foregroundStyle(active ? Color.accentColor : Color.secondary)
         }
-        .background(.bar)
+        .help(help)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    // MARK: - Summary
+
+    private var summaryBody: some View {
+        SummaryView(
+            insights: insights,
+            isGenerating: isGenerating,
+            canGenerate: richTranscript != nil,
+            onGenerate: { Task { await generateSummary() } },
+            onSave: { updated in await saveInsights(updated) }
+        )
     }
 
     // MARK: - Transcript
+
+    private var transcriptBody: some View {
+        VStack(spacing: 0) {
+            transcriptList
+            Divider()
+            playerBar
+        }
+    }
 
     private var transcriptList: some View {
         ScrollViewReader { proxy in
             List {
                 ForEach(displayedTurns) { turn in
                     transcriptRow(turn)
-                        .listRowBackground(
-                            isTurnActive(turn)
-                                ? Color.accentColor.opacity(0.12)
-                                : Color.clear
-                        )
+                        .listRowBackground(rowBackground(turn))
                         .id(turn.id)
                 }
             }
@@ -233,34 +275,72 @@ struct TranscriptDetailView: View {
         }
     }
 
+    private func rowBackground(_ turn: SpeakerTurn) -> Color {
+        if isTurnActive(turn) { return Color.accentColor.opacity(0.14) }
+        if turn.speakerId != nil, turn.speakerId == meSpeakerId {
+            return Color.accentColor.opacity(0.05)
+        }
+        return Color.clear
+    }
+
     @ViewBuilder
     private func transcriptRow(_ turn: SpeakerTurn) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            if showSpeakerNames, let id = turn.speakerId {
-                speakerLabel(id: id)
+        let isMe = turn.speakerId != nil && turn.speakerId == meSpeakerId
+        let railColor = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: turn.speakerId)
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(railColor)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    if showSpeakerNames, let id = turn.speakerId {
+                        speakerLabel(id: id, isMe: isMe)
+                    }
+                    Button {
+                        seek(to: turn.startTime)
+                    } label: {
+                        Text(timecode(turn.startTime))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(TranscriptDesignTokens.timestampText(scheme: colorScheme))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Jump to this point")
+                }
+                Text(turn.text)
+                    .font(.system(size: CGFloat(fontSize)))
+                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+                    .lineSpacing(CGFloat(fontSize) * 0.4)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text(turn.text)
-                .font(.system(size: CGFloat(fontSize)))
-                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-                .lineSpacing(CGFloat(fontSize) * 0.4)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture { seek(to: turn.startTime) }
     }
 
-    private func speakerLabel(id: String) -> some View {
+    private func speakerLabel(id: String, isMe: Bool) -> some View {
         Menu {
             Button("Rename…") {
                 speakerRenameText = displayName(for: id)
                 renamingSpeakerId = id
             }
+            if isMe {
+                Button("Clear “This is me”") { setMeSpeaker(nil) }
+            } else {
+                Button("This is me") { setMeSpeaker(id) }
+            }
         } label: {
-            Text(displayName(for: id))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(TranscriptDesignTokens.speakerColor(for: id))
+            HStack(spacing: 4) {
+                Text(displayName(for: id))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: id))
+                if isMe {
+                    Text("· You")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -268,6 +348,11 @@ struct TranscriptDetailView: View {
 
     private func displayName(for id: String) -> String {
         richTranscript?.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
+    }
+
+    private func timecode(_ time: TimeInterval) -> String {
+        let total = Int(time)
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Player
@@ -358,21 +443,6 @@ struct TranscriptDetailView: View {
 
     // MARK: - Actions
 
-    private func toggleChat() {
-        showChat.toggle()
-        if showChat {
-            showAnalysis = false
-            if chatService == nil { buildChatService() }
-        }
-    }
-
-    private func toggleAnalysis() {
-        showAnalysis.toggle()
-        if showAnalysis {
-            showChat = false
-        }
-    }
-
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
         currentTime >= turn.startTime && currentTime < turn.endTime
     }
@@ -381,6 +451,13 @@ struct TranscriptDetailView: View {
         guard let audioURL = recording.finalizedAudioURL else { return }
         if audioPlayer.currentFileURL != audioURL { audioPlayer.play(url: audioURL) }
         audioPlayer.seek(to: time)
+    }
+
+    private func setMeSpeaker(_ id: String?) {
+        guard var transcript = richTranscript else { return }
+        transcript.meSpeakerId = id
+        richTranscript = transcript
+        saveTranscript(transcript)
     }
 
     private func renameSpeaker(speakerId: String, displayName: String) {
@@ -412,6 +489,16 @@ struct TranscriptDetailView: View {
         } catch {
             diarizeError = error.localizedDescription
         }
+    }
+
+    /// Re-runs the AI pipeline for this recording, then reloads the new insights.
+    private func generateSummary() async {
+        guard !isGenerating else { return }
+        isGenerating = true
+        defer { isGenerating = false }
+        await context.recordingManager.retryAIAnalysis(for: recording)
+        await loadInsights()
+        if hasSummary { mode = .summary }
     }
 
     private func copyTranscript() {
@@ -502,30 +589,38 @@ struct TranscriptDetailView: View {
     private func loadTranscript() async {
         richTranscript = nil
         loadFailed = false
-        showAnalysis = false
         insights = nil
         await loadInsights()
 
         // Restore any in-progress chat session for this recording.
+        var resumedChat = false
         if let existing = chatStore.session(for: recording.fileURL) {
             chatService = existing
-            if !existing.messages.isEmpty { showChat = true }
+            if !existing.messages.isEmpty { resumedChat = true }
         } else {
             chatService = nil
         }
 
         if let cached = recording.richTranscript {
             richTranscript = cached
-            return
-        }
-        do {
-            richTranscript = try await context.transcriptStore.load(for: recording)
-        } catch {
-            if let result = recording.transcription {
-                richTranscript = RichTranscriptBuilder().build(from: result)
-            } else {
-                loadFailed = true
+        } else {
+            do {
+                richTranscript = try await context.transcriptStore.load(for: recording)
+            } catch {
+                if let result = recording.transcription {
+                    richTranscript = RichTranscriptBuilder().build(from: result)
+                } else {
+                    loadFailed = true
+                }
             }
+        }
+
+        // Data-driven default view: an in-progress chat wins; otherwise Summary
+        // when one exists, else Transcript.
+        if resumedChat {
+            mode = .chat
+        } else {
+            mode = hasSummary ? .summary : .transcript
         }
     }
 
