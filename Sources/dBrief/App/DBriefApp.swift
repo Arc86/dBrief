@@ -24,6 +24,7 @@ final class AppContext {
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
     let whisperPrewarmCoordinator: WhisperPrewarmCoordinator
+    let watchedFolderService: WatchedFolderService
     private var permissionsChecked = false
 
     init() {
@@ -39,6 +40,9 @@ final class AppContext {
 
         self.whisperPrewarmCoordinator = WhisperPrewarmCoordinator(
             appSettings: appSettings, plugin: recordingManager.localPlugin)
+
+        self.watchedFolderService = WatchedFolderService(
+            appSettings: appSettings, recordingManager: recordingManager)
 
         // Start power state monitoring for queue processing nudge
         self.powerStateMonitor = PowerStateMonitor(appState: appState, recordingManager: recordingManager)
@@ -101,6 +105,9 @@ final class AppContext {
         await runRetentionCleanupIfNeeded()
 
         whisperPrewarmCoordinator.scheduleLaunchPrewarm()
+
+        // Start the watched-folders poller (self-gates on the master toggle/list).
+        watchedFolderService.start()
 
         log.info("Ready")
     }

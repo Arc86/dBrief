@@ -6,23 +6,25 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab? = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general      = "General"
-        case recording    = "Recording"
-        case aiAndModels  = "AI & Models"
-        case integrations = "Integrations"
-        case profiles     = "Profiles"
-        case benchmark    = "Benchmark"
-        case permissions  = "Permissions"
+        case general        = "General"
+        case recording      = "Recording"
+        case aiAndModels    = "AI & Models"
+        case watchedFolders = "Watched Folders"
+        case integrations   = "Integrations"
+        case profiles       = "Profiles"
+        case benchmark      = "Benchmark"
+        case permissions    = "Permissions"
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .general:      "gear"
-            case .permissions:  "lock.shield"
-            case .recording:    "mic"
-            case .aiAndModels:  "brain"
-            case .integrations: "puzzlepiece.extension"
-            case .profiles:     "person.3"
-            case .benchmark:    "speedometer"
+            case .general:        "gear"
+            case .permissions:    "lock.shield"
+            case .recording:      "mic"
+            case .aiAndModels:    "brain"
+            case .watchedFolders: "folder.badge.gearshape"
+            case .integrations:   "puzzlepiece.extension"
+            case .profiles:       "person.3"
+            case .benchmark:      "speedometer"
             }
         }
     }
@@ -62,6 +64,7 @@ struct SettingsView: View {
                 case .permissions:  SettingsPermissionsTab()
                 case .recording:    SettingsRecordingTab()
                 case .aiAndModels:  SettingsAIModelsTab()
+                case .watchedFolders: SettingsWatchedFoldersTab()
                 case .integrations: SettingsIntegrationsTab()
                 case .profiles:     SettingsProfilesTab()
                 case .benchmark:    SettingsBenchmarkTab()

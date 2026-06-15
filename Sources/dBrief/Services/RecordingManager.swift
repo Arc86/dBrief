@@ -915,6 +915,55 @@ final class RecordingManager {
         appState.showPostRecordingSheet = true
     }
 
+    // MARK: - Watched Folders
+
+    /// Headlessly transcribe + analyze a file dropped into a watched folder, using the
+    /// global auto-processing preferences. The user's original file is left untouched: it's
+    /// copied into a temp location and imported (relocated) into the recordings folder via
+    /// the same path as YouTube imports, so it lands in History with outputs in dBrief's
+    /// folders rather than scattering sidecars next to the source.
+    func processWatchedFile(_ sourceURL: URL) async {
+        guard appState.recordingState == .idle else { return }
+
+        let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("watched-\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        } catch {
+            appState.lastError = "Watched folder: couldn't read \(sourceURL.lastPathComponent). \(error.localizedDescription)"
+            return
+        }
+
+        let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path)
+        let size = (attrs?[.size] as? Int64) ?? 0
+        let title = sourceURL.deletingPathExtension().lastPathComponent
+
+        let recording = Recording(
+            fileURL: sourceURL,
+            fileSize: size,
+            meetingTitleDraft: title
+        )
+        recording.importSourceURL = tempURL
+        recording.duration = await durationSeconds(for: tempURL)
+
+        // Re-check idleness: the user may have started a recording while we awaited
+        // AVFoundation's duration probe. Don't clobber a live recording's state.
+        guard appState.recordingState == .idle else {
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
+        appState.currentRecording = recording
+
+        await processRecording(
+            transcribe: appSettings.autoTranscribe,
+            summary: appSettings.autoSummary && appSettings.autoTranscribe,
+            actionItems: appSettings.autoActionItems && appSettings.autoTranscribe,
+            tags: appSettings.autoTags && appSettings.autoTranscribe
+        )
+    }
+
     func skipProcessing() async {
         if let recording = appState.currentRecording {
             do {
@@ -1009,6 +1058,12 @@ final class RecordingManager {
     /// True when models may be downloaded (no active recording/processing that
     /// would contend for the GPU mutex and the shared state stream).
     var canDownloadModels: Bool {
+        appState.recordingState == .idle
+    }
+
+    /// True when no recording or processing is in flight — safe for the watched-folder
+    /// poller to start a headless transcription.
+    var isIdle: Bool {
         appState.recordingState == .idle
     }
 
