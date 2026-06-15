@@ -83,4 +83,81 @@ struct TranscriptCleanupTests {
         let cleaned = TranscriptCleanup.clean(result, removeFillerWords: false)
         #expect(cleaned.segments[0].words?.count == 2)
     }
+
+    // MARK: - Ignored segments
+
+    @Test("Strips asterisk-wrapped stage directions")
+    func stripsAsteriskAnnotations() {
+        let out = TranscriptCleanup.cleanText("Hello *music* there *laughs*", fillerWords: [])
+        #expect(out == "Hello there")
+    }
+
+    @Test("Strips leading and trailing dash runs")
+    func stripsBoundaryDashes() {
+        #expect(TranscriptCleanup.cleanText("- Hello world", fillerWords: []) == "Hello world")
+        #expect(TranscriptCleanup.cleanText("Hello world —", fillerWords: []) == "Hello world")
+        #expect(TranscriptCleanup.cleanText("— Right —", fillerWords: []) == "Right")
+    }
+
+    @Test("Keeps mid-sentence hyphens")
+    func keepsInnerHyphens() {
+        let out = TranscriptCleanup.cleanText("A well-known follow-up", fillerWords: [])
+        #expect(out == "A well-known follow-up")
+    }
+
+    @Test("normalizeForIgnoreMatch is case/punctuation/whitespace insensitive")
+    func ignoreNormalization() {
+        #expect(TranscriptCleanup.normalizeForIgnoreMatch("Thank you for watching!") == "thank you for watching")
+        #expect(TranscriptCleanup.normalizeForIgnoreMatch("  THANKS   for  watching. ") == "thanks for watching")
+    }
+
+    @Test("clean() drops whole segments matching an ignored phrase")
+    func dropsIgnoredSegments() {
+        let result = TranscriptionResult(
+            text: "Let's begin. Thank you for watching!",
+            segments: [
+                .init(start: 0, end: 2, text: "Let's begin."),
+                .init(start: 2, end: 4, text: "Thank you for watching!"),
+            ]
+        )
+        let ignored: Set<String> = ["thank you for watching"]
+        let cleaned = TranscriptCleanup.clean(result, removeFillerWords: false, ignoredSegments: ignored)
+        #expect(cleaned.segments.count == 1)
+        #expect(cleaned.segments[0].text == "Let's begin.")
+        #expect(cleaned.text == "Let's begin.")
+    }
+
+    @Test("clean() keeps real speech that merely contains an ignored phrase")
+    func keepsPartialMatches() {
+        let result = TranscriptionResult(
+            text: "I wanted to thank you for watching the demo earlier.",
+            segments: [.init(start: 0, end: 3, text: "I wanted to thank you for watching the demo earlier.")]
+        )
+        let cleaned = TranscriptCleanup.clean(result, removeFillerWords: false,
+                                              ignoredSegments: ["thank you for watching"])
+        #expect(cleaned.segments.count == 1)
+    }
+
+    @Test("clean() does nothing when ignore set is empty (back-compat)")
+    func noIgnoreWhenEmpty() {
+        let result = TranscriptionResult(
+            text: "Thank you for watching",
+            segments: [.init(start: 0, end: 1, text: "Thank you for watching")]
+        )
+        let cleaned = TranscriptCleanup.clean(result, removeFillerWords: false)
+        #expect(cleaned.segments.count == 1)
+        #expect(cleaned.text == "Thank you for watching")
+    }
+
+    @Test("Default ignore list catches a bracket-free music annotation after cleanup")
+    func defaultListCatchesMusic() {
+        let ignored = Set(TranscriptCleanup.defaultIgnoredSegments.map(TranscriptCleanup.normalizeForIgnoreMatch))
+        // "[Music]" is bracket-stripped to empty (dropped as empty); a bare "Music." relies on the list.
+        let result = TranscriptionResult(
+            text: "Music.",
+            segments: [.init(start: 0, end: 1, text: "Music.")]
+        )
+        let cleaned = TranscriptCleanup.clean(result, removeFillerWords: false, ignoredSegments: ignored)
+        #expect(cleaned.segments.isEmpty)
+    }
 }

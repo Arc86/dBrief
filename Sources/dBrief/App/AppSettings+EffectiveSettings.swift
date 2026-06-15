@@ -28,6 +28,13 @@ extension AppSettings {
         removeFillerWords
     }
 
+    /// Resolved ignored-segment phrases (built-in defaults + user custom), or empty when the
+    /// feature is disabled. Global preference; exposed as `effective…` for call-site uniformity.
+    var effectiveIgnoredSegments: Set<String> {
+        guard removeIgnoredSegments else { return [] }
+        return Set(TranscriptCleanup.defaultIgnoredSegments).union(customIgnoredSegments)
+    }
+
     var effectiveTranscriptionEngine: TranscriptionEngine {
         activeProfile.overrides.transcriptionEngine ?? transcriptionEngine
     }

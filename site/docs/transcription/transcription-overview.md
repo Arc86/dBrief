@@ -29,7 +29,11 @@ When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker d
 
 ## Cleanup
 
-After transcription, dBrief always tidies the text — stripping stray markup and non-speech annotations (like `[BLANK_AUDIO]`) that speech models sometimes emit. Under **Settings → Transcription → Cleanup** you can also turn on **Remove filler words** (um, uh, …); it's off by default so meeting transcripts stay verbatim.
+After transcription, dBrief always tidies the text — stripping stray markup and non-speech annotations (like `[BLANK_AUDIO]` or `*music*`) that speech models sometimes emit.
+
+**Filter ignored segments** (on by default) drops whole lines that exactly match a known filler phrase — the silence-hallucinations speech models love to invent, like "Thank you for watching", "Subscribe to the channel", or "♪". It only removes a segment when the *entire* line matches, so real speech that happens to contain one of these phrases is always kept. dBrief ships a curated, meeting-safe list of these phrases, and you can add your own (or reset back to the defaults) under **Settings → Transcription → Cleanup**.
+
+In the same place you can turn on **Remove filler words** (um, uh, …); it's off by default so meeting transcripts stay verbatim.
 
 ## Long recordings
 

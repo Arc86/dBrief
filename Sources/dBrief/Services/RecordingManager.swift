@@ -1676,8 +1676,13 @@ final class RecordingManager {
             )
         }
         // Engine-agnostic cleanup: always strip hallucination/markup noise; strip filler
-        // words only when the user opted in. Applies uniformly across all engines.
-        let cleaned = TranscriptCleanup.clean(raw, removeFillerWords: appSettings.effectiveRemoveFillerWords)
+        // words only when the user opted in; drop ignored-phrase segments (Whisper
+        // silence-hallucinations) when enabled. Applies uniformly across all engines.
+        let cleaned = TranscriptCleanup.clean(
+            raw,
+            removeFillerWords: appSettings.effectiveRemoveFillerWords,
+            ignoredSegments: appSettings.effectiveIgnoredSegments
+        )
 
         // Vocabulary spelling: re-spell the user's custom-vocabulary terms via the
         // AI engine (the reliable replacement for Whisper decoder-prompt biasing).
