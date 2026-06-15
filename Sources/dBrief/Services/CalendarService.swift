@@ -26,26 +26,31 @@ actor CalendarService {
         }
     }
 
-    /// Finds the calendar event best matching `date`, or nil if none matches or access is denied.
-    func findCurrentEvent(at date: Date) async -> CalendarEvent? {
+    /// Ranked calendar events plausibly matching the recording span `[recordingStart, recordingEnd]`,
+    /// best-first. Empty if access is denied. Matching at recording stop (rather than start) lets
+    /// `CalendarMatcher` score candidates against the true recording span.
+    func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-            return nil
+            return []
         }
 
         let predicate = store.predicateForEvents(
-            withStart: date.addingTimeInterval(-searchWindow),
-            end: date.addingTimeInterval(searchWindow),
+            withStart: recordingStart.addingTimeInterval(-searchWindow),
+            end: recordingEnd.addingTimeInterval(searchWindow),
             calendars: nil
         )
 
-        let ekEvents = store.events(matching: predicate)
-        let candidates = ekEvents.map { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.selectBestMatch(from: candidates, at: date)
+        let candidates = store.events(matching: predicate).compactMap { Self.makeCalendarEvent(from: $0) }
+        return CalendarMatcher.rankedMatches(
+            from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
+        )
     }
 
     /// Maps an EKEvent into our Sendable value type, extracting attendee names + emails,
-    /// the organizer, location, and a derived online/onsite signal.
-    private static func makeCalendarEvent(from ekEvent: EKEvent) -> CalendarEvent {
+    /// the organizer, location, and a derived online/onsite signal. Returns nil when the
+    /// event lacks usable start/end dates (it can't be scored against the recording span).
+    private static func makeCalendarEvent(from ekEvent: EKEvent) -> CalendarEvent? {
+        guard let start = ekEvent.startDate, let end = ekEvent.endDate else { return nil }
         let attendees: [CalendarEvent.Person] = (ekEvent.attendees ?? []).compactMap(makePerson)
         let location = ekEvent.location?.trimmingCharacters(in: .whitespacesAndNewlines)
         let notes = ekEvent.notes ?? ""
@@ -57,14 +62,16 @@ actor CalendarService {
         let isOnline = CalendarEvent.looksOnline(onlineHint) ? true : nil
 
         return CalendarEvent(
+            uid: ekEvent.eventIdentifier,
             title: ekEvent.title ?? "",
             attendees: attendees,
             organizer: ekEvent.organizer.flatMap(makePerson),
             body: notes,
             location: (location?.isEmpty == false) ? location : nil,
             isOnline: isOnline,
-            startDate: ekEvent.startDate ?? Date(),
-            endDate: ekEvent.endDate ?? Date()
+            isAllDay: ekEvent.isAllDay,
+            startDate: start,
+            endDate: end
         )
     }
 

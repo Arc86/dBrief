@@ -10,24 +10,31 @@ actor OutlookCalendarService {
         self.authService = authService
     }
 
-    func findCurrentEvent(at date: Date) async -> CalendarEvent? {
+    /// Ranked calendar events plausibly matching the recording span, best-first. Empty on failure.
+    func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
         do {
             let token = try await authService.getValidAccessToken()
-            return try await fetchEvents(at: date, token: token)
+            return try await fetchCandidates(
+                recordingStart: recordingStart, recordingEnd: recordingEnd, token: token
+            )
         } catch {
             Logger.calendar.error("Outlook calendar fetch failed: \(error.localizedDescription)")
-            return nil
+            return []
         }
     }
 
     // MARK: - Private
 
-    private func fetchEvents(at date: Date, token: String) async throws -> CalendarEvent? {
+    private func fetchCandidates(
+        recordingStart: Date,
+        recordingEnd: Date,
+        token: String
+    ) async throws -> [CalendarEvent] {
         var components = URLComponents(string: Self.calendarViewURL)!
         components.queryItems = [
-            URLQueryItem(name: "startDateTime", value: graphDateString(date.addingTimeInterval(-searchWindow))),
-            URLQueryItem(name: "endDateTime",   value: graphDateString(date.addingTimeInterval(searchWindow))),
-            URLQueryItem(name: "$select",       value: "subject,bodyPreview,body,attendees,organizer,location,isOnlineMeeting,start,end"),
+            URLQueryItem(name: "startDateTime", value: graphDateString(recordingStart.addingTimeInterval(-searchWindow))),
+            URLQueryItem(name: "endDateTime",   value: graphDateString(recordingEnd.addingTimeInterval(searchWindow))),
+            URLQueryItem(name: "$select",       value: "id,subject,bodyPreview,body,attendees,organizer,location,isOnlineMeeting,isAllDay,start,end"),
         ]
 
         var request = URLRequest(url: components.url!)
@@ -40,8 +47,10 @@ actor OutlookCalendarService {
         }
 
         let result = try JSONDecoder().decode(CalendarViewResponse.self, from: data)
-        let candidates = result.value.map { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.selectBestMatch(from: candidates, at: date)
+        let candidates = result.value.compactMap { Self.makeCalendarEvent(from: $0) }
+        return CalendarMatcher.rankedMatches(
+            from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
+        )
     }
 
     // MARK: - JSON types
@@ -51,6 +60,7 @@ actor OutlookCalendarService {
     }
 
     private struct GraphEvent: Decodable {
+        let id: String?
         let subject: String?
         let bodyPreview: String?
         let body: GraphItemBody?
@@ -58,6 +68,7 @@ actor OutlookCalendarService {
         let organizer: GraphAttendee?
         let location: GraphLocation?
         let isOnlineMeeting: Bool?
+        let isAllDay: Bool?
         let start: GraphDateTimeZone?
         let end: GraphDateTimeZone?
     }
@@ -86,7 +97,11 @@ actor OutlookCalendarService {
 
     // MARK: - Mapping
 
-    private static func makeCalendarEvent(from event: GraphEvent) -> CalendarEvent {
+    /// Returns nil when the event lacks parseable start/end dates (it can't be scored against
+    /// the recording span) — never silently defaulting to "now", which would corrupt matching.
+    private static func makeCalendarEvent(from event: GraphEvent) -> CalendarEvent? {
+        guard let start = parseGraphDate(event.start?.dateTime),
+              let end = parseGraphDate(event.end?.dateTime) else { return nil }
         let attendees = (event.attendees ?? []).compactMap { makePerson(from: $0.emailAddress) }
         let location = event.location?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -99,14 +114,16 @@ actor OutlookCalendarService {
         }
 
         return CalendarEvent(
+            uid: event.id,
             title: event.subject ?? "",
             attendees: attendees,
             organizer: makePerson(from: event.organizer?.emailAddress),
             body: agenda,
             location: (location?.isEmpty == false) ? location : nil,
             isOnline: event.isOnlineMeeting,
-            startDate: parseGraphDate(event.start?.dateTime),
-            endDate: parseGraphDate(event.end?.dateTime)
+            isAllDay: event.isAllDay ?? false,
+            startDate: start,
+            endDate: end
         )
     }
 
@@ -137,16 +154,23 @@ actor OutlookCalendarService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Graph calendarView returns UTC dates without 'Z': "2026-06-04T10:00:00.0000000"
-    private static func parseGraphDate(_ string: String?) -> Date {
-        guard let string else { return Date() }
+    /// Graph calendarView returns UTC dates without 'Z', with up to 7 fractional digits:
+    /// "2026-06-04T10:00:00.0000000". `DateFormatter`'s fractional-second support is only
+    /// reliable to milliseconds, so normalize by dropping any fractional part (sub-second
+    /// precision is irrelevant for minute-granularity calendar matching) and parse the
+    /// integer-seconds form. Returns nil on failure rather than defaulting to the current
+    /// date, which would silently corrupt span matching.
+    /// Internal (not private) so it can be unit-tested directly.
+    static func parseGraphDate(_ string: String?) -> Date? {
+        guard let string, !string.isEmpty else { return nil }
+        let normalized = string.replacingOccurrences(
+            of: "(\\.\\d+)?Z?$", with: "", options: .regularExpression
+        )
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSS"
-        if let d = f.date(from: string) { return d }
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return f.date(from: string) ?? Date()
+        return f.date(from: normalized)
     }
 
     /// ISO 8601 format expected by Graph query parameters.

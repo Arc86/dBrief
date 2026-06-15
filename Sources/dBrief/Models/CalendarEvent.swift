@@ -2,7 +2,7 @@ import Foundation
 
 /// A calendar event matched to a recording, carrying only the fields dBrief needs.
 /// EventKit / Microsoft Graph types are never exposed outside their services.
-struct CalendarEvent: Sendable, Equatable, Codable {
+struct CalendarEvent: Sendable, Equatable, Codable, Identifiable {
     /// A meeting participant: a display name and (when the calendar provides it) an email,
     /// which is the stable key for matching people downstream.
     struct Person: Sendable, Equatable, Codable {
@@ -17,6 +17,10 @@ struct CalendarEvent: Sendable, Equatable, Codable {
         }
     }
 
+    /// Source calendar identifier (EventKit `eventIdentifier` / Graph event `id`) when the
+    /// source exposes one. Recurring series share this across occurrences, so `id` also
+    /// folds in the start/end to keep distinct occurrences distinct.
+    let uid: String?
     let title: String
     let attendees: [Person]
     let organizer: Person?
@@ -24,27 +28,43 @@ struct CalendarEvent: Sendable, Equatable, Codable {
     let location: String?
     /// Whether the event is an online meeting (Zoom/Teams/Meet/etc.). nil when unknown.
     let isOnline: Bool?
+    /// Whether the event is an all-day block. Span-aware matching sinks these beneath any
+    /// timed event so a day-long personal block never wins over a real meeting it overlaps.
+    let isAllDay: Bool
     let startDate: Date
     let endDate: Date
 
     init(
+        uid: String? = nil,
         title: String,
         attendees: [Person],
         organizer: Person? = nil,
         body: String,
         location: String? = nil,
         isOnline: Bool? = nil,
+        isAllDay: Bool = false,
         startDate: Date,
         endDate: Date
     ) {
+        self.uid = uid
         self.title = title
         self.attendees = attendees
         self.organizer = organizer
         self.body = body
         self.location = location
         self.isOnline = isOnline
+        self.isAllDay = isAllDay
         self.startDate = startDate
         self.endDate = endDate
+    }
+
+    /// Stable identity for SwiftUI selection (the override picker tags candidates by this).
+    /// Prefers the source `uid` to disambiguate distinct same-title events, but always folds
+    /// in start/end so recurring occurrences (which share a uid) stay distinct.
+    var id: String {
+        let key = uid ?? title
+        let names = attendees.map(\.name).joined(separator: ",")
+        return "\(key)|\(startDate.timeIntervalSince1970)|\(endDate.timeIntervalSince1970)|\(names)"
     }
 
     /// Comma-separated attendee names, for pre-filling the participants field and mapping

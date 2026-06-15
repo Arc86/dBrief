@@ -1,16 +1,20 @@
 # Calendar Integration
 
-dBrief can look up the meeting on your calendar when a recording starts and use it to pre-fill details — so you don't have to type the title or participant names yourself.
+dBrief can match a recording to the meeting on your calendar and use it to pre-fill details — so you don't have to type the title or participant names yourself.
 
 ## What you get
 
-When a recording starts, dBrief finds the calendar event happening around that time and uses it to pre-fill:
+When a recording **stops**, dBrief finds the calendar event that best fits the recording and uses it to pre-fill:
 
 - **Title** — the meeting name, used in the filename and Markdown header
 - **Participants** — attendee names (used to label speakers when [diarization](../transcription/local-whisper.md) is on)
 - **Agenda context** — the event notes, used to give the AI more context for the summary
 
-You can always edit these in the post-recording sheet before processing.
+The match is chosen by how closely an event's time window fits the recording's actual span, with a preference for meetings that have invitees and a strong penalty for all-day blocks — so a day-long "Focus time" block never wins over the real 30-minute meeting it overlaps.
+
+## Picking a different meeting
+
+If more than one event is nearby, the post-recording sheet shows a **Meeting** picker listing the candidates (best match first) with a **None** option. Choosing one fills the title, participants, and AI context from that event; choosing **None** clears the calendar context without wiping anything you've typed. You can always edit any field in the post-recording sheet before processing.
 
 ## Calendar sources
 

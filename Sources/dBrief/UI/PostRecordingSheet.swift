@@ -4,7 +4,6 @@ struct PostRecordingSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(MicrosoftAuthService.self) private var microsoftAuthService
 
     @State private var transcribe = true
     @State private var summary = true
@@ -12,7 +11,6 @@ struct PostRecordingSheet: View {
     @State private var tags = true
     @State private var meetingTitle = ""
     @State private var participantsText = ""
-    private let calendarService = CalendarService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -49,6 +47,22 @@ struct PostRecordingSheet: View {
                         .frame(maxWidth: 220)
                 }
                 Text("Comma-separated names. Matched to speakers in order of first appearance.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let recording = appState.currentRecording, !recording.calendarCandidates.isEmpty {
+                LabeledContent("Meeting:") {
+                    Picker("Meeting", selection: calendarSelection(recording)) {
+                        Text("None").tag(String?.none)
+                        ForEach(recording.calendarCandidates) { event in
+                            Text(pickerLabel(event)).tag(Optional(event.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                }
+                Text("Pick the meeting this recording belongs to. Fills the title, participants, and AI context.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -177,32 +191,19 @@ struct PostRecordingSheet: View {
             } else {
                 meetingTitle = "meeting"
             }
-            if let recording = appState.currentRecording {
-                if let event = recording.calendarEvent {
-                    applyCalendarEvent(event, to: recording)
-                } else if appSettings.effectiveCalendarSource == .iCal {
-                    let started = recording.date
-                    Task { [weak recording] in
-                        guard let event = await calendarService.findCurrentEvent(at: started) else { return }
-                        await MainActor.run {
-                            guard let recording else { return }
-                            recording.calendarEvent = event
-                            applyCalendarEvent(event, to: recording)
-                        }
-                    }
-                } else if appSettings.effectiveCalendarSource == .outlook {
-                    let started = recording.date
-                    let outlookService = OutlookCalendarService(authService: microsoftAuthService)
-                    Task { [weak recording] in
-                        guard let event = await outlookService.findCurrentEvent(at: started) else { return }
-                        await MainActor.run {
-                            guard let recording else { return }
-                            recording.calendarEvent = event
-                            applyCalendarEvent(event, to: recording)
-                        }
-                    }
-                }
+            // The calendar lookup runs in RecordingManager.stopRecording; here we only react to
+            // its result. If the best match already arrived, pre-fill from it (guarded so we
+            // never clobber a title/participants the user typed).
+            if let recording = appState.currentRecording, let event = recording.calendarEvent {
+                applyCalendarEvent(event, to: recording)
             }
+        }
+        .onChange(of: appState.currentRecording?.calendarEvent?.id) { _, _ in
+            // Reactive pre-fill: the async candidate lookup set the best match after the sheet
+            // appeared. Auto-fill is guarded; an explicit picker pick is handled in selectCalendarEvent.
+            guard let recording = appState.currentRecording,
+                  let event = recording.calendarEvent else { return }
+            applyCalendarEvent(event, to: recording)
         }
     }
 
@@ -239,6 +240,8 @@ struct PostRecordingSheet: View {
             .filter { !$0.isEmpty }
     }
 
+    /// Guarded auto-fill: only fills the title when it's still a fallback and only fills
+    /// participants when empty, so a reactive best-match update never overwrites typed input.
     private func applyCalendarEvent(_ event: CalendarEvent, to recording: Recording) {
         let current = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let isFallback = current.isEmpty
@@ -251,5 +254,36 @@ struct PostRecordingSheet: View {
            !event.participantsText.isEmpty {
             participantsText = event.participantsText
         }
+    }
+
+    /// Two-way binding between the override picker and `recording.calendarEvent`, keyed by event id.
+    private func calendarSelection(_ recording: Recording) -> Binding<String?> {
+        Binding(
+            get: { recording.calendarEvent?.id },
+            set: { newID in
+                let event = recording.calendarCandidates.first { $0.id == newID }
+                selectCalendarEvent(event, to: recording)
+            }
+        )
+    }
+
+    /// Explicit user pick: overwrite title and participants from the chosen event (distinct
+    /// from the auto-fill guard in `applyCalendarEvent`). `nil` clears the context without
+    /// wiping fields the user may have typed.
+    private func selectCalendarEvent(_ event: CalendarEvent?, to recording: Recording) {
+        recording.calendarEvent = event
+        guard let event else { return }
+        if !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            meetingTitle = event.title
+        }
+        participantsText = event.participantsText
+    }
+
+    private func pickerLabel(_ event: CalendarEvent) -> String {
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "(untitled)" : event.title
+        let start = event.startDate.formatted(date: .omitted, time: .shortened)
+        let end = event.endDate.formatted(date: .omitted, time: .shortened)
+        return "\(title)  \(start)–\(end)"
     }
 }
