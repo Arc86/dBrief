@@ -168,9 +168,10 @@ final class RecordingManager {
 
             // Now that the true recording span is known, find matching calendar events.
             // Detached so the post-recording sheet appears immediately; the ranked
-            // candidates + best match populate reactively via @Observable.
+            // candidates + best match populate reactively via @Observable. The handle is
+            // stored so the processing pipeline can await it before reading calendarEvent.
             if appSettings.effectiveCalendarSource != .disabled {
-                Task { [weak self, weak recording] in
+                recording.calendarLookupTask = Task { [weak self, weak recording] in
                     guard let self, let recording else { return }
                     await self.lookupCalendarCandidates(for: recording)
                 }
@@ -250,6 +251,12 @@ final class RecordingManager {
         appState.processingSteps = []
         appState.liveTranscriptSegments = []
         appState.liveInferenceText = nil
+
+        // Make sure the calendar lookup started at stop has finished before the pipeline reads
+        // calendarEvent for title/participants/AI context — a fast user can otherwise click
+        // Process before the (network) Outlook lookup resolves. Completed/absent task → no-op.
+        // State is already .processing above, so this suspension can't re-enter processRecording.
+        await recording.calendarLookupTask?.value
 
         // Measured performance for this session (logged at the end).
         var perfTranscriptionModel: String?

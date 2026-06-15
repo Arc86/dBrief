@@ -160,7 +160,8 @@ actor OutlookCalendarService {
     /// precision is irrelevant for minute-granularity calendar matching) and parse the
     /// integer-seconds form. Returns nil on failure rather than defaulting to the current
     /// date, which would silently corrupt span matching.
-    private static func parseGraphDate(_ string: String?) -> Date? {
+    /// Internal (not private) so it can be unit-tested directly.
+    static func parseGraphDate(_ string: String?) -> Date? {
         guard let string, !string.isEmpty else { return nil }
         let normalized = string.replacingOccurrences(
             of: "(\\.\\d+)?Z?$", with: "", options: .regularExpression
