@@ -109,21 +109,9 @@ final class RecordingManager {
         )
         appState.currentRecording = recording
 
-        let started = recording.date
-        switch appSettings.effectiveCalendarSource {
-        case .iCal:
-            Task { [weak recording] in
-                let event = await calendarService.findCurrentEvent(at: started)
-                await MainActor.run { recording?.calendarEvent = event }
-            }
-        case .outlook:
-            Task { [weak recording] in
-                let event = await outlookCalendarService.findCurrentEvent(at: started)
-                await MainActor.run { recording?.calendarEvent = event }
-            }
-        case .disabled:
-            break
-        }
+        // The calendar lookup happens at stopRecording (not here): only once recording stops
+        // is the true span [start, start+duration] known, which the span-aware CalendarMatcher
+        // needs to rank events that overlap the recording.
 
         try await audioCaptureManager.startRecording(
             to: baseURL,
@@ -177,11 +165,43 @@ final class RecordingManager {
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
+
+            // Now that the true recording span is known, find matching calendar events.
+            // Detached so the post-recording sheet appears immediately; the ranked
+            // candidates + best match populate reactively via @Observable.
+            if appSettings.effectiveCalendarSource != .disabled {
+                Task { [weak self, weak recording] in
+                    guard let self, let recording else { return }
+                    await self.lookupCalendarCandidates(for: recording)
+                }
+            }
         }
 
         appState.recordingState = .idle
         appState.showPostRecordingSheet = true
         miniPlayer?.dismiss()
+    }
+
+    /// Looks up calendar events matching the finished recording's true span and publishes the
+    /// ranked candidates + best match. The post-recording sheet observes both to drive the
+    /// override picker and pre-fill the title/participants. Never clobbers a `calendarEvent`
+    /// the user already picked.
+    private func lookupCalendarCandidates(for recording: Recording) async {
+        let start = recording.date
+        let end = start.addingTimeInterval(recording.duration)
+        let candidates: [CalendarEvent]
+        switch appSettings.effectiveCalendarSource {
+        case .iCal:
+            candidates = await calendarService.findCandidates(recordingStart: start, recordingEnd: end)
+        case .outlook:
+            candidates = await outlookCalendarService.findCandidates(recordingStart: start, recordingEnd: end)
+        case .disabled:
+            candidates = []
+        }
+        recording.calendarCandidates = candidates
+        if recording.calendarEvent == nil {
+            recording.calendarEvent = candidates.first
+        }
     }
 
     func pauseRecording() {
