@@ -389,10 +389,16 @@ struct TranscriptDetailView: View {
     }
 
     private var liveWaitingState: some View {
-        VStack(spacing: 12) {
+        // Surface live status (e.g. "Preparing language…" while a first-run speech
+        // asset downloads) when present; otherwise the default listening/preparing copy.
+        let status = context.appState.liveStatusMessage
+        let headline = !status.isEmpty
+            ? status
+            : (context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
+        return VStack(spacing: 12) {
             Spacer()
             ProgressView()
-            Text(context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
+            Text(headline)
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Text("Spoken words appear here as you record.")

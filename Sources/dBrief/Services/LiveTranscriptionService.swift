@@ -156,7 +156,10 @@ actor LiveTranscriptionService {
 
         inputBuilder.finish()
         try? await analyzer.finalizeAndFinishThroughEndOfInput()
-        resultsTask.cancel()
+        // Drain (don't cancel) the results task: `finalizeAndFinishThroughEndOfInput`
+        // ends `transcriber.results`, so awaiting the task lets the last finalized
+        // segment(s) be delivered instead of being dropped by an early cancel.
+        await resultsTask.value
         onVolatile(channel.rawValue, "")
     }
 

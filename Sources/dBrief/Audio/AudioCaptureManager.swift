@@ -213,9 +213,11 @@ final class AudioCaptureManager {
             } catch {
                 log.error("System write error: \(error.localizedDescription, privacy: .public)")
             }
-            // `pcm` is freshly created by `toPCMBuffer()`, but copy anyway so the
-            // live consumer's lifetime is fully independent of the writer.
-            if let liveSink, let copy = pcm.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
+            // `toPCMBuffer()` already allocates a fresh buffer each callback and the
+            // writer is done with it synchronously above, so it can be handed to the
+            // live consumer directly — no second copy needed (unlike the mic tap,
+            // whose buffer storage AVAudioEngine reuses across callbacks).
+            if let liveSink { liveSink.yield(LiveAudioBuffer(pcm)) }
         }
     }
 

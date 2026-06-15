@@ -150,6 +150,7 @@ final class RecordingManager {
         appState.liveTranscriptSegments = []
         appState.liveVolatileMic = ""
         appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
         appState.isLiveTranscribing = true
 
         // Only drive channels that actually have an audio source.
@@ -169,17 +170,24 @@ final class RecordingManager {
                 onFinalized: { [weak self] segments in
                     Task { @MainActor [weak self] in
                         guard let self else { return }
+                        // First real output clears any "Preparing language…" status.
+                        self.appState.liveStatusMessage = ""
                         self.appState.liveTranscriptSegments = LiveSegmentMerge.insert(segments, into: self.appState.liveTranscriptSegments)
                     }
                 },
                 onVolatile: { [weak self] speaker, text in
                     Task { @MainActor [weak self] in
                         guard let self else { return }
+                        if !text.isEmpty { self.appState.liveStatusMessage = "" }
                         if speaker == micLabel { self.appState.liveVolatileMic = text }
                         else { self.appState.liveVolatileSystem = text }
                     }
                 },
-                onStatus: { _ in }
+                onStatus: { [weak self] message in
+                    Task { @MainActor [weak self] in
+                        self?.appState.liveStatusMessage = message
+                    }
+                }
             )
         }
     }
@@ -190,6 +198,7 @@ final class RecordingManager {
         appState.isLiveTranscribing = false
         appState.liveVolatileMic = ""
         appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
         Task { await service.stop() }
     }
 
@@ -266,6 +275,7 @@ final class RecordingManager {
         appState.liveTranscriptSegments = []
         appState.liveVolatileMic = ""
         appState.liveVolatileSystem = ""
+        appState.liveStatusMessage = ""
         appState.isLiveTranscribing = false
         appState.liveInferenceText = nil
 

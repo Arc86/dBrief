@@ -37,6 +37,9 @@ final class AppState {
     var liveVolatileSystem: String = ""
     /// True while real-time transcription is running during an active recording.
     var isLiveTranscribing: Bool = false
+    /// Human-readable live-transcription status (e.g. "Preparing language…"), shown in
+    /// the live transcript waiting state. Empty once segments start arriving.
+    var liveStatusMessage: String = ""
     /// When set, the transcript browser should select the in-progress live recording on open.
     var pendingLiveTranscriptSelection: Bool = false
     var lastError: String?

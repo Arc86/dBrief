@@ -82,17 +82,30 @@ public enum LiveSegmentMerge {
     /// equal starts — the new segment goes after existing ones at the same time).
     public static func insert(_ segment: LiveTranscriptSegment, into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
         var result = segments
-        let index = result.firstIndex { $0.start > segment.start } ?? result.count
-        result.insert(segment, at: index)
+        insertInPlace(segment, into: &result)
         return result
     }
 
-    /// Inserts several new segments, keeping ascending `start` order.
+    /// Inserts several new segments, keeping ascending `start` order. Mutates a single
+    /// array so a batch is one copy-on-write copy rather than one per segment.
     public static func insert(_ newSegments: [LiveTranscriptSegment], into segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
         var result = segments
         for segment in newSegments {
-            result = insert(segment, into: result)
+            insertInPlace(segment, into: &result)
         }
         return result
+    }
+
+    /// Scans from the end for the insertion point, so the common case — finalized
+    /// segments arriving in ascending `start` order — is O(1) per insert (an append)
+    /// instead of the O(n) forward scan that made a full recording O(n²). Stops at the
+    /// first element whose `start` is `<=` the new one, preserving stable ordering for
+    /// equal starts.
+    private static func insertInPlace(_ segment: LiveTranscriptSegment, into result: inout [LiveTranscriptSegment]) {
+        var index = result.count
+        while index > 0, result[index - 1].start > segment.start {
+            index -= 1
+        }
+        result.insert(segment, at: index)
     }
 }
