@@ -154,7 +154,7 @@ Profile system for per-meeting configuration overrides:
 
 ### Call Detection (`Services/CallDetectionService.swift`)
 
-`CallDetectionService` monitors for known meeting apps (`knownCallApps`: Zoom, Teams classic/new, Slack, Webex, FaceTime, Google Meet) via `NSWorkspace` notifications and microphone activity via CoreAudio `kAudioDevicePropertyDeviceIsRunningSomewhere`. Can auto-start recording (`autoRecordCalls`) or show a popup prompt. Per-app enable/disable via `AppSettings.disabledCallApps`. Configured in **Settings → General → Call Detection**.
+`CallDetectionService` monitors for known meeting apps (`knownCallApps`: Zoom, Teams classic/new, Slack, Webex, FaceTime, Google Meet) via `NSWorkspace` notifications and microphone activity via CoreAudio `kAudioDevicePropertyDeviceIsRunningSomewhere`. Can auto-start recording (`autoRecordCalls`) or show a popup prompt (`CallDetectedOverlayController`). The prompt can **auto-dismiss** after `AppSettings.autoDismissCallPromptSeconds` (0 = never; the timer is scheduled in `CallDetectedOverlayController.show()` and cancelled in `hide()`, so any user interaction cancels it). Per-app enable/disable via `AppSettings.disabledCallApps`. Configured in **Settings → General → Call Detection**.
 
 ### Calendar Integration (`Services/CalendarService.swift`, `OutlookCalendarService.swift`)
 

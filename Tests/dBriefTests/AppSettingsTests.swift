@@ -42,4 +42,20 @@ struct AppSettingsTests {
         #expect(reloaded.acousticEchoCancellation == false)
         UserDefaults.standard.removeObject(forKey: "acousticEchoCancellation")
     }
+
+    @Test func autoDismissCallPromptDefaultsToNever() {
+        UserDefaults.standard.removeObject(forKey: "autoDismissCallPromptSeconds")
+        let settings = AppSettings()
+        #expect(settings.autoDismissCallPromptSeconds == 0)
+    }
+
+    @Test func autoDismissCallPromptPersists() {
+        UserDefaults.standard.removeObject(forKey: "autoDismissCallPromptSeconds")
+        let settings = AppSettings()
+        settings.autoDismissCallPromptSeconds = 15
+        #expect(UserDefaults.standard.integer(forKey: "autoDismissCallPromptSeconds") == 15)
+        let reloaded = AppSettings()
+        #expect(reloaded.autoDismissCallPromptSeconds == 15)
+        UserDefaults.standard.removeObject(forKey: "autoDismissCallPromptSeconds")
+    }
 }

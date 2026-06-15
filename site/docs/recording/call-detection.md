@@ -23,6 +23,7 @@ In **Settings → General → Call Detection**:
 
 - **Enable call detection** — turn the feature on or off.
 - **Auto-start recording when call detected** — when on, dBrief starts recording automatically as soon as a call is detected. When off, detection still runs but won't start a recording on its own.
+- **Auto-dismiss prompt** — when you're using the prompt (i.e. auto-start is off), choose how long it stays on screen before dismissing itself: Never (the default), or after 10/15/30/60 seconds. Clicking the prompt cancels the timer, so it never disappears while you're deciding.
 
 ## Choosing which apps to watch
 

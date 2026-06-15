@@ -15,6 +15,7 @@ final class CallDetectedOverlayController {
 
     private var panel: NSPanel?
     private var observer: NSObjectProtocol?
+    private var autoDismissTask: Task<Void, Never>?
 
     private init() {}
 
@@ -80,9 +81,23 @@ final class CallDetectedOverlayController {
         }
 
         newPanel.orderFrontRegardless()
+
+        // Auto-dismiss after the configured delay (0 = never). Any user interaction
+        // sets showCallDetectedPopup = false → hide(), which cancels this task.
+        autoDismissTask?.cancel()
+        let seconds = appSettings.autoDismissCallPromptSeconds
+        if seconds > 0 {
+            autoDismissTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                self?.appState?.showCallDetectedPopup = false
+            }
+        }
     }
 
     func hide() {
+        autoDismissTask?.cancel()
+        autoDismissTask = nil
         panel?.orderOut(nil)
         panel = nil
     }
