@@ -17,6 +17,8 @@ struct SettingsTranscriptionTab: View {
     @State private var whisperModelFetchError: String?
     @State private var showAllWhisperModels = false
     @State private var showModelHelp = false
+    @State private var newIgnoredPhrase = ""
+    @State private var showIgnoredSegments = false
 
     enum TestResult {
         case testing
@@ -413,12 +415,89 @@ struct SettingsTranscriptionTab: View {
 
     private var cleanupSection: some View {
         @Bindable var settings = appSettings
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Remove filler words (um, uh, …)", isOn: $settings.removeFillerWords)
+                Text("Markup and hallucination artifacts are always cleaned. Filler removal is off by default so meeting transcripts stay verbatim.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            ignoredSegmentsSection
+        }
+    }
+
+    private var ignoredSegmentsSection: some View {
+        @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
-            Toggle("Remove filler words (um, uh, …)", isOn: $settings.removeFillerWords)
-            Text("Markup and hallucination artifacts are always cleaned. Filler removal is off by default so meeting transcripts stay verbatim.")
+            Toggle("Filter ignored segments", isOn: $settings.removeIgnoredSegments)
+            Text("Drops segments that exactly match a known filler phrase — Whisper silence-hallucinations like “Thank you for watching”, “Subscribe to the channel”, or “♪”. Matching is whole-segment, so real speech that merely contains a phrase is kept.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if settings.removeIgnoredSegments {
+                DisclosureGroup(isExpanded: $showIgnoredSegments) {
+                    customIgnoredSegmentsEditor
+                } label: {
+                    Text("Custom phrases (\(settings.customIgnoredSegments.count)) · \(TranscriptCleanup.defaultIgnoredSegments.count) built-in")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
+    }
+
+    private var customIgnoredSegmentsEditor: some View {
+        @Bindable var settings = appSettings
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Add a phrase to ignore", text: $newIgnoredPhrase)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { addIgnoredPhrase() }
+                Button("Add", action: addIgnoredPhrase)
+                    .disabled(newIgnoredPhrase.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if settings.customIgnoredSegments.isEmpty {
+                Text("No custom phrases. Built-in phrases are always applied while filtering is on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(settings.customIgnoredSegments, id: \.self) { phrase in
+                    HStack {
+                        Text(phrase)
+                            .font(.callout)
+                        Spacer()
+                        Button {
+                            settings.customIgnoredSegments.removeAll { $0 == phrase }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove phrase")
+                    }
+                }
+
+                Button("Reset to Defaults") {
+                    settings.customIgnoredSegments = []
+                }
+                .font(.caption)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func addIgnoredPhrase() {
+        let trimmed = newIgnoredPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // De-dupe case-insensitively against existing custom phrases.
+        if !appSettings.customIgnoredSegments.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            appSettings.customIgnoredSegments.append(trimmed)
+        }
+        newIgnoredPhrase = ""
     }
 
     private var vocabularySection: some View {

@@ -38,6 +38,8 @@ final class AppSettings {
         static let watchedFoldersEnabled = "watchedFoldersEnabled"
         static let watchedFolders = "watchedFolders"
         static let watchedFolderNotifyOnDetect = "watchedFolderNotifyOnDetect"
+        static let removeIgnoredSegments = "removeIgnoredSegments"
+        static let customIgnoredSegments = "customIgnoredSegments"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
         static let defaultTranscriptionEndpointId = "defaultTranscriptionEndpointId"
@@ -382,6 +384,19 @@ final class AppSettings {
     /// Completion notifications fire regardless via the normal processing pipeline.
     var watchedFolderNotifyOnDetect: Bool {
         didSet { UserDefaults.standard.set(watchedFolderNotifyOnDetect, forKey: Keys.watchedFolderNotifyOnDetect) }
+    }
+
+    /// When enabled (default), segments whose entire text matches a built-in or custom
+    /// ignored phrase (e.g. "Thank you for watching", "♪") are dropped from the transcript
+    /// before AI analysis, export, and integrations. Targets Whisper silence-hallucinations.
+    var removeIgnoredSegments: Bool {
+        didSet { UserDefaults.standard.set(removeIgnoredSegments, forKey: Keys.removeIgnoredSegments) }
+    }
+
+    /// User-added ignored phrases, layered on top of `TranscriptCleanup.defaultIgnoredSegments`.
+    /// "Reset to defaults" in Settings clears this list.
+    var customIgnoredSegments: [String] {
+        didSet { UserDefaults.standard.set(customIgnoredSegments, forKey: Keys.customIgnoredSegments) }
     }
 
     /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
@@ -750,6 +765,8 @@ final class AppSettings {
         self.watchedFoldersEnabled = defaults.bool(forKey: Keys.watchedFoldersEnabled)
         self.watchedFolders = AppSettings.loadWatchedFolders(forKey: Keys.watchedFolders)
         self.watchedFolderNotifyOnDetect = defaults.object(forKey: Keys.watchedFolderNotifyOnDetect) as? Bool ?? true
+        self.removeIgnoredSegments = defaults.object(forKey: Keys.removeIgnoredSegments) as? Bool ?? true
+        self.customIgnoredSegments = defaults.stringArray(forKey: Keys.customIgnoredSegments) ?? []
         self.whisperModelName = {
             // New key takes priority
             if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {
