@@ -237,13 +237,6 @@ struct DBriefApp: App {
                 .environment(context.transcriptChatStore)
         }
         .defaultSize(width: 1100, height: 720)
-
-        Window("Live Transcript", id: "live-transcript") {
-            LiveTranscriptView()
-                .environment(context.appState)
-        }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 600, height: 400)
     }
 }
 

@@ -17,6 +17,10 @@ final class TranscriptChatStore {
         sessions[url] = service
     }
 
+    func remove(for url: URL) {
+        sessions[url] = nil
+    }
+
     func hasMessages(for url: URL) -> Bool {
         !(sessions[url]?.messages.isEmpty ?? true)
     }
