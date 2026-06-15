@@ -12,6 +12,7 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var whisperPrompt: String?
     var transcriptionEngine: AppSettings.TranscriptionEngine?
     var transcriptionEndpointId: UUID?
+    var aiProcessingEnabled: Bool?
     var aiEngine: AppSettings.AIEngine?
     var aiEndpointId: UUID?
     var summaryPrompt: String?

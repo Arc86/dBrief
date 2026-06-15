@@ -41,6 +41,10 @@ extension AppSettings {
         return defaultTranscriptionEndpoint
     }
 
+    var effectiveAIProcessingEnabled: Bool {
+        activeProfile.overrides.aiProcessingEnabled ?? aiProcessingEnabled
+    }
+
     var effectiveAIEngine: AIEngine {
         activeProfile.overrides.aiEngine ?? aiEngine
     }

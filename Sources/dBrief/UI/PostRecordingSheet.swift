@@ -61,7 +61,7 @@ struct PostRecordingSheet: View {
 
             Toggle("Transcribe audio", isOn: $transcribe)
 
-            if appSettings.aiProcessingEnabled {
+            if appSettings.effectiveAIProcessingEnabled {
                 Toggle("Generate summary", isOn: $summary)
                     .disabled(!transcribe)
                 Toggle("Extract action items", isOn: $actionItems)

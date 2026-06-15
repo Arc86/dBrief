@@ -314,24 +314,24 @@ struct MenuBarView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+                    HStack(spacing: 8) {
                         Button {
                             recordingManager.pickFileForTranscription()
                         } label: {
                             Label("Transcribe File...", systemImage: "doc.badge.plus")
+                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(!appState.isIdle)
-
-                        Spacer()
 
                         Button {
                             showYouTubeInput.toggle()
                         } label: {
                             Label("YouTube URL...", systemImage: "play.rectangle")
+                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(!appState.isIdle)
                     }
@@ -370,7 +370,9 @@ struct MenuBarView: View {
             appState.queuedCount = recordingManager.discoverQueuedItems().count
         }
         .padding(12)
-        .frame(width: 360)
+        // Let the window-style popover size to its content rather than forcing a
+        // hard pixel width; the ideal/min keep it sensible without fighting the OS.
+        .frame(minWidth: 340, idealWidth: 360)
     }
 
     private var header: some View {
