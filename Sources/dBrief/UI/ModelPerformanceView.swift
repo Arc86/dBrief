@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Model Performance panel in the transcript viewer. Aggregates every recorded
-/// session (across all recordings) by model, filterable by time range, and shows
-/// a card per transcription model and per AI-analysis model.
+/// Benchmark panel (Power User Mode → Settings → Benchmark). Aggregates every
+/// recorded session by model and time range, then highlights the fastest
+/// transcription model in a hero block and ranks all models in a leaderboard
+/// with relative-speed bars. AI-analysis models get a small comparison group.
 struct ModelPerformanceView: View {
     let store: ModelPerformanceStore
 
@@ -14,7 +15,8 @@ struct ModelPerformanceView: View {
     @State private var range: PerformanceRange = .last30Days
     @State private var showClearConfirm = false
 
-    private let columns = [GridItem(.adaptive(minimum: 220), spacing: TranscriptDesignTokens.cardGap)]
+    @State private var txSort = [KeyPathComparator(\TranscriptionStat.headlineSpeed, order: .reverse)]
+    @State private var aiSort = [KeyPathComparator(\AIStat.avgTime, order: .forward)]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,8 +78,8 @@ struct ModelPerformanceView: View {
 
     @ViewBuilder
     private var content: some View {
-        let txStats = transcriptionStats
-        let aiStats = aiStats
+        let txStats = sortedTxStats
+        let aiStats = sortedAIStats
 
         if !loaded {
             ProgressView()
@@ -86,20 +88,15 @@ struct ModelPerformanceView: View {
             emptyState
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let fastest = txStats.max(by: { $0.headlineSpeed < $1.headlineSpeed }) {
+                        heroCard(fastest)
+                    }
                     if !txStats.isEmpty {
-                        section(title: "Transcription Models") {
-                            LazyVGrid(columns: columns, spacing: TranscriptDesignTokens.cardGap) {
-                                ForEach(txStats) { transcriptionCard($0) }
-                            }
-                        }
+                        transcriptionLeaderboard(txStats)
                     }
                     if !aiStats.isEmpty {
-                        section(title: "AI Analysis Models") {
-                            LazyVGrid(columns: columns, spacing: TranscriptDesignTokens.cardGap) {
-                                ForEach(aiStats) { aiCard($0) }
-                            }
-                        }
+                        aiComparison(aiStats)
                     }
                 }
                 .padding(TranscriptDesignTokens.scrollPadding)
@@ -126,109 +123,155 @@ struct ModelPerformanceView: View {
         .padding(40)
     }
 
-    private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: TranscriptDesignTokens.cardGap) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
-            content()
-        }
-    }
+    // MARK: - Hero (fastest model)
 
-    // MARK: - Cards
-
-    private func transcriptionCard(_ stat: TranscriptionStat) -> some View {
-        card {
-            VStack(spacing: 6) {
-                modelTitle(stat.model, sessions: stat.sessions)
-
-                if let inf = stat.inferenceSpeedup {
-                    Text(String(format: "%.1fx", inf))
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(hex: "30d158"))
-                    Text("Model · faster than real-time")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(stat.avgOverhead.map {
-                        String(format: "%.1fx end-to-end · +%@ load/overhead", stat.speedup, Self.formatDuration(max(0, $0)))
-                    } ?? String(format: "%.1fx end-to-end", stat.speedup))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                } else {
-                    Text(String(format: "%.1fx", stat.speedup))
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(hex: "30d158"))
-                    Text("End-to-end · faster than real-time")
+    private func heroCard(_ stat: TranscriptionStat) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Fastest Model", systemImage: "bolt.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Spacer()
+                    Text("\(stat.sessions) \(stat.sessions == 1 ? "session" : "sessions")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Divider().padding(.vertical, 2)
+                Text(stat.model)
+                    .font(.title3.weight(.semibold))
 
-                HStack(alignment: .top, spacing: 0) {
-                    metric(value: Self.formatDuration(stat.avgAudio),
-                           label: "Avg. Audio",
-                           color: Color(hex: "0a84ff"))
-                    Divider().frame(height: 30)
-                    metric(value: Self.formatDuration(stat.avgProcessing),
-                           label: "Avg. Processing",
-                           color: Color(hex: "30d158"))
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(String(format: "%.1f×", stat.headlineSpeed))
+                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.accentColor)
+                    Text(stat.inferenceSpeedup != nil
+                         ? "model speed, faster than real-time"
+                         : "end-to-end, faster than real-time")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
+
+                Divider()
+
+                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
+                    GridRow {
+                        LabeledContent("Avg. audio", value: Self.formatDuration(stat.avgAudio))
+                        LabeledContent("Avg. processing", value: Self.formatDuration(stat.avgProcessing))
+                    }
+                    GridRow {
+                        if stat.inferenceSpeedup != nil {
+                            LabeledContent("End-to-end", value: String(format: "%.1f×", stat.speedup))
+                        }
+                        if let overhead = stat.avgOverhead {
+                            LabeledContent("Load / overhead", value: "+\(Self.formatDuration(max(0, overhead)))")
+                        }
+                    }
+                }
+                .font(.callout)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(6)
         }
     }
 
-    private func aiCard(_ stat: AIStat) -> some View {
-        card {
-            VStack(spacing: 6) {
-                modelTitle(stat.model, sessions: stat.sessions)
+    // MARK: - Transcription leaderboard
 
-                Text(Self.formatDuration(stat.avgTime))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(hex: "5e5ce6"))
-                Text("Avg. Analysis Time")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private func transcriptionLeaderboard(_ stats: [TranscriptionStat]) -> some View {
+        let maxSpeed = stats.map(\.headlineSpeed).max() ?? 1
+        let fastestModel = stats.max(by: { $0.headlineSpeed < $1.headlineSpeed })?.model
+        let accurateModel = ModelRanking.mostAccurate(stats.map(\.model))
+        let showBadges = stats.count > 1
+
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Transcription Models")
+            Table(stats, sortOrder: $txSort) {
+                TableColumn("Model", value: \.model) { stat in
+                    HStack(spacing: 6) {
+                        Text(stat.model).lineLimit(2)
+                        if showBadges && stat.model == fastestModel {
+                            badge("FASTEST", accent: true)
+                        }
+                        if showBadges && stat.model == accurateModel {
+                            badge("MOST ACCURATE", accent: false)
+                        }
+                    }
+                }
+                TableColumn("Relative speed", value: \.headlineSpeed) { stat in
+                    HStack(spacing: 8) {
+                        Gauge(value: max(0, stat.headlineSpeed), in: 0...max(maxSpeed, 0.001)) {
+                            EmptyView()
+                        }
+                        .gaugeStyle(.accessoryLinearCapacity)
+                        .tint(.accentColor)
+                        Text(String(format: "%.1f×", stat.headlineSpeed))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                }
+                TableColumn("Sessions", value: \.sessions) { stat in
+                    Text("\(stat.sessions)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 60, ideal: 70)
             }
+            .scrollDisabled(true)
+            .frame(height: tableHeight(stats.count))
         }
     }
 
-    private func modelTitle(_ name: String, sessions: Int) -> some View {
-        VStack(spacing: 2) {
-            Text(name)
-                .font(.callout.weight(.semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-            Text("\(sessions) \(sessions == 1 ? "session" : "sessions")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    // MARK: - AI comparison
+
+    private func aiComparison(_ stats: [AIStat]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("AI Analysis Models")
+            Table(stats, sortOrder: $aiSort) {
+                TableColumn("Model", value: \.model) { stat in
+                    Text(stat.model).lineLimit(2)
+                }
+                TableColumn("Avg. analysis", value: \.avgTime) { stat in
+                    Text(Self.formatDuration(stat.avgTime))
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                TableColumn("Sessions", value: \.sessions) { stat in
+                    Text("\(stat.sessions)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 60, ideal: 70)
+            }
+            .scrollDisabled(true)
+            .frame(height: tableHeight(stats.count))
         }
     }
 
-    private func metric(value: String, label: String, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
+    // MARK: - Small views
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
     }
 
-    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(.vertical, 14)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
-            .background(TranscriptDesignTokens.cardFill(scheme: colorScheme))
-            .overlay(
-                RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius)
-                    .stroke(TranscriptDesignTokens.cardBorder(scheme: colorScheme), lineWidth: 1)
+    private func badge(_ text: String, accent: Bool) -> some View {
+        Text(text)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule().fill((accent ? Color.accentColor : Color.secondary).opacity(0.18))
             )
-            .clipShape(RoundedRectangle(cornerRadius: TranscriptDesignTokens.cardCornerRadius))
+            .foregroundStyle(accent ? Color.accentColor : Color.secondary)
+            .accessibilityLabel(accent ? "Fastest model" : "Most accurate model")
+    }
+
+    /// Content-sized height so the (scroll-disabled) Table never fights the outer
+    /// ScrollView. Header row + one row per model.
+    private func tableHeight(_ rows: Int) -> CGFloat {
+        CGFloat(max(rows, 1)) * 30 + 30
     }
 
     // MARK: - Aggregation
@@ -238,20 +281,12 @@ struct ModelPerformanceView: View {
         return records.filter { $0.date >= cutoff }
     }
 
-    private var transcriptionStats: [TranscriptionStat] {
-        TranscriptionStat.aggregate(filtered)
+    private var sortedTxStats: [TranscriptionStat] {
+        TranscriptionStat.aggregate(filtered).sorted(using: txSort)
     }
 
-    private var aiStats: [AIStat] {
-        let grouped = Dictionary(grouping: filtered.filter { $0.hasAI }) {
-            $0.aiModel ?? "Unknown"
-        }
-        return grouped.map { model, recs -> AIStat in
-            let times = recs.compactMap { $0.aiTime }
-            let avg = times.isEmpty ? 0 : times.reduce(0, +) / Double(times.count)
-            return AIStat(model: model, sessions: recs.count, avgTime: avg)
-        }
-        .sorted { $0.sessions > $1.sessions }
+    private var sortedAIStats: [AIStat] {
+        AIStat.aggregate(filtered).sorted(using: aiSort)
     }
 
     // MARK: - Formatting
@@ -294,6 +329,9 @@ struct TranscriptionStat: Identifiable {
     let avgOverhead: TimeInterval?
     var id: String { model }
 
+    /// Ranking number: pure model inference when available, else end-to-end.
+    var headlineSpeed: Double { inferenceSpeedup ?? speedup }
+
     /// Pure aggregation over already-filtered records, grouped by model.
     static func aggregate(_ records: [ModelPerformanceRecord]) -> [TranscriptionStat] {
         let grouped = Dictionary(grouping: records.filter { $0.hasTranscription }) {
@@ -333,11 +371,73 @@ struct TranscriptionStat: Identifiable {
     }
 }
 
-private struct AIStat: Identifiable {
+struct AIStat: Identifiable {
     let model: String
     let sessions: Int
     let avgTime: TimeInterval
     var id: String { model }
+
+    static func aggregate(_ records: [ModelPerformanceRecord]) -> [AIStat] {
+        let grouped = Dictionary(grouping: records.filter { $0.hasAI }) {
+            $0.aiModel ?? "Unknown"
+        }
+        return grouped.map { model, recs -> AIStat in
+            let times = recs.compactMap { $0.aiTime }
+            let avg = times.isEmpty ? 0 : times.reduce(0, +) / Double(times.count)
+            return AIStat(model: model, sessions: recs.count, avgTime: avg)
+        }
+        .sorted { $0.sessions > $1.sessions }
+    }
+}
+
+// MARK: - Model ranking heuristics
+
+/// Pure helpers for deriving the FASTEST / MOST ACCURATE badges from model names.
+/// Fastest is decided by measured speed (the caller); "most accurate" is the
+/// largest non-distilled model, with a small override map for reference-grade
+/// families that beat raw size.
+enum ModelRanking {
+    /// Families known to be reference-accurate, scored above raw size in MB.
+    static let accuracyOverride: [String: Double] = [
+        "large-v3": 2000,
+        "large-v2": 1800,
+        "parakeet": 1600,
+        "scribe": 1500
+    ]
+
+    static func isDistilled(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.contains("distil") || lower.contains("turbo")
+    }
+
+    /// Parse an embedded size such as "(632 MB)" or "1.5 GB" into megabytes.
+    static func sizeMB(in name: String) -> Double? {
+        let lower = name.lowercased()
+        guard let match = lower.range(
+            of: #"(\d+(?:\.\d+)?)\s*(gb|mb)"#,
+            options: .regularExpression
+        ) else { return nil }
+        let token = lower[match]
+        let isGB = token.contains("gb")
+        let number = token.filter { $0.isNumber || $0 == "." }
+        guard let value = Double(number) else { return nil }
+        return isGB ? value * 1024 : value
+    }
+
+    static func accuracyScore(_ name: String) -> Double {
+        let lower = name.lowercased()
+        var score = sizeMB(in: name) ?? 0
+        for (family, weight) in accuracyOverride where lower.contains(family) {
+            score = max(score, weight)
+        }
+        if isDistilled(name) { score -= 5000 }
+        return score
+    }
+
+    /// The most-accurate model among the given names, or nil when empty.
+    static func mostAccurate(_ names: [String]) -> String? {
+        names.max { accuracyScore($0) < accuracyScore($1) }
+    }
 }
 
 // MARK: - Time range

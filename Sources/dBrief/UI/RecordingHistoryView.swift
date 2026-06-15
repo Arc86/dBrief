@@ -1,6 +1,39 @@
 import SwiftUI
 import AppKit
 
+/// Explicit per-recording processing state surfaced in the menu-bar list,
+/// replacing the old cryptic "✓ AI". Rendered as an SF Symbol + tinted Label
+/// (theme-adaptive, reads natively in Light/Dark) rather than a filled pill.
+enum RecordingStatus {
+    case analyzed
+    case transcribed
+    case queued
+
+    var label: String {
+        switch self {
+        case .analyzed: "Analyzed"
+        case .transcribed: "Transcribed"
+        case .queued: "Queued"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .analyzed: "checkmark.seal.fill"
+        case .transcribed: "waveform"
+        case .queued: "clock"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .analyzed: .green
+        case .transcribed: .secondary
+        case .queued: .orange
+        }
+    }
+}
+
 struct RecordingHistoryView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(AppSettings.self) private var appSettings
@@ -9,6 +42,7 @@ struct RecordingHistoryView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @State private var recordings: [HistoryItem] = []
     @State private var expandedItemId: UUID?
+    @State private var hoveredItemId: UUID?
     @State private var loadedSummaries: [UUID: String] = [:]
 
     struct HistoryItem: Identifiable {
@@ -21,6 +55,18 @@ struct RecordingHistoryView: View {
         let profileName: String?
         let hasTranscript: Bool
         let hasRichTranscript: Bool
+        let hasInsights: Bool
+        let isQueued: Bool
+
+        /// Derived processing state for the row's status badge. AI analysis is
+        /// signalled by the `<base>.insights.json` sidecar (written only when a
+        /// summary exists); a pending `<base>.queue.json` means awaiting processing.
+        var status: RecordingStatus? {
+            if hasInsights { return .analyzed }
+            if hasTranscript { return .transcribed }
+            if isQueued { return .queued }
+            return nil
+        }
 
         var formattedDate: String {
             let cal = Calendar.current
@@ -141,7 +187,7 @@ struct RecordingHistoryView: View {
                         Image(systemName: audioPlayer.currentFileURL == item.url && audioPlayer.isPlaying
                             ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.tint)
                     }
                     .buttonStyle(.borderless)
                     .onTapGesture {}  // prevent row tap propagation
@@ -157,9 +203,12 @@ struct RecordingHistoryView: View {
                                 Text("·")
                                 Text(item.formattedDuration)
                             }
-                            if item.hasTranscript {
+                            if let status = item.status {
                                 Text("·")
-                                Text("✓ AI").foregroundStyle(.green)
+                                Label(status.label, systemImage: status.systemImage)
+                                    .labelStyle(.titleAndIcon)
+                                    .foregroundStyle(status.tint)
+                                    .accessibilityLabel("Status: \(status.label)")
                             }
                         }
                         .font(.caption2)
@@ -232,12 +281,25 @@ struct RecordingHistoryView: View {
                 .padding(.bottom, 6)
             }
         }
-        .background(
-            (audioPlayer.currentFileURL == item.url || isExpanded)
-                ? Color.accentColor.opacity(0.07)
-                : Color.clear
-        )
+        .background(rowBackground(for: item, isExpanded: isExpanded))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .onHover { hovering in
+            if hovering {
+                hoveredItemId = item.id
+            } else if hoveredItemId == item.id {
+                hoveredItemId = nil
+            }
+        }
+    }
+
+    private func rowBackground(for item: HistoryItem, isExpanded: Bool) -> Color {
+        if audioPlayer.currentFileURL == item.url || isExpanded {
+            return Color.accentColor.opacity(0.07)
+        }
+        if hoveredItemId == item.id {
+            return Color.primary.opacity(0.05)
+        }
+        return .clear
     }
 
     private func actionChip(title: String, systemImage: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
@@ -314,7 +376,7 @@ struct RecordingHistoryView: View {
                     Rectangle()
                         .fill(.quaternary)
                     Rectangle()
-                        .fill(.blue)
+                        .fill(.tint)
                         .frame(width: audioPlayer.duration > 0
                             ? geo.size.width * (audioPlayer.currentTime / audioPlayer.duration)
                             : 0)
@@ -357,6 +419,10 @@ struct RecordingHistoryView: View {
             let hasTranscript = FileManager.default.fileExists(atPath: transcriptURL.path)
             let richTranscriptURL = base.appendingPathExtension("richtranscript.json")
             let hasRichTranscript = FileManager.default.fileExists(atPath: richTranscriptURL.path)
+            let insightsURL = base.appendingPathExtension("insights.json")
+            let hasInsights = FileManager.default.fileExists(atPath: insightsURL.path)
+            let queueURL = base.appendingPathExtension("queue.json")
+            let isQueued = FileManager.default.fileExists(atPath: queueURL.path)
 
             var duration: TimeInterval = 0
             let metaURL = base.appendingPathExtension("json")
@@ -374,7 +440,9 @@ struct RecordingHistoryView: View {
                 duration: duration,
                 profileName: nil,
                 hasTranscript: hasTranscript,
-                hasRichTranscript: hasRichTranscript
+                hasRichTranscript: hasRichTranscript,
+                hasInsights: hasInsights,
+                isQueued: isQueued
             )
         }
     }
