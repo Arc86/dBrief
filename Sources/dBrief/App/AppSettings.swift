@@ -34,6 +34,9 @@ final class AppSettings {
         static let audioInputDeviceUID = "audioInputDeviceUID"
         static let whisperPrompt = "whisperPrompt"
         static let removeFillerWords = "removeFillerWords"
+        static let watchedFoldersEnabled = "watchedFoldersEnabled"
+        static let watchedFolders = "watchedFolders"
+        static let watchedFolderNotifyOnDetect = "watchedFolderNotifyOnDetect"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
         static let defaultTranscriptionEndpointId = "defaultTranscriptionEndpointId"
@@ -361,6 +364,23 @@ final class AppSettings {
     /// Hallucination/markup cleanup runs regardless of this toggle.
     var removeFillerWords: Bool {
         didSet { UserDefaults.standard.set(removeFillerWords, forKey: Keys.removeFillerWords) }
+    }
+
+    /// Master switch for the watched-folders drop-in transcription queue. Off by default.
+    var watchedFoldersEnabled: Bool {
+        didSet { UserDefaults.standard.set(watchedFoldersEnabled, forKey: Keys.watchedFoldersEnabled) }
+    }
+
+    /// Folders monitored for dropped-in audio files. New files are auto-transcribed using
+    /// the global auto-processing preferences. Persisted as JSON (each holds a bookmark).
+    var watchedFolders: [WatchedFolder] {
+        didSet { saveWatchedFolders(watchedFolders) }
+    }
+
+    /// Post a notification when a new file is detected in a watched folder (default on).
+    /// Completion notifications fire regardless via the normal processing pipeline.
+    var watchedFolderNotifyOnDetect: Bool {
+        didSet { UserDefaults.standard.set(watchedFolderNotifyOnDetect, forKey: Keys.watchedFolderNotifyOnDetect) }
     }
 
     /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
@@ -720,6 +740,9 @@ final class AppSettings {
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
         self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
         self.removeFillerWords = defaults.bool(forKey: Keys.removeFillerWords)
+        self.watchedFoldersEnabled = defaults.bool(forKey: Keys.watchedFoldersEnabled)
+        self.watchedFolders = AppSettings.loadWatchedFolders(forKey: Keys.watchedFolders)
+        self.watchedFolderNotifyOnDetect = defaults.object(forKey: Keys.watchedFolderNotifyOnDetect) as? Bool ?? true
         self.whisperModelName = {
             // New key takes priority
             if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {

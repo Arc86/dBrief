@@ -134,7 +134,11 @@ actor RecordingFinalizer {
         do {
             try fileManager.moveItem(at: sourceURL, to: masterURL)
         } catch {
+            // Cross-volume move fails (e.g. temp on a different volume than the
+            // recordings folder); fall back to copy, then remove the temp source so
+            // imported temp files (YouTube downloads, watched-folder copies) don't leak.
             try fileManager.copyItem(at: sourceURL, to: masterURL)
+            try? fileManager.removeItem(at: sourceURL)
         }
 
         var warnings: [String] = []

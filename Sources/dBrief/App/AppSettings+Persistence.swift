@@ -110,6 +110,21 @@ extension AppSettings {
         return endpoints
     }
 
+    // MARK: Watched Folders Persistence
+
+    func saveWatchedFolders(_ folders: [WatchedFolder]) {
+        if let data = try? JSONEncoder().encode(folders) {
+            UserDefaults.standard.set(data, forKey: Keys.watchedFolders)
+        }
+    }
+
+    static func loadWatchedFolders(forKey key: String) -> [WatchedFolder] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let folders = try? JSONDecoder().decode([WatchedFolder].self, from: data)
+        else { return [] }
+        return folders
+    }
+
     // MARK: Local CLI Config Persistence
 
     func saveLocalCLIConfig(_ config: LocalCLIConfig) {

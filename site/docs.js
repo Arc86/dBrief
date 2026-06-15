@@ -24,6 +24,7 @@
         { slug: "recording/call-detection",  title: "Call Detection" },
         { slug: "recording/calendar",        title: "Calendar Integration" },
         { slug: "recording/youtube-urls",    title: "Video & YouTube URLs" },
+        { slug: "recording/watched-folders", title: "Watched Folders" },
       ],
     },
     {
