@@ -406,9 +406,11 @@ final class AudioCaptureManager {
         inputNode.removeTap(onBus: 0)
 
         let targetUIDOrNil = decision.targetDeviceUID.isEmpty ? nil : decision.targetDeviceUID
+        var deviceApplied = true
         do {
             try AudioInputDeviceManager.applyInputDevice(uid: targetUIDOrNil, to: engine)
         } catch {
+            deviceApplied = false
             log.warning("Reconfigure: applyInputDevice failed: \(error.localizedDescription, privacy: .public)")
         }
 
@@ -431,10 +433,22 @@ final class AudioCaptureManager {
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
         if shouldRun { try engine.start() }
 
-        // Record the state actually achieved — VPIO may have refused to toggle, and
-        // the device may have fallen back to default — so the snapshot stays truthful.
-        appliedInputUID = decision.targetDeviceUID
-        appliedVoiceProcessing = inputNode.isVoiceProcessingEnabled
+        // Record the achieved state so the snapshot stays truthful AND the
+        // reconfigure converges — a snapshot that can never match the desired state
+        // would re-fire a full engine restart on every later benign config event.
+        //
+        // Device: only adopt the target if the switch actually took; on failure the
+        // engine kept its previous device, so leave the snapshot unchanged.
+        if deviceApplied { appliedInputUID = decision.targetDeviceUID }
+        // VPIO: if the toggle refused (the route can't do Voice Processing), record
+        // the DESIRED value rather than the stuck readback, so benign config events
+        // don't keep retrying an impossible toggle. A genuine route change recomputes
+        // a fresh target and retries then (turning VPIO *off* always succeeds).
+        let achievedVPIO = inputNode.isVoiceProcessingEnabled
+        if vpioChanged, achievedVPIO != decision.voiceProcessingEnabled {
+            log.warning("Reconfigure: VPIO stuck at \(achievedVPIO, privacy: .public); suppressing retry until route changes")
+        }
+        appliedVoiceProcessing = vpioChanged ? decision.voiceProcessingEnabled : achievedVPIO
         log.info("Reconfigure: applied device=\(self.appliedInputUID.isEmpty ? "default" : self.appliedInputUID, privacy: .public) vpio=\(self.appliedVoiceProcessing, privacy: .public)")
     }
 
