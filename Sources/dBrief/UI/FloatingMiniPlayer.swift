@@ -159,6 +159,20 @@ private struct MiniPlayerView: View {
                 .frame(height: 20)
                 .frame(maxWidth: .infinity)
 
+            // Transient note when the input device / echo cancellation auto-switches.
+            if let note = appState.recordingStatusNote {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption2)
+                    Text(note)
+                        .font(.caption2)
+                        .lineLimit(2)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
+            }
+
             // Bottom: action buttons
             HStack(spacing: 6) {
                 if appState.isRecording {

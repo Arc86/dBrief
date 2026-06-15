@@ -19,9 +19,21 @@ Choose which microphone dBrief records from in **Settings → Recording → Audi
 
 You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. Click the **Mic** chip in the recording controls and pick a different input device. dBrief switches the live input without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed).
 
+### Automatic device follow
+
+dBrief also adapts on its own when your audio devices change mid-recording, so you never silently lose your voice:
+
+- If your selected microphone **disappears** (e.g. AirPods run out of battery or disconnect), dBrief automatically falls back to the system default input and keeps recording.
+- If you're on **System Default**, it follows the new default device when you connect one.
+- A microphone you've explicitly picked stays selected as long as it's still connected.
+
+When an automatic switch happens, a brief note appears in the floating recorder (e.g. "Switched to MacBook Pro Microphone") so you know what changed. This works alongside the manual **Mic** chip — both share the same seamless, single-track switch.
+
 ## Echo cancellation
 
 **Settings → Recording → Echo Cancellation** has a **Remove meeting audio from microphone** toggle. It's recommended when using laptop speakers: it uses the captured system audio as a reference to suppress speaker bleed picked up by your mic. When recording mic-only, it falls back to macOS real-time voice processing.
+
+> **Headphones & earphones:** when your audio output is headphones, earphones (including AirPods), or any non-built-in device, there's no speaker bleed to cancel, so dBrief **automatically skips** echo cancellation — even with the toggle on. This keeps the audio you hear at full volume (real-time voice processing would otherwise duck output and lower the level). dBrief re-checks the output route **continuously during recording**: switch from speakers to headphones (or back) mid-recording and echo cancellation turns off or on to match, automatically.
 
 ## Technical details
 

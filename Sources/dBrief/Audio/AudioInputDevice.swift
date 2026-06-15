@@ -72,6 +72,23 @@ enum AudioInputDeviceManager {
         }
     }
 
+    /// Name of the current system default input device (e.g. "MacBook Pro Microphone"),
+    /// for user-facing status notes. `nil` if it can't be resolved.
+    static func defaultInputDeviceName() -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
+        )
+        guard status == noErr, deviceID != 0 else { return nil }
+        return stringProperty(selector: kAudioObjectPropertyName, deviceID: deviceID)
+    }
+
     static func deviceID(forUID uid: String) -> AudioDeviceID? {
         let deviceIDs = allDeviceIDs()
         for id in deviceIDs {

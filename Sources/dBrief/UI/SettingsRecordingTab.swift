@@ -37,7 +37,7 @@ struct SettingsRecordingTab: View {
 
             Section("Echo Cancellation") {
                 Toggle("Remove meeting audio from microphone", isOn: $settings.acousticEchoCancellation)
-                Text("Recommended when using laptop speakers. Uses the captured system audio as a reference to suppress speaker bleed in the mic during mixing. Falls back to real-time voice processing when recording mic only.")
+                Text("Recommended when using laptop speakers. Uses the captured system audio as a reference to suppress speaker bleed in the mic during mixing. Falls back to real-time voice processing when recording mic only. Automatically skipped when you're on headphones or earphones (no speaker bleed to cancel), so output volume stays at full level.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

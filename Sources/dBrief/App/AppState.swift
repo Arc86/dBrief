@@ -43,6 +43,10 @@ final class AppState {
     /// When set, the transcript browser should select the in-progress live recording on open.
     var pendingLiveTranscriptSelection: Bool = false
     var lastError: String?
+    /// Transient note shown during recording when dBrief auto-switches the input
+    /// device or echo cancellation mid-recording (e.g. "Switched to MacBook Microphone").
+    /// Auto-cleared a few seconds after it's set; nil when there's nothing to show.
+    var recordingStatusNote: String?
     var queuedCount: Int = 0
     var memoryPressureLevel: MemoryPressureLevel = .normal
     var preflightWarning: PreflightWarning?
