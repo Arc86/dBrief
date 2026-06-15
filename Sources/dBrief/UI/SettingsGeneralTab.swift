@@ -58,6 +58,19 @@ struct SettingsGeneralTab: View {
 
                 if appSettings.callDetectionEnabled {
                     Toggle("Auto-start recording when call detected", isOn: $settings.autoRecordCalls)
+
+                    if !appSettings.autoRecordCalls {
+                        Picker("Auto-dismiss prompt:", selection: $settings.autoDismissCallPromptSeconds) {
+                            Text("Never").tag(0)
+                            Text("After 10 seconds").tag(10)
+                            Text("After 15 seconds").tag(15)
+                            Text("After 30 seconds").tag(30)
+                            Text("After 60 seconds").tag(60)
+                        }
+                        Text("Automatically dismiss the “call detected” prompt if you don't respond. Clicking the prompt cancels the timer.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .listRowBackground(Color.clear)

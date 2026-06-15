@@ -20,6 +20,7 @@ final class AppSettings {
         static let callDetectionEnabled = "callDetectionEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let autoRecordCalls = "autoRecordCalls"
+        static let autoDismissCallPromptSeconds = "autoDismissCallPromptSeconds"
         static let disabledCallApps = "disabledCallApps"
         static let transcriptionLanguage = "transcriptionLanguage"
         static let useBuiltInTranscription = "useBuiltInTranscription"
@@ -593,6 +594,12 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(autoRecordCalls, forKey: Keys.autoRecordCalls) }
     }
 
+    /// Auto-dismiss the "call detected" prompt after this many seconds. `0` = never (the
+    /// prompt stays until the user acts). Cancelled if the user interacts with the prompt.
+    var autoDismissCallPromptSeconds: Int {
+        didSet { UserDefaults.standard.set(autoDismissCallPromptSeconds, forKey: Keys.autoDismissCallPromptSeconds) }
+    }
+
     var disabledCallApps: Set<String> {
         didSet {
             UserDefaults.standard.set(Array(disabledCallApps), forKey: Keys.disabledCallApps)
@@ -775,6 +782,7 @@ final class AppSettings {
         self.remoteChunkRetryCount = max(0, defaults.object(forKey: Keys.remoteChunkRetryCount) as? Int ?? 2)
 
         self.callDetectionEnabled = defaults.object(forKey: Keys.callDetectionEnabled) as? Bool ?? true
+        self.autoDismissCallPromptSeconds = max(0, defaults.object(forKey: Keys.autoDismissCallPromptSeconds) as? Int ?? 0)
         if let raw = defaults.string(forKey: Keys.calendarSource),
            let source = CalendarSource(rawValue: raw) {
             self.calendarSource = source
