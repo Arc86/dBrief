@@ -172,14 +172,17 @@ actor YouTubeDownloadService {
         let title = Self.runBlocking(ytdlp, args: ["--get-title", "--no-playlist", trimmed])
             .flatMap { $0.isEmpty ? nil : $0 } ?? "youtube-video"
 
-        // Download best audio and re-encode to m4a 16 kHz mono via ffmpeg post-processor
+        // Download best audio as m4a. (The 16 kHz / mono downsample happens in a
+        // dedicated ffmpeg pass below — yt-dlp's ExtractAudio post-processor only
+        // *remuxes* when the source is already m4a, silently ignoring
+        // `--postprocessor-args` sample-rate/channel flags, so it can't be relied
+        // on to resample.)
         let outputTemplate = tempDir.appendingPathComponent("audio.%(ext)s").path
         var args: [String] = [
             "--no-playlist",
             "-f", "bestaudio[ext=m4a]/bestaudio/best",
             "--extract-audio",
             "--audio-format", "m4a",
-            "--postprocessor-args", "ffmpeg:-ac 1 -ar 16000",
             "-o", outputTemplate,
             "--no-progress",
         ]
@@ -226,7 +229,50 @@ actor YouTubeDownloadService {
         }
 
         Self.log.info("Audio download complete: \(audioFile.lastPathComponent, privacy: .public)")
-        return (audioFile, title)
+
+        // Downsample to 16 kHz mono m4a (Whisper's native rate; also ~halves the
+        // file). Best-effort: if ffmpeg is unavailable or the pass fails, fall
+        // back to the original download — transcription engines resample anyway.
+        let converted = Self.downsampleToMono16k(audioFile, in: tempDir)
+        return (converted, title)
+    }
+
+    /// Re-encodes `source` to 16 kHz mono AAC/m4a via ffmpeg. Returns the new
+    /// file on success, or `source` unchanged if ffmpeg is missing or the
+    /// conversion fails (so a download is never lost to a post-processing hiccup).
+    nonisolated private static func downsampleToMono16k(_ source: URL, in tempDir: URL) -> URL {
+        guard let ffmpeg = FFmpegLocator.resolve(), ffmpeg != "/usr/bin/env" else {
+            log.info("ffmpeg unavailable; keeping native-rate download")
+            return source
+        }
+        let outURL = tempDir.appendingPathComponent("audio16k.m4a")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpeg)
+        process.arguments = [
+            "-y", "-i", source.path,
+            "-ac", "1", "-ar", "16000",
+            "-c:a", "aac", "-b:a", "64k",
+            "-movflags", "+faststart",
+            outURL.path,
+        ]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            log.error("ffmpeg downsample failed to launch: \(error.localizedDescription, privacy: .public)")
+            return source
+        }
+        guard process.terminationStatus == 0,
+              FileManager.default.fileExists(atPath: outURL.path),
+              (try? outURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 > 0
+        else {
+            log.error("ffmpeg downsample failed (exit \(process.terminationStatus)); keeping native-rate download")
+            return source
+        }
+        try? FileManager.default.removeItem(at: source)
+        return outURL
     }
 
     // MARK: - Private helpers

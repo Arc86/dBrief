@@ -106,10 +106,37 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let transcribeStart = Date()
             // wkResults type inferred as WhisperKit's TranscriptionResult — kept local to avoid
             // the module/class name collision when naming the type in function signatures.
-            let wkResults = try await whisper.transcribe(
+            var wkResults = try await whisper.transcribe(
                 audioArray: audioArray,
                 decodeOptions: options
             )
+
+            // A custom-vocabulary initialPrompt is fed to Whisper as conditioning
+            // ("previous text") tokens. When that domain is unrelated to the audio
+            // (e.g. a work-meeting vocabulary applied to a YouTube video), Whisper
+            // can emit *blank* output for most windows — the segments still carry
+            // time ranges, so the loss is silent, but their text is empty. Detect
+            // that collapse and recover by re-transcribing once without the prompt
+            // (a no-prompt pass is reliably complete on the same audio).
+            if !promptTokens.isEmpty {
+                // wkResults type is inferred (name collision), so count inline.
+                let total = wkResults.reduce(0) { $0 + $1.segments.count }
+                let nonEmpty = wkResults.reduce(0) {
+                    $0 + $1.segments.filter { !$0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty }.count
+                }
+                if total >= 4, Double(nonEmpty) / Double(total) < 0.5 {
+                    Logger.localAI.warning(
+                        "Initial prompt suppressed transcription (\(nonEmpty)/\(total) segments had text); retrying without prompt"
+                    )
+                    var noPromptOptions = options
+                    noPromptOptions.promptTokens = nil
+                    let retry = try await whisper.transcribe(audioArray: audioArray, decodeOptions: noPromptOptions)
+                    let retryNonEmpty = retry.reduce(0) {
+                        $0 + $1.segments.filter { !$0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty }.count
+                    }
+                    if retryNonEmpty > nonEmpty { wkResults = retry }
+                }
+            }
             let transcribeDuration = Date().timeIntervalSince(transcribeStart)
             // Logged at .notice so it persists to the unified log (unlike .info), making
             // transcription speed comparable across runs/settings via `log show`. Includes
@@ -140,48 +167,55 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     )
                     let speakerKit = try await SpeakerKit(skConfig)
                     let diarResult = try await speakerKit.diarize(audioArray: audioArray)
+                    await speakerKit.unloadModels()
                     Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
-                    let speakerSegments = diarResult.addSpeakerInfo(to: wkResults, strategy: SpeakerInfoStrategy.subsegment)
-                    await speakerKit.unloadModels()
+                    // Convert the diarization turns to our wire type.
+                    let turns: [DiarizedTurn] = diarResult.segments.compactMap { seg in
+                        guard let id = speakerInfoString(seg.speaker) else { return nil }
+                        return DiarizedTurn(speakerId: id, start: Double(seg.startTime), end: Double(seg.endTime))
+                    }
 
-                    var allSegments: [dBriefWire.TranscriptionResult.Segment] = []
+                    // Build the transcript from WhisperKit's own segments (every one
+                    // of them), then overlay speakers by time overlap via
+                    // SpeakerMerge.mergePreservingSegments. We do NOT use
+                    // SpeakerKit's addSpeakerInfo(strategy: .subsegment) here: it
+                    // silently discards any segment lacking word timestamps, and a
+                    // custom-vocabulary initialPrompt routinely makes WhisperKit omit
+                    // word timings for most segments — which dropped the bulk of the
+                    // transcript whenever diarization + a vocabulary prompt were both on.
+                    var baseSegments: [dBriefWire.TranscriptionResult.Segment] = []
                     var fullTextParts: [String] = []
-
-                    for group in speakerSegments {
-                        for seg in group {
-                            let speakerId = speakerInfoString(seg.speaker)
-                            let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.speakerWords.isEmpty ? nil :
-                                seg.speakerWords.map { sw in
-                                    dBriefWire.TranscriptionResult.Word(
-                                        word: sw.wordTiming.word,
-                                        start: Double(sw.wordTiming.start),
-                                        end: Double(sw.wordTiming.end),
-                                        probability: nil,
-                                        speaker: speakerInfoString(sw.speaker)
-                                    )
-                                }
-
+                    for result in wkResults {
+                        for seg in result.segments {
                             let segText = cleanTranscriptArtifacts(seg.text)
                             guard !segText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else { continue }
-
-                            allSegments.append(dBriefWire.TranscriptionResult.Segment(
-                                start: Double(seg.startTime),
-                                end: Double(seg.endTime),
+                            let wordTimings: [dBriefWire.TranscriptionResult.Word]? = seg.words?.map { w in
+                                dBriefWire.TranscriptionResult.Word(
+                                    word: w.word,
+                                    start: Double(w.start),
+                                    end: Double(w.end),
+                                    probability: Double(w.probability)
+                                )
+                            }
+                            baseSegments.append(dBriefWire.TranscriptionResult.Segment(
+                                start: Double(seg.start),
+                                end: Double(seg.end),
                                 text: segText,
-                                words: wordTimings,
-                                speaker: speakerId
+                                words: wordTimings
                             ))
                             fullTextParts.append(segText)
                         }
                     }
-
                     let fullText = fullTextParts.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    let base = dBriefWire.TranscriptionResult(text: fullText, segments: baseSegments)
+                    let merged = SpeakerMerge.mergePreservingSegments(base, turns: turns)
+
                     await unload()
                     return dBriefWire.TranscriptionResult(
-                        text: fullText,
-                        segments: allSegments,
-                        speakerCount: diarResult.speakerCount,
+                        text: merged.text,
+                        segments: merged.segments,
+                        speakerCount: merged.speakerCount ?? diarResult.speakerCount,
                         inferenceTime: transcribeDuration
                     )
                 } catch {
