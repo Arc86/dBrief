@@ -202,15 +202,16 @@ Optional SpeakerKit integration (Pyannote v4 models) for identifying who said wh
 
 **Important**: WhisperKit's `TranscriptionResult` class conflicts with dBrief's `TranscriptionResult` struct (same name, different modules). The `WhisperKit` module name also collides with the `WhisperKit` class. As a result, diarization code that uses both types must be inlined within `transcribe()` where `wkResults` type is inferred — it cannot be extracted into separate functions with explicit type annotations. Use `dBrief.TranscriptionResult` to qualify our type.
 
-### Live Transcript Streaming
+### Live Transcript
 
-Progressive transcript output during WhisperKit transcription:
-- WhisperKit's `segmentDiscoveryCallback` fires each time a ~30-second audio chunk is decoded
-- Segments converted to `LiveTranscriptSegment` structs and pushed via `LocalAIPluginState.newSegments(...)`
-- `RecordingManager` appends to `AppState.liveTranscriptSegments` (cleared on each new transcription)
-- `LiveTranscriptView` (`UI/LiveTranscriptView.swift`) displays segments in a popup window with timestamps and auto-scroll
-- "Live Transcript" button appears in `TranscriptionProgressView` once segments start arriving
-- Separate `WindowGroup(id: "live-transcript")` scene in `DBriefApp`
+`AppState.liveTranscriptSegments` (+ `liveVolatileMic`/`liveVolatileSystem`/`liveStatusMessage`) drives a real-time transcript view that's filled in two phases — while recording (optional Apple Speech preview) and while WhisperKit transcribes the finished file. Both render inside `TranscriptDetailView`'s **live mode** (there is no standalone live window); the in-progress recording is pinned at the top of `TranscriptBrowserView`'s sidebar ("In Progress"), and the **"Live Transcript"** button in `TranscriptionProgressView` opens the transcript window (`id: "transcript"`) with it selected.
+
+**Real-time, during recording — `LiveTranscriptionService` (`Services/LiveTranscriptionService.swift`)**: optional (`AppSettings.liveTranscriptionEnabled`, default off; **Settings → AI & Models → Transcription → Live Transcription**), separate from the authoritative transcript still produced by the chosen engine at stop. An `actor` running two concurrent in-process Apple Speech channels — mic ("You") and system audio ("Participant"); macOS 26+ uses the streaming `SpeechAnalyzer`/`SpeechTranscriber` (volatile + finalized, input converter rebuilt on source-format change), macOS 14–25 falls back to `SFSpeechAudioBufferRecognitionRequest`. On-device only.
+- **Live audio feed**: `AudioCaptureManager.makeLiveAudioStreams()` (called *before* `startRecording` so the tap handlers capture the sinks) returns mic + system `AsyncStream<LiveAudioBuffer>`. Tap handlers deep-copy each buffer into a `LiveAudioBuffer` (an `@unchecked Sendable` wrapper, so the stream crosses the main-actor → transcription-actor boundary without `sending` gymnastics) in addition to writing the CAF tracks; the converting hot-swap handler feeds the live sink too, so live transcription survives a mid-recording mic device switch. Streams use `.bufferingNewest` (bounded — a lossy preview, not unbounded RAM) and are finished by `stopRecording`.
+- **Orchestration**: `RecordingManager.startLiveTranscription(streams:)` starts the service (gating each channel on its permission); finalized segments → `liveTranscriptSegments` (ordered by the pure, end-anchored `LiveSegmentMerge.insert`), volatile text → `liveVolatile*`, status → `liveStatusMessage` ("Preparing language…" during a first-run language-asset download). `stopLiveTranscription` cancels it on stop/reset.
+- Pure, OS-independent, unit-tested helpers in `dBriefWire`: `AppleSpeechResultMapper.liveSegments` (chunk → speaker-tagged `LiveTranscriptSegment`) and `LiveSegmentMerge` (`LiveTranscriptMappingTests`).
+
+**Progressive, during WhisperKit transcription**: WhisperKit's `segmentDiscoveryCallback` fires each time a ~30-second audio chunk is decoded; segments convert to `LiveTranscriptSegment` and are pushed via `LocalAIPluginState.newSegments(...)`, which `RecordingManager` appends to the same `liveTranscriptSegments` (cleared on each new transcription).
 
 ### YouTube / Video URL Transcription (`Services/YouTubeDownloadService.swift`)
 
@@ -227,8 +228,9 @@ Progressive transcript output during WhisperKit transcription:
 
 - Holds a `[ChatMessage]` array and an `isStreaming` flag
 - Routes to Apple Intelligence, MLX (streaming), or remote endpoint based on `AppSettings.aiEngine`
-- Builds a system prompt from the full transcript text and speaker labels; each user turn appends context
-- `TranscriptChatView` renders the conversation with a command-palette layout and glass styling, embedded as a panel in `TranscriptWindowView`
+- Builds the system prompt from a **`transcriptProvider: @MainActor () -> String` closure** (not a fixed string) read at each `send()`, plus speaker labels — so the chat can run against a *live, growing* transcript during recording (the provider reads `AppState.liveTranscriptSegments` + volatile lines). A `transcriptText:` convenience init covers the fixed finished-recording case.
+- `rebindTranscript(text:speakerLabels:)` re-points an existing session at a new transcript while keeping its messages — used when a live recording finishes so the in-progress Q&A **carries over** to the authoritative transcript (an empty live chat is dropped instead). Chat is in-memory only (`TranscriptChatStore`, app-run lifetime); on-disk persistence is tracked separately.
+- `TranscriptChatView` renders the conversation with a command-palette layout and glass styling. In the finished-recording viewer it's a full-pane mode swap; during **live mode** it opens as a right-hand side panel (`TranscriptDetailView.liveChatPanel`) so the growing transcript stays visible.
 
 ### Rich Transcript Viewer
 
@@ -266,8 +268,7 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
 - **MenuBarView** (in `DBriefApp.swift`) — main menu bar popover with header, recording controls, history, YouTube URL input, and settings access
 - **RecordingControlsView** — record/pause/resume/stop buttons
 - **PostRecordingSheet** — post-recording options (transcribe, summary/AI toggles; title edit; participants input for diarization); AI options hidden when `aiProcessingEnabled` is false
-- **TranscriptionProgressView** — step-by-step progress display during processing with download progress bar and "Live Transcript" popup button
-- **LiveTranscriptView** — popup window showing progressive transcript segments as they arrive during transcription
+- **TranscriptionProgressView** — step-by-step progress display during processing with download progress bar and a "Live Transcript" button that opens the transcript window (`id: "transcript"`) on the in-progress recording (see [Live Transcript](#live-transcript))
 - **RecordingHistoryView** — list of past recordings with action chips; opens transcript viewer
 - **OnboardingView** — initial setup wizard (permissions, engine selection, folder setup)
 - **FloatingMiniPlayer** — floating window showing real-time peak levels during recording
@@ -278,7 +279,7 @@ AI output (summary, action items, tags, sentiment) is persisted to a `<base>.ins
   - **General** — start-at-login toggle (`LoginItemManager`/`SMAppService`), appearance/power-user toggle, record shortcut (`ShortcutRecorderView`), output folders, call detection, calendar source (iCal/Outlook), and a Reset Onboarding button (flips `hasCompletedOnboarding` to re-show the setup guide)
   - **Permissions** (`SettingsPermissionsTab`) — top-level page consolidating all permission status/requests (microphone, screen recording, speech recognition, calendar) with "Open System Settings" deep links; moved here out of General. Pinned to the **bottom** of the sidebar (last `SettingsTab` case).
   - **Recording** (`SettingsRecordingTab`) — audio input device, acoustic echo cancellation, and a read-only Audio Quality summary (Power User Mode)
-  - **AI & Models** (`SettingsAIModelsTab`) — two sub-tabs: **Transcription** (`SettingsTranscriptionTab`: engine; for Local Whisper a model **card** with Recommended badge + per-model plain-language descriptor + `ModelDownloadButton`, a help popover, diarization, and an **Advanced** disclosure holding compute units, "Show all models", refresh, and purge; plus language, custom vocabulary, endpoints, chunking) and **AI Analysis** (`SettingsAITab`: AI engine, Gemma model download, prompts, AI processing toggle, output language, endpoints)
+  - **AI & Models** (`SettingsAIModelsTab`) — two sub-tabs: **Transcription** (`SettingsTranscriptionTab`: engine; for Local Whisper a model **card** with Recommended badge + per-model plain-language descriptor + `ModelDownloadButton`, a help popover, diarization, and an **Advanced** disclosure holding compute units, "Show all models", refresh, and purge; plus language, a **Live Transcription** toggle (`liveTranscriptionEnabled`, real-time Apple Speech preview during recording — see [Live Transcript](#live-transcript)), cleanup, custom vocabulary, endpoints, chunking) and **AI Analysis** (`SettingsAITab`: AI engine, Gemma model download, prompts, AI processing toggle, output language, endpoints)
   - **Integrations** (`SettingsIntegrationsTab`) — only `IntegrationDestination.available` destinations
   - **Profiles** (`SettingsProfilesTab`) — hidden unless `powerUserMode` is enabled
   - **Benchmark** (`SettingsBenchmarkTab`) — hidden unless `powerUserMode` is enabled; hosts `ModelPerformanceView` (the global per-model timing aggregate from `ModelPerformanceStore`). Each transcription card's **headline** number is the pure model **inference** realtime ratio (`TranscriptionResult.inferenceTime`, reported by the WhisperKit helper); the **end-to-end** ratio (full transcription step — model load/prewarm, IPC, audio decode, diarization) plus the load/overhead delta move to the caption (cards lacking inference data fall back to end-to-end as the headline). The header shows a lifetime **"… transcribed by dBrief"** odometer (`AppSettings.lifetimeTranscribedSeconds`, incremented per transcription in `RecordingManager`) and a **Clear Stats** trash button (`ModelPerformanceStore.clear()`, with confirmation) that wipes the per-model history but **keeps** the odometer. Lives here because the data is overall, not tied to a single transcript — it is **not** in the transcript window toolbar. Reads the store via `@Environment(AppContext.self)` and `AppSettings` via `@Environment` (the settings window injects both).
