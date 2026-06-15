@@ -17,18 +17,8 @@ struct SettingsProfilesTab: View {
     @State private var showTaskOverrides = false
     @State private var showFolderOverrides = false
 
-    private let profileIcons: [(label: String, symbol: String)] = [
-        ("General", "slider.horizontal.3"),
-        ("Team", "person.3.fill"),
-        ("Sales", "briefcase.fill"),
-        ("Work", "building.2.fill"),
-        ("Personal", "person.crop.circle.fill"),
-        ("Client", "person.crop.square.fill"),
-        ("Call", "phone.fill"),
-        ("Notes", "note.text"),
-        ("Idea", "lightbulb.fill"),
-        ("Star", "star.fill")
-    ]
+    // The symbol grid is hidden until the user taps the icon to change it.
+    @State private var showSymbolPicker = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -40,7 +30,10 @@ struct SettingsProfilesTab: View {
         .padding(.leading, 14)
         .onAppear { ensureSelection() }
         .onChange(of: appSettings.profiles.count) { _, _ in ensureSelection() }
-        .onChange(of: selectedProfileId) { _, _ in ensureSelection() }
+        .onChange(of: selectedProfileId) { _, _ in
+            ensureSelection()
+            showSymbolPicker = false
+        }
         .confirmationDialog(
             profilePendingDeletion.map { "Delete “\($0.name)”?" } ?? "Delete profile?",
             isPresented: Binding(
@@ -227,11 +220,26 @@ struct SettingsProfilesTab: View {
     private func identitySection(_ profile: MeetingProfile) -> some View {
         Section("Profile") {
             HStack(spacing: 14) {
-                ProfileIconView(
-                    systemName: profile.iconSystemName,
-                    colorKey: profile.iconBackgroundColorKey,
-                    size: 52
-                )
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { showSymbolPicker.toggle() }
+                } label: {
+                    ProfileIconView(
+                        systemName: profile.iconSystemName,
+                        colorKey: profile.iconBackgroundColorKey,
+                        size: 52
+                    )
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white, Color.accentColor)
+                            .background(Circle().fill(.background))
+                            .offset(x: 4, y: 4)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(showSymbolPicker ? "Hide symbols" : "Change symbol")
+                .accessibilityLabel("Change symbol")
+
                 VStack(alignment: .leading, spacing: 6) {
                     NativeTextField(
                         placeholder: "Profile name",
@@ -251,15 +259,10 @@ struct SettingsProfilesTab: View {
                 }
             }
 
-            Picker(
-                "Symbol",
-                selection: profileBinding(\.iconSystemName, fallback: profile.iconSystemName)
-            ) {
-                ForEach(profileIcons, id: \.symbol) { item in
-                    Label(item.label, systemImage: item.symbol).tag(item.symbol)
-                }
+            if showSymbolPicker {
+                symbolGrid(profile)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .pickerStyle(.menu)
 
             LabeledContent("Color") {
                 HStack(spacing: 8) {
@@ -297,6 +300,44 @@ struct SettingsProfilesTab: View {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    /// Symbol-only icon picker: a wrapping grid of selectable SF Symbols (no
+    /// labels). The selected glyph is tinted with the profile's own color.
+    @ViewBuilder
+    private func symbolGrid(_ profile: MeetingProfile) -> some View {
+        let binding = profileBinding(\.iconSystemName, fallback: profile.iconSystemName)
+        let tint = Theme.profileColor(for: profile.iconBackgroundColorKey)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Symbol")
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 40), spacing: 8)],
+                spacing: 8
+            ) {
+                ForEach(Theme.profileIconOptions, id: \.self) { symbol in
+                    let isSelected = symbol == binding.wrappedValue
+                    Button { binding.wrappedValue = symbol } label: {
+                        Image(systemName: symbol)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(isSelected ? tint : Color.primary)
+                            .frame(width: 36, height: 36)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(isSelected ? tint.opacity(0.18) : Color.secondary.opacity(0.10))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .strokeBorder(isSelected ? tint : .clear, lineWidth: 2)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help(symbol)
+                    .accessibilityLabel(symbol)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
             }
         }
     }
@@ -360,6 +401,12 @@ struct SettingsProfilesTab: View {
     private var aiOverridesSection: some View {
         Section {
             DisclosureGroup(isExpanded: $showAIOverrides) {
+                overrideRow("AI processing", \.aiProcessingEnabled,
+                            defaultValue: appSettings.aiProcessingEnabled) {
+                    boolToggle("Enable AI processing", \.aiProcessingEnabled,
+                               fallback: appSettings.aiProcessingEnabled)
+                }
+
                 overrideRow("AI engine", \.aiEngine, defaultValue: appSettings.aiEngine) {
                     Picker("AI engine", selection: overrideBinding(\.aiEngine, fallback: appSettings.aiEngine)) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
@@ -404,8 +451,8 @@ struct SettingsProfilesTab: View {
                 }
             } label: {
                 overrideGroupLabel("AI Analysis", keyPaths: [
-                    isSet(\.aiEngine), isSet(\.aiEndpointId), isSet(\.summaryPrompt),
-                    isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)
+                    isSet(\.aiProcessingEnabled), isSet(\.aiEngine), isSet(\.aiEndpointId),
+                    isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)
                 ])
             }
         }

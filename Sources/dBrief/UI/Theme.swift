@@ -38,6 +38,23 @@ enum Theme {
     static func profileColor(for key: String) -> Color {
         profileColorOptions.first(where: { $0.key == key })?.color ?? .blue
     }
+
+    /// SF Symbols offered for profile identity icons. Symbol-only (no labels) —
+    /// the name is the profile's, not the glyph's. Curated for the kinds of
+    /// meetings/contexts people make profiles for.
+    static let profileIconOptions: [String] = [
+        "slider.horizontal.3", "person.3.fill", "person.2.fill", "person.crop.circle.fill",
+        "person.crop.square.fill", "briefcase.fill", "building.2.fill", "building.columns.fill",
+        "phone.fill", "video.fill", "mic.fill", "headphones",
+        "note.text", "doc.text.fill", "list.bullet.clipboard.fill", "calendar",
+        "lightbulb.fill", "star.fill", "flag.fill", "bookmark.fill",
+        "megaphone.fill", "bubble.left.and.bubble.right.fill", "envelope.fill", "globe",
+        "cart.fill", "dollarsign.circle.fill", "chart.bar.fill", "chart.line.uptrend.xyaxis",
+        "graduationcap.fill", "books.vertical.fill", "hammer.fill", "wrench.and.screwdriver.fill",
+        "paintbrush.fill", "music.note", "gamecontroller.fill", "heart.fill",
+        "bolt.fill", "flame.fill", "leaf.fill", "airplane",
+        "house.fill", "cup.and.saucer.fill", "stethoscope", "scalemass.fill"
+    ]
 }
 
 /// Vibrant filled rounded-square profile icon: a solid color fill with a white

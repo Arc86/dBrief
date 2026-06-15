@@ -261,7 +261,7 @@ final class RecordingManager {
 
         // Warm the Apple Intelligence model during transcription so the AI step starts
         // without first-call load latency. Fire-and-forget; no-op for other engines.
-        if appSettings.aiProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence {
+        if appSettings.effectiveAIProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence {
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
                 Task { await LocalAIService().prewarm() }
@@ -324,7 +324,7 @@ final class RecordingManager {
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         guard !Task.isCancelled else { return }
-        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
+        if appSettings.effectiveAIProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
@@ -545,7 +545,7 @@ final class RecordingManager {
         var perfAITime: TimeInterval?
 
         // Step 2: AI tasks (same as processRecording)
-        if appSettings.aiProcessingEnabled, let transcription = recording.transcription {
+        if appSettings.effectiveAIProcessingEnabled, let transcription = recording.transcription {
             let aiEngine = appSettings.effectiveAIEngine
             let endpoint = appSettings.effectiveDefaultAIEndpoint
             let localAvailable = localAIAvailable
