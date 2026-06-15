@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// One borderless metric in the header's right-hand group (e.g. Acties · Tags · Audio).
+/// One borderless metric in the header's right-hand group (e.g. Actions · Tags · Audio).
 struct ViewerMetric: Identifiable {
-    let id = UUID()
+    /// Stable key (e.g. "actions") so SwiftUI keeps view identity across renders
+    /// instead of re-creating each metric when the header recomputes.
+    let id: String
     let label: LocalizedStringKey
     let value: String
 

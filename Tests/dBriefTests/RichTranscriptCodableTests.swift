@@ -7,8 +7,11 @@ struct RichTranscriptCodableTests {
 
     @Test("legacy JSON without meSpeakerId still decodes")
     func legacyDecode() throws {
+        // A segment as persisted before `meSpeakerId` existed: all of RichSegment's
+        // non-optional fields are present (synthesized Codable requires them); only
+        // the new top-level `meSpeakerId` key is absent.
         let json = """
-        {"version":1,"segments":[{"id":"\(UUID().uuidString)","start":0,"end":1,"text":"hi","originalText":"hi"}],"speakerLabels":[]}
+        {"version":1,"segments":[{"id":"\(UUID().uuidString)","start":0,"end":1,"text":"hi","originalText":"hi","tokens":[],"isStarred":false,"isEdited":false}],"speakerLabels":[]}
         """
         let data = Data(json.utf8)
         let t = try JSONDecoder().decode(RichTranscript.self, from: data)

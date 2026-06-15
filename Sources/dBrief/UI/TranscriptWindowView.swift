@@ -128,7 +128,10 @@ struct TranscriptDetailView: View {
     }
 
     private var headerSpeakers: [HeaderSpeaker] {
-        uniqueSpeakerIds.map { id in
+        // Respect the "Speaker Names" display toggle: when off, the header avatar
+        // stack hides too, matching the transcript rows.
+        guard showSpeakerNames else { return [] }
+        return uniqueSpeakerIds.map { id in
             HeaderSpeaker(id: id, name: displayName(for: id), isMe: id == meSpeakerId)
         }
     }
@@ -138,13 +141,13 @@ struct TranscriptDetailView: View {
     private var headerMetrics: [ViewerMetric] {
         var metrics: [ViewerMetric] = []
         if let insights, !insights.actionItems.isEmpty {
-            metrics.append(ViewerMetric(label: "Actions", value: "\(insights.actionItems.count)"))
+            metrics.append(ViewerMetric(id: "actions", label: "Actions", value: "\(insights.actionItems.count)"))
         }
         if let insights, !insights.tags.isEmpty {
-            metrics.append(ViewerMetric(label: "Tags", value: "\(insights.tags.count)"))
+            metrics.append(ViewerMetric(id: "tags", label: "Tags", value: "\(insights.tags.count)"))
         }
         if recording.duration > 0 {
-            metrics.append(ViewerMetric(label: "Audio", value: recording.formattedDuration))
+            metrics.append(ViewerMetric(id: "audio", label: "Audio", value: recording.formattedDuration))
         }
         return metrics
     }

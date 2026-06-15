@@ -123,7 +123,6 @@ struct TranscriptBrowserView: View {
 
     private func makeRecording(from item: RecordingBrowserItem) -> Recording {
         Recording(
-            id: UUID(),
             date: item.date,
             fileURL: item.url,
             duration: item.duration,

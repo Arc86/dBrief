@@ -18,9 +18,17 @@ struct SummaryView: View {
     @State private var isSaving = false
     @State private var copied = false
 
+    /// One row in the editable action-items list. Carries a stable `id` so the
+    /// edit `ForEach` keeps identity and deleting a focused row can't index past
+    /// the array (the classic `ForEach(indices, id: \.self)` + `TextField` crash).
+    private struct DraftActionItem: Identifiable {
+        let id = UUID()
+        var text: String
+    }
+
     // Working copies for edit mode.
     @State private var draftSummary = ""
-    @State private var draftActionItems: [String] = []
+    @State private var draftActionItems: [DraftActionItem] = []
     @State private var draftTags: [String] = []
 
     // Ephemeral per-session "done" state for action-item checkboxes, keyed by raw text.
@@ -36,6 +44,7 @@ struct SummaryView: View {
                 emptyState
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { sync() }
         .onChange(of: insights) { _, _ in if !isEditing { sync() } }
     }
@@ -48,25 +57,27 @@ struct SummaryView: View {
     private func sync() {
         guard let insights else { return }
         draftSummary = insights.summary
-        draftActionItems = insights.actionItems
+        draftActionItems = insights.actionItems.map { DraftActionItem(text: $0) }
         draftTags = insights.tags
     }
 
     // MARK: - Loaded content
 
     private func content(for insights: RecordingInsights) -> some View {
-        VStack(spacing: 0) {
-            header(for: insights)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.cardGap) {
-                    summaryCard
-                    actionItemsCard
-                    tagsCard
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                header(for: insights)
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.cardGap) {
+                        summaryCard(availableHeight: geo.size.height)
+                        actionItemsCard
+                        tagsCard
+                    }
+                    .padding(Theme.contentPadding)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(Theme.contentPadding)
-                .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -103,15 +114,23 @@ struct SummaryView: View {
 
     // MARK: - Summary card
 
-    private var summaryCard: some View {
+    /// `availableHeight` is the detail pane's height; in edit mode the summary
+    /// editor takes a generous share of it (min 240) so it's comfortable to type
+    /// in immediately and grows with the window instead of staying cramped.
+    private func summaryCard(availableHeight: CGFloat) -> some View {
         GroupBox {
             if isEditing {
                 TextEditor(text: $draftSummary)
                     .font(.body)
-                    .frame(minHeight: 120)
+                    .frame(minHeight: max(240, availableHeight * 0.55))
                     .scrollContentBackground(.hidden)
+            } else if draftSummary.isEmpty {
+                Text("—")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(draftSummary.isEmpty ? "—" : draftSummary)
+                MarkdownText(draftSummary)
                     .font(.body)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -119,6 +138,7 @@ struct SummaryView: View {
         } label: {
             Label("Summary", systemImage: "text.alignleft")
                 .font(.headline)
+                .padding(.bottom, 6)
         }
     }
 
@@ -133,7 +153,7 @@ struct SummaryView: View {
                 Text("—").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                let groups = ActionItemParser.group(draftActionItems)
+                let groups = ActionItemParser.group(draftActionItems.map(\.text))
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(groups) { group in
                         ownerGroup(group)
@@ -144,6 +164,7 @@ struct SummaryView: View {
         } label: {
             Label("Action Items", systemImage: "checklist")
                 .font(.headline)
+                .padding(.bottom, 6)
         }
     }
 
@@ -190,19 +211,19 @@ struct SummaryView: View {
 
     private var editableActionItems: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(draftActionItems.indices, id: \.self) { idx in
+            ForEach($draftActionItems) { $item in
                 HStack(spacing: 6) {
-                    TextField("Action item", text: $draftActionItems[idx])
+                    TextField("Action item", text: $item.text)
                         .textFieldStyle(.roundedBorder)
                     Button(role: .destructive) {
-                        draftActionItems.remove(at: idx)
+                        draftActionItems.removeAll { $0.id == item.id }
                     } label: { Image(systemName: "minus.circle.fill") }
                         .buttonStyle(.plain)
                         .foregroundStyle(.red)
                 }
             }
             Button {
-                draftActionItems.append("")
+                draftActionItems.append(DraftActionItem(text: ""))
             } label: { Label("Add Item", systemImage: "plus.circle") }
                 .buttonStyle(.plain)
                 .font(.callout)
@@ -239,6 +260,7 @@ struct SummaryView: View {
         } label: {
             Label("Tags", systemImage: "tag")
                 .font(.headline)
+                .padding(.bottom, 6)
         }
     }
 
@@ -277,7 +299,7 @@ struct SummaryView: View {
         var updated = base
         updated.summary = draftSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.actionItems = draftActionItems
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.text.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         updated.tags = draftTags
         // sentiment unchanged (display-only)
