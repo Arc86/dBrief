@@ -6,6 +6,7 @@ struct SettingsProfilesTab: View {
     @Environment(AppSettings.self) private var appSettings
     @State private var selectedProfileId: UUID?
     @State private var statusMessage: String?
+    @State private var profilePendingDeletion: MeetingProfile?
     private let profileIcons: [(label: String, symbol: String)] = [
         ("General", "slider.horizontal.3"),
         ("Team", "person.3.fill"),
@@ -42,6 +43,23 @@ struct SettingsProfilesTab: View {
         }
         .onChange(of: appSettings.profiles.count) { _, _ in ensureSelection() }
         .onChange(of: selectedProfileId) { _, _ in ensureSelection() }
+        .confirmationDialog(
+            "Delete “\(profilePendingDeletion?.name ?? "")”?",
+            isPresented: Binding(
+                get: { profilePendingDeletion != nil },
+                set: { if !$0 { profilePendingDeletion = nil } }
+            ),
+            presenting: profilePendingDeletion
+        ) { profile in
+            Button("Delete Profile", role: .destructive) {
+                appSettings.deleteProfile(id: profile.id)
+                selectedProfileId = appSettings.activeProfileId
+                profilePendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { profilePendingDeletion = nil }
+        } message: { profile in
+            Text("This permanently removes “\(profile.name)” and its overrides. This can’t be undone.")
+        }
     }
 
     private var profileListPane: some View {
@@ -86,15 +104,8 @@ struct SettingsProfilesTab: View {
 
     private func profileRow(_ profile: MeetingProfile) -> some View {
         HStack(spacing: 0) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(iconBackgroundColor(for: profile).opacity(0.28))
-                Image(systemName: profile.iconSystemName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-            }
-            .frame(width: 34, height: 34)
-            .padding(.trailing, 10)
+            profileIcon(for: profile, size: 34)
+                .padding(.trailing, 10)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name)
@@ -103,7 +114,7 @@ struct SettingsProfilesTab: View {
                     if profile.id == appSettings.activeProfileId {
                         Label("Active", systemImage: "checkmark.seal.fill")
                             .font(.caption)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.tint)
                     } else if profile.preset == .custom {
                         Text("Custom profile")
                             .font(.caption)
@@ -131,15 +142,21 @@ struct SettingsProfilesTab: View {
             stripDivider
 
             toolbarIconButton(systemImage: "minus", tooltip: "Delete selected profile") {
-                guard let selected = selectedProfile else { return }
-                appSettings.deleteProfile(id: selected.id)
-                selectedProfileId = appSettings.activeProfileId
+                guard let selected = selectedProfile, !selected.isProtectedDefault else { return }
+                profilePendingDeletion = selected
             }
             .disabled(selectedProfile?.isProtectedDefault ?? true)
 
             stripDivider
 
             Menu {
+                Button("Make Active", systemImage: "checkmark.seal") {
+                    if let id = selectedProfile?.id { appSettings.setActiveProfile(id) }
+                }
+                .disabled(selectedProfile == nil || selectedProfile?.id == appSettings.activeProfileId)
+
+                Divider()
+
                 Button("Duplicate Profile", systemImage: "square.on.square") {
                     duplicateSelectedProfile()
                 }
@@ -219,11 +236,14 @@ struct SettingsProfilesTab: View {
         if let selectedProfile {
             Form {
                 Section("Profile") {
-                    NativeTextField(
-                        placeholder: "Profile name",
-                        text: profileBinding(\.name, fallback: selectedProfile.name)
-                    )
-                    .frame(height: 22)
+                    HStack(spacing: 14) {
+                        profileIcon(for: selectedProfile, size: 52)
+                        NativeTextField(
+                            placeholder: "Profile name",
+                            text: profileBinding(\.name, fallback: selectedProfile.name)
+                        )
+                        .frame(height: 22)
+                    }
 
                     Picker(
                         "Icon",
@@ -251,17 +271,17 @@ struct SettingsProfilesTab: View {
                     }
                     .pickerStyle(.menu)
 
-                    Toggle(
-                        "Active profile",
-                        isOn: Binding(
-                            get: { selectedProfile.id == appSettings.activeProfileId },
-                            set: { isActive in
-                                if isActive {
-                                    appSettings.setActiveProfile(selectedProfile.id)
-                                }
+                    LabeledContent("Status") {
+                        if selectedProfile.id == appSettings.activeProfileId {
+                            Label("Active", systemImage: "checkmark.seal.fill")
+                                .foregroundStyle(.tint)
+                        } else {
+                            Button("Make Active") {
+                                appSettings.setActiveProfile(selectedProfile.id)
                             }
-                        )
-                    )
+                            .buttonStyle(.bordered)
+                        }
+                    }
 
                     if selectedProfile.isProtectedDefault {
                         Button("Reset to default values") {
@@ -279,7 +299,7 @@ struct SettingsProfilesTab: View {
                 }
                 .listRowBackground(Color.clear)
 
-                Section("Transcription Overrides") {
+                DisclosureGroup {
                     overrideToggle(
                         "Transcription engine",
                         isOn: hasOverride(\.transcriptionEngine),
@@ -351,10 +371,21 @@ struct SettingsProfilesTab: View {
                             .pickerStyle(.menu)
                         }
                     }
+                } label: {
+                    overrideGroupLabel(
+                        "Transcription",
+                        overridden: overriddenCount([
+                            hasOverride(\.transcriptionEngine).wrappedValue,
+                            hasOverride(\.transcriptionLanguage).wrappedValue,
+                            hasOverride(\.whisperPrompt).wrappedValue,
+                            hasOverride(\.transcriptionEndpointId).wrappedValue,
+                        ]),
+                        total: 4
+                    )
                 }
                 .listRowBackground(Color.clear)
 
-                Section("AI Overrides") {
+                DisclosureGroup {
                     overrideToggle(
                         "AI engine",
                         isOn: hasOverride(\.aiEngine),
@@ -436,49 +467,61 @@ struct SettingsProfilesTab: View {
                         NativeTextView(text: overrideBinding(\.tagsPrompt, fallback: appSettings.tagsPrompt))
                             .frame(height: 70)
                     }
+                } label: {
+                    overrideGroupLabel(
+                        "AI Analysis",
+                        overridden: overriddenCount([
+                            hasOverride(\.aiEngine).wrappedValue,
+                            hasOverride(\.aiEndpointId).wrappedValue,
+                            hasOverride(\.summaryPrompt).wrappedValue,
+                            hasOverride(\.actionItemsPrompt).wrappedValue,
+                            hasOverride(\.tagsPrompt).wrappedValue,
+                        ]),
+                        total: 5
+                    )
                 }
                 .listRowBackground(Color.clear)
 
-                Section("Task Defaults Overrides") {
-                    overrideToggle(
+                DisclosureGroup {
+                    boolOverrideRow(
                         "Auto transcribe",
-                        isOn: hasOverride(\.autoTranscribe),
-                        set: { setOverride(\.autoTranscribe, enabled: $0, defaultValue: appSettings.autoTranscribe) }
+                        valueLabel: "Transcribe recordings",
+                        keyPath: \.autoTranscribe,
+                        defaultValue: appSettings.autoTranscribe
                     )
-                    if hasOverride(\.autoTranscribe).wrappedValue {
-                        Toggle("", isOn: overrideBinding(\.autoTranscribe, fallback: appSettings.autoTranscribe))
-                    }
-
-                    overrideToggle(
+                    boolOverrideRow(
                         "Auto summary",
-                        isOn: hasOverride(\.autoSummary),
-                        set: { setOverride(\.autoSummary, enabled: $0, defaultValue: appSettings.autoSummary) }
+                        valueLabel: "Generate summary",
+                        keyPath: \.autoSummary,
+                        defaultValue: appSettings.autoSummary
                     )
-                    if hasOverride(\.autoSummary).wrappedValue {
-                        Toggle("", isOn: overrideBinding(\.autoSummary, fallback: appSettings.autoSummary))
-                    }
-
-                    overrideToggle(
+                    boolOverrideRow(
                         "Auto action items",
-                        isOn: hasOverride(\.autoActionItems),
-                        set: { setOverride(\.autoActionItems, enabled: $0, defaultValue: appSettings.autoActionItems) }
+                        valueLabel: "Extract action items",
+                        keyPath: \.autoActionItems,
+                        defaultValue: appSettings.autoActionItems
                     )
-                    if hasOverride(\.autoActionItems).wrappedValue {
-                        Toggle("", isOn: overrideBinding(\.autoActionItems, fallback: appSettings.autoActionItems))
-                    }
-
-                    overrideToggle(
+                    boolOverrideRow(
                         "Auto tags",
-                        isOn: hasOverride(\.autoTags),
-                        set: { setOverride(\.autoTags, enabled: $0, defaultValue: appSettings.autoTags) }
+                        valueLabel: "Generate tags",
+                        keyPath: \.autoTags,
+                        defaultValue: appSettings.autoTags
                     )
-                    if hasOverride(\.autoTags).wrappedValue {
-                        Toggle("", isOn: overrideBinding(\.autoTags, fallback: appSettings.autoTags))
-                    }
+                } label: {
+                    overrideGroupLabel(
+                        "Task Defaults",
+                        overridden: overriddenCount([
+                            hasOverride(\.autoTranscribe).wrappedValue,
+                            hasOverride(\.autoSummary).wrappedValue,
+                            hasOverride(\.autoActionItems).wrappedValue,
+                            hasOverride(\.autoTags).wrappedValue,
+                        ]),
+                        total: 4
+                    )
                 }
                 .listRowBackground(Color.clear)
 
-                Section("Folder Overrides") {
+                DisclosureGroup {
                     folderOverrideRow(
                         label: "Recording folder",
                         keyPath: \.recordingFolderPath,
@@ -516,6 +559,17 @@ struct SettingsProfilesTab: View {
                         )
                         .frame(height: 22)
                     }
+                } label: {
+                    overrideGroupLabel(
+                        "Folders",
+                        overridden: overriddenCount([
+                            hasOverride(\.recordingFolderPath).wrappedValue,
+                            hasOverride(\.transcriptionFolderPath).wrappedValue,
+                            hasOverride(\.obsidianVaultPath).wrappedValue,
+                            hasOverride(\.obsidianDefaultFolderRelativePath).wrappedValue,
+                        ]),
+                        total: 4
+                    )
                 }
                 .listRowBackground(Color.clear)
             }
@@ -530,12 +584,69 @@ struct SettingsProfilesTab: View {
 
     private func overrideToggle(_ title: String, isOn: Binding<Bool>, set: @escaping (Bool) -> Void) -> some View {
         Toggle(
-            title,
             isOn: Binding(
                 get: { isOn.wrappedValue },
                 set: { set($0) }
             )
-        )
+        ) {
+            HStack {
+                Text(title)
+                Spacer()
+                if !isOn.wrappedValue {
+                    Text("Inherits Default")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Header for an override DisclosureGroup: title on the left and an "X of Y"
+    /// pill showing how many fields in the group override the active defaults.
+    private func overrideGroupLabel(_ title: String, overridden: Int, total: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(overridden) of \(total)")
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(overridden > 0 ? Color.accentColor : .secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule().fill(
+                        overridden > 0
+                            ? Color.accentColor.opacity(0.15)
+                            : Color.secondary.opacity(0.12)
+                    )
+                )
+                .accessibilityLabel("\(overridden) of \(total) overridden")
+        }
+    }
+
+    private func overriddenCount(_ flags: [Bool]) -> Int {
+        flags.filter { $0 }.count
+    }
+
+    /// A boolean task-default override: an enable toggle (reading "Inherits
+    /// Default" when off) that reveals the native value Toggle when on.
+    private func boolOverrideRow(
+        _ title: String,
+        valueLabel: String,
+        keyPath: WritableKeyPath<MeetingProfileOverrides, Bool?>,
+        defaultValue: Bool
+    ) -> some View {
+        Group {
+            overrideToggle(
+                title,
+                isOn: hasOverride(keyPath),
+                set: { setOverride(keyPath, enabled: $0, defaultValue: defaultValue) }
+            )
+            if hasOverride(keyPath).wrappedValue {
+                Toggle(valueLabel, isOn: overrideBinding(keyPath, fallback: defaultValue))
+                    .padding(.leading, 16)
+            }
+        }
     }
 
     private var selectedProfile: MeetingProfile? {
@@ -558,6 +669,21 @@ struct SettingsProfilesTab: View {
 
     private func iconBackgroundColor(for profile: MeetingProfile) -> Color {
         iconBackgroundColors.first(where: { $0.key == profile.iconBackgroundColorKey })?.color ?? .gray
+    }
+
+    /// Profiles are the one deliberately colorful surface (per the design brief):
+    /// a fully filled, rounded-square tile in the profile's chosen color with a
+    /// white SF Symbol — not the muted tinted chip used elsewhere.
+    private func profileIcon(for profile: MeetingProfile, size: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                .fill(iconBackgroundColor(for: profile).gradient)
+            Image(systemName: profile.iconSystemName)
+                .font(.system(size: size * 0.47, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 
     private func profileBinding<T>(_ keyPath: WritableKeyPath<MeetingProfile, T>, fallback: T) -> Binding<T> {
