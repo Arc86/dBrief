@@ -17,7 +17,7 @@ dBrief asks for the permissions it uses. You can grant them here or skip and gra
 - **Microphone** — required for all recording. You can't continue past this step without it.
 - **Screen Recording** — for capturing system audio (what your Mac plays out loud) alongside your mic.
 - **Speech Recognition** — for the built-in Apple Speech transcription engine.
-- **Calendar** — lets dBrief pre-fill the meeting title and participants from your calendar when a recording starts.
+- **Calendar** — lets dBrief pre-fill the meeting title and participants from the calendar event that matches your recording.
 
 ### 3. Transcription & AI
 

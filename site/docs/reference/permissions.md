@@ -28,7 +28,7 @@ Without this permission, Apple Speech is unavailable. Local Whisper and remote e
 
 ## Calendar
 
-**Required for:** Calendar integration — pre-filling the meeting title and participants from your calendar when a recording starts.
+**Required for:** Calendar integration — pre-filling the meeting title and participants from the calendar event that matches your recording.
 
 Without this permission, dBrief still records normally; it just can't pull in calendar details. See [Calendar Integration](../recording/calendar.md).
 
