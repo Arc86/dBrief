@@ -33,17 +33,25 @@ final class AudioCaptureManager {
     /// Live audio sinks for real-time transcription. Non-nil only while live
     /// transcription is enabled for the current recording. The tap handlers
     /// yield deep-copied buffers here in addition to writing the CAF tracks.
-    private var micLiveContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
-    private var systemLiveContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private var micLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
+    private var systemLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
+
+    /// Bound on buffered live audio. Live transcription is an explicitly lossy
+    /// preview, so we cap the queue and drop the oldest buffers rather than let
+    /// it grow without bound — e.g. while a first-run language asset downloads,
+    /// the consumer (`SpeechAnalyzer`) hasn't started yet and buffers would
+    /// otherwise accumulate in RAM until it does. ~64 tap buffers (≈ a few
+    /// seconds at 4096 frames) is plenty of slack for a real-time consumer.
+    private static let liveBufferLimit = 64
 
     /// Creates fresh live audio streams (mic + system) for real-time transcription.
     /// MUST be called *before* `startRecording` so the tap handlers capture the sinks.
     /// The streams stay open across pause/resume and are finished by `stopRecording`.
-    func makeLiveAudioStreams() -> (mic: AsyncStream<AVAudioPCMBuffer>, system: AsyncStream<AVAudioPCMBuffer>) {
-        let mic = AsyncStream<AVAudioPCMBuffer> { continuation in
+    func makeLiveAudioStreams() -> (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>) {
+        let mic = AsyncStream<LiveAudioBuffer>(bufferingPolicy: .bufferingNewest(Self.liveBufferLimit)) { continuation in
             self.micLiveContinuation = continuation
         }
-        let system = AsyncStream<AVAudioPCMBuffer> { continuation in
+        let system = AsyncStream<LiveAudioBuffer>(bufferingPolicy: .bufferingNewest(Self.liveBufferLimit)) { continuation in
             self.systemLiveContinuation = continuation
         }
         return (mic, system)
@@ -196,7 +204,7 @@ final class AudioCaptureManager {
 
     private nonisolated static func makeSystemHandler(
         writer: AudioTrackWriter,
-        liveSink: AsyncStream<AVAudioPCMBuffer>.Continuation?
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (CMSampleBuffer) -> Void {
         return { sampleBuffer in
             guard let pcm = sampleBuffer.toPCMBuffer() else { return }
@@ -207,7 +215,7 @@ final class AudioCaptureManager {
             }
             // `pcm` is freshly created by `toPCMBuffer()`, but copy anyway so the
             // live consumer's lifetime is fully independent of the writer.
-            if let liveSink, let copy = pcm.deepCopy() { liveSink.yield(copy) }
+            if let liveSink, let copy = pcm.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
         }
     }
 
@@ -255,7 +263,7 @@ final class AudioCaptureManager {
 
     private nonisolated static func makeMicHandler(
         writer: AudioTrackWriter,
-        liveSink: AsyncStream<AVAudioPCMBuffer>.Continuation?
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         return { buffer, _ in
             do {
@@ -265,7 +273,7 @@ final class AudioCaptureManager {
             }
             // AVAudioEngine reuses the tap buffer's storage across callbacks, so
             // deep-copy before handing it to the live transcriber.
-            if let liveSink, let copy = buffer.deepCopy() { liveSink.yield(copy) }
+            if let liveSink, let copy = buffer.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
         }
     }
 
@@ -298,6 +306,16 @@ final class AudioCaptureManager {
         timer?.invalidate()
         timer = nil
     }
+}
+
+/// A deep-copied PCM buffer carried over the live-audio `AsyncStream`. Wrapping it
+/// makes the stream `Sendable` (so it can cross from the main actor into the
+/// transcription actor without `sending` gymnastics): the buffer is freshly
+/// allocated by `deepCopy()`, owned exclusively by the live consumer, and never
+/// mutated after the copy — so `@unchecked Sendable` is sound.
+struct LiveAudioBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
 }
 
 extension AVAudioPCMBuffer {

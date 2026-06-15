@@ -31,8 +31,8 @@ actor LiveTranscriptionService {
     ///   - onVolatile: the current in-progress hypothesis for a channel ("" clears it).
     ///   - onStatus: human-readable progress ("Preparing language…").
     func start(
-        mic: AsyncStream<AVAudioPCMBuffer>?,
-        system: AsyncStream<AVAudioPCMBuffer>?,
+        mic: AsyncStream<LiveAudioBuffer>?,
+        system: AsyncStream<LiveAudioBuffer>?,
         language: String,
         onFinalized: @escaping @Sendable ([LiveTranscriptSegment]) -> Void,
         onVolatile: @escaping @Sendable (String, String) -> Void,
@@ -60,7 +60,7 @@ actor LiveTranscriptionService {
     // MARK: - Channel dispatch
 
     private static func runChannel(
-        audio: AsyncStream<AVAudioPCMBuffer>,
+        audio: AsyncStream<LiveAudioBuffer>,
         channel: Channel,
         language: String,
         onFinalized: @escaping @Sendable ([LiveTranscriptSegment]) -> Void,
@@ -86,7 +86,7 @@ actor LiveTranscriptionService {
 
     @available(macOS 26, *)
     private static func runModernChannel(
-        audio: AsyncStream<AVAudioPCMBuffer>,
+        audio: AsyncStream<LiveAudioBuffer>,
         channel: Channel,
         language: String,
         onFinalized: @escaping @Sendable ([LiveTranscriptSegment]) -> Void,
@@ -137,10 +137,18 @@ actor LiveTranscriptionService {
         try await analyzer.start(inputSequence: inputSequence)
 
         var converter: AVAudioConverter?
-        for await buffer in audio {
+        var converterInputFormat: AVAudioFormat?
+        for await wrapped in audio {
             if Task.isCancelled { break }
+            let buffer = wrapped.buffer
             let converted = analyzerFormat.flatMap { fmt -> AVAudioPCMBuffer? in
-                if converter == nil { converter = AVAudioConverter(from: buffer.format, to: fmt) }
+                // Rebuild the converter when the source format changes — a mid-recording
+                // mic hot-swap (`switchMicrophoneDevice`) can change sample rate/channels,
+                // and a stale converter would garble or drop the live audio.
+                if converter == nil || converterInputFormat != buffer.format {
+                    converter = AVAudioConverter(from: buffer.format, to: fmt)
+                    converterInputFormat = buffer.format
+                }
                 return converter.flatMap { convert(buffer, to: fmt, using: $0) }
             } ?? buffer
             inputBuilder.yield(AnalyzerInput(buffer: converted))
@@ -198,7 +206,7 @@ actor LiveTranscriptionService {
     // MARK: - Legacy (macOS 14–25) SFSpeechRecognizer streaming
 
     private static func runLegacyChannel(
-        audio: AsyncStream<AVAudioPCMBuffer>,
+        audio: AsyncStream<LiveAudioBuffer>,
         channel: Channel,
         language: String,
         onFinalized: @escaping @Sendable ([LiveTranscriptSegment]) -> Void,
@@ -233,9 +241,9 @@ actor LiveTranscriptionService {
             }
         }
 
-        for await buffer in audio {
+        for await wrapped in audio {
             if Task.isCancelled { break }
-            request.append(buffer)
+            request.append(wrapped.buffer)
         }
         request.endAudio()
         task.finish()

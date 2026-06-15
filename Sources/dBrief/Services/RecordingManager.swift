@@ -146,7 +146,7 @@ final class RecordingManager {
         observeAudioState()
     }
 
-    private func startLiveTranscription(streams: (mic: AsyncStream<AVAudioPCMBuffer>, system: AsyncStream<AVAudioPCMBuffer>)) {
+    private func startLiveTranscription(streams: (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>)) {
         appState.liveTranscriptSegments = []
         appState.liveVolatileMic = ""
         appState.liveVolatileSystem = ""
