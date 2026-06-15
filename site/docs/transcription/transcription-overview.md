@@ -39,4 +39,6 @@ For Apple Speech, Local Whisper, and remote endpoints, you can set the input lan
 
 ## Custom vocabulary
 
-With **Power User Mode** enabled, a **Custom Vocabulary** field (Local Whisper and remote endpoints) lets you list proper nouns, acronyms, and domain terms — e.g. *Acme Corp, JIRA, Kubernetes* — to improve recognition. The same terms are also passed to the AI analysis step, so summaries and action items spell your proper nouns correctly too.
+With **Power User Mode** enabled, a **Custom Vocabulary** field lets you list proper nouns, acronyms, and domain terms — e.g. *Acme Corp, JIRA, Kubernetes* — so they're spelled correctly. The same terms are also passed to the AI analysis step, so summaries and action items spell your proper nouns correctly too.
+
+For **Local Whisper**, dBrief applies the vocabulary *after* transcription: once the audio is transcribed, your configured AI engine fixes the spelling and capitalization of these terms in the transcript. This is reliable and never drops audio. (Earlier versions fed the vocabulary to Whisper as a recognition prompt, which could make Whisper silently skip large parts of the audio — that approach has been removed, following OpenAI's own guidance to prefer post-processing.) Because the AI engine does the correction, the vocabulary fix needs an AI engine configured; if AI analysis is unavailable it's simply skipped.

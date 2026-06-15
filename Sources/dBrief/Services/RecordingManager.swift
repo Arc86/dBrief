@@ -1522,7 +1522,19 @@ final class RecordingManager {
         }
         // Engine-agnostic cleanup: always strip hallucination/markup noise; strip filler
         // words only when the user opted in. Applies uniformly across all engines.
-        return TranscriptCleanup.clean(raw, removeFillerWords: appSettings.effectiveRemoveFillerWords)
+        let cleaned = TranscriptCleanup.clean(raw, removeFillerWords: appSettings.effectiveRemoveFillerWords)
+
+        // Vocabulary spelling: re-spell the user's custom-vocabulary terms via the
+        // AI engine (the reliable replacement for Whisper decoder-prompt biasing).
+        // No-op when no vocabulary is set or no AI engine is available.
+        guard !TranscriptSpellingService.vocabularyTerms(from: appSettings.effectiveWhisperPrompt).isEmpty else {
+            return cleaned
+        }
+        if appState.processingSteps.indices.contains(stepIndex) {
+            appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
+        }
+        let speller = TranscriptSpellingService(appSettings: appSettings, localPlugin: localAIPluginService)
+        return await speller.correct(cleaned)
     }
 
     private func transcribeSegmentedAudio(
@@ -1620,9 +1632,15 @@ final class RecordingManager {
         case .localWhisper:
             let whisperConfig = appSettings.whisperRuntimeConfig
             return try await withPluginStepAdapter(stepIndex: stepIndex) {
+                // Custom vocabulary is intentionally NOT passed to Whisper as a
+                // decoder prompt: an off-topic (or even on-topic) prompt can make
+                // Whisper emit blank output for most windows, silently dropping the
+                // bulk of the transcript. Vocabulary spelling is instead applied as
+                // a reliable post-step (TranscriptSpellingService) in
+                // transcribeRecordingAudio. See WhisperKitTranscriptionService notes.
                 try await self.localAIPluginService.transcribe(
                     fileURL: url,
-                    initialPrompt: self.appSettings.effectiveWhisperPrompt,
+                    initialPrompt: nil,
                     whisperConfig: whisperConfig
                 )
             }
@@ -1650,7 +1668,14 @@ final class RecordingManager {
                 fileURL: url,
                 endpoint: endpoint,
                 language: appSettings.effectiveTranscriptionLanguage,
-                initialPrompt: appSettings.effectiveWhisperPrompt,
+                // Custom vocabulary is intentionally NOT sent as the ASR prompt:
+                // the only remote consumers of initialPrompt are Whisper-family
+                // servers (OpenAI-compatible `prompt` / whisper-asr `initial_prompt`),
+                // which share Whisper's prompt fragility (it can blank out large
+                // stretches of audio). Deepgram/ElevenLabs ignore it entirely.
+                // Vocabulary spelling is applied uniformly post-transcription via
+                // TranscriptSpellingService in transcribeRecordingAudio.
+                initialPrompt: "",
                 diarize: appSettings.diarizationEnabled,
                 chunking: .init(
                     enabled: appSettings.remoteChunkingEnabled,

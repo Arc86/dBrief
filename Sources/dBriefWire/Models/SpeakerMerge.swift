@@ -98,10 +98,60 @@ public enum SpeakerMerge {
         )
     }
 
+    // MARK: - Segment-preserving merge
+
+    /// Overlays speakers on `result` **purely additively** — every segment's
+    /// text, timing, and word list are preserved verbatim; only `speaker`
+    /// labels are attached (one per segment by best time overlap, plus per-word
+    /// when word timing is present).
+    ///
+    /// This is the safe counterpart to `merge`, which rebuilds segments from a
+    /// flattened word stream. Two ways `merge` loses text that this avoids:
+    /// segments with no word timing vanish entirely, and segments whose words
+    /// only partially cover their text get truncated to the timed words. A
+    /// custom-vocabulary `initialPrompt` triggers exactly that in WhisperKit
+    /// (partial / sparse word timestamps), and the old
+    /// `SpeakerKit.addSpeakerInfo(strategy: .subsegment)` path dropped the bulk
+    /// of the transcript as a result. Because this never rebuilds text from
+    /// words, the full transcript always survives diarization. The trade-off is
+    /// no within-segment speaker splitting — acceptable since WhisperKit's VAD
+    /// segments are short, single-utterance spans.
+    public static func mergePreservingSegments(
+        _ result: TranscriptionResult,
+        turns: [DiarizedTurn]
+    ) -> TranscriptionResult {
+        guard !turns.isEmpty else { return result }
+
+        let outSegments = result.segments.map { seg -> TranscriptionResult.Segment in
+            var copy = seg
+            copy.speaker = bestSpeaker(start: seg.start, end: seg.end, turns: turns)
+            if let words = seg.words {
+                copy.words = words.map { w in
+                    var wc = w
+                    wc.speaker = bestSpeaker(start: w.start, end: w.end, turns: turns)
+                    return wc
+                }
+            }
+            return copy
+        }
+
+        // Count distinct speakers across segments and words (a single segment
+        // can contain words from more than one speaker).
+        var speakers = Set(outSegments.compactMap(\.speaker))
+        for seg in outSegments { for w in seg.words ?? [] { if let s = w.speaker { speakers.insert(s) } } }
+        return TranscriptionResult(
+            text: result.text,
+            segments: outSegments,
+            language: result.language,
+            warnings: result.warnings,
+            speakerCount: speakers.isEmpty ? nil : speakers.count
+        )
+    }
+
     // MARK: - Overlap
 
     /// The id of the turn overlapping `[start, end]` most, or `nil` if none do.
-    private static func bestSpeaker(start: Double, end: Double, turns: [DiarizedTurn]) -> String? {
+    static func bestSpeaker(start: Double, end: Double, turns: [DiarizedTurn]) -> String? {
         var bestId: String? = nil
         var bestOverlap = 0.0
         for turn in turns {
