@@ -66,6 +66,8 @@ final class AppSettings {
         static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
+        static let showMiniRecordingView = "showMiniRecordingView"
+        static let showMenuBarRecordingDuration = "showMenuBarRecordingDuration"
         static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -434,6 +436,18 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(prewarmWhisperOnLaunch, forKey: Keys.prewarmWhisperOnLaunch) }
     }
 
+    /// Show the floating Mini Recording view (`FloatingMiniPlayer`) during recording.
+    /// On by default.
+    var showMiniRecordingView: Bool {
+        didSet { UserDefaults.standard.set(showMiniRecordingView, forKey: Keys.showMiniRecordingView) }
+    }
+
+    /// Show the elapsed recording duration in the menu bar label while recording.
+    /// On by default; when off, only the red record dot is shown.
+    var showMenuBarRecordingDuration: Bool {
+        didSet { UserDefaults.standard.set(showMenuBarRecordingDuration, forKey: Keys.showMenuBarRecordingDuration) }
+    }
+
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
     /// monotonically-increasing odometer that survives "Clear benchmark stats".
     var lifetimeTranscribedSeconds: Double {
@@ -784,6 +798,8 @@ final class AppSettings {
         self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
+        self.showMiniRecordingView = defaults.object(forKey: Keys.showMiniRecordingView) as? Bool ?? true
+        self.showMenuBarRecordingDuration = defaults.object(forKey: Keys.showMenuBarRecordingDuration) as? Bool ?? true
         self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 

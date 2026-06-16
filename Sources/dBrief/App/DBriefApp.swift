@@ -202,9 +202,11 @@ struct DBriefApp: App {
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.red, .red)
                         .environment(\.symbolVariants, .none)
-                    Text(formatMenuBarDuration(context.appState.recordingDuration))
-                        .monospacedDigit()
-                        .font(.caption)
+                    if context.appSettings.showMenuBarRecordingDuration {
+                        Text(formatMenuBarDuration(context.appState.recordingDuration))
+                            .monospacedDigit()
+                            .font(.caption)
+                    }
                 }
             } else if context.appState.isProcessing {
                 Image(systemName: "circle.dotted")
