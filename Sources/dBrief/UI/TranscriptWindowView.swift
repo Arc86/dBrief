@@ -458,6 +458,9 @@ struct TranscriptDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        // Each turn's label carries its own popover, but `assigningTurn` is single-valued
+        // and `SpeakerTurn.id` is stable (derived from the first segment), so exactly one
+        // label's binding is ever true — only the tapped badge presents.
         .popover(isPresented: Binding(
             get: { assigningTurn?.id == turn.id },
             set: { if !$0 { assigningTurn = nil } }

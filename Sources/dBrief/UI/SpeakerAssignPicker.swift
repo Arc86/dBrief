@@ -56,7 +56,6 @@ struct SpeakerAssignPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(c.existingSpeakerId == nil && c.isCurrent)
             }
 
             Divider()
