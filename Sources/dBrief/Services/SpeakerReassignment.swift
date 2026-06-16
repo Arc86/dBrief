@@ -82,8 +82,35 @@ enum SpeakerReassignment {
         participants: [String],
         calendarAttendees: [String]
     ) -> [SpeakerCandidate] {
-        // Implemented in Task 2.
-        []
+        func label(for id: String) -> String {
+            transcript.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
+        }
+
+        // Existing speakers in first-appearance order.
+        var seenIds: [String] = []
+        for seg in transcript.segments {
+            if let id = seg.speakerId, !seenIds.contains(id) { seenIds.append(id) }
+        }
+
+        var result: [SpeakerCandidate] = seenIds.map { id in
+            SpeakerCandidate(id: id, displayName: label(for: id),
+                             existingSpeakerId: id, isCurrent: id == currentSpeakerId)
+        }
+        // Current speaker first.
+        result.sort { ($0.isCurrent ? 0 : 1) < ($1.isCurrent ? 0 : 1) }
+
+        // Name-only candidates: names not already an existing speaker's display name.
+        var takenNames = Set(result.map { normalize($0.displayName) })
+        for name in participants + calendarAttendees {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = normalize(trimmed)
+            if takenNames.contains(key) { continue }
+            takenNames.insert(key)
+            result.append(SpeakerCandidate(id: "name:" + key, displayName: trimmed,
+                                           existingSpeakerId: nil, isCurrent: false))
+        }
+        return result
     }
 
     private static func normalize(_ s: String) -> String {

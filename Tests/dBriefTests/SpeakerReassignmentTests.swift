@@ -109,4 +109,37 @@ struct SpeakerReassignmentTests {
         #expect(!out.speakerLabels.contains { $0.id == "NEW" })
         #expect(out.speakerLabels.count == 1)               // S2 orphaned; no duplicate Alice label
     }
+
+    @Test("candidates put the current speaker first and flag it")
+    func candidatesCurrentFirst() {
+        let t = transcript(["S2", "S1"],
+                           labels: [SpeakerLabel(id: "S1", displayName: "Alice"),
+                                    SpeakerLabel(id: "S2", displayName: "Bob")])
+        let cands = SpeakerReassignment.candidates(in: t, currentSpeakerId: "S2",
+                                                   participants: [], calendarAttendees: [])
+        #expect(cands.first?.existingSpeakerId == "S2")
+        #expect(cands.first?.isCurrent == true)
+        #expect(cands.count == 2)
+        #expect(cands.contains { $0.existingSpeakerId == "S1" && !$0.isCurrent })
+    }
+
+    @Test("unlabeled speakers display their raw id")
+    func candidatesUnlabeled() {
+        let t = transcript(["S1", "S2"])  // no labels
+        let cands = SpeakerReassignment.candidates(in: t, currentSpeakerId: "S1",
+                                                   participants: [], calendarAttendees: [])
+        #expect(cands.contains { $0.existingSpeakerId == "S2" && $0.displayName == "S2" })
+    }
+
+    @Test("participant names not yet speakers appear as name-only candidates")
+    func candidatesNameOnly() {
+        let t = transcript(["S1"], labels: [SpeakerLabel(id: "S1", displayName: "Alice")])
+        let cands = SpeakerReassignment.candidates(in: t, currentSpeakerId: "S1",
+                                                   participants: ["Carol", "alice"],
+                                                   calendarAttendees: ["Carol", "Dave"])
+        // "alice" deduped against existing "Alice"; "Carol" deduped across the two lists.
+        let nameOnly = cands.filter { $0.existingSpeakerId == nil }
+        #expect(nameOnly.map(\.displayName).sorted() == ["Carol", "Dave"])
+        #expect(nameOnly.allSatisfy { $0.id.hasPrefix("name:") })
+    }
 }
