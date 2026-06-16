@@ -59,6 +59,29 @@ struct TitleSyncTests {
         #expect(!json.contains("generatedTitle"))
     }
 
+    /// The transcript browser and menu-bar history read duration from the metadata
+    /// sidecar by dictionary key. That key must match the payload's encoded field
+    /// name (`durationSeconds`) — a mismatch silently zeros every duration.
+    @Test
+    func metadataSidecarEncodesDurationUnderReaderKey() throws {
+        let payload = RecordingMetadataPayload(
+            dateISO8601: "2026-06-16T10:00:00Z",
+            durationSeconds: 28.8,
+            meetingTitle: "meeting",
+            masterFileName: "2026-06-16_1000_meeting.m4a",
+            segmentFileNames: [],
+            warnings: []
+        )
+
+        // Parse exactly as RecordingBrowserStore / RecordingHistoryView do.
+        let data = try JSONEncoder().encode(payload)
+        let meta = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(meta["durationSeconds"] as? TimeInterval == 28.8)
+        #expect(meta["duration"] == nil) // the old, buggy reader key must not exist
+    }
+
     // MARK: - Browser title preference
 
     private func makeItem(name: String, generatedTitle: String?) -> RecordingBrowserItem {

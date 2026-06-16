@@ -77,7 +77,8 @@ enum RecordingBrowserStore {
             let metaURL = base.appendingPathExtension("json")
             if let data = try? Data(contentsOf: metaURL),
                let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                if let d = meta["duration"] as? TimeInterval {
+                // Key must match RecordingMetadataPayload's encoded field name.
+                if let d = meta["durationSeconds"] as? TimeInterval {
                     duration = d
                 }
                 generatedTitle = meta["generatedTitle"] as? String
