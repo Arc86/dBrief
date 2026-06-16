@@ -38,6 +38,16 @@ struct TranscriptDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var isGenerating = false
 
+    // Transcript search (finished-recording transcript only)
+    @State private var searchQuery = ""
+    @State private var isSearchPresented = false
+    @State private var searchResult = TranscriptSearch.Result.empty
+    @State private var matchesByTurn: [UUID: [TranscriptSearch.Match]] = [:]
+    @State private var currentMatchIndex = 0
+    @State private var searchDebounce: Task<Void, Never>?
+    /// Bumped to ask the transcript `ScrollViewReader` to scroll to the current match.
+    @State private var searchScrollTick = 0
+
     // Speaker rename
     @State private var renamingSpeakerId: String?
     @State private var speakerRenameText = ""
@@ -118,6 +128,20 @@ struct TranscriptDetailView: View {
         .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .modifier(TranscriptSearchableModifier(
+            enabled: !isLive,
+            query: $searchQuery,
+            isPresented: $isSearchPresented,
+            onSubmitSearch: gotoNextMatch))
+        .background { if !isLive { findShortcuts } }
+        .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
+        .onChange(of: isSearchPresented) { _, presented in
+            if !presented {
+                searchQuery = ""
+                searchDebounce?.cancel()
+                recomputeSearch()
+            }
+        }
         .onChange(of: context.appState.recordingState) { _, newState in
             // When the live recording finishes, swap the live preview for the
             // authoritative on-disk transcript. Keep a non-empty live chat and
@@ -288,6 +312,26 @@ struct TranscriptDetailView: View {
                 Image(systemName: "trash")
             }
             .help("Delete recording")
+
+            // Search match counter + prev/next, kept adjacent to the trailing
+            // `.searchable` field (which the system pins to the toolbar's edge).
+            if isSearching {
+                Divider()
+                Text(searchCounterLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help("Search matches")
+                Button { gotoPrevMatch() } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Previous match (⌘⇧G)")
+                Button { gotoNextMatch() } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Next match (⌘G)")
+            }
         }
     }
 
@@ -345,6 +389,11 @@ struct TranscriptDetailView: View {
                 }) else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
             }
+            .onChange(of: searchScrollTick) { _, _ in
+                guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
+                let turnId = searchResult.matches[currentMatchIndex].turnId
+                withAnimation { proxy.scrollTo(turnId, anchor: .center) }
+            }
         }
     }
 
@@ -379,7 +428,7 @@ struct TranscriptDetailView: View {
                     .buttonStyle(.plain)
                     .help("Jump to this point")
                 }
-                Text(turn.text)
+                Text(highlightedText(turn))
                     .font(.system(size: CGFloat(fontSize)))
                     .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     .lineSpacing(CGFloat(fontSize) * 0.4)
@@ -701,6 +750,7 @@ struct TranscriptDetailView: View {
             }
             let updated = SpeakerAssigner.assign(turns, to: transcript)
             richTranscript = updated
+            recomputeSearch()
             if !showSpeakerNames { showSpeakerNames = true }
             saveTranscript(updated)
         } catch {
@@ -802,6 +852,99 @@ struct TranscriptDetailView: View {
         onDeleted()
     }
 
+    // MARK: - Search
+
+    /// True while the user has an active (non-blank) query.
+    private var isSearching: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Status text for the toolbar accessory.
+    private var searchCounterLabel: String {
+        guard isSearching else { return "" }
+        if !searchResult.isValid { return "Invalid pattern" }
+        if searchResult.matches.isEmpty { return "No results" }
+        return "\(currentMatchIndex + 1) of \(searchResult.matches.count)"
+    }
+
+    /// Recomputes matches over the currently displayed turns. Keeps
+    /// `currentMatchIndex` in bounds; callers decide when to reset it to 0.
+    private func recomputeSearch() {
+        let turns = displayedTurns.map { (id: $0.id, text: $0.text) }
+        let result = TranscriptSearch.search(turns: turns, query: searchQuery)
+        searchResult = result
+        matchesByTurn = Dictionary(grouping: result.matches, by: \.turnId)
+        if result.matches.isEmpty {
+            currentMatchIndex = 0
+        } else if currentMatchIndex >= result.matches.count {
+            currentMatchIndex = result.matches.count - 1
+        }
+    }
+
+    /// Debounced recompute triggered on each keystroke; resets to the first match.
+    private func scheduleSearchRecompute() {
+        searchDebounce?.cancel()
+        searchDebounce = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            if Task.isCancelled { return }
+            currentMatchIndex = 0
+            recomputeSearch()
+            // Surface results: jump to the transcript view if elsewhere.
+            if isSearching, mode != .transcript { mode = .transcript }
+            searchScrollTick &+= 1
+        }
+    }
+
+    private func gotoNextMatch() {
+        guard !searchResult.matches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchResult.matches.count
+        searchScrollTick &+= 1
+    }
+
+    private func gotoPrevMatch() {
+        guard !searchResult.matches.isEmpty else { return }
+        let n = searchResult.matches.count
+        currentMatchIndex = (currentMatchIndex - 1 + n) % n
+        searchScrollTick &+= 1
+    }
+
+    /// Zero-size buttons that register Find keyboard shortcuts without adding any
+    /// visible UI (the `.searchable` field is the only visible search affordance):
+    /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
+    private var findShortcuts: some View {
+        Group {
+            Button("") { if !isLive { isSearchPresented = true } }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("") { gotoNextMatch() }
+                .keyboardShortcut("g", modifiers: .command)
+            Button("") { gotoPrevMatch() }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// Builds the row text with search highlights. Returns plain (un-highlighted)
+    /// text when there is no active query or no matches in this turn.
+    private func highlightedText(_ turn: SpeakerTurn) -> AttributedString {
+        var attr = AttributedString(turn.text)
+        guard isSearching, let turnMatches = matchesByTurn[turn.id], !turnMatches.isEmpty else {
+            return attr
+        }
+        let chars = attr.characters
+        let count = chars.count
+        for match in turnMatches {
+            guard match.location >= 0, match.location + match.length <= count else { continue }
+            let lower = chars.index(chars.startIndex, offsetBy: match.location)
+            let upper = chars.index(lower, offsetBy: match.length)
+            attr[lower..<upper].backgroundColor = match.globalIndex == currentMatchIndex
+                ? TranscriptDesignTokens.searchHighlightCurrent(scheme: colorScheme)
+                : TranscriptDesignTokens.searchHighlight(scheme: colorScheme)
+        }
+        return attr
+    }
+
     // MARK: - Persistence
 
     private func saveTranscript(_ transcript: RichTranscript) {
@@ -880,6 +1023,7 @@ struct TranscriptDetailView: View {
         } else {
             mode = hasSummary ? .summary : .transcript
         }
+        recomputeSearch()
     }
 
     private func rebuildTranscript() {
@@ -887,6 +1031,7 @@ struct TranscriptDetailView: View {
         let built = RichTranscriptBuilder().build(from: result)
         richTranscript = built
         loadFailed = false
+        recomputeSearch()
         saveTranscript(built)
     }
 }
@@ -895,4 +1040,27 @@ struct TranscriptDetailView: View {
 private struct IdentifiedString: Identifiable {
     let value: String
     var id: String { value }
+}
+
+/// Applies the native macOS toolbar search field only when `enabled` (finished
+/// recordings). On macOS the field shows full-width when the toolbar has room and
+/// collapses to a magnifying-glass loupe when the window is narrow — no extra code.
+private struct TranscriptSearchableModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    @Binding var isPresented: Bool
+    let onSubmitSearch: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(text: $query,
+                            isPresented: $isPresented,
+                            placement: .toolbar,
+                            prompt: "Search transcript")
+                .onSubmit(of: .search, onSubmitSearch)
+        } else {
+            content
+        }
+    }
 }
