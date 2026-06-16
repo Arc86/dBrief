@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import dBrief
 
@@ -100,5 +101,33 @@ struct SpeakerTurnTests {
         let turn = t.speakerTurns()[0]
         #expect(turn.startTime == 5)
         #expect(turn.endTime == 20)
+    }
+
+    // MARK: - Stable identity (transcript search prerequisite)
+
+    @Test("speakerTurns produces the same turn ids across repeated calls")
+    func stableTurnIds() {
+        let segments = [
+            RichSegment(start: 0, end: 1, text: "Hello", originalText: "Hello", speakerId: "Speaker 1"),
+            RichSegment(start: 1, end: 2, text: "there", originalText: "there", speakerId: "Speaker 1"),
+            RichSegment(start: 2, end: 3, text: "Hi", originalText: "Hi", speakerId: "Speaker 2"),
+        ]
+        let transcript = RichTranscript(segments: segments)
+
+        let first = transcript.speakerTurns()
+        let second = transcript.speakerTurns()
+
+        #expect(first.count == second.count)
+        #expect(first.map(\.id) == second.map(\.id))
+    }
+
+    @Test("a turn's id matches its first segment's id")
+    func idDerivedFromFirstSegment() {
+        let seg = RichSegment(start: 0, end: 1, text: "Hello", originalText: "Hello")
+        let transcript = RichTranscript(segments: [seg])
+
+        let turns = transcript.speakerTurns()
+
+        #expect(turns.first?.id == seg.id)
     }
 }

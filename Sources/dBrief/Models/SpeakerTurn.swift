@@ -9,7 +9,10 @@ struct SpeakerTurn: Identifiable, Sendable {
     let segments: [RichSegment]
 
     init(speakerId: String?, segments: [RichSegment]) {
-        self.id = UUID()
+        // Derive a stable id from the first segment so repeated `speakerTurns()`
+        // calls (and re-renders) yield consistent turn identity — required for
+        // match-to-turn mapping, scroll-to, and the playback auto-scroll.
+        self.id = segments.first?.id ?? UUID()
         self.speakerId = speakerId
         self.segments = segments
     }
