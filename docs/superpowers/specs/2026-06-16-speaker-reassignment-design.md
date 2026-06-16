@@ -1,7 +1,7 @@
 # Speaker Reassignment via Known-Name Picker
 
 **Date:** 2026-06-16
-**Status:** Approved (design)
+**Status:** Approved (design); revised after code reconnaissance
 **Branch:** `speaker-reassign`
 
 ## Problem
@@ -12,18 +12,17 @@ seeded from calendar) and from speakers already named in this transcript. Typing
 hand is slower and invites typos/inconsistency ("Alice" vs "alice" vs "Alise").
 
 Separately, diarization sometimes **mis-splits or mis-attributes** speech: one real person
-shows up as two speakers, or a single segment is assigned to the wrong speaker. There is no
+shows up as two speakers, or a run of speech is assigned to the wrong speaker. There is no
 way to fix this today.
 
 ## Goal
 
-Replace free-text rename with a **known-name picker** that also supports **per-segment
-reassignment**:
+Replace free-text rename with a **known-name picker** that also supports **reassignment**:
 
 - Pick a speaker from a list of known people (existing transcript speakers + participants +
   calendar attendees), or add a new name inline.
-- When the picked person differs from the current one, choose the **scope**: just this
-  segment, or every segment currently attributed to this speaker.
+- When the picked person differs from the current one, choose the **scope**: just this turn
+  (the run of segments on screen), or every segment currently attributed to this speaker.
 - Renaming a whole speaker becomes the special case "pick/add a name + scope = All", so the
   picker **subsumes** today's free-text rename — there is no separate rename UI left.
 
@@ -38,19 +37,24 @@ reassignment**:
 
 ## Key Constraints (from the codebase)
 
+- **Single live entry point.** `TranscriptSegmentRow` and `SpeakerPillView` exist but have
+  **zero instantiations** — dead code, left untouched. The finished-recording transcript in
+  `TranscriptWindowView` renders **turn-based** rows (`transcriptRow(_ turn: SpeakerTurn)`),
+  and the only rename UI is the `speakerLabel(id:isMe:)` SwiftUI `Menu` → "Rename…" → a sheet
+  driven by `renamingSpeakerId` / `speakerRenameText` / `commitSpeakerRename` /
+  `renameSpeaker`. That is the one path to replace.
+- **`SpeakerTurn`** (`Models/SpeakerTurn.swift`) is a merged run of consecutive same-speaker
+  `RichSegment`s; it exposes `.segments: [RichSegment]` (each with `id: UUID`, `speakerId`) and
+  `.speakerId`. So a turn already carries the exact segment IDs to reassign for "this turn".
 - **Display resolves `speakerId` → `displayName`** via `RichTranscript.speakerLabels`
-  everywhere (segment rows, turn cards, markdown). So a label edit is *already*
-  transcript-wide; true per-segment changes require rewriting `RichSegment.speakerId`.
+  everywhere (turn cards, markdown, People list). A label edit is *already* transcript-wide;
+  true per-occurrence changes require rewriting `RichSegment.speakerId`.
 - **Reconstruction on reopen:** a finished recording reopened later is rebuilt minimally —
   `Recording.participants` is **not** restored from disk; only the `.richtranscript.json`
   sidecar (`speakerLabels`) survives. Calendar attendees are session-only and already flow
   into `participants` during processing. So the picker's reliable, persisted name source is
   the existing `speakerLabels`, augmented by `participants` / `calendarCandidates` when
   present in-session.
-- **Three rename entry points exist today**, all funneling to free text:
-  `TranscriptSegmentRow` popover (`.transcript` + `.segments` modes) and the
-  `TranscriptWindowView` rename sheet (from the `SpeakerTurnCard` speaker menu). All three
-  must move to the new picker.
 - **Pure-helper + TDD convention:** logic that can be pure (e.g. `MicReconfigurePlanner`,
   `CalendarMatcher`, `SpeakerMerge`) lives in a pure, unit-tested type. Reassignment logic
   follows suit.
@@ -62,103 +66,116 @@ reassignment**:
 
 - A **person** is identified by a `speakerId`. The display name is the matching
   `SpeakerLabel.displayName` (falls back to the raw id, e.g. "Speaker 2", when unlabeled).
-- **Reassigning** a segment = setting its `speakerId` to the target person's id.
+- **Reassigning** segments = setting their `speakerId` to the target person's id.
 - **Adding a new person** = minting a fresh `speakerId` + appending a `SpeakerLabel`. If the
   typed name case-insensitively matches an existing label, reuse that id (so "add" that
   collides becomes a merge, never a duplicate).
 
 ## Component 1 — `SpeakerReassignment` (pure, unit-tested)
 
-New file `Sources/dBrief/Services/SpeakerReassignment.swift`. Pure `enum`/`struct` with
-static functions; no I/O, no `@MainActor`. Unit-tested in
-`Tests/dBriefTests/SpeakerReassignmentTests.swift`.
+New file `Sources/dBrief/Services/SpeakerReassignment.swift`. Pure types + static functions;
+no I/O, no `@MainActor`. Unit-tested in `Tests/dBriefTests/SpeakerReassignmentTests.swift`.
+
+The helper is **segment-ID-general** (works for one segment or a turn's set), so the same code
+backs both the turn UI today and any future per-segment UI.
 
 ```swift
-enum ReassignScope { case thisSegment, allOfSpeaker }
+enum ReassignScope { case theseSegments, allOfSpeaker }
+
+enum SpeakerChoice: Equatable {
+    case existing(speakerId: String)
+    case new(name: String)
+}
 
 struct SpeakerCandidate: Identifiable, Equatable {
-    var id: String          // speakerId; for a name-only candidate, a derived placeholder id
-    var displayName: String
-    var existingSpeakerId: String?  // non-nil when this name is already a transcript speaker
-    var isCurrent: Bool             // matches the segment's current speaker
+    let id: String              // existing speakerId, or "name:"+normalized for a name-only entry
+    let displayName: String
+    let existingSpeakerId: String?  // non-nil when this name is already a transcript speaker
+    let isCurrent: Bool             // matches the turn's current speaker
 }
 
 enum SpeakerReassignment {
-    /// Ordered, de-duplicated candidate list for a given segment.
-    /// Order: current speaker first, then other existing speakers (by first appearance),
-    /// then participant/attendee names not yet tied to a speaker. Dedup by normalized name.
+    /// Ordered, de-duplicated candidate list for a turn whose current speaker is `currentSpeakerId`.
+    /// Order: current speaker first, then other existing speakers (by first appearance in
+    /// `segments`), then participant/attendee names not already an existing speaker. Dedup by
+    /// normalized (trimmed, case-insensitive) name.
     static func candidates(
         in transcript: RichTranscript,
-        forSegment segmentId: UUID,
+        currentSpeakerId: String?,
         participants: [String],
         calendarAttendees: [String]
     ) -> [SpeakerCandidate]
 
-    /// Reassign to an existing speakerId. Returns a new transcript.
-    static func assign(
-        _ transcript: RichTranscript,
-        segmentId: UUID,
-        toSpeakerId targetId: String,
-        scope: ReassignScope
-    ) -> RichTranscript
+    /// Count of segments whose speakerId == speakerId (drives "All N" label + scope skip).
+    static func segmentCount(in transcript: RichTranscript, speakerId: String?) -> Int
 
-    /// Reassign to a new (or name-matched existing) person. `newId` is injected for
-    /// deterministic tests. Returns the new transcript.
-    static func assignNew(
-        _ transcript: RichTranscript,
-        segmentId: UUID,
-        name: String,
+    /// Apply a choice to a set of segments. Returns a new transcript.
+    /// `newId` is used only for `.new` names that don't collide with an existing label;
+    /// inject it (`UUID().uuidString` in the app, a fixed string in tests) for determinism.
+    static func apply(
+        _ choice: SpeakerChoice,
+        to transcript: RichTranscript,
+        segmentIds: Set<UUID>,
         scope: ReassignScope,
         newId: String
     ) -> RichTranscript
 }
 ```
 
-**`assign` behavior**
+**`apply` behavior**
 
-1. Resolve the segment and its current `speakerId` (`origin`). If `origin == targetId`,
-   return the transcript unchanged.
-2. `thisSegment`: set that one segment's `speakerId = targetId`.
-   `allOfSpeaker`: set `speakerId = targetId` on **every** segment whose `speakerId == origin`.
-3. Ensure a `SpeakerLabel` exists for `targetId` (it should already).
+1. **Resolve the target id:**
+   - `.existing(id)` → `id`.
+   - `.new(name)` → if `name` (normalized) matches an existing `SpeakerLabel.displayName`,
+     use that label's id; otherwise append `SpeakerLabel(id: newId, displayName: name.trimmed)`
+     and use `newId`. A blank/whitespace name returns the transcript unchanged.
+2. **Determine the origin speaker** = the `speakerId` of the first segment in `segmentIds`
+   (all of a turn's segments share one speakerId). If `origin == targetId`, return unchanged.
+3. **Rewrite:**
+   - `.theseSegments`: set `speakerId = targetId` on segments whose id ∈ `segmentIds`.
+   - `.allOfSpeaker`: set `speakerId = targetId` on **every** segment whose `speakerId == origin`.
 4. **Orphan cleanup:** drop any `SpeakerLabel` whose id no longer appears on any segment —
-   **except** never drop the target. (Keeps the People list honest after a full merge.)
+   **except** never drop the target's label. (Keeps the People list honest after a full merge.)
 5. **`meSpeakerId` transfer:** if `origin == meSpeakerId` and no segment retains `origin`
-   after the change, move `meSpeakerId` to `targetId`.
+   after the rewrite, move `meSpeakerId` to `targetId`.
 
-**`assignNew` behavior**
+**`candidates` behavior**
 
-- If `name` (normalized) matches an existing `SpeakerLabel.displayName`, delegate to `assign`
-  with that label's id. Otherwise append `SpeakerLabel(id: newId, displayName: name.trimmed)`
-  and apply the same scope rewrite + cleanup as `assign`.
-
-**Candidate behavior**
-
-- Existing speakers come from `speakerLabels` ∪ distinct `segment.speakerId`s (an unlabeled
-  speaker still appears, displayed as its raw id).
-- Name-only candidates: each participant/attendee name whose normalized form is **not**
-  already an existing speaker's display name. Their `id` is a derived placeholder
-  (e.g. `"name:"+normalized`); selecting one routes through `assignNew`.
-- Normalization for dedup = trimmed, case-insensitive (reuse/extend an existing normalizer
-  if present; otherwise local).
+- Existing speakers = distinct `segment.speakerId`s (non-nil), each shown with its label
+  displayName (or the raw id when unlabeled). `existingSpeakerId` set, `id` = that speakerId.
+- Name-only candidates = each `participants`/`calendarAttendees` name whose normalized form is
+  **not** already an existing speaker's display name. `existingSpeakerId == nil`,
+  `id = "name:"+normalized`.
+- `isCurrent == (existingSpeakerId == currentSpeakerId)`.
+- Normalization = `trimmingCharacters(in: .whitespacesAndNewlines)` + `lowercased()`.
 
 ## Component 2 — `SpeakerAssignPicker` (shared UI)
 
-New file `Sources/dBrief/UI/SpeakerAssignPicker.swift`. A popover body reused by every entry
-point. Inputs: `candidates: [SpeakerCandidate]`, `currentSpeakerSegmentCount: Int`,
-`currentDisplayName: String`, and a completion
-`onChoose(_ choice: SpeakerChoice, _ scope: ReassignScope)` where
-`SpeakerChoice = .existing(id) | .new(name)`.
+New file `Sources/dBrief/UI/SpeakerAssignPicker.swift`. A popover body. Inputs:
 
-Two-step popover:
+```swift
+struct SpeakerAssignPicker: View {
+    let candidates: [SpeakerCandidate]
+    let currentDisplayName: String
+    let speakerSegmentCount: Int     // segments for the current speaker (for "All N" + skip)
+    let turnSegmentCount: Int        // segments in the tapped turn (for "This turn" wording)
+    let onChoose: (SpeakerChoice, ReassignScope) -> Void
+    let onCancel: () -> Void
+}
+```
 
-1. **Pick step** — vertical list of candidates: color dot
-   (`TranscriptDesignTokens.speakerColor(for:)`), name, checkmark on `isCurrent`. A divider,
-   then an "Add someone…" row that reveals an inline `TextField` (submit = confirm).
-2. **Scope step** — shown only when the chosen person differs from current **and** the current
-   speaker has >1 segment. Two buttons: **[This segment only]** and
-   **[All N from "<current>"]**. If the current speaker has a single segment, skip this step
-   and apply immediately (scope is moot).
+Two-step popover (local `@State` step machine):
+
+1. **Pick step** — vertical list of `candidates`: color dot
+   (`TranscriptDesignTokens.speakerColor(for: candidate.existingSpeakerId)`), name, checkmark
+   on `isCurrent`. A divider, then an "Add someone…" row that reveals an inline `TextField`
+   (`.roundedBorder`, submit = confirm). Selecting `isCurrent` just calls `onCancel` (no-op).
+2. **Scope step** — entered only when the chosen person differs from current **and**
+   `speakerSegmentCount > turnSegmentCount` (i.e. the speaker has segments outside this turn).
+   Two buttons: **[This turn]** (or "[This segment]" when `turnSegmentCount == 1`) →
+   `onChoose(choice, .theseSegments)`, and **[All N from "<current>"]** →
+   `onChoose(choice, .allOfSpeaker)`. Otherwise skip the step and call
+   `onChoose(choice, .allOfSpeaker)` immediately (the turn already is the whole speaker).
 
 Layout mirrors the approved mock:
 
@@ -170,85 +187,99 @@ Layout mirrors the approved mock:
  ─────────────────────
  ＋ Add someone…
 └──────────────────────┘
-   then: [This segment] [All]
+   then: [This turn] [All]
 ```
 
-Styling matches existing transcript popovers (compact, `.roundedBorder` field, small control
-sizes).
+Styling matches existing transcript popovers (compact, small control sizes, `.padding(12)`).
 
-## Component 3 — Wiring
+## Component 3 — Wiring `TranscriptWindowView`
 
-**`TranscriptSegmentRow`**
-- Replace `onRenameSpeaker: (String, String) -> Void` with
-  `onAssignSpeaker: (_ segmentId: UUID, _ choice: SpeakerChoice, _ scope: ReassignScope) -> Void`.
-- Add inputs: `candidates: [SpeakerCandidate]` and `currentSpeakerSegmentCount: Int` for the
-  row's speaker.
-- Both display modes (`.transcript`, `.segments`) present `SpeakerAssignPicker` in the popover
-  instead of the free-text `speakerRenamePopover`. Remove `speakerRenameText` /
-  `speakerRenamePopover` / `commitRename`.
-
-**`TranscriptWindowView`**
-- Build candidates via `SpeakerReassignment.candidates(in:forSegment:participants:calendarAttendees:)`,
-  sourcing `participants` from `recording.participants` and `calendarAttendees` from
-  `recording.calendarCandidates` (attendee display names; empty after reopen — acceptable).
-- New `assignSpeaker(segmentId:choice:scope:)` that calls the pure helper (`assign` or
-  `assignNew` with a freshly minted `UUID().uuidString` id), then the **existing**
-  `richTranscript = updated` → `saveTranscript(updated)` → `recomputeSearch()` path.
-- The `SpeakerTurnCard` speaker `Menu`: replace "Rename…" with "Reassign / rename…" that opens
-  the same picker; its default scope is **`allOfSpeaker`** (a turn spans multiple segments —
-  the natural unit there is the whole speaker). "This is me" / "Clear this is me" stay.
-- Delete the old rename sheet (`renamingSpeakerId`, `speakerRenameText`, `commitSpeakerRename`,
-  `renameSpeaker`) once both callers use the picker. `setMeSpeaker` is unchanged.
+- Add `@State private var assigningTurn: SpeakerTurn?` (replaces `renamingSpeakerId` /
+  `speakerRenameText`). Remove the old rename sheet (the `.sheet`/popover bound via the
+  `IdentifiedString` adapter at ~L194), `commitSpeakerRename`, and `renameSpeaker`.
+- Change `speakerLabel(id:isMe:)` to `speakerLabel(turn:isMe:)` (callsite at L419 passes the
+  turn; `id` derives from `turn.speakerId`). Its `Menu`:
+  - "Reassign / rename…" → `assigningTurn = turn` (opens the picker popover anchored on the
+    label). "This is me" / "Clear "This is me"" unchanged (`setMeSpeaker`).
+- Attach `.popover(item: $assigningTurn)` (make a small `Identifiable` wrapper or use the
+  existing `IdentifiedString` pattern keyed by turn id) presenting `SpeakerAssignPicker` with:
+  - `candidates = SpeakerReassignment.candidates(in: transcript, currentSpeakerId: turn.speakerId, participants: recording.participants, calendarAttendees: attendeeNames)`
+  - `attendeeNames` = display names from `recording.calendarCandidates` (flattened attendees;
+    empty after reopen — acceptable).
+  - `currentDisplayName = displayName(for: turn.speakerId ?? "")`
+  - `speakerSegmentCount = SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId)`
+  - `turnSegmentCount = turn.segments.count`
+  - `onChoose = { choice, scope in assignSpeaker(turn: turn, choice: choice, scope: scope) }`
+  - `onCancel = { assigningTurn = nil }`
+- New `assignSpeaker(turn:choice:scope:)`:
+  ```swift
+  private func assignSpeaker(turn: SpeakerTurn, choice: SpeakerChoice, scope: ReassignScope) {
+      guard var transcript = richTranscript else { return }
+      let ids = Set(turn.segments.map(\.id))
+      transcript = SpeakerReassignment.apply(choice, to: transcript,
+                                             segmentIds: ids, scope: scope,
+                                             newId: UUID().uuidString)
+      richTranscript = transcript
+      saveTranscript(transcript)
+      recomputeSearch()
+      assigningTurn = nil
+  }
+  ```
+  (`saveTranscript(_:)` at L950 and `recomputeSearch()` at L872 already exist.)
 
 ## Data Flow
 
 ```
-click speaker badge
+click speaker badge (turn)
         ↓
+Menu → "Reassign / rename…"  → assigningTurn = turn
+        ↓  .popover(item:)
 SpeakerAssignPicker  (candidates from SpeakerReassignment.candidates)
         ↓  onChoose(choice, scope)
-TranscriptWindowView.assignSpeaker(segmentId, choice, scope)
+TranscriptWindowView.assignSpeaker(turn, choice, scope)
         ↓
-SpeakerReassignment.assign / assignNew   → new RichTranscript
+SpeakerReassignment.apply(...)  → new RichTranscript
         ↓
 richTranscript = updated → saveTranscript(updated) → recomputeSearch()
         ↓
-TranscriptStore writes .richtranscript.json   (markdown/People list re-derive from labels)
+TranscriptStore writes .richtranscript.json   (turn cards/markdown/People re-derive from labels)
 ```
 
 ## Edge Cases
 
 - **No-op pick** (chose the current speaker): close picker, no write.
-- **Single-segment speaker:** skip the scope step; apply directly.
+- **Whole-speaker turn** (`speakerSegmentCount == turnSegmentCount`): skip the scope step;
+  apply as `allOfSpeaker`.
 - **Full merge empties a speaker:** orphaned `SpeakerLabel` removed; `meSpeakerId` transferred
   if it was the emptied speaker.
 - **Add-name collides with an existing label** (case-insensitive): reuse that speaker's id
-  (becomes a merge), never a duplicate label.
+  (becomes a merge), never a duplicate label. Blank name = no-op.
 - **Unlabeled raw speakers** ("Speaker 2") are valid pick targets and valid origins.
 - **Reopened recording with no participants:** candidate list = existing speakers only; the
-  feature still works, just with fewer suggested names. "Add someone…" always available.
-- **Live transcript:** speaker reassignment is offered only on the finished-recording
-  transcript (same as today's rename), not in live mode.
+  feature still works. "Add someone…" always available.
+- **Live transcript:** reassignment is offered only on the finished-recording transcript (the
+  live turn rows have no speaker menu today), unchanged.
 
 ## Testing
 
 `Tests/dBriefTests/SpeakerReassignmentTests.swift` (swift-testing), all against the pure helper:
 
-- `assign` `thisSegment` changes only the target segment's `speakerId`.
-- `assign` `allOfSpeaker` rewrites every segment of the origin speaker.
+- `apply(.existing, theseSegments)` changes only the given segment ids.
+- `apply(.existing, allOfSpeaker)` rewrites every segment of the origin speaker.
 - No-op when target == origin.
 - Orphan label removed after a full merge; target label retained.
 - `meSpeakerId` transfers when its speaker is fully merged away; untouched otherwise.
-- `assignNew` mints a label with the injected id; collision (case-insensitive) reuses the
-  existing id instead of duplicating.
-- `candidates` ordering (current first), dedup by normalized name, name-only candidates
-  excluded when already an existing speaker, `isCurrent` flagged correctly.
+- `apply(.new(name), …)` mints a label with the injected `newId`; collision (case-insensitive)
+  reuses the existing id instead of duplicating; blank name is a no-op.
+- `segmentCount` correctness.
+- `candidates`: current first, dedup by normalized name, name-only excluded when already an
+  existing speaker, `isCurrent` flagged, `existingSpeakerId` populated correctly.
 
-UI is exercised manually (build + run): pick existing, add new, both scopes, turn-card entry,
-both display modes.
+UI is exercised manually (build + run): pick existing, add new, both scopes, whole-speaker
+turn (scope skipped), no-op pick.
 
 ## Docs
 
 Update `CLAUDE.md` (Speaker Diarization / Rich Transcript Viewer sections) and `site/docs/`
-(+ NAV in `site/docs.js`) to describe the picker + per-segment reassignment, replacing the
-"free-text rename popover" description.
+(+ NAV in `site/docs.js`) to describe the picker + turn/all-speaker reassignment, replacing the
+"post-hoc rename popover" description.
