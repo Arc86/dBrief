@@ -95,4 +95,18 @@ struct SpeakerReassignmentTests {
         #expect(SpeakerReassignment.segmentCount(in: t, speakerId: "S2") == 1)
         #expect(SpeakerReassignment.segmentCount(in: t, speakerId: nil) == 0)
     }
+
+    @Test("new name matching an existing label (case-insensitive) reuses its id")
+    func newNameReusesExistingLabel() {
+        let t = transcript(["S1", "S2"],
+                           labels: [SpeakerLabel(id: "S1", displayName: "Alice"),
+                                    SpeakerLabel(id: "S2", displayName: "Bob")])
+        let id1 = t.segments[1].id   // currently S2
+        let out = SpeakerReassignment.apply(.new(name: "ALICE"), to: t,
+                                            segmentIds: [id1], scope: .theseSegments,
+                                            newId: "NEW")
+        #expect(out.segments[1].speakerId == "S1")          // reused, not minted
+        #expect(!out.speakerLabels.contains { $0.id == "NEW" })
+        #expect(out.speakerLabels.count == 1)               // S2 orphaned; no duplicate Alice label
+    }
 }

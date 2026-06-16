@@ -47,9 +47,12 @@ enum SpeakerReassignment {
         }
 
         // 2. Origin speaker = speakerId of the first targeted segment (a turn shares one).
-        guard let origin = out.segments.first(where: { segmentIds.contains($0.id) })?.speakerId
+        // `origin` may be nil (an undiarized segment) — that is a valid reassignment,
+        // so only abort when no targeted segment exists at all.
+        guard let originSegment = out.segments.first(where: { segmentIds.contains($0.id) })
         else { return transcript }
-        if origin == targetId { return transcript }
+        let origin = originSegment.speakerId
+        if origin == targetId { return transcript }   // targetId is non-nil; nil origin proceeds
 
         // 3. Rewrite.
         for i in out.segments.indices {
@@ -66,7 +69,7 @@ enum SpeakerReassignment {
         out.speakerLabels.removeAll { $0.id != targetId && !live.contains($0.id) }
 
         // 5. meSpeakerId transfer if the origin was "me" and is now gone.
-        if out.meSpeakerId == origin && !live.contains(origin) {
+        if let origin, out.meSpeakerId == origin, !live.contains(origin) {
             out.meSpeakerId = targetId
         }
 
