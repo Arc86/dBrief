@@ -256,6 +256,7 @@ Glass-styled transcript window with word-level timestamps and audio sync:
 - **`SpeakerPillView`** — colored speaker badge, tap to rename
 - **`TranscriptDesignTokens`** — shared color/spacing constants for the glass UI system
 - **`TranscriptAnalysisView`** — "AI Analysis" toolbar toggle (mutually exclusive with chat) showing Summary / Action Items / Tags+Sentiment in three editable glass cards, mirroring `ResultsView`. Read-only by default; an Edit button enables editing, Save persists. Sentiment is display-only. Recordings processed before this feature (no sidecar) show an empty state.
+- **Transcript search** — `TranscriptDetailView` hosts a native `.searchable(placement: .toolbar)` field (macOS shows a full search field when wide, collapsing to a loupe button when the window is narrow). The query is a case-insensitive regex evaluated by the pure, unit-tested `TranscriptSearch` engine (`Services/TranscriptSearch.swift`, `TranscriptSearchTests`) over the displayed `SpeakerTurn`s; matches are highlighted per-row via `AttributedString`, with an "n of m" toolbar counter and ⌘G / ⌘⇧G (and up/down chevron) prev/next navigation that scrolls each match into view. Finished-recording transcript only (not live/summary/chat).
 - Persisted via `TranscriptStore` which writes `.richtranscript.json` sidecar files alongside Markdown output
 - Opened from `ResultsView` and `RecordingHistoryView`; hosted in a separate `WindowGroup(id: "transcript")` scene
 

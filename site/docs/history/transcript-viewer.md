@@ -49,12 +49,24 @@ Click the **AI Analysis** button (chart icon) in the toolbar to switch the detai
 
 The AI analysis is saved automatically when a recording is processed. Recordings made before this feature was added show a "No saved analysis" message in the panel.
 
+## Searching the transcript
+
+Use the **search field** in the toolbar (or press **⌘F**) to find text in a long transcript. When the window is wide the search field shows in full; when it's narrow it collapses to a magnifying-glass button — click it to search.
+
+- Every match is highlighted, and the match you're currently on is highlighted more strongly.
+- The toolbar shows a **"3 of 12"** counter. Use the **up/down arrows** next to it — or **⌘G** (next) and **⌘⇧G** (previous), or **Return** for next — to jump between matches. Each jump scrolls the match into view.
+- Search understands **regular expressions**, so `\baction\b` matches the whole word "action" only. Plain words work as you'd expect. An invalid pattern shows "Invalid pattern".
+- Press **Esc** to close search and clear the highlights.
+
+Search covers the transcript text of a finished recording. It isn't available for the live (in-progress) transcript or the Summary/Chat views.
+
 ## Toolbar actions
 
 | Button | What it does |
 |---|---|
 | **AI Analysis** | Toggle between the transcript and the recording's editable AI analysis |
 | **Chat** | Toggle between the transcript and a chat about the recording |
+| **Search** | Find text in the transcript (⌘F); ⌘G / ⌘⇧G step matches |
 | **Copy** | Copy the full transcript to the clipboard |
 | **Detect Speakers** | Run on-device speaker detection on this recording |
 | **Display** | Adjust the transcript font size and toggle speaker names |
