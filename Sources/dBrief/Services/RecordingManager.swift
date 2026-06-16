@@ -596,6 +596,7 @@ final class RecordingManager {
                     includeTranscript: appSettings.obsidianIncludeTranscript
                 )
                 appState.processingSteps[stepIndex].status = .completed
+                persistGeneratedTitle(for: recording)
                 await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
             } catch {
                 appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
@@ -804,6 +805,7 @@ final class RecordingManager {
                 includeTranscript: appSettings.obsidianIncludeTranscript
             )
             appState.processingSteps[markdownStepIndex].status = .completed
+            persistGeneratedTitle(for: recording)
             await writeInsightsSidecar(for: recording, markdownURL: generatedMarkdownURL)
         } catch {
             appState.processingSteps[markdownStepIndex].status = .failed(error.localizedDescription)
@@ -2040,6 +2042,28 @@ final class RecordingManager {
 
     /// Persist AI analysis to `<base>.insights.json` so the transcript window can
     /// display and edit it later. No-op when there is no summary to save.
+    /// Writes the AI-generated title back into the recording's metadata `.json`
+    /// sidecar so the transcript browser can show it (the audio file is never
+    /// renamed — it's referenced by the sidecar, segments, and markdown links).
+    /// No-op when there's no generated title or sidecar. See #71.
+    private func persistGeneratedTitle(for recording: Recording) {
+        let title = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty, let audioURL = recording.finalizedAudioURL else { return }
+        let metaURL = audioURL.deletingPathExtension().appendingPathExtension("json")
+        guard let data = try? Data(contentsOf: metaURL),
+              var payload = try? JSONDecoder().decode(RecordingMetadataPayload.self, from: data) else { return }
+        guard payload.generatedTitle != title else { return }
+        payload.generatedTitle = title
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let out = try? encoder.encode(payload) else { return }
+        do {
+            try out.write(to: metaURL, options: .atomic)
+        } catch {
+            Logger.recording.error("Failed to persist generated title to metadata sidecar: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func writeInsightsSidecar(for recording: Recording, markdownURL: URL?) async {
         guard let summary = recording.summary, !summary.isEmpty else { return }
         let insights = RecordingInsights(
