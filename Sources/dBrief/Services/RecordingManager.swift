@@ -171,7 +171,9 @@ final class RecordingManager {
             Task { await localAIPluginService.prewarmWhisper(config: cfg, refresh: false) }
         }
 
-        miniPlayer?.show()
+        if appSettings.showMiniRecordingView {
+            miniPlayer?.show()
+        }
 
         if let liveStreams {
             startLiveTranscription(streams: liveStreams)

@@ -17,3 +17,9 @@ You can drag the mini player anywhere on your screen.
 Click the close button on the mini player to dismiss it. Recording continues in the background.
 
 > **Note:** Hiding the mini player doesn't stop the recording.
+
+## Turning it off
+
+To stop the mini player from appearing at all, open **Settings → Recording → Recording Indicators** and turn off **Show floating Mini Recording view**. Recording is unaffected.
+
+The same section has a **Show recording duration in the menu bar** toggle — turn it off to show only the red record indicator in the menu bar while recording, hiding the elapsed time.

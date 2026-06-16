@@ -43,6 +43,19 @@ struct SettingsRecordingTab: View {
             }
             .listRowBackground(Color.clear)
 
+            Section("Recording Indicators") {
+                Toggle("Show floating Mini Recording view", isOn: $settings.showMiniRecordingView)
+                Text("The small floating window that shows recording status and audio levels while you record.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Show recording duration in the menu bar", isOn: $settings.showMenuBarRecordingDuration)
+                Text("When off, the menu bar shows only the red record indicator while recording — the elapsed time is hidden.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowBackground(Color.clear)
+
             if appSettings.powerUserMode {
                 Section("Audio Quality") {
                     LabeledContent("Capture:") {
