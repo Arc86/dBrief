@@ -76,6 +76,18 @@ enum TranscriptDesignTokens {
         scheme == .dark ? Color.white.opacity(0.35) : Color.black.opacity(0.50)
     }
 
+    // MARK: - Search highlight
+
+    /// Background behind every match of the active search query.
+    static func searchHighlight(scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.yellow.opacity(0.32) : Color.yellow.opacity(0.45)
+    }
+
+    /// Background behind the currently-focused match (the one prev/next lands on).
+    static func searchHighlightCurrent(scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.orange.opacity(0.70) : Color.orange.opacity(0.65)
+    }
+
     // MARK: - Speaker accent colours
 
     /// Canonical speaker palette now lives in `Theme` so every surface (transcript
