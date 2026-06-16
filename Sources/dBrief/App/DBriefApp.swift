@@ -13,6 +13,7 @@ final class AppContext {
     let transcriptStore = TranscriptStore()
     let insightsStore = InsightsStore()
     let transcriptChatStore = TranscriptChatStore()
+    let chatStore = ChatStore()
     let modelPerformanceStore = ModelPerformanceStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()

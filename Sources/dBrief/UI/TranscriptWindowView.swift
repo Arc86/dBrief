@@ -135,6 +135,12 @@ struct TranscriptDetailView: View {
                     let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
                         ?? recording.transcription?.text ?? ""
                     liveChat.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                    // The recording is finalized now, so a stable sidecar exists:
+                    // bind persistence and flush the carried-over conversation.
+                    if let url = recording.chatSidecarURL {
+                        liveChat.enablePersistence(store: context.chatStore, url: url)
+                        liveChat.persistNow()
+                    }
                 }
             }
         }
@@ -752,6 +758,13 @@ struct TranscriptDetailView: View {
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin
             )
+            // A finished recording has a stable sidecar location: bind it for
+            // on-disk persistence and adopt any previously-saved conversation.
+            if let url = recording.chatSidecarURL {
+                service.enablePersistence(store: context.chatStore, url: url)
+                let svc = service
+                Task { await svc.loadPersisted() }
+            }
         }
         chatStore.set(service, for: recording.fileURL)
         chatService = service
@@ -780,6 +793,7 @@ struct TranscriptDetailView: View {
             base.appendingPathExtension("transcript.json"),
             base.appendingPathExtension("richtranscript.json"),
             base.appendingPathExtension("insights.json"),
+            base.appendingPathExtension("chat.json"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {

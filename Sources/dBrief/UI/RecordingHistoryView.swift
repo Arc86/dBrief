@@ -348,6 +348,8 @@ struct RecordingHistoryView: View {
             base.appendingPathExtension("md"),
             base.appendingPathExtension("transcript.json"),
             base.appendingPathExtension("richtranscript.json"),
+            base.appendingPathExtension("insights.json"),
+            base.appendingPathExtension("chat.json"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
