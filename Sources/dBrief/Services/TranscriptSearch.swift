@@ -29,14 +29,14 @@ enum TranscriptSearch {
     ///
     /// Matches are ordered top-to-bottom across turns and left-to-right within
     /// each turn, with `globalIndex` numbering them 0..<count. An empty or
-    /// whitespace-only query returns no matches but stays `isValid`. A pattern
+    /// whitespace-only query returns no matches but stays `isValid`. Leading/trailing whitespace in the query is ignored. A pattern
     /// that fails to compile returns `isValid == false` and no matches.
     /// Zero-length matches (e.g. `x*`) are skipped so highlighting can't loop.
     static func search(turns: [(id: UUID, text: String)], query: String) -> Result {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }
 
-        guard let regex = try? NSRegularExpression(pattern: query, options: [.caseInsensitive]) else {
+        guard let regex = try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive]) else {
             return Result(isValid: false, matches: [])
         }
 

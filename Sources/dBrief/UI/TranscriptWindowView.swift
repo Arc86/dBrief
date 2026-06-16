@@ -133,7 +133,7 @@ struct TranscriptDetailView: View {
             query: $searchQuery,
             isPresented: $isSearchPresented,
             onSubmitSearch: gotoNextMatch))
-        .background(findShortcuts)
+        .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
         .onChange(of: isSearchPresented) { _, presented in
             if !presented {

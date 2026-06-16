@@ -57,6 +57,12 @@ struct TranscriptSearchTests {
         #expect(result.matches.count == 1)
     }
 
+    @Test("leading and trailing whitespace in the query is ignored")
+    func trimmedQuery() {
+        let result = TranscriptSearch.search(turns: [turn("the cat sat")], query: "  cat  ")
+        #expect(result.matches.count == 1)
+    }
+
     @Test("regex metacharacters work")
     func regexPattern() {
         let t = turn("cat category scatter")
