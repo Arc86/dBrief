@@ -128,6 +128,20 @@ struct TranscriptDetailView: View {
         .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .modifier(TranscriptSearchableModifier(
+            enabled: !isLive,
+            query: $searchQuery,
+            isPresented: $isSearchPresented,
+            onSubmitSearch: gotoNextMatch))
+        .background(findShortcuts)
+        .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
+        .onChange(of: isSearchPresented) { _, presented in
+            if !presented {
+                searchQuery = ""
+                searchDebounce?.cancel()
+                recomputeSearch()
+            }
+        }
         .onChange(of: context.appState.recordingState) { _, newState in
             // When the live recording finishes, swap the live preview for the
             // authoritative on-disk transcript. Keep a non-empty live chat and
@@ -258,6 +272,23 @@ struct TranscriptDetailView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            if isSearching {
+                Text(searchCounterLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help("Search matches")
+                Button { gotoPrevMatch() } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Previous match (⌘⇧G)")
+                Button { gotoNextMatch() } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Next match (⌘G)")
+                Divider()
+            }
             Button {
                 copyTranscript()
             } label: {
@@ -348,6 +379,11 @@ struct TranscriptDetailView: View {
                     newTime >= $0.startTime && newTime < $0.endTime
                 }) else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
+            }
+            .onChange(of: searchScrollTick) { _, _ in
+                guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
+                let turnId = searchResult.matches[currentMatchIndex].turnId
+                withAnimation { proxy.scrollTo(turnId, anchor: .center) }
             }
         }
     }
@@ -856,6 +892,23 @@ struct TranscriptDetailView: View {
         searchScrollTick &+= 1
     }
 
+    /// Zero-size buttons that register Find keyboard shortcuts without adding any
+    /// visible UI (the `.searchable` field is the only visible search affordance):
+    /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
+    private var findShortcuts: some View {
+        Group {
+            Button("") { if !isLive { isSearchPresented = true } }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("") { gotoNextMatch() }
+                .keyboardShortcut("g", modifiers: .command)
+            Button("") { gotoPrevMatch() }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
     /// Builds the row text with search highlights. Returns plain (un-highlighted)
     /// text when there is no active query or no matches in this turn.
     private func highlightedText(_ turn: SpeakerTurn) -> AttributedString {
@@ -971,4 +1024,27 @@ struct TranscriptDetailView: View {
 private struct IdentifiedString: Identifiable {
     let value: String
     var id: String { value }
+}
+
+/// Applies the native macOS toolbar search field only when `enabled` (finished
+/// recordings). On macOS the field shows full-width when the toolbar has room and
+/// collapses to a magnifying-glass loupe when the window is narrow — no extra code.
+private struct TranscriptSearchableModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    @Binding var isPresented: Bool
+    let onSubmitSearch: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(text: $query,
+                            isPresented: $isPresented,
+                            placement: .toolbar,
+                            prompt: "Search transcript")
+                .onSubmit(of: .search, onSubmitSearch)
+        } else {
+            content
+        }
+    }
 }
