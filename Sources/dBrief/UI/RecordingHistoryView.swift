@@ -57,6 +57,9 @@ struct RecordingHistoryView: View {
         let hasRichTranscript: Bool
         let hasInsights: Bool
         let isQueued: Bool
+        /// AI-generated title persisted to the metadata sidecar after
+        /// post-processing; preferred over the filename-derived name. See #71.
+        var generatedTitle: String? = nil
 
         /// Derived processing state for the row's status badge. AI analysis is
         /// signalled by the `<base>.insights.json` sidecar (written only when a
@@ -110,6 +113,9 @@ struct RecordingHistoryView: View {
         }
 
         var displayName: String {
+            if let generated = generatedTitle?.trimmingCharacters(in: .whitespaces), !generated.isEmpty {
+                return generated
+            }
             let parts = name.split(separator: "_", maxSplits: 2)
             guard parts.count == 3 else { return name }
             return String(parts[2]).replacingOccurrences(of: "-", with: " ")
@@ -427,11 +433,14 @@ struct RecordingHistoryView: View {
             let isQueued = FileManager.default.fileExists(atPath: queueURL.path)
 
             var duration: TimeInterval = 0
+            var generatedTitle: String?
             let metaURL = base.appendingPathExtension("json")
             if let data = try? Data(contentsOf: metaURL),
-               let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let d = meta["duration"] as? TimeInterval {
-                duration = d
+               let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let d = meta["duration"] as? TimeInterval {
+                    duration = d
+                }
+                generatedTitle = meta["generatedTitle"] as? String
             }
 
             return HistoryItem(
@@ -444,7 +453,8 @@ struct RecordingHistoryView: View {
                 hasTranscript: hasTranscript,
                 hasRichTranscript: hasRichTranscript,
                 hasInsights: hasInsights,
-                isQueued: isQueued
+                isQueued: isQueued,
+                generatedTitle: generatedTitle
             )
         }
     }

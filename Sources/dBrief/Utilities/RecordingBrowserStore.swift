@@ -12,10 +12,16 @@ struct RecordingBrowserItem: Identifiable, Hashable {
     let duration: TimeInterval
     let hasTranscript: Bool
     let hasRichTranscript: Bool
+    /// AI-generated title persisted to the metadata sidecar after post-processing.
+    /// Preferred over the filename-derived title when present. See #71.
+    var generatedTitle: String? = nil
 
-    /// Human title: the meeting-title segment of the filename when present,
-    /// otherwise a date-based "Meeting …" label (matches the dB2 look).
+    /// Human title: the AI-generated title when present, else the meeting-title
+    /// segment of the filename, else a date-based "Meeting …" label (dB2 look).
     var title: String {
+        if let generated = generatedTitle?.trimmingCharacters(in: .whitespaces), !generated.isEmpty {
+            return generated
+        }
         let parts = name.split(separator: "_", maxSplits: 2)
         if parts.count == 3 {
             let raw = String(parts[2]).replacingOccurrences(of: "-", with: " ")
@@ -67,11 +73,14 @@ enum RecordingBrowserStore {
                 atPath: base.appendingPathExtension("richtranscript.json").path)
 
             var duration: TimeInterval = 0
+            var generatedTitle: String?
             let metaURL = base.appendingPathExtension("json")
             if let data = try? Data(contentsOf: metaURL),
-               let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let d = meta["duration"] as? TimeInterval {
-                duration = d
+               let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let d = meta["duration"] as? TimeInterval {
+                    duration = d
+                }
+                generatedTitle = meta["generatedTitle"] as? String
             }
 
             return RecordingBrowserItem(
@@ -81,7 +90,8 @@ enum RecordingBrowserStore {
                 size: entry.size,
                 duration: duration,
                 hasTranscript: hasTranscript,
-                hasRichTranscript: hasRich
+                hasRichTranscript: hasRich,
+                generatedTitle: generatedTitle
             )
         }
     }

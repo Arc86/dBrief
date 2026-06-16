@@ -400,6 +400,12 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     let masterFileName: String
     let segmentFileNames: [String]
     let warnings: [String]
+    /// The AI-generated meeting title, written back into the sidecar after
+    /// post-processing (the audio file itself is never renamed). `nil` until AI
+    /// title generation runs, and absent in sidecars written before this field
+    /// existed — so the transcript browser can prefer it when present and fall
+    /// back to the (draft) filename otherwise. See #71.
+    var generatedTitle: String? = nil
 }
 
 private struct ProcessResult: Sendable {

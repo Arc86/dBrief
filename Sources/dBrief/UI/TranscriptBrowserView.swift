@@ -161,7 +161,7 @@ struct TranscriptBrowserView: View {
     }
 
     private func makeRecording(from item: RecordingBrowserItem) -> Recording {
-        Recording(
+        let recording = Recording(
             date: item.date,
             fileURL: item.url,
             duration: item.duration,
@@ -169,6 +169,10 @@ struct TranscriptBrowserView: View {
             meetingTitleDraft: item.title,
             finalizedAudioURL: item.url
         )
+        // Carry the persisted AI title so the detail view's navigation title
+        // reflects it after post-processing (not the stale filename). See #71.
+        recording.generatedTitle = item.generatedTitle
+        return recording
     }
 }
 
