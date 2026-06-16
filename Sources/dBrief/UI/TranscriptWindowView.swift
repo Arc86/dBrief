@@ -762,8 +762,7 @@ struct TranscriptDetailView: View {
             // on-disk persistence and adopt any previously-saved conversation.
             if let url = recording.chatSidecarURL {
                 service.enablePersistence(store: context.chatStore, url: url)
-                let svc = service
-                Task { await svc.loadPersisted() }
+                service.startLoadingPersisted()
             }
         }
         chatStore.set(service, for: recording.fileURL)

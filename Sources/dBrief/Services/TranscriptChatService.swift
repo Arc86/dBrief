@@ -28,6 +28,13 @@ final class TranscriptChatService {
     private var chatStore: ChatStore?
     private var persistenceURL: URL?
     private var saveTask: Task<Void, Never>?
+    /// The in-flight initial load from disk. `send()` awaits it so a fast typist
+    /// can't append to an empty conversation before persisted history arrives
+    /// (which would no-op the load and overwrite the saved file).
+    private var loadTask: Task<Void, Never>?
+    /// True when `messages` has changed since the last successful write — lets
+    /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
+    private var hasUnsavedChanges = false
 
     init(
         transcriptProvider: @escaping @MainActor () -> String,
@@ -59,6 +66,10 @@ final class TranscriptChatService {
     func send(_ userText: String) async {
         let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
+
+        // Make sure any persisted history has been adopted before we append, so
+        // sending before the disk load finishes can't drop the saved conversation.
+        await loadTask?.value
 
         messages.append(ChatMessage(role: .user, content: trimmed))
 
@@ -92,6 +103,7 @@ final class TranscriptChatService {
         streamingError = nil
         // Clearing the conversation removes the on-disk sidecar too.
         saveTask?.cancel()
+        hasUnsavedChanges = false
         if let chatStore, let persistenceURL {
             Task { await chatStore.delete(at: persistenceURL) }
         }
@@ -105,6 +117,13 @@ final class TranscriptChatService {
     func enablePersistence(store: ChatStore, url: URL) {
         chatStore = store
         persistenceURL = url
+    }
+
+    /// Begin adopting a previously-saved conversation from disk. Tracks the work
+    /// in `loadTask` so `send()` can await it before appending. Call after
+    /// `enablePersistence`.
+    func startLoadingPersisted() {
+        loadTask = Task { await loadPersisted() }
     }
 
     /// Adopt a previously-saved conversation from disk. No-op if persistence
@@ -121,11 +140,23 @@ final class TranscriptChatService {
     /// carried over to a now-finalized recording). Debounced like any exchange.
     func persistNow() { scheduleSave() }
 
+    /// Write the current conversation immediately if it has unsaved changes,
+    /// bypassing the debounce. Called on app termination so the most recent
+    /// exchange isn't lost when the user quits within the debounce window.
+    func flushPendingSave() async {
+        saveTask?.cancel()
+        guard hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        let history = ChatHistory(messages: messages, engine: appSettings.effectiveAIEngine.rawValue)
+        try? await chatStore.save(history, to: persistenceURL)
+        hasUnsavedChanges = false
+    }
+
     /// Debounced write of the current conversation. Coalesces rapid exchanges
     /// into a single atomic save and snapshots `messages` on the main actor so
     /// the actor write sees a consistent value.
     private func scheduleSave() {
         guard let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        hasUnsavedChanges = true
         let snapshot = messages
         let engine = appSettings.effectiveAIEngine.rawValue
         saveTask?.cancel()
@@ -134,6 +165,7 @@ final class TranscriptChatService {
             guard !Task.isCancelled else { return }
             let history = ChatHistory(messages: snapshot, engine: engine)
             try? await chatStore.save(history, to: persistenceURL)
+            hasUnsavedChanges = false
         }
     }
 
