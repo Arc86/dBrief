@@ -22,6 +22,20 @@ final class TranscriptChatService {
     private let localPlugin: LocalAIPluginService?
     private let aiService = AIService()
 
+    /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
+    /// that have no stable sidecar location yet (e.g. a still-recording live
+    /// session, until it finishes and rebinds to the authoritative transcript).
+    private var chatStore: ChatStore?
+    private var persistenceURL: URL?
+    private var saveTask: Task<Void, Never>?
+    /// The in-flight initial load from disk. `send()` awaits it so a fast typist
+    /// can't append to an empty conversation before persisted history arrives
+    /// (which would no-op the load and overwrite the saved file).
+    private var loadTask: Task<Void, Never>?
+    /// True when `messages` has changed since the last successful write — lets
+    /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
+    private var hasUnsavedChanges = false
+
     init(
         transcriptProvider: @escaping @MainActor () -> String,
         speakerLabels: [SpeakerLabel],
@@ -53,6 +67,10 @@ final class TranscriptChatService {
         let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
 
+        // Make sure any persisted history has been adopted before we append, so
+        // sending before the disk load finishes can't drop the saved conversation.
+        await loadTask?.value
+
         messages.append(ChatMessage(role: .user, content: trimmed))
 
         var assistantMessage = ChatMessage(role: .assistant, content: "")
@@ -77,11 +95,78 @@ final class TranscriptChatService {
         }
 
         isStreaming = false
+        scheduleSave()
     }
 
     func clearMessages() {
         messages = []
         streamingError = nil
+        // Clearing the conversation removes the on-disk sidecar too.
+        saveTask?.cancel()
+        hasUnsavedChanges = false
+        if let chatStore, let persistenceURL {
+            Task { await chatStore.delete(at: persistenceURL) }
+        }
+    }
+
+    // MARK: - Persistence
+
+    /// Bind this session to an on-disk `<base>.chat.json` sidecar. Idempotent —
+    /// safe to call again (e.g. when a live session finishes and gains a stable
+    /// finalized audio URL). Does not itself load; call `loadPersisted()` after.
+    func enablePersistence(store: ChatStore, url: URL) {
+        chatStore = store
+        persistenceURL = url
+    }
+
+    /// Begin adopting a previously-saved conversation from disk. Tracks the work
+    /// in `loadTask` so `send()` can await it before appending. Call after
+    /// `enablePersistence`.
+    func startLoadingPersisted() {
+        loadTask = Task { await loadPersisted() }
+    }
+
+    /// Adopt a previously-saved conversation from disk. No-op if persistence
+    /// isn't enabled, the sidecar is absent/empty, or this session already has
+    /// messages (an in-progress live chat must not be clobbered by an old file).
+    func loadPersisted() async {
+        guard let chatStore, let persistenceURL, messages.isEmpty else { return }
+        guard let history = try? await chatStore.load(from: persistenceURL),
+              !history.messages.isEmpty else { return }
+        messages = history.messages
+    }
+
+    /// Request a save of the current conversation (e.g. after a live chat is
+    /// carried over to a now-finalized recording). Debounced like any exchange.
+    func persistNow() { scheduleSave() }
+
+    /// Write the current conversation immediately if it has unsaved changes,
+    /// bypassing the debounce. Called on app termination so the most recent
+    /// exchange isn't lost when the user quits within the debounce window.
+    func flushPendingSave() async {
+        saveTask?.cancel()
+        guard hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        let history = ChatHistory(messages: messages, engine: appSettings.effectiveAIEngine.rawValue)
+        try? await chatStore.save(history, to: persistenceURL)
+        hasUnsavedChanges = false
+    }
+
+    /// Debounced write of the current conversation. Coalesces rapid exchanges
+    /// into a single atomic save and snapshots `messages` on the main actor so
+    /// the actor write sees a consistent value.
+    private func scheduleSave() {
+        guard let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        hasUnsavedChanges = true
+        let snapshot = messages
+        let engine = appSettings.effectiveAIEngine.rawValue
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            let history = ChatHistory(messages: snapshot, engine: engine)
+            try? await chatStore.save(history, to: persistenceURL)
+            hasUnsavedChanges = false
+        }
     }
 
     /// Re-point this chat at a fixed transcript while keeping the conversation so far.

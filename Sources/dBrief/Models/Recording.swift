@@ -101,4 +101,9 @@ final class Recording: Identifiable {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("insights.json")
     }
+
+    var chatSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("chat.json")
+    }
 }

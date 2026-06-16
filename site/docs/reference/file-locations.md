@@ -17,7 +17,7 @@ Recordings are saved as **M4A / AAC**. You can change the output folder in **Set
 
 ## Markdown exports
 
-Markdown files are saved in the same dated subfolder as the audio file, unless you've configured an Obsidian vault folder — in which case they go there instead. A `.richtranscript.json` sidecar (storing speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)) is written next to the Markdown file.
+Markdown files are saved in the same dated subfolder as the audio file, unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
 
 ## AI and transcription models
 

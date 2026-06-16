@@ -13,6 +13,7 @@ final class AppContext {
     let transcriptStore = TranscriptStore()
     let insightsStore = InsightsStore()
     let transcriptChatStore = TranscriptChatStore()
+    let chatStore = ChatStore()
     let modelPerformanceStore = ModelPerformanceStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
@@ -154,12 +155,17 @@ final class AppContext {
 class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by DBriefApp so the delegate can clean up GPU resources on quit.
     weak var recordingManager: RecordingManager?
+    /// Set by DBriefApp so the delegate can flush pending chat saves on quit.
+    weak var transcriptChatStore: TranscriptChatStore?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Release Metal/GPU resources before hard-exiting so WindowServer
         // doesn't inherit orphaned GPU allocations that keep it at high
         // utilization until reboot.
         Task { @MainActor in
+            // Flush any debounced chat save first so an exchange sent moments
+            // before quit survives — the _exit() below skips normal teardown.
+            await self.transcriptChatStore?.flushAll()
             await self.recordingManager?.forceReleaseGPU()
             // Bypasses C++ static destructors (`__cxa_finalize_ranges`) which
             // deadlock in `mlx::core::scheduler::Scheduler::~Scheduler()`.
@@ -177,6 +183,7 @@ struct DBriefApp: App {
 
     init() {
         appDelegate.recordingManager = context.recordingManager
+        appDelegate.transcriptChatStore = context.transcriptChatStore
     }
 
     var body: some Scene {

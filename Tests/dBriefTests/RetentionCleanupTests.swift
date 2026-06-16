@@ -22,6 +22,7 @@ struct RetentionCleanupTests {
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("transcript.json").lastPathComponent))
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("richtranscript.json").lastPathComponent))
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("insights.json").lastPathComponent))
+        #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("chat.json").lastPathComponent))
     }
 
     @Test
@@ -32,6 +33,7 @@ struct RetentionCleanupTests {
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("richtranscript.json")))
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("insights.json")))
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("transcript.json")))
+        #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("chat.json")))
     }
 
     // MARK: - Sweeps
