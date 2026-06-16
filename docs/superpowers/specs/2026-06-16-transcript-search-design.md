@@ -51,8 +51,9 @@ is an iOS/iPadOS/visionOS-26 bottom-toolbar behavior and is **not** used here.)
   status label — `"n of m"`, `"No results"`, or `"Invalid pattern"` — plus up/down chevrons
   for previous/next. In a very narrow window these fold into the toolbar overflow (`···`)
   menu — standard native behavior.
-- **Keyboard:** `⏎` (`.onSubmit(of: .search)`) = next match; `⇧⏎` = previous. These work even
-  when the field has collapsed to a loupe.
+- **Keyboard:** `⌘F` focuses search; `⏎` (`.onSubmit(of: .search)`) = next match; the macOS-standard
+  `⌘G` = next and `⌘⇧G` = previous (registered as hidden zero-size buttons so they work even when
+  the field has collapsed to a loupe). The chevrons mirror next/prev.
 
 ## Architecture
 
@@ -66,12 +67,14 @@ unit-tested helpers such as `LiveSegmentMerge`, `SpeakerMerge`, `MicReconfigureP
   keeps highlight ranges trivially correct.)
 - **Compilation:** query compiled as `NSRegularExpression` with `.caseInsensitive`.
 - **Output:** an ordered `[Match]` walking turns top-to-bottom and matches left-to-right
-  within each turn:
+  within each turn. Ranges are stored as **Character offsets** (not `Range<String.Index>`) so
+  they map cleanly onto `AttributedString` indices in the view:
   ```swift
   struct Match: Equatable {
       let turnId: UUID
-      let range: Range<String.Index>   // into that turn's text
-      let globalIndex: Int             // 0-based position in the flat list
+      let location: Int    // Character offset into that turn's text
+      let length: Int      // Character length of the match
+      let globalIndex: Int // 0-based position in the flat list
   }
   ```
 - **Validity:** the engine exposes whether the pattern compiled (e.g. returns a result type
@@ -80,6 +83,15 @@ unit-tested helpers such as `LiveSegmentMerge`, `SpeakerMerge`, `MicReconfigureP
 
 The engine performs no SwiftUI work and has no dependency on view types, so it is fully
 unit-testable.
+
+### 1a. Prerequisite — stable `SpeakerTurn.id`
+
+`RichTranscript.speakerTurns()` currently assigns each `SpeakerTurn` a fresh `UUID()` on every
+call, and `displayedTurns` is a computed property re-evaluated multiple times per render. For
+search to map matches to turns and scroll reliably (and to fix the existing latent churn that
+the playback auto-scroll already depends on), change `SpeakerTurn.init` to derive its `id` from
+its **first segment's** stable `RichSegment.id` (`segments.first?.id ?? UUID()`). This makes turn
+identity deterministic across recomputations of the same transcript.
 
 ### 2. View integration — `TranscriptDetailView`
 
