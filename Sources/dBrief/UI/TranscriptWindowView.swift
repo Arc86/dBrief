@@ -48,9 +48,8 @@ struct TranscriptDetailView: View {
     /// Bumped to ask the transcript `ScrollViewReader` to scroll to the current match.
     @State private var searchScrollTick = 0
 
-    // Speaker rename
-    @State private var renamingSpeakerId: String?
-    @State private var speakerRenameText = ""
+    // Speaker reassignment
+    @State private var assigningTurn: SpeakerTurn?
 
     // Diarization (after-the-fact speaker detection)
     @State private var isDiarizing = false
@@ -189,11 +188,6 @@ struct TranscriptDetailView: View {
             Button("OK", role: .cancel) { diarizeError = nil }
         } message: {
             Text(diarizeError ?? "")
-        }
-        .sheet(item: Binding(
-            get: { renamingSpeakerId.map { IdentifiedString(value: $0) } },
-            set: { renamingSpeakerId = $0?.value })) { boxed in
-            speakerRenameSheet(for: boxed.value)
         }
     }
 
@@ -415,8 +409,8 @@ struct TranscriptDetailView: View {
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    if showSpeakerNames, let id = turn.speakerId {
-                        speakerLabel(id: id, isMe: isMe)
+                    if showSpeakerNames, turn.speakerId != nil {
+                        speakerLabel(turn: turn, isMe: isMe)
                     }
                     Button {
                         seek(to: turn.startTime)
@@ -441,16 +435,14 @@ struct TranscriptDetailView: View {
         .onTapGesture { seek(to: turn.startTime) }
     }
 
-    private func speakerLabel(id: String, isMe: Bool) -> some View {
-        Menu {
-            Button("Rename…") {
-                speakerRenameText = displayName(for: id)
-                renamingSpeakerId = id
-            }
+    private func speakerLabel(turn: SpeakerTurn, isMe: Bool) -> some View {
+        let id = turn.speakerId ?? ""
+        return Menu {
+            Button("Reassign / rename…") { assigningTurn = turn }
             if isMe {
                 Button("Clear “This is me”") { setMeSpeaker(nil) }
             } else {
-                Button("This is me") { setMeSpeaker(id) }
+                Button("This is me") { setMeSpeaker(turn.speakerId) }
             }
         } label: {
             HStack(spacing: 4) {
@@ -466,6 +458,12 @@ struct TranscriptDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .popover(isPresented: Binding(
+            get: { assigningTurn?.id == turn.id },
+            set: { if !$0 { assigningTurn = nil } }
+        ), arrowEdge: .bottom) {
+            speakerAssignPicker(for: turn)
+        }
     }
 
     private func displayName(for id: String) -> String {
@@ -678,33 +676,35 @@ struct TranscriptDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Speaker rename sheet
+    // MARK: - Speaker assign picker
 
-    private func speakerRenameSheet(for speakerId: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Rename Speaker").font(.headline)
-            TextField("Name", text: $speakerRenameText)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 240)
-                .onSubmit { commitSpeakerRename(speakerId) }
-            HStack {
-                Spacer()
-                Button("Cancel") { renamingSpeakerId = nil }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { commitSpeakerRename(speakerId) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(speakerRenameText.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
+    @ViewBuilder
+    private func speakerAssignPicker(for turn: SpeakerTurn) -> some View {
+        let transcript = richTranscript ?? RichTranscript(segments: [])
+        let attendees = recording.calendarCandidates.flatMap { $0.attendees.map(\.name) }
+        SpeakerAssignPicker(
+            candidates: SpeakerReassignment.candidates(
+                in: transcript,
+                currentSpeakerId: turn.speakerId,
+                participants: recording.participants,
+                calendarAttendees: attendees),
+            currentDisplayName: displayName(for: turn.speakerId ?? ""),
+            speakerSegmentCount: SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId),
+            turnSegmentCount: turn.segments.count,
+            onChoose: { choice, scope in assignSpeaker(turn: turn, choice: choice, scope: scope) },
+            onCancel: { assigningTurn = nil })
     }
 
-    private func commitSpeakerRename(_ speakerId: String) {
-        let name = speakerRenameText.trimmingCharacters(in: .whitespaces)
-        if !name.isEmpty {
-            renameSpeaker(speakerId: speakerId, displayName: name)
-        }
-        renamingSpeakerId = nil
+    private func assignSpeaker(turn: SpeakerTurn, choice: SpeakerChoice, scope: ReassignScope) {
+        guard var transcript = richTranscript else { return }
+        let ids = Set(turn.segments.map(\.id))
+        transcript = SpeakerReassignment.apply(choice, to: transcript,
+                                               segmentIds: ids, scope: scope,
+                                               newId: UUID().uuidString)
+        richTranscript = transcript
+        saveTranscript(transcript)
+        recomputeSearch()
+        assigningTurn = nil
     }
 
     // MARK: - Actions
@@ -722,17 +722,6 @@ struct TranscriptDetailView: View {
     private func setMeSpeaker(_ id: String?) {
         guard var transcript = richTranscript else { return }
         transcript.meSpeakerId = id
-        richTranscript = transcript
-        saveTranscript(transcript)
-    }
-
-    private func renameSpeaker(speakerId: String, displayName: String) {
-        guard var transcript = richTranscript else { return }
-        if let idx = transcript.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
-            transcript.speakerLabels[idx].displayName = displayName
-        } else {
-            transcript.speakerLabels.append(SpeakerLabel(id: speakerId, displayName: displayName))
-        }
         richTranscript = transcript
         saveTranscript(transcript)
     }
@@ -1034,12 +1023,6 @@ struct TranscriptDetailView: View {
         recomputeSearch()
         saveTranscript(built)
     }
-}
-
-/// Small Identifiable wrapper so a `String` speaker id can drive `.sheet(item:)`.
-private struct IdentifiedString: Identifiable {
-    let value: String
-    var id: String { value }
 }
 
 /// Applies the native macOS toolbar search field only when `enabled` (finished
