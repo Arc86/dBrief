@@ -272,23 +272,6 @@ struct TranscriptDetailView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
-            if isSearching {
-                Text(searchCounterLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help("Search matches")
-                Button { gotoPrevMatch() } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Previous match (⌘⇧G)")
-                Button { gotoNextMatch() } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Next match (⌘G)")
-                Divider()
-            }
             Button {
                 copyTranscript()
             } label: {
@@ -323,6 +306,26 @@ struct TranscriptDetailView: View {
                 Image(systemName: "trash")
             }
             .help("Delete recording")
+
+            // Search match counter + prev/next, kept adjacent to the trailing
+            // `.searchable` field (which the system pins to the toolbar's edge).
+            if isSearching {
+                Divider()
+                Text(searchCounterLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help("Search matches")
+                Button { gotoPrevMatch() } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Previous match (⌘⇧G)")
+                Button { gotoNextMatch() } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Next match (⌘G)")
+            }
         }
     }
 
