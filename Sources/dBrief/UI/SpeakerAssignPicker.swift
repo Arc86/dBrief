@@ -17,6 +17,7 @@ struct SpeakerAssignPicker: View {
     @State private var pendingChoice: SpeakerChoice?
     @State private var addingNew = false
     @State private var newName = ""
+    @FocusState private var newNameFocused: Bool
 
     private var hasSegmentsBeyondTurn: Bool { speakerSegmentCount > turnSegmentCount }
     private var thisScopeLabel: String { turnSegmentCount == 1 ? "This segment" : "This turn" }
@@ -41,7 +42,7 @@ struct SpeakerAssignPicker: View {
                 .foregroundStyle(.secondary)
 
             ForEach(candidates) { c in
-                Button { choose(.existing(speakerId: c.existingSpeakerId ?? ""), candidate: c) } label: {
+                Button { choose(candidate: c) } label: {
                     HStack(spacing: 8) {
                         Circle()
                             .fill(TranscriptDesignTokens.speakerColor(for: c.existingSpeakerId))
@@ -63,6 +64,7 @@ struct SpeakerAssignPicker: View {
             if addingNew {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.roundedBorder)
+                    .focused($newNameFocused)
                     .onSubmit { confirmNewName() }
                 HStack {
                     Button("Cancel") { addingNew = false; newName = "" }
@@ -72,7 +74,7 @@ struct SpeakerAssignPicker: View {
                         .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } else {
-                Button { addingNew = true } label: {
+                Button { addingNew = true; newNameFocused = true } label: {
                     Label("Add someone…", systemImage: "plus")
                         .font(.system(size: 12))
                 }
@@ -81,14 +83,14 @@ struct SpeakerAssignPicker: View {
         }
     }
 
-    private func choose(_ choice: SpeakerChoice, candidate: SpeakerCandidate) {
-        // Picking a name-only candidate routes through .new so it mints/merges by name.
-        let resolved: SpeakerChoice
-        if candidate.existingSpeakerId == nil { resolved = .new(name: candidate.displayName) }
-        else { resolved = choice }
-
+    private func choose(candidate: SpeakerCandidate) {
         if candidate.isCurrent { onCancel(); return }   // no-op
-        advance(with: resolved)
+        // A name-only candidate (no existing speakerId) routes through .new so it
+        // mints or merges by name; an existing speaker reassigns by id.
+        let choice: SpeakerChoice
+        if let id = candidate.existingSpeakerId { choice = .existing(speakerId: id) }
+        else { choice = .new(name: candidate.displayName) }
+        advance(with: choice)
     }
 
     private func confirmNewName() {
