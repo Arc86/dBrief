@@ -71,12 +71,23 @@ public struct TranscriptionResult: Codable, Sendable {
         self.diarizationTime = diarizationTime
     }
 
-    public var textForLLM: String {
+    /// Speaker-labeled transcript for LLM consumption. `speakerNames` maps raw
+    /// speaker IDs (e.g. "Speaker 1") to human display names; an ID absent from
+    /// the map — or mapping to a blank string — keeps its raw label. Grouping is
+    /// keyed on the raw speaker ID, so relabeling never changes how turns merge.
+    public func textForLLM(speakerNames: [String: String]) -> String {
         if segments.isEmpty {
             return text.replacingOccurrences(of: #"\*\*\[\d{2}:\d{2}:\d{2}\]\*\*"#, with: "", options: .regularExpression)
         }
         let hasSpeakerInfo = segments.contains { $0.speaker != nil }
         if hasSpeakerInfo {
+            func label(for id: String?) -> String? {
+                guard let id else { return nil }
+                if let name = speakerNames[id]?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                    return name
+                }
+                return id
+            }
             var lines: [String] = []
             var currentSpeaker: String? = nil
             var currentParts: [String] = []
@@ -88,7 +99,7 @@ public struct TranscriptionResult: Codable, Sendable {
                 } else {
                     if !currentParts.isEmpty {
                         let joined = currentParts.joined(separator: " ")
-                        lines.append(currentSpeaker.map { "\($0): \(joined)" } ?? joined)
+                        lines.append(label(for: currentSpeaker).map { "\($0): \(joined)" } ?? joined)
                     }
                     currentSpeaker = segment.speaker
                     currentParts = [trimmed]
@@ -96,10 +107,13 @@ public struct TranscriptionResult: Codable, Sendable {
             }
             if !currentParts.isEmpty {
                 let joined = currentParts.joined(separator: " ")
-                lines.append(currentSpeaker.map { "\($0): \(joined)" } ?? joined)
+                lines.append(label(for: currentSpeaker).map { "\($0): \(joined)" } ?? joined)
             }
             return lines.joined(separator: "\n")
         }
         return segments.map { $0.text }.joined(separator: " ")
     }
+
+    /// Convenience: speaker-labeled transcript using raw speaker IDs as labels.
+    public var textForLLM: String { textForLLM(speakerNames: [:]) }
 }
