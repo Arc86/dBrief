@@ -13,6 +13,7 @@ actor MLOrchestrator: MLBackend {
     private let insightsService: MLXInsightsService
     private let parakeetService: ParakeetTranscriptionService
     private let ttsService: TTSService
+    private let embeddingExtractor = SpeakerEmbeddingExtractor()
     private var parakeetStateTask: Task<Void, Never>?
 
     init(emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
@@ -33,12 +34,13 @@ actor MLOrchestrator: MLBackend {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
-            return try await whisperService.transcribe(
+            let result = try await whisperService.transcribe(
                 fileURL: URL(fileURLWithPath: path),
                 initialPrompt: initialPrompt,
                 whisperConfig: config,
                 safeMode: safeMode
             )
+            return await withEmbeddings(result, path: path)
         }
     }
 
@@ -48,6 +50,18 @@ actor MLOrchestrator: MLBackend {
             await insightsService.unload()
             return try await whisperService.diarize(fileURL: URL(fileURLWithPath: path))
         }
+    }
+
+    /// Attaches per-speaker voiceprints to a diarized result. No-op (returns the
+    /// result unchanged) when no segment carries a speaker label.
+    private func withEmbeddings(_ result: TranscriptionResult, path: String) async -> TranscriptionResult {
+        guard result.segments.contains(where: { $0.speaker != nil }) else { return result }
+        var r = result
+        r.speakerEmbeddings = await embeddingExtractor.embeddings(
+            forAudioAt: URL(fileURLWithPath: path),
+            segments: result.segments
+        )
+        return r
     }
 
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
@@ -75,7 +89,7 @@ actor MLOrchestrator: MLBackend {
                 )
                 var merged = SpeakerMerge.merge(result, turns: turns)
                 merged.diarizationTime = Date().timeIntervalSince(diarStart)
-                return merged
+                return await withEmbeddings(merged, path: path)
             } catch {
                 Logger.localAI.error("Parakeet diarization failed: \(error.localizedDescription, privacy: .public) — returning transcript without speakers")
                 return result
