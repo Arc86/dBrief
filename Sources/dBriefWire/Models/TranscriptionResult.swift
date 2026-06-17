@@ -14,6 +14,11 @@ public struct TranscriptionResult: Codable, Sendable {
     /// separately by the helper so the Benchmark breakdown can show it apart from
     /// transcription overhead; nil when diarization didn't run.
     public var diarizationTime: TimeInterval?
+    /// Per-speaker 256-dim voice embeddings (speakerId → vector), from the
+    /// FluidAudio embedding pass that runs after diarization. Nil when
+    /// diarization didn't run or no embeddings were extracted; an entry is
+    /// present only for speakers with enough clean speech.
+    public var speakerEmbeddings: [String: [Float]]?
 
     public struct Segment: Codable, Sendable {
         public let start: Double
@@ -60,7 +65,8 @@ public struct TranscriptionResult: Codable, Sendable {
         warnings: [String]? = nil,
         speakerCount: Int? = nil,
         inferenceTime: TimeInterval? = nil,
-        diarizationTime: TimeInterval? = nil
+        diarizationTime: TimeInterval? = nil,
+        speakerEmbeddings: [String: [Float]]? = nil
     ) {
         self.text = text
         self.segments = segments
@@ -69,6 +75,7 @@ public struct TranscriptionResult: Codable, Sendable {
         self.speakerCount = speakerCount
         self.inferenceTime = inferenceTime
         self.diarizationTime = diarizationTime
+        self.speakerEmbeddings = speakerEmbeddings
     }
 
     public var textForLLM: String {
