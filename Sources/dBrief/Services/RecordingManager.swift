@@ -41,6 +41,7 @@ final class RecordingManager {
     private let recordingFinalizer = RecordingFinalizer()
     private let transcriptStore: TranscriptStore
     private let insightsStore: InsightsStore
+    private let voiceLibraryStore: VoiceLibraryStore
     private let modelPerformanceStore: ModelPerformanceStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
@@ -53,11 +54,12 @@ final class RecordingManager {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, modelPerformanceStore: ModelPerformanceStore, microsoftAuthService: MicrosoftAuthService) {
+    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, voiceLibraryStore: VoiceLibraryStore, modelPerformanceStore: ModelPerformanceStore, microsoftAuthService: MicrosoftAuthService) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
         self.insightsStore = insightsStore
+        self.voiceLibraryStore = voiceLibraryStore
         self.modelPerformanceStore = modelPerformanceStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
@@ -460,6 +462,15 @@ final class RecordingManager {
                     let rich = richTranscriptBuilder.build(from: result, participants: recording.participants)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
+                    // Enroll named speakers' voiceprints into the global voice library.
+                    if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
+                        for entry in VoiceEnrollment.enrollable(speakerLabels: rich.speakerLabels, embeddings: embeddings) {
+                            await voiceLibraryStore.upsert(
+                                name: entry.name,
+                                voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date())
+                            )
+                        }
+                    }
                 } catch {
                     let msg = error.localizedDescription
                     Logger.transcription.error("Transcription failed: \(msg, privacy: .public)")
