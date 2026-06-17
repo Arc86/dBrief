@@ -67,12 +67,15 @@ actor MLOrchestrator: MLBackend {
             // Route SpeakerKit's download/diarizing progress to the parakeet
             // channel so a first-time model fetch is visible, not a frozen step.
             await parakeetService.unload()
+            let diarStart = Date()
             do {
                 let turns = try await whisperService.diarize(
                     fileURL: fileURL,
                     onState: { [emit] state in emit(.parakeet, state) }
                 )
-                return SpeakerMerge.merge(result, turns: turns)
+                var merged = SpeakerMerge.merge(result, turns: turns)
+                merged.diarizationTime = Date().timeIntervalSince(diarStart)
+                return merged
             } catch {
                 Logger.localAI.error("Parakeet diarization failed: \(error.localizedDescription, privacy: .public) — returning transcript without speakers")
                 return result

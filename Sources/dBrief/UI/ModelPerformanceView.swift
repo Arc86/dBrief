@@ -98,8 +98,32 @@ struct ModelPerformanceView: View {
                     if !aiStats.isEmpty {
                         aiComparison(aiStats)
                     }
+                    let rows = recentRows
+                    if !rows.isEmpty {
+                        recentTranscriptions(rows)
+                    }
                 }
                 .padding(TranscriptDesignTokens.scrollPadding)
+            }
+        }
+    }
+
+    // MARK: - Recent transcriptions (per-recording breakdown)
+
+    private var recentRows: [RecordingPerformanceRow] {
+        RecordingPerformanceBuilder.rows(from: filtered)
+    }
+
+    private func recentTranscriptions(_ rows: [RecordingPerformanceRow]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Recent Transcriptions")
+            Text("Per-recording step timing — expand a row to see where the time went.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(spacing: 6) {
+                ForEach(rows) { row in
+                    RecentRecordingRow(row: row, colorScheme: colorScheme)
+                }
             }
         }
     }
@@ -310,6 +334,127 @@ struct ModelPerformanceView: View {
             return String(format: "%.0fs", s)
         } else {
             return String(format: "%.2fs", s)
+        }
+    }
+}
+
+// MARK: - Recent recording row
+
+/// One expandable row in the "Recent Transcriptions" section: a collapsed summary
+/// (title · date · ×realtime · total) that expands to a per-step timeline.
+private struct RecentRecordingRow: View {
+    let row: RecordingPerformanceRow
+    let colorScheme: ColorScheme
+    @State private var expanded = false
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d MMM"
+        return f
+    }()
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                if let model = row.transcriptionModel {
+                    Text(model)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+                ForEach(row.steps) { step in
+                    stepRow(step)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 2)
+        } label: {
+            header
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.10 : 0.06))
+        )
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text(row.label)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            if row.isSlowerThanUsual {
+                Text("slower than usual")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.18)))
+                    .foregroundStyle(.orange)
+            }
+            Text(Self.dateFormatter.string(from: row.date))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            speedBadge
+            Text(ModelPerformanceView.formatDuration(row.total))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 56, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var speedBadge: some View {
+        if let rt = row.transcriptionRealtime {
+            HStack(spacing: 3) {
+                switch row.speedTier {
+                case .fast:
+                    Image(systemName: "bolt.fill").foregroundStyle(.green)
+                case .slow:
+                    Image(systemName: "tortoise.fill").foregroundStyle(.orange)
+                case .normal, .unknown:
+                    EmptyView()
+                }
+                Text(String(format: "%.1f×", rt))
+                    .font(.callout.monospacedDigit().weight(.semibold))
+            }
+            .help("Transcription speed relative to real-time (audio ÷ transcription time)")
+        }
+    }
+
+    private func stepRow(_ step: RecordingPerformanceRow.Step) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Gauge(value: max(0, min(1, step.share))) { EmptyView() }
+                .gaugeStyle(.accessoryLinearCapacity)
+                .tint(Self.color(for: step.kind))
+                .frame(width: 70)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack {
+                    Text(step.kind.title)
+                        .font(.caption)
+                    Spacer()
+                    Text(ModelPerformanceView.formatDuration(step.duration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                if let caption = step.caption, !caption.isEmpty {
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private static func color(for kind: RecordingPerformanceRow.StepKind) -> Color {
+        switch kind {
+        case .finalize: .gray
+        case .transcribe: .accentColor
+        case .diarize: .purple
+        case .ai: .teal
+        case .vocab: .indigo
+        case .title: .brown
         }
     }
 }

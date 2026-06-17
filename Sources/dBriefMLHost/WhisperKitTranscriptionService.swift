@@ -157,6 +157,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // from the transcribe() return — cannot be named explicitly in a function signature.
             if whisperConfig.diarizationEnabled {
                 stateHandler(.diarizing)
+                let diarStart = Date()
                 do {
                     let downloadBase = try speakerKitDownloadBaseURL()
                     let skConfig = PyannoteConfig(
@@ -211,12 +212,14 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     let base = dBriefWire.TranscriptionResult(text: fullText, segments: baseSegments)
                     let merged = SpeakerMerge.mergePreservingSegments(base, turns: turns)
 
+                    let diarizationDuration = Date().timeIntervalSince(diarStart)
                     await unload()
                     return dBriefWire.TranscriptionResult(
                         text: merged.text,
                         segments: merged.segments,
                         speakerCount: merged.speakerCount ?? diarResult.speakerCount,
-                        inferenceTime: transcribeDuration
+                        inferenceTime: transcribeDuration,
+                        diarizationTime: diarizationDuration
                     )
                 } catch {
                     Logger.localAI.error("Diarization failed: \(error.localizedDescription, privacy: .public) — continuing without speaker labels")

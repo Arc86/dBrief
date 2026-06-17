@@ -372,6 +372,10 @@ final class RecordingManager {
         var perfTranscriptionModel: String?
         var perfTranscriptionTime: TimeInterval?
         var perfInferenceTime: TimeInterval?
+        var perfDiarizationTime: TimeInterval?
+        var perfSpellCorrectionTime: TimeInterval?
+        var perfFinalizationTime: TimeInterval?
+        var perfTitleGenerationTime: TimeInterval?
         var perfAudioDuration: TimeInterval?
         var perfAIModel: String?
         var perfAITime: TimeInterval?
@@ -379,7 +383,9 @@ final class RecordingManager {
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
         do {
+            let finalizeStart = Date()
             try await ensureRecordingFinalized(recording: recording)
+            perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
             appState.processingSteps[finalizationStepIndex].status = .completed
             if !recording.finalizationWarnings.isEmpty {
                 appState.processingSteps.append(
@@ -428,9 +434,12 @@ final class RecordingManager {
                 appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
                 do {
                     let txStart = Date()
-                    let result = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
+                    let stepResult = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
+                    let result = stepResult.transcription
                     perfTranscriptionTime = Date().timeIntervalSince(txStart)
                     perfInferenceTime = result.inferenceTime
+                    perfDiarizationTime = result.diarizationTime
+                    perfSpellCorrectionTime = stepResult.spellCorrectionTime
                     perfTranscriptionModel = transcriptionModelDisplayName
                     perfAudioDuration = recording.duration
                     // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
@@ -528,15 +537,6 @@ final class RecordingManager {
             }
         }
 
-        logModelPerformance(
-            transcriptionModel: perfTranscriptionModel,
-            audioDuration: perfAudioDuration,
-            transcriptionTime: perfTranscriptionTime,
-            inferenceTime: perfInferenceTime,
-            aiModel: perfAIModel,
-            aiTime: perfAITime
-        )
-
         var generatedMarkdownURL: URL?
 
         // Step 3: Generate title & write Markdown
@@ -558,11 +558,13 @@ final class RecordingManager {
                 do {
                     if engine == .remoteEndpoint,
                        let endpoint = appSettings.effectiveDefaultAIEndpoint {
+                        let titleStart = Date()
                         recording.generatedTitle = try await aiService.generateTitle(
                             transcription: titleInput,
                             language: language,
                             endpoint: endpoint
                         )
+                        perfTitleGenerationTime = Date().timeIntervalSince(titleStart)
                     }
                     appState.processingSteps[titleStepIndex].status = .completed
                 } catch {
@@ -570,6 +572,22 @@ final class RecordingManager {
                     appState.processingSteps[titleStepIndex].status = .completed
                 }
             }
+
+            // Logged here (after title generation) so the title-generation time is
+            // captured; the helper guards on transcription/AI timing being present.
+            logModelPerformance(
+                label: performanceLabel(for: recording),
+                transcriptionModel: perfTranscriptionModel,
+                audioDuration: perfAudioDuration,
+                transcriptionTime: perfTranscriptionTime,
+                inferenceTime: perfInferenceTime,
+                diarizationTime: perfDiarizationTime,
+                finalizationTime: perfFinalizationTime,
+                aiModel: perfAIModel,
+                aiTime: perfAITime,
+                spellCorrectionTime: perfSpellCorrectionTime,
+                titleGenerationTime: perfTitleGenerationTime
+            )
 
             let stepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
@@ -743,6 +761,7 @@ final class RecordingManager {
         }
 
         logModelPerformance(
+            label: performanceLabel(for: recording),
             transcriptionModel: nil,
             audioDuration: nil,
             transcriptionTime: nil,
@@ -1677,32 +1696,70 @@ final class RecordingManager {
         }
     }
 
+    /// Best-available display title for the per-recording Benchmark list: the
+    /// AI-generated title (sans its leading "YYYY-MM-DD - " date prefix) when set,
+    /// else the user's draft title, else the audio filename.
+    private func performanceLabel(for recording: Recording) -> String {
+        if let generated = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !generated.isEmpty {
+            // Strip a leading ISO-date prefix ("2026-06-17 - ") that persistGeneratedTitle adds.
+            if let range = generated.range(of: #"^\d{4}-\d{2}-\d{2}\s*-\s*"#, options: .regularExpression) {
+                let stripped = String(generated[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stripped.isEmpty { return stripped }
+            }
+            return generated
+        }
+        let draft = recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !draft.isEmpty { return draft }
+        return recording.fileURL.deletingPathExtension().lastPathComponent
+    }
+
     /// Append a performance record for the session, if either pass produced
     /// timing. Fire-and-forget — never blocks or fails the pipeline.
     private func logModelPerformance(
+        label: String? = nil,
         transcriptionModel: String?,
         audioDuration: TimeInterval?,
         transcriptionTime: TimeInterval?,
         inferenceTime: TimeInterval?,
+        diarizationTime: TimeInterval? = nil,
+        finalizationTime: TimeInterval? = nil,
         aiModel: String?,
-        aiTime: TimeInterval?
+        aiTime: TimeInterval?,
+        spellCorrectionTime: TimeInterval? = nil,
+        titleGenerationTime: TimeInterval? = nil
     ) {
         guard transcriptionTime != nil || aiTime != nil else { return }
+        let hasTx = transcriptionTime != nil
         let record = ModelPerformanceRecord(
-            transcriptionModel: transcriptionTime != nil ? transcriptionModel : nil,
-            audioDuration: transcriptionTime != nil ? audioDuration : nil,
+            label: label,
+            transcriptionModel: hasTx ? transcriptionModel : nil,
+            audioDuration: hasTx ? audioDuration : nil,
             transcriptionTime: transcriptionTime,
-            inferenceTime: transcriptionTime != nil ? inferenceTime : nil,
+            inferenceTime: hasTx ? inferenceTime : nil,
+            diarizationTime: hasTx ? diarizationTime : nil,
+            finalizationTime: finalizationTime,
             aiModel: aiTime != nil ? aiModel : nil,
-            aiTime: aiTime
+            aiTime: aiTime,
+            spellCorrectionTime: hasTx ? spellCorrectionTime : nil,
+            titleGenerationTime: aiTime != nil ? titleGenerationTime : nil
         )
         Task { await modelPerformanceStore.append(record) }
+    }
+
+    /// Result of the transcription step: the (cleaned, optionally spell-corrected)
+    /// transcript plus the wall-clock spent in the vocabulary spell-correction pass
+    /// (nil when no vocabulary was set, so the Benchmark breakdown can show it apart
+    /// from the transcription model/overhead).
+    private struct TranscriptionStepResult {
+        let transcription: TranscriptionResult
+        let spellCorrectionTime: TimeInterval?
     }
 
     private func transcribeRecordingAudio(
         recording: Recording,
         stepIndex: Int
-    ) async throws -> TranscriptionResult {
+    ) async throws -> TranscriptionStepResult {
         let raw: TranscriptionResult
         if !recording.segmentAudioURLs.isEmpty {
             raw = try await transcribeSegmentedAudio(recording: recording, stepIndex: stepIndex)
@@ -1727,13 +1784,18 @@ final class RecordingManager {
         // AI engine (the reliable replacement for Whisper decoder-prompt biasing).
         // No-op when no vocabulary is set or no AI engine is available.
         guard !TranscriptSpellingService.vocabularyTerms(from: appSettings.effectiveWhisperPrompt).isEmpty else {
-            return cleaned
+            return TranscriptionStepResult(transcription: cleaned, spellCorrectionTime: nil)
         }
         if appState.processingSteps.indices.contains(stepIndex) {
             appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
         }
         let speller = TranscriptSpellingService(appSettings: appSettings, localPlugin: localAIPluginService)
-        return await speller.correct(cleaned)
+        let spellStart = Date()
+        let corrected = await speller.correct(cleaned)
+        return TranscriptionStepResult(
+            transcription: corrected,
+            spellCorrectionTime: Date().timeIntervalSince(spellStart)
+        )
     }
 
     private func transcribeSegmentedAudio(
@@ -1755,6 +1817,10 @@ final class RecordingManager {
         var cumulativeOffset = 0.0
         var warnings: [String] = []
         var language: String?
+        // Sum the per-segment model/diarization times so the Benchmark breakdown
+        // works for long (segmented) recordings, not just single-file ones.
+        var inferenceSum: TimeInterval?
+        var diarizationSum: TimeInterval?
 
         for (index, segmentURL) in segments.enumerated() {
             let segmentNumber = index + 1
@@ -1768,6 +1834,8 @@ final class RecordingManager {
                 segmentIndex: segmentNumber,
                 segmentCount: segments.count
             )
+            if let inf = result.inferenceTime { inferenceSum = (inferenceSum ?? 0) + inf }
+            if let diar = result.diarizationTime { diarizationSum = (diarizationSum ?? 0) + diar }
             if language == nil, let detected = result.language, !detected.isEmpty {
                 language = detected
             }
@@ -1792,7 +1860,9 @@ final class RecordingManager {
             text: merged.text,
             segments: merged.segments,
             language: language,
-            warnings: warnings.isEmpty ? nil : warnings
+            warnings: warnings.isEmpty ? nil : warnings,
+            inferenceTime: inferenceSum,
+            diarizationTime: diarizationSum
         )
     }
 

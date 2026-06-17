@@ -37,6 +37,31 @@ sessions for that model.
 Each AI model gets a card showing the average time it takes to produce a summary,
 action items, tags, and sentiment for a recording.
 
+## Recent Transcriptions
+
+Below the model cards, **Recent Transcriptions** lists your individual recent
+recordings (newest first) so you can confirm whether a particular one was actually
+slow — not just how the model averages out.
+
+Each row collapses to the recording's title, date, a **speed badge** (⚡ fast, 🐢
+slow) showing how far above or below real-time the transcription ran, and the total
+processing time. Expand a row to see exactly where the time went, step by step:
+
+- **Finalize audio** — merging and encoding the recording before transcription.
+- **Transcribe** — the transcription itself, with a caption splitting pure **model**
+  time from **overhead** (model load, moving audio to the helper).
+- **Diarize** — speaker identification, when enabled.
+- **AI analysis** — summary, action items, tags, and sentiment.
+- **Vocabulary fix** — spell-correcting your custom vocabulary terms, when set.
+- **Title** — generating the recording's title.
+
+Steps that didn't run are left out. A bar next to each step shows its share of the
+total, so the biggest time sink is obvious at a glance.
+
+If a recording ran much slower than that model usually does for you, it's tagged
+**"slower than usual"** — a direct answer to "was that one actually sluggish, or did
+it just feel that way?"
+
 ## Time range
 
 Use the menu in the top-right to filter the cards to the **last 7 days**, **30

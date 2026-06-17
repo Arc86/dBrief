@@ -10,6 +10,10 @@ public struct TranscriptionResult: Codable, Sendable {
     /// call, excluding model load/prewarm, IPC, audio decode, and diarization.
     /// Populated by the local Whisper helper; nil for engines that can't separate it.
     public var inferenceTime: TimeInterval?
+    /// Wall-clock (seconds) of the speaker-diarization pass, when it ran. Measured
+    /// separately by the helper so the Benchmark breakdown can show it apart from
+    /// transcription overhead; nil when diarization didn't run.
+    public var diarizationTime: TimeInterval?
 
     public struct Segment: Codable, Sendable {
         public let start: Double
@@ -55,7 +59,8 @@ public struct TranscriptionResult: Codable, Sendable {
         language: String? = nil,
         warnings: [String]? = nil,
         speakerCount: Int? = nil,
-        inferenceTime: TimeInterval? = nil
+        inferenceTime: TimeInterval? = nil,
+        diarizationTime: TimeInterval? = nil
     ) {
         self.text = text
         self.segments = segments
@@ -63,6 +68,7 @@ public struct TranscriptionResult: Codable, Sendable {
         self.warnings = warnings
         self.speakerCount = speakerCount
         self.inferenceTime = inferenceTime
+        self.diarizationTime = diarizationTime
     }
 
     public var textForLLM: String {
