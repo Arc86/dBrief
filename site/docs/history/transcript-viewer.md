@@ -31,10 +31,11 @@ If a recording wasn't diarized during transcription — or you want to try again
 
 Once a recording has speakers (from diarization at transcription time or from **Detect Speakers**), a row of coloured speaker chips appears above the transcript, and each turn shows a speaker label.
 
-Click a turn's speaker label to open the speaker picker. It does two things:
+Click a turn's speaker label to open its menu. Everything is chosen from a list — no typing needed for the common cases:
 
-- **Rename the speaker** — type any name (or tap a suggestion drawn from your post-recording participants and calendar attendees). The name applies to every turn from that speaker. If the name you choose already belongs to another speaker, the two **swap** names — the quick fix for when diarization mixed up who's who, with no one lost.
-- **Move this turn to** another speaker — pick one of the other speakers, then choose whether to move just this turn or all turns currently attributed to the current speaker.
+- **Rename to** — pick a name from your post-recording participants, calendar attendees, or another speaker. The name applies to every turn from that speaker. If you pick a name that already belongs to another speaker, the two **swap** names — the quick fix for when diarization mixed up who's who, with no one lost. (Need a name that isn't listed? **Custom name…** lets you type one.)
+- **Move this turn to** another speaker — and, when the speaker has more than this turn, **Move all "<name>" to** another speaker (which merges them).
+- **This is me** — mark (or clear) which speaker is you.
 
 Changes are saved alongside the recording and used everywhere, including the Markdown export.
 

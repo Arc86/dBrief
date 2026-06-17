@@ -49,7 +49,7 @@ struct TranscriptDetailView: View {
     @State private var searchScrollTick = 0
 
     // Speaker reassignment
-    @State private var assigningTurn: SpeakerTurn?
+    @State private var customRenameTurn: SpeakerTurn?
 
     // Diarization (after-the-fact speaker detection)
     @State private var isDiarizing = false
@@ -438,12 +438,7 @@ struct TranscriptDetailView: View {
     private func speakerLabel(turn: SpeakerTurn, isMe: Bool) -> some View {
         let id = turn.speakerId ?? ""
         return Menu {
-            Button("Reassign / rename…") { assigningTurn = turn }
-            if isMe {
-                Button("Clear “This is me”") { setMeSpeaker(nil) }
-            } else {
-                Button("This is me") { setMeSpeaker(turn.speakerId) }
-            }
+            speakerMenuContent(turn: turn, isMe: isMe)
         } label: {
             HStack(spacing: 4) {
                 Text(displayName(for: id))
@@ -458,14 +453,78 @@ struct TranscriptDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        // Each turn's label carries its own popover, but `assigningTurn` is single-valued
-        // and `SpeakerTurn.id` is stable (derived from the first segment), so exactly one
+        // The "Custom name…" typing fallback. Each turn's label carries the popover, but
+        // `customRenameTurn` is single-valued and `SpeakerTurn.id` is stable, so exactly one
         // label's binding is ever true — only the tapped badge presents.
         .popover(isPresented: Binding(
-            get: { assigningTurn?.id == turn.id },
-            set: { if !$0 { assigningTurn = nil } }
+            get: { customRenameTurn?.id == turn.id },
+            set: { if !$0 { customRenameTurn = nil } }
         ), arrowEdge: .bottom) {
-            speakerAssignPicker(for: turn)
+            SpeakerRenamePopover(currentName: displayName(for: id)) { newName in
+                renameSpeaker(turn: turn, to: newName)
+            }
+        }
+    }
+
+    /// Selection-based speaker actions, split into Rename / Move / This-is-me. Candidates are
+    /// computed lazily here (only when the menu opens), not per row render.
+    @ViewBuilder
+    private func speakerMenuContent(turn: SpeakerTurn, isMe: Bool) -> some View {
+        let transcript = richTranscript ?? RichTranscript(segments: [])
+        let attendees = recording.calendarCandidates.flatMap { $0.attendees.map(\.name) }
+        let cands = SpeakerReassignment.candidates(
+            in: transcript,
+            currentSpeakerId: turn.speakerId,
+            participants: recording.participants,
+            calendarAttendees: attendees)
+        // Names to rename to: known people + other speakers (picking another speaker swaps).
+        let renameNames = cands.filter { !$0.isCurrent }.map(\.displayName)
+        // Move targets: the other existing speakers.
+        let others = cands.compactMap { c -> SpeakerMoveTarget? in
+            guard let sid = c.existingSpeakerId, !c.isCurrent else { return nil }
+            return SpeakerMoveTarget(id: sid, displayName: c.displayName)
+        }
+        let segCount = SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId)
+        let hasSegmentsBeyondTurn = segCount > turn.segments.count
+
+        // Rename
+        if renameNames.isEmpty {
+            Button("Rename…") { customRenameTurn = turn }
+        } else {
+            Menu("Rename to") {
+                ForEach(renameNames, id: \.self) { name in
+                    Button(name) { renameSpeaker(turn: turn, to: name) }
+                }
+                Divider()
+                Button("Custom name…") { customRenameTurn = turn }
+            }
+        }
+
+        // Reassign (move segments to another existing speaker)
+        if !others.isEmpty {
+            Menu(hasSegmentsBeyondTurn ? "Move this turn to" : "Move to") {
+                ForEach(others) { t in
+                    Button(t.displayName) {
+                        reassignTurn(turn: turn, toSpeakerId: t.id, scope: .theseSegments)
+                    }
+                }
+            }
+            if hasSegmentsBeyondTurn {
+                Menu("Move all “\(displayName(for: turn.speakerId ?? ""))” to") {
+                    ForEach(others) { t in
+                        Button(t.displayName) {
+                            reassignTurn(turn: turn, toSpeakerId: t.id, scope: .allOfSpeaker)
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider()
+        if isMe {
+            Button("Clear “This is me”") { setMeSpeaker(nil) }
+        } else {
+            Button("This is me") { setMeSpeaker(turn.speakerId) }
         }
     }
 
@@ -679,54 +738,27 @@ struct TranscriptDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Speaker assign picker
-
-    @ViewBuilder
-    private func speakerAssignPicker(for turn: SpeakerTurn) -> some View {
-        let transcript = richTranscript ?? RichTranscript(segments: [])
-        let attendees = recording.calendarCandidates.flatMap { $0.attendees.map(\.name) }
-        let cands = SpeakerReassignment.candidates(
-            in: transcript,
-            currentSpeakerId: turn.speakerId,
-            participants: recording.participants,
-            calendarAttendees: attendees)
-        // Known names not yet a speaker → rename suggestions; other existing speakers → move targets.
-        let suggestions = cands.filter { $0.existingSpeakerId == nil }.map(\.displayName)
-        let others = cands.compactMap { c -> SpeakerMoveTarget? in
-            guard let id = c.existingSpeakerId, !c.isCurrent else { return nil }
-            return SpeakerMoveTarget(id: id, displayName: c.displayName)
-        }
-        SpeakerAssignPicker(
-            currentDisplayName: displayName(for: turn.speakerId ?? ""),
-            nameSuggestions: suggestions,
-            otherSpeakers: others,
-            speakerSegmentCount: SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId),
-            turnSegmentCount: turn.segments.count,
-            onRename: { newName in renameSpeaker(turn: turn, to: newName) },
-            onReassign: { toId, scope in reassignTurn(turn: turn, toSpeakerId: toId, scope: scope) },
-            onCancel: { assigningTurn = nil })
-    }
+    // MARK: - Speaker assignment
 
     /// Rename the whole speaker (swap on name collision — see `SpeakerReassignment.rename`).
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
-        guard var transcript = richTranscript, let id = turn.speakerId else { assigningTurn = nil; return }
+        customRenameTurn = nil
+        guard var transcript = richTranscript, let id = turn.speakerId else { return }
         transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName)
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()
-        assigningTurn = nil
     }
 
     /// Move this turn (or all of the speaker's segments) to another existing speaker.
     private func reassignTurn(turn: SpeakerTurn, toSpeakerId: String, scope: ReassignScope) {
-        guard var transcript = richTranscript else { assigningTurn = nil; return }
+        guard var transcript = richTranscript else { return }
         let ids = Set(turn.segments.map(\.id))
         transcript = SpeakerReassignment.apply(.existing(speakerId: toSpeakerId), to: transcript,
                                                segmentIds: ids, scope: scope, newId: "")
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()
-        assigningTurn = nil
     }
 
     // MARK: - Actions
