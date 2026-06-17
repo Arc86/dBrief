@@ -15,6 +15,7 @@ final class AppContext {
     let transcriptChatStore = TranscriptChatStore()
     let chatStore = ChatStore()
     let modelPerformanceStore = ModelPerformanceStore()
+    let voiceLibraryStore = VoiceLibraryStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
