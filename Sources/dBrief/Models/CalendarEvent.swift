@@ -107,6 +107,18 @@ struct CalendarEvent: Sendable, Equatable, Codable, Identifiable {
         return "Meeting context from calendar:\n\(body)\n\n\(basePrompt)"
     }
 
+    /// Prepends a roster hint and/or this event's agenda to a base AI prompt.
+    /// Order: roster line, then calendar agenda, then the base prompt. Each
+    /// addition is omitted when empty/nil, so `roster: nil, event: nil` returns
+    /// `basePrompt` unchanged.
+    static func augment(prompt basePrompt: String, with event: CalendarEvent?, roster: String?) -> String {
+        let withAgenda = augment(prompt: basePrompt, with: event)
+        guard let roster, !roster.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return withAgenda
+        }
+        return "\(roster)\n\n\(withAgenda)"
+    }
+
     /// Known online-meeting host fragments used to derive `isOnline` from a URL/location/notes
     /// blob when the calendar source doesn't expose an explicit flag.
     static let onlineMeetingHints = [
