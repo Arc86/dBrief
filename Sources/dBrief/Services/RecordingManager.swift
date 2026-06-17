@@ -492,11 +492,22 @@ final class RecordingManager {
                 labelForTags(engine: aiEngine)
             ) : nil
 
+            let speakerNames = Dictionary(
+                (recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
+            let roster = AnalysisRoster.hint(
+                participants: recording.participants,
+                attendees: recording.calendarEvent?.attendees.map(\.name) ?? []
+            )
+
             let aiStart = Date()
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceUnifiedTasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -505,7 +516,8 @@ final class RecordingManager {
                 )
             case .qwenLocal:
                 await runLocalQwenTasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -513,7 +525,8 @@ final class RecordingManager {
                 )
             case .remoteEndpoint:
                 await runRemoteAITasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     endpoint: endpoint,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -522,7 +535,8 @@ final class RecordingManager {
                 )
             case .localCLI:
                 await runLocalCLITasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -671,6 +685,12 @@ final class RecordingManager {
             recording.transcription = saved
         }
 
+        // The rich transcript carries the user's speaker labels; load it from the
+        // sidecar when it isn't already in memory so relabels reach the AI prompts.
+        if recording.richTranscript == nil {
+            recording.richTranscript = try? await transcriptStore.load(for: recording)
+        }
+
         // Clear previous AI results and any stale memory warning
         appState.preflightWarning = nil
         recording.summary = nil
@@ -717,11 +737,22 @@ final class RecordingManager {
             let actionStepIndex = appendAIStep(labelForActionItems(engine: aiEngine))
             let tagsStepIndex = appendAIStep(labelForTags(engine: aiEngine))
 
+            let speakerNames = Dictionary(
+                (recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
+            let roster = AnalysisRoster.hint(
+                participants: recording.participants,
+                attendees: recording.calendarEvent?.attendees.map(\.name) ?? []
+            )
+
             let aiStart = Date()
             switch aiEngine {
             case .appleIntelligence:
                 await runAppleIntelligenceUnifiedTasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     localAvailable: localAvailable,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -730,7 +761,8 @@ final class RecordingManager {
                 )
             case .qwenLocal:
                 await runLocalQwenTasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -738,7 +770,8 @@ final class RecordingManager {
                 )
             case .remoteEndpoint:
                 await runRemoteAITasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     endpoint: endpoint,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
@@ -747,7 +780,8 @@ final class RecordingManager {
                 )
             case .localCLI:
                 await runLocalCLITasks(
-                    transcription: transcription.textForLLM,
+                    transcription: analysisTranscript,
+                    roster: roster,
                     summaryStepIndex: summaryStepIndex,
                     actionStepIndex: actionStepIndex,
                     tagsStepIndex: tagsStepIndex,
@@ -1286,6 +1320,7 @@ final class RecordingManager {
     /// completed by the single call, so the progress UI stays consistent across engines.
     private func runAppleIntelligenceUnifiedTasks(
         transcription: String,
+        roster: String?,
         localAvailable: Bool,
         summaryStepIndex: Int?,
         actionStepIndex: Int?,
@@ -1309,7 +1344,7 @@ final class RecordingManager {
         }
         guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
 
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
         do {
             let insights = try await LocalAIService().analyzeTranscript(
                 contextualTranscription,
@@ -1356,13 +1391,14 @@ final class RecordingManager {
 
     private func runLocalQwenTasks(
         transcription: String,
+        roster: String?,
         summaryStepIndex: Int?,
         actionStepIndex: Int?,
         tagsStepIndex: Int?,
         recording: Recording
     ) async {
         guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
         do {
             let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
                 let stream = await self.localAIPluginService.analyzeTranscriptStream(
@@ -1433,13 +1469,14 @@ final class RecordingManager {
     /// does not stream.
     private func runLocalCLITasks(
         transcription: String,
+        roster: String?,
         summaryStepIndex: Int?,
         actionStepIndex: Int?,
         tagsStepIndex: Int?,
         recording: Recording
     ) async {
         guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent)
+        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
         do {
             let insights = try await localCLIService.analyze(
                 transcript: contextualTranscription,
@@ -1486,6 +1523,7 @@ final class RecordingManager {
 
     private func runRemoteAITasks(
         transcription: String,
+        roster: String?,
         endpoint: Endpoint?,
         summaryStepIndex: Int?,
         actionStepIndex: Int?,
@@ -1505,7 +1543,7 @@ final class RecordingManager {
                 recording.summary = try await aiService.generateSummary(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent))
+                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent, roster: roster))
                 )
                 markCompleted(summaryStepIndex)
             } catch {
@@ -1518,7 +1556,7 @@ final class RecordingManager {
                 recording.actionItems = try await aiService.extractActionItems(
                     transcription: transcription,
                     endpoint: endpoint,
-                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent))
+                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent, roster: roster))
                 )
                 markCompleted(actionStepIndex)
             } catch {
