@@ -31,7 +31,12 @@ If a recording wasn't diarized during transcription — or you want to try again
 
 Once a recording has speakers (from diarization at transcription time or from **Detect Speakers**), a row of coloured speaker chips appears above the transcript, and each turn shows a speaker label.
 
-Click a turn's speaker label to open the speaker picker. It lists everyone already in the transcript, anyone you entered in the post-recording sheet, and any calendar attendees. Select a person (or type a new name in "Add someone…") and dBrief will ask whether to reassign just that one turn or all turns currently attributed to that speaker. The result is saved alongside the recording and used everywhere, including the Markdown export.
+Click a turn's speaker label to open the speaker picker. It does two things:
+
+- **Rename the speaker** — type any name (or tap a suggestion drawn from your post-recording participants and calendar attendees). The name applies to every turn from that speaker. If the name you choose already belongs to another speaker, the two **swap** names — the quick fix for when diarization mixed up who's who, with no one lost.
+- **Move this turn to** another speaker — pick one of the other speakers, then choose whether to move just this turn or all turns currently attributed to the current speaker.
+
+Changes are saved alongside the recording and used everywhere, including the Markdown export.
 
 If you entered participant names in the post-recording sheet, dBrief maps them to speakers in order automatically.
 

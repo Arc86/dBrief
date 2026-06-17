@@ -685,25 +685,44 @@ struct TranscriptDetailView: View {
     private func speakerAssignPicker(for turn: SpeakerTurn) -> some View {
         let transcript = richTranscript ?? RichTranscript(segments: [])
         let attendees = recording.calendarCandidates.flatMap { $0.attendees.map(\.name) }
+        let cands = SpeakerReassignment.candidates(
+            in: transcript,
+            currentSpeakerId: turn.speakerId,
+            participants: recording.participants,
+            calendarAttendees: attendees)
+        // Known names not yet a speaker → rename suggestions; other existing speakers → move targets.
+        let suggestions = cands.filter { $0.existingSpeakerId == nil }.map(\.displayName)
+        let others = cands.compactMap { c -> SpeakerMoveTarget? in
+            guard let id = c.existingSpeakerId, !c.isCurrent else { return nil }
+            return SpeakerMoveTarget(id: id, displayName: c.displayName)
+        }
         SpeakerAssignPicker(
-            candidates: SpeakerReassignment.candidates(
-                in: transcript,
-                currentSpeakerId: turn.speakerId,
-                participants: recording.participants,
-                calendarAttendees: attendees),
             currentDisplayName: displayName(for: turn.speakerId ?? ""),
+            nameSuggestions: suggestions,
+            otherSpeakers: others,
             speakerSegmentCount: SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId),
             turnSegmentCount: turn.segments.count,
-            onChoose: { choice, scope in assignSpeaker(turn: turn, choice: choice, scope: scope) },
+            onRename: { newName in renameSpeaker(turn: turn, to: newName) },
+            onReassign: { toId, scope in reassignTurn(turn: turn, toSpeakerId: toId, scope: scope) },
             onCancel: { assigningTurn = nil })
     }
 
-    private func assignSpeaker(turn: SpeakerTurn, choice: SpeakerChoice, scope: ReassignScope) {
-        guard var transcript = richTranscript else { return }
+    /// Rename the whole speaker (swap on name collision — see `SpeakerReassignment.rename`).
+    private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
+        guard var transcript = richTranscript, let id = turn.speakerId else { assigningTurn = nil; return }
+        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName)
+        richTranscript = transcript
+        saveTranscript(transcript)
+        recomputeSearch()
+        assigningTurn = nil
+    }
+
+    /// Move this turn (or all of the speaker's segments) to another existing speaker.
+    private func reassignTurn(turn: SpeakerTurn, toSpeakerId: String, scope: ReassignScope) {
+        guard var transcript = richTranscript else { assigningTurn = nil; return }
         let ids = Set(turn.segments.map(\.id))
-        transcript = SpeakerReassignment.apply(choice, to: transcript,
-                                               segmentIds: ids, scope: scope,
-                                               newId: UUID().uuidString)
+        transcript = SpeakerReassignment.apply(.existing(speakerId: toSpeakerId), to: transcript,
+                                               segmentIds: ids, scope: scope, newId: "")
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()

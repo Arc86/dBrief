@@ -16,6 +16,69 @@ struct SpeakerReassignmentTests {
         return RichTranscript(segments: segs, speakerLabels: labels, meSpeakerId: me)
     }
 
+    // MARK: - rename / swap
+
+    @Test("rename to a fresh name sets the speaker's label, leaving segments and others untouched")
+    func renameFresh() {
+        let t = transcript(["S1", "S1", "S2"],
+                           labels: [SpeakerLabel(id: "S2", displayName: "Bob")])
+        let out = SpeakerReassignment.rename(t, speakerId: "S1", to: "Alice")
+        #expect(out.speakerLabels.first(where: { $0.id == "S1" })?.displayName == "Alice")
+        #expect(out.speakerLabels.first(where: { $0.id == "S2" })?.displayName == "Bob")
+        #expect(out.segments.map(\.speakerId) == ["S1", "S1", "S2"])   // identities unchanged
+    }
+
+    @Test("rename to a name held by another speaker swaps their display names")
+    func renameSwaps() {
+        let t = transcript(["S1", "S2"],
+                           labels: [SpeakerLabel(id: "S1", displayName: "Alice"),
+                                    SpeakerLabel(id: "S2", displayName: "Bob")])
+        let out = SpeakerReassignment.rename(t, speakerId: "S1", to: "Bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S1" })?.displayName == "Bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S2" })?.displayName == "Alice")
+        #expect(out.segments.map(\.speakerId) == ["S1", "S2"])   // no segments moved, no merge
+    }
+
+    @Test("swap is case-insensitive on the matched name")
+    func renameSwapCaseInsensitive() {
+        let t = transcript(["S1", "S2"],
+                           labels: [SpeakerLabel(id: "S1", displayName: "Alice"),
+                                    SpeakerLabel(id: "S2", displayName: "Bob")])
+        let out = SpeakerReassignment.rename(t, speakerId: "S1", to: "bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S1" })?.displayName == "bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S2" })?.displayName == "Alice")
+    }
+
+    @Test("renaming an unlabeled speaker to another speaker's name swaps, giving the other the raw id")
+    func renameUnlabeledSwaps() {
+        let t = transcript(["S1", "S2"],
+                           labels: [SpeakerLabel(id: "S2", displayName: "Bob")])  // S1 unlabeled
+        let out = SpeakerReassignment.rename(t, speakerId: "S1", to: "Bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S1" })?.displayName == "Bob")
+        #expect(out.speakerLabels.first(where: { $0.id == "S2" })?.displayName == "S1")
+    }
+
+    @Test("rename to the current name is a no-op; blank is a no-op")
+    func renameNoOps() {
+        let t = transcript(["S1"], labels: [SpeakerLabel(id: "S1", displayName: "Alice")])
+        let sameName = SpeakerReassignment.rename(t, speakerId: "S1", to: "Alice")
+        #expect(sameName.speakerLabels.count == 1)
+        #expect(sameName.speakerLabels.first?.displayName == "Alice")
+        let blank = SpeakerReassignment.rename(t, speakerId: "S1", to: "   ")
+        #expect(blank.speakerLabels.count == 1)
+        #expect(blank.speakerLabels.first?.displayName == "Alice")
+    }
+
+    @Test("rename leaves meSpeakerId (tied to identity, not name) untouched")
+    func renameKeepsMe() {
+        let t = transcript(["S1", "S2"],
+                           labels: [SpeakerLabel(id: "S1", displayName: "Alice"),
+                                    SpeakerLabel(id: "S2", displayName: "Bob")],
+                           me: "S1")
+        let out = SpeakerReassignment.rename(t, speakerId: "S1", to: "Bob")
+        #expect(out.meSpeakerId == "S1")
+    }
+
     @Test("theseSegments rewrites only the given ids")
     func theseSegmentsOnly() {
         let t = transcript(["S1", "S1", "S2"],

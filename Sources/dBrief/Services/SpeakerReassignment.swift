@@ -113,6 +113,51 @@ enum SpeakerReassignment {
         return result
     }
 
+    /// Rename a speaker's display label, keeping its identity (`speakerId`) and all its
+    /// segments. If `newName` (normalized) already belongs to a *different* speaker, the two
+    /// **swap** display names — so no two speakers share a name and no speaker is ever lost
+    /// (this is the fix for diarization mixing up who's who). No segment is moved.
+    static func rename(_ transcript: RichTranscript, speakerId: String, to rawName: String) -> RichTranscript {
+        let newName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else { return transcript }
+        var out = transcript
+
+        let currentName = displayName(in: out, id: speakerId)
+        if normalize(currentName) == normalize(newName) { return transcript }  // no change
+
+        if let otherId = speakerOwning(name: newName, in: out, excluding: speakerId) {
+            // Swap: the other speaker inherits this speaker's current name.
+            setLabel(&out, id: otherId, name: currentName)
+        }
+        setLabel(&out, id: speakerId, name: newName)
+        return out
+    }
+
+    /// The effective display name of a speaker id: its label, or the raw id when unlabeled.
+    private static func displayName(in transcript: RichTranscript, id: String) -> String {
+        transcript.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
+    }
+
+    /// A speaker id (present in segments or labels) other than `excluding` whose effective
+    /// display name matches `name` (normalized), or nil.
+    private static func speakerOwning(name: String, in transcript: RichTranscript, excluding: String) -> String? {
+        let key = normalize(name)
+        var ids: [String] = []
+        for seg in transcript.segments {
+            if let id = seg.speakerId, !ids.contains(id) { ids.append(id) }
+        }
+        for label in transcript.speakerLabels where !ids.contains(label.id) { ids.append(label.id) }
+        return ids.first { $0 != excluding && normalize(displayName(in: transcript, id: $0)) == key }
+    }
+
+    private static func setLabel(_ transcript: inout RichTranscript, id: String, name: String) {
+        if let i = transcript.speakerLabels.firstIndex(where: { $0.id == id }) {
+            transcript.speakerLabels[i].displayName = name
+        } else {
+            transcript.speakerLabels.append(SpeakerLabel(id: id, displayName: name))
+        }
+    }
+
     private static func normalize(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
