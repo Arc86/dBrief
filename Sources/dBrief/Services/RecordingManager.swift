@@ -492,6 +492,13 @@ final class RecordingManager {
                 labelForTags(engine: aiEngine)
             ) : nil
 
+            // The rich transcript carries the user's speaker labels; when a saved
+            // transcript was loaded (skipping the fresh-transcription build above),
+            // load it from the sidecar so relabels reach the AI prompts.
+            if recording.richTranscript == nil {
+                recording.richTranscript = try? await transcriptStore.load(for: recording)
+            }
+
             let speakerNames = Dictionary(
                 (recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
                 uniquingKeysWith: { first, _ in first }
