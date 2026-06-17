@@ -356,8 +356,8 @@ private struct RecentRecordingRow: View {
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 6) {
-                if let model = row.transcriptionModel {
-                    Text(model)
+                if row.transcriptionModel != nil || row.audioDuration != nil {
+                    Text(modelSubtitle)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
@@ -392,7 +392,7 @@ private struct RecentRecordingRow: View {
                     .background(Capsule().fill(Color.orange.opacity(0.18)))
                     .foregroundStyle(.orange)
             }
-            Text(Self.dateFormatter.string(from: row.date))
+            Text(headerContext)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             speedBadge
@@ -401,6 +401,32 @@ private struct RecentRecordingRow: View {
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 56, alignment: .trailing)
         }
+    }
+
+    /// Collapsed-header secondary text: date, plus audio length when transcription
+    /// ran ("18 Jun · 10:50 audio") so the ×realtime/total read in context.
+    private var headerContext: String {
+        let date = Self.dateFormatter.string(from: row.date)
+        if let audio = row.audioDuration, audio > 0 {
+            return "\(date) · \(Self.audioLength(audio)) audio"
+        }
+        return date
+    }
+
+    /// Expanded model line: model name and audio length together.
+    private var modelSubtitle: String {
+        var parts: [String] = []
+        if let model = row.transcriptionModel { parts.append(model) }
+        if let audio = row.audioDuration, audio > 0 { parts.append("\(Self.audioLength(audio)) audio") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Compact clock form of an audio length: "0:42", "10:50", or "1:02:30".
+    private static func audioLength(_ s: TimeInterval) -> String {
+        let total = Int(s.rounded())
+        let h = total / 3600, m = (total % 3600) / 60, sec = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, sec) }
+        return String(format: "%d:%02d", m, sec)
     }
 
     @ViewBuilder

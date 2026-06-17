@@ -43,9 +43,11 @@ Below the model cards, **Recent Transcriptions** lists your individual recent
 recordings (newest first) so you can confirm whether a particular one was actually
 slow — not just how the model averages out.
 
-Each row collapses to the recording's title, date, a **speed badge** (⚡ fast, 🐢
-slow) showing how far above or below real-time the transcription ran, and the total
-processing time. Expand a row to see exactly where the time went, step by step:
+Each row collapses to the recording's title, date, the **audio length**, a **speed
+badge** (⚡ fast, 🐢 slow) showing how far above or below real-time the transcription
+ran, and the total processing time. Seeing the audio length next to the times makes
+the speed concrete — e.g. 10:50 of audio processed in 2:34. Expand a row to see
+exactly where the time went, step by step:
 
 - **Finalize audio** — merging and encoding the recording before transcription.
 - **Transcribe** — the transcription itself, with a caption splitting pure **model**
