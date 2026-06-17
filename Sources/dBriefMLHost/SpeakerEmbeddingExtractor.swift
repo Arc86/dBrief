@@ -14,8 +14,10 @@ actor SpeakerEmbeddingExtractor {
     private func ensureLoaded() async throws -> DiarizerManager {
         if let manager { return manager }
         // Cache the diarizer models alongside the other FluidAudio models the
-        // helper already uses (see ParakeetTranscriptionService's models dir).
-        let modelsDir = try SupportPaths.subdirectory("FluidAudio").appendingPathComponent("Models")
+        // helper already uses (same dir as ParakeetTranscriptionService).
+        let modelsDir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("FluidAudio/Models")
         let models = try await DiarizerModels.downloadIfNeeded(to: modelsDir)
         let m = DiarizerManager()
         m.initialize(models: models)
