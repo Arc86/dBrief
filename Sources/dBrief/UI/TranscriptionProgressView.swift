@@ -136,8 +136,7 @@ struct TranscriptionProgressView: View {
 
                 if appState.pendingSpeakerReview != nil {
                     Button {
-                        openWindow(id: "speaker-review")
-                        NSApp.activate(ignoringOtherApps: true)
+                        SpeakerReviewWindowController.shared.show()
                     } label: {
                         Label("Review speakers", systemImage: "person.crop.circle.badge.questionmark")
                     }

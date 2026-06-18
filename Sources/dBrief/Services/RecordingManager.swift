@@ -534,6 +534,7 @@ final class RecordingManager {
                                 spellCorrection: perfSpellCorrectionTime, finalization: perfFinalizationTime,
                                 audioDuration: perfAudioDuration))
                         appState.recordingStatusNote = "Waiting for speaker confirmation"
+                        SpeakerReviewWindowController.shared.show()
                         sendReviewReadyNotification()
                         Logger.transcription.info("Confirm-first: holding \(items.count) speaker(s) for review")
                     } else {
