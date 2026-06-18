@@ -109,7 +109,9 @@ public enum TranscriptCleanup {
             language: result.language,
             warnings: result.warnings,
             speakerCount: result.speakerCount,
-            inferenceTime: result.inferenceTime
+            inferenceTime: result.inferenceTime,
+            diarizationTime: result.diarizationTime,
+            speakerEmbeddings: result.speakerEmbeddings
         )
     }
 
