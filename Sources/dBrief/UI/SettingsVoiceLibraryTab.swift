@@ -106,7 +106,10 @@ struct SettingsVoiceLibraryTab: View {
                 .fixedSize()
             }
             if expanded.contains(person.id) {
-                ForEach(person.voiceprints, id: \.capturedAt) { vp in
+                // Index-based identity: capturedAt is not guaranteed unique
+                // (two prints can land in the same second), and the list is a
+                // fixed-order snapshot, so the offset is a stable, collision-free key.
+                ForEach(Array(person.voiceprints.enumerated()), id: \.offset) { _, vp in
                     HStack {
                         Text("Captured \(vp.capturedAt.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption).foregroundStyle(.secondary)
