@@ -56,6 +56,11 @@ struct TranscriptDetailView: View {
     @State private var showDiarizeConfirm = false
     @State private var diarizeError: String?
 
+    // Voice library (Phase 2): known-people names offered as rename candidates,
+    // and a normalized-name → personId map to link a label on rename.
+    @State private var knownPeopleNames: [String] = []
+    @State private var knownPersonIds: [String: String] = [:]
+
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
     }
@@ -476,7 +481,8 @@ struct TranscriptDetailView: View {
             in: transcript,
             currentSpeakerId: turn.speakerId,
             participants: recording.participants,
-            calendarAttendees: attendees)
+            calendarAttendees: attendees,
+            knownPeople: knownPeopleNames)
         // Names to rename to: known people + other speakers (picking another speaker swaps).
         let renameNames = cands.filter { !$0.isCurrent }.map(\.displayName)
         // Move targets: the other existing speakers.
@@ -744,7 +750,9 @@ struct TranscriptDetailView: View {
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
         customRenameTurn = nil
         guard var transcript = richTranscript, let id = turn.speakerId else { return }
-        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName)
+        // Link to a voice-library person when the chosen name is a known person.
+        let personId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
+        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: personId)
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()
@@ -1022,10 +1030,21 @@ struct TranscriptDetailView: View {
         }
     }
 
+    /// Best-effort load of voice-library people for the rename menu. Empty on
+    /// failure — the menu must work even with no library.
+    private func loadKnownPeople() async {
+        let library = await context.voiceLibraryStore.load()
+        knownPeopleNames = library.people.map(\.name)
+        knownPersonIds = Dictionary(
+            library.people.map { ($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0.id) },
+            uniquingKeysWith: { first, _ in first })
+    }
+
     private func loadTranscript() async {
         richTranscript = nil
         loadFailed = false
         insights = nil
+        await loadKnownPeople()
 
         // Live recording: nothing on disk yet — the view renders from the
         // in-memory live segments, and chat uses the live provider.
