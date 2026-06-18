@@ -65,7 +65,7 @@ var speakerIdMode: SpeakerIdMode {
 }
 ```
 - `Keys.speakerIdMode = "speakerIdMode"`; load in init with `.optimistic` fallback (lenient — absent key → optimistic).
-- Global setting (no profile override) for scope. UI: a `Picker` in **Settings → Recording** under the diarization toggle, shown only when `diarizationEnabled`, with a one-line description of each mode.
+- Global setting (no profile override) for scope. UI: a `Picker` in **Settings → AI & Models → Transcription** (`SettingsTranscriptionTab`), co-located with the diarization toggle that gates it (the toggle lives at `SettingsTranscriptionTab.swift:296`, not the Recording tab), shown only when `diarizationEnabled`, with a one-line description of each mode.
 
 ### 2. Hold trigger — pure predicate
 
