@@ -122,6 +122,7 @@ struct TranscriptDetailView: View {
             } else if richTranscript != nil {
                 documentHeader
                 Divider()
+                if offerReanalysis && mode != .chat { reanalysisBanner }
                 switch mode {
                 case .summary:    summaryBody
                 case .transcript: transcriptBody
@@ -208,6 +209,40 @@ struct TranscriptDetailView: View {
             date: recording.date,
             metrics: headerMetrics
         )
+    }
+
+    /// Shown after a speaker rename changes who-said-what: offers to regenerate
+    /// the (name-aware) AI analysis. Opt-in — never auto-regenerates.
+    private var reanalysisBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.text.rectangle")
+                .foregroundStyle(.secondary)
+            Text("Speaker names changed — regenerate analysis?")
+                .font(.callout)
+            Spacer(minLength: 8)
+            if isGenerating {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Regenerate") {
+                    offerReanalysis = false
+                    Task { await generateSummary() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Button {
+                    offerReanalysis = false
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Dismiss")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 
     private var headerSpeakers: [HeaderSpeaker] {
