@@ -1,8 +1,22 @@
 import Foundation
 import dBriefWire
 
+/// A speaker identity resolved from the voice library, injected into the builder.
+struct ResolvedSpeaker: Equatable {
+    let name: String
+    let personId: String?
+}
+
 struct RichTranscriptBuilder {
-    func build(from result: TranscriptionResult, participants: [String] = []) -> RichTranscript {
+    /// Builds the rich transcript. `resolved` maps a diarization speaker id to a
+    /// library-resolved identity (Phase 2); those win over the ordinal
+    /// participant mapping, which in turn wins over the raw speaker id. A
+    /// participant name already claimed by a resolved match is not reused.
+    func build(
+        from result: TranscriptionResult,
+        participants: [String] = [],
+        resolved: [String: ResolvedSpeaker] = [:]
+    ) -> RichTranscript {
         let segments = result.segments.map { seg -> RichSegment in
             let tokens: [RichToken] = seg.words?.map { word in
                 RichToken(text: word.word, start: word.start, end: word.end)
@@ -17,12 +31,23 @@ struct RichTranscriptBuilder {
             )
         }
 
-        // Build speaker labels, mapping participant names by ordinal when available
-        let speakerIds = segments.compactMap { $0.speakerId }
-        let uniqueSpeakerIds = Array(Set(speakerIds)).sorted()
-        let labels = uniqueSpeakerIds.enumerated().map { index, id in
-            let displayName = index < participants.count ? participants[index] : id
-            return SpeakerLabel(id: id, displayName: displayName)
+        let uniqueSpeakerIds = Array(Set(segments.compactMap { $0.speakerId })).sorted()
+
+        // Participants not already claimed by a resolved match, consumed by ordinal.
+        func norm(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let usedNames = Set(resolved.values.map { norm($0.name) })
+        let participantQueue = participants.filter { !usedNames.contains(norm($0)) }
+        var pIndex = 0
+
+        let labels = uniqueSpeakerIds.map { id -> SpeakerLabel in
+            if let r = resolved[id] {
+                return SpeakerLabel(id: id, displayName: r.name, personId: r.personId)
+            }
+            if pIndex < participantQueue.count {
+                defer { pIndex += 1 }
+                return SpeakerLabel(id: id, displayName: participantQueue[pIndex])
+            }
+            return SpeakerLabel(id: id, displayName: id)
         }
 
         return RichTranscript(segments: segments, speakerLabels: labels)

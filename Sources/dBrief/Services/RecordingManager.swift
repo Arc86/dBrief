@@ -458,8 +458,28 @@ final class RecordingManager {
                     }
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
-                    // Build and save rich transcript with word-level sync (pass participant names for speaker mapping)
-                    let rich = richTranscriptBuilder.build(from: result, participants: recording.participants)
+                    // Resolve diarized speakers against the voice library (Phase 2):
+                    // confident matches become real names automatically.
+                    var resolved: [String: ResolvedSpeaker] = [:]
+                    if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
+                        let library = await voiceLibraryStore.load()
+                        let roster = recording.participants
+                            + (recording.calendarEvent?.attendees.map(\.name) ?? [])
+                        let decisions = VoiceIdentityResolver.resolve(
+                            clusterEmbeddings: embeddings, library: library, roster: roster)
+                        for (sid, d) in decisions where d.reason == .matched {
+                            if let name = d.name {
+                                resolved[sid] = ResolvedSpeaker(name: name, personId: d.personId)
+                            }
+                        }
+                        if !resolved.isEmpty {
+                            Logger.transcription.info("Voice library matched \(resolved.count) speaker(s)")
+                        }
+                    }
+                    // Build and save rich transcript with word-level sync (resolved
+                    // identities win over the ordinal participant-name mapping).
+                    let rich = richTranscriptBuilder.build(
+                        from: result, participants: recording.participants, resolved: resolved)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
                     // Enroll named speakers' voiceprints into the global voice library.
