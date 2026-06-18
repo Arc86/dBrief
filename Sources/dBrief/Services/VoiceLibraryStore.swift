@@ -51,20 +51,28 @@ actor VoiceLibraryStore {
 
     /// Adds a voiceprint to the named person (creating them if new), keeping at
     /// most `maxPerPerson` newest prints. Name match is case-insensitive on the
-    /// trimmed name; the first-seen display spelling is preserved.
-    func upsert(name: String, voiceprint: Voiceprint, maxPerPerson: Int = 5) {
+    /// trimmed name; the first-seen display spelling is preserved. A new print
+    /// that is a near-duplicate (cosine ≥ `dedupThreshold`) of one the person
+    /// already has is skipped, so the bounded set stays diverse.
+    /// Returns the person id (lowercased trimmed name), or "" for a blank name.
+    @discardableResult
+    func upsert(name: String, voiceprint: Voiceprint, maxPerPerson: Int = 5, dedupThreshold: Float = 0.97) -> String {
         let display = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !display.isEmpty else { return }
+        guard !display.isEmpty else { return "" }
         let key = display.lowercased()
         var lib = load()
         if let idx = lib.people.firstIndex(where: { $0.id == key }) {
-            lib.people[idx].voiceprints.append(voiceprint)
-            if lib.people[idx].voiceprints.count > maxPerPerson {
-                lib.people[idx].voiceprints.removeFirst(lib.people[idx].voiceprints.count - maxPerPerson)
+            if !VoiceEnrollment.isDuplicate(voiceprint.embedding, against: lib.people[idx].voiceprints, threshold: dedupThreshold) {
+                lib.people[idx].voiceprints.append(voiceprint)
+                if lib.people[idx].voiceprints.count > maxPerPerson {
+                    lib.people[idx].voiceprints.removeFirst(lib.people[idx].voiceprints.count - maxPerPerson)
+                }
+                save(lib)
             }
         } else {
             lib.people.append(KnownPerson(id: key, name: display, voiceprints: [voiceprint]))
+            save(lib)
         }
-        save(lib)
+        return key
     }
 }

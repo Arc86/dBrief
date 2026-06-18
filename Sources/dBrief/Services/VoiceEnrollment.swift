@@ -17,4 +17,12 @@ enum VoiceEnrollment {
             return Entry(name: name, embedding: embedding)
         }
     }
+
+    /// True when `embedding` is a near-duplicate (cosine ≥ `threshold`) of any
+    /// existing print. Used to avoid filling a person's bounded print set with
+    /// near-identical vectors from the same voice/session, so the kept prints
+    /// stay diverse and recognition keeps improving.
+    static func isDuplicate(_ embedding: [Float], against existing: [Voiceprint], threshold: Float = 0.97) -> Bool {
+        existing.contains { VoiceMatch.cosineSimilarity(embedding, $0.embedding) >= threshold }
+    }
 }

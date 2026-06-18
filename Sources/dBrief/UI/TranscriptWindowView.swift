@@ -60,6 +60,8 @@ struct TranscriptDetailView: View {
     // and a normalized-name → personId map to link a label on rename.
     @State private var knownPeopleNames: [String] = []
     @State private var knownPersonIds: [String: String] = [:]
+    // Phase 3: after a rename changes who-said-what, offer to regenerate analysis.
+    @State private var offerReanalysis = false
 
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
@@ -120,6 +122,7 @@ struct TranscriptDetailView: View {
             } else if richTranscript != nil {
                 documentHeader
                 Divider()
+                if offerReanalysis && mode != .chat { reanalysisBanner }
                 switch mode {
                 case .summary:    summaryBody
                 case .transcript: transcriptBody
@@ -206,6 +209,40 @@ struct TranscriptDetailView: View {
             date: recording.date,
             metrics: headerMetrics
         )
+    }
+
+    /// Shown after a speaker rename changes who-said-what: offers to regenerate
+    /// the (name-aware) AI analysis. Opt-in — never auto-regenerates.
+    private var reanalysisBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.text.rectangle")
+                .foregroundStyle(.secondary)
+            Text("Speaker names changed — regenerate analysis?")
+                .font(.callout)
+            Spacer(minLength: 8)
+            if isGenerating {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Regenerate") {
+                    offerReanalysis = false
+                    Task { await generateSummary() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Button {
+                    offerReanalysis = false
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Dismiss")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 
     private var headerSpeakers: [HeaderSpeaker] {
@@ -750,12 +787,30 @@ struct TranscriptDetailView: View {
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
         customRenameTurn = nil
         guard var transcript = richTranscript, let id = turn.speakerId else { return }
-        // Link to a voice-library person when the chosen name is a known person.
-        let personId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
-        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: personId)
+        // Link to a voice-library person when the chosen name is already known.
+        let knownId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
+        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: knownId)
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()
+        // Growth loop (Phase 3): enroll this speaker's voiceprint, then link the
+        // resulting (new or existing) library person id onto the label.
+        Task {
+            guard let personId = await context.recordingManager
+                .enrollVoiceprintOnRename(recording: recording, speakerId: id, name: newName) else {
+                if hasSummary { offerReanalysis = true }
+                return
+            }
+            await loadKnownPeople()   // refresh rename candidates + name→id map
+            if var t = richTranscript,
+               let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
+               t.speakerLabels[i].personId != personId {
+                t.speakerLabels[i].personId = personId
+                richTranscript = t
+                saveTranscript(t)
+            }
+            if hasSummary { offerReanalysis = true }
+        }
     }
 
     /// Move this turn (or all of the speaker's segments) to another existing speaker.
