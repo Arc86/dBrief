@@ -29,7 +29,12 @@ struct SpeakerReviewView: View {
             footer
         }
         .frame(width: 392)
-        .background(MaterialBackgroundView(material: .menu).ignoresSafeArea())
+        // Translucent glass, matching the app's other floating surfaces (mini player,
+        // call popup). Full-bleed under the transparent titlebar.
+        .background { Rectangle().fill(.thinMaterial).ignoresSafeArea() }
+        // Take over the titlebar inset ourselves so the header sits just below the
+        // traffic lights instead of leaving SwiftUI's safe-area gap on top of ours.
+        .ignoresSafeArea(.container, edges: .top)
         .task {
             if edits.isEmpty {
                 for item in items {
@@ -78,8 +83,8 @@ struct SpeakerReviewView: View {
             }
             Spacer()
         }
-        // Top inset clears the floating traffic-light controls (full-size content).
-        .padding(.top, 28)
+        // Just enough top inset to clear the floating traffic-light controls.
+        .padding(.top, 26)
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -141,10 +146,7 @@ struct SpeakerReviewView: View {
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(.background.opacity(scheme == .dark ? 0.35 : 0.5))
-        )
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(TranscriptDesignTokens.cardBorder(scheme: scheme), lineWidth: 1)
