@@ -31,7 +31,7 @@ struct SpeakerReviewView: View {
         .frame(width: 392)
         // Translucent glass, matching the app's other floating surfaces (mini player,
         // call popup). Full-bleed under the transparent titlebar.
-        .background { Rectangle().fill(.regularMaterial).ignoresSafeArea() }
+        .background { Rectangle().fill(.thickMaterial).ignoresSafeArea() }
         // Take over the titlebar inset ourselves so the header sits just below the
         // traffic lights instead of leaving SwiftUI's safe-area gap on top of ours.
         .ignoresSafeArea(.container, edges: .top)
@@ -146,7 +146,7 @@ struct SpeakerReviewView: View {
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(TranscriptDesignTokens.cardBorder(scheme: scheme), lineWidth: 1)
@@ -207,13 +207,16 @@ struct SpeakerReviewView: View {
             case .emptyLibrary: return ("New voice", .blue, "sparkles")
             }
         }()
+        // Recognized matches get a solid, high-contrast pill (white on color); the
+        // uncertain states stay quieter with a tinted background.
+        let solid = item.reason == .matched
         return HStack(spacing: 4) {
             Image(systemName: icon).font(.caption2)
-            Text(text).font(.caption.weight(.medium))
+            Text(text).font(.caption.weight(.semibold))
         }
-        .foregroundStyle(color)
+        .foregroundStyle(solid ? Color.white : color)
         .padding(.vertical, 3)
         .padding(.horizontal, 8)
-        .background(Capsule().fill(color.opacity(0.12)))
+        .background(Capsule().fill(solid ? AnyShapeStyle(color) : AnyShapeStyle(color.opacity(0.15))))
     }
 }
