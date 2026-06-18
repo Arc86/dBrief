@@ -28,4 +28,12 @@ struct VoiceEnrollmentTests {
         let entries = VoiceEnrollment.enrollable(speakerLabels: labels, embeddings: ["Speaker 1": [1]])
         #expect(entries.isEmpty)
     }
+
+    @Test("isDuplicate: true for near-identical, false for distinct or empty set")
+    func isDuplicateThreshold() {
+        let existing = [Voiceprint(embedding: [1, 0], model: "t", capturedAt: Date(timeIntervalSince1970: 0))]
+        #expect(VoiceEnrollment.isDuplicate([1, 0.01], against: existing, threshold: 0.97) == true)
+        #expect(VoiceEnrollment.isDuplicate([0, 1], against: existing, threshold: 0.97) == false)
+        #expect(VoiceEnrollment.isDuplicate([1, 0], against: [], threshold: 0.97) == false)
+    }
 }
