@@ -2562,6 +2562,16 @@ final class RecordingManager {
         return id.isEmpty ? nil : id
     }
 
+    /// Speaker ids with a non-empty voice embedding available right now (from the
+    /// in-memory transcription or the persisted `.transcript.json` sidecar) — i.e.
+    /// the speakers that `enrollVoiceprintOnRename` could enroll.
+    func embeddedSpeakerIds(for recording: Recording) -> Set<String> {
+        let embeddings = recording.transcription?.speakerEmbeddings
+            ?? loadSavedTranscript(for: recording)?.speakerEmbeddings
+        guard let embeddings else { return [] }
+        return Set(embeddings.filter { !$0.value.isEmpty }.keys)
+    }
+
     private var hasEnabledIntegrations: Bool {
         let integrations = appSettings.integrations
         return integrations.appleNotes.enabled
