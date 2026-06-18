@@ -18,6 +18,9 @@ final class AppState {
     var recentRecordings: [Recording] = []
     /// Non-nil while a recording is paused for confirm-first speaker review.
     var pendingSpeakerReview: SpeakerReviewSession?
+    /// Bumped when a confirm-first re-diarize review commits, so an open
+    /// transcript viewer reloads the updated transcript (and offers reanalysis).
+    var speakerReviewCommit: SpeakerReviewCommit?
     /// Audio file URL the transcript browser should select when it opens
     /// (deep-link from the menu-bar history or results view).
     var pendingTranscriptSelectionURL: URL?

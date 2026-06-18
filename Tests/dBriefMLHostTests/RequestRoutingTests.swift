@@ -8,6 +8,7 @@ actor MockBackend: MLBackend {
         TranscriptionResult(text: "mock:\(path):safe=\(safeMode)")
     }
     func diarize(path: String) async throws -> [DiarizedTurn] { [] }
+    func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) { ([], [:]) }
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String) async throws -> LocalInsightsResult {
         LocalInsightsResult(summary: "s", actionItems: [], tags: [], sentiment: "Neutral")
     }

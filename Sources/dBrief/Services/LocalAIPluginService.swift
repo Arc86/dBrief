@@ -55,6 +55,13 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return turns
     }
 
+    /// Diarize plus a per-speaker voiceprint, for confirm-first re-diarize from the
+    /// transcript viewer (the resolver needs embeddings to match against the library).
+    func diarizeWithEmbeddings(fileURL: URL) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) {
+        guard case let .diarizeWithEmbeddingsResult(turns, embeddings) = try await connection.call(.diarizeWithEmbeddings(path: fileURL.path)) else { return ([], [:]) }
+        return (turns, embeddings)
+    }
+
     func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "") async throws -> LocalInsightsResult {
         guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary)) else {
             throw WireError(kind: .generic, message: "no insights")

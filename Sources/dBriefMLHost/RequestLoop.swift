@@ -6,6 +6,7 @@ import dBriefWire
 protocol MLBackend: Sendable {
     func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult
     func diarize(path: String) async throws -> [DiarizedTurn]
+    func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]])
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String) async throws -> LocalInsightsResult
     func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
@@ -62,6 +63,9 @@ final class RequestRouter: Sendable {
                 send(.transcriptionResult(r)); send(.finished)
             case let .diarize(path):
                 send(.diarizeResult(try await backend.diarize(path: path))); send(.finished)
+            case let .diarizeWithEmbeddings(path):
+                let r = try await backend.diarizeWithEmbeddings(path: path)
+                send(.diarizeWithEmbeddingsResult(turns: r.turns, embeddings: r.embeddings)); send(.finished)
             case let .analyze(text, lang, vocab):
                 send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab))); send(.finished)
             case let .analyzeStream(text, lang, vocab):

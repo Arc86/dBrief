@@ -52,6 +52,26 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
+    /// Standalone diarization plus a FluidAudio embedding per detected speaker —
+    /// the confirm-first re-diarize path needs voiceprints to resolve against the
+    /// library, which the plain `diarize` (turns only) doesn't produce. The turns
+    /// are fed to the embedding extractor as one pseudo-segment each, so it
+    /// clusters by `speakerId` exactly as the transcribe path clusters by segment.
+    func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) {
+        try await mutex.withLock { [self] in
+            defer { emit(.plugin, .idle) }
+            await insightsService.unload()
+            let url = URL(fileURLWithPath: path)
+            let turns = try await whisperService.diarize(fileURL: url)
+            guard !turns.isEmpty else { return (turns, [:]) }
+            let segments = turns.map {
+                TranscriptionResult.Segment(start: $0.start, end: $0.end, text: "", speaker: $0.speakerId)
+            }
+            let embeddings = await embeddingExtractor.embeddings(forAudioAt: url, segments: segments)
+            return (turns, embeddings)
+        }
+    }
+
     /// Attaches per-speaker voiceprints to a diarized result. No-op (returns the
     /// result unchanged) when no segment carries a speaker label.
     private func withEmbeddings(_ result: TranscriptionResult, path: String) async -> TranscriptionResult {
