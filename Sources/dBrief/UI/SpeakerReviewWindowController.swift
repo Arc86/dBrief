@@ -53,10 +53,20 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         .environment(audioPlayer)
 
         let hosting = NSHostingController(rootView: root)
+        // Let the SwiftUI content drive the window size — no fixed height, so no
+        // wasted whitespace or premature scrollbar.
+        hosting.sizingOptions = [.preferredContentSize]
+
         let win = NSWindow(contentViewController: hosting)
         win.title = "Confirm Speakers"
-        win.styleMask = [.titled, .closable, .miniaturizable]
-        win.setContentSize(NSSize(width: 520, height: 460))
+        win.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        // Seamless glass: the material background fills the whole window (incl. under
+        // the titlebar), matching the rest of the app's translucent windows.
+        win.titlebarAppearsTransparent = true
+        win.titleVisibility = .hidden
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.isMovableByWindowBackground = true
         win.isReleasedWhenClosed = false
         win.delegate = self
         win.center()

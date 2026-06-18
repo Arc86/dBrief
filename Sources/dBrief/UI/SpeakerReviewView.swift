@@ -23,21 +23,13 @@ struct SpeakerReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().opacity(0.4)
-
-            ScrollView {
-                VStack(spacing: Theme.cardGap) {
-                    ForEach(items) { item in
-                        card(item)
-                    }
-                }
-                .padding(Theme.contentPadding)
-            }
-
-            Divider().opacity(0.4)
+            Divider().opacity(0.35)
+            cardsArea
+            Divider().opacity(0.35)
             footer
         }
-        .background(TranscriptDesignTokens.windowBackground(scheme: scheme).ignoresSafeArea())
+        .frame(width: 392)
+        .background(MaterialBackgroundView(material: .menu).ignoresSafeArea())
         .task {
             if edits.isEmpty {
                 for item in items {
@@ -48,34 +40,53 @@ struct SpeakerReviewView: View {
         }
     }
 
+    /// Cards hug their content (so the window is tight) until there are enough
+    /// speakers to need scrolling, at which point the height is capped.
+    @ViewBuilder
+    private var cardsArea: some View {
+        let stack = VStack(spacing: 8) {
+            ForEach(items) { card($0) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+
+        if items.count > 5 {
+            ScrollView { stack }.frame(height: 470)
+        } else {
+            stack
+        }
+    }
+
     // MARK: Header / footer
 
     private var header: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 11) {
             ZStack {
                 Circle()
                     .fill(Color.accentColor.gradient)
-                    .frame(width: 44, height: 44)
-                    .shadow(color: Color.accentColor.opacity(0.35), radius: 5, y: 2)
+                    .frame(width: 34, height: 34)
+                    .shadow(color: Color.accentColor.opacity(0.35), radius: 4, y: 1)
                 Image(systemName: "person.2.wave.2.fill")
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Who's speaking?")
-                    .font(.title2).bold()
-                Text("Confirm the speakers before the summary and exports are created.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.headline)
+                Text("Confirm the speakers before analysis runs.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }
-        .padding(Theme.contentPadding)
+        // Top inset clears the floating traffic-light controls (full-size content).
+        .padding(.top, 28)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 10) {
             Button("Cancel", role: .cancel) { onCancel() }
-                .controlSize(.large)
             Spacer()
             Text("\(items.count) speaker\(items.count == 1 ? "" : "s")")
                 .font(.caption).foregroundStyle(.secondary)
@@ -85,10 +96,10 @@ struct SpeakerReviewView: View {
                 Label("Confirm", systemImage: "checkmark")
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             .keyboardShortcut(.defaultAction)
         }
-        .padding(Theme.contentPadding)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: Speaker card
@@ -106,49 +117,39 @@ struct SpeakerReviewView: View {
         let railColor = Theme.speakerColor(for: item.id)
 
         return HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: 1.5)
                 .fill(railColor)
-                .frame(width: 4)
+                .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    SpeakerAvatar(speakerId: item.id, name: currentName, size: 40)
-                        .shadow(color: railColor.opacity(0.4), radius: 3, y: 1)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 10) {
+                    SpeakerAvatar(speakerId: item.id, name: currentName, size: 30)
                     TextField("Speaker name", text: nameBinding)
                         .textFieldStyle(.plain)
-                        .font(.title3.weight(.semibold))
+                        .font(.body.weight(.semibold))
                     snippetButton(item)
                 }
 
-                reasonBadge(item)
-
-                if !candidates.isEmpty {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("SUGGESTIONS")
-                            .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
-                            .kerning(0.5)
-                        HStack(spacing: 6) {
-                            ForEach(candidates, id: \.personId) { c in
-                                chip(c, for: item.id)
-                            }
-                        }
+                HStack(spacing: 6) {
+                    reasonBadge(item)
+                    ForEach(Array(candidates.prefix(2)), id: \.personId) { c in
+                        chip(c, for: item.id)
                     }
                 }
             }
-            .padding(14)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(TranscriptDesignTokens.cardFill(scheme: scheme))
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(.background.opacity(scheme == .dark ? 0.35 : 0.5))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(TranscriptDesignTokens.cardBorder(scheme: scheme), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: TranscriptDesignTokens.cardShadowColor(scheme: scheme),
-                radius: TranscriptDesignTokens.cardShadowRadius(scheme: scheme), y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
     @ViewBuilder
