@@ -459,10 +459,14 @@ final class RecordingManager {
                     // Persist transcript to disk for retry resilience
                     saveTranscript(result, for: recording)
                     // Resolve diarized speakers against the voice library (Phase 2):
-                    // confident matches become real names automatically.
+                    // confident matches become real names automatically. Load the
+                    // library unconditionally (cheap) so we can also suppress the
+                    // ordinal-name guess when a library exists but no embeddings
+                    // were produced — the case that caused the "swapped labels" bug.
+                    let library = await voiceLibraryStore.load()
+                    let hasLibrary = !library.people.isEmpty
                     var resolved: [String: ResolvedSpeaker] = [:]
-                    if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
-                        let library = await voiceLibraryStore.load()
+                    if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty, hasLibrary {
                         let roster = recording.participants
                             + (recording.calendarEvent?.attendees.map(\.name) ?? [])
                         let decisions = VoiceIdentityResolver.resolve(
@@ -472,9 +476,8 @@ final class RecordingManager {
                                 resolved[sid] = ResolvedSpeaker(name: name, personId: d.personId)
                             }
                         }
-                        // DIAGNOSTIC (temporary): full cosine matrix + per-speaker decision,
-                        // so we can see exactly why a label was chosen and calibrate thresholds.
-                        Logger.transcription.info("VoiceID roster: \(roster.joined(separator: ", "), privacy: .public)")
+                        // Per-speaker decision log (cosine + reason) — kept for support
+                        // and threshold calibration; cheap, runs only when diarized.
                         for sid in embeddings.keys.sorted() {
                             let emb = embeddings[sid] ?? []
                             let scores = library.people.map { p -> String in
@@ -484,14 +487,16 @@ final class RecordingManager {
                             let d = decisions[sid]
                             Logger.transcription.info("VoiceID \(sid, privacy: .public): [\(scores, privacy: .public)] → \(d?.reason.rawValue ?? "nil", privacy: .public) name=\(d?.name ?? "-", privacy: .public) conf=\(String(format: "%.3f", d?.confidence ?? 0), privacy: .public)")
                         }
-                        if !resolved.isEmpty {
-                            Logger.transcription.info("Voice library matched \(resolved.count) speaker(s)")
-                        }
+                        Logger.transcription.info("Voice library matched \(resolved.count) of \(embeddings.count) speaker(s)")
+                    } else if hasLibrary {
+                        Logger.transcription.error("Voice library present but no speaker embeddings on this recording — speakers left unnamed (no ordinal guess)")
                     }
-                    // Build and save rich transcript with word-level sync (resolved
-                    // identities win over the ordinal participant-name mapping).
+                    // Build and save rich transcript. Resolved (voice-matched) identities
+                    // win; when a library exists, unmatched speakers stay "Speaker N"
+                    // rather than getting an arbitrary ordinal participant guess.
                     let rich = richTranscriptBuilder.build(
-                        from: result, participants: recording.participants, resolved: resolved)
+                        from: result, participants: recording.participants,
+                        resolved: resolved, suppressOrdinalGuess: hasLibrary)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
                     // Enroll named speakers' voiceprints into the global voice library.

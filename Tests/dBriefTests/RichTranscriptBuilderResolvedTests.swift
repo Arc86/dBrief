@@ -40,6 +40,22 @@ struct RichTranscriptBuilderResolvedTests {
         #expect(rich.speakerLabels.first { $0.id == "Speaker 1" }?.displayName == "Bob")
     }
 
+    @Test("suppressOrdinalGuess keeps unmatched speakers as raw ids (no swap guess)")
+    func suppressOrdinalGuess() {
+        let r = result(["Speaker 1", "Speaker 2"])
+        let rich = RichTranscriptBuilder().build(
+            from: r,
+            participants: ["Alice", "Bob"],
+            resolved: ["Speaker 1": .init(name: "Erwin", personId: "erwin")],
+            suppressOrdinalGuess: true)
+        // Resolved match still applies…
+        #expect(rich.speakerLabels.first { $0.id == "Speaker 1" }?.displayName == "Erwin")
+        // …but the unmatched speaker is NOT ordinal-guessed — it stays raw.
+        let s2 = rich.speakerLabels.first { $0.id == "Speaker 2" }
+        #expect(s2?.displayName == "Speaker 2")
+        #expect(s2?.personId == nil)
+    }
+
     @Test("Empty resolved map preserves existing ordinal behavior")
     func emptyResolvedUnchanged() {
         let r = result(["Speaker 1", "Speaker 2"])

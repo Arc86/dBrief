@@ -12,10 +12,19 @@ struct RichTranscriptBuilder {
     /// library-resolved identity (Phase 2); those win over the ordinal
     /// participant mapping, which in turn wins over the raw speaker id. A
     /// participant name already claimed by a resolved match is not reused.
+    ///
+    /// `suppressOrdinalGuess` disables the ordinal participant fallback for
+    /// speakers the voice resolver did NOT match: instead of guessing a name by
+    /// participant order (an arbitrary 50/50 for two speakers — the source of
+    /// the "swapped labels" bug), an unmatched speaker keeps its raw "Speaker N"
+    /// id. Set this when a voice library exists, so the only confident naming
+    /// signal is voice matching; an embedding-extraction miss then shows a
+    /// neutral "Speaker N" the user can rename, never a wrong name.
     func build(
         from result: TranscriptionResult,
         participants: [String] = [],
-        resolved: [String: ResolvedSpeaker] = [:]
+        resolved: [String: ResolvedSpeaker] = [:],
+        suppressOrdinalGuess: Bool = false
     ) -> RichTranscript {
         let segments = result.segments.map { seg -> RichSegment in
             let tokens: [RichToken] = seg.words?.map { word in
@@ -43,7 +52,7 @@ struct RichTranscriptBuilder {
             if let r = resolved[id] {
                 return SpeakerLabel(id: id, displayName: r.name, personId: r.personId)
             }
-            if pIndex < participantQueue.count {
+            if !suppressOrdinalGuess, pIndex < participantQueue.count {
                 defer { pIndex += 1 }
                 return SpeakerLabel(id: id, displayName: participantQueue[pIndex])
             }
