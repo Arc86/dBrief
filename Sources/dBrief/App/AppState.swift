@@ -16,6 +16,8 @@ final class AppState {
     var peakLevel: Float = 0
     var currentRecording: Recording?
     var recentRecordings: [Recording] = []
+    /// Non-nil while a recording is paused for confirm-first speaker review.
+    var pendingSpeakerReview: SpeakerReviewSession?
     /// Audio file URL the transcript browser should select when it opens
     /// (deep-link from the menu-bar history or results view).
     var pendingTranscriptSelectionURL: URL?

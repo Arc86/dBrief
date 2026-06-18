@@ -63,6 +63,7 @@ final class AppSettings {
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
         static let diarizationEnabled = "diarizationEnabled"
+        static let speakerIdMode = "speakerIdMode"
         static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
@@ -208,6 +209,26 @@ final class AppSettings {
         /// The engine we steer new users toward — private, on-device, and accurate.
         static let recommended: TranscriptionEngine = .localWhisper
         var isRecommended: Bool { self == Self.recommended }
+    }
+
+    /// How diarized speakers get their identities.
+    enum SpeakerIdMode: String, CaseIterable, Codable, Hashable, Sendable {
+        case optimistic    // auto-label confident matches, run straight through (default)
+        case confirmFirst  // hold before AI; review speaker IDs first
+
+        var displayName: String {
+            switch self {
+            case .optimistic: "Optimistic"
+            case .confirmFirst: "Confirm first"
+            }
+        }
+
+        var shortDescription: String {
+            switch self {
+            case .optimistic: "Auto-label matched voices and keep processing."
+            case .confirmFirst: "Pause to review speaker names before analysis."
+            }
+        }
     }
 
 
@@ -415,6 +436,12 @@ final class AppSettings {
     /// Enable SpeakerKit speaker diarization after transcription (identifies who said what).
     var diarizationEnabled: Bool {
         didSet { UserDefaults.standard.set(diarizationEnabled, forKey: Keys.diarizationEnabled) }
+    }
+
+    /// Optimistic (auto-label matched voices) vs. confirm-first (pause to review
+    /// speaker identities before AI analysis). Only meaningful when diarizing.
+    var speakerIdMode: SpeakerIdMode {
+        didSet { UserDefaults.standard.set(speakerIdMode.rawValue, forKey: Keys.speakerIdMode) }
     }
 
     /// Enable real-time transcription (and live chat) during recording using Apple's
@@ -795,6 +822,8 @@ final class AppSettings {
         }()
         self.whisperComputeUnits = WhisperComputeUnits(rawValue: defaults.string(forKey: Keys.whisperComputeUnits) ?? "") ?? .all
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
+        self.speakerIdMode = defaults.string(forKey: Keys.speakerIdMode)
+            .flatMap(SpeakerIdMode.init(rawValue:)) ?? .optimistic
         self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false

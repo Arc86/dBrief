@@ -12,6 +12,12 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private(set) var duration: TimeInterval = 0
     private(set) var currentFileURL: URL?
     private var timer: Timer?
+    /// When set, playback auto-pauses once `currentTime` reaches it (snippet preview).
+    private var endLimit: TimeInterval?
+    /// Identifies the snippet currently playing (e.g. a speaker id), so a caller with
+    /// several previews of the same file can tell which one is active. Cleared when
+    /// playback stops or reaches the snippet end.
+    private(set) var playingTag: String?
 
     private(set) var playbackRate: Float = 1.0
 
@@ -33,6 +39,17 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         } catch {
             log.error("Playback failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Plays `url` from `from`, automatically pausing at `to`. Used by the speaker
+    /// review window to preview a single speaker's representative turn. `tag`
+    /// identifies which preview is active (see `playingTag`). Starting a new range
+    /// stops any current playback, so only one preview ever plays at a time.
+    func playRange(url: URL, from: TimeInterval, to: TimeInterval, tag: String? = nil) {
+        play(url: url)        // stop()s any current playback (clears playingTag)
+        seek(to: from)
+        endLimit = to
+        playingTag = tag
     }
 
     func setRate(_ rate: Float) {
@@ -59,6 +76,8 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         currentTime = 0
         duration = 0
         currentFileURL = nil
+        endLimit = nil
+        playingTag = nil
         stopTimer()
     }
 
@@ -81,6 +100,8 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor in
             self.isPlaying = false
             self.currentTime = 0
+            self.endLimit = nil
+            self.playingTag = nil
             self.stopTimer()
         }
     }
@@ -90,6 +111,11 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.currentTime = self.player?.currentTime ?? 0
+                if let limit = self.endLimit, self.currentTime >= limit {
+                    self.endLimit = nil
+                    self.playingTag = nil
+                    self.pause()
+                }
             }
         }
     }

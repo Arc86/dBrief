@@ -301,6 +301,22 @@ struct SettingsTranscriptionTab: View {
                 }
             }
 
+            // — Confirm-first speaker review (only meaningful while diarizing) —
+            if settings.diarizationEnabled {
+                Picker(selection: $settings.speakerIdMode) {
+                    ForEach(AppSettings.SpeakerIdMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("When a voice is recognized")
+                        Text(settings.speakerIdMode.shortDescription)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
             // — Advanced (collapsed) —
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 10) {

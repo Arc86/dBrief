@@ -133,6 +133,16 @@ struct TranscriptionProgressView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
+
+                if appState.pendingSpeakerReview != nil {
+                    Button {
+                        SpeakerReviewWindowController.shared.show()
+                    } label: {
+                        Label("Review speakers", systemImage: "person.crop.circle.badge.questionmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

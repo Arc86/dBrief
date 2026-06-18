@@ -39,6 +39,12 @@ final class AppContext {
             recordingManager: recordingManager
         )
         UpdateAvailableOverlayController.shared.configure(updateService: updateService)
+        SpeakerReviewWindowController.shared.configure(
+            appState: appState,
+            appSettings: appSettings,
+            recordingManager: recordingManager,
+            audioPlayer: audioPlayer
+        )
 
         self.whisperPrewarmCoordinator = WhisperPrewarmCoordinator(
             appSettings: appSettings, plugin: recordingManager.localPlugin)
