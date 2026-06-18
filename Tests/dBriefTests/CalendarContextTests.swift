@@ -43,4 +43,31 @@ struct CalendarContextTests {
         let augmented = CalendarEvent.augment(prompt: "Base prompt.", with: event)
         #expect(augmented == "Base prompt.")
     }
+
+    @Test
+    func augmentWithRosterPrependsRosterThenAgenda() {
+        let event = makeEvent(body: "Discuss Q2 roadmap.")
+        let out = CalendarEvent.augment(
+            prompt: "BASE",
+            with: event,
+            roster: "People likely in this meeting: Alice, Bob."
+        )
+        // roster first, agenda second, base last
+        let rosterIdx = out.range(of: "People likely in this meeting: Alice, Bob.")!.lowerBound
+        let agendaIdx = out.range(of: "Meeting context from calendar:")!.lowerBound
+        let baseIdx = out.range(of: "BASE")!.lowerBound
+        #expect(rosterIdx < agendaIdx)
+        #expect(agendaIdx < baseIdx)
+    }
+
+    @Test
+    func augmentWithNilRosterAndNilEventReturnsBaseUnchanged() {
+        #expect(CalendarEvent.augment(prompt: "BASE", with: nil, roster: nil) == "BASE")
+    }
+
+    @Test
+    func augmentWithBlankRosterSkipsRosterLine() {
+        let out = CalendarEvent.augment(prompt: "BASE", with: nil, roster: "   ")
+        #expect(out == "BASE")
+    }
 }
