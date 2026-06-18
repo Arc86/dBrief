@@ -254,6 +254,17 @@ struct DBriefApp: App {
                 .environment(context.transcriptChatStore)
         }
         .defaultSize(width: 1100, height: 720)
+
+        Window("Confirm Speakers", id: "speaker-review") {
+            SpeakerReviewView()
+                .environment(context)
+                .environment(context.appState)
+                .environment(context.appSettings)
+                .environment(context.audioPlayer)
+                .environment(context.recordingManager)
+        }
+        .defaultSize(width: 500, height: 440)
+        .windowResizability(.contentSize)
     }
 }
 
@@ -378,6 +389,12 @@ struct MenuBarView: View {
         }
         .task {
             appState.queuedCount = recordingManager.discoverQueuedItems().count
+        }
+        // Confirm-first: open the review window when a recording holds for review.
+        // Best-effort auto-open (fires while the menu is visible); the guaranteed
+        // path is the "Review speakers" button in TranscriptionProgressView.
+        .onChange(of: appState.pendingSpeakerReview?.id) { _, newValue in
+            if newValue != nil { openWindow(id: "speaker-review") }
         }
         .padding(12)
         // Let the window-style popover size to its content rather than forcing a

@@ -12,6 +12,8 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private(set) var duration: TimeInterval = 0
     private(set) var currentFileURL: URL?
     private var timer: Timer?
+    /// When set, playback auto-pauses once `currentTime` reaches it (snippet preview).
+    private var endLimit: TimeInterval?
 
     private(set) var playbackRate: Float = 1.0
 
@@ -33,6 +35,14 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         } catch {
             log.error("Playback failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Plays `url` from `from`, automatically pausing at `to`. Used by the speaker
+    /// review window to preview a single speaker's representative turn.
+    func playRange(url: URL, from: TimeInterval, to: TimeInterval) {
+        play(url: url)
+        seek(to: from)
+        endLimit = to
     }
 
     func setRate(_ rate: Float) {
@@ -59,6 +69,7 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         currentTime = 0
         duration = 0
         currentFileURL = nil
+        endLimit = nil
         stopTimer()
     }
 
@@ -90,6 +101,10 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.currentTime = self.player?.currentTime ?? 0
+                if let limit = self.endLimit, self.currentTime >= limit {
+                    self.endLimit = nil
+                    self.pause()
+                }
             }
         }
     }
