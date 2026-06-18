@@ -2340,6 +2340,24 @@ final class RecordingManager {
         return result
     }
 
+    /// Growth loop: when the user names a diarized speaker, enroll that speaker's
+    /// stored voiceprint into the library so future meetings recognize them.
+    /// Resolves embeddings from memory or the saved `.transcript.json`. Best-effort;
+    /// returns the library person id, or nil when no embedding exists for the
+    /// speaker (a pre-embedding recording / extraction miss) or the name is blank.
+    func enrollVoiceprintOnRename(recording: Recording, speakerId: String, name: String) async -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let embeddings = recording.transcription?.speakerEmbeddings
+            ?? loadSavedTranscript(for: recording)?.speakerEmbeddings
+        guard let embedding = embeddings?[speakerId], !embedding.isEmpty else { return nil }
+        let id = await voiceLibraryStore.upsert(
+            name: trimmed,
+            voiceprint: Voiceprint(embedding: embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+        Logger.transcription.info("Enrolled voiceprint for a manually-named speaker")
+        return id.isEmpty ? nil : id
+    }
+
     private var hasEnabledIntegrations: Bool {
         let integrations = appSettings.integrations
         return integrations.appleNotes.enabled

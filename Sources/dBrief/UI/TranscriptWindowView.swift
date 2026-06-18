@@ -60,6 +60,8 @@ struct TranscriptDetailView: View {
     // and a normalized-name → personId map to link a label on rename.
     @State private var knownPeopleNames: [String] = []
     @State private var knownPersonIds: [String: String] = [:]
+    // Phase 3: after a rename changes who-said-what, offer to regenerate analysis.
+    @State private var offerReanalysis = false
 
     private var displayedTurns: [SpeakerTurn] {
         richTranscript?.speakerTurns() ?? []
@@ -750,12 +752,30 @@ struct TranscriptDetailView: View {
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
         customRenameTurn = nil
         guard var transcript = richTranscript, let id = turn.speakerId else { return }
-        // Link to a voice-library person when the chosen name is a known person.
-        let personId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
-        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: personId)
+        // Link to a voice-library person when the chosen name is already known.
+        let knownId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
+        transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: knownId)
         richTranscript = transcript
         saveTranscript(transcript)
         recomputeSearch()
+        // Growth loop (Phase 3): enroll this speaker's voiceprint, then link the
+        // resulting (new or existing) library person id onto the label.
+        Task {
+            guard let personId = await context.recordingManager
+                .enrollVoiceprintOnRename(recording: recording, speakerId: id, name: newName) else {
+                if hasSummary { offerReanalysis = true }
+                return
+            }
+            await loadKnownPeople()   // refresh rename candidates + name→id map
+            if var t = richTranscript,
+               let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
+               t.speakerLabels[i].personId != personId {
+                t.speakerLabels[i].personId = personId
+                richTranscript = t
+                saveTranscript(t)
+            }
+            if hasSummary { offerReanalysis = true }
+        }
     }
 
     /// Move this turn (or all of the speaker's segments) to another existing speaker.
