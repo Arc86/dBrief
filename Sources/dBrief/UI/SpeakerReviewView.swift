@@ -51,13 +51,19 @@ struct SpeakerReviewView: View {
     // MARK: Header / footer
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.2.wave.2.fill")
-                .font(.title2)
-                .foregroundStyle(.tint)
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.gradient)
+                    .frame(width: 44, height: 44)
+                    .shadow(color: Color.accentColor.opacity(0.35), radius: 5, y: 2)
+                Image(systemName: "person.2.wave.2.fill")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Who's speaking?")
-                    .font(.title3).bold()
+                    .font(.title2).bold()
                 Text("Confirm the speakers before the summary and exports are created.")
                     .font(.callout).foregroundStyle(.secondary)
             }
@@ -93,41 +99,54 @@ struct SpeakerReviewView: View {
             get: { edits[item.id]?.name ?? item.proposedName },
             set: { edits[item.id] = ConfirmedSpeaker(name: $0, personId: edits[item.id]?.personId) }
         )
+        // Drop a suggestion that just repeats the current name — no value, less clutter.
         let candidates = SpeakerReviewCandidates.topMatches(
             clusterEmbedding: item.clusterEmbedding, library: library)
+            .filter { $0.name.caseInsensitiveCompare(currentName.trimmingCharacters(in: .whitespaces)) != .orderedSame }
+        let railColor = Theme.speakerColor(for: item.id)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                SpeakerAvatar(speakerId: item.id, name: currentName, size: 34)
-                TextField("Speaker name", text: nameBinding)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                snippetButton(item)
-            }
+        return HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(railColor)
+                .frame(width: 4)
 
-            reasonBadge(item)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    SpeakerAvatar(speakerId: item.id, name: currentName, size: 40)
+                        .shadow(color: railColor.opacity(0.4), radius: 3, y: 1)
+                    TextField("Speaker name", text: nameBinding)
+                        .textFieldStyle(.plain)
+                        .font(.title3.weight(.semibold))
+                    snippetButton(item)
+                }
 
-            if !candidates.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Suggestions")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                    HStack(spacing: 6) {
-                        ForEach(candidates, id: \.personId) { c in
-                            chip(c, for: item.id)
+                reasonBadge(item)
+
+                if !candidates.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("SUGGESTIONS")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                            .kerning(0.5)
+                        HStack(spacing: 6) {
+                            ForEach(candidates, id: \.personId) { c in
+                                chip(c, for: item.id)
+                            }
                         }
                     }
                 }
             }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(TranscriptDesignTokens.cardFill(scheme: scheme))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(TranscriptDesignTokens.cardBorder(scheme: scheme), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: TranscriptDesignTokens.cardShadowColor(scheme: scheme),
                 radius: TranscriptDesignTokens.cardShadowRadius(scheme: scheme), y: 2)
     }
@@ -135,15 +154,21 @@ struct SpeakerReviewView: View {
     @ViewBuilder
     private func snippetButton(_ item: SpeakerReviewItem) -> some View {
         if let snippet = item.snippet, let url = appState.pendingSpeakerReview?.masterAudioURL {
+            let isPlayingThis = audioPlayer.playingTag == item.id && audioPlayer.isPlaying
             Button {
-                audioPlayer.playRange(url: url, from: snippet.start, to: snippet.end)
+                if isPlayingThis {
+                    audioPlayer.stop()
+                } else {
+                    audioPlayer.playRange(url: url, from: snippet.start, to: snippet.end, tag: item.id)
+                }
             } label: {
-                Image(systemName: "play.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
+                Image(systemName: isPlayingThis ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(isPlayingThis ? Color.red : Color.accentColor)
+                    .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
-            .help("Play a sample of this voice")
+            .help(isPlayingThis ? "Stop" : "Play a sample of this voice")
         }
     }
 
@@ -152,29 +177,40 @@ struct SpeakerReviewView: View {
             edits[speakerId] = ConfirmedSpeaker(name: c.name, personId: c.personId)
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "person.fill").font(.caption2)
-                Text(c.name).font(.caption)
+                SpeakerAvatar(speakerId: c.personId, name: c.name, size: 15)
+                Text(c.name).font(.caption.weight(.medium))
             }
+            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .tint(Theme.speakerColor(for: c.personId))
+        .buttonStyle(.plain)
+        .background(
+            Capsule().fill(TranscriptDesignTokens.chipFill(scheme: scheme))
+        )
+        .overlay(
+            Capsule().strokeBorder(TranscriptDesignTokens.chipBorder(scheme: scheme), lineWidth: 1)
+        )
     }
 
     private func reasonBadge(_ item: SpeakerReviewItem) -> some View {
-        let (text, color): (String, Color) = {
+        let (text, color, icon): (String, Color, String) = {
             switch item.reason {
-            case .matched: return ("Recognized · \(Int(item.confidence * 100))%", .green)
-            case .belowThreshold: return ("No confident match", .secondary)
-            case .lowMargin: return ("Ambiguous match", .orange)
-            case .offRoster: return ("Off the expected roster", .orange)
-            case .lostContention: return ("Claimed by another speaker", .orange)
-            case .noEmbedding: return ("No voice sample", .secondary)
-            case .emptyLibrary: return ("New voice", .secondary)
+            case .matched: return ("Recognized · \(Int(item.confidence * 100))%", .green, "checkmark.seal.fill")
+            case .belowThreshold: return ("No confident match", .secondary, "questionmark.circle.fill")
+            case .lowMargin: return ("Ambiguous match", .orange, "questionmark.circle.fill")
+            case .offRoster: return ("Off the expected roster", .orange, "questionmark.circle.fill")
+            case .lostContention: return ("Claimed by another speaker", .orange, "questionmark.circle.fill")
+            case .noEmbedding: return ("No voice sample", .secondary, "waveform.slash")
+            case .emptyLibrary: return ("New voice", .blue, "sparkles")
             }
         }()
-        return Label(text, systemImage: item.reason == .matched ? "checkmark.seal.fill" : "questionmark.circle")
-            .font(.caption)
-            .foregroundStyle(color)
+        return HStack(spacing: 4) {
+            Image(systemName: icon).font(.caption2)
+            Text(text).font(.caption.weight(.medium))
+        }
+        .foregroundStyle(color)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .background(Capsule().fill(color.opacity(0.12)))
     }
 }
