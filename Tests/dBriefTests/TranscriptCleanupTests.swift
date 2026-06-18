@@ -11,6 +11,19 @@ struct TranscriptCleanupTests {
         #expect(out == "Hello world")
     }
 
+    @Test("Preserves speakerEmbeddings and diarizationTime through cleanup")
+    func preservesEmbeddingsAndDiarizationTime() {
+        let input = TranscriptionResult(
+            text: "hello world",
+            segments: [.init(start: 0, end: 1, text: "hello world", speaker: "Speaker 1")],
+            diarizationTime: 2.5,
+            speakerEmbeddings: ["Speaker 1": [0.1, 0.2, 0.3]]
+        )
+        let out = TranscriptCleanup.clean(input, removeFillerWords: false)
+        #expect(out.speakerEmbeddings?["Speaker 1"] == [0.1, 0.2, 0.3])
+        #expect(out.diarizationTime == 2.5)
+    }
+
     @Test("Strips square and brace bracket annotations but keeps parentheses")
     func stripsBracketAnnotations() {
         let out = TranscriptCleanup.cleanText("Welcome [BLANK_AUDIO] back {music} now (really)", fillerWords: [])

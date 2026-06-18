@@ -15,6 +15,7 @@ final class AppContext {
     let transcriptChatStore = TranscriptChatStore()
     let chatStore = ChatStore()
     let modelPerformanceStore = ModelPerformanceStore()
+    let voiceLibraryStore = VoiceLibraryStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
@@ -31,7 +32,7 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         registerFontAwesomeBrands()
-        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, insightsStore: insightsStore, modelPerformanceStore: modelPerformanceStore, microsoftAuthService: microsoftAuthService)
+        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, insightsStore: insightsStore, voiceLibraryStore: voiceLibraryStore, modelPerformanceStore: modelPerformanceStore, microsoftAuthService: microsoftAuthService)
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
