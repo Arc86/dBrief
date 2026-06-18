@@ -22,6 +22,19 @@ struct ConfirmedSpeaker: Equatable {
     let personId: String?
 }
 
+/// Transcription-side performance metrics gathered before the confirm-first hold,
+/// carried through so the post-confirm continuation can record a complete
+/// `ModelPerformanceRecord` (it adds the AI-side metrics itself).
+struct TranscriptionPerf: Sendable {
+    var model: String?
+    var time: TimeInterval?
+    var inference: TimeInterval?
+    var diarization: TimeInterval?
+    var spellCorrection: TimeInterval?
+    var finalization: TimeInterval?
+    var audioDuration: TimeInterval?
+}
+
 /// The held-pipeline state for a recording paused awaiting speaker confirmation.
 /// Session-only: never persisted; cleared on confirm/cancel.
 @MainActor
@@ -31,19 +44,24 @@ final class SpeakerReviewSession: Identifiable {
     let masterAudioURL: URL?
     var items: [SpeakerReviewItem]
     // Captured so the continuation runs with the same options the user chose.
+    let transcribe: Bool
     let summary: Bool
     let actionItems: Bool
     let tags: Bool
     let localAIAvailable: Bool
+    let perf: TranscriptionPerf
 
     init(recording: Recording, masterAudioURL: URL?, items: [SpeakerReviewItem],
-         summary: Bool, actionItems: Bool, tags: Bool, localAIAvailable: Bool) {
+         transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
+         localAIAvailable: Bool, perf: TranscriptionPerf) {
         self.recording = recording
         self.masterAudioURL = masterAudioURL
         self.items = items
+        self.transcribe = transcribe
         self.summary = summary
         self.actionItems = actionItems
         self.tags = tags
         self.localAIAvailable = localAIAvailable
+        self.perf = perf
     }
 }

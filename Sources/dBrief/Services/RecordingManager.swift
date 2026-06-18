@@ -370,17 +370,15 @@ final class RecordingManager {
         // State is already .processing above, so this suspension can't re-enter processRecording.
         await recording.calendarLookupTask?.value
 
-        // Measured performance for this session (logged at the end).
+        // Measured transcription-side performance for this session. Carried into
+        // runAnalysisAndExport (which adds the AI-side metrics) and recorded at the end.
         var perfTranscriptionModel: String?
         var perfTranscriptionTime: TimeInterval?
         var perfInferenceTime: TimeInterval?
         var perfDiarizationTime: TimeInterval?
         var perfSpellCorrectionTime: TimeInterval?
         var perfFinalizationTime: TimeInterval?
-        var perfTitleGenerationTime: TimeInterval?
         var perfAudioDuration: TimeInterval?
-        var perfAIModel: String?
-        var perfAITime: TimeInterval?
 
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
@@ -466,11 +464,13 @@ final class RecordingManager {
                     let library = await voiceLibraryStore.load()
                     let hasLibrary = !library.people.isEmpty
                     var resolved: [String: ResolvedSpeaker] = [:]
+                    var allDecisions: [String: VoiceIdentityResolver.Decision] = [:]
                     if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty, hasLibrary {
                         let roster = recording.participants
                             + (recording.calendarEvent?.attendees.map(\.name) ?? [])
                         let decisions = VoiceIdentityResolver.resolve(
                             clusterEmbeddings: embeddings, library: library, roster: roster)
+                        allDecisions = decisions
                         for (sid, d) in decisions where d.reason == .matched {
                             if let name = d.name {
                                 resolved[sid] = ResolvedSpeaker(name: name, personId: d.personId)
@@ -499,13 +499,52 @@ final class RecordingManager {
                         resolved: resolved, suppressOrdinalGuess: hasLibrary)
                     recording.richTranscript = rich
                     try? await transcriptStore.save(rich, for: recording)
-                    // Enroll named speakers' voiceprints into the global voice library.
-                    if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
-                        for entry in VoiceEnrollment.enrollable(speakerLabels: rich.speakerLabels, embeddings: embeddings) {
-                            await voiceLibraryStore.upsert(
-                                name: entry.name,
-                                voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date())
-                            )
+
+                    // Confirm-first: pause here instead of auto-enrolling + running AI,
+                    // when there is something to review. Otherwise behave exactly as before.
+                    let speakerCount = Set(rich.segments.compactMap { $0.speakerId }).count
+                    let shouldHold = SpeakerReviewGate.shouldHold(
+                        mode: appSettings.speakerIdMode,
+                        speakerCount: speakerCount,
+                        libraryCount: library.people.count)
+
+                    if shouldHold {
+                        let embeddings = result.speakerEmbeddings ?? [:]
+                        let items: [SpeakerReviewItem] = rich.speakerLabels.map { label in
+                            let d = allDecisions[label.id]
+                            return SpeakerReviewItem(
+                                id: label.id,
+                                proposedName: label.displayName,
+                                reason: d?.reason ?? .noEmbedding,
+                                confidence: d?.confidence ?? 0,
+                                personId: label.personId,
+                                clusterEmbedding: embeddings[label.id] ?? [],
+                                snippet: SpeakerSnippet.representative(for: label.id, in: rich))
+                        }.sorted { $0.id < $1.id }
+                        appState.pendingSpeakerReview = SpeakerReviewSession(
+                            recording: recording,
+                            masterAudioURL: recording.finalizedAudioURL,
+                            items: items,
+                            transcribe: transcribe,
+                            summary: summary, actionItems: actionItems, tags: tags,
+                            localAIAvailable: localAIAvailable,
+                            perf: TranscriptionPerf(
+                                model: perfTranscriptionModel, time: perfTranscriptionTime,
+                                inference: perfInferenceTime, diarization: perfDiarizationTime,
+                                spellCorrection: perfSpellCorrectionTime, finalization: perfFinalizationTime,
+                                audioDuration: perfAudioDuration))
+                        appState.recordingStatusNote = "Waiting for speaker confirmation"
+                        sendReviewReadyNotification()
+                        Logger.transcription.info("Confirm-first: holding \(items.count) speaker(s) for review")
+                    } else {
+                        // Enroll named speakers' voiceprints into the global voice library.
+                        if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
+                            for entry in VoiceEnrollment.enrollable(speakerLabels: rich.speakerLabels, embeddings: embeddings) {
+                                await voiceLibraryStore.upsert(
+                                    name: entry.name,
+                                    voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date())
+                                )
+                            }
                         }
                     }
                 } catch {
@@ -515,6 +554,42 @@ final class RecordingManager {
                 }
             }
         }
+
+        // Confirm-first gate: when a hold was armed during Step 1, stop here. The
+        // review window's Confirm/Cancel resumes via finishReview / cancelReview.
+        if appState.pendingSpeakerReview?.recording === recording { return }
+
+        await runAnalysisAndExport(
+            recording: recording,
+            transcribe: transcribe,
+            summary: summary,
+            actionItems: actionItems,
+            tags: tags,
+            localAIAvailable: localAIAvailable,
+            perf: TranscriptionPerf(
+                model: perfTranscriptionModel, time: perfTranscriptionTime,
+                inference: perfInferenceTime, diarization: perfDiarizationTime,
+                spellCorrection: perfSpellCorrectionTime, finalization: perfFinalizationTime,
+                audioDuration: perfAudioDuration)
+        )
+    }
+
+    /// Steps 2–4 of processing (AI analysis → title+markdown → integration dispatch)
+    /// plus completion. Extracted so confirm-first can run it after the user confirms
+    /// speaker names, and the optimistic path can call it inline. Behavior unchanged.
+    private func runAnalysisAndExport(
+        recording: Recording,
+        transcribe: Bool,
+        summary: Bool,
+        actionItems: Bool,
+        tags: Bool,
+        localAIAvailable: Bool,
+        perf: TranscriptionPerf
+    ) async {
+        // AI-side performance, added to the transcription-side metrics in `perf`.
+        var perfAIModel: String?
+        var perfAITime: TimeInterval?
+        var perfTitleGenerationTime: TimeInterval?
 
         // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
         guard !Task.isCancelled else { return }
@@ -646,15 +721,15 @@ final class RecordingManager {
             // captured; the helper guards on transcription/AI timing being present.
             logModelPerformance(
                 label: performanceLabel(for: recording),
-                transcriptionModel: perfTranscriptionModel,
-                audioDuration: perfAudioDuration,
-                transcriptionTime: perfTranscriptionTime,
-                inferenceTime: perfInferenceTime,
-                diarizationTime: perfDiarizationTime,
-                finalizationTime: perfFinalizationTime,
+                transcriptionModel: perf.model,
+                audioDuration: perf.audioDuration,
+                transcriptionTime: perf.time,
+                inferenceTime: perf.inference,
+                diarizationTime: perf.diarization,
+                finalizationTime: perf.finalization,
                 aiModel: perfAIModel,
                 aiTime: perfAITime,
-                spellCorrectionTime: perfSpellCorrectionTime,
+                spellCorrectionTime: perf.spellCorrection,
                 titleGenerationTime: perfTitleGenerationTime
             )
 
@@ -726,6 +801,67 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+    }
+
+    /// Confirm-first: the user accepted/corrected speaker names. Apply them to the
+    /// rich transcript, enroll the named speakers' voiceprints, then resume the
+    /// held pipeline (AI → markdown → integrations).
+    func finishReview(confirmed: [String: ConfirmedSpeaker]) async {
+        guard let session = appState.pendingSpeakerReview else { return }
+        let recording = session.recording
+        appState.pendingSpeakerReview = nil
+        appState.recordingStatusNote = nil
+
+        var loaded = recording.richTranscript
+        if loaded == nil { loaded = try? await transcriptStore.load(for: recording) }
+        if var transcript = loaded {
+            for (speakerId, c) in confirmed {
+                let name = c.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { continue }
+                transcript = SpeakerReassignment.rename(transcript, speakerId: speakerId, to: name, personId: c.personId)
+            }
+            recording.richTranscript = transcript
+            try? await transcriptStore.save(transcript, for: recording)
+            // Enroll confirmed, named speakers (best-effort, deduped by upsert).
+            for (speakerId, c) in confirmed {
+                let name = c.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, name != speakerId else { continue }
+                _ = await enrollVoiceprintOnRename(recording: recording, speakerId: speakerId, name: name)
+            }
+        }
+
+        await runAnalysisAndExport(
+            recording: recording,
+            transcribe: session.transcribe,
+            summary: session.summary, actionItems: session.actionItems,
+            tags: session.tags, localAIAvailable: session.localAIAvailable,
+            perf: session.perf)
+    }
+
+    /// Confirm-first: the user cancelled/closed the review. Keep the resolver's own
+    /// names (the rich transcript is already built) and resume so nothing is stranded.
+    func cancelReview() async {
+        guard let session = appState.pendingSpeakerReview else { return }
+        appState.pendingSpeakerReview = nil
+        appState.recordingStatusNote = nil
+        await runAnalysisAndExport(
+            recording: session.recording,
+            transcribe: session.transcribe,
+            summary: session.summary, actionItems: session.actionItems,
+            tags: session.tags, localAIAvailable: session.localAIAvailable,
+            perf: session.perf)
+    }
+
+    /// Read-only access to the voice library for review UI (candidate chips).
+    func loadVoiceLibrary() async -> VoiceLibrary { await voiceLibraryStore.load() }
+
+    private func sendReviewReadyNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Confirm speakers"
+        content.body = "Review who's who to finish processing this recording."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     /// Retries AI analysis for a recording that already has a transcript on disk.
