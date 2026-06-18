@@ -80,7 +80,8 @@ enum SpeakerReassignment {
         in transcript: RichTranscript,
         currentSpeakerId: String?,
         participants: [String],
-        calendarAttendees: [String]
+        calendarAttendees: [String],
+        knownPeople: [String] = []
     ) -> [SpeakerCandidate] {
         func label(for id: String) -> String {
             transcript.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
@@ -100,8 +101,10 @@ enum SpeakerReassignment {
         result.sort { ($0.isCurrent ? 0 : 1) < ($1.isCurrent ? 0 : 1) }
 
         // Name-only candidates: names not already an existing speaker's display name.
+        // Sources, in priority order: typed participants, calendar attendees, then
+        // known people from the voice library (de-duped by `takenNames`).
         var takenNames = Set(result.map { normalize($0.displayName) })
-        for name in participants + calendarAttendees {
+        for name in participants + calendarAttendees + knownPeople {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             let key = normalize(trimmed)
@@ -117,19 +120,26 @@ enum SpeakerReassignment {
     /// segments. If `newName` (normalized) already belongs to a *different* speaker, the two
     /// **swap** display names — so no two speakers share a name and no speaker is ever lost
     /// (this is the fix for diarization mixing up who's who). No segment is moved.
-    static func rename(_ transcript: RichTranscript, speakerId: String, to rawName: String) -> RichTranscript {
+    /// `personId`, when non-nil, links the renamed speaker to a voice-library
+    /// person (set on the label). A no-op early-return is skipped when a
+    /// `personId` is supplied so the link is still recorded even if the name
+    /// didn't change.
+    static func rename(_ transcript: RichTranscript, speakerId: String, to rawName: String, personId: String? = nil) -> RichTranscript {
         let newName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty else { return transcript }
         var out = transcript
 
         let currentName = displayName(in: out, id: speakerId)
-        if normalize(currentName) == normalize(newName) { return transcript }  // no change
+        if normalize(currentName) == normalize(newName), personId == nil { return transcript }  // no change
 
         if let otherId = speakerOwning(name: newName, in: out, excluding: speakerId) {
             // Swap: the other speaker inherits this speaker's current name.
             setLabel(&out, id: otherId, name: currentName)
         }
         setLabel(&out, id: speakerId, name: newName)
+        if let personId, let i = out.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
+            out.speakerLabels[i].personId = personId
+        }
         return out
     }
 

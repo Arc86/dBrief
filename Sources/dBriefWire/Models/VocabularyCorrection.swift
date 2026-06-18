@@ -80,13 +80,20 @@ public enum VocabularyCorrection {
             )
         }
 
+        // NOTE: every field of `result` must be forwarded here. Vocabulary
+        // correction edits only text; speaker/timing/embedding metadata must
+        // pass through untouched. Dropping `speakerEmbeddings` here silently
+        // disabled voice-library matching (Phase 2) on any recording with a
+        // custom vocabulary — the labels then fell back to the ordinal guess.
         return TranscriptionResult(
             text: fix(result.text),
             segments: segments,
             language: result.language,
             warnings: result.warnings,
             speakerCount: result.speakerCount,
-            inferenceTime: result.inferenceTime
+            inferenceTime: result.inferenceTime,
+            diarizationTime: result.diarizationTime,
+            speakerEmbeddings: result.speakerEmbeddings
         )
     }
 

@@ -31,21 +31,39 @@ actor SpeakerEmbeddingExtractor {
     func embeddings(forAudioAt fileURL: URL, segments: [TranscriptionResult.Segment]) async -> [String: [Float]] {
         do {
             let audio = try AudioConverter().resampleAudioFile(fileURL) // 16 kHz mono [Float]
+            let speakered = segments.filter { $0.speaker != nil }.count
             let ranges = SpeakerClipRanges.build(segments: segments, totalSamples: audio.count)
-            guard !ranges.isEmpty else { return [:] }
+            Logger.localAI.info("Embedding pass: \(audio.count) samples, \(speakered) speakered segs, \(ranges.count) qualifying speaker cluster(s)")
+            guard !ranges.isEmpty else {
+                Logger.localAI.error("Embedding pass produced NO clusters (all speakers < min duration or no speaker segments) — embeddings empty")
+                return [:]
+            }
             let mgr = try await ensureLoaded()
             var out: [String: [Float]] = [:]
+            var skipped: [String] = []
             for (speakerId, rs) in ranges {
                 var clip: [Float] = []
                 for r in rs { clip.append(contentsOf: audio[r]) }
-                guard let emb = try? mgr.extractSpeakerEmbedding(from: clip),
-                      emb.contains(where: { $0 != 0 }) else { continue }
-                out[speakerId] = emb
+                let seconds = Double(clip.count) / 16000.0
+                do {
+                    let emb = try mgr.extractSpeakerEmbedding(from: clip)
+                    if emb.contains(where: { $0 != 0 }) {
+                        out[speakerId] = emb
+                    } else {
+                        skipped.append("\(speakerId)(zero-vector, \(String(format: "%.1f", seconds))s)")
+                    }
+                } catch {
+                    skipped.append("\(speakerId)(error: \(error.localizedDescription), \(String(format: "%.1f", seconds))s)")
+                }
             }
-            Logger.localAI.info("Extracted \(out.count) speaker embedding(s)")
+            if skipped.isEmpty {
+                Logger.localAI.info("Extracted \(out.count) speaker embedding(s)")
+            } else {
+                Logger.localAI.error("Extracted \(out.count) embedding(s); skipped \(skipped.count): \(skipped.joined(separator: ", "), privacy: .public)")
+            }
             return out
         } catch {
-            Logger.localAI.error("Speaker embedding extraction failed: \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Speaker embedding extraction failed (decode or model load): \(error.localizedDescription, privacy: .public)")
             return [:]
         }
     }
