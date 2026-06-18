@@ -13,6 +13,24 @@ struct VocabularyCorrectionTests {
         TranscriptionResult.Word(word: w, start: s, end: e)
     }
 
+    @Test("preserves speakerEmbeddings and diarizationTime through correction")
+    func preservesEmbeddingsAndDiarization() {
+        let input = TranscriptionResult(
+            text: "service now",
+            segments: [seg("service now", 0, 2, words: [word("service", 0, 1), word("now", 1, 2)])],
+            diarizationTime: 1.25,
+            speakerEmbeddings: ["Speaker 1": [0.1, 0.2, 0.3]]
+        )
+        let out = VocabularyCorrection.apply(
+            [SpellingCorrection(from: "service now", to: "ServiceNow")],
+            vocabulary: ["ServiceNow"],
+            to: input
+        )
+        #expect(out.text == "ServiceNow")                                   // correction applied
+        #expect(out.speakerEmbeddings?["Speaker 1"] == [0.1, 0.2, 0.3])     // not dropped
+        #expect(out.diarizationTime == 1.25)                               // not dropped
+    }
+
     @Test("corrects casing/spacing across text, segments, and words")
     func correctsEverywhere() {
         let input = result(
