@@ -472,6 +472,18 @@ final class RecordingManager {
                                 resolved[sid] = ResolvedSpeaker(name: name, personId: d.personId)
                             }
                         }
+                        // DIAGNOSTIC (temporary): full cosine matrix + per-speaker decision,
+                        // so we can see exactly why a label was chosen and calibrate thresholds.
+                        Logger.transcription.info("VoiceID roster: \(roster.joined(separator: ", "), privacy: .public)")
+                        for sid in embeddings.keys.sorted() {
+                            let emb = embeddings[sid] ?? []
+                            let scores = library.people.map { p -> String in
+                                let s = p.voiceprints.reduce(Float(-1)) { max($0, VoiceMatch.cosineSimilarity(emb, $1.embedding)) }
+                                return "\(p.name)=\(String(format: "%.3f", s))"
+                            }.joined(separator: " ")
+                            let d = decisions[sid]
+                            Logger.transcription.info("VoiceID \(sid, privacy: .public): [\(scores, privacy: .public)] → \(d?.reason.rawValue ?? "nil", privacy: .public) name=\(d?.name ?? "-", privacy: .public) conf=\(String(format: "%.3f", d?.confidence ?? 0), privacy: .public)")
+                        }
                         if !resolved.isEmpty {
                             Logger.transcription.info("Voice library matched \(resolved.count) speaker(s)")
                         }
