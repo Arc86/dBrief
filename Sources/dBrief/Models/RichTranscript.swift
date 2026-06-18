@@ -51,4 +51,10 @@ struct RichToken: Codable, Sendable {
 struct SpeakerLabel: Codable, Sendable {
     var id: String
     var displayName: String
+    /// Links this label to a `KnownPerson.id` in the voice library, when the
+    /// name came from (or was confirmed against) a stored voiceprint. Nil for
+    /// raw diarization ids and free-typed names with no library match. Decoded
+    /// leniently (synthesized `Decodable` treats a missing key for an Optional
+    /// as `nil`) so labels written before this field still load.
+    var personId: String? = nil
 }
