@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import OSLog
+import dBriefWire
 
 /// Right-hand detail pane of the recording viewer. A calm shared document header
 /// sits above one of three views — Summary, Transcript, or Chat — switched from
@@ -173,6 +174,17 @@ struct TranscriptDetailView: View {
                         liveChat.persistNow()
                     }
                 }
+            }
+        }
+        .onChange(of: context.appState.speakerReviewCommit) { _, commit in
+            // A confirm-first re-diarize review committed names for this recording —
+            // reload the persisted transcript and offer optional re-analysis.
+            guard let commit, commit.recordingID == recording.id else { return }
+            Task {
+                await loadTranscript()
+                recomputeSearch()
+                if !showSpeakerNames { showSpeakerNames = true }
+                if commit.offerReanalysis && hasSummary { offerReanalysis = true }
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
@@ -849,19 +861,45 @@ struct TranscriptDetailView: View {
         isDiarizing = true
         defer { isDiarizing = false }
         do {
+            // Confirm-first: resolve the new clusters against the voice library and
+            // hold for review before committing names (mirrors the fresh-transcription
+            // pipeline). Optimistic mode keeps the silent assign below.
+            if context.appSettings.speakerIdMode == .confirmFirst {
+                let (turns, embeddings) = try await context.recordingManager.localPlugin
+                    .diarizeWithEmbeddings(fileURL: audioURL)
+                guard !turns.isEmpty else {
+                    diarizeError = "No speakers were detected in this recording."
+                    return
+                }
+                // When a hold is armed the review window owns the commit; the viewer
+                // reloads via `speakerReviewCommit`. Otherwise fall through to assign.
+                if await context.recordingManager.presentReDiarizeReview(
+                    recording: recording, turns: turns,
+                    embeddings: embeddings, baseTranscript: transcript) {
+                    return
+                }
+                applyDiarization(turns, to: transcript)
+                return
+            }
+
             let turns = try await context.recordingManager.localPlugin.diarize(fileURL: audioURL)
             guard !turns.isEmpty else {
                 diarizeError = "No speakers were detected in this recording."
                 return
             }
-            let updated = SpeakerAssigner.assign(turns, to: transcript)
-            richTranscript = updated
-            recomputeSearch()
-            if !showSpeakerNames { showSpeakerNames = true }
-            saveTranscript(updated)
+            applyDiarization(turns, to: transcript)
         } catch {
             diarizeError = error.localizedDescription
         }
+    }
+
+    /// Silent (optimistic) commit of a re-diarization onto the viewer's transcript.
+    private func applyDiarization(_ turns: [DiarizedTurn], to transcript: RichTranscript) {
+        let updated = SpeakerAssigner.assign(turns, to: transcript)
+        richTranscript = updated
+        recomputeSearch()
+        if !showSpeakerNames { showSpeakerNames = true }
+        saveTranscript(updated)
     }
 
     /// Re-runs the AI pipeline for this recording, then reloads the new insights.

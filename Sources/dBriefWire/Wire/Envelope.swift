@@ -8,6 +8,7 @@ public enum MLChannel: String, Sendable, Codable {
 public enum MLRequest: Sendable, Codable {
     case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool)
     case diarize(path: String)
+    case diarizeWithEmbeddings(path: String)
     case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
     case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
     case chatStream(systemPrompt: String, userMessage: String)
@@ -37,6 +38,7 @@ public enum MLEvent: Sendable, Codable {
     case token(String)                          // one chunk of a streaming response
     case transcriptionResult(TranscriptionResult)
     case diarizeResult([DiarizedTurn])
+    case diarizeWithEmbeddingsResult(turns: [DiarizedTurn], embeddings: [String: [Float]])
     case speechResult(SpeechSynthesisResult)
     case insightsResult(LocalInsightsResult)
     case boolResult(Bool)

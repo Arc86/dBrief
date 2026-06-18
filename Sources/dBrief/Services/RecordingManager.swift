@@ -831,12 +831,7 @@ final class RecordingManager {
             }
         }
 
-        await runAnalysisAndExport(
-            recording: recording,
-            transcribe: session.transcribe,
-            summary: session.summary, actionItems: session.actionItems,
-            tags: session.tags, localAIAvailable: session.localAIAvailable,
-            perf: session.perf)
+        await resumeAfterReview(session: session, recording: recording)
     }
 
     /// Confirm-first: the user cancelled/closed the review. Keep the resolver's own
@@ -845,12 +840,84 @@ final class RecordingManager {
         guard let session = appState.pendingSpeakerReview else { return }
         appState.pendingSpeakerReview = nil
         appState.recordingStatusNote = nil
-        await runAnalysisAndExport(
-            recording: session.recording,
-            transcribe: session.transcribe,
-            summary: session.summary, actionItems: session.actionItems,
-            tags: session.tags, localAIAvailable: session.localAIAvailable,
-            perf: session.perf)
+        await resumeAfterReview(session: session, recording: session.recording)
+    }
+
+    /// Shared tail of finish/cancel: the fresh-transcription hold resumes the AI →
+    /// markdown → export pipeline; a transcript-viewer re-diarize only commits the
+    /// names (already applied + persisted) and signals the open viewer to reload —
+    /// re-analysis stays an explicit choice via the viewer's reanalysis banner.
+    private func resumeAfterReview(session: SpeakerReviewSession, recording: Recording) async {
+        switch session.origin {
+        case .pipeline:
+            await runAnalysisAndExport(
+                recording: recording,
+                transcribe: session.transcribe,
+                summary: session.summary, actionItems: session.actionItems,
+                tags: session.tags, localAIAvailable: session.localAIAvailable,
+                perf: session.perf)
+        case .rediarize:
+            appState.speakerReviewCommit = SpeakerReviewCommit(
+                recordingID: recording.id, token: UUID(), offerReanalysis: true)
+        }
+    }
+
+    /// Confirm-first re-diarize from the transcript viewer: resolve the freshly
+    /// re-diarized turns against the voice library, persist the rebuilt transcript,
+    /// and present the review window — mirroring the fresh-transcription hold.
+    /// Returns `true` when a hold was armed; `false` when there's nothing to review
+    /// (the caller then commits the diarization silently, as in optimistic mode).
+    func presentReDiarizeReview(recording: Recording, turns: [DiarizedTurn],
+                                embeddings: [String: [Float]], baseTranscript: RichTranscript) async -> Bool {
+        var transcript = SpeakerAssigner.assign(turns, to: baseTranscript)
+        let speakerIds = Set(transcript.segments.compactMap { $0.speakerId }).sorted()
+        let library = await voiceLibraryStore.load()
+        guard SpeakerReviewGate.shouldHold(
+            mode: appSettings.speakerIdMode,
+            speakerCount: speakerIds.count,
+            libraryCount: library.people.count) else { return false }
+
+        // Resolve clusters against the library (matched identities pre-fill the cards).
+        var decisions: [String: VoiceIdentityResolver.Decision] = [:]
+        if !embeddings.isEmpty, !library.people.isEmpty {
+            let roster = recording.participants
+                + (recording.calendarEvent?.attendees.map(\.name) ?? [])
+            decisions = VoiceIdentityResolver.resolve(
+                clusterEmbeddings: embeddings, library: library, roster: roster)
+        }
+        // Matched names win; unmatched speakers stay "Speaker N".
+        transcript.speakerLabels = speakerIds.map { sid in
+            if let d = decisions[sid], d.reason == .matched, let name = d.name {
+                return SpeakerLabel(id: sid, displayName: name, personId: d.personId)
+            }
+            return SpeakerLabel(id: sid, displayName: sid)
+        }
+        recording.richTranscript = transcript
+        try? await transcriptStore.save(transcript, for: recording)
+
+        let items: [SpeakerReviewItem] = transcript.speakerLabels.map { label in
+            let d = decisions[label.id]
+            return SpeakerReviewItem(
+                id: label.id,
+                proposedName: label.displayName,
+                reason: d?.reason ?? .noEmbedding,
+                confidence: d?.confidence ?? 0,
+                personId: label.personId,
+                clusterEmbedding: embeddings[label.id] ?? [],
+                snippet: SpeakerSnippet.representative(for: label.id, in: transcript))
+        }.sorted { $0.id < $1.id }
+
+        appState.pendingSpeakerReview = SpeakerReviewSession(
+            recording: recording,
+            masterAudioURL: recording.finalizedAudioURL,
+            items: items,
+            transcribe: false, summary: false, actionItems: false, tags: false,
+            localAIAvailable: false, perf: TranscriptionPerf(),
+            origin: .rediarize)
+        SpeakerReviewWindowController.shared.show()
+        sendReviewReadyNotification()
+        Logger.transcription.info("Confirm-first re-diarize: holding \(items.count) speaker(s) for review")
+        return true
     }
 
     /// Read-only access to the voice library for review UI (candidate chips).
