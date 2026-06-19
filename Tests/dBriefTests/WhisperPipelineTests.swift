@@ -221,4 +221,34 @@ struct WhisperPipelineTests {
         #expect(names.contains("legacy.m4a"))
         #expect(!names.contains("ignore.txt"))
     }
+
+    @Test("mergeSegmentTranscriptions reconciles speakers, embeddings, and count")
+    func mergeForwardsSpeakerData() {
+        // Part 1: Speaker 1 at t=0..1. Part 2: Speaker 1 (same voiceprint) at t=0..1.
+        let seg1 = TranscriptionResult.Segment(
+            start: 0, end: 1, text: "hello",
+            words: [.init(word: "hello", start: 0, end: 1, probability: 1, speaker: "Speaker 1")],
+            speaker: "Speaker 1")
+        let seg2 = TranscriptionResult.Segment(
+            start: 0, end: 1, text: "again",
+            words: [.init(word: "again", start: 0, end: 1, probability: 1, speaker: "Speaker 1")],
+            speaker: "Speaker 1")
+        let p1 = RecordingManager.SegmentTranscriptionPiece(
+            offsetSeconds: 0, text: "hello", segments: [seg1], speakerEmbeddings: ["Speaker 1": [1, 0]])
+        let p2 = RecordingManager.SegmentTranscriptionPiece(
+            offsetSeconds: 100, text: "again", segments: [seg2], speakerEmbeddings: ["Speaker 1": [0.98, 0.2]])
+
+        let merged = RecordingManager.mergeSegmentTranscriptions([p1, p2])
+
+        // Speakers survive the merge and are unified to one global.
+        #expect(merged.segments.count == 2)
+        #expect(merged.segments[0].speaker == "Speaker 1")
+        #expect(merged.segments[1].speaker == "Speaker 1")
+        #expect(merged.segments[1].words?.first?.speaker == "Speaker 1")
+        // Offset still applied.
+        #expect(merged.segments[1].start == 100)
+        // Embeddings + count forwarded.
+        #expect(merged.speakerCount == 1)
+        #expect(merged.speakerEmbeddings?["Speaker 1"]?.count == 2)
+    }
 }

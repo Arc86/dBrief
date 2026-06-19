@@ -2144,7 +2144,8 @@ final class RecordingManager {
                 SegmentTranscriptionPiece(
                     offsetSeconds: cumulativeOffset,
                     text: result.text,
-                    segments: result.segments
+                    segments: result.segments,
+                    speakerEmbeddings: result.speakerEmbeddings
                 )
             )
             let segmentDuration = await durationSeconds(for: segmentURL)
@@ -2158,8 +2159,10 @@ final class RecordingManager {
             segments: merged.segments,
             language: language,
             warnings: warnings.isEmpty ? nil : warnings,
+            speakerCount: merged.speakerCount,
             inferenceTime: inferenceSum,
-            diarizationTime: diarizationSum
+            diarizationTime: diarizationSum,
+            speakerEmbeddings: merged.speakerEmbeddings
         )
     }
 
@@ -2583,25 +2586,51 @@ final class RecordingManager {
         let offsetSeconds: Double
         let text: String
         let segments: [TranscriptionResult.Segment]
+        let speakerEmbeddings: [String: [Float]]?
+
+        init(
+            offsetSeconds: Double,
+            text: String,
+            segments: [TranscriptionResult.Segment],
+            speakerEmbeddings: [String: [Float]]? = nil
+        ) {
+            self.offsetSeconds = offsetSeconds
+            self.text = text
+            self.segments = segments
+            self.speakerEmbeddings = speakerEmbeddings
+        }
     }
 
     nonisolated static func mergeSegmentTranscriptions(_ pieces: [SegmentTranscriptionPiece]) -> TranscriptionResult {
+        // Unify each part's independently-diarized speakers into one global space.
+        let reconciled = SegmentSpeakerReconciler.reconcile(
+            pieces.map { .init(segments: $0.segments, speakerEmbeddings: $0.speakerEmbeddings) }
+        )
+
         var fullTextParts: [String] = []
         var mergedSegments: [TranscriptionResult.Segment] = []
 
-        for piece in pieces {
+        for (index, piece) in pieces.enumerated() {
+            let remap = reconciled.remaps[index]
             let trimmed = piece.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 fullTextParts.append(trimmed)
             }
 
             for segment in piece.segments {
+                let globalSpeaker = segment.speaker.flatMap { remap[$0] }
+                let remappedWords = segment.words?.map { word -> TranscriptionResult.Word in
+                    var w = word
+                    if let s = word.speaker { w.speaker = remap[s] }
+                    return w
+                }
                 mergedSegments.append(
                     .init(
                         start: segment.start + piece.offsetSeconds,
                         end: segment.end + piece.offsetSeconds,
                         text: segment.text,
-                        words: segment.words
+                        words: remappedWords,
+                        speaker: globalSpeaker
                     )
                 )
             }
@@ -2609,7 +2638,9 @@ final class RecordingManager {
 
         return TranscriptionResult(
             text: fullTextParts.joined(separator: " "),
-            segments: mergedSegments
+            segments: mergedSegments,
+            speakerCount: reconciled.speakerCount == 0 ? nil : reconciled.speakerCount,
+            speakerEmbeddings: reconciled.speakerEmbeddings.isEmpty ? nil : reconciled.speakerEmbeddings
         )
     }
 }
