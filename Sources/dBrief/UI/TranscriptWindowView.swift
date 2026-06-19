@@ -130,9 +130,16 @@ struct TranscriptDetailView: View {
                 Divider()
                 if offerReanalysis && mode != .chat { reanalysisBanner }
                 switch mode {
-                case .transcript: transcriptBody
+                case .transcript: transcriptList
                 case .chat:       chatContent
                 }
+                Divider()
+                if let _ = richTranscript, recording.duration > 0 {
+                    speakerTimeline
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                }
+                playerBar
             } else {
                 loadingState
             }
@@ -446,12 +453,13 @@ struct TranscriptDetailView: View {
 
     // MARK: - Transcript
 
-    private var transcriptBody: some View {
-        VStack(spacing: 0) {
-            transcriptList
-            Divider()
-            playerBar
-        }
+    private var speakerTimeline: some View {
+        SpeakerTimelineView(
+            segments: richTranscript?.segments ?? [],
+            duration: recording.duration,
+            currentTime: currentTime,
+            onSeek: { time in seek(to: time) }
+        )
     }
 
     private var transcriptList: some View {
