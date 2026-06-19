@@ -21,32 +21,24 @@ struct SettingsVocabularyTab: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    if appSettings.customVocabulary.isEmpty {
-                        Text("No terms yet — add your first one below.")
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 4)
-                    } else {
-                        ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
-                            termRow(index: index, term: term)
-                        }
+                HStack(spacing: 8) {
+                    TextField("Add a term…", text: $newTermText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+                        .onSubmit { addTerm() }
+                    Button("Add") { addTerm() }
+                        .disabled(newTermText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if !appSettings.customVocabulary.isEmpty {
+                    ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
+                        termRow(index: index, term: term)
                     }
                 }
             } header: {
                 Text("Terms")
             } footer: {
-                Text("Double-click a term to edit it. Terms are applied as spelling hints during AI analysis.")
+                Text("Double-click a term to edit it.")
                     .foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack {
-                    TextField("Add a term…", text: $newTermText)
-                        .onSubmit { addTerm() }
-                    Button("Add") { addTerm() }
-                        .disabled(newTermText.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
             }
         }
         .formStyle(.grouped)
