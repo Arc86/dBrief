@@ -4,27 +4,35 @@ struct SettingsIntegrationsTab: View {
     @Environment(AppSettings.self) private var appSettings
     @State private var connectionMessages: [IntegrationDestination: String] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
-    @State private var selectedDestination: IntegrationDestination? = IntegrationDestination.available.first
+    @State private var selectedDestination: IntegrationDestination? = nil
     private let integrationService = IntegrationDispatchService()
 
     var body: some View {
-        HStack(spacing: 0) {
-            List(IntegrationDestination.available, id: \.self, selection: $selectedDestination) { destination in
-                integrationRow(for: destination)
-                    .tag(destination)
+        Form {
+            Section("Integrations") {
+                ForEach(IntegrationDestination.available, id: \.self) { destination in
+                    Button {
+                        selectedDestination = destination
+                    } label: {
+                        integrationRow(for: destination)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .listStyle(.sidebar)
-            .frame(width: 200)
-
-            Divider()
-
-            if let destination = selectedDestination {
+        }
+        .formStyle(.grouped)
+        .scrollBounceBehavior(.basedOnSize)
+        .sheet(item: $selectedDestination) { destination in
+            NavigationStack {
                 integrationDetail(destination)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ContentUnavailableView("Select an Integration", systemImage: "puzzlepiece.extension")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle(destination.displayName)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { selectedDestination = nil }
+                        }
+                    }
             }
+            .frame(minWidth: 420, minHeight: 320)
         }
     }
 
