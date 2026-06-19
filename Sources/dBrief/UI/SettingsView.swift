@@ -9,6 +9,7 @@ struct SettingsView: View {
         case general        = "General"
         case recording      = "Recording"
         case aiAndModels    = "AI & Models"
+        case vocabulary     = "Vocabulary"
         case watchedFolders = "Watched Folders"
         case integrations   = "Integrations"
         case voiceLibrary   = "Voice Library"
@@ -22,6 +23,7 @@ struct SettingsView: View {
             case .permissions:    "lock.shield"
             case .recording:      "mic"
             case .aiAndModels:    "brain"
+            case .vocabulary:     "text.word.spacing"
             case .watchedFolders: "folder.badge.gearshape"
             case .integrations:   "puzzlepiece.extension"
             case .voiceLibrary:   "person.wave.2"
@@ -66,6 +68,7 @@ struct SettingsView: View {
                 case .permissions:  SettingsPermissionsTab()
                 case .recording:    SettingsRecordingTab()
                 case .aiAndModels:  SettingsAIModelsTab()
+                case .vocabulary:     SettingsVocabularyTab()
                 case .watchedFolders: SettingsWatchedFoldersTab()
                 case .integrations: SettingsIntegrationsTab()
                 case .voiceLibrary: SettingsVoiceLibraryTab()
