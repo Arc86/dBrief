@@ -22,9 +22,12 @@ struct TranscriptDetailView: View {
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
     @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
 
-    /// Which of the three views is showing.
-    private enum ViewerMode { case summary, transcript, chat }
+    /// Which of the two views is showing.
+    private enum ViewerMode { case transcript, chat }
     @State private var mode: ViewerMode = .transcript
+
+    /// Whether the AI Analysis inspector panel is open.
+    @AppStorage("showTranscriptInspector") private var showInspector: Bool = false
 
     /// In live mode, chat is a right-hand side panel (so the in-progress transcript
     /// stays visible) rather than a full-screen swap like the finished-recording view.
@@ -127,7 +130,6 @@ struct TranscriptDetailView: View {
                 Divider()
                 if offerReanalysis && mode != .chat { reanalysisBanner }
                 switch mode {
-                case .summary:    summaryBody
                 case .transcript: transcriptBody
                 case .chat:       chatContent
                 }
@@ -190,6 +192,16 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
+        .inspector(isPresented: $showInspector) {
+            SummaryView(
+                insights: insights,
+                isGenerating: isGenerating,
+                canGenerate: richTranscript != nil,
+                onGenerate: { Task { await generateSummary() } },
+                onSave: { updated in await saveInsights(updated) }
+            )
+            .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+        }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteRecording() }
@@ -321,9 +333,18 @@ struct TranscriptDetailView: View {
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
             } else {
-                modeButton(.summary, systemImage: "doc.text", help: "Summary")
                 modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
                 modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
+                Button {
+                    showInspector.toggle()
+                } label: {
+                    Image(systemName: "doc.text")
+                        .symbolVariant(showInspector ? .fill : .none)
+                        .foregroundStyle(showInspector ? Color.accentColor : Color.secondary)
+                }
+                .help(showInspector ? "Hide AI Analysis" : "AI Analysis (⌘I)")
+                .accessibilityAddTraits(showInspector ? .isSelected : [])
+                .keyboardShortcut("i", modifiers: .command)
             }
         }
 
@@ -397,18 +418,6 @@ struct TranscriptDetailView: View {
         }
         .help(help)
         .accessibilityAddTraits(active ? .isSelected : [])
-    }
-
-    // MARK: - Summary
-
-    private var summaryBody: some View {
-        SummaryView(
-            insights: insights,
-            isGenerating: isGenerating,
-            canGenerate: richTranscript != nil,
-            onGenerate: { Task { await generateSummary() } },
-            onSave: { updated in await saveInsights(updated) }
-        )
     }
 
     // MARK: - Transcript
@@ -943,7 +952,7 @@ struct TranscriptDetailView: View {
         defer { isGenerating = false }
         await context.recordingManager.retryAIAnalysis(for: recording)
         await loadInsights()
-        if hasSummary { mode = .summary }
+        if hasSummary { showInspector = true }
     }
 
     private func copyTranscript() {
@@ -1206,12 +1215,13 @@ struct TranscriptDetailView: View {
             }
         }
 
-        // Data-driven default view: an in-progress chat wins; otherwise Summary
-        // when one exists, else Transcript.
+        // Data-driven default view: an in-progress chat wins; otherwise open
+        // the inspector when a summary exists, showing Transcript underneath.
         if resumedChat {
             mode = .chat
         } else {
-            mode = hasSummary ? .summary : .transcript
+            mode = .transcript
+            if hasSummary { showInspector = true }
         }
         recomputeSearch()
     }
