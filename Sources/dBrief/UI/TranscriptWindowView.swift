@@ -61,6 +61,8 @@ struct TranscriptDetailView: View {
     // and a normalized-name → personId map to link a label on rename.
     @State private var knownPeopleNames: [String] = []
     @State private var knownPersonIds: [String: String] = [:]
+    @State private var embeddedSpeakerIds: Set<String> = []
+    @State private var enrolledSpeakerIds: Set<String> = []
     // Phase 3: after a rename changes who-said-what, offer to regenerate analysis.
     @State private var offerReanalysis = false
 
@@ -575,6 +577,17 @@ struct TranscriptDetailView: View {
             }
         }
 
+        // Save voice to library (explicit enrollment — surfaces the growth loop
+        // for an already-named speaker without renaming).
+        let sid = turn.speakerId ?? ""
+        let speakerName = displayName(for: sid)
+        if VoiceLibraryDisplay.canEnroll(displayName: speakerName, speakerId: sid,
+                                         hasEmbedding: embeddedSpeakerIds.contains(sid),
+                                         alreadyEnrolled: enrolledSpeakerIds.contains(sid)) {
+            Divider()
+            Button("Save “\(speakerName)” voice to library") { saveVoice(turn: turn, name: speakerName) }
+        }
+
         Divider()
         if isMe {
             Button("Clear “This is me”") { setMeSpeaker(nil) }
@@ -822,6 +835,27 @@ struct TranscriptDetailView: View {
                 saveTranscript(t)
             }
             if hasSummary { offerReanalysis = true }
+        }
+    }
+
+    /// Explicitly bank the speaker's voiceprint under their current display name,
+    /// then link the resulting library person id onto the label. Reuses the same
+    /// enrollment path as rename; no-op (and the menu item is hidden) when no
+    /// embedding is available.
+    private func saveVoice(turn: SpeakerTurn, name: String) {
+        guard let id = turn.speakerId else { return }
+        Task {
+            guard let personId = await context.recordingManager
+                .enrollVoiceprintOnRename(recording: recording, speakerId: id, name: name) else { return }
+            enrolledSpeakerIds.insert(id)
+            await loadKnownPeople()
+            if var t = richTranscript,
+               let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
+               t.speakerLabels[i].personId != personId {
+                t.speakerLabels[i].personId = personId
+                richTranscript = t
+                saveTranscript(t)
+            }
         }
     }
 
@@ -1131,6 +1165,7 @@ struct TranscriptDetailView: View {
         knownPersonIds = Dictionary(
             library.people.map { ($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0.id) },
             uniquingKeysWith: { first, _ in first })
+        embeddedSpeakerIds = context.recordingManager.embeddedSpeakerIds(for: recording)
     }
 
     private func loadTranscript() async {

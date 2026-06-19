@@ -11,6 +11,7 @@ struct SettingsView: View {
         case aiAndModels    = "AI & Models"
         case watchedFolders = "Watched Folders"
         case integrations   = "Integrations"
+        case voiceLibrary   = "Voice Library"
         case profiles       = "Profiles"
         case benchmark      = "Benchmark"
         case permissions    = "Permissions"
@@ -23,6 +24,7 @@ struct SettingsView: View {
             case .aiAndModels:    "brain"
             case .watchedFolders: "folder.badge.gearshape"
             case .integrations:   "puzzlepiece.extension"
+            case .voiceLibrary:   "person.wave.2"
             case .profiles:       "person.3"
             case .benchmark:      "speedometer"
             }
@@ -66,6 +68,7 @@ struct SettingsView: View {
                 case .aiAndModels:  SettingsAIModelsTab()
                 case .watchedFolders: SettingsWatchedFoldersTab()
                 case .integrations: SettingsIntegrationsTab()
+                case .voiceLibrary: SettingsVoiceLibraryTab()
                 case .profiles:     SettingsProfilesTab()
                 case .benchmark:    SettingsBenchmarkTab()
                 }

@@ -9,7 +9,7 @@ struct Voiceprint: Codable, Sendable, Equatable {
 
 /// A known person and their accumulated voiceprints.
 struct KnownPerson: Codable, Sendable, Equatable, Identifiable {
-    var id: String           // stable key: lowercased trimmed name (spike)
+    var id: String           // stable opaque key (UUID string); never changes on rename
     var name: String         // display spelling (first seen)
     var voiceprints: [Voiceprint]
 }
