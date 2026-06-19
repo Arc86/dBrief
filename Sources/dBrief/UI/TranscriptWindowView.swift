@@ -359,9 +359,8 @@ struct TranscriptDetailView: View {
                 }
                 .keyboardShortcut("i", modifiers: .command)
                 .help(showInspector ? "Hide Analysis (⌘I)" : "Show Analysis (⌘I)")
-            }
+                .accessibilityAddTraits(showInspector ? .isSelected : [])
 
-            if !isLive {
                 Menu {
                     if let path = insights?.markdownPath,
                        FileManager.default.fileExists(atPath: path) {
