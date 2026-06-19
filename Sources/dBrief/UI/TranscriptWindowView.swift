@@ -650,14 +650,33 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var playerBar: some View {
-        if let audioURL = recording.finalizedAudioURL {
-            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
-        } else {
-            Text("Audio file not found")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(8)
+        Group {
+            if let audioURL = recording.finalizedAudioURL {
+                TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
+            } else {
+                Text("Audio file not found")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            if #available(macOS 26, *) {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.regularMaterial)
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(TranscriptDesignTokens.structureFill(scheme: colorScheme))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(TranscriptDesignTokens.structureBorder(scheme: colorScheme), lineWidth: 0.5)
+                    )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Chat
