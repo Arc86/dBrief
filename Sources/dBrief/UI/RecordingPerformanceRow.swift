@@ -81,7 +81,7 @@ struct RecordingPerformanceRow: Identifiable {
 /// the whole (already time-filtered) set, then returns the most recent `limit`
 /// rows newest-first with the breakdown + slower-than-usual flag resolved.
 enum RecordingPerformanceBuilder {
-    static func rows(from records: [ModelPerformanceRecord], limit: Int = 25) -> [RecordingPerformanceRow] {
+    static func rows(from records: [ModelPerformanceRecord], limit: Int = 10) -> [RecordingPerformanceRow] {
         // Per-model average transcription realtime + session count, over the full set.
         var ratioSum: [String: Double] = [:]
         var ratioCount: [String: Int] = [:]

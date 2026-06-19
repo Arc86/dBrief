@@ -204,7 +204,6 @@ struct ModelPerformanceView: View {
     private func transcriptionLeaderboard(_ stats: [TranscriptionStat]) -> some View {
         let maxSpeed = stats.map(\.headlineSpeed).max() ?? 1
         let fastestModel = stats.max(by: { $0.headlineSpeed < $1.headlineSpeed })?.model
-        let accurateModel = ModelRanking.mostAccurate(stats.map(\.model))
         let showBadges = stats.count > 1
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -215,9 +214,6 @@ struct ModelPerformanceView: View {
                         Text(stat.model).lineLimit(2)
                         if showBadges && stat.model == fastestModel {
                             badge("FASTEST", accent: true)
-                        }
-                        if showBadges && stat.model == accurateModel {
-                            badge("MOST ACCURATE", accent: false)
                         }
                     }
                 }
@@ -289,7 +285,7 @@ struct ModelPerformanceView: View {
                 Capsule().fill((accent ? Color.accentColor : Color.secondary).opacity(0.18))
             )
             .foregroundStyle(accent ? Color.accentColor : Color.secondary)
-            .accessibilityLabel(accent ? "Fastest model" : "Most accurate model")
+            .accessibilityLabel("Fastest model")
     }
 
     /// Content-sized height so the (scroll-disabled) Table never fights the outer
@@ -558,56 +554,6 @@ struct AIStat: Identifiable {
             return AIStat(model: model, sessions: recs.count, avgTime: avg)
         }
         .sorted { $0.sessions > $1.sessions }
-    }
-}
-
-// MARK: - Model ranking heuristics
-
-/// Pure helpers for deriving the FASTEST / MOST ACCURATE badges from model names.
-/// Fastest is decided by measured speed (the caller); "most accurate" is the
-/// largest non-distilled model, with a small override map for reference-grade
-/// families that beat raw size.
-enum ModelRanking {
-    /// Families known to be reference-accurate, scored above raw size in MB.
-    static let accuracyOverride: [String: Double] = [
-        "large-v3": 2000,
-        "large-v2": 1800,
-        "parakeet": 1600,
-        "scribe": 1500
-    ]
-
-    static func isDistilled(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        return lower.contains("distil") || lower.contains("turbo")
-    }
-
-    /// Parse an embedded size such as "(632 MB)" or "1.5 GB" into megabytes.
-    static func sizeMB(in name: String) -> Double? {
-        let lower = name.lowercased()
-        guard let match = lower.range(
-            of: #"(\d+(?:\.\d+)?)\s*(gb|mb)"#,
-            options: .regularExpression
-        ) else { return nil }
-        let token = lower[match]
-        let isGB = token.contains("gb")
-        let number = token.filter { $0.isNumber || $0 == "." }
-        guard let value = Double(number) else { return nil }
-        return isGB ? value * 1024 : value
-    }
-
-    static func accuracyScore(_ name: String) -> Double {
-        let lower = name.lowercased()
-        var score = sizeMB(in: name) ?? 0
-        for (family, weight) in accuracyOverride where lower.contains(family) {
-            score = max(score, weight)
-        }
-        if isDistilled(name) { score -= 5000 }
-        return score
-    }
-
-    /// The most-accurate model among the given names, or nil when empty.
-    static func mostAccurate(_ names: [String]) -> String? {
-        names.max { accuracyScore($0) < accuracyScore($1) }
     }
 }
 
