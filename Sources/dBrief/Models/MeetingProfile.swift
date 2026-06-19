@@ -10,6 +10,7 @@ enum ProfilePresetKind: String, Codable, CaseIterable, Sendable {
 struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var transcriptionLanguage: String?
     var whisperPrompt: String?
+    var customVocabulary: [String]?
     var transcriptionEngine: AppSettings.TranscriptionEngine?
     var transcriptionEndpointId: UUID?
     var aiProcessingEnabled: Bool?

@@ -18,8 +18,8 @@ extension AppSettings {
         activeProfile.overrides.transcriptionLanguage ?? transcriptionLanguage
     }
 
-    var effectiveWhisperPrompt: String {
-        activeProfile.overrides.whisperPrompt ?? whisperPrompt
+    var effectiveCustomVocabulary: [String] {
+        activeProfile.overrides.customVocabulary ?? customVocabulary
     }
 
     /// Filler-word removal is a global preference (not currently profile-overridable).
