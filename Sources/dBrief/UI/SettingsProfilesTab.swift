@@ -209,7 +209,6 @@ struct SettingsProfilesTab: View {
                 folderOverridesSection
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         } else {
             ContentUnavailableView("No Profile Selected", systemImage: "person.3")

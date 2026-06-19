@@ -4,28 +4,26 @@ struct SettingsIntegrationsTab: View {
     @Environment(AppSettings.self) private var appSettings
     @State private var connectionMessages: [IntegrationDestination: String] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
+    @State private var selectedDestination: IntegrationDestination? = IntegrationDestination.available.first
     private let integrationService = IntegrationDispatchService()
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Integrations") {
-                    ForEach(IntegrationDestination.available, id: \.self) { destination in
-                        NavigationLink(value: destination) {
-                            integrationRow(for: destination)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+        HStack(spacing: 0) {
+            List(IntegrationDestination.available, id: \.self, selection: $selectedDestination) { destination in
+                integrationRow(for: destination)
+                    .tag(destination)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
-            .navigationDestination(for: IntegrationDestination.self) { destination in
+            .listStyle(.sidebar)
+            .frame(width: 200)
+
+            Divider()
+
+            if let destination = selectedDestination {
                 integrationDetail(destination)
-                    .navigationTitle(destination.displayName)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ContentUnavailableView("Select an Integration", systemImage: "puzzlepiece.extension")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -68,10 +66,7 @@ struct SettingsIntegrationsTab: View {
             }
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
     }
 
     private var obsidianDetail: some View {
@@ -412,7 +407,6 @@ struct SettingsIntegrationsTab: View {
                         set(current)
                     }
                 ))
-                .toggleStyle(.smallSwitch)
             }
         }
         .padding(.vertical, 4)
@@ -424,7 +418,7 @@ struct SettingsIntegrationsTab: View {
 
     @ViewBuilder
     private func integrationIcon(for destination: IntegrationDestination) -> some View {
-        glassIconTile {
+        iconTile {
             if let image = integrationIconImage(for: destination) {
                 Image(nsImage: image)
                     .resizable()
@@ -478,26 +472,10 @@ struct SettingsIntegrationsTab: View {
         }
     }
 
-    private func glassIconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func iconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.45),
-                                    .white.opacity(0.15),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.8
-                        )
-                )
-                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
-
+                .fill(Color(nsColor: .secondarySystemFill))
             content()
                 .padding(3)
         }

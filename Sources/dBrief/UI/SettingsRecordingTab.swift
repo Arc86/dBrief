@@ -79,10 +79,7 @@ struct SettingsRecordingTab: View {
             }
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
         .onAppear {
             inputDevices = AudioInputDeviceManager.availableInputDevices()
         }

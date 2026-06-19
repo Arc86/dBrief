@@ -18,11 +18,8 @@ struct SettingsAITab: View {
     @State private var cliConfigExpanded = false
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
-            @Bindable var settings = appSettings
-            Form {
+        @Bindable var settings = appSettings
+        Form {
                 Section {
                     Toggle("Enable AI processing", isOn: $settings.aiProcessingEnabled)
                 } footer: {
@@ -121,11 +118,11 @@ struct SettingsAITab: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
-        }
+            .sheet(isPresented: $isEditing) {
+                endpointEditor
+                    .frame(minWidth: 460, minHeight: 400)
+            }
     }
 
     private func engineDescription(for engine: AppSettings.AIEngine) -> String {

@@ -44,32 +44,29 @@ struct SettingsTranscriptionTab: View {
     }
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
-            Form {
-                Section("Engine") { engineSection }
+        Form {
+            Section("Engine") { engineSection }
+                .listRowBackground(Color.clear)
+            Section("Language") { languageSection }
+                .listRowBackground(Color.clear)
+            Section("Cleanup") { cleanupSection }
+                .listRowBackground(Color.clear)
+            Section("Live Transcription") { liveTranscriptionSection }
+                .listRowBackground(Color.clear)
+            if appSettings.transcriptionEngine == .remoteEndpoint {
+                Section("Endpoints") { endpointsSection }
                     .listRowBackground(Color.clear)
-                Section("Language") { languageSection }
-                    .listRowBackground(Color.clear)
-                Section("Cleanup") { cleanupSection }
-                    .listRowBackground(Color.clear)
-                Section("Live Transcription") { liveTranscriptionSection }
-                    .listRowBackground(Color.clear)
-                if appSettings.transcriptionEngine == .remoteEndpoint {
-                    Section("Endpoints") { endpointsSection }
+                if appSettings.powerUserMode {
+                    Section("Large File Handling") { chunkingSection }
                         .listRowBackground(Color.clear)
-                    if appSettings.powerUserMode {
-                        Section("Large File Handling") { chunkingSection }
-                            .listRowBackground(Color.clear)
-                    }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+        }
+        .formStyle(.grouped)
+        .scrollBounceBehavior(.basedOnSize)
+        .sheet(isPresented: $isEditing) {
+            endpointEditor
+                .frame(minWidth: 460, minHeight: 400)
         }
     }
 

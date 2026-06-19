@@ -19,18 +19,24 @@ struct SettingsVoiceLibraryTab: View {
     private var people: [KnownPerson] { VoiceLibraryDisplay.sortedByLastSeen(library.people) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                privacySection
+        Form {
+            Section("Voice Library") {
+                Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Known People") {
                 if people.isEmpty {
-                    emptyState
+                    Text("No voices saved yet. A voice is added when you name a speaker in a transcript, or with \u{201C}Save voice to library\u{201D} from the speaker menu.")
+                        .foregroundStyle(.secondary)
                 } else {
-                    peopleSection
+                    ForEach(people) { person in
+                        personRow(person)
+                    }
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .formStyle(.grouped)
+        .scrollBounceBehavior(.basedOnSize)
         .task { if !loaded { await reload(); loaded = true } }
         .alert("Forget this voice?", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
             Button("Forget", role: .destructive) {
@@ -50,33 +56,6 @@ struct SettingsVoiceLibraryTab: View {
         }
         .sheet(item: $renaming) { person in renameSheet(person) }
         .sheet(item: $mergeSource) { person in mergeSheet(person) }
-    }
-
-    private var privacySection: some View {
-        SettingsSection(title: "Voice Library") {
-            Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var emptyState: some View {
-        SettingsSection(title: "Known People") {
-            Text("No voices saved yet. A voice is added when you name a speaker in a transcript, or with \u{201C}Save voice to library\u{201D} from the speaker menu.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var peopleSection: some View {
-        SettingsSection(title: "Known People") {
-            ForEach(people) { person in
-                personRow(person)
-                if person.id != people.last?.id { Divider() }
-            }
-        }
     }
 
     @ViewBuilder
