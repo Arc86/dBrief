@@ -318,10 +318,13 @@ struct TranscriptDetailView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .principal) {
+        ToolbarItem(placement: .principal) {
+            // Empty: let the window navigation title show in the centre.
+            EmptyView()
+        }
+
+        ToolbarItem(placement: .primaryAction) {
             if isLive {
-                // Live recording: a single chat toggle that slides the chat panel in
-                // beside the transcript, instead of the summary/transcript/chat tabs.
                 Button {
                     showLiveChat.toggle()
                     if showLiveChat, chatService == nil { buildChatService() }
@@ -333,22 +336,58 @@ struct TranscriptDetailView: View {
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
             } else {
-                modeButton(.transcript, systemImage: "list.bullet", help: "Transcript")
-                modeButton(.chat, systemImage: "bubble.left.and.bubble.right", help: "Chat")
-                Button {
-                    showInspector.toggle()
-                } label: {
-                    Image(systemName: "doc.text")
-                        .symbolVariant(showInspector ? .fill : .none)
-                        .foregroundStyle(showInspector ? Color.accentColor : Color.secondary)
+                Picker("View", selection: $mode) {
+                    Label("Transcript", systemImage: "list.bullet").tag(ViewerMode.transcript)
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right").tag(ViewerMode.chat)
                 }
-                .help(showInspector ? "Hide AI Analysis" : "AI Analysis (⌘I)")
-                .accessibilityAddTraits(showInspector ? .isSelected : [])
-                .keyboardShortcut("i", modifiers: .command)
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .onChange(of: mode) { _, newMode in
+                    if newMode == .chat, chatService == nil { buildChatService() }
+                }
             }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            if !isLive {
+                Button {
+                    withAnimation { showInspector.toggle() }
+                } label: {
+                    Image(systemName: "sidebar.trailing")
+                        .symbolVariant(showInspector ? .fill : .none)
+                        .foregroundStyle(showInspector ? Color.accentColor : Color.secondary)
+                }
+                .keyboardShortcut("i", modifiers: .command)
+                .help(showInspector ? "Hide Analysis (⌘I)" : "Show Analysis (⌘I)")
+            }
+
+            if !isLive {
+                Menu {
+                    if let path = insights?.markdownPath,
+                       FileManager.default.fileExists(atPath: path) {
+                        ShareLink("Share Markdown Note",
+                                  item: URL(fileURLWithPath: path),
+                                  preview: SharePreview(
+                                      recording.generatedTitle ?? recording.meetingTitleDraft,
+                                      image: Image(systemName: "doc.text")))
+                    }
+                    if let audioURL = recording.finalizedAudioURL {
+                        ShareLink("Share Audio",
+                                  item: audioURL,
+                                  preview: SharePreview(
+                                      recording.generatedTitle ?? recording.meetingTitleDraft,
+                                      image: Image(systemName: "waveform")))
+                    }
+                    Divider()
+                    Button("Copy Transcript") { copyTranscript() }
+                        .disabled(richTranscript == nil)
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .help("Share")
+                .disabled(richTranscript == nil && recording.finalizedAudioURL == nil)
+            }
+
             Button {
                 copyTranscript()
             } label: {
@@ -404,20 +443,6 @@ struct TranscriptDetailView: View {
                 .help("Next match (⌘G)")
             }
         }
-    }
-
-    private func modeButton(_ target: ViewerMode, systemImage: String, help: String) -> some View {
-        let active = mode == target
-        return Button {
-            mode = target
-            if target == .chat, chatService == nil { buildChatService() }
-        } label: {
-            Image(systemName: systemImage)
-                .symbolVariant(active ? .fill : .none)
-                .foregroundStyle(active ? Color.accentColor : Color.secondary)
-        }
-        .help(help)
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     // MARK: - Transcript
