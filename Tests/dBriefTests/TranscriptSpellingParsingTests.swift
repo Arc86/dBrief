@@ -36,9 +36,4 @@ struct TranscriptSpellingParsingTests {
         #expect(TranscriptSpellingService.parseCorrections("").isEmpty)
     }
 
-    @Test("vocabulary terms split on commas, semicolons, and newlines")
-    func vocabSplitting() {
-        let terms = TranscriptSpellingService.vocabularyTerms(from: "ServiceNow, ITSM;\n Kubernetes ")
-        #expect(terms == ["ServiceNow", "ITSM", "Kubernetes"])
-    }
 }

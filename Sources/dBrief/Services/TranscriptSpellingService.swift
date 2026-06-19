@@ -29,19 +29,11 @@ final class TranscriptSpellingService {
         self.localPlugin = localPlugin
     }
 
-    /// Parses the comma/newline-separated custom-vocabulary string into terms.
-    static func vocabularyTerms(from raw: String) -> [String] {
-        raw
-            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == ";" })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
     /// Returns a copy of `result` with vocabulary terms re-spelled. Best-effort:
     /// on any failure (no engine, parse error, empty transcript) the input is
     /// returned unchanged.
     func correct(_ result: TranscriptionResult) async -> TranscriptionResult {
-        let terms = Self.vocabularyTerms(from: appSettings.effectiveWhisperPrompt)
+        let terms = appSettings.effectiveCustomVocabulary
         let transcript = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !terms.isEmpty, !transcript.isEmpty else { return result }
 
