@@ -12,13 +12,29 @@ struct SettingsVocabularyTab: View {
     var body: some View {
         Form {
             Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Terms you add here help the AI understand your domain. After transcription, the AI corrects misspellings of these terms in the transcript. During analysis, they're provided to generate more accurate summaries and action items.")
+                    Text("Add names, acronyms, product names, and technical terms your recordings commonly include.")
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
-                        termRow(index: index, term: term)
+                    if appSettings.customVocabulary.isEmpty {
+                        Text("No terms yet — add your first one below.")
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
+                            termRow(index: index, term: term)
+                        }
                     }
                 }
             } header: {
-                Text("Custom Terms")
+                Text("Terms")
             } footer: {
                 Text("Double-click a term to edit it. Terms are applied as spelling hints during AI analysis.")
                     .foregroundStyle(.secondary)
@@ -84,12 +100,17 @@ struct SettingsVocabularyTab: View {
         editingIndex = nil
         let trimmed = editingText.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        let isDuplicate = appSettings.customVocabulary.enumerated().contains { i, t in
+            i != index && t.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+        guard !isDuplicate else { return }
         @Bindable var settings = appSettings
         settings.customVocabulary[index] = trimmed
     }
 
     private func cancelEdit() {
         editingIndex = nil
+        editingText = ""
     }
 
     private func deleteTerm(at index: Int) {
