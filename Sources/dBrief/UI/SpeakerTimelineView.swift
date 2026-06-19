@@ -58,7 +58,7 @@ struct SpeakerTimelineView: View {
         if duration > 0 {
             let x = CGFloat(currentTime / duration) * width
             RoundedRectangle(cornerRadius: 1)
-                .fill(Color.white.opacity(0.9))
+                .fill(colorScheme == .dark ? Color.white.opacity(0.9) : Color.black.opacity(0.75))
                 .frame(width: 2, height: 14)
                 .offset(x: x - 1)
                 .shadow(color: .black.opacity(0.3), radius: 2)

@@ -134,7 +134,7 @@ struct TranscriptDetailView: View {
                 case .chat:       chatContent
                 }
                 Divider()
-                if let _ = richTranscript, recording.duration > 0 {
+                if let _ = richTranscript, recording.duration > 0, mode == .transcript {
                     speakerTimeline
                         .padding(.horizontal, 12)
                         .padding(.top, 6)
@@ -393,15 +393,6 @@ struct TranscriptDetailView: View {
                 .help("Share")
                 .disabled(richTranscript == nil && recording.finalizedAudioURL == nil)
             }
-
-            Button {
-                copyTranscript()
-            } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .foregroundStyle(copied ? Color.green : Color.secondary)
-            }
-            .disabled(richTranscript == nil)
-            .help("Copy full transcript")
 
             Button {
                 showDiarizeConfirm = true
