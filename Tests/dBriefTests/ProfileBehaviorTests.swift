@@ -108,7 +108,7 @@ struct ProfileBehaviorTests {
                 return
             }
 
-            settings.profiles[index].overrides.whisperPrompt = "custom words"
+            settings.profiles[index].overrides.customVocabulary = ["custom", "words"]
             settings.profiles[index].overrides.autoTags = true
 
             let exportedData = try settings.exportProfiles(ids: [created.id])
@@ -116,7 +116,7 @@ struct ProfileBehaviorTests {
             #expect(exported.version == 1)
             #expect(exported.profiles.count == 1)
             #expect(exported.profiles[0].name == "Roundtrip")
-            #expect(exported.profiles[0].overrides.whisperPrompt == "custom words")
+            #expect(exported.profiles[0].overrides.customVocabulary == ["custom", "words"])
             #expect(exported.profiles[0].overrides.autoTags == true)
         }
     }

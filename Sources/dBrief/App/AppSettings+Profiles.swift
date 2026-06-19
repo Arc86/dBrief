@@ -33,7 +33,7 @@ extension AppSettings {
         profiles[index].iconBackgroundColorKey = MeetingProfile.defaultIconBackgroundColor(for: .default)
 
         transcriptionLanguage = ""
-        whisperPrompt = ""
+        customVocabulary = []
         summaryPrompt = Self.defaultSummaryPrompt
         actionItemsPrompt = Self.defaultActionItemsPrompt
         tagsPrompt = Self.defaultTagsPrompt
@@ -140,7 +140,7 @@ extension AppSettings {
             name: "Team meeting",
             preset: .teamMeeting,
             overrides: MeetingProfileOverrides(
-                whisperPrompt: teamMeetingWhisperPrompt,
+                customVocabulary: AppSettings.teamMeetingVocabulary,
                 summaryPrompt: teamMeetingSummaryPrompt,
                 actionItemsPrompt: teamMeetingActionItemsPrompt,
                 tagsPrompt: teamMeetingTagsPrompt,
@@ -156,7 +156,7 @@ extension AppSettings {
             name: "Sales meeting",
             preset: .salesMeeting,
             overrides: MeetingProfileOverrides(
-                whisperPrompt: salesMeetingWhisperPrompt,
+                customVocabulary: AppSettings.salesMeetingVocabulary,
                 summaryPrompt: salesMeetingSummaryPrompt,
                 actionItemsPrompt: salesMeetingActionItemsPrompt,
                 tagsPrompt: salesMeetingTagsPrompt,
