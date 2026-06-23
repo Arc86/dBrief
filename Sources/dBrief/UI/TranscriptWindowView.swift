@@ -22,12 +22,16 @@ struct TranscriptDetailView: View {
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
     @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
 
-    /// Which of the two views is showing.
-    private enum ViewerMode { case transcript, chat }
+    /// The two primary views of a finished recording, swapped full-width by the
+    /// toolbar's segmented switcher. Defaults to `.summary` when one exists (most
+    /// people just want the gist), otherwise `.transcript`. Chat is not a mode — it
+    /// rides alongside as a right-hand inspector (`showChatInspector`).
+    private enum ViewerMode { case summary, transcript }
     @State private var mode: ViewerMode = .transcript
 
-    /// Whether the AI Analysis inspector panel is open.
-    @AppStorage("showTranscriptInspector") private var showInspector: Bool = false
+    /// Chat lives in a trailing inspector so the Summary/Transcript stays visible
+    /// while you ask questions — mirroring the live-recording side panel.
+    @AppStorage("showTranscriptChatInspector") private var showChatInspector: Bool = false
 
     /// In live mode, chat is a right-hand side panel (so the in-progress transcript
     /// stays visible) rather than a full-screen swap like the finished-recording view.
@@ -44,7 +48,11 @@ struct TranscriptDetailView: View {
 
     // Transcript search (finished-recording transcript only)
     @State private var searchQuery = ""
-    @State private var isSearchPresented = false
+    /// Drives whether the toolbar search field is shown. Kept separate from
+    /// `@FocusState` because focus can't both reveal a not-yet-rendered field and
+    /// land on it — `@State` controls visibility, `@FocusState` only the cursor.
+    @State private var searchExpanded = false
+    @FocusState private var searchFieldFocused: Bool
     @State private var searchResult = TranscriptSearch.Result.empty
     @State private var matchesByTurn: [UUID: [TranscriptSearch.Match]] = [:]
     @State private var currentMatchIndex = 0
@@ -128,13 +136,15 @@ struct TranscriptDetailView: View {
             } else if richTranscript != nil {
                 documentHeader
                 Divider()
-                if offerReanalysis && mode != .chat { reanalysisBanner }
+                if offerReanalysis { reanalysisBanner }
                 switch mode {
+                case .summary:    summaryContent
                 case .transcript: transcriptList
-                case .chat:       chatContent
                 }
+                // The player anchors both views — you may listen while reading
+                // either; the speaker timeline only makes sense over the transcript.
                 Divider()
-                if let _ = richTranscript, recording.duration > 0, mode == .transcript {
+                if richTranscript != nil, recording.duration > 0, mode == .transcript {
                     speakerTimeline
                         .padding(.horizontal, 12)
                         .padding(.top, 6)
@@ -144,22 +154,18 @@ struct TranscriptDetailView: View {
                 loadingState
             }
         }
+        // Keep the window titled for the OS (Window menu / Mission Control) but drop
+        // the title from the toolbar — the in-content document header already shows
+        // it (with sentiment, speakers, and metrics), so the toolbar copy is a dupe.
         .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
+        .hidingToolbarTitle()
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
-        .modifier(TranscriptSearchableModifier(
-            enabled: !isLive,
-            query: $searchQuery,
-            isPresented: $isSearchPresented,
-            onSubmitSearch: gotoNextMatch))
         .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
-        .onChange(of: isSearchPresented) { _, presented in
-            if !presented {
-                searchQuery = ""
-                searchDebounce?.cancel()
-                recomputeSearch()
-            }
+        .onChange(of: searchFieldFocused) { _, focused in
+            // Collapse the field back to the magnifier when it's dismissed empty.
+            if !focused, !isSearching { searchExpanded = false }
         }
         .onChange(of: context.appState.recordingState) { _, newState in
             // When the live recording finishes, swap the live preview for the
@@ -199,15 +205,9 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
-        .inspector(isPresented: $showInspector) {
-            SummaryView(
-                insights: insights,
-                isGenerating: isGenerating,
-                canGenerate: richTranscript != nil,
-                onGenerate: { Task { await generateSummary() } },
-                onSave: { updated in await saveInsights(updated) }
-            )
-            .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+        .inspector(isPresented: $showChatInspector) {
+            chatContent
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
         }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -233,6 +233,19 @@ struct TranscriptDetailView: View {
     }
 
     // MARK: - Document header
+
+    /// Full-width Summary / Action Items / Tags. `SummaryView` constrains itself to
+    /// a comfortable reading column and centers it, so it reads well edge-to-edge.
+    private var summaryContent: some View {
+        SummaryView(
+            insights: insights,
+            isGenerating: isGenerating,
+            canGenerate: richTranscript != nil,
+            fontSize: fontSize,
+            onGenerate: { Task { await generateSummary() } },
+            onSave: { updated in await saveInsights(updated) }
+        )
+    }
 
     private var documentHeader: some View {
         RecordingDocumentHeader(
@@ -325,13 +338,22 @@ struct TranscriptDetailView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            // Empty: let the window navigation title show in the centre.
-            EmptyView()
+        // Center: the primary view switcher for a finished recording.
+        if !isLive {
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $mode) {
+                    Text("Summary").tag(ViewerMode.summary)
+                    Text("Transcript").tag(ViewerMode.transcript)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
         }
 
-        ToolbarItem(placement: .primaryAction) {
-            if isLive {
+        // Live recording has no finished transcript/summary: keep the lone chat
+        // toggle that slides the side panel in/out.
+        if isLive {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     showLiveChat.toggle()
                     if showLiveChat, chatService == nil { buildChatService() }
@@ -342,32 +364,86 @@ struct TranscriptDetailView: View {
                 }
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
-            } else {
-                Picker("View", selection: $mode) {
-                    Label("Transcript", systemImage: "list.bullet").tag(ViewerMode.transcript)
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right").tag(ViewerMode.chat)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .onChange(of: mode) { _, newMode in
-                    if newMode == .chat, chatService == nil { buildChatService() }
-                }
             }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
             if !isLive {
-                Button {
-                    withAnimation { showInspector.toggle() }
-                } label: {
-                    Image(systemName: "sidebar.trailing")
-                        .symbolVariant(showInspector ? .fill : .none)
-                        .foregroundStyle(showInspector ? Color.accentColor : Color.secondary)
+                // Search only applies to the Transcript. At rest it's a single
+                // magnifier icon (matching the other toolbar buttons); it expands
+                // into a self-contained capsule — field + match counter + nav +
+                // clear — only while focused or non-empty. ⌘F reveals + focuses it.
+                if mode == .transcript {
+                    if searchExpanded || isSearching {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            TextField("Search transcript", text: $searchQuery)
+                                .textFieldStyle(.plain)
+                                .frame(width: 150)
+                                .focused($searchFieldFocused)
+                                .onSubmit { gotoNextMatch() }
+                            if isSearching {
+                                Text(searchCounterLabel)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                Button { gotoPrevMatch() } label: {
+                                    Image(systemName: "chevron.up")
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(searchResult.matches.isEmpty)
+                                .help("Previous match (⌘⇧G)")
+                                Button { gotoNextMatch() } label: {
+                                    Image(systemName: "chevron.down")
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(searchResult.matches.isEmpty)
+                                .help("Next match (⌘G)")
+                            }
+                            Button {
+                                searchQuery = ""
+                                searchExpanded = false
+                                searchFieldFocused = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tertiary)
+                            .help("Clear search")
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: Capsule())
+                        // Field is now in the hierarchy; land the cursor on it.
+                        .onAppear { DispatchQueue.main.async { searchFieldFocused = true } }
+                    } else {
+                        Button {
+                            searchExpanded = true
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .help("Search transcript (⌘F)")
+                    }
                 }
-                .keyboardShortcut("i", modifiers: .command)
-                .help(showInspector ? "Hide Analysis (⌘I)" : "Show Analysis (⌘I)")
-                .accessibilityAddTraits(showInspector ? .isSelected : [])
 
+                // Chat — toggles the trailing inspector so Summary/Transcript stays
+                // visible while you ask questions about the recording.
+                Button {
+                    if chatService == nil { buildChatService() }
+                    withAnimation { showChatInspector.toggle() }
+                } label: {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                        .symbolVariant(showChatInspector ? .fill : .none)
+                        .foregroundStyle(showChatInspector ? Color.accentColor : Color.primary)
+                }
+                .labelStyle(.titleAndIcon)
+                .keyboardShortcut("0", modifiers: .command)
+                .help(showChatInspector ? "Hide Chat (⌘0)" : "Ask questions about this recording (⌘0)")
+                .accessibilityAddTraits(showChatInspector ? .isSelected : [])
+                .disabled(richTranscript == nil)
+
+                // Share — everyday action, stays a primary button.
                 Menu {
                     if let path = insights?.markdownPath,
                        FileManager.default.fileExists(atPath: path) {
@@ -392,52 +468,32 @@ struct TranscriptDetailView: View {
                 }
                 .help("Share")
                 .disabled(richTranscript == nil && recording.finalizedAudioURL == nil)
-            }
 
-            Button {
-                showDiarizeConfirm = true
-            } label: {
-                Image(systemName: "person.2.wave.2")
-                    .foregroundStyle(Color.secondary)
-            }
-            .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
-            .help("Detect speakers")
-
-            Menu {
-                Stepper(value: $fontSize, in: 12...24) {
-                    Text("Font Size: \(fontSize) pt")
+                // Secondary / rare actions demoted into one overflow menu, so the
+                // toolbar reads as: [switcher]            🔍  ⤴  •••
+                Menu {
+                    Section("Display") {
+                        Stepper(value: $fontSize, in: 12...24) {
+                            Text("Font Size: \(fontSize) pt")
+                        }
+                        Toggle("Speaker Names", isOn: $showSpeakerNames)
+                    }
+                    Button {
+                        showDiarizeConfirm = true
+                    } label: {
+                        Label("Detect Speakers…", systemImage: "person.2.wave.2")
+                    }
+                    .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
+                    Divider()
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete Recording…", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                Toggle("Speaker Names", isOn: $showSpeakerNames)
-            } label: {
-                Image(systemName: "textformat.size")
-            }
-            .help("Display options")
-
-            Button(role: .destructive) {
-                showDeleteConfirm = true
-            } label: {
-                Image(systemName: "trash")
-            }
-            .help("Delete recording")
-
-            // Search match counter + prev/next, kept adjacent to the trailing
-            // `.searchable` field (which the system pins to the toolbar's edge).
-            if isSearching {
-                Divider()
-                Text(searchCounterLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help("Search matches")
-                Button { gotoPrevMatch() } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Previous match (⌘⇧G)")
-                Button { gotoNextMatch() } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Next match (⌘G)")
+                .help("More")
             }
         }
     }
@@ -674,20 +730,26 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var chatContent: some View {
-        if let chatService {
-            TranscriptChatView(chatService: chatService)
-        } else {
-            VStack(spacing: 12) {
-                Spacer()
-                ProgressView()
-                Text("Preparing chat…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        Group {
+            if let chatService {
+                TranscriptChatView(chatService: chatService)
+            } else {
+                VStack(spacing: 12) {
+                    Spacer()
+                    ProgressView()
+                    Text("Preparing chat…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task { buildChatService() }
         }
+        // Build (or rebind) the chat once the transcript is actually available.
+        // The id flips false→true when the transcript loads, so a chat panel that
+        // opened first (e.g. the inspector auto-restored open) re-runs and binds the
+        // real text instead of an empty snapshot.
+        .task(id: isLive || richTranscript != nil) { buildChatService() }
     }
 
     // MARK: - Live transcript
@@ -994,7 +1056,7 @@ struct TranscriptDetailView: View {
         defer { isGenerating = false }
         await context.recordingManager.retryAIAnalysis(for: recording)
         await loadInsights()
-        if hasSummary { showInspector = true }
+        if hasSummary { withAnimation { mode = .summary } }
     }
 
     private func copyTranscript() {
@@ -1009,11 +1071,27 @@ struct TranscriptDetailView: View {
         }
     }
 
+    /// The finished recording's full transcript text, from the rich transcript if
+    /// loaded, else the raw transcription. Empty until the transcript is ready.
+    private func currentFinishedTranscriptText() -> String {
+        richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+            ?? recording.transcription?.text ?? ""
+    }
+
     private func buildChatService() {
         // Reuse an existing session for this recording so the conversation
         // survives switching recordings and coming back.
         if let existing = chatStore.session(for: recording.fileURL) {
             chatService = existing
+            // The session may have been created before the transcript finished
+            // loading (the chat inspector can auto-restore open), capturing empty
+            // text. Re-point a reused finished-recording session at the real text.
+            if !isLive {
+                let text = currentFinishedTranscriptText()
+                if !text.isEmpty {
+                    existing.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                }
+            }
             return
         }
         let labels = richTranscript?.speakerLabels ?? []
@@ -1029,8 +1107,11 @@ struct TranscriptDetailView: View {
                 localPlugin: context.recordingManager.localPlugin
             )
         } else {
-            let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-                ?? recording.transcription?.text ?? ""
+            let text = currentFinishedTranscriptText()
+            // Don't cache a permanently-empty session: the transcript isn't loaded
+            // yet. Bail — the chatContent `.task(id:)` re-runs once it is, and the
+            // toolbar Chat button is disabled until then anyway.
+            guard !text.isEmpty else { return }
             service = TranscriptChatService(
                 transcriptText: text,
                 speakerLabels: labels,
@@ -1138,16 +1219,27 @@ struct TranscriptDetailView: View {
     }
 
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
-    /// visible UI (the `.searchable` field is the only visible search affordance):
-    /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
+    /// visible UI: ⌘F jumps to Transcript and focuses the toolbar search field,
+    /// ⌘G / ⌘⇧G step next/previous match.
     private var findShortcuts: some View {
         Group {
-            Button("") { if !isLive { isSearchPresented = true } }
-                .keyboardShortcut("f", modifiers: .command)
+            Button("") {
+                if !isLive {
+                    mode = .transcript
+                    searchExpanded = true
+                    searchFieldFocused = true
+                }
+            }
+            .keyboardShortcut("f", modifiers: .command)
             Button("") { gotoNextMatch() }
                 .keyboardShortcut("g", modifiers: .command)
             Button("") { gotoPrevMatch() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+            // ⌘1/⌘2 switch views; ⌘0 (toolbar) toggles the chat inspector.
+            Button("") { withAnimation { mode = .summary } }
+                .keyboardShortcut("1", modifiers: .command)
+            Button("") { withAnimation { mode = .transcript } }
+                .keyboardShortcut("2", modifiers: .command)
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -1257,14 +1349,11 @@ struct TranscriptDetailView: View {
             }
         }
 
-        // Data-driven default view: an in-progress chat wins; otherwise open
-        // the inspector when a summary exists, showing Transcript underneath.
-        if resumedChat {
-            mode = .chat
-        } else {
-            mode = .transcript
-            if hasSummary { showInspector = true }
-        }
+        // Data-driven default view: land on Summary when one exists (most people
+        // just want the gist), else Transcript. An in-progress chat re-opens the
+        // chat inspector alongside, rather than hijacking the main view.
+        mode = hasSummary ? .summary : .transcript
+        if resumedChat { showChatInspector = true }
         recomputeSearch()
     }
 
@@ -1278,25 +1367,16 @@ struct TranscriptDetailView: View {
     }
 }
 
-/// Applies the native macOS toolbar search field only when `enabled` (finished
-/// recordings). On macOS the field shows full-width when the toolbar has room and
-/// collapses to a magnifying-glass loupe when the window is narrow — no extra code.
-private struct TranscriptSearchableModifier: ViewModifier {
-    let enabled: Bool
-    @Binding var query: String
-    @Binding var isPresented: Bool
-    let onSubmitSearch: () -> Void
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content
-                .searchable(text: $query,
-                            isPresented: $isPresented,
-                            placement: .toolbar,
-                            prompt: "Search transcript")
-                .onSubmit(of: .search, onSubmitSearch)
+private extension View {
+    /// Removes the title item from the window toolbar (the in-content document
+    /// header already shows it) while keeping `navigationTitle` for the OS. The
+    /// `removing:` API is macOS 15+, so older systems keep the (duplicate) title.
+    @ViewBuilder
+    func hidingToolbarTitle() -> some View {
+        if #available(macOS 15.0, *) {
+            self.toolbar(removing: .title)
         } else {
-            content
+            self
         }
     }
 }

@@ -11,6 +11,8 @@ struct SummaryView: View {
     let insights: RecordingInsights?
     let isGenerating: Bool
     let canGenerate: Bool
+    /// Reading-text size, shared with the transcript's Display control.
+    var fontSize: Int = 16
     var onGenerate: () -> Void = {}
     var onSave: (RecordingInsights) async -> Void = { _ in }
 
@@ -65,17 +67,36 @@ struct SummaryView: View {
 
     private func content(for insights: RecordingInsights) -> some View {
         GeometryReader { geo in
+            // When the pane is wide, run the summary prose beside a details rail
+            // (Action Items + Tags) instead of stacking them in a narrow centered
+            // column — this fills the horizontal space and surfaces action items
+            // without scrolling. Editing always uses one column for clarity.
+            let twoColumn = !isEditing && geo.size.width >= 1000
             VStack(spacing: 0) {
                 header(for: insights)
                 Divider()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.cardGap) {
-                        summaryCard(availableHeight: geo.size.height)
-                        actionItemsCard
-                        tagsCard
+                    Group {
+                        if twoColumn {
+                            HStack(alignment: .top, spacing: Theme.cardGap) {
+                                summaryCard(availableHeight: geo.size.height)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                VStack(spacing: Theme.cardGap) {
+                                    actionItemsCard
+                                    tagsCard
+                                }
+                                .frame(width: 380, alignment: .topLeading)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: Theme.cardGap) {
+                                summaryCard(availableHeight: geo.size.height)
+                                actionItemsCard
+                                tagsCard
+                            }
+                        }
                     }
                     .padding(Theme.contentPadding)
-                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: 1180, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
             }
@@ -121,17 +142,18 @@ struct SummaryView: View {
         GroupBox {
             if isEditing {
                 TextEditor(text: $draftSummary)
-                    .font(.body)
+                    .font(.system(size: CGFloat(fontSize)))
                     .frame(minHeight: max(240, availableHeight * 0.55))
                     .scrollContentBackground(.hidden)
             } else if draftSummary.isEmpty {
                 Text("—")
-                    .font(.body)
+                    .font(.system(size: CGFloat(fontSize)))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 MarkdownText(draftSummary)
-                    .font(.body)
+                    .font(.system(size: CGFloat(fontSize)))
+                    .lineSpacing(CGFloat(fontSize) * 0.35)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -154,7 +176,7 @@ struct SummaryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 let groups = ActionItemParser.group(draftActionItems.map(\.text))
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(groups) { group in
                         ownerGroup(group)
                     }
@@ -168,44 +190,57 @@ struct SummaryView: View {
         }
     }
 
+    /// One owner's action items: a light subheader (avatar · name · count) over a
+    /// clean, always-visible checklist. Rows use a top-aligned tappable check so
+    /// multi-line items read straight down instead of centering on the box, and the
+    /// old per-owner disclosure chevron is gone (it added clutter, never collapsed).
     private func ownerGroup(_ group: ActionItemGroup) -> some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(group.items) { item in
-                    Toggle(isOn: Binding(
-                        get: { completed.contains(item.raw) },
-                        set: { isOn in
-                            if isOn { completed.insert(item.raw) } else { completed.remove(item.raw) }
-                        }
-                    )) {
-                        Text(item.text)
-                            .strikethrough(completed.contains(item.raw))
-                            .foregroundStyle(completed.contains(item.raw) ? .secondary : .primary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .toggleStyle(.checkbox)
-                }
-            }
-            .padding(.leading, 2)
-        } label: {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
                 if group.isUnassigned {
                     Image(systemName: "person.crop.circle.badge.questionmark")
                         .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                 } else {
-                    SpeakerAvatar(speakerId: group.owner, name: group.owner, size: 22)
+                    SpeakerAvatar(speakerId: group.owner, name: group.owner, size: 20)
                 }
                 Text(group.owner)
-                    .font(.body.weight(.medium))
+                    .font(.subheadline.weight(.semibold))
                 Text("\(group.items.count)")
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(.quaternary, in: Capsule())
+                Spacer(minLength: 0)
             }
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(group.items) { item in
+                    actionItemRow(item)
+                }
+            }
+        }
+    }
+
+    private func actionItemRow(_ item: ParsedActionItem) -> some View {
+        let isDone = completed.contains(item.raw)
+        return HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Button {
+                if isDone { completed.remove(item.raw) } else { completed.insert(item.raw) }
+            } label: {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: CGFloat(fontSize)))
+                    .foregroundStyle(isDone ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            Text(item.text)
+                .font(.system(size: CGFloat(fontSize)))
+                .lineSpacing(3)
+                .strikethrough(isDone)
+                .foregroundStyle(isDone ? .secondary : .primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
