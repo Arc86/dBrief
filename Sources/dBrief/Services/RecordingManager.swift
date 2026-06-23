@@ -1608,7 +1608,7 @@ final class RecordingManager {
             let insights = try await LocalAIService().analyzeTranscript(
                 contextualTranscription,
                 outputLanguage: appSettings.outputLanguage,
-                customVocabulary: appSettings.effectiveWhisperPrompt
+                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", ")
             )
 
             if let summaryStepIndex {
@@ -1663,7 +1663,7 @@ final class RecordingManager {
                 let stream = await self.localAIPluginService.analyzeTranscriptStream(
                     contextualTranscription,
                     outputLanguage: self.appSettings.outputLanguage,
-                    customVocabulary: self.appSettings.effectiveWhisperPrompt
+                    customVocabulary: self.appSettings.effectiveCustomVocabulary.joined(separator: ", ")
                 )
                 
                 var chunks: [String] = []
@@ -1741,7 +1741,7 @@ final class RecordingManager {
                 transcript: contextualTranscription,
                 outputLanguage: appSettings.outputLanguage,
                 config: appSettings.localCLIConfig,
-                customVocabulary: appSettings.effectiveWhisperPrompt
+                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", ")
             )
 
             if let summaryStepIndex {
@@ -1777,7 +1777,7 @@ final class RecordingManager {
     /// Appends the user's custom-vocabulary "spell these exactly" block to a remote
     /// per-task system prompt (no-op when no vocabulary is configured).
     private func withVocabulary(_ prompt: String) -> String {
-        prompt + UnifiedInsightsPrompt.vocabularyBlock(appSettings.effectiveWhisperPrompt)
+        prompt + UnifiedInsightsPrompt.vocabularyBlock(appSettings.effectiveCustomVocabulary.joined(separator: ", "))
     }
 
     private func runRemoteAITasks(
@@ -2080,7 +2080,7 @@ final class RecordingManager {
         // Vocabulary spelling: re-spell the user's custom-vocabulary terms via the
         // AI engine (the reliable replacement for Whisper decoder-prompt biasing).
         // No-op when no vocabulary is set or no AI engine is available.
-        guard !TranscriptSpellingService.vocabularyTerms(from: appSettings.effectiveWhisperPrompt).isEmpty else {
+        guard !appSettings.effectiveCustomVocabulary.isEmpty else {
             return TranscriptionStepResult(transcription: cleaned, spellCorrectionTime: nil)
         }
         if appState.processingSteps.indices.contains(stepIndex) {

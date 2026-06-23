@@ -80,10 +80,7 @@ struct SettingsPermissionsTab: View {
             .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
         .onAppear {
             refreshStatuses()
         }

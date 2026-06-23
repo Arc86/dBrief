@@ -209,7 +209,6 @@ struct SettingsProfilesTab: View {
                 folderOverridesSection
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         } else {
             ContentUnavailableView("No Profile Selected", systemImage: "person.3")
@@ -367,10 +366,23 @@ struct SettingsProfilesTab: View {
                     .frame(height: 22)
                 }
 
-                overrideRow("Whisper prompt", \.whisperPrompt,
-                            defaultValue: appSettings.whisperPrompt) {
-                    NativeTextView(text: overrideBinding(\.whisperPrompt, fallback: appSettings.whisperPrompt))
-                        .frame(height: 70)
+                overrideRow("Custom vocabulary", \.customVocabulary,
+                            defaultValue: appSettings.customVocabulary.isEmpty ? nil : appSettings.customVocabulary) {
+                    NativeTextView(text: Binding(
+                        get: {
+                            guard let index = selectedProfileIndex else {
+                                return appSettings.customVocabulary.joined(separator: ", ")
+                            }
+                            return (appSettings.profiles[index].overrides.customVocabulary
+                                ?? appSettings.customVocabulary).joined(separator: ", ")
+                        },
+                        set: { newValue in
+                            guard let index = selectedProfileIndex else { return }
+                            appSettings.profiles[index].overrides.customVocabulary =
+                                TokenField.tokens(from: newValue)
+                        }
+                    ))
+                    .frame(height: 70)
                 }
 
                 overrideRow("Transcription endpoint", \.transcriptionEndpointId,
@@ -392,7 +404,7 @@ struct SettingsProfilesTab: View {
             } label: {
                 overrideGroupLabel("Transcription", keyPaths: [
                     isSet(\.transcriptionEngine), isSet(\.transcriptionLanguage),
-                    isSet(\.whisperPrompt), isSet(\.transcriptionEndpointId)
+                    isSet(\.customVocabulary), isSet(\.transcriptionEndpointId)
                 ])
             }
         }

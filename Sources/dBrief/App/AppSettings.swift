@@ -33,7 +33,7 @@ final class AppSettings {
         static let outputLanguageMode = "outputLanguageMode"
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
         static let audioInputDeviceUID = "audioInputDeviceUID"
-        static let whisperPrompt = "whisperPrompt"
+        static let customVocabulary = "customVocabulary"
         static let removeFillerWords = "removeFillerWords"
         static let watchedFoldersEnabled = "watchedFoldersEnabled"
         static let watchedFolders = "watchedFolders"
@@ -380,9 +380,9 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(transcriptionLanguage, forKey: Keys.transcriptionLanguage) }
     }
 
-    /// Custom vocabulary/context hint for Whisper (initial_prompt parameter). Helps with proper nouns, acronyms, etc.
-    var whisperPrompt: String {
-        didSet { UserDefaults.standard.set(whisperPrompt, forKey: Keys.whisperPrompt) }
+    /// Custom vocabulary list for spell-correction and AI analysis context. Helps with proper nouns, acronyms, etc.
+    var customVocabulary: [String] {
+        didSet { UserDefaults.standard.set(customVocabulary, forKey: Keys.customVocabulary) }
     }
 
     /// When enabled, filler words (um, uh, …) are stripped from transcripts after
@@ -529,8 +529,10 @@ final class AppSettings {
         Output valid JSON only. No markdown code fences, no explanation.
         """
 
-    static let teamMeetingWhisperPrompt =
-        "Team standup, sprint, backlog, blocker, follow-up, ETA, Jira, PR, release, roadmap, architecture."
+    static let teamMeetingVocabulary: [String] = [
+        "Team standup", "sprint", "backlog", "blocker", "follow-up",
+        "ETA", "Jira", "PR", "release", "roadmap", "architecture"
+    ]
 
     static let teamMeetingSummaryPrompt = """
         Summarize this internal team meeting. Write in the same language as the transcription. \
@@ -560,8 +562,10 @@ final class AppSettings {
         No markdown code fences, no explanation.
         """
 
-    static let salesMeetingWhisperPrompt =
-        "Customer, contract, pricing, procurement, renewal, objections, competitor, timeline, stakeholder, action item, follow-up."
+    static let salesMeetingVocabulary: [String] = [
+        "Customer", "contract", "pricing", "procurement", "renewal",
+        "objections", "competitor", "timeline", "stakeholder", "action item", "follow-up"
+    ]
 
     static let salesMeetingSummaryPrompt = """
         Summarize this sales meeting. Write in the same language as the transcription. \
@@ -801,7 +805,20 @@ final class AppSettings {
         self.obsidianIncludeTranscript = defaults.object(forKey: Keys.obsidianIncludeTranscript) as? Bool ?? false
 
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? ""
-        self.whisperPrompt = defaults.string(forKey: Keys.whisperPrompt) ?? ""
+        // Migration: if customVocabulary absent but legacy whisperPrompt exists, parse and migrate
+        if let existing = defaults.stringArray(forKey: Keys.customVocabulary) {
+            self.customVocabulary = existing
+        } else if let legacy = defaults.string(forKey: "whisperPrompt"), !legacy.isEmpty {
+            let migrated = legacy
+                .components(separatedBy: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            self.customVocabulary = migrated
+            defaults.set(migrated, forKey: Keys.customVocabulary)
+            defaults.removeObject(forKey: "whisperPrompt")
+        } else {
+            self.customVocabulary = []
+        }
         self.removeFillerWords = defaults.bool(forKey: Keys.removeFillerWords)
         self.watchedFoldersEnabled = defaults.bool(forKey: Keys.watchedFoldersEnabled)
         self.watchedFolders = AppSettings.loadWatchedFolders(forKey: Keys.watchedFolders)

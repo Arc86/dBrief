@@ -8,7 +8,9 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general        = "General"
         case recording      = "Recording"
-        case aiAndModels    = "AI & Models"
+        case transcription  = "Transcription"
+        case aiAnalysis     = "AI Analysis"
+        case vocabulary     = "Vocabulary"
         case watchedFolders = "Watched Folders"
         case integrations   = "Integrations"
         case voiceLibrary   = "Voice Library"
@@ -21,7 +23,9 @@ struct SettingsView: View {
             case .general:        "gear"
             case .permissions:    "lock.shield"
             case .recording:      "mic"
-            case .aiAndModels:    "brain"
+            case .transcription:  "waveform"
+            case .aiAnalysis:     "brain"
+            case .vocabulary:     "text.word.spacing"
             case .watchedFolders: "folder.badge.gearshape"
             case .integrations:   "puzzlepiece.extension"
             case .voiceLibrary:   "person.wave.2"
@@ -64,8 +68,10 @@ struct SettingsView: View {
                 switch tab {
                 case .general:      SettingsGeneralTab()
                 case .permissions:  SettingsPermissionsTab()
-                case .recording:    SettingsRecordingTab()
-                case .aiAndModels:  SettingsAIModelsTab()
+                case .recording:     SettingsRecordingTab()
+                case .transcription: SettingsTranscriptionTab()
+                case .aiAnalysis:    SettingsAITab()
+                case .vocabulary:    SettingsVocabularyTab()
                 case .watchedFolders: SettingsWatchedFoldersTab()
                 case .integrations: SettingsIntegrationsTab()
                 case .voiceLibrary: SettingsVoiceLibraryTab()

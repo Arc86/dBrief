@@ -9,7 +9,7 @@ enum ProfilePresetKind: String, Codable, CaseIterable, Sendable {
 
 struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var transcriptionLanguage: String?
-    var whisperPrompt: String?
+    var customVocabulary: [String]?
     var transcriptionEngine: AppSettings.TranscriptionEngine?
     var transcriptionEndpointId: UUID?
     var aiProcessingEnabled: Bool?
@@ -27,7 +27,89 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var obsidianVaultPath: String?
     var obsidianDefaultFolderRelativePath: String?
 
+    // swiftlint:disable:next function_default_parameter_at_end
+    init(
+        transcriptionLanguage: String? = nil,
+        customVocabulary: [String]? = nil,
+        transcriptionEngine: AppSettings.TranscriptionEngine? = nil,
+        transcriptionEndpointId: UUID? = nil,
+        aiProcessingEnabled: Bool? = nil,
+        aiEngine: AppSettings.AIEngine? = nil,
+        aiEndpointId: UUID? = nil,
+        summaryPrompt: String? = nil,
+        actionItemsPrompt: String? = nil,
+        tagsPrompt: String? = nil,
+        autoTranscribe: Bool? = nil,
+        autoSummary: Bool? = nil,
+        autoActionItems: Bool? = nil,
+        autoTags: Bool? = nil,
+        recordingFolderPath: String? = nil,
+        transcriptionFolderPath: String? = nil,
+        obsidianVaultPath: String? = nil,
+        obsidianDefaultFolderRelativePath: String? = nil
+    ) {
+        self.transcriptionLanguage = transcriptionLanguage
+        self.customVocabulary = customVocabulary
+        self.transcriptionEngine = transcriptionEngine
+        self.transcriptionEndpointId = transcriptionEndpointId
+        self.aiProcessingEnabled = aiProcessingEnabled
+        self.aiEngine = aiEngine
+        self.aiEndpointId = aiEndpointId
+        self.summaryPrompt = summaryPrompt
+        self.actionItemsPrompt = actionItemsPrompt
+        self.tagsPrompt = tagsPrompt
+        self.autoTranscribe = autoTranscribe
+        self.autoSummary = autoSummary
+        self.autoActionItems = autoActionItems
+        self.autoTags = autoTags
+        self.recordingFolderPath = recordingFolderPath
+        self.transcriptionFolderPath = transcriptionFolderPath
+        self.obsidianVaultPath = obsidianVaultPath
+        self.obsidianDefaultFolderRelativePath = obsidianDefaultFolderRelativePath
+    }
+
     static let empty = MeetingProfileOverrides()
+
+    // Legacy key used only in decoding migration
+    private enum LegacyKeys: String, CodingKey { case whisperPrompt }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        transcriptionLanguage = try c.decodeIfPresent(String.self, forKey: .transcriptionLanguage)
+        transcriptionEngine = try c.decodeIfPresent(AppSettings.TranscriptionEngine.self, forKey: .transcriptionEngine)
+        transcriptionEndpointId = try c.decodeIfPresent(UUID.self, forKey: .transcriptionEndpointId)
+        aiProcessingEnabled = try c.decodeIfPresent(Bool.self, forKey: .aiProcessingEnabled)
+        aiEngine = try c.decodeIfPresent(AppSettings.AIEngine.self, forKey: .aiEngine)
+        aiEndpointId = try c.decodeIfPresent(UUID.self, forKey: .aiEndpointId)
+        summaryPrompt = try c.decodeIfPresent(String.self, forKey: .summaryPrompt)
+        actionItemsPrompt = try c.decodeIfPresent(String.self, forKey: .actionItemsPrompt)
+        tagsPrompt = try c.decodeIfPresent(String.self, forKey: .tagsPrompt)
+        autoTranscribe = try c.decodeIfPresent(Bool.self, forKey: .autoTranscribe)
+        autoSummary = try c.decodeIfPresent(Bool.self, forKey: .autoSummary)
+        autoActionItems = try c.decodeIfPresent(Bool.self, forKey: .autoActionItems)
+        autoTags = try c.decodeIfPresent(Bool.self, forKey: .autoTags)
+        recordingFolderPath = try c.decodeIfPresent(String.self, forKey: .recordingFolderPath)
+        transcriptionFolderPath = try c.decodeIfPresent(String.self, forKey: .transcriptionFolderPath)
+        obsidianVaultPath = try c.decodeIfPresent(String.self, forKey: .obsidianVaultPath)
+        obsidianDefaultFolderRelativePath = try c.decodeIfPresent(String.self, forKey: .obsidianDefaultFolderRelativePath)
+
+        if let vocab = try c.decodeIfPresent([String].self, forKey: .customVocabulary) {
+            customVocabulary = vocab
+        } else {
+            // Migrate legacy "whisperPrompt" string → [String]
+            let legacyC = try decoder.container(keyedBy: LegacyKeys.self)
+            if let legacy = try legacyC.decodeIfPresent(String.self, forKey: .whisperPrompt),
+               !legacy.isEmpty
+            {
+                customVocabulary = legacy
+                    .components(separatedBy: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+            } else {
+                customVocabulary = nil
+            }
+        }
+    }
 }
 
 struct MeetingProfile: Identifiable, Codable, Hashable, Sendable {

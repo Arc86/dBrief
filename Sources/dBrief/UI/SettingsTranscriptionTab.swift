@@ -44,38 +44,29 @@ struct SettingsTranscriptionTab: View {
     }
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
-            Form {
-                Section("Engine") { engineSection }
-                    .listRowBackground(Color.clear)
-                Section("Language") { languageSection }
-                    .listRowBackground(Color.clear)
-                Section("Cleanup") { cleanupSection }
-                    .listRowBackground(Color.clear)
-                Section("Live Transcription") { liveTranscriptionSection }
+        Form {
+            Section("Engine") { engineSection }
+                .listRowBackground(Color.clear)
+            Section("Language") { languageSection }
+                .listRowBackground(Color.clear)
+            Section("Cleanup") { cleanupSection }
+                .listRowBackground(Color.clear)
+            Section("Live Transcription") { liveTranscriptionSection }
+                .listRowBackground(Color.clear)
+            if appSettings.transcriptionEngine == .remoteEndpoint {
+                Section("Endpoints") { endpointsSection }
                     .listRowBackground(Color.clear)
                 if appSettings.powerUserMode {
-                    if appSettings.transcriptionEngine == .localWhisper || appSettings.transcriptionEngine == .remoteEndpoint {
-                        Section("Custom Vocabulary") { vocabularySection }
-                            .listRowBackground(Color.clear)
-                    }
-                }
-                if appSettings.transcriptionEngine == .remoteEndpoint {
-                    Section("Endpoints") { endpointsSection }
+                    Section("Large File Handling") { chunkingSection }
                         .listRowBackground(Color.clear)
-                    if appSettings.powerUserMode {
-                        Section("Large File Handling") { chunkingSection }
-                            .listRowBackground(Color.clear)
-                    }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+        }
+        .formStyle(.grouped)
+        .scrollBounceBehavior(.basedOnSize)
+        .sheet(isPresented: $isEditing) {
+            endpointEditor
+                .frame(minWidth: 460, minHeight: 400)
         }
     }
 
@@ -514,17 +505,6 @@ struct SettingsTranscriptionTab: View {
             appSettings.customIgnoredSegments.append(trimmed)
         }
         newIgnoredPhrase = ""
-    }
-
-    private var vocabularySection: some View {
-        @Bindable var settings = appSettings
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Helps Whisper recognize proper nouns, acronyms, and domain-specific terms. Press return or comma to add a term.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TokenField(text: $settings.whisperPrompt, placeholder: "e.g. Acme Corp, JIRA, Kubernetes, GraphQL")
-                .frame(minHeight: 22)
-        }
     }
 
     private var endpointsSection: some View {

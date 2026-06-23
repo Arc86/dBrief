@@ -269,10 +269,7 @@ struct SettingsGeneralTab: View {
             .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
         .confirmationDialog(
             "Delete \(pendingCleanup?.displayName ?? "files") older than the selected age?",
             isPresented: Binding(
@@ -428,7 +425,7 @@ struct SettingsGeneralTab: View {
 
     @ViewBuilder
     private func callPlatformIcon(for app: CallDetectionService.CallApp) -> some View {
-        glassIconTile {
+        iconTile {
             if let customIcon = callPlatformIconImage(for: app) {
                 Image(nsImage: customIcon)
                     .resizable()
@@ -446,26 +443,10 @@ struct SettingsGeneralTab: View {
         }
     }
 
-    private func glassIconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func iconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.45),
-                                    .white.opacity(0.15),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.8
-                        )
-                )
-                .shadow(color: .black.opacity(0.10), radius: 2, x: 0, y: 1)
-
+                .fill(Color(nsColor: .secondarySystemFill))
             content()
                 .padding(1)
         }
