@@ -266,15 +266,19 @@ final class TranscriptChatService {
             ? UnifiedInsightsPrompt.truncateForFoundationModels(transcriptText)
             : transcriptText
 
-        var prompt = "You are an intelligent assistant helping analyze a meeting transcript.\n\n"
-        prompt += "TRANSCRIPT:\n\(transcript)\n"
+        var prompt = "You are an assistant analyzing a meeting transcript. The complete "
+        prompt += "transcript is included in full below — you already have it. Never ask the "
+        prompt += "user to provide the transcript; always answer from the text between the markers.\n\n"
+        prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n"
         if !speakerLabels.isEmpty {
             prompt += "\nSPEAKER LEGEND:\n"
             for label in speakerLabels {
                 prompt += "- \(label.id): \(label.displayName)\n"
             }
         }
-        prompt += "\nAnswer the user's questions concisely. When asked to format or transform the transcript, do so directly without preamble."
+        prompt += "\nAnswer concisely in the transcript's language. When asked to summarize, list "
+        prompt += "action items, or transform the transcript, do so directly from the text above — "
+        prompt += "without preamble and without asking for more information."
         return prompt
     }
 

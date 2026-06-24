@@ -14,6 +14,47 @@ enum TranscriptDesignTokens {
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
+    // MARK: - Neon ambient foundation (redesign)
+
+    /// Signature neon-on-black backdrop: a near-black base with three soft
+    /// brand-coloured radial glows (coral, violet, cyan). Light mode is a flat
+    /// near-white surface, matching the design's light frames. Sits behind the
+    /// glass panels of the transcript window.
+    @ViewBuilder
+    static func ambientBackground(scheme: ColorScheme) -> some View {
+        if scheme == .dark {
+            GeometryReader { geo in
+                let s = max(geo.size.width, geo.size.height)
+                ZStack {
+                    Color(hex: "07070b")
+                    ambientOrb(Color(hex: "ff405f"), opacity: 0.14, x: 0.16, y: 0.08, radius: s * 0.55)
+                    ambientOrb(Color(hex: "8b4dff"), opacity: 0.18, x: 0.88, y: 0.18, radius: s * 0.60)
+                    ambientOrb(Color(hex: "25abff"), opacity: 0.14, x: 0.60, y: 1.10, radius: s * 0.55)
+                }
+            }
+            .ignoresSafeArea()
+        } else {
+            Color(hex: "ffffff").ignoresSafeArea()
+        }
+    }
+
+    private static func ambientOrb(_ color: Color, opacity: Double, x: Double, y: Double, radius: CGFloat) -> some View {
+        RadialGradient(
+            colors: [color.opacity(opacity), .clear],
+            center: UnitPoint(x: x, y: y),
+            startRadius: 0,
+            endRadius: radius
+        )
+    }
+
+    /// Brand gradient (coral → violet → cyan), diagonal. Used for primary CTAs,
+    /// the play button, the send button, and avatar / icon marks.
+    static let brandGradient = LinearGradient(
+        colors: [Color(hex: "ff405f"), Color(hex: "8b4dff"), Color(hex: "25abff")],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     // MARK: - Structural surfaces (toolbar, player bar)
 
     static func structureFill(scheme: ColorScheme) -> Color {
@@ -30,14 +71,37 @@ enum TranscriptDesignTokens {
         scheme == .dark ? Color.black.opacity(0.20) : Color.white.opacity(0.35)
     }
 
+    /// Gradient fill behind the selected meeting row.
+    static func sidebarActiveFill(scheme: ColorScheme) -> LinearGradient {
+        let colors: [Color] = scheme == .dark
+            ? [Color(hex: "ff405f").opacity(0.16), Color(hex: "8b4dff").opacity(0.14)]
+            : [Color(hex: "8b4dff").opacity(0.10), Color(hex: "8b4dff").opacity(0.10)]
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    static func sidebarActiveBorder(scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: "8b4dff").opacity(0.28) : Color(hex: "8b4dff").opacity(0.22)
+    }
+
+    static func sidebarHoverFill(scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.04)
+    }
+
+    /// Vertical coral→violet bar marking the active row.
+    static let accentBar = LinearGradient(
+        colors: [Color(hex: "ff405f"), Color(hex: "8b4dff")],
+        startPoint: .top, endPoint: .bottom)
+
     // MARK: - Content cards
 
     static func cardFill(scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.white.opacity(0.05) : Color.white.opacity(0.60)
+        // Light: a faint grey so cards read as raised on the white page (a near-white
+        // fill is invisible). Dark is unchanged.
+        scheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.035)
     }
 
     static func cardBorder(scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.white.opacity(0.09) : Color.white.opacity(0.80)
+        scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.09)
     }
 
     static func cardShadowColor(scheme: ColorScheme) -> Color {
