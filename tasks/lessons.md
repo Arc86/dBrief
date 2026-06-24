@@ -68,3 +68,19 @@ embedding-extraction miss now yields a neutral "Speaker N", never a wrong name.
 Still open: the rare/stateful embedding-extraction failure itself (helper returned `[:]` on `1001`/`1214`
 but extracted fine on 3 fresh-build re-runs of the same audio). Now non-harmful + logged at `.error`; awaiting
 a live recurrence to pinpoint the branch (decode/model-load/zero-vector).
+
+## Verifying SwiftUI redesigns on an LSUIElement app — harness the real tokens, watch for display sleep
+
+Redesigning the transcript window (neon-on-black, 8 phases), I couldn't drive the real app to a
+screenshot: dBrief is `LSUIElement` and the transcript `Window` only opens via in-app interaction,
+and `make app` is a heavy ML release build. Approach that worked: a throwaway `swiftc` harness in the
+scratchpad that compiles the **real** source files whose visuals I was verifying (`TranscriptDesignTokens.swift`,
+`Color+Hex.swift`) with a tiny `Theme` stub, renders the layout recipe in an `NSWindow`, and `screencapture`s it.
+Same tokens → faithful preview without the ML stack. Two gotchas:
+- A window wider/taller than the screen gets clipped (and `window.center()` may clamp on-screen); render one
+  scheme at a time (≤ screen size) or side-by-side, and compute crop offsets from the centered rect.
+- After several launches the **display went to sleep** and every `screencapture` returned all-black — including
+  a re-render of a previously-good frame. All-black across *both* schemes = capture-env/sleep, not a render bug.
+  Don't keep retrying; confirm by re-capturing a known-good frame.
+Net: this verifies the token/visual layer, not the live wiring. A real-app integration pass (open the
+Transcripts window, dark+light) is still the gold standard and worth a project `run` skill.
