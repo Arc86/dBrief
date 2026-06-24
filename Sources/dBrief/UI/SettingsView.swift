@@ -16,11 +16,13 @@ struct SettingsView: View {
         case profiles       = "Profiles"
         case benchmark      = "Benchmark"
         case permissions    = "Permissions"
+        case about          = "About"
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .general:        "gear"
             case .permissions:    "lock.shield"
+            case .about:          "info.circle"
             case .recording:      "mic"
             case .aiAndModels:    "brain"
             case .vocabulary:     "text.word.spacing"
@@ -74,6 +76,7 @@ struct SettingsView: View {
                 case .voiceLibrary: SettingsVoiceLibraryTab()
                 case .profiles:     SettingsProfilesTab()
                 case .benchmark:    SettingsBenchmarkTab()
+                case .about:        AboutTab()
                 }
             } else {
                 SettingsGeneralTab()

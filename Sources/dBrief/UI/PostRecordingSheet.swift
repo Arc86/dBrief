@@ -11,82 +11,103 @@ struct PostRecordingSheet: View {
     @State private var tags = true
     @State private var meetingTitle = ""
     @State private var participantsText = ""
+    @State private var participantInput = ""
+    @FocusState private var participantFieldFocused: Bool
+    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recording Complete")
-                .font(.headline)
-            Text("Profile: \(appSettings.activeProfile.name)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if let recording = appState.currentRecording {
-                HStack {
-                    Label(recording.formattedDuration, systemImage: "clock")
-                    Spacer()
-                    Label(recording.formattedFileSize, systemImage: "doc")
+            // Success banner
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle().fill(Brand.violetTint).frame(width: 30, height: 30)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Brand.violet2)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            LabeledContent("Meeting title:") {
-                TextField("meeting", text: $meetingTitle)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 220)
-            }
-
-            Text("Used for file naming (`YYYY-MM-DD_HHMM_[meeting-title].m4a`).")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if appSettings.diarizationEnabled {
-                LabeledContent("Participants:") {
-                    TextField("Alice, Bob, Charlie", text: $participantsText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 220)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Recording complete")
+                        .font(.system(size: 15, weight: .bold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    profilePill
                 }
-                Text("Comma-separated names. Matched to speakers in order of first appearance.")
-                    .font(.caption2)
+                Spacer(minLength: 8)
+                if let recording = appState.currentRecording {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Label(recording.formattedDuration, systemImage: "clock")
+                        Label(recording.formattedFileSize, systemImage: "doc")
+                    }
+                    .font(.brandMono(10.5))
                     .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+                    .fixedSize()
+                }
             }
+
+            // Meeting title
+            HStack {
+                Text("Meeting title")
+                    .font(.system(size: 12.5, weight: .semibold))
+                Spacer()
+                if appState.currentRecording?.calendarEvent != nil {
+                    Label("Calendar linked", systemImage: "calendar")
+                        .font(.brandMono(9.5))
+                        .foregroundStyle(Brand.cyan2)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(Brand.cyanTint, in: Capsule())
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+            TextField("meeting", text: $meetingTitle)
+                .textFieldStyle(.roundedBorder)
 
             if let recording = appState.currentRecording, !recording.calendarCandidates.isEmpty {
-                LabeledContent("Meeting:") {
-                    Picker("Meeting", selection: calendarSelection(recording)) {
-                        Text("None").tag(String?.none)
-                        ForEach(recording.calendarCandidates) { event in
-                            Text(pickerLabel(event)).tag(Optional(event.id))
-                        }
+                Picker("Meeting", selection: calendarSelection(recording)) {
+                    Text("None").tag(String?.none)
+                    ForEach(recording.calendarCandidates) { event in
+                        Text(pickerLabel(event)).tag(Optional(event.id))
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 220)
                 }
-                Text("Pick the meeting this recording belongs to. Fills the title, participants, and AI context.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                .labelsHidden()
+            }
+
+            Text("Used for file naming · YYYY-MM-DD_HHMM_[meeting-title].md")
+                .font(.brandMono(10.5))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Participants
+            if appSettings.diarizationEnabled {
+                Text("Participants")
+                    .font(.system(size: 12.5, weight: .semibold))
+                participantsField
+                Text("Type a name and press return · matched to speakers in order of first appearance")
+                    .font(.brandMono(10.5))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
 
-            Text("Post-Processing Options")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            BrandKicker("Post-processing")
 
-            Toggle("Transcribe audio", isOn: $transcribe)
+            VStack(alignment: .leading, spacing: 2) {
+                BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)
+
+                if appSettings.effectiveAIProcessingEnabled {
+                    BrandCheckRow(title: "Generate summary", isOn: $summary, enabled: transcribe)
+                    BrandCheckRow(title: "Extract action items", isOn: $actionItems, enabled: transcribe)
+                    BrandCheckRow(title: "Analyze tags & sentiment", isOn: $tags, enabled: transcribe)
+                }
+            }
 
             if appSettings.effectiveAIProcessingEnabled {
-                Toggle("Generate summary", isOn: $summary)
-                    .disabled(!transcribe)
-                Toggle("Extract action items", isOn: $actionItems)
-                    .disabled(!transcribe)
-                Toggle("Analyze tags & sentiment", isOn: $tags)
-                    .disabled(!transcribe)
-
                 if !transcribe {
                     Text("Transcription is required for AI analysis.")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Brand.paused)
                 }
             } else {
                 Text("AI processing is disabled in Settings.")
@@ -99,7 +120,7 @@ struct PostRecordingSheet: View {
                transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Brand.coral)
             }
 
             if appSettings.obsidianEnabled, let recording = appState.currentRecording {
@@ -119,9 +140,7 @@ struct PostRecordingSheet: View {
             if !enabledDestinationNames.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Auto-send destinations")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    BrandKicker("Auto-send destinations")
                     Text(enabledDestinationNames.joined(separator: ", "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -136,47 +155,77 @@ struct PostRecordingSheet: View {
 
             Divider()
 
-            HStack {
-                Button("Skip") {
-                    applyFieldsToRecording()
-                    Task { await recordingManager.skipProcessing() }
-                }
-                .buttonStyle(.bordered)
-                .disabled(sanitizedMeetingTitle.isEmpty)
+            if confirmingDelete {
+                deleteConfirmation
+            } else {
+                HStack(spacing: 8) {
+                    // Delete — coral-outlined icon button (38×38, radius 10)
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Brand.coral)
+                            .frame(width: 38, height: 38)
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Brand.coral.opacity(0.4), lineWidth: 1))
+                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete recording")
 
-                Button("Queue") {
-                    applyFieldsToRecording()
-                    Task {
-                        await recordingManager.queueForLater(
+                    Button("Skip") {
+                        applyFieldsToRecording()
+                        Task { await recordingManager.skipProcessing() }
+                    }
+                    .buttonStyle(SheetActionButtonStyle())
+                    .disabled(sanitizedMeetingTitle.isEmpty)
+
+                    Button("Queue") {
+                        applyFieldsToRecording()
+                        Task {
+                            await recordingManager.queueForLater(
+                                transcribe: transcribe,
+                                summary: summary && transcribe,
+                                actionItems: actionItems && transcribe,
+                                tags: tags && transcribe
+                            )
+                        }
+                    }
+                    .buttonStyle(SheetActionButtonStyle())
+                    .disabled(sanitizedMeetingTitle.isEmpty)
+                    .help("Finalize audio and queue processing for later")
+
+                    Spacer(minLength: 8)
+
+                    Button {
+                        applyFieldsToRecording()
+                        recordingManager.startProcessing(
                             transcribe: transcribe,
                             summary: summary && transcribe,
                             actionItems: actionItems && transcribe,
                             tags: tags && transcribe
                         )
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
+                            Text("Process")
+                        }
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .frame(height: 38)
+                        .background(Brand.gradientDiagonal, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .shadow(color: Brand.coral.opacity(0.5), radius: 10, y: 4)
                     }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .disabled(processDisabled)
+                    .opacity(processDisabled ? 0.4 : 1)
                 }
-                .buttonStyle(.bordered)
-                .disabled(sanitizedMeetingTitle.isEmpty)
-                .help("Finalize audio and queue processing for later")
 
-                Spacer()
-
-                Button("Process") {
-                    applyFieldsToRecording()
-                    recordingManager.startProcessing(
-                        transcribe: transcribe,
-                        summary: summary && transcribe,
-                        actionItems: actionItems && transcribe,
-                        tags: tags && transcribe
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    sanitizedMeetingTitle.isEmpty
-                        || (transcribe
-                            && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
-                            && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
-                )
+                Text("**Skip** keeps the audio and stops here · **Delete** removes the file")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
@@ -205,6 +254,133 @@ struct PostRecordingSheet: View {
                   let event = recording.calendarEvent else { return }
             applyCalendarEvent(event, to: recording)
         }
+    }
+
+    /// Inline delete confirmation (coral panel) shown in place of the action row.
+    private var deleteConfirmation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Delete this recording?")
+                .font(.system(size: 13, weight: .semibold))
+            Text("The audio file is permanently removed from disk. This can’t be undone.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = false }
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    Task { await recordingManager.discardRecording() }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Brand.coral, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(13)
+        .background(Brand.coralTint, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Brand.coral.opacity(0.4), lineWidth: 1))
+    }
+
+    /// Profile switcher rendered as the design's banner pill ("PROFILE  Default ⌄").
+    private var profilePill: some View {
+        Menu {
+            ForEach(appSettings.profiles) { p in
+                Button {
+                    appSettings.setActiveProfile(p.id)
+                } label: {
+                    if p.id == appSettings.activeProfileId {
+                        Label(p.name, systemImage: "checkmark")
+                    } else {
+                        Text(p.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("Profile:")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(appSettings.activeProfile.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Brand.violet2)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(Brand.violetTint, in: Capsule())
+            .overlay(Capsule().strokeBorder(Brand.violet.opacity(0.35), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private var processDisabled: Bool {
+        sanitizedMeetingTitle.isEmpty
+            || (transcribe
+                && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
+                && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
+    }
+
+    /// Participant entry as removable pills plus an inline "Add name…" field.
+    /// `participantsText` (comma-separated) stays the canonical store so calendar
+    /// auto-fill and `applyFieldsToRecording` keep working unchanged.
+    private var participantsField: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(participantNames, id: \.self) { name in
+                ParticipantPill(name: name, color: Theme.speakerColor(for: name)) {
+                    removeParticipant(name)
+                }
+            }
+            TextField("Add name…", text: $participantInput)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .frame(minWidth: 90)
+                .focused($participantFieldFocused)
+                .onSubmit(addParticipant)
+        }
+        .padding(7)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { participantFieldFocused = true }
+    }
+
+    private var participantNames: [String] {
+        participantsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func addParticipant() {
+        let name = participantInput.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        var names = participantNames
+        if !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            names.append(name)
+            participantsText = names.joined(separator: ", ")
+        }
+        participantInput = ""
+    }
+
+    private func removeParticipant(_ name: String) {
+        let names = participantNames.filter { $0.caseInsensitiveCompare(name) != .orderedSame }
+        participantsText = names.joined(separator: ", ")
     }
 
     private var enabledDestinationNames: [String] {
