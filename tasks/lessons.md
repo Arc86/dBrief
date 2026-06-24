@@ -1,5 +1,44 @@
 # Lessons Learned
 
+## Verifying the menu-bar popover live (MenuBarExtra) — script the click + screencapture
+
+The popover is a `MenuBarExtra`; there's no window to screenshot directly. To verify UI changes
+in the running app without a human clicking the menu bar:
+
+```bash
+make app && open dBrief.app && sleep 4
+# open the popover (status item lives in "menu bar 2", the app's extras bar)
+osascript -e 'tell application "System Events" to tell process "dBrief" to click menu bar item 1 of menu bar 2'
+sleep 1.5 && screencapture -x -o /tmp/popover.png
+# crop the top-right region (retina ~3840px wide) with `sips -c H W --cropOffset 0 X`
+# click the same item again to dismiss
+```
+
+Needs Accessibility permission for the controlling process. `menu bar item 1 of menu bar 2` resolved to
+dBrief's "waveform" status item.
+
+**To trigger the post-recording sheet for a screenshot:** send the global record hotkey twice with a gap —
+`osascript -e 'tell application "System Events" to keystroke "r" using {control down, option down, command down}'`,
+sleep 4, repeat — then open the popover and `screencapture`. Relaunching the app (`pkill -x dBrief; open
+dBrief.app`) clears the in-memory `showPostRecordingSheet`, and an un-finalized clip never lands in the
+recordings folder (scratch CAFs live in `NSTemporaryDirectory`).
+
+**Two automation traps (hit 2026-06-24):**
+1. **Synthetic keystrokes don't reach the popover's text fields.** The app is `LSUIElement`/accessory and
+   not "active", so `System Events … keystroke` goes to the *frontmost* app, not the dBrief popover — the
+   "Add name…" field stayed empty. Same focus quirk as the Settings window. Real user typing works (clicking
+   the menu-bar item makes the popover key); only *synthetic* input fails. Verify pill/title typing by code
+   + real use, not scripted keystrokes.
+2. **`System Events … click at {x,y}` can hang** (2-min timeout → SIGTERM) and dismiss the popover. Avoid
+   `click at` for popover buttons; click AX elements by role/title, or just verify visually.
+
+## SwiftUI memberwise init vs positional — a stored `let text` gives you `Foo(text:)`, not `Foo("...")`
+
+`BrandKicker` had `let text: String` and was called as `BrandKicker("Post-processing")` → "missing
+argument label 'text:'". A struct with stored properties only synthesizes the *labeled* memberwise init.
+For ergonomic positional call sites, add an explicit `init(_ text: String, ...)`. (Brand styling layer
+lives in `Sources/dBrief/UI/BrandKit.swift`.)
+
 ## Extracting a method from a long pipeline — grep for ALL referenced locals, not a sample
 
 Phase 3b split `RecordingManager.processRecording` at the resolve seam, moving Steps 2–4 into

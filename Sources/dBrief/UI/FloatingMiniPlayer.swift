@@ -121,26 +121,21 @@ private struct MiniPlayerView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                         .opacity(0.8)
 
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 7, height: 7)
-                        .opacity(appState.isRecording ? 1 : 0.5)
-                        .animation(
-                            appState.isRecording
-                                ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                                : .default,
-                            value: appState.isRecording
-                        )
+                    BrandStatusDot(
+                        color: appState.isRecording ? Brand.recording : Brand.paused,
+                        size: 7,
+                        pulse: appState.isRecording
+                    )
 
                     Text(appState.isRecording ? "Recording" : "Paused")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .font(.brandMono(11, weight: .medium))
+                        .foregroundStyle(appState.isRecording ? Brand.recording : Brand.paused)
                 }
 
                 Spacer()
 
                 Text(formattedDuration)
-                    .font(.system(.caption, design: .monospaced, weight: .semibold))
+                    .font(.brandMono(12, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 Button {
@@ -205,12 +200,10 @@ private struct MiniPlayerView: View {
                     Task { await recordingManager.stopRecording() }
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
-                        .font(.caption.weight(.medium))
-                        .frame(maxWidth: .infinity)
+                        .font(.caption.weight(.bold))
                 }
                 .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .tint(.red.opacity(0.8))
+                .buttonStyle(CoralControlButtonStyle())
             }
             } // end if !controller.isCollapsed
         }
@@ -242,11 +235,10 @@ private struct MiniWaveform: View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { idx in
                 Capsule()
-                    .fill(.tint)
+                    .fill(Brand.gradient)
                     .frame(width: 2.5, height: barHeight(for: idx))
             }
         }
-        .tint(.blue.opacity(0.7))
         .animation(.easeOut(duration: 0.1), value: history)
         .onChange(of: level) { _, newLevel in
             history.removeFirst()

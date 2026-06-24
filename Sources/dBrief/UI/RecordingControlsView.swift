@@ -39,80 +39,76 @@ struct RecordingControlsView: View {
                 }
             }
 
-            // REC header shown while recording
+            // Timer + REC/PAUSED indicator while recording
             if appState.isRecording || appState.isPaused {
-                HStack {
-                    Spacer()
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(.red)
-                            .frame(width: 7, height: 7)
-                            .opacity(appState.isRecording ? 1 : 0.3)
-                            .animation(.easeInOut(duration: 0.6), value: appState.isRecording)
-                        Text(appState.isPaused ? "PAUSED" : "REC")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundStyle(appState.isRecording ? .red : .secondary)
-                    }
-                }
-            }
-
-            // Timer and level
-            if appState.isRecording || appState.isPaused {
-                HStack(alignment: .bottom) {
+                HStack(alignment: .firstTextBaseline) {
                     Text(formattedDuration)
-                        .font(.system(.title2, design: .monospaced))
+                        .font(.brandMono(30, weight: .semibold))
                         .foregroundStyle(.primary)
                     Spacer()
-                    LevelMeterBars(level: appState.peakLevel)
-                        .frame(width: 36, height: 20)
+                    HStack(spacing: 7) {
+                        BrandStatusDot(
+                            color: appState.isPaused ? Brand.paused : Brand.recording,
+                            size: 8,
+                            pulse: appState.isRecording
+                        )
+                        Text(appState.isPaused ? "PAUSED" : "REC")
+                            .font(.brandMono(11, weight: .bold))
+                            .tracking(1.4)
+                            .foregroundStyle(appState.isPaused ? Brand.paused : Brand.recording)
+                    }
                 }
+
+                LiveWaveStrip(level: appState.peakLevel, active: appState.isRecording)
+                    .frame(height: 28)
+                    .padding(.vertical, 2)
             }
 
             // Controls
-            HStack(spacing: 12) {
-                if appState.isIdle {
-                    Button {
-                        appState.lastError = nil
-                        Task {
-                            do {
-                                try await recordingManager.startRecording()
-                            } catch {
-                                let msg = error.localizedDescription
-                                appState.lastError = msg
-                            }
+            if appState.isIdle {
+                Button {
+                    appState.lastError = nil
+                    Task {
+                        do {
+                            try await recordingManager.startRecording()
+                        } catch {
+                            appState.lastError = error.localizedDescription
                         }
-                    } label: {
-                        Label("Record", systemImage: "record.circle")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                } else if appState.isRecording {
-                    Button { recordingManager.pauseRecording() } label: {
-                        Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
+                } label: {
+                    HStack(spacing: 9) {
+                        RecordGlyph(size: 18)
+                        Text("Record meeting")
                     }
-                    .buttonStyle(.bordered)
-
-                    Button { Task { await recordingManager.stopRecording() } } label: {
-                        Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                } else if appState.isPaused {
-                    Button { try? recordingManager.resumeRecording() } label: {
-                        Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button { Task { await recordingManager.stopRecording() } } label: {
-                        Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
                 }
+                .buttonStyle(GradientButtonStyle())
+
+                Text("⌃ ⌥ ⌘ R")
+                    .font(.brandMono(11))
+                    .tracking(2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 10) {
+                    if appState.isRecording {
+                        Button { recordingManager.pauseRecording() } label: {
+                            Label("Pause", systemImage: "pause.fill")
+                        }
+                        .buttonStyle(GlassControlButtonStyle())
+                    } else {
+                        Button { try? recordingManager.resumeRecording() } label: {
+                            Label("Resume", systemImage: "play.fill")
+                        }
+                        .buttonStyle(GlassControlButtonStyle())
+                    }
+
+                    Button { Task { await recordingManager.stopRecording() } } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(CoralControlButtonStyle())
+                }
+                .environment(\.controlActiveState, .active)
             }
-            .environment(\.controlActiveState, .active)
 
             // Audio source chips
             if appState.isRecording || appState.isPaused {
@@ -193,6 +189,42 @@ struct RecordingControlsView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// Full-width live "waveform" for the recording state: a row of brand-gradient
+/// bars whose heights breathe with the current peak level. Purely cosmetic — a
+/// deterministic per-bar profile gives the wave shape, scaled by `level`.
+struct LiveWaveStrip: View {
+    let level: Float
+    var active: Bool
+    private let barCount = 34
+
+    var body: some View {
+        GeometryReader { geo in
+            let spacing: CGFloat = 3
+            let barWidth = max(2, (geo.size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(0..<barCount, id: \.self) { i in
+                    Capsule()
+                        .fill(Brand.gradient)
+                        .frame(width: barWidth, height: barHeight(i, maxH: geo.size.height))
+                        .opacity(active ? 1 : 0.4)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .animation(.easeOut(duration: 0.12), value: level)
+        }
+    }
+
+    private func barHeight(_ i: Int, maxH: CGFloat) -> CGFloat {
+        // A smooth standing-wave profile (two sines) so the strip has shape even
+        // at a steady level; scaled by the live peak with a small floor.
+        let phase = Double(i) / Double(barCount) * .pi * 4
+        let profile = (sin(phase) * 0.5 + 0.5) * 0.6 + (sin(phase * 0.5) * 0.5 + 0.5) * 0.4
+        let lvl = CGFloat(max(0.06, min(1, level)))
+        let h = (0.18 + 0.82 * CGFloat(profile) * lvl) * maxH
+        return max(3, h)
     }
 }
 

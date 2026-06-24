@@ -293,67 +293,72 @@ struct MenuBarView: View {
 
                 Divider()
 
-                RecordingControlsView()
-
+                // The post-recording sheet is a focused, dedicated screen: it
+                // replaces the recording controls (no Profile row / Record button),
+                // history, queue, and file-transcription affordances — matching the
+                // "Recording complete" design frame.
                 if appState.showPostRecordingSheet {
-                    Divider()
                     PostRecordingSheet()
-                } else if appState.isProcessing {
-                    Divider()
-                    TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
-                } else if appState.hasProcessingResults {
-                    Divider()
-                    ResultsView()
-                }
+                } else {
+                    RecordingControlsView()
 
-                if appState.isIdle, !appState.hasProcessingResults, !appState.showPostRecordingSheet {
-                    Divider()
-                    RecordingHistoryView()
-                }
-
-                if appState.queuedCount > 0, appState.isIdle {
-                    Divider()
-                    HStack {
-                        Label("\(appState.queuedCount) queued", systemImage: "tray.full")
-                            .font(.callout)
-                            .foregroundStyle(.orange)
-                        Spacer()
-                        Button("Process Queue") {
-                            recordingManager.startProcessingQueue()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(.orange)
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Button {
-                            recordingManager.pickFileForTranscription()
-                        } label: {
-                            Label("Transcribe File...", systemImage: "doc.badge.plus")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(!appState.isIdle)
-
-                        Button {
-                            showYouTubeInput.toggle()
-                        } label: {
-                            Label("YouTube URL...", systemImage: "play.rectangle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(!appState.isIdle)
+                    if appState.isProcessing {
+                        Divider()
+                        TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
+                    } else if appState.hasProcessingResults {
+                        Divider()
+                        ResultsView()
                     }
 
-                    if showYouTubeInput && appState.isIdle {
-                        YouTubeURLInputView(isVisible: $showYouTubeInput)
+                    if appState.isIdle, !appState.hasProcessingResults {
+                        Divider()
+                        RecordingHistoryView()
+                    }
+
+                    if appState.queuedCount > 0, appState.isIdle {
+                        Divider()
+                        HStack {
+                            Label("\(appState.queuedCount) queued", systemImage: "tray.full")
+                                .font(.callout)
+                                .foregroundStyle(.orange)
+                            Spacer()
+                            Button("Process Queue") {
+                                recordingManager.startProcessingQueue()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(.orange)
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Button {
+                                recordingManager.pickFileForTranscription()
+                            } label: {
+                                Label("Transcribe File...", systemImage: "doc.badge.plus")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!appState.isIdle)
+
+                            Button {
+                                showYouTubeInput.toggle()
+                            } label: {
+                                Label("YouTube URL...", systemImage: "play.rectangle")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!appState.isIdle)
+                        }
+
+                        if showYouTubeInput && appState.isIdle {
+                            YouTubeURLInputView(isVisible: $showYouTubeInput)
+                        }
                     }
                 }
 
@@ -427,14 +432,12 @@ struct MenuBarView: View {
     }
 
     private var statusPill: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 6, height: 6)
+        HStack(spacing: 6) {
+            BrandStatusDot(color: statusColor, size: 8, pulse: appState.isRecording)
             Text(statusLabel)
-                .font(.caption2.weight(.medium))
+                .font(.brandMono(11))
+                .foregroundStyle(.secondary)
         }
-        .foregroundStyle(.secondary)
     }
 
     private var statusLabel: String {
@@ -445,10 +448,10 @@ struct MenuBarView: View {
     }
 
     private var statusColor: Color {
-        if appState.isRecording { return .red }
-        if appState.isPaused { return .orange }
-        if appState.isProcessing { return .blue }
-        return .green
+        if appState.isRecording { return Brand.recording }
+        if appState.isPaused { return Brand.paused }
+        if appState.isProcessing { return Brand.processing }
+        return Brand.ready
     }
 
     private func appIconImage() -> NSImage? {

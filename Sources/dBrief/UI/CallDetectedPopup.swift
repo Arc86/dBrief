@@ -1,8 +1,5 @@
 import SwiftUI
 
-private let brandOrange = Color(hex: "#FF6B00")
-private let brandOrangeLight = Color(hex: "#FF9500")
-
 struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
@@ -11,47 +8,70 @@ struct CallDetectedPopup: View {
     var body: some View {
         ZStack {
             // Glass background — matches native macOS notification style
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)
+
+            // Signature brand gradient top bar
+            VStack(spacing: 0) {
+                Brand.gradient.frame(height: 3)
+                Spacer()
+            }
 
             // Content — icon vertically centered against text block
             HStack(alignment: .center, spacing: 14) {
-                // dBrief app icon
+                // dBrief app icon + live alert dot
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(alignment: .topTrailing) {
+                        BrandStatusDot(color: Brand.recording, size: 13, pulse: true)
+                            .padding(2)
+                            .background(.background, in: Circle())
+                            .offset(x: 4, y: -4)
+                    }
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
+                    BrandKicker("Call detected", color: Brand.coral)
+
                     Text("\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
-                    Text("Would you like to start recording?")
+                    Text("Want dBrief to record and brief it?")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     HStack(spacing: 10) {
-                        Button("Not Now") {
+                        Button("Not now") {
                             appState.showCallDetectedPopup = false
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
 
-                        Button("Record") {
+                        Button {
                             appState.showCallDetectedPopup = false
                             Task {
                                 try? await recordingManager.startRecording(
                                     associatedApp: appState.detectedCallApp
                                 )
                             }
+                        } label: {
+                            HStack(spacing: 7) {
+                                RecordGlyph(size: 14)
+                                Text("Record")
+                            }
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 7)
+                            .background(Brand.gradientDiagonal, in: Capsule())
+                            .shadow(color: Brand.coral.opacity(0.5), radius: 10, y: 4)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.regular)
-                        .tint(brandOrange)
+                        .buttonStyle(.plain)
                     }
                     .padding(.top, 8)
                 }
@@ -73,7 +93,10 @@ struct CallDetectedPopup: View {
             .accessibilityLabel("Dismiss")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
-        .frame(width: 360, height: 118)
+        .frame(width: 380, height: 132)
+        // Clip to the card shape so the gradient top bar follows the rounded
+        // corners instead of overhanging them as a straight line.
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

@@ -1328,6 +1328,33 @@ final class RecordingManager {
         appState.recordingState = .idle
     }
 
+    /// Discards the current post-recording recording: removes its on-disk audio
+    /// (the captured scratch tracks if not yet finalized, otherwise the finalized
+    /// master + sidecars) and returns to idle without processing. Backs the
+    /// post-recording sheet's Delete action.
+    func discardRecording() async {
+        defer {
+            appState.currentRecording = nil
+            appState.showPostRecordingSheet = false
+            appState.recordingState = .idle
+        }
+        guard let recording = appState.currentRecording else { return }
+
+        var urls: [URL] = [recording.fileURL]
+        if let tracks = recording.capturedTracks {
+            urls.append(contentsOf: [tracks.systemURL, tracks.micURL].compactMap { $0 })
+        }
+        if let finalized = recording.finalizedAudioURL { urls.append(finalized) }
+        if let metadata = recording.metadataURL { urls.append(metadata) }
+        urls.append(contentsOf: recording.segmentAudioURLs)
+
+        let fm = FileManager.default
+        for url in Set(urls) {
+            try? fm.removeItem(at: url)
+        }
+        recording.capturedTracks = nil
+    }
+
     func queueForLater(
         transcribe: Bool,
         summary: Bool,

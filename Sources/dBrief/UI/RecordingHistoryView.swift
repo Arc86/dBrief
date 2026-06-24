@@ -132,7 +132,7 @@ struct RecordingHistoryView: View {
                     openWindow(id: "transcript")
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
-                    Label("Open Viewer", systemImage: "rectangle.split.2x1")
+                    Label("Transcript viewer", systemImage: "rectangle.split.2x1")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -191,9 +191,11 @@ struct RecordingHistoryView: View {
                         audioPlayer.togglePlayPause(url: item.url)
                     } label: {
                         Image(systemName: audioPlayer.currentFileURL == item.url && audioPlayer.isPlaying
-                            ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.tint)
+                            ? "pause.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Brand.violet2)
+                            .frame(width: 30, height: 30)
+                            .background(Brand.violetTint, in: Circle())
                     }
                     .buttonStyle(.borderless)
                     .onTapGesture {}  // prevent row tap propagation
@@ -300,7 +302,7 @@ struct RecordingHistoryView: View {
 
     private func rowBackground(for item: HistoryItem, isExpanded: Bool) -> Color {
         if audioPlayer.currentFileURL == item.url || isExpanded {
-            return Color.accentColor.opacity(0.07)
+            return Brand.violet.opacity(0.1)
         }
         if hoveredItemId == item.id {
             return Color.primary.opacity(0.05)
