@@ -8,7 +8,18 @@ struct TranscriptBrowserView: View {
     @Environment(AppContext.self) private var context
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
+    @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
+
+    @State private var searchText = ""
+
+    /// Whether the meeting-list sidebar is shown. Persisted so the choice
+    /// survives relaunch.
+    @AppStorage("transcriptSidebarOpen") private var sidebarOpen = true
+
+    /// Whether the "Earlier" group is collapsed. Persisted across relaunches.
+    @AppStorage("transcriptSidebarEarlierCollapsed") private var earlierCollapsed = false
 
     @State private var items: [RecordingBrowserItem] = []
     @State private var selection: URL?
@@ -30,42 +41,40 @@ struct TranscriptBrowserView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        // Native collapsible + resizable sidebar (system component) hosting the
+        // redesigned meeting list. The neon ambient lives on the detail side; the
+        // sidebar uses the standard vibrant sidebar material (the navigation glass
+        // layer). `sidebarOpen` maps to the split view's column visibility so the
+        // native sidebar toggle + the persisted open/closed state stay in sync.
+        NavigationSplitView(columnVisibility: Binding(
+            get: { sidebarOpen ? .all : .detailOnly },
+            set: { newValue in sidebarOpen = (newValue != .detailOnly) }
+        )) {
             sidebar
-                .navigationTitle("dBrief")
-                .frame(minWidth: 240)
-                .toolbar {
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        Button {
-                            openWindow(id: "settings")
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .help("Open Settings (⌘,)")
-
-                        Button {
-                            reload()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .help("Refresh")
-                    }
-                }
+                .scrollContentBackground(.hidden)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
-            if let recording = detailRecording {
-                TranscriptDetailView(
-                    recording: recording,
-                    onDeleted: { handleDeleted(recording.fileURL) }
-                )
-                .id(recording.fileURL)
-            } else {
-                ContentUnavailableView(
-                    "Select a Recording",
-                    systemImage: "text.bubble",
-                    description: Text("Choose a recording to view its transcript."))
+            mainPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background { TranscriptDesignTokens.ambientBackground(scheme: colorScheme) }
+        }
+        .navigationTitle("dBrief")
+        .frame(minWidth: 760, minHeight: 480)
+        .toolbar {
+            // Refresh + Settings sit at the leading edge, right next to the native
+            // sidebar-collapse toggle.
+            ToolbarItemGroup(placement: .navigation) {
+                Button { reload() } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh")
+
+                Button { openWindow(id: "settings") } label: {
+                    Image(systemName: "gearshape")
+                }
+                .help("Open Settings (⌘,)")
             }
         }
-        .frame(minWidth: 760, minHeight: 480)
         .onAppear {
             reload()
             applyPendingSelection()
@@ -88,33 +97,182 @@ struct TranscriptBrowserView: View {
         }
     }
 
-    // MARK: - Sidebar
+    // MARK: - Shell panes
 
     @ViewBuilder
-    private var sidebar: some View {
-        if items.isEmpty && liveRecording == nil {
-            ContentUnavailableView(
-                "No Recordings",
-                systemImage: "waveform.slash",
-                description: Text("Recordings you capture will appear here."))
+    private var mainPane: some View {
+        if let recording = detailRecording {
+            TranscriptDetailView(
+                recording: recording,
+                onDeleted: { handleDeleted(recording.fileURL) }
+            )
+            .id(recording.fileURL)
         } else {
-            List(selection: $selection) {
-                if let live = liveRecording {
-                    Section("In Progress") {
-                        LiveBrowserRow(recording: live, recordingState: appState.recordingState)
-                            .tag(live.fileURL)
-                    }
-                }
-                if !items.isEmpty {
-                    Section(liveRecording == nil ? "" : "Recordings") {
-                        ForEach(items) { item in
-                            RecordingBrowserRow(item: item)
-                                .tag(item.url)
+            ContentUnavailableView(
+                "Select a Recording",
+                systemImage: "text.bubble",
+                description: Text("Choose a recording to view its transcript."))
+        }
+    }
+
+    // MARK: - Sidebar
+
+    /// Items matching the search box (by title), unfiltered when empty.
+    private var filteredItems: [RecordingBrowserItem] {
+        guard !searchText.isEmpty else { return items }
+        return items.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private var thisWeekItems: [RecordingBrowserItem] {
+        let cal = Calendar.current
+        return filteredItems.filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .weekOfYear) }
+    }
+
+    private var earlierItems: [RecordingBrowserItem] {
+        let cal = Calendar.current
+        return filteredItems.filter { !cal.isDate($0.date, equalTo: Date(), toGranularity: .weekOfYear) }
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            searchField
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+
+            if items.isEmpty && liveRecording == nil {
+                Spacer()
+                ContentUnavailableView(
+                    "No Recordings",
+                    systemImage: "waveform.slash",
+                    description: Text("Recordings you capture will appear here."))
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        if let live = liveRecording {
+                            sectionLabel("In Progress")
+                            LiveSidebarRow(
+                                recording: live,
+                                recordingState: appState.recordingState,
+                                isSelected: selection == live.fileURL,
+                                onTap: { selection = live.fileURL })
+                        }
+                        if !thisWeekItems.isEmpty {
+                            sectionLabel("This week", count: thisWeekItems.count)
+                            ForEach(thisWeekItems) { row(for: $0) }
+                        }
+                        if !earlierItems.isEmpty {
+                            sectionLabel("Earlier", count: earlierItems.count,
+                                         collapsed: earlierCollapsed) {
+                                withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
+                            }
+                            if !earlierCollapsed {
+                                ForEach(earlierItems) { row(for: $0) }
+                            }
                         }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .overlayScrollers()
                 }
             }
+
+            recordButton
+                .padding(12)
         }
+    }
+
+    private func row(for item: RecordingBrowserItem) -> some View {
+        SidebarRecordingRow(
+            item: item,
+            isSelected: selection == item.url,
+            onTap: { selection = item.url })
+    }
+
+    /// Section header for the meeting list. Passing `collapsed`/`onToggle` makes it
+    /// a tappable, collapsible header with a chevron (used by "Earlier").
+    private func sectionLabel(_ text: String,
+                              count: Int? = nil,
+                              collapsed: Bool? = nil,
+                              onToggle: (() -> Void)? = nil) -> some View {
+        let content = HStack(spacing: 7) {
+            Text(text.uppercased())
+                .font(.system(size: 11, weight: .bold).monospaced())
+                .tracking(1.2)
+                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme).opacity(0.55))
+            if let count {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(TranscriptDesignTokens.chipFill(scheme: colorScheme)))
+            }
+            Spacer(minLength: 4)
+            if let collapsed {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(collapsed ? -90 : 0))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+
+        return Group {
+            if let onToggle {
+                Button(action: onToggle) { content }
+                    .buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
+            TextField("Search meetings", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 1))
+        }
+    }
+
+    private var recordButton: some View {
+        Button {
+            appState.lastError = nil
+            Task { try? await recordingManager.startRecording() }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Record meeting")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .background(TranscriptDesignTokens.brandGradient, in: RoundedRectangle(cornerRadius: 10))
+            .shadow(color: Color(hex: "8b4dff").opacity(0.5), radius: 14, x: 0, y: 8)
+        }
+        .buttonStyle(.plain)
+        .disabled(!appState.isIdle)
+        .opacity(appState.isIdle ? 1 : 0.5)
+        .help(appState.isIdle ? "Start a new recording" : "Already recording")
     }
 
     // MARK: - Helpers
@@ -176,57 +334,153 @@ struct TranscriptBrowserView: View {
     }
 }
 
-/// Pinned sidebar row for the in-progress recording — a pulsing status dot plus
-/// "Recording…" / "Processing…" caption.
-private struct LiveBrowserRow: View {
+/// `23 Jun` short date used in the sidebar captions.
+private let sidebarDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "d MMM"
+    return f
+}()
+
+private let sidebarStatusGreen = Color(hex: "28c840")
+
+/// Selectable meeting row matching the redesign: title + mono caption, a gradient
+/// fill + coral→violet bar when selected, a hover tint otherwise.
+private struct SidebarRecordingRow: View {
+    let item: RecordingBrowserItem
+    let isSelected: Bool
+    let onTap: () -> Void
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+
+    private var doneColor: Color {
+        scheme == .dark ? Color(hex: "54e6ff") : Color.secondary
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected
+                        ? TranscriptDesignTokens.bodyText(scheme: scheme)
+                        : TranscriptDesignTokens.bodyText(scheme: scheme).opacity(0.85))
+                    .lineLimit(1)
+                caption
+            }
+            .padding(.vertical, 10)
+            .padding(.leading, isSelected ? 14 : 12)
+            .padding(.trailing, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background { background }
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(TranscriptDesignTokens.accentBar)
+                        .frame(width: 3)
+                        .padding(.vertical, 10)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+
+    private var caption: some View {
+        HStack(spacing: 7) {
+            Text(captionText)
+            if item.statusText == "Done" {
+                if isSelected {
+                    Circle().fill(Color.secondary.opacity(0.5)).frame(width: 3, height: 3)
+                    Text("Done").foregroundStyle(doneColor)
+                } else {
+                    Circle().fill(sidebarStatusGreen).frame(width: 5, height: 5)
+                }
+            }
+        }
+        .font(.system(size: 11).monospaced())
+        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: scheme))
+    }
+
+    private var captionText: String {
+        let date = sidebarDateFormatter.string(from: item.date)
+        return item.formattedDuration.isEmpty ? date : "\(date) · \(item.formattedDuration)"
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
+        } else if hovering {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(TranscriptDesignTokens.sidebarHoverFill(scheme: scheme))
+        }
+    }
+}
+
+/// Pinned in-progress row — pulsing red/orange dot plus "Recording…/Processing…".
+private struct LiveSidebarRow: View {
     let recording: Recording
     let recordingState: AppState.RecordingState
+    let isSelected: Bool
+    let onTap: () -> Void
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+    @State private var pulse = false
 
     private var statusText: String {
         recordingState == .processing ? "Processing…" : "Recording…"
     }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                .font(.body)
-                .lineLimit(1)
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(recordingState == .processing ? Color.orange : Color.red)
-                    .frame(width: 7, height: 7)
-                Text(statusText)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
+    private var dotColor: Color {
+        recordingState == .processing ? .orange : .red
     }
-}
-
-/// Sidebar row: title plus a `date · duration · status` caption (dB2 style).
-private struct RecordingBrowserRow: View {
-    let item: RecordingBrowserItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(item.title)
-                .font(.body)
-                .lineLimit(1)
-            HStack(spacing: 6) {
-                Text(item.date, style: .date)
-                if !item.formattedDuration.isEmpty {
-                    Text("·")
-                    Text(item.formattedDuration)
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(recording.generatedTitle ?? recording.meetingTitleDraft)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: scheme))
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Circle().fill(dotColor).frame(width: 6, height: 6)
+                        .opacity(pulse ? 1 : 0.4)
+                        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                    Text(statusText)
                 }
-                if !item.statusText.isEmpty {
-                    Text("·")
-                    Text(item.statusText)
+                .font(.system(size: 11).monospaced())
+                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: scheme))
+            }
+            .padding(.vertical, 10)
+            .padding(.leading, isSelected ? 14 : 12)
+            .padding(.trailing, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme))
+                        .overlay(RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
+                } else if hovering {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(TranscriptDesignTokens.sidebarHoverFill(scheme: scheme))
                 }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(TranscriptDesignTokens.accentBar)
+                        .frame(width: 3)
+                        .padding(.vertical, 10)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .onAppear { pulse = true }
     }
 }

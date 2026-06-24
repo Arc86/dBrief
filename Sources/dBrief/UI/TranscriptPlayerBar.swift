@@ -6,6 +6,8 @@ struct TranscriptPlayerBar: View {
 
     let audioURL: URL
     @Binding var currentTime: TimeInterval
+    /// Proportional speaker-coloured timeline shown above the waveform.
+    var speakerStrip: [SpeakerStripSegment] = []
 
     @State private var waveformSamples: [Float] = []
 
@@ -18,51 +20,68 @@ struct TranscriptPlayerBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Button {
-                audioPlayer.togglePlayPause(url: audioURL)
-            } label: {
-                Image(systemName: isThisFile && audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(width: 20)
+        VStack(spacing: 9) {
+            if !speakerStrip.isEmpty {
+                SpeakerActivityStrip(segments: speakerStrip)
+                    .frame(height: 5)
             }
-            .buttonStyle(.borderless)
-
-            Text(formatTime(displayTime))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-                .frame(width: 40, alignment: .trailing)
-
-            WaveformView(
-                samples: waveformSamples,
-                playbackFraction: playbackFraction,
-                onSeek: { fraction in
-                    let seekTime = (isThisFile ? audioPlayer.duration : 0) * fraction
-                    if isThisFile { audioPlayer.seek(to: seekTime) }
-                    currentTime = seekTime
+            HStack(spacing: 14) {
+                Button {
+                    audioPlayer.togglePlayPause(url: audioURL)
+                } label: {
+                    Image(systemName: isThisFile && audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(TranscriptDesignTokens.brandGradient, in: Circle())
+                        .shadow(color: Color(hex: "8b4dff").opacity(0.6), radius: 10, x: 0, y: 4)
                 }
-            )
-            .frame(height: 36)
+                .buttonStyle(.plain)
 
-            Text(formatTime(isThisFile ? audioPlayer.duration : 0))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-                .frame(width: 40, alignment: .leading)
+                Text(formatTime(displayTime))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
+                    .frame(width: 44, alignment: .trailing)
 
-            Menu {
-                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { speed in
-                    Button(speedLabel(speed)) { audioPlayer.setRate(speed) }
+                WaveformView(
+                    samples: waveformSamples,
+                    playbackFraction: playbackFraction,
+                    onSeek: { fraction in
+                        let seekTime = (isThisFile ? audioPlayer.duration : 0) * fraction
+                        if isThisFile { audioPlayer.seek(to: seekTime) }
+                        currentTime = seekTime
+                    }
+                )
+                .frame(height: 30)
+
+                Text(formatTime(isThisFile ? audioPlayer.duration : 0))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(TranscriptDesignTokens.timestampText(scheme: colorScheme))
+                    .frame(width: 44, alignment: .leading)
+
+                Menu {
+                    ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { speed in
+                        Button(speedLabel(speed)) { audioPlayer.setRate(speed) }
+                    }
+                } label: {
+                    Text(speedLabel(audioPlayer.playbackRate))
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
+                                .overlay(RoundedRectangle(cornerRadius: 7)
+                                    .strokeBorder(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 1))
+                        }
                 }
-            } label: {
-                Text(speedLabel(audioPlayer.playbackRate))
-                    .font(.caption2.monospacedDigit())
-                    .frame(width: 30)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
         .background(
             TranscriptDesignTokens.structureFill(scheme: colorScheme)
                 .background(.ultraThinMaterial)
@@ -88,5 +107,32 @@ struct TranscriptPlayerBar: View {
         let m = (total % 3600) / 60
         let s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+}
+
+/// One run of speaker activity for the audio-bar timeline strip.
+struct SpeakerStripSegment: Identifiable {
+    let id = UUID()
+    let colorKey: String
+    let color: Color
+    var weight: Double
+}
+
+/// A thin proportional timeline of who spoke when, coloured by speaker.
+struct SpeakerActivityStrip: View {
+    let segments: [SpeakerStripSegment]
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = max(0.0001, segments.reduce(0) { $0 + $1.weight })
+            HStack(spacing: 0) {
+                ForEach(segments) { seg in
+                    Rectangle()
+                        .fill(seg.color.opacity(0.85))
+                        .frame(width: geo.size.width * seg.weight / total)
+                }
+            }
+        }
+        .clipShape(Capsule())
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct TranscriptChatView: View {
     let chatService: TranscriptChatService
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var inputText = ""
 
     private var sendEnabled: Bool {
@@ -39,14 +40,14 @@ struct TranscriptChatView: View {
                             Text(template.title)
                                 .font(.caption)
                         }
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme).opacity(0.85))
                         .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 11)
                         .background(
-                            Capsule().fill(Color(nsColor: .controlBackgroundColor))
+                            Capsule().fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
                         )
                         .overlay(
-                            Capsule().stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
+                            Capsule().strokeBorder(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -147,7 +148,9 @@ struct TranscriptChatView: View {
                     }
                 }
                 .padding(.vertical, 12)
+                .overlayScrollers()
             }
+            .scrollIndicators(.automatic)
             .onChange(of: chatService.messages.count) { _, _ in
                 if let lastId = chatService.messages.last?.id {
                     withAnimation(.easeOut(duration: 0.15)) {
@@ -182,22 +185,30 @@ struct TranscriptChatView: View {
             Button {
                 submitMessage()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(sendEnabled ? Color.accentColor : Color.secondary)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8).fill(
+                            sendEnabled
+                                ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "8b4dff"), Color(hex: "25abff")],
+                                                               startPoint: .topLeading, endPoint: .bottomTrailing))
+                                : AnyShapeStyle(Color.secondary.opacity(0.35)))
+                    }
             }
             .buttonStyle(.plain)
             .disabled(!sendEnabled)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                .strokeBorder(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
     }
@@ -235,6 +246,7 @@ struct TranscriptChatView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showReasoning = false
 
     /// Splits an assistant message into its `<think>…</think>` reasoning and the
@@ -290,20 +302,31 @@ private struct MessageBubble: View {
 
     @ViewBuilder
     private func bubble(_ text: String) -> some View {
+        let isUser = message.role == .user
+        let shape = UnevenRoundedRectangle(cornerRadii: isUser
+            ? .init(topLeading: 14, bottomLeading: 14, bottomTrailing: 4, topTrailing: 14)
+            : .init(topLeading: 14, bottomLeading: 4, bottomTrailing: 14, topTrailing: 14))
         bubbleContent(text)
             .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(message.role == .user
-                ? Color.accentColor.opacity(0.12)
-                : Color.secondary.opacity(0.18))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
-            )
+            .foregroundStyle(isUser ? Color.white : TranscriptDesignTokens.bodyText(scheme: colorScheme))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background {
+                if isUser {
+                    LinearGradient(colors: [Color(hex: "8b4dff"), Color(hex: "25abff")],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                } else {
+                    TranscriptDesignTokens.cardFill(scheme: colorScheme)
+                }
+            }
+            .clipShape(shape)
+            .overlay {
+                if !isUser {
+                    shape.strokeBorder(TranscriptDesignTokens.cardBorder(scheme: colorScheme), lineWidth: 1)
+                }
+            }
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     }
 
     /// User messages stay plain; assistant messages render Markdown (headings,

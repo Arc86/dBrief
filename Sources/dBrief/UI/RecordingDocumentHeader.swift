@@ -39,7 +39,9 @@ struct RecordingDocumentHeader: View {
             // Row 1 — title + sentiment
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(title)
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 23, weight: .bold))
+                    .tracking(-0.4)
+                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let sentiment, !sentiment.isEmpty {
@@ -64,22 +66,23 @@ struct RecordingDocumentHeader: View {
                 }
             }
         }
-        .padding(.horizontal, Theme.contentPadding)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 28)
+        .padding(.top, 22)
+        .padding(.bottom, 16)
     }
 
     private var metricGroup: some View {
-        HStack(spacing: 12) {
-            ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
-                if index > 0 {
-                    Divider().frame(height: 22)
-                }
-                VStack(alignment: .trailing, spacing: 1) {
+        HStack(spacing: 22) {
+            ForEach(metrics) { metric in
+                VStack(alignment: .center, spacing: 2) {
                     Text(metric.value)
-                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .font(.system(size: 17, weight: .bold).monospacedDigit())
+                        .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     Text(metric.label)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 10, weight: .semibold).monospaced())
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(metric.accessibilityText)
@@ -126,21 +129,28 @@ private struct AvatarStack: View {
 struct SentimentPill: View {
     let sentiment: String
 
-    private var tone: (color: Color, symbol: String) {
+    private var tone: Color {
         switch sentiment.lowercased() {
-        case let s where s.contains("pos"): return (.green, "face.smiling")
-        case let s where s.contains("neg"): return (.red, "face.dashed")
-        default: return (.orange, "minus.circle")
+        case let s where s.contains("pos"): return Color(hex: "30d158")
+        case let s where s.contains("neg"): return Color(hex: "ff453a")
+        default: return Color(hex: "ff9f0a")
         }
     }
 
     var body: some View {
-        Label(sentiment.capitalized, systemImage: tone.symbol)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(tone.color)
-            .padding(.vertical, 3)
-            .padding(.horizontal, 9)
-            .background(tone.color.opacity(0.14), in: Capsule())
-            .accessibilityLabel(Text("Sentiment: \(sentiment)"))
+        HStack(spacing: 6) {
+            Circle()
+                .fill(tone)
+                .frame(width: 6, height: 6)
+                .shadow(color: tone, radius: 4)
+            Text(sentiment.capitalized)
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(tone)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 11)
+        .background(tone.opacity(0.16), in: Capsule())
+        .overlay(Capsule().strokeBorder(tone.opacity(0.3), lineWidth: 1))
+        .accessibilityLabel(Text("Sentiment: \(sentiment)"))
     }
 }

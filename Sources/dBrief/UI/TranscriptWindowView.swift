@@ -22,16 +22,12 @@ struct TranscriptDetailView: View {
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
     @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
 
-    /// The two primary views of a finished recording, swapped full-width by the
-    /// toolbar's segmented switcher. Defaults to `.summary` when one exists (most
-    /// people just want the gist), otherwise `.transcript`. Chat is not a mode — it
-    /// rides alongside as a right-hand inspector (`showChatInspector`).
-    private enum ViewerMode { case summary, transcript }
+    /// Which content view is showing in the main pane.
+    private enum ViewerMode: Hashable { case summary, transcript }
     @State private var mode: ViewerMode = .transcript
 
-    /// Chat lives in a trailing inspector so the Summary/Transcript stays visible
-    /// while you ask questions — mirroring the live-recording side panel.
-    @AppStorage("showTranscriptChatInspector") private var showChatInspector: Bool = false
+    /// Whether the assistant (chat) side panel is open beside the content.
+    @AppStorage("transcriptAssistantOpen") private var assistantOpen = false
 
     /// In live mode, chat is a right-hand side panel (so the in-progress transcript
     /// stays visible) rather than a full-screen swap like the finished-recording view.
@@ -48,11 +44,7 @@ struct TranscriptDetailView: View {
 
     // Transcript search (finished-recording transcript only)
     @State private var searchQuery = ""
-    /// Drives whether the toolbar search field is shown. Kept separate from
-    /// `@FocusState` because focus can't both reveal a not-yet-rendered field and
-    /// land on it — `@State` controls visibility, `@FocusState` only the cursor.
-    @State private var searchExpanded = false
-    @FocusState private var searchFieldFocused: Bool
+    @State private var isSearchPresented = false
     @State private var searchResult = TranscriptSearch.Result.empty
     @State private var matchesByTurn: [UUID: [TranscriptSearch.Match]] = [:]
     @State private var currentMatchIndex = 0
@@ -134,38 +126,44 @@ struct TranscriptDetailView: View {
             } else if loadFailed {
                 failedState
             } else if richTranscript != nil {
-                documentHeader
-                Divider()
-                if offerReanalysis { reanalysisBanner }
-                switch mode {
-                case .summary:    summaryContent
-                case .transcript: transcriptList
+                // Header (and the toolbar search) stay full-width on top; the
+                // assistant inspector is scoped to the body region below the
+                // divider so it sits beside the content, not the header.
+                VStack(spacing: 0) {
+                    documentHeader
+                    Divider()
+                    if offerReanalysis { reanalysisBanner }
+                    bodyContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .inspector(isPresented: $assistantOpen) {
+                            assistantInspector
+                                .inspectorColumnWidth(min: 300, ideal: 336, max: 480)
+                        }
                 }
-                // The player anchors both views — you may listen while reading
-                // either; the speaker timeline only makes sense over the transcript.
-                Divider()
-                if richTranscript != nil, recording.duration > 0, mode == .transcript {
-                    speakerTimeline
-                        .padding(.horizontal, 12)
-                        .padding(.top, 6)
-                }
-                playerBar
             } else {
                 loadingState
             }
         }
-        // Keep the window titled for the OS (Window menu / Mission Control) but drop
-        // the title from the toolbar — the in-content document header already shows
-        // it (with sentiment, speakers, and metrics), so the toolbar copy is a dupe.
-        .navigationTitle(recording.generatedTitle ?? recording.meetingTitleDraft)
-        .hidingToolbarTitle()
+        // Empty title: the styled document header below is the single visible
+        // title. With a unified toolbar SwiftUI renders `navigationTitle` as a
+        // centered toolbar label, so an empty string (not titleVisibility) is
+        // what actually removes the duplicate.
+        .navigationTitle("")
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .modifier(TranscriptSearchableModifier(
+            enabled: !isLive,
+            query: $searchQuery,
+            isPresented: $isSearchPresented,
+            onSubmitSearch: gotoNextMatch))
         .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
-        .onChange(of: searchFieldFocused) { _, focused in
-            // Collapse the field back to the magnifier when it's dismissed empty.
-            if !focused, !isSearching { searchExpanded = false }
+        .onChange(of: isSearchPresented) { _, presented in
+            if !presented {
+                searchQuery = ""
+                searchDebounce?.cancel()
+                recomputeSearch()
+            }
         }
         .onChange(of: context.appState.recordingState) { _, newState in
             // When the live recording finishes, swap the live preview for the
@@ -205,10 +203,6 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
-        .inspector(isPresented: $showChatInspector) {
-            chatContent
-                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
-        }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteRecording() }
@@ -233,19 +227,6 @@ struct TranscriptDetailView: View {
     }
 
     // MARK: - Document header
-
-    /// Full-width Summary / Action Items / Tags. `SummaryView` constrains itself to
-    /// a comfortable reading column and centers it, so it reads well edge-to-edge.
-    private var summaryContent: some View {
-        SummaryView(
-            insights: insights,
-            isGenerating: isGenerating,
-            canGenerate: richTranscript != nil,
-            fontSize: fontSize,
-            onGenerate: { Task { await generateSummary() } },
-            onSave: { updated in await saveInsights(updated) }
-        )
-    }
 
     private var documentHeader: some View {
         RecordingDocumentHeader(
@@ -338,22 +319,10 @@ struct TranscriptDetailView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // Center: the primary view switcher for a finished recording.
-        if !isLive {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $mode) {
-                    Text("Summary").tag(ViewerMode.summary)
-                    Text("Transcript").tag(ViewerMode.transcript)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
-        }
-
-        // Live recording has no finished transcript/summary: keep the lone chat
-        // toggle that slides the side panel in/out.
-        if isLive {
-            ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .principal) {
+            if isLive {
+                // Live recording: a single chat toggle that slides the chat panel in
+                // beside the transcript, instead of the summary/transcript/chat tabs.
                 Button {
                     showLiveChat.toggle()
                     if showLiveChat, chatService == nil { buildChatService() }
@@ -364,162 +333,135 @@ struct TranscriptDetailView: View {
                 }
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
+            } else {
+                Picker("View", selection: $mode) {
+                    Text("Summary").tag(ViewerMode.summary)
+                    Text("Transcript").tag(ViewerMode.transcript)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
             }
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
             if !isLive {
-                // Search only applies to the Transcript. At rest it's a single
-                // magnifier icon (matching the other toolbar buttons); it expands
-                // into a self-contained capsule — field + match counter + nav +
-                // clear — only while focused or non-empty. ⌘F reveals + focuses it.
-                if mode == .transcript {
-                    if searchExpanded || isSearching {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            TextField("Search transcript", text: $searchQuery)
-                                .textFieldStyle(.plain)
-                                .frame(width: 150)
-                                .focused($searchFieldFocused)
-                                .onSubmit { gotoNextMatch() }
-                            if isSearching {
-                                Text(searchCounterLabel)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                Button { gotoPrevMatch() } label: {
-                                    Image(systemName: "chevron.up")
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(searchResult.matches.isEmpty)
-                                .help("Previous match (⌘⇧G)")
-                                Button { gotoNextMatch() } label: {
-                                    Image(systemName: "chevron.down")
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(searchResult.matches.isEmpty)
-                                .help("Next match (⌘G)")
-                            }
-                            Button {
-                                searchQuery = ""
-                                searchExpanded = false
-                                searchFieldFocused = false
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.tertiary)
-                            .help("Clear search")
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(.quaternary, in: Capsule())
-                        // Field is now in the hierarchy; land the cursor on it.
-                        .onAppear { DispatchQueue.main.async { searchFieldFocused = true } }
-                    } else {
-                        Button {
-                            searchExpanded = true
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        .help("Search transcript (⌘F)")
-                    }
-                }
-
-                // Chat — toggles the trailing inspector so Summary/Transcript stays
-                // visible while you ask questions about the recording.
                 Button {
-                    if chatService == nil { buildChatService() }
-                    withAnimation { showChatInspector.toggle() }
+                    assistantOpen.toggle()
+                    if assistantOpen, chatService == nil { buildChatService() }
                 } label: {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                        .symbolVariant(showChatInspector ? .fill : .none)
-                        .foregroundStyle(showChatInspector ? Color.accentColor : Color.primary)
+                        .symbolVariant(assistantOpen ? .fill : .none)
                 }
-                .labelStyle(.titleAndIcon)
-                .keyboardShortcut("0", modifiers: .command)
-                .help(showChatInspector ? "Hide Chat (⌘0)" : "Ask questions about this recording (⌘0)")
-                .accessibilityAddTraits(showChatInspector ? .isSelected : [])
-                .disabled(richTranscript == nil)
+                .foregroundStyle(assistantOpen ? Color.accentColor : Color.secondary)
+                .help(assistantOpen ? "Hide assistant" : "Chat with this transcript")
+                .accessibilityAddTraits(assistantOpen ? .isSelected : [])
+            }
 
-                // Share — everyday action, stays a primary button.
-                Menu {
-                    if let path = insights?.markdownPath,
-                       FileManager.default.fileExists(atPath: path) {
-                        ShareLink("Share Markdown Note",
-                                  item: URL(fileURLWithPath: path),
-                                  preview: SharePreview(
-                                      recording.generatedTitle ?? recording.meetingTitleDraft,
-                                      image: Image(systemName: "doc.text")))
-                    }
-                    if let audioURL = recording.finalizedAudioURL {
-                        ShareLink("Share Audio",
-                                  item: audioURL,
-                                  preview: SharePreview(
-                                      recording.generatedTitle ?? recording.meetingTitleDraft,
-                                      image: Image(systemName: "waveform")))
-                    }
-                    Divider()
-                    Button("Copy Transcript") { copyTranscript() }
-                        .disabled(richTranscript == nil)
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .help("Share")
-                .disabled(richTranscript == nil && recording.finalizedAudioURL == nil)
+            Button {
+                copyTranscript()
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .foregroundStyle(copied ? Color.green : Color.secondary)
+            }
+            .disabled(richTranscript == nil)
+            .help("Copy full transcript")
 
-                // Secondary / rare actions demoted into one overflow menu, so the
-                // toolbar reads as: [switcher]            🔍  ⤴  •••
-                Menu {
-                    Section("Display") {
-                        Stepper(value: $fontSize, in: 12...24) {
-                            Text("Font Size: \(fontSize) pt")
-                        }
-                        Toggle("Speaker Names", isOn: $showSpeakerNames)
-                    }
-                    Button {
-                        showDiarizeConfirm = true
-                    } label: {
-                        Label("Detect Speakers…", systemImage: "person.2.wave.2")
-                    }
-                    .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
-                    Divider()
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Label("Delete Recording…", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+            Button {
+                showDiarizeConfirm = true
+            } label: {
+                Image(systemName: "person.2.wave.2")
+                    .foregroundStyle(Color.secondary)
+            }
+            .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
+            .help("Detect speakers")
+
+            Menu {
+                Stepper(value: $fontSize, in: 12...24) {
+                    Text("Font Size: \(fontSize) pt")
                 }
-                .help("More")
+                Toggle("Speaker Names", isOn: $showSpeakerNames)
+            } label: {
+                Image(systemName: "textformat.size")
+            }
+            .help("Display options")
+
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .help("Delete recording")
+
+            // Search match counter + prev/next, kept adjacent to the trailing
+            // `.searchable` field (which the system pins to the toolbar's edge).
+            if isSearching {
+                Divider()
+                Text(searchCounterLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help("Search matches")
+                Button { gotoPrevMatch() } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Previous match (⌘⇧G)")
+                Button { gotoNextMatch() } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(searchResult.matches.isEmpty)
+                .help("Next match (⌘G)")
             }
         }
     }
 
+    // MARK: - Body (mode-switched content the inspector sits beside)
+
+    @ViewBuilder
+    private var bodyContent: some View {
+        switch mode {
+        case .summary:    summaryBody
+        case .transcript: transcriptBody
+        }
+    }
+
+    // MARK: - Summary
+
+    private var summaryBody: some View {
+        SummaryView(
+            insights: insights,
+            isGenerating: isGenerating,
+            canGenerate: richTranscript != nil,
+            onGenerate: { Task { await generateSummary() } },
+            onSave: { updated in await saveInsights(updated) }
+        )
+    }
+
     // MARK: - Transcript
 
-    private var speakerTimeline: some View {
-        SpeakerTimelineView(
-            segments: richTranscript?.segments ?? [],
-            duration: recording.duration,
-            currentTime: currentTime,
-            onSeek: { time in seek(to: time) }
-        )
+    private var transcriptBody: some View {
+        VStack(spacing: 0) {
+            transcriptList
+            Divider()
+            playerBar
+        }
     }
 
     private var transcriptList: some View {
         ScrollViewReader { proxy in
-            List {
-                ForEach(displayedTurns) { turn in
-                    transcriptRow(turn)
-                        .listRowBackground(rowBackground(turn))
-                        .id(turn.id)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(displayedTurns) { turn in
+                        transcriptRow(turn).id(turn.id)
+                    }
                 }
+                .padding(.horizontal, 36)
+                .padding(.vertical, 22)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlayScrollers()
             }
-            .listStyle(.inset)
             .scrollContentBackground(.hidden)
+            .scrollIndicators(.automatic)
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
                 guard let active = displayedTurns.first(where: {
@@ -535,48 +477,134 @@ struct TranscriptDetailView: View {
         }
     }
 
-    private func rowBackground(_ turn: SpeakerTurn) -> Color {
-        if isTurnActive(turn) { return Color.accentColor.opacity(0.14) }
-        if turn.speakerId != nil, turn.speakerId == meSpeakerId {
-            return Color.accentColor.opacity(0.05)
+    /// Border drawn around the active speaker's presence dot — matches the panel
+    /// base so the dot reads as sitting on the avatar.
+    private var avatarRingBorder: Color {
+        colorScheme == .dark ? Color(hex: "07070b") : .white
+    }
+
+    /// One speaker turn: an avatar + connecting lane on the left, a capped-measure
+    /// content column on the right. The currently-playing turn is "lit" — a ring +
+    /// pulsing presence dot on the avatar and a tinted card around the text.
+    @ViewBuilder
+    private func transcriptRow(_ turn: SpeakerTurn) -> some View {
+        let active = isTurnActive(turn)
+        let hasSpeaker = turn.speakerId != nil
+        let isMe = hasSpeaker && turn.speakerId == meSpeakerId
+        let color = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: turn.speakerId)
+        let isLast = turn.id == displayedTurns.last?.id
+
+        HStack(alignment: .top, spacing: 14) {
+            if hasSpeaker {
+                avatarLane(turn: turn, color: color, active: active, drawLane: !isLast)
+                    .frame(width: 34)
+            }
+            turnContent(turn: turn, color: color, active: active, isMe: isMe, hasSpeaker: hasSpeaker)
+                .frame(maxWidth: active ? 660 : 640, alignment: .leading)
+            Spacer(minLength: 0)
         }
-        return Color.clear
+        .contentShape(Rectangle())
+        .onTapGesture { seek(to: turn.startTime) }
+    }
+
+    private func avatarLane(turn: SpeakerTurn, color: Color, active: Bool, drawLane: Bool) -> some View {
+        VStack(spacing: 7) {
+            SpeakerAvatar(
+                speakerId: turn.speakerId ?? "",
+                name: displayName(for: turn.speakerId ?? ""),
+                size: 34,
+                overrideColor: color
+            )
+            .background {
+                if active { Circle().fill(color.opacity(0.25)).frame(width: 42, height: 42) }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if active { PresenceDot(border: avatarRingBorder) }
+            }
+            if drawLane {
+                Capsule()
+                    .fill(color.opacity(active ? 0.30 : 0.22))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
-    private func transcriptRow(_ turn: SpeakerTurn) -> some View {
-        let isMe = turn.speakerId != nil && turn.speakerId == meSpeakerId
-        let railColor = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: turn.speakerId)
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(railColor)
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    if showSpeakerNames, turn.speakerId != nil {
-                        speakerLabel(turn: turn, isMe: isMe)
-                    }
-                    Button {
-                        seek(to: turn.startTime)
-                    } label: {
-                        Text(timecode(turn.startTime))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(TranscriptDesignTokens.timestampText(scheme: colorScheme))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Jump to this point")
+    private func turnContent(turn: SpeakerTurn, color: Color, active: Bool, isMe: Bool, hasSpeaker: Bool) -> some View {
+        VStack(alignment: .leading, spacing: active ? 10 : 6) {
+            HStack(spacing: 10) {
+                if showSpeakerNames, hasSpeaker {
+                    speakerLabel(turn: turn, isMe: isMe)
                 }
-                Text(highlightedText(turn))
+                timecodeChip(turn.startTime, color: active ? color : nil)
+                if active {
+                    Spacer(minLength: 8)
+                    HStack(spacing: 5) {
+                        PulsingDot(color: Color(hex: "30d158"), size: 5)
+                        Text("PLAYING").font(.system(size: 10).monospaced())
+                    }
+                    .foregroundStyle(color)
+                }
+            }
+            ForEach(Array(paragraphs(for: turn).enumerated()), id: \.offset) { _, para in
+                Text(para)
                     .font(.system(size: CGFloat(fontSize)))
-                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-                    .lineSpacing(CGFloat(fontSize) * 0.4)
+                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme).opacity(active ? 1 : 0.92))
+                    .lineSpacing(CGFloat(fontSize) * 0.45)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture { seek(to: turn.startTime) }
+        .padding(active ? EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16) : EdgeInsets())
+        .background {
+            if active {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(color.opacity(0.16), lineWidth: 1))
+            }
+        }
+    }
+
+    private func timecodeChip(_ time: TimeInterval, color: Color?) -> some View {
+        Button { seek(to: time) } label: {
+            Text(timecode(time))
+                .font(.system(size: 11).monospaced())
+                .foregroundStyle(color ?? TranscriptDesignTokens.timestampText(scheme: colorScheme))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background {
+                    if let color {
+                        RoundedRectangle(cornerRadius: 5).fill(color.opacity(0.14))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .help("Jump to this point")
+    }
+
+    /// Splits the (search-highlighted) turn text back into per-segment paragraphs so
+    /// long monologues read as paragraphs. Slicing the already-highlighted string by
+    /// segment offsets keeps search-match positions intact.
+    private func paragraphs(for turn: SpeakerTurn) -> [AttributedString] {
+        let full = highlightedText(turn)
+        guard turn.segments.count > 1 else { return [full] }
+        let chars = full.characters
+        let total = chars.count
+        var result: [AttributedString] = []
+        var offset = 0
+        for seg in turn.segments {
+            if offset >= total { break }
+            let lower = chars.index(chars.startIndex, offsetBy: offset)
+            let upper = chars.index(lower, offsetBy: min(seg.text.count, total - offset))
+            let slice = AttributedString(full[lower..<upper])
+            if !String(slice.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.append(slice)
+            }
+            offset += seg.text.count + 1   // + the single space `SpeakerTurn.text` joins with
+        }
+        return result.isEmpty ? [full] : result
     }
 
     private func speakerLabel(turn: SpeakerTurn, isMe: Bool) -> some View {
@@ -586,11 +614,11 @@ struct TranscriptDetailView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(displayName(for: id))
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: id))
                 if isMe {
                     Text("· You")
-                        .font(.caption2)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -695,61 +723,104 @@ struct TranscriptDetailView: View {
 
     // MARK: - Player
 
+    /// Proportional who-spoke-when timeline for the audio bar, merged from the
+    /// transcript's speaker segments (silence collapses into adjacent runs).
+    private var speakerStripSegments: [SpeakerStripSegment] {
+        guard let t = richTranscript else { return [] }
+        var segs: [SpeakerStripSegment] = []
+        for seg in t.segments {
+            let dur = max(0, seg.end - seg.start)
+            guard dur > 0 else { continue }
+            let key = seg.speakerId ?? "·nil"
+            let isMe = seg.speakerId != nil && seg.speakerId == meSpeakerId
+            let color = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: seg.speakerId)
+            if !segs.isEmpty, segs[segs.count - 1].colorKey == key {
+                segs[segs.count - 1].weight += dur
+            } else {
+                segs.append(SpeakerStripSegment(colorKey: key, color: color, weight: dur))
+            }
+        }
+        // A single-speaker (or un-diarized) timeline adds no information.
+        return segs.count > 1 ? segs : []
+    }
+
     @ViewBuilder
     private var playerBar: some View {
-        Group {
-            if let audioURL = recording.finalizedAudioURL {
-                TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime)
-            } else {
-                Text("Audio file not found")
-                    .font(.caption)
+        if let audioURL = recording.finalizedAudioURL {
+            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime, speakerStrip: speakerStripSegments)
+        } else {
+            Text("Audio file not found")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(8)
+        }
+    }
+
+    // MARK: - Assistant panel (finished recording)
+
+    private var isOnDeviceAI: Bool {
+        switch context.appSettings.aiEngine {
+        case .appleIntelligence, .qwenLocal: return true
+        default: return false
+        }
+    }
+
+    /// The assistant chat shown in the native trailing inspector (collapsible via
+    /// the toolbar Chat toggle, resizable by dragging its divider). The inspector
+    /// supplies its own background/chrome, so this is just header + chat content.
+    private var assistantInspector: some View {
+        VStack(spacing: 0) {
+            assistantHeader
+            Divider()
+            chatContent
+        }
+    }
+
+    private var assistantHeader: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(TranscriptDesignTokens.brandGradient, in: RoundedRectangle(cornerRadius: 7))
+            Text("dBrief Assistant")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
+            Spacer(minLength: 8)
+            if isOnDeviceAI {
+                Text("ON-DEVICE")
+                    .font(.system(size: 10).monospaced())
+                    .tracking(0.8)
                     .foregroundStyle(.secondary)
-                    .padding(8)
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background {
-            if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.regularMaterial)
-            } else {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(TranscriptDesignTokens.structureFill(scheme: colorScheme))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(TranscriptDesignTokens.structureBorder(scheme: colorScheme), lineWidth: 0.5)
-                    )
+            Button { assistantOpen = false } label: {
+                Image(systemName: "xmark").font(.caption2).foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
+            .help("Hide assistant")
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+        .frame(height: 52)
     }
 
     // MARK: - Chat
 
     @ViewBuilder
     private var chatContent: some View {
-        Group {
-            if let chatService {
-                TranscriptChatView(chatService: chatService)
-            } else {
-                VStack(spacing: 12) {
-                    Spacer()
-                    ProgressView()
-                    Text("Preparing chat…")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if let chatService {
+            TranscriptChatView(chatService: chatService)
+        } else {
+            VStack(spacing: 12) {
+                Spacer()
+                ProgressView()
+                Text("Preparing chat…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task { buildChatService() }
         }
-        // Build (or rebind) the chat once the transcript is actually available.
-        // The id flips false→true when the transcript loads, so a chat panel that
-        // opened first (e.g. the inspector auto-restored open) re-runs and binds the
-        // real text instead of an empty snapshot.
-        .task(id: isLive || richTranscript != nil) { buildChatService() }
     }
 
     // MARK: - Live transcript
@@ -1056,7 +1127,7 @@ struct TranscriptDetailView: View {
         defer { isGenerating = false }
         await context.recordingManager.retryAIAnalysis(for: recording)
         await loadInsights()
-        if hasSummary { withAnimation { mode = .summary } }
+        if hasSummary { mode = .summary }
     }
 
     private func copyTranscript() {
@@ -1071,27 +1142,11 @@ struct TranscriptDetailView: View {
         }
     }
 
-    /// The finished recording's full transcript text, from the rich transcript if
-    /// loaded, else the raw transcription. Empty until the transcript is ready.
-    private func currentFinishedTranscriptText() -> String {
-        richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-            ?? recording.transcription?.text ?? ""
-    }
-
     private func buildChatService() {
         // Reuse an existing session for this recording so the conversation
         // survives switching recordings and coming back.
         if let existing = chatStore.session(for: recording.fileURL) {
             chatService = existing
-            // The session may have been created before the transcript finished
-            // loading (the chat inspector can auto-restore open), capturing empty
-            // text. Re-point a reused finished-recording session at the real text.
-            if !isLive {
-                let text = currentFinishedTranscriptText()
-                if !text.isEmpty {
-                    existing.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
-                }
-            }
             return
         }
         let labels = richTranscript?.speakerLabels ?? []
@@ -1107,11 +1162,8 @@ struct TranscriptDetailView: View {
                 localPlugin: context.recordingManager.localPlugin
             )
         } else {
-            let text = currentFinishedTranscriptText()
-            // Don't cache a permanently-empty session: the transcript isn't loaded
-            // yet. Bail — the chatContent `.task(id:)` re-runs once it is, and the
-            // toolbar Chat button is disabled until then anyway.
-            guard !text.isEmpty else { return }
+            let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
+                ?? recording.transcription?.text ?? ""
             service = TranscriptChatService(
                 transcriptText: text,
                 speakerLabels: labels,
@@ -1219,27 +1271,16 @@ struct TranscriptDetailView: View {
     }
 
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
-    /// visible UI: ⌘F jumps to Transcript and focuses the toolbar search field,
-    /// ⌘G / ⌘⇧G step next/previous match.
+    /// visible UI (the `.searchable` field is the only visible search affordance):
+    /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
     private var findShortcuts: some View {
         Group {
-            Button("") {
-                if !isLive {
-                    mode = .transcript
-                    searchExpanded = true
-                    searchFieldFocused = true
-                }
-            }
-            .keyboardShortcut("f", modifiers: .command)
+            Button("") { if !isLive { isSearchPresented = true } }
+                .keyboardShortcut("f", modifiers: .command)
             Button("") { gotoNextMatch() }
                 .keyboardShortcut("g", modifiers: .command)
             Button("") { gotoPrevMatch() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-            // ⌘1/⌘2 switch views; ⌘0 (toolbar) toggles the chat inspector.
-            Button("") { withAnimation { mode = .summary } }
-                .keyboardShortcut("1", modifiers: .command)
-            Button("") { withAnimation { mode = .transcript } }
-                .keyboardShortcut("2", modifiers: .command)
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -1349,11 +1390,10 @@ struct TranscriptDetailView: View {
             }
         }
 
-        // Data-driven default view: land on Summary when one exists (most people
-        // just want the gist), else Transcript. An in-progress chat re-opens the
-        // chat inspector alongside, rather than hijacking the main view.
+        // Data-driven default view: Summary when one exists, else Transcript.
+        // A resumed (non-empty) chat opens the assistant panel beside it.
         mode = hasSummary ? .summary : .transcript
-        if resumedChat { showChatInspector = true }
+        if resumedChat { assistantOpen = true }
         recomputeSearch()
     }
 
@@ -1367,16 +1407,57 @@ struct TranscriptDetailView: View {
     }
 }
 
-private extension View {
-    /// Removes the title item from the window toolbar (the in-content document
-    /// header already shows it) while keeping `navigationTitle` for the OS. The
-    /// `removing:` API is macOS 15+, so older systems keep the (duplicate) title.
-    @ViewBuilder
-    func hidingToolbarTitle() -> some View {
-        if #available(macOS 15.0, *) {
-            self.toolbar(removing: .title)
+/// A small dot that gently pulses (opacity + scale) forever — the live presence
+/// indicator on the active speaker's avatar and the PLAYING pill.
+struct PulsingDot: View {
+    let color: Color
+    var size: CGFloat = 6
+    @State private var on = false
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .scaleEffect(on ? 1.15 : 0.85)
+            .opacity(on ? 1 : 0.5)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// Green presence dot with a panel-matching border, pulsing on the active avatar.
+struct PresenceDot: View {
+    let border: Color
+    @State private var on = false
+    var body: some View {
+        Circle()
+            .fill(Color(hex: "30d158"))
+            .frame(width: 9, height: 9)
+            .overlay(Circle().strokeBorder(border, lineWidth: 2))
+            .scaleEffect(on ? 1.1 : 0.9)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// Applies the native macOS toolbar search field only when `enabled` (finished
+/// recordings). On macOS the field shows full-width when the toolbar has room and
+/// collapses to a magnifying-glass loupe when the window is narrow — no extra code.
+private struct TranscriptSearchableModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    @Binding var isPresented: Bool
+    let onSubmitSearch: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(text: $query,
+                            isPresented: $isPresented,
+                            placement: .toolbar,
+                            prompt: "Search transcript")
+                .onSubmit(of: .search, onSubmitSearch)
         } else {
-            self
+            content
         }
     }
 }
