@@ -29,6 +29,17 @@ struct TranscriptDetailView: View {
     /// Whether the assistant (chat) side panel is open beside the content.
     @AppStorage("transcriptAssistantOpen") private var assistantOpen = false
 
+    /// Drag-resizable width of the assistant side panel (persisted, clamped to
+    /// `assistantPanelWidthRange`). Replaces the native `.inspector` resize.
+    @AppStorage("transcriptAssistantPanelWidth") private var assistantPanelWidth = 336.0
+    private let assistantPanelWidthRange: ClosedRange<Double> = 300...480
+    /// Live width while a resize drag is in flight (nil when not dragging). The
+    /// drag tracks this `@State` directly and only commits to `@AppStorage` on
+    /// release, so we don't write UserDefaults every frame.
+    @State private var assistantPanelLiveWidth: Double?
+    /// Panel width captured at the start of a resize drag (anchor for the global-X delta).
+    @State private var assistantPanelDragStartWidth: Double?
+
     /// In live mode, chat is a right-hand side panel (so the in-progress transcript
     /// stays visible) rather than a full-screen swap like the finished-recording view.
     @State private var showLiveChat = false
@@ -127,18 +138,21 @@ struct TranscriptDetailView: View {
                 failedState
             } else if richTranscript != nil {
                 // Header (and the toolbar search) stay full-width on top; the
-                // assistant inspector is scoped to the body region below the
-                // divider so it sits beside the content, not the header.
+                // assistant panel sits beside the body region below the divider
+                // (a plain HStack, not `.inspector`, which spans the full window
+                // height and would overlap the header).
                 VStack(spacing: 0) {
                     documentHeader
                     Divider()
                     if offerReanalysis { reanalysisBanner }
-                    bodyContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .inspector(isPresented: $assistantOpen) {
-                            assistantInspector
-                                .inspectorColumnWidth(min: 300, ideal: 336, max: 480)
+                    HStack(spacing: 0) {
+                        bodyContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if assistantOpen {
+                            assistantResizeHandle
+                            assistantPanel
                         }
+                    }
                 }
             } else {
                 loadingState
@@ -765,15 +779,51 @@ struct TranscriptDetailView: View {
         }
     }
 
-    /// The assistant chat shown in the native trailing inspector (collapsible via
-    /// the toolbar Chat toggle, resizable by dragging its divider). The inspector
-    /// supplies its own background/chrome, so this is just header + chat content.
-    private var assistantInspector: some View {
+    /// The assistant chat shown as a right-hand side panel below the document
+    /// header (collapsible via the toolbar Chat toggle, drag-resizable via the
+    /// handle on its leading edge). A side column below the header, so it sits
+    /// beside the body without the native `.inspector` chrome that would span the
+    /// full window height and overlap the header.
+    private var assistantPanel: some View {
         VStack(spacing: 0) {
             assistantHeader
             Divider()
             chatContent
         }
+        .frame(width: assistantPanelLiveWidth ?? assistantPanelWidth)
+    }
+
+    /// Draggable divider on the panel's leading edge. Dragging left widens the
+    /// panel; the new width is clamped and persisted via `assistantPanelWidth`.
+    private var assistantResizeHandle: some View {
+        Divider()
+            .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()))
+            .gesture(
+                // Measure in `.global` space: the handle moves as the panel
+                // resizes, so a handle-local `translation` feeds back on itself
+                // and jitters. Global X doesn't move with the handle.
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = assistantPanelDragStartWidth ?? assistantPanelWidth
+                        if assistantPanelDragStartWidth == nil { assistantPanelDragStartWidth = start }
+                        let delta = value.location.x - value.startLocation.x
+                        let proposed = start - delta            // panel grows leftward
+                        let clamped = min(max(proposed, assistantPanelWidthRange.lowerBound),
+                                          assistantPanelWidthRange.upperBound)
+                        // Track the cursor 1:1 — no implicit animation interpolating
+                        // toward each new width (a source of the erratic feel).
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { assistantPanelLiveWidth = clamped }
+                    }
+                    .onEnded { _ in
+                        if let live = assistantPanelLiveWidth { assistantPanelWidth = live }
+                        assistantPanelLiveWidth = nil
+                        assistantPanelDragStartWidth = nil
+                    }
+            )
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
     }
 
     private var assistantHeader: some View {
@@ -801,6 +851,7 @@ struct TranscriptDetailView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
+        .background(.bar)
     }
 
     // MARK: - Chat
