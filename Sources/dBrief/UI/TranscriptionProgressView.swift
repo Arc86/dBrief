@@ -67,7 +67,7 @@ struct TranscriptionProgressView: View {
                         Text(step.name)
                             .font(.callout)
                         Spacer()
-                        if case .inProgress = step.status, appState.memoryPressureLevel != .normal {
+                        if case .inProgress = step.status, appState.memoryPressureLevel == .critical {
                             Text("⚠ Low RAM")
                                 .font(.caption2)
                                 .foregroundStyle(.yellow)
