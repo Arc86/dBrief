@@ -89,11 +89,18 @@ final class TTSService: @unchecked Sendable {
         // Prefer the 1.7B variant — much more natural prosody than the 0.6B
         // default and macOS-only, which this app always is. It supports style
         // instructions too (see GenerationOptions.instruction) if we want them.
+        // `load: false` so the initializer does NOT auto-load after it resolves
+        // the model folder — otherwise the model loads twice (init + our explicit
+        // loadModels below), and the first generate can race a still-loading
+        // component ("MultiCodeEmbedder model not loaded"). We load exactly once,
+        // after attaching the progress callback. The race is wider on the heavier
+        // 1.7B model, which is why it surfaced there.
         let config = TTSKitConfig(
             model: .qwen3TTS_1_7b,
             downloadBase: downloadBase,
             verbose: true,
-            logLevel: .info
+            logLevel: .info,
+            load: false
         )
         let engine = try await TTSKit(config)
         engine.modelStateCallback = { [stateHandler] (_, newState: ModelState) in

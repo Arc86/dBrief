@@ -89,3 +89,14 @@ public struct WireError: Sendable, Codable, Error {
         self.requiredGB = requiredGB
     }
 }
+
+extension WireError: LocalizedError {
+    /// Surface the real `message` (and memory hint) instead of the generic
+    /// "operation couldn't be completed (… error 1.)" Foundation default.
+    public var errorDescription: String? {
+        if kind == .insufficientMemory, let requiredGB {
+            return "\(message) (needs ~\(requiredGB) GB)"
+        }
+        return message
+    }
+}
