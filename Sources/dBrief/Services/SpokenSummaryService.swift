@@ -102,23 +102,29 @@ final class SpokenSummaryService {
         guard let tempAudioURL,
               let audioURL = recording.spokenSummaryAudioURL,
               let scriptURL = recording.spokenSummaryScriptURL else {
+            phase = .failed(message: SpokenSummaryError.notReady.localizedDescription)
             throw SpokenSummaryError.notReady
         }
         // Capture as locals (Sendable URLs) for the detached closure.
         let wavURL = tempAudioURL
         let m4aURL = audioURL
-        try await Task.detached(priority: .userInitiated) {
-            try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
-        }.value
-        let summary = SpokenSummary(
-            script: script,
-            audioFileName: audioURL.lastPathComponent,
-            voice: nil,
-            language: languageCode(appSettings.outputLanguage),
-            engine: appSettings.effectiveAIEngine.rawValue,
-            generatedAt: Date()
-        )
-        try await store.save(summary, to: scriptURL)
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
+            }.value
+            let summary = SpokenSummary(
+                script: script,
+                audioFileName: audioURL.lastPathComponent,
+                voice: nil,
+                language: languageCode(appSettings.outputLanguage),
+                engine: appSettings.effectiveAIEngine.rawValue,
+                generatedAt: Date()
+            )
+            try await store.save(summary, to: scriptURL)
+        } catch {
+            phase = .failed(message: error.localizedDescription)
+            throw error
+        }
         discardTemp()
         phase = .idle
         return audioURL

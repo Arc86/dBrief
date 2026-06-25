@@ -228,11 +228,13 @@ struct TranscriptDetailView: View {
                     service: service,
                     audioPlayer: audioPlayer,
                     onSave: {
-                        if let url = try? await service.save(for: recording) {
+                        do {
+                            _ = try await service.save(for: recording)
                             hasSpokenSummary = true
-                            _ = url
+                            showSpokenSummarySheet = false
+                        } catch {
+                            // service.save set phase = .failed; keep the sheet open so the error shows
                         }
-                        showSpokenSummarySheet = false
                     },
                     onClose: {
                         service.discard()
