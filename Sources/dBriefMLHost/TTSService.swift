@@ -27,24 +27,42 @@ final class TTSService: @unchecked Sendable {
             throw WireError(kind: .generic, message: "TTS: empty text")
         }
         let engine = try await loadTTS()
-        let result: SpeechResult
+
+        // Synthesize in short, sentence-aligned chunks and concatenate. A long
+        // single utterance makes Qwen3-TTS lose energy toward the end (the tail
+        // drifts to a whisper); per-chunk synthesis keeps prosody stable.
+        let chunks = SpeechChunker.chunks(trimmed)
+        var samples: [Float] = []
+        var sampleRate = 0
         do {
-            result = try await engine.generate(text: trimmed, voice: voice, language: language)
+            for (i, chunk) in chunks.enumerated() {
+                let r = try await engine.generate(text: chunk, voice: voice, language: language)
+                if sampleRate == 0 { sampleRate = r.sampleRate }
+                // Brief silence between chunks for natural pacing.
+                if i > 0, sampleRate > 0 {
+                    samples.append(contentsOf: [Float](repeating: 0, count: Int(Double(sampleRate) * 0.18)))
+                }
+                samples.append(contentsOf: r.audio)
+            }
         } catch {
             Logger.localAI.error("TTS generation failed: \(error.localizedDescription, privacy: .public)")
             throw WireError(kind: .generic, message: "TTS generation failed: \(error.localizedDescription)")
         }
 
+        guard sampleRate > 0, !samples.isEmpty else {
+            throw WireError(kind: .generic, message: "TTS: no audio produced")
+        }
+
         let url = URL(fileURLWithPath: outputPath)
         do {
-            try Self.writeWAV(samples: result.audio, sampleRate: result.sampleRate, to: url)
+            try Self.writeWAV(samples: samples, sampleRate: sampleRate, to: url)
         } catch {
             throw WireError(kind: .generic, message: "TTS: writing audio failed: \(error.localizedDescription)")
         }
         return SpeechSynthesisResult(
             outputPath: url.path,
-            durationSeconds: result.audioDuration,
-            sampleRate: result.sampleRate
+            durationSeconds: Double(samples.count) / Double(sampleRate),
+            sampleRate: sampleRate
         )
     }
 
