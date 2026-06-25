@@ -50,6 +50,10 @@ struct TranscriptDetailView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
     @State private var insights: RecordingInsights?
+    @State private var spokenSummaryService: SpokenSummaryService?
+    @State private var showSpokenSummarySheet = false
+    @State private var hasSpokenSummary = false
+    private let spokenSummaryStore = SpokenSummaryStore()
     @State private var copied = false
     @State private var showDeleteConfirm = false
     @State private var isGenerating = false
@@ -218,6 +222,26 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
+        .sheet(isPresented: $showSpokenSummarySheet) {
+            if let service = spokenSummaryService {
+                SpokenSummaryPlayerView(
+                    service: service,
+                    audioPlayer: audioPlayer,
+                    onSave: {
+                        if let url = try? await service.save(for: recording) {
+                            hasSpokenSummary = true
+                            _ = url
+                        }
+                        showSpokenSummarySheet = false
+                    },
+                    onClose: {
+                        service.discard()
+                        showSpokenSummarySheet = false
+                    },
+                    onRetry: { startSpokenSummary() }
+                )
+            }
+        }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteRecording() }
@@ -448,7 +472,10 @@ struct TranscriptDetailView: View {
             isGenerating: isGenerating,
             canGenerate: richTranscript != nil,
             onGenerate: { Task { await generateSummary() } },
-            onSave: { updated in await saveInsights(updated) }
+            onSave: { updated in await saveInsights(updated) },
+            hasSpokenSummary: hasSpokenSummary,
+            onGenerateSpoken: { startSpokenSummary() },
+            onPlaySpoken: { Task { await playSavedSpokenSummary() } }
         )
     }
 
@@ -1374,6 +1401,37 @@ struct TranscriptDetailView: View {
 
     private func loadInsights() async {
         insights = (try? await context.insightsStore.load(for: recording)) ?? nil
+        refreshSpokenSummaryAvailability()
+    }
+
+    private func startSpokenSummary() {
+        guard let insights else { return }
+        let service = SpokenSummaryService(
+            appSettings: context.appSettings,
+            plugin: context.recordingManager.localPlugin,
+            store: spokenSummaryStore
+        )
+        spokenSummaryService = service
+        showSpokenSummarySheet = true
+        Task { await service.generate(insights: insights) }
+    }
+
+    private func playSavedSpokenSummary() async {
+        guard let scriptURL = recording.spokenSummaryScriptURL,
+              let audioURL = recording.spokenSummaryAudioURL,
+              FileManager.default.fileExists(atPath: audioURL.path) else { return }
+        _ = scriptURL
+        audioPlayer.play(url: audioURL)
+    }
+
+    private func refreshSpokenSummaryAvailability() {
+        guard let audioURL = recording.spokenSummaryAudioURL,
+              let scriptURL = recording.spokenSummaryScriptURL else {
+            hasSpokenSummary = false
+            return
+        }
+        hasSpokenSummary = FileManager.default.fileExists(atPath: audioURL.path)
+            && FileManager.default.fileExists(atPath: scriptURL.path)
     }
 
     private func saveInsights(_ updated: RecordingInsights) async {

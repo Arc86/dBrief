@@ -13,6 +13,9 @@ struct SummaryView: View {
     let canGenerate: Bool
     var onGenerate: () -> Void = {}
     var onSave: (RecordingInsights) async -> Void = { _ in }
+    var hasSpokenSummary: Bool = false
+    var onGenerateSpoken: () -> Void = {}
+    var onPlaySpoken: () -> Void = {}
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -323,6 +326,21 @@ struct SummaryView: View {
                     Label("Edit", systemImage: "pencil")
                 }
                 .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                if hasSpokenSummary {
+                    Button { onPlaySpoken() } label: {
+                        Label("Play Spoken", systemImage: "play.circle")
+                    }
+                    .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                    Button { onGenerateSpoken() } label: {
+                        Label("Regenerate", systemImage: "waveform")
+                    }
+                    .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                } else {
+                    Button { onGenerateSpoken() } label: {
+                        Label("Spoken Summary", systemImage: "waveform")
+                    }
+                    .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                }
             }
         }
         .padding(.horizontal, Theme.contentPadding)
