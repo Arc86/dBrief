@@ -12,7 +12,12 @@ import FoundationModels
 /// CLI). Speaker labels are intentionally omitted — the summary already names people.
 @MainActor
 @Observable
-final class SpokenSummaryService {
+final class SpokenSummaryService: Identifiable {
+    /// Stable identity so the player sheet can be driven by `.sheet(item:)`
+    /// (presenting on an optional `@State` avoids the empty-sheet race that
+    /// `.sheet(isPresented:)` + inner `if let` hits on macOS).
+    nonisolated let id = UUID()
+
     enum Phase: Equatable {
         case idle
         case rewriting

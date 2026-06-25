@@ -51,7 +51,6 @@ struct TranscriptDetailView: View {
     @State private var chatService: TranscriptChatService?
     @State private var insights: RecordingInsights?
     @State private var spokenSummaryService: SpokenSummaryService?
-    @State private var showSpokenSummarySheet = false
     @State private var hasSpokenSummary = false
     private let spokenSummaryStore = SpokenSummaryStore()
     @State private var copied = false
@@ -222,27 +221,25 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
-        .sheet(isPresented: $showSpokenSummarySheet) {
-            if let service = spokenSummaryService {
-                SpokenSummaryPlayerView(
-                    service: service,
-                    audioPlayer: audioPlayer,
-                    onSave: {
-                        do {
-                            _ = try await service.save(for: recording)
-                            hasSpokenSummary = true
-                            showSpokenSummarySheet = false
-                        } catch {
-                            // service.save set phase = .failed; keep the sheet open so the error shows
-                        }
-                    },
-                    onClose: {
-                        service.discard()
-                        showSpokenSummarySheet = false
-                    },
-                    onRetry: { startSpokenSummary() }
-                )
-            }
+        .sheet(item: $spokenSummaryService) { service in
+            SpokenSummaryPlayerView(
+                service: service,
+                audioPlayer: audioPlayer,
+                onSave: {
+                    do {
+                        _ = try await service.save(for: recording)
+                        hasSpokenSummary = true
+                        spokenSummaryService = nil
+                    } catch {
+                        // service.save set phase = .failed; keep the sheet open so the error shows
+                    }
+                },
+                onClose: {
+                    service.discard()
+                    spokenSummaryService = nil
+                },
+                onRetry: { startSpokenSummary() }
+            )
         }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -1416,7 +1413,6 @@ struct TranscriptDetailView: View {
             store: spokenSummaryStore
         )
         spokenSummaryService = service
-        showSpokenSummarySheet = true
         Task { await service.generate(insights: insights) }
     }
 
