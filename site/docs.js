@@ -74,6 +74,7 @@
       items: [
         { slug: "history/recording-history", title: "Recording History" },
         { slug: "history/transcript-viewer", title: "Transcript Viewer" },
+        { slug: "history/voice-library",     title: "Voice Library" },
       ],
     },
     {

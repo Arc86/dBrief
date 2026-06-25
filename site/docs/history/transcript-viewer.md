@@ -11,13 +11,14 @@ There are two ways in:
 
 ## Layout
 
-- **Sidebar (left)** — lists all your recordings with their date, duration, and status. Select one to view it.
-- **Detail (right)** — the selected recording's transcript, a player bar, and the toolbar actions.
+- **Sidebar (left)** — lists your recordings, grouped into **In Progress** (a live recording, if any), **This week**, and a collapsible **Earlier** section. Select one to view it.
+- **Detail (right)** — a **Summary / Transcript** switch in the toolbar, the selected content, a player bar, and the toolbar actions. Finished recordings open on **Summary** when there's an AI analysis to show, otherwise on the transcript.
+- **Chat panel** — the assistant opens as a resizable panel on the right, beside whatever you're reading, and remembers its width.
 
 ## Reading the transcript
 
-- The transcript is shown as a single, continuous list. Each speaker turn is labelled and consecutive segments from the same speaker are merged for easier reading.
-- **Player bar** — play, pause, and scrub through the recording using the waveform. The transcript highlights and auto-scrolls as it plays; click any line to jump the audio to that point.
+- Switch to **Transcript** in the toolbar to read the full text as a single, continuous list. Each speaker turn is labelled and consecutive segments from the same speaker are merged for easier reading.
+- **Player bar** — play, pause, and scrub through the recording using the waveform. A slim **who-spoke-when timeline** above the controls shows how the speakers are distributed, and stays put as you switch between Summary and Transcript. The transcript highlights and auto-scrolls as it plays; click any line to jump the audio to that point.
 
 ## Detecting speakers
 
@@ -26,6 +27,17 @@ If a recording wasn't diarized during transcription — or you want to try again
 - The first run downloads the speaker-detection model, which can take a while.
 - Detecting speakers **replaces** any current speakers and custom names for that recording, so you'll confirm before it runs.
 - Requires the recording's audio file to still be on disk.
+- If you have a [Voice Library](voice-library.md), recognized people are labelled automatically; otherwise speakers come back as "Speaker 1", "Speaker 2", and so on for you to name.
+
+## Confirming speakers before analysis
+
+By default, dBrief labels confident voice matches and gets straight on with the AI analysis. If you'd rather check who's who first, switch the **speaker recognition mode** to *confirm first* in [Settings → Transcription](../transcription/transcription-overview.md).
+
+In that mode, once a recording (or a re-run of **Detect Speakers**) has been diarized, dBrief pops up a short **speaker review**:
+
+- One card per voice, each with a snippet you can **play** to hear who it is.
+- Suggested names from your [Voice Library](voice-library.md) when there's a likely match.
+- Edit any name, then **Confirm** — the corrected names flow into the summary, action items, and the exported note. **Cancel** keeps dBrief's best guess.
 
 ## Renaming speakers
 
@@ -37,17 +49,17 @@ Click a turn's speaker label to open its menu. Everything is chosen from a list 
 - **Move this turn to** another speaker — and, when the speaker has more than this turn, **Move all "<name>" to** another speaker (which merges them).
 - **This is me** — mark (or clear) which speaker is you.
 
-Changes are saved alongside the recording and used everywhere, including the Markdown export.
+Changes are saved alongside the recording and used everywhere, including the Markdown export. Naming a speaker also teaches your [Voice Library](voice-library.md), so the same person is recognized in future recordings.
 
 If you entered participant names in the post-recording sheet, dBrief maps them to speakers in order automatically.
 
 ## Chatting about the recording
 
-Click the **chat** button (speech-bubble icon) in the toolbar to switch the detail pane to a chat about the recording, and click it again to return to the transcript. See [Transcript Chat](../ai-analysis/transcript-chat.md).
+Click the **Chat** button (speech-bubble icon) in the toolbar to open the assistant as a side panel beside the transcript or summary; click it again to close it. The panel can be dragged wider or narrower and remembers its size. See [Transcript Chat](../ai-analysis/transcript-chat.md).
 
 ## Viewing and editing the AI analysis
 
-Click the **AI Analysis** button (chart icon) in the toolbar to switch the detail pane from the transcript to the recording's AI output, shown in three boxes — **Summary**, **Action Items**, and **Tags & Sentiment** — just like the menu bar shows after processing. Click it again to return to the transcript.
+The recording's AI output lives in the **Summary** view — choose **Summary** in the toolbar's view switch to see it, shown in cards for **Summary**, **Action Items**, and **Tags & Sentiment**, just like the menu bar shows after processing.
 
 - **Copy** — the **Copy** button at the top of the panel copies the whole analysis as clean, formatted text, so you don't have to select it by hand.
 - **Editing** — click **Edit** to change the summary, add or remove action items, or edit the tags, then click **Save** (or **Cancel** to discard). Sentiment is shown for reference but isn't editable.
@@ -70,8 +82,8 @@ Search covers the transcript text of a finished recording. It isn't available fo
 
 | Button | What it does |
 |---|---|
-| **AI Analysis** | Toggle between the transcript and the recording's editable AI analysis |
-| **Chat** | Toggle between the transcript and a chat about the recording |
+| **Summary / Transcript** | Switch the detail pane between the AI summary and the full transcript |
+| **Chat** | Open or close the assistant side panel |
 | **Search** | Find text in the transcript (⌘F); ⌘G / ⌘⇧G step matches |
 | **Copy** | Copy the full transcript to the clipboard |
 | **Detect Speakers** | Run on-device speaker detection on this recording |

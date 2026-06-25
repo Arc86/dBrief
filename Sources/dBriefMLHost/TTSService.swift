@@ -28,41 +28,30 @@ final class TTSService: @unchecked Sendable {
         }
         let engine = try await loadTTS()
 
-        // Synthesize in short, sentence-aligned chunks and concatenate. A long
-        // single utterance makes Qwen3-TTS lose energy toward the end (the tail
-        // drifts to a whisper); per-chunk synthesis keeps prosody stable.
-        let chunks = SpeechChunker.chunks(trimmed)
-        var samples: [Float] = []
-        var sampleRate = 0
+        // Let TTSKit handle long text: its `generate` splits on sentence
+        // boundaries (default `.sentence` strategy) and crossfades the chunks by
+        // 100 ms internally, keeping prosody stable and joins seamless — far
+        // better than hand-concatenating per-chunk WAVs (which clicks and varies
+        // in level). The 1.7B model (selected in `loadTTS`) also sounds markedly
+        // more natural than 0.6B.
+        let result: SpeechResult
         do {
-            for (i, chunk) in chunks.enumerated() {
-                let r = try await engine.generate(text: chunk, voice: voice, language: language)
-                if sampleRate == 0 { sampleRate = r.sampleRate }
-                // Brief silence between chunks for natural pacing.
-                if i > 0, sampleRate > 0 {
-                    samples.append(contentsOf: [Float](repeating: 0, count: Int(Double(sampleRate) * 0.18)))
-                }
-                samples.append(contentsOf: r.audio)
-            }
+            result = try await engine.generate(text: trimmed, voice: voice, language: language)
         } catch {
             Logger.localAI.error("TTS generation failed: \(error.localizedDescription, privacy: .public)")
             throw WireError(kind: .generic, message: "TTS generation failed: \(error.localizedDescription)")
         }
 
-        guard sampleRate > 0, !samples.isEmpty else {
-            throw WireError(kind: .generic, message: "TTS: no audio produced")
-        }
-
         let url = URL(fileURLWithPath: outputPath)
         do {
-            try Self.writeWAV(samples: samples, sampleRate: sampleRate, to: url)
+            try Self.writeWAV(samples: result.audio, sampleRate: result.sampleRate, to: url)
         } catch {
             throw WireError(kind: .generic, message: "TTS: writing audio failed: \(error.localizedDescription)")
         }
         return SpeechSynthesisResult(
             outputPath: url.path,
-            durationSeconds: Double(samples.count) / Double(sampleRate),
-            sampleRate: sampleRate
+            durationSeconds: result.audioDuration,
+            sampleRate: result.sampleRate
         )
     }
 
@@ -84,7 +73,11 @@ final class TTSService: @unchecked Sendable {
     private func loadTTS() async throws -> TTSKit {
         if let tts { return tts }
         let downloadBase = try ttsDownloadBaseURL()
+        // Prefer the 1.7B variant — much more natural prosody than the 0.6B
+        // default and macOS-only, which this app always is. It supports style
+        // instructions too (see GenerationOptions.instruction) if we want them.
         let config = TTSKitConfig(
+            model: .qwen3TTS_1_7b,
             downloadBase: downloadBase,
             verbose: true,
             logLevel: .info
