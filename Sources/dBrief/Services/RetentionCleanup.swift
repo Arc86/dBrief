@@ -54,6 +54,10 @@ enum RetentionCleanup {
         ".insights.json",
         ".chat.json",
         ".spokensummary.json",
+        // The spoken-summary audio is a derived artifact that travels with its
+        // script sidecar — age both under the transcripts policy so they never
+        // split (audio gone, script orphaned, or vice versa).
+        ".spokensummary.m4a",
     ]
 
     static func isTranscriptFile(_ name: String) -> Bool {

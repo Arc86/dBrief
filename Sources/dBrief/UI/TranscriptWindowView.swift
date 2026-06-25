@@ -51,6 +51,9 @@ struct TranscriptDetailView: View {
     @State private var chatService: TranscriptChatService?
     @State private var insights: RecordingInsights?
     @State private var spokenSummaryService: SpokenSummaryService?
+    /// Dedicated player for the spoken-summary sheet so it never commandeers the
+    /// main transcript `audioPlayer` (which keeps the recording's position/state).
+    @State private var spokenSummaryPlayer = AudioPlayer()
     @State private var hasSpokenSummary = false
     private let spokenSummaryStore = SpokenSummaryStore()
     @State private var copied = false
@@ -224,7 +227,7 @@ struct TranscriptDetailView: View {
         .sheet(item: $spokenSummaryService) { service in
             SpokenSummaryPlayerView(
                 service: service,
-                audioPlayer: audioPlayer,
+                audioPlayer: spokenSummaryPlayer,
                 onSave: {
                     do {
                         _ = try await service.save(for: recording)
