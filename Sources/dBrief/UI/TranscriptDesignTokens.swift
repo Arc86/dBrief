@@ -21,18 +21,24 @@ enum TranscriptDesignTokens {
     /// near-white surface, matching the design's light frames. Sits behind the
     /// glass panels of the transcript window.
     @ViewBuilder
-    static func ambientBackground(scheme: ColorScheme) -> some View {
+    static func ambientBackground(scheme: ColorScheme, calm: Bool = false) -> some View {
         if scheme == .dark {
-            GeometryReader { geo in
-                let s = max(geo.size.width, geo.size.height)
-                ZStack {
-                    Color(hex: "07070b")
-                    ambientOrb(Color(hex: "ff405f"), opacity: 0.14, x: 0.16, y: 0.08, radius: s * 0.55)
-                    ambientOrb(Color(hex: "8b4dff"), opacity: 0.18, x: 0.88, y: 0.18, radius: s * 0.60)
-                    ambientOrb(Color(hex: "25abff"), opacity: 0.14, x: 0.60, y: 1.10, radius: s * 0.55)
+            if calm {
+                // Calm mode: the plain native macOS window background — no neon
+                // glow orbs, no purple tint, just the system dark surface.
+                Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
+            } else {
+                GeometryReader { geo in
+                    let s = max(geo.size.width, geo.size.height)
+                    ZStack {
+                        Color(hex: "07070b")
+                        ambientOrb(Color(hex: "ff405f"), opacity: 0.14, x: 0.16, y: 0.08, radius: s * 0.55)
+                        ambientOrb(Color(hex: "8b4dff"), opacity: 0.18, x: 0.88, y: 0.18, radius: s * 0.60)
+                        ambientOrb(Color(hex: "25abff"), opacity: 0.14, x: 0.60, y: 1.10, radius: s * 0.55)
+                    }
                 }
+                .ignoresSafeArea()
             }
-            .ignoresSafeArea()
         } else {
             Color(hex: "ffffff").ignoresSafeArea()
         }
@@ -55,6 +61,12 @@ enum TranscriptDesignTokens {
         endPoint: .bottomTrailing
     )
 
+    /// Brand fill for CTAs / play / send / avatars — the gradient normally, a
+    /// flat solid coral in calm mode.
+    static func brandFill(calm: Bool) -> AnyShapeStyle {
+        calm ? AnyShapeStyle(Color(hex: "ff405f")) : AnyShapeStyle(brandGradient)
+    }
+
     // MARK: - Structural surfaces (toolbar, player bar)
 
     static func structureFill(scheme: ColorScheme) -> Color {
@@ -71,11 +83,18 @@ enum TranscriptDesignTokens {
         scheme == .dark ? Color.black.opacity(0.20) : Color.white.opacity(0.35)
     }
 
-    /// Gradient fill behind the selected meeting row.
-    static func sidebarActiveFill(scheme: ColorScheme) -> LinearGradient {
-        let colors: [Color] = scheme == .dark
-            ? [Color(hex: "ff405f").opacity(0.16), Color(hex: "8b4dff").opacity(0.14)]
-            : [Color(hex: "8b4dff").opacity(0.10), Color(hex: "8b4dff").opacity(0.10)]
+    /// Gradient fill behind the selected meeting row. Calm mode flattens it to a
+    /// single neutral violet tint (no coral→violet gradient).
+    static func sidebarActiveFill(scheme: ColorScheme, calm: Bool = false) -> LinearGradient {
+        let colors: [Color]
+        if calm {
+            let tint = Color(hex: "8b4dff").opacity(scheme == .dark ? 0.14 : 0.10)
+            colors = [tint, tint]
+        } else {
+            colors = scheme == .dark
+                ? [Color(hex: "ff405f").opacity(0.16), Color(hex: "8b4dff").opacity(0.14)]
+                : [Color(hex: "8b4dff").opacity(0.10), Color(hex: "8b4dff").opacity(0.10)]
+        }
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
@@ -91,6 +110,12 @@ enum TranscriptDesignTokens {
     static let accentBar = LinearGradient(
         colors: [Color(hex: "ff405f"), Color(hex: "8b4dff")],
         startPoint: .top, endPoint: .bottom)
+
+    /// Active-row marker fill — the coral→violet bar normally, a flat solid
+    /// coral in calm mode.
+    static func accentBarFill(calm: Bool) -> AnyShapeStyle {
+        calm ? AnyShapeStyle(Color(hex: "ff405f")) : AnyShapeStyle(accentBar)
+    }
 
     // MARK: - Content cards
 

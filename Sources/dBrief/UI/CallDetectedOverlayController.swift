@@ -52,6 +52,7 @@ final class CallDetectedOverlayController {
                 .environment(appState)
                 .environment(appSettings)
                 .environment(recordingManager)
+                .environment(\.calmAppearance, appSettings.reduceNeon)
         )
 
         let newPanel = NSPanel(

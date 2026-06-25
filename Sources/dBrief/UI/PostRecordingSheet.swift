@@ -4,6 +4,7 @@ struct PostRecordingSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(\.calmAppearance) private var calm
 
     @State private var transcribe = true
     @State private var summary = true
@@ -214,8 +215,8 @@ struct PostRecordingSheet: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
                         .frame(height: 38)
-                        .background(Brand.gradientDiagonal, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .shadow(color: Brand.coral.opacity(0.5), radius: 10, y: 4)
+                        .background(Brand.ctaFill(calm: calm), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .shadow(color: Brand.ctaGlow(calm: calm), radius: calm ? 0 : 10, y: calm ? 0 : 4)
                     }
                     .buttonStyle(.plain)
                     .fixedSize()

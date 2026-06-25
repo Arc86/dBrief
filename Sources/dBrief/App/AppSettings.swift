@@ -69,6 +69,7 @@ final class AppSettings {
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
         static let showMiniRecordingView = "showMiniRecordingView"
         static let showMenuBarRecordingDuration = "showMenuBarRecordingDuration"
+        static let reduceNeon = "reduceNeon"
         static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -475,6 +476,14 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(showMenuBarRecordingDuration, forKey: Keys.showMenuBarRecordingDuration) }
     }
 
+    /// Calm-appearance opt-in: swap the neon brand styling (gradient CTAs, glow
+    /// halos, the neon-on-black transcript backdrop) for plain colors — a solid
+    /// red record button, flat dark surfaces, no glow. Off by default so the
+    /// signature brand look is preserved unless the user opts in.
+    var reduceNeon: Bool {
+        didSet { UserDefaults.standard.set(reduceNeon, forKey: Keys.reduceNeon) }
+    }
+
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
     /// monotonically-increasing odometer that survives "Clear benchmark stats".
     var lifetimeTranscribedSeconds: Double {
@@ -846,6 +855,7 @@ final class AppSettings {
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
         self.showMiniRecordingView = defaults.object(forKey: Keys.showMiniRecordingView) as? Bool ?? true
         self.showMenuBarRecordingDuration = defaults.object(forKey: Keys.showMenuBarRecordingDuration) as? Bool ?? true
+        self.reduceNeon = defaults.object(forKey: Keys.reduceNeon) as? Bool ?? false
         self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 

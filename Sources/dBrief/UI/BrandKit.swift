@@ -53,6 +53,42 @@ enum Brand {
         colors: [violet.opacity(0.35), cyan.opacity(0.25)],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
+
+    // MARK: - Calm-appearance variants
+
+    /// Primary-CTA fill: the coral→violet→cyan gradient normally, a flat solid
+    /// coral (i.e. plain "red") in calm mode.
+    static func ctaFill(calm: Bool) -> AnyShapeStyle {
+        calm ? AnyShapeStyle(coral) : AnyShapeStyle(gradientDiagonal)
+    }
+
+    /// Accent fill for waveforms / top bars: the horizontal brand gradient
+    /// normally, a flat solid coral in calm mode.
+    static func accentFill(calm: Bool) -> AnyShapeStyle {
+        calm ? AnyShapeStyle(coral) : AnyShapeStyle(gradient)
+    }
+
+    /// Glow color for CTA shadows — transparent in calm mode so a `.shadow`
+    /// modifier renders no halo without restructuring the view.
+    static func ctaGlow(calm: Bool, base: Color = coral, opacity: Double = 0.5) -> Color {
+        calm ? .clear : base.opacity(opacity)
+    }
+}
+
+// MARK: - Calm-appearance environment
+
+/// Whether the UI should drop neon brand styling (gradients, glow, neon
+/// backdrops) in favour of plain colors. Driven by `AppSettings.reduceNeon`,
+/// injected at each surface root. Default `false` keeps BrandKit standalone.
+private struct CalmAppearanceKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var calmAppearance: Bool {
+        get { self[CalmAppearanceKey.self] }
+        set { self[CalmAppearanceKey.self] = newValue }
+    }
 }
 
 // MARK: - Glass card surface
@@ -62,6 +98,7 @@ enum Brand {
 struct GlassCard: ViewModifier {
     var cornerRadius: CGFloat = 16
     var padding: CGFloat = 14
+    @Environment(\.calmAppearance) private var calm
 
     func body(content: Content) -> some View {
         content
@@ -69,10 +106,10 @@ struct GlassCard: ViewModifier {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Brand.cardStroke, lineWidth: 1)
-                    .opacity(0.6)
+                    .strokeBorder(calm ? AnyShapeStyle(Color.primary.opacity(0.12)) : AnyShapeStyle(Brand.cardStroke), lineWidth: 1)
+                    .opacity(calm ? 1 : 0.6)
             )
-            .shadow(color: Brand.violet.opacity(0.18), radius: 18, y: 10)
+            .shadow(color: calm ? .clear : Brand.violet.opacity(0.18), radius: calm ? 0 : 18, y: calm ? 0 : 10)
     }
 }
 
@@ -90,6 +127,7 @@ extension View {
 /// "Process", and the call-detected "Record" button.
 struct GradientButtonStyle: ButtonStyle {
     var cornerRadius: CGFloat = 13
+    @Environment(\.calmAppearance) private var calm
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -97,8 +135,8 @@ struct GradientButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(Brand.gradientDiagonal, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .shadow(color: Brand.coral.opacity(0.5), radius: 14, y: 6)
+            .background(Brand.ctaFill(calm: calm), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .shadow(color: Brand.ctaGlow(calm: calm), radius: calm ? 0 : 14, y: calm ? 0 : 6)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -163,12 +201,13 @@ struct BrandStatusDot: View {
     var pulse: Bool = false
 
     @State private var on = true
+    @Environment(\.calmAppearance) private var calm
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .shadow(color: color.opacity(0.9), radius: size * 0.9)
+            .shadow(color: calm ? .clear : color.opacity(0.9), radius: calm ? 0 : size * 0.9)
             .opacity(pulse ? (on ? 1 : 0.35) : 1)
             .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: on)
             .onAppear { if pulse { on = false } }
@@ -259,6 +298,7 @@ struct BrandCheckRow: View {
     let title: String
     @Binding var isOn: Bool
     var enabled: Bool = true
+    @Environment(\.calmAppearance) private var calm
 
     var body: some View {
         Button {
@@ -271,7 +311,7 @@ struct BrandCheckRow: View {
                         .frame(width: 20, height: 20)
                     if isOn {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Brand.gradientDiagonal)
+                            .fill(Brand.ctaFill(calm: calm))
                             .frame(width: 20, height: 20)
                             .overlay(
                                 Image(systemName: "checkmark")

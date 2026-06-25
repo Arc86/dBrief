@@ -40,6 +40,12 @@ struct SettingsGeneralTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Toggle("Reduce neon accents", isOn: $settings.reduceNeon)
+                if appSettings.reduceNeon {
+                    Text("Uses plain colors instead of glowing gradients and the neon dark-mode backdrop.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .listRowBackground(Color.clear)
 

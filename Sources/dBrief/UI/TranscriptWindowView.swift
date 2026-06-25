@@ -17,6 +17,7 @@ struct TranscriptDetailView: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(TranscriptChatStore.self) private var chatStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.calmAppearance) private var calm
 
     // Persisted display preferences
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
@@ -832,7 +833,7 @@ struct TranscriptDetailView: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
-                .background(TranscriptDesignTokens.brandGradient, in: RoundedRectangle(cornerRadius: 7))
+                .background(TranscriptDesignTokens.brandFill(calm: calm), in: RoundedRectangle(cornerRadius: 7))
             Text("dBrief Assistant")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))

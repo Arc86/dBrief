@@ -537,6 +537,7 @@ private struct SummaryPillButtonStyle: ButtonStyle {
     var tint: Color? = nil
 
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.calmAppearance) private var calm
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -565,7 +566,7 @@ private struct SummaryPillButtonStyle: ButtonStyle {
 
     private func background(pressed: Bool) -> AnyShapeStyle {
         if prominent {
-            return AnyShapeStyle(TranscriptDesignTokens.brandGradient.opacity(pressed ? 0.8 : 1))
+            return AnyShapeStyle(TranscriptDesignTokens.brandFill(calm: calm).opacity(pressed ? 0.8 : 1))
         }
         return AnyShapeStyle(TranscriptDesignTokens.chipFill(scheme: scheme).opacity(pressed ? 0.6 : 1))
     }
