@@ -1417,10 +1417,8 @@ struct TranscriptDetailView: View {
     }
 
     private func playSavedSpokenSummary() async {
-        guard let scriptURL = recording.spokenSummaryScriptURL,
-              let audioURL = recording.spokenSummaryAudioURL,
+        guard let audioURL = recording.spokenSummaryAudioURL,
               FileManager.default.fileExists(atPath: audioURL.path) else { return }
-        _ = scriptURL
         audioPlayer.play(url: audioURL)
     }
 
