@@ -29,6 +29,10 @@ final class SpokenSummaryService: Identifiable {
 
     private(set) var phase: Phase = .idle
 
+    /// True when the currently-`.ready` result is an already-saved summary being
+    /// replayed (no temp file, no Save/Discard) rather than a fresh generation.
+    private(set) var resultIsSaved = false
+
     private let appSettings: AppSettings
     private let plugin: LocalAIPluginService?
     private let store: SpokenSummaryStore
@@ -47,8 +51,18 @@ final class SpokenSummaryService: Identifiable {
 
     // MARK: - Pipeline
 
+    /// Present an already-saved summary for playback (no temp file, no Save).
+    /// Used when the user taps "Play Spoken" on the Summary screen.
+    func presentSaved(audioURL: URL, script: String) {
+        discardTemp()
+        self.script = script
+        resultIsSaved = true
+        phase = .ready(audioURL: audioURL, script: script)
+    }
+
     func generate(insights: RecordingInsights) async {
         discardTemp()
+        resultIsSaved = false
         phase = .rewriting
         do {
             let raw = try await generateScript(insights: insights)

@@ -240,6 +240,7 @@ struct TranscriptDetailView: View {
                 },
                 onRetry: { startSpokenSummary() }
             )
+            .environment(\.calmAppearance, context.appSettings.reduceNeon)
         }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -1418,8 +1419,16 @@ struct TranscriptDetailView: View {
 
     private func playSavedSpokenSummary() async {
         guard let audioURL = recording.spokenSummaryAudioURL,
+              let scriptURL = recording.spokenSummaryScriptURL,
               FileManager.default.fileExists(atPath: audioURL.path) else { return }
-        audioPlayer.play(url: audioURL)
+        let saved = try? await spokenSummaryStore.load(from: scriptURL)
+        let service = SpokenSummaryService(
+            appSettings: context.appSettings,
+            plugin: context.recordingManager.localPlugin,
+            store: spokenSummaryStore
+        )
+        service.presentSaved(audioURL: audioURL, script: saved?.script ?? "")
+        spokenSummaryService = service
     }
 
     private func refreshSpokenSummaryAvailability() {

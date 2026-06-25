@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Sheet presented after the user asks for a spoken summary. Shows pipeline
-/// progress, then a compact audio player with Save / Discard, or an error.
+/// progress, then a compact audio player with Save / Discard (fresh generation)
+/// or a single Done button (replaying an already-saved summary), or an error.
+/// Styled with the dBrief brand kit (neon accents, glass card, gradient CTA).
 struct SpokenSummaryPlayerView: View {
     let service: SpokenSummaryService
     @Bindable var bindableAudioPlayer: AudioPlayer
@@ -9,6 +11,7 @@ struct SpokenSummaryPlayerView: View {
     var onClose: () -> Void
     var onRetry: () -> Void
 
+    @Environment(\.calmAppearance) private var calm
     @State private var isSaving = false
 
     init(service: SpokenSummaryService,
@@ -24,59 +27,85 @@ struct SpokenSummaryPlayerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 18) {
-            HStack {
-                Label("Spoken Summary", systemImage: "waveform")
-                    .font(.headline)
-                Spacer()
-                Button { stopAndClose() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-            }
-
-            switch service.phase {
-            case .idle:
-                ProgressView()
-            case .rewriting:
-                phaseRow("Writing a spoken script…")
-            case .preparingVoice(let progress):
-                if let progress {
-                    VStack(spacing: 6) {
-                        Text("Preparing voice model…").foregroundStyle(.secondary)
-                        ProgressView(value: progress)
-                    }
-                } else {
-                    phaseRow("Preparing voice model…")
-                }
-            case .synthesizing:
-                phaseRow("Generating audio…")
-            case .ready(let audioURL, _):
-                playerControls(audioURL: audioURL)
-            case .failed(let message):
-                errorView(message)
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            Divider().opacity(0.4)
+            content
         }
-        .padding(24)
-        .frame(width: 420)
+        .padding(22)
+        .frame(width: 440)
         .onDisappear { bindableAudioPlayer.stop() }
     }
 
-    private func phaseRow(_ text: String) -> some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text(text).foregroundStyle(.secondary)
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 9) {
+            BrandStatusDot(color: Brand.violet, size: 8)
+            BrandKicker("Spoken Summary")
             Spacer()
+            Button { stopAndClose() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
     }
 
+    // MARK: - Phase content
+
+    @ViewBuilder
+    private var content: some View {
+        switch service.phase {
+        case .idle:
+            phaseRow("Preparing…")
+        case .rewriting:
+            phaseRow("Writing a spoken script…")
+        case .preparingVoice(let progress):
+            if let progress {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Preparing voice model…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    ProgressView(value: progress)
+                        .tint(Brand.violet)
+                }
+            } else {
+                phaseRow("Preparing voice model…")
+            }
+        case .synthesizing:
+            phaseRow("Generating audio…")
+        case .ready(let audioURL, _):
+            playerControls(audioURL: audioURL)
+        case .failed(let message):
+            errorView(message)
+        }
+    }
+
+    private func phaseRow(_ text: String) -> some View {
+        HStack(spacing: 11) {
+            ProgressView().controlSize(.small)
+            Text(text)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+
+    // MARK: - Player
+
     private func playerControls(audioURL: URL) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             HStack(spacing: 14) {
                 Button {
                     bindableAudioPlayer.togglePlayPause(url: audioURL)
                 } label: {
                     Image(systemName: bindableAudioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 38))
+                        .font(.system(size: 42))
+                        .foregroundStyle(Brand.accentFill(calm: calm))
                 }
                 .buttonStyle(.plain)
 
@@ -88,38 +117,61 @@ struct SpokenSummaryPlayerView: View {
                         ),
                         in: 0...max(bindableAudioPlayer.duration, 0.1)
                     )
+                    .tint(Brand.violet)
                     HStack {
                         Text(bindableAudioPlayer.formattedCurrentTime)
                         Spacer()
                         Text(bindableAudioPlayer.formattedDuration)
                     }
-                    .font(.caption.monospacedDigit())
+                    .font(.brandMono(11))
                     .foregroundStyle(.secondary)
                 }
             }
+            .glassCard(cornerRadius: 14, padding: 14)
 
-            HStack {
-                Button("Discard", role: .destructive) { stopAndClose() }
-                Spacer()
-                Button {
-                    Task { isSaving = true; await onSave(); isSaving = false }
-                } label: {
-                    if isSaving { ProgressView().controlSize(.small) } else { Text("Save") }
+            if service.resultIsSaved {
+                Button { stopAndClose() } label: { Text("Done") }
+                    .buttonStyle(GlassControlButtonStyle())
+            } else {
+                HStack(spacing: 12) {
+                    Button("Discard", role: .destructive) { stopAndClose() }
+                        .buttonStyle(CoralControlButtonStyle())
+                    Button {
+                        Task { isSaving = true; await onSave(); isSaving = false }
+                    } label: {
+                        if isSaving {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Label("Save", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isSaving)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isSaving)
             }
         }
     }
 
+    // MARK: - Error
+
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: 12) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            HStack {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.coral)
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .glassCard(cornerRadius: 12, padding: 12)
+
+            HStack(spacing: 12) {
                 Button("Close") { stopAndClose() }
-                Button("Retry") { onRetry() }
+                    .buttonStyle(GlassControlButtonStyle())
+                Button { onRetry() } label: { Text("Retry") }
+                    .buttonStyle(GradientButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
