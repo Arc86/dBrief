@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import dBriefWire
 #if canImport(FoundationModels)
 import FoundationModels
@@ -53,16 +54,20 @@ final class SpokenSummaryService {
             }
             self.script = cleaned
 
+            // Verify plugin before starting state observation.
+            guard let plugin else {
+                phase = .failed(message: "Local AI plugin not available.")
+                return
+            }
+
             // Observe helper download/load progress while synthesizing.
             phase = .preparingVoice(progress: nil)
             observeModelState()
 
             let outURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("dbrief-spokensummary-\(UUID().uuidString).wav")
-            guard let plugin else {
-                phase = .failed(message: "Local AI plugin not available.")
-                return
-            }
+            // Assign before calling synthesizeSpeech so any partial file is cleaned up on error.
+            self.tempAudioURL = outURL
             phase = .synthesizing
             _ = try await plugin.synthesizeSpeech(
                 text: cleaned,
@@ -71,10 +76,10 @@ final class SpokenSummaryService {
                 language: languageCode(appSettings.outputLanguage)
             )
             stopObservingModelState()
-            self.tempAudioURL = outURL
             phase = .ready(audioURL: outURL, script: cleaned)
         } catch {
             stopObservingModelState()
+            discardTemp()
             phase = .failed(message: error.localizedDescription)
         }
     }
@@ -99,7 +104,12 @@ final class SpokenSummaryService {
               let scriptURL = recording.spokenSummaryScriptURL else {
             throw SpokenSummaryError.notReady
         }
-        try transcodeToM4A(from: tempAudioURL, to: audioURL)
+        // Capture as locals (Sendable URLs) for the detached closure.
+        let wavURL = tempAudioURL
+        let m4aURL = audioURL
+        try await Task.detached(priority: .userInitiated) {
+            try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
+        }.value
         let summary = SpokenSummary(
             script: script,
             audioFileName: audioURL.lastPathComponent,
@@ -176,7 +186,7 @@ final class SpokenSummaryService {
             for await state in plugin.stateStream {
                 guard let self else { return }
                 if case let .downloading(progress, _) = state {
-                    await MainActor.run { self.phase = .preparingVoice(progress: progress) }
+                    self.phase = .preparingVoice(progress: progress)
                 }
             }
         }
@@ -203,7 +213,7 @@ final class SpokenSummaryService {
         }
     }
 
-    private func transcodeToM4A(from wav: URL, to m4a: URL) throws {
+    nonisolated static func transcodeToM4A(from wav: URL, to m4a: URL) throws {
         try? FileManager.default.removeItem(at: m4a)
         let args = ["-y", "-i", wav.path, "-ac", "1", "-c:a", "aac", "-b:a", "96k", m4a.path]
         let process = Process()
@@ -226,7 +236,9 @@ final class SpokenSummaryService {
         }
         guard process.terminationStatus == 0 else {
             let data = stdErr.fileHandleForReading.readDataToEndOfFile()
-            throw SpokenSummaryError.transcodeFailed(String(data: data, encoding: .utf8) ?? "ffmpeg failed")
+            let stderr = String(data: data, encoding: .utf8) ?? "ffmpeg failed"
+            Logger.ai.error("SpokenSummaryService: ffmpeg transcode failed — \(stderr, privacy: .public)")
+            throw SpokenSummaryError.transcodeFailed(stderr)
         }
     }
 }
