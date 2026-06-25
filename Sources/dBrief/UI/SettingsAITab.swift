@@ -1,4 +1,5 @@
 import SwiftUI
+import dBriefWire
 
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings
@@ -104,6 +105,19 @@ struct SettingsAITab: View {
                     }
                         .listRowBackground(Color.clear)
                 }
+                Section("Spoken Voice") {
+                    Picker("Voice model", selection: $settings.ttsModelSize) {
+                        ForEach(TTSModelSize.allCases, id: \.self) { size in
+                            Text(size.displayName).tag(size)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
+                }
+                    .listRowBackground(Color.clear)
                 if appSettings.aiEngine == .remoteEndpoint {
                     Section("Endpoints") {
                         endpointsSection

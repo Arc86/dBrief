@@ -92,7 +92,9 @@ final class SpokenSummaryService: Identifiable {
                 text: cleaned,
                 outputPath: outURL.path,
                 voice: nil,
-                language: languageCode(appSettings.outputLanguage)
+                language: languageCode(appSettings.outputLanguage),
+                instruction: appSettings.ttsDeliveryInstruction,
+                model: appSettings.ttsModelSize.rawValue
             )
             stopObservingModelState()
             phase = .ready(audioURL: outURL, script: cleaned)

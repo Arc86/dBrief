@@ -49,6 +49,8 @@ final class AppSettings {
         static let actionItemsPrompt = "actionItemsPrompt"
         static let tagsPrompt = "tagsPrompt"
         static let spokenSummaryPrompt = "spokenSummaryPrompt"
+        static let ttsDeliveryInstruction = "ttsDeliveryInstruction"
+        static let ttsModelSize = "ttsModelSize"
         static let remoteChunkingEnabled = "remoteChunkingEnabled"
         static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
         static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
@@ -555,6 +557,13 @@ final class AppSettings {
         the briefing.
         """
 
+    /// Default calm-delivery style instruction for the Spoken Summary TTS voice.
+    /// Followed only by the 1.7B model.
+    static let defaultTTSDeliveryInstruction =
+        "Narrate in a calm, measured, professional tone. Speak at a relaxed, "
+        + "unhurried pace and pause briefly between sentences. Avoid sounding "
+        + "overly energetic or excited."
+
     static let teamMeetingVocabulary: [String] = [
         "Team standup", "sprint", "backlog", "blocker", "follow-up",
         "ETA", "Jira", "PR", "release", "roadmap", "architecture"
@@ -640,6 +649,20 @@ final class AppSettings {
     /// for the Spoken Summary feature. User-editable in Settings → AI Analysis.
     var spokenSummaryPrompt: String {
         didSet { UserDefaults.standard.set(spokenSummaryPrompt, forKey: Keys.spokenSummaryPrompt) }
+    }
+
+    /// Style/delivery instruction fed to the Spoken Summary TTS voice. Only the
+    /// 1.7B model follows it (the 0.6B variant ignores it). User-editable in
+    /// Settings → AI Analysis; an empty value sends no instruction.
+    var ttsDeliveryInstruction: String {
+        didSet { UserDefaults.standard.set(ttsDeliveryInstruction, forKey: Keys.ttsDeliveryInstruction) }
+    }
+
+    /// Qwen3-TTS model size used for spoken-summary synthesis. 1.7B is the most
+    /// natural (and the only one that follows `ttsDeliveryInstruction`); 0.6B is
+    /// lighter for 16 GB Macs. Settings → AI Analysis.
+    var ttsModelSize: TTSModelSize {
+        didSet { UserDefaults.standard.set(ttsModelSize.rawValue, forKey: Keys.ttsModelSize) }
     }
 
     var remoteChunkingEnabled: Bool {
@@ -886,6 +909,8 @@ final class AppSettings {
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
         self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
+        self.ttsDeliveryInstruction = defaults.string(forKey: Keys.ttsDeliveryInstruction) ?? Self.defaultTTSDeliveryInstruction
+        self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
         self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
         self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
         self.remoteChunkOverlapSeconds = max(

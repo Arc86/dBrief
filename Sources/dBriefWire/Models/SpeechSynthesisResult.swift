@@ -17,3 +17,25 @@ public struct SpeechSynthesisResult: Sendable, Codable {
         self.sampleRate = sampleRate
     }
 }
+
+/// Selectable Qwen3-TTS model size for spoken-summary synthesis. Raw values match
+/// TTSKit's `TTSModelVariant` raw values so the helper can map them directly
+/// without `dBrief` importing TTSKit.
+public enum TTSModelSize: String, Codable, Sendable, CaseIterable {
+    /// Lighter, faster; ignores the voice-style instruction. Better on 16 GB Macs.
+    case small = "0.6b"
+    /// Heavier; markedly more natural prosody and the only variant that follows
+    /// the voice-style instruction.
+    case large = "1.7b"
+
+    /// Human-readable label for settings UI.
+    public var displayName: String {
+        switch self {
+        case .small: "Qwen3 TTS 0.6B (lighter)"
+        case .large: "Qwen3 TTS 1.7B (most natural)"
+        }
+    }
+
+    /// Whether this variant follows the spoken-voice style instruction.
+    public var supportsVoiceInstruction: Bool { self == .large }
+}

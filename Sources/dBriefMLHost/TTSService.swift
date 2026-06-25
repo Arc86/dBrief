@@ -13,42 +13,41 @@ import OSLog
 final class TTSService: @unchecked Sendable {
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var tts: TTSKit?
+    /// Variant of the currently-loaded `tts`, so a model-size change reloads.
+    private var loadedVariant: TTSModelVariant?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
     }
 
-    /// Style/delivery instruction fed to the 1.7B model (the 0.6B variant ignores
-    /// it). Aims for a calm, measured narration rather than the model's default
-    /// energetic read, with brief pauses between sentences.
-    private static let deliveryInstruction =
-        "Narrate in a calm, measured, professional tone. Speak at a relaxed, "
-        + "unhurried pace and pause briefly between sentences. Avoid sounding "
-        + "overly energetic or excited."
-
     // MARK: - Public API
 
-    /// Synthesize `text` to a mono WAV at `outputPath`. Loads the model on first call.
-    func synthesize(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult {
+    /// Synthesize `text` to a mono WAV at `outputPath`. Loads the model on first
+    /// call. `instruction` is a calm-delivery style hint (1.7B only; the 0.6B
+    /// variant ignores it). `model` is a `TTSModelSize` raw value ("0.6b"/"1.7b").
+    func synthesize(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?) async throws -> SpeechSynthesisResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw WireError(kind: .generic, message: "TTS: empty text")
         }
-        let engine = try await loadTTS()
+        let variant = Self.variant(for: model)
+        let engine = try await loadTTS(variant: variant)
+        let styleInstruction = instruction?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedInstruction = (styleInstruction?.isEmpty ?? true) ? nil : styleInstruction
 
         // Let TTSKit handle long text: its `generate` splits on sentence
         // boundaries (default `.sentence` strategy) and crossfades the chunks by
         // 100 ms internally, keeping prosody stable and joins seamless — far
         // better than hand-concatenating per-chunk WAVs (which clicks and varies
-        // in level). The 1.7B model (selected in `loadTTS`) also sounds markedly
-        // more natural than 0.6B.
+        // in level). The 1.7B model sounds markedly more natural than 0.6B and is
+        // the only one that follows `instruction` (see GenerationOptions).
         let result: SpeechResult
         do {
             result = try await engine.generate(
                 text: trimmed,
                 voice: voice,
                 language: language,
-                options: GenerationOptions(instruction: Self.deliveryInstruction)
+                options: GenerationOptions(instruction: resolvedInstruction)
             )
         } catch {
             Logger.localAI.error("TTS generation failed: \(error.localizedDescription, privacy: .public)")
@@ -71,6 +70,7 @@ final class TTSService: @unchecked Sendable {
     func unload() async {
         await tts?.unloadModels()
         tts = nil
+        loadedVariant = nil
     }
 
     /// Delete the cached TTS model directory.
@@ -83,12 +83,20 @@ final class TTSService: @unchecked Sendable {
 
     // MARK: - Loading
 
-    private func loadTTS() async throws -> TTSKit {
-        if let tts { return tts }
+    /// Maps a `TTSModelSize` raw value to a TTSKit variant, defaulting to the
+    /// more natural 1.7B when unset/unknown (macOS-only, which this app always is).
+    private static func variant(for model: String?) -> TTSModelVariant {
+        guard let model, let v = TTSModelVariant(rawValue: model) else { return .qwen3TTS_1_7b }
+        return v
+    }
+
+    private func loadTTS(variant: TTSModelVariant) async throws -> TTSKit {
+        // Reuse a loaded engine only if it matches the requested variant; otherwise
+        // unload and reload so a settings change takes effect. (In practice the
+        // orchestrator unloads after every synth, so this is belt-and-suspenders.)
+        if let tts, loadedVariant == variant { return tts }
+        if tts != nil { await unload() }
         let downloadBase = try ttsDownloadBaseURL()
-        // Prefer the 1.7B variant — much more natural prosody than the 0.6B
-        // default and macOS-only, which this app always is. It supports style
-        // instructions too (see GenerationOptions.instruction) if we want them.
         // `load: false` so the initializer does NOT auto-load after it resolves
         // the model folder — otherwise the model loads twice (init + our explicit
         // loadModels below), and the first generate can race a still-loading
@@ -96,7 +104,7 @@ final class TTSService: @unchecked Sendable {
         // after attaching the progress callback. The race is wider on the heavier
         // 1.7B model, which is why it surfaced there.
         let config = TTSKitConfig(
-            model: .qwen3TTS_1_7b,
+            model: variant,
             downloadBase: downloadBase,
             verbose: true,
             logLevel: .info,
@@ -115,6 +123,7 @@ final class TTSService: @unchecked Sendable {
         }
         try await engine.loadModels()
         self.tts = engine
+        self.loadedVariant = variant
         return engine
     }
 

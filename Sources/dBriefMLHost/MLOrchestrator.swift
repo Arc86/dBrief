@@ -119,12 +119,12 @@ actor MLOrchestrator: MLBackend {
 
     // MARK: - Text-to-speech (scaffold)
 
-    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult {
+    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?) async throws -> SpeechSynthesisResult {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             await insightsService.unload()
-            let result = try await ttsService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language)
+            let result = try await ttsService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model)
             await ttsService.unload()
             return result
         }
