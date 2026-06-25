@@ -39,3 +39,67 @@ public enum TTSModelSize: String, Codable, Sendable, CaseIterable {
     /// Whether this variant follows the spoken-voice style instruction.
     public var supportsVoiceInstruction: Bool { self == .large }
 }
+
+/// Selectable Qwen3-TTS speaker voice. Raw values match TTSKit's `Qwen3Speaker`
+/// raw values exactly so the helper can map them without `dBrief` importing
+/// TTSKit. A voice works with any `TTSLanguage`, but sounds best in its native
+/// language (shown in `detail`).
+public enum TTSVoice: String, Codable, Sendable, CaseIterable {
+    case ryan, aiden
+    case onoAnna = "ono-anna"
+    case sohee, eric, dylan, serena, vivian
+    case uncleFu = "uncle-fu"
+
+    /// Human-readable label for settings UI.
+    public var displayName: String {
+        switch self {
+        case .ryan: "Ryan"
+        case .aiden: "Aiden"
+        case .onoAnna: "Ono Anna"
+        case .sohee: "Sohee"
+        case .eric: "Eric"
+        case .dylan: "Dylan"
+        case .serena: "Serena"
+        case .vivian: "Vivian"
+        case .uncleFu: "Uncle Fu"
+        }
+    }
+
+    /// Character of the voice plus its native (best-quality) language.
+    public var detail: String {
+        switch self {
+        case .ryan: "Dynamic male voice with strong rhythmic drive · English"
+        case .aiden: "Sunny American male voice with a clear midrange · English"
+        case .onoAnna: "Playful, light Japanese female voice · Japanese"
+        case .sohee: "Warm Korean female voice with rich emotion · Korean"
+        case .eric: "Lively, slightly husky male voice · Chinese (Sichuan)"
+        case .dylan: "Youthful, clear male voice · Chinese (Beijing)"
+        case .serena: "Warm, gentle young female voice · Chinese"
+        case .vivian: "Bright, slightly edgy young female voice · Chinese"
+        case .uncleFu: "Seasoned male voice with a low, mellow timbre · Chinese"
+        }
+    }
+}
+
+/// Selectable Qwen3-TTS output language. Raw values match TTSKit's
+/// `Qwen3Language` raw values exactly so the helper can map them without
+/// `dBrief` importing TTSKit.
+public enum TTSLanguage: String, Codable, Sendable, CaseIterable {
+    case english, chinese, japanese, korean, german, french, russian, portuguese, spanish, italian
+
+    /// Human-readable label for settings UI.
+    public var displayName: String {
+        switch self {
+        case .english: "English"
+        case .chinese: "Chinese"
+        case .japanese: "Japanese"
+        case .korean: "Korean"
+        case .german: "German"
+        case .french: "French"
+        case .russian: "Russian"
+        case .portuguese: "Portuguese"
+        case .spanish: "Spanish"
+        case .italian: "Italian"
+        }
+    }
+}

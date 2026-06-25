@@ -51,6 +51,8 @@ final class AppSettings {
         static let spokenSummaryPrompt = "spokenSummaryPrompt"
         static let ttsDeliveryInstruction = "ttsDeliveryInstruction"
         static let ttsModelSize = "ttsModelSize"
+        static let ttsVoice = "ttsVoice"
+        static let ttsLanguage = "ttsLanguage"
         static let remoteChunkingEnabled = "remoteChunkingEnabled"
         static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
         static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
@@ -665,6 +667,16 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(ttsModelSize.rawValue, forKey: Keys.ttsModelSize) }
     }
 
+    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI Analysis.
+    var ttsVoice: TTSVoice {
+        didSet { UserDefaults.standard.set(ttsVoice.rawValue, forKey: Keys.ttsVoice) }
+    }
+
+    /// Qwen3-TTS output language used for spoken-summary synthesis. Settings → AI Analysis.
+    var ttsLanguage: TTSLanguage {
+        didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
+    }
+
     var remoteChunkingEnabled: Bool {
         didSet { UserDefaults.standard.set(remoteChunkingEnabled, forKey: Keys.remoteChunkingEnabled) }
     }
@@ -911,6 +923,8 @@ final class AppSettings {
         self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
         self.ttsDeliveryInstruction = defaults.string(forKey: Keys.ttsDeliveryInstruction) ?? Self.defaultTTSDeliveryInstruction
         self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
+        self.ttsVoice = (defaults.string(forKey: Keys.ttsVoice)).flatMap(TTSVoice.init(rawValue:)) ?? .ryan
+        self.ttsLanguage = (defaults.string(forKey: Keys.ttsLanguage)).flatMap(TTSLanguage.init(rawValue:)) ?? .english
         self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
         self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
         self.remoteChunkOverlapSeconds = max(

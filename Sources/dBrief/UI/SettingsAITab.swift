@@ -115,6 +115,24 @@ struct SettingsAITab: View {
                     Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Picker("Voice", selection: $settings.ttsVoice) {
+                        ForEach(TTSVoice.allCases, id: \.self) { voice in
+                            Text(voice.displayName).tag(voice)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text(settings.ttsVoice.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("Language", selection: $settings.ttsLanguage) {
+                        ForEach(TTSLanguage.allCases, id: \.self) { language in
+                            Text(language.displayName).tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
                 }
                     .listRowBackground(Color.clear)

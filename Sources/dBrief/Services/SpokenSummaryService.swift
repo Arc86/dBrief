@@ -91,8 +91,8 @@ final class SpokenSummaryService: Identifiable {
             _ = try await plugin.synthesizeSpeech(
                 text: cleaned,
                 outputPath: outURL.path,
-                voice: nil,
-                language: languageCode(appSettings.outputLanguage),
+                voice: appSettings.ttsVoice.rawValue,
+                language: appSettings.ttsLanguage.rawValue,
                 instruction: appSettings.ttsDeliveryInstruction,
                 model: appSettings.ttsModelSize.rawValue
             )
@@ -136,8 +136,8 @@ final class SpokenSummaryService: Identifiable {
             let summary = SpokenSummary(
                 script: script,
                 audioFileName: audioURL.lastPathComponent,
-                voice: nil,
-                language: languageCode(appSettings.outputLanguage),
+                voice: appSettings.ttsVoice.rawValue,
+                language: appSettings.ttsLanguage.rawValue,
                 engine: appSettings.effectiveAIEngine.rawValue,
                 generatedAt: Date()
             )
@@ -229,15 +229,6 @@ final class SpokenSummaryService: Identifiable {
     private func discardTemp() {
         if let tempAudioURL { try? FileManager.default.removeItem(at: tempAudioURL) }
         tempAudioURL = nil
-    }
-
-    private func languageCode(_ language: OutputLanguage) -> String? {
-        switch language {
-        case .matchInput: return nil
-        case .english: return "en"
-        case .dutch: return "nl"
-        case .custom(let code): return code.isEmpty ? nil : code
-        }
     }
 
     nonisolated static func transcodeToM4A(from wav: URL, to m4a: URL) throws {
