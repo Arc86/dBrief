@@ -48,6 +48,7 @@ final class AppSettings {
         static let summaryPrompt = "summaryPrompt"
         static let actionItemsPrompt = "actionItemsPrompt"
         static let tagsPrompt = "tagsPrompt"
+        static let spokenSummaryPrompt = "spokenSummaryPrompt"
         static let remoteChunkingEnabled = "remoteChunkingEnabled"
         static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
         static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
@@ -538,6 +539,22 @@ final class AppSettings {
         Output valid JSON only. No markdown code fences, no explanation.
         """
 
+    static let defaultSpokenSummaryPrompt = """
+        You are an assistant that turns a meeting's written summary and action items \
+        into a short, natural-sounding spoken briefing to be read aloud by a \
+        text-to-speech voice. \
+        Write in the same language as the input. \
+        Produce flowing spoken prose only — no headings, bullet points, markdown, \
+        emoji, or list markers. \
+        Open with one sentence framing what the meeting was about, then narrate the \
+        key points and decisions conversationally, and finish by mentioning the most \
+        important action items and who owns them. \
+        Keep it concise (roughly 150-220 words), use complete sentences, and spell out \
+        abbreviations where it helps listening. \
+        Do not add meta commentary like "here is your summary" — start directly with \
+        the briefing.
+        """
+
     static let teamMeetingVocabulary: [String] = [
         "Team standup", "sprint", "backlog", "blocker", "follow-up",
         "ETA", "Jira", "PR", "release", "roadmap", "architecture"
@@ -617,6 +634,12 @@ final class AppSettings {
 
     var tagsPrompt: String {
         didSet { UserDefaults.standard.set(tagsPrompt, forKey: Keys.tagsPrompt) }
+    }
+
+    /// Prompt for the second AI pass that rewrites insights into a spoken script
+    /// for the Spoken Summary feature. User-editable in Settings → AI Analysis.
+    var spokenSummaryPrompt: String {
+        didSet { UserDefaults.standard.set(spokenSummaryPrompt, forKey: Keys.spokenSummaryPrompt) }
     }
 
     var remoteChunkingEnabled: Bool {
@@ -862,6 +885,7 @@ final class AppSettings {
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
+        self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
         self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
         self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
         self.remoteChunkOverlapSeconds = max(

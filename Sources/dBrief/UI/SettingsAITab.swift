@@ -100,6 +100,7 @@ struct SettingsAITab: View {
                         promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
                         promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
                         promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                        promptRow(label: "Spoken Summary", key: "spokenSummary", text: $settings.spokenSummaryPrompt, defaultText: AppSettings.defaultSpokenSummaryPrompt)
                     }
                         .listRowBackground(Color.clear)
                 }
