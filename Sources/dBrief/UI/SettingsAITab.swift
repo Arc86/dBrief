@@ -107,35 +107,59 @@ struct SettingsAITab: View {
                         .listRowBackground(Color.clear)
                 }
                 Section("Spoken Voice") {
-                    Picker("Voice model", selection: $settings.ttsModelSize) {
-                        ForEach(TTSModelSize.allCases, id: \.self) { size in
-                            Text(size.displayName).tag(size)
+                    Picker("Voice engine", selection: $settings.ttsEngine) {
+                        ForEach(TTSEngine.allCases, id: \.self) { engine in
+                            Text(engine.displayName).tag(engine)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
+                    Text(settings.ttsEngine.shortDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Picker("Voice", selection: $settings.ttsVoice) {
-                        ForEach(TTSVoice.allCases, id: \.self) { voice in
-                            Text(voice.displayName).tag(voice)
+
+                    switch settings.ttsEngine {
+                    case .qwen3:
+                        Picker("Voice model", selection: $settings.ttsModelSize) {
+                            ForEach(TTSModelSize.allCases, id: \.self) { size in
+                                Text(size.displayName).tag(size)
+                            }
                         }
-                    }
-                    .pickerStyle(.menu)
-                    Text(settings.ttsVoice.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("Language", selection: $settings.ttsLanguage) {
-                        ForEach(TTSLanguage.allCases, id: \.self) { language in
-                            Text(language.displayName).tag(language)
+                        .pickerStyle(.menu)
+                        Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("Voice", selection: $settings.ttsVoice) {
+                            ForEach(TTSVoice.allCases, id: \.self) { voice in
+                                Text(voice.displayName).tag(voice)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        Text(settings.ttsVoice.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("Language", selection: $settings.ttsLanguage) {
+                            ForEach(TTSLanguage.allCases, id: \.self) { language in
+                                Text(language.displayName).tag(language)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        voicePreviewRow
+                        promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
+                    case .kokoro:
+                        Picker("Voice", selection: $settings.ttsKokoroVoice) {
+                            ForEach(KokoroVoice.allCases, id: \.self) { voice in
+                                Text("\(voice.displayName) · \(voice.language)").tag(voice)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Text("Kokoro is in beta and sounds best in English. The chosen voice sets the language — there's no separate language or style control.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        voicePreviewRow
                     }
-                    .pickerStyle(.menu)
-                    Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    voicePreviewRow
-                    promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
                 }
                     .listRowBackground(Color.clear)
                 if appSettings.aiEngine == .remoteEndpoint {
@@ -163,6 +187,21 @@ struct SettingsAITab: View {
         }
     }
 
+    /// A short sample sentence in the language the preview will be spoken in.
+    /// Qwen3 uses the selected output language; Kokoro derives it from the voice.
+    private var previewSampleText: String {
+        switch appSettings.ttsEngine {
+        case .qwen3:
+            return appSettings.ttsLanguage.sampleText
+        case .kokoro:
+            switch appSettings.ttsKokoroVoice.language {
+            case "Mandarin": return TTSLanguage.chinese.sampleText
+            case "Japanese": return TTSLanguage.japanese.sampleText
+            default: return TTSLanguage.english.sampleText
+            }
+        }
+    }
+
     /// Audition the selected voice/language/model/style with a short sample.
     @ViewBuilder
     private var voicePreviewRow: some View {
@@ -170,11 +209,14 @@ struct SettingsAITab: View {
             switch voicePreview.state {
             case .idle, .failed:
                 Button {
+                    let tts = appSettings.ttsSynthesisParams
                     voicePreview.preview(
-                        voice: appSettings.ttsVoice,
-                        language: appSettings.ttsLanguage,
-                        model: appSettings.ttsModelSize,
-                        instruction: appSettings.ttsDeliveryInstruction,
+                        text: previewSampleText,
+                        engine: tts.engine,
+                        voice: tts.voice,
+                        language: tts.language,
+                        instruction: tts.instruction,
+                        model: tts.model,
                         plugin: recordingManager.localPlugin
                     )
                 } label: {

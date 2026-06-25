@@ -34,13 +34,17 @@ final class VoicePreviewPlayer {
 
     var isPlaying: Bool { state == .playing }
 
-    /// Synthesize the sample for `language` with the given voice settings and play
-    /// it. Calling again (or `stop()`) cancels any in-flight work first.
+    /// Synthesize `text` with the given resolved TTS parameters and play it.
+    /// Engine-agnostic — the caller resolves voice/language/instruction/model/engine
+    /// (e.g. via `AppSettings.ttsSynthesisParams`). Calling again (or `stop()`)
+    /// cancels any in-flight work first.
     func preview(
-        voice: TTSVoice,
-        language: TTSLanguage,
-        model: TTSModelSize,
-        instruction: String,
+        text: String,
+        engine: String,
+        voice: String?,
+        language: String?,
+        instruction: String?,
+        model: String?,
         plugin: LocalAIPluginService?
     ) {
         stop()
@@ -48,7 +52,6 @@ final class VoicePreviewPlayer {
             state = .failed(message: "Local AI plugin not available.")
             return
         }
-        let text = language.sampleText
         observeModelState(plugin: plugin)
         state = .preparingVoice(progress: nil)
         task = Task { [weak self] in
@@ -61,10 +64,11 @@ final class VoicePreviewPlayer {
                 _ = try await plugin.synthesizeSpeech(
                     text: text,
                     outputPath: outURL.path,
-                    voice: voice.rawValue,
-                    language: language.rawValue,
+                    voice: voice,
+                    language: language,
                     instruction: instruction,
-                    model: model.rawValue
+                    model: model,
+                    engine: engine
                 )
                 try Task.checkCancellation()
                 self.stopObservingModelState()

@@ -18,6 +18,72 @@ public struct SpeechSynthesisResult: Sendable, Codable {
     }
 }
 
+/// Which on-device TTS backend synthesizes spoken summaries. Raw values are the
+/// `engine` discriminator carried on `MLRequest.synthesizeSpeech` so the helper
+/// routes to the right service without `dBrief` importing either TTS framework.
+public enum TTSEngine: String, Codable, Sendable, Hashable, CaseIterable {
+    /// TTSKit / Qwen3-TTS — multilingual, voice-style instructions, 0.6B/1.7B.
+    case qwen3
+    /// FluidAudio Kokoro (KokoroAne) — fast, ANE-resident; English/Mandarin/Japanese (beta).
+    case kokoro
+
+    /// Human-readable label for the engine picker.
+    public var displayName: String {
+        switch self {
+        case .qwen3: "Qwen3 TTS"
+        case .kokoro: "Kokoro"
+        }
+    }
+
+    /// One-line descriptor under the picker.
+    public var shortDescription: String {
+        switch self {
+        case .qwen3: "Multilingual · voice styles"
+        case .kokoro: "Fast · EN/ZH/JA (beta)"
+        }
+    }
+}
+
+/// Selectable Kokoro (FluidAudio KokoroAne) voice. Raw values are Kokoro voice
+/// ids passed verbatim to `KokoroAneManager` (which downloads the embedding on
+/// demand), so `dBrief` never imports FluidAudio.
+///
+/// Only voices that actually ship in FluidAudio's KokoroAne CoreML repos are
+/// listed: the English ANE repo currently ships a single voice (`af_heart`),
+/// while the Mandarin (`ANE-zh`) repo ships `zf_001`…`zf_007`. The Japanese
+/// variant has no text frontend, so no Japanese voices are offered. Kokoro infers
+/// language from the voice id, so there is no separate language control.
+public enum KokoroVoice: String, Codable, Sendable, CaseIterable {
+    // English (the only voice FluidAudio currently ships for the English variant)
+    case afHeart = "af_heart"
+    // Mandarin (ANE-zh/voices/*.bin)
+    case zf001 = "zf_001"
+    case zf002 = "zf_002"
+    case zf003 = "zf_003"
+    case zf004 = "zf_004"
+    case zf005 = "zf_005"
+
+    /// Human-readable label for the voice picker.
+    public var displayName: String {
+        switch self {
+        case .afHeart: "Heart"
+        case .zf001: "Mandarin 1"
+        case .zf002: "Mandarin 2"
+        case .zf003: "Mandarin 3"
+        case .zf004: "Mandarin 4"
+        case .zf005: "Mandarin 5"
+        }
+    }
+
+    /// Language grouping for the picker (Kokoro derives language from the voice).
+    public var language: String {
+        switch self {
+        case .afHeart: "English"
+        case .zf001, .zf002, .zf003, .zf004, .zf005: "Mandarin"
+        }
+    }
+}
+
 /// Selectable Qwen3-TTS model size for spoken-summary synthesis. Raw values match
 /// TTSKit's `TTSModelVariant` raw values so the helper can map them directly
 /// without `dBrief` importing TTSKit.

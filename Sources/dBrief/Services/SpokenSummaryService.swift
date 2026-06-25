@@ -88,13 +88,15 @@ final class SpokenSummaryService: Identifiable {
             // Assign before calling synthesizeSpeech so any partial file is cleaned up on error.
             self.tempAudioURL = outURL
             phase = .synthesizing
+            let tts = appSettings.ttsSynthesisParams
             _ = try await plugin.synthesizeSpeech(
                 text: cleaned,
                 outputPath: outURL.path,
-                voice: appSettings.ttsVoice.rawValue,
-                language: appSettings.ttsLanguage.rawValue,
-                instruction: appSettings.ttsDeliveryInstruction,
-                model: appSettings.ttsModelSize.rawValue
+                voice: tts.voice,
+                language: tts.language,
+                instruction: tts.instruction,
+                model: tts.model,
+                engine: tts.engine
             )
             stopObservingModelState()
             phase = .ready(audioURL: outURL, script: cleaned)

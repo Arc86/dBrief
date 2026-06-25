@@ -90,9 +90,9 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     /// Synthesize speech to a WAV at `outputPath` via TTSKit in the helper.
     /// Scaffold only — not yet surfaced in any view. Returns the written file's
     /// path plus duration/sample-rate metadata.
-    func synthesizeSpeech(text: String, outputPath: String, voice: String? = nil, language: String? = nil, instruction: String? = nil, model: String? = nil) async throws -> SpeechSynthesisResult {
+    func synthesizeSpeech(text: String, outputPath: String, voice: String? = nil, language: String? = nil, instruction: String? = nil, model: String? = nil, engine: String? = nil) async throws -> SpeechSynthesisResult {
         guard case let .speechResult(r) = try await connection.call(
-            .synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model)
+            .synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
         ) else { throw WireError(kind: .generic, message: "no speech result") }
         return r
     }

@@ -13,7 +13,7 @@ public enum MLRequest: Sendable, Codable {
     case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
     case chatStream(systemPrompt: String, userMessage: String)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
-    case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?)
+    case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)
     case prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool)

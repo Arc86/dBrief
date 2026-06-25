@@ -32,9 +32,9 @@ extension DownloadStage {
     /// Short user-facing label for the inline progress row.
     var downloadLabel: String {
         switch self {
-        case .whisperModel, .llmModel, .parakeetModel, .ttsModel:
+        case .whisperModel, .llmModel, .parakeetModel, .ttsModel, .kokoroTTSModel:
             return "Downloading…"
-        case .whisperModelLoading, .parakeetModelLoading, .ttsModelLoading:
+        case .whisperModelLoading, .parakeetModelLoading, .ttsModelLoading, .kokoroTTSModelLoading:
             return "Loading…"
         case .speakerKitModel:
             return "Downloading speakers…"

@@ -53,6 +53,8 @@ final class AppSettings {
         static let ttsModelSize = "ttsModelSize"
         static let ttsVoice = "ttsVoice"
         static let ttsLanguage = "ttsLanguage"
+        static let ttsEngine = "ttsEngine"
+        static let ttsKokoroVoice = "ttsKokoroVoice"
         static let remoteChunkingEnabled = "remoteChunkingEnabled"
         static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
         static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
@@ -677,6 +679,30 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
     }
 
+    /// Which on-device TTS engine synthesizes spoken summaries. Default Kokoro
+    /// (fast, ANE-resident); Qwen3 is the broader-multilingual alternative.
+    /// Settings → AI Analysis.
+    var ttsEngine: TTSEngine {
+        didSet { UserDefaults.standard.set(ttsEngine.rawValue, forKey: Keys.ttsEngine) }
+    }
+
+    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI Analysis.
+    var ttsKokoroVoice: KokoroVoice {
+        didSet { UserDefaults.standard.set(ttsKokoroVoice.rawValue, forKey: Keys.ttsKokoroVoice) }
+    }
+
+    /// Resolved parameters for a `synthesizeSpeech` call, branching on the selected
+    /// TTS engine. Kokoro derives language from its voice id and has no style
+    /// instruction or model-size control, so those are `nil` for it.
+    var ttsSynthesisParams: (engine: String, voice: String?, language: String?, instruction: String?, model: String?) {
+        switch ttsEngine {
+        case .kokoro:
+            return (ttsEngine.rawValue, ttsKokoroVoice.rawValue, nil, nil, nil)
+        case .qwen3:
+            return (ttsEngine.rawValue, ttsVoice.rawValue, ttsLanguage.rawValue, ttsDeliveryInstruction, ttsModelSize.rawValue)
+        }
+    }
+
     var remoteChunkingEnabled: Bool {
         didSet { UserDefaults.standard.set(remoteChunkingEnabled, forKey: Keys.remoteChunkingEnabled) }
     }
@@ -925,6 +951,8 @@ final class AppSettings {
         self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
         self.ttsVoice = (defaults.string(forKey: Keys.ttsVoice)).flatMap(TTSVoice.init(rawValue:)) ?? .ryan
         self.ttsLanguage = (defaults.string(forKey: Keys.ttsLanguage)).flatMap(TTSLanguage.init(rawValue:)) ?? .english
+        self.ttsEngine = (defaults.string(forKey: Keys.ttsEngine)).flatMap(TTSEngine.init(rawValue:)) ?? .kokoro
+        self.ttsKokoroVoice = (defaults.string(forKey: Keys.ttsKokoroVoice)).flatMap(KokoroVoice.init(rawValue:)) ?? .afHeart
         self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
         self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
         self.remoteChunkOverlapSeconds = max(

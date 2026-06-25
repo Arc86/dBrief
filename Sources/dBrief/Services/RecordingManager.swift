@@ -1962,6 +1962,11 @@ final class RecordingManager {
             case .ttsModelLoading:
                 appState.processingSteps[stepIndex].name = "Loading TTS model…"
                 appState.processingSteps[stepIndex].progress = nil
+            case .kokoroTTSModel:
+                appState.processingSteps[stepIndex].name = "Downloading Kokoro voice model…"
+            case .kokoroTTSModelLoading:
+                appState.processingSteps[stepIndex].name = "Loading Kokoro voice model…"
+                appState.processingSteps[stepIndex].progress = nil
             }
         }
     }

@@ -87,13 +87,17 @@ actor ParakeetTranscriptionService {
     /// the padded buffer. Falls back to FluidAudio's file-based path on load failure
     /// or for very long audio (preserving its memory-efficient disk-backed route).
     private static func transcribePadded(_ mgr: AsrManager, fileURL: URL) async throws -> ASRResult {
+        // FluidAudio 0.15.4 makes the TDT decoder state caller-owned. We do
+        // single-shot full-file transcription (not streaming), so a fresh state
+        // per call is correct.
+        var decoderState = try TdtDecoderState()
         guard var samples = try? AudioConverter().resampleAudioFile(fileURL),
               samples.count <= maxInMemorySamples
         else {
-            return try await mgr.transcribe(fileURL)
+            return try await mgr.transcribe(fileURL, decoderState: &decoderState)
         }
         samples.append(contentsOf: repeatElement(Float(0), count: trailingSilenceSamples))
-        return try await mgr.transcribe(samples, source: .system)
+        return try await mgr.transcribe(samples, decoderState: &decoderState)
     }
 
     // MARK: - Segment / word reconstruction
@@ -197,7 +201,7 @@ actor ParakeetTranscriptionService {
         let fm = FileManager.default
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
-            DownloadUtils.clearModelCache(forRepo: .parakeet, directory: modelsDir)
+            DownloadUtils.clearModelCache(forRepo: .parakeetV3, directory: modelsDir)
             DownloadUtils.clearModelCache(forRepo: .parakeetV2, directory: modelsDir)
         }
         Logger.localAI.info("Parakeet: model cache purged")

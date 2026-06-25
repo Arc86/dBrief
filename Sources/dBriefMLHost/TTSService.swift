@@ -138,7 +138,8 @@ final class TTSService: @unchecked Sendable {
     // MARK: - WAV writing
 
     /// Write mono Float32 PCM `samples` to a 16-bit PCM WAV at `url`.
-    private static func writeWAV(samples: [Float], sampleRate: Int, to url: URL) throws {
+    /// Shared with `KokoroTTSService` (FluidAudio Kokoro hands back `[Float]` too).
+    static func writeWAV(samples: [Float], sampleRate: Int, to url: URL) throws {
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: Double(sampleRate),
