@@ -18,6 +18,14 @@ final class TTSService: @unchecked Sendable {
         self.stateHandler = stateHandler
     }
 
+    /// Style/delivery instruction fed to the 1.7B model (the 0.6B variant ignores
+    /// it). Aims for a calm, measured narration rather than the model's default
+    /// energetic read, with brief pauses between sentences.
+    private static let deliveryInstruction =
+        "Narrate in a calm, measured, professional tone. Speak at a relaxed, "
+        + "unhurried pace and pause briefly between sentences. Avoid sounding "
+        + "overly energetic or excited."
+
     // MARK: - Public API
 
     /// Synthesize `text` to a mono WAV at `outputPath`. Loads the model on first call.
@@ -36,7 +44,12 @@ final class TTSService: @unchecked Sendable {
         // more natural than 0.6B.
         let result: SpeechResult
         do {
-            result = try await engine.generate(text: trimmed, voice: voice, language: language)
+            result = try await engine.generate(
+                text: trimmed,
+                voice: voice,
+                language: language,
+                options: GenerationOptions(instruction: Self.deliveryInstruction)
+            )
         } catch {
             Logger.localAI.error("TTS generation failed: \(error.localizedDescription, privacy: .public)")
             throw WireError(kind: .generic, message: "TTS generation failed: \(error.localizedDescription)")

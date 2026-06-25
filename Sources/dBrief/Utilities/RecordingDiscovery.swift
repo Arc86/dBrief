@@ -23,6 +23,10 @@ enum RecordingDiscovery {
         for case let fileURL as URL in enumerator {
             let ext = fileURL.pathExtension.lowercased()
             guard supportedExtensions.contains(ext) else { continue }
+            // Skip the spoken-summary audio sidecar (`<base>.spokensummary.m4a`) —
+            // it's a derived artifact, not a recording, so it must not appear in
+            // the browser/history lists.
+            guard !fileURL.deletingPathExtension().lastPathComponent.hasSuffix(".spokensummary") else { continue }
             let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey])
             guard values?.isRegularFile ?? false else { continue }
 
