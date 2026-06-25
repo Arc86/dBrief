@@ -53,6 +53,7 @@ enum RetentionCleanup {
         ".richtranscript.json",
         ".insights.json",
         ".chat.json",
+        ".spokensummary.json",
     ]
 
     static func isTranscriptFile(_ name: String) -> Bool {

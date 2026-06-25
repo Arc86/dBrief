@@ -1284,6 +1284,8 @@ struct TranscriptDetailView: View {
             base.appendingPathExtension("richtranscript.json"),
             base.appendingPathExtension("insights.json"),
             base.appendingPathExtension("chat.json"),
+            base.appendingPathExtension("spokensummary.json"),
+            base.appendingPathExtension("spokensummary.m4a"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
