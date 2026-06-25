@@ -4,6 +4,7 @@ import dBriefWire
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @State private var voicePreview = VoicePreviewPlayer()
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
@@ -133,6 +134,7 @@ struct SettingsAITab: View {
                     Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    voicePreviewRow
                     promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
                 }
                     .listRowBackground(Color.clear)
@@ -159,6 +161,51 @@ struct SettingsAITab: View {
             .toggleStyle(.smallSwitch)
             .padding(.top, -20)
         }
+    }
+
+    /// Audition the selected voice/language/model/style with a short sample.
+    @ViewBuilder
+    private var voicePreviewRow: some View {
+        HStack(spacing: 10) {
+            switch voicePreview.state {
+            case .idle, .failed:
+                Button {
+                    voicePreview.preview(
+                        voice: appSettings.ttsVoice,
+                        language: appSettings.ttsLanguage,
+                        model: appSettings.ttsModelSize,
+                        instruction: appSettings.ttsDeliveryInstruction,
+                        plugin: recordingManager.localPlugin
+                    )
+                } label: {
+                    Label("Preview voice", systemImage: "play.circle")
+                }
+                if case let .failed(message) = voicePreview.state {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            case .playing:
+                Button(role: .cancel) {
+                    voicePreview.stop()
+                } label: {
+                    Label("Stop", systemImage: "stop.circle")
+                }
+            case .preparingVoice(let progress):
+                ProgressView().controlSize(.small)
+                Text(progress != nil ? "Preparing voice… \(Int((progress ?? 0) * 100))%" : "Preparing voice…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .synthesizing:
+                ProgressView().controlSize(.small)
+                Text("Synthesizing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .onDisappear { voicePreview.stop() }
     }
 
     private func engineDescription(for engine: AppSettings.AIEngine) -> String {

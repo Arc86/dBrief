@@ -102,4 +102,20 @@ public enum TTSLanguage: String, Codable, Sendable, CaseIterable {
         case .italian: "Italian"
         }
     }
+
+    /// A short sentence in this language, used to audition a voice in Settings.
+    public var sampleText: String {
+        switch self {
+        case .english: "Here's a quick preview of how your spoken summary will sound."
+        case .chinese: "这是您的语音摘要听起来效果的简短预览。"
+        case .japanese: "これは、音声要約がどのように聞こえるかの簡単なプレビューです。"
+        case .korean: "음성 요약이 어떻게 들리는지 미리 들어보세요."
+        case .german: "Hier ist eine kurze Vorschau, wie Ihre gesprochene Zusammenfassung klingt."
+        case .french: "Voici un bref aperçu de la façon dont votre résumé parlé sonnera."
+        case .russian: "Вот краткий пример того, как будет звучать ваше голосовое резюме."
+        case .portuguese: "Aqui está uma breve prévia de como o seu resumo falado vai soar."
+        case .spanish: "Aquí tienes una breve muestra de cómo sonará tu resumen hablado."
+        case .italian: "Ecco una breve anteprima di come suonerà il tuo riassunto parlato."
+        }
+    }
 }
