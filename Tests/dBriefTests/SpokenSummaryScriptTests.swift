@@ -28,4 +28,36 @@ import Testing
         let prose = "Here is a normal sentence. And another one."
         #expect(SpokenSummaryScript.clean(prose) == prose)
     }
+
+    // MARK: - Speech normalization
+
+    @Test func normalizesEllipsisGlyphToSentenceStop() {
+        #expect(SpokenSummaryScript.clean("Well… anyway, we shipped it.")
+                == "Well. anyway, we shipped it.")
+    }
+
+    @Test func normalizesDottedEllipsisToSentenceStop() {
+        #expect(SpokenSummaryScript.clean("wait...what happened") == "wait. what happened")
+    }
+
+    @Test func convertsEmDashAsideToCommaPause() {
+        #expect(SpokenSummaryScript.clean("First point — second point") == "First point, second point")
+    }
+
+    @Test func keepsHyphenatedWords() {
+        #expect(SpokenSummaryScript.clean("We agreed on a follow-up next week.")
+                == "We agreed on a follow-up next week.")
+    }
+
+    @Test func stripsEmoji() {
+        #expect(SpokenSummaryScript.clean("Great meeting 🎉 today") == "Great meeting today")
+    }
+
+    @Test func collapsesDoubleSpacesAndSpaceBeforePunctuation() {
+        #expect(SpokenSummaryScript.clean("Too   many    spaces here .") == "Too many spaces here.")
+    }
+
+    @Test func keepsDigitsWhenStrippingEmoji() {
+        #expect(SpokenSummaryScript.clean("There were 3 action items.") == "There were 3 action items.")
+    }
 }
