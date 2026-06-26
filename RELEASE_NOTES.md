@@ -1,3 +1,9 @@
+## dBrief 1.3.2
+
+**Fixes microphone and calendar access on the notarized build.** The first notarized release (1.3.1) ran under Apple's hardened runtime, which — unlike the older self-signed builds — gates a few privacy resources behind explicit entitlements. Those were missing, so **Microphone**, **Calendar**, and **Apple Reminders** couldn't be enabled no matter what you toggled in System Settings (Screen Recording and Speech were unaffected). 1.3.2 adds the required entitlements; grant the prompts as normal and they work. If you installed 1.3.1, update to 1.3.2 and allow Microphone/Calendar when asked.
+
+---
+
 ## dBrief 1.3.1
 
 **dBrief is now notarized by Apple.** Fresh downloads open with a normal double-click — no more "can't be opened" Gatekeeper warning and no `xattr` workaround. In-app updates (added in 1.3.0) carry the notarization through automatically, so you stay current without ever re-downloading. Everything else is identical to 1.3.0 below.
