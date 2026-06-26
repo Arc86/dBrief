@@ -11,6 +11,7 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.4"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -38,6 +39,7 @@ let package = Package(
             name: "dBrief",
             dependencies: [
                 "dBriefWire",
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             exclude: ["Resources", "Images"],
             linkerSettings: [

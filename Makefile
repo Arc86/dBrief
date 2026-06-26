@@ -97,6 +97,18 @@ app: build
 	cp $(RESOURCES)/default.metallib $(MACOS)/mlx.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/default.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/mlx.metallib
+	@set -e; \
+	SPARKLE_FW="$$(find .build -type d -name 'Sparkle.framework' -path '*release*' | head -n 1)"; \
+	if [ -z "$$SPARKLE_FW" ]; then SPARKLE_FW="$$(find .build -type d -name 'Sparkle.framework' | head -n 1)"; fi; \
+	if [ -z "$$SPARKLE_FW" ]; then \
+		echo "ERROR: Sparkle.framework not found under .build — run 'swift build' first." >&2; exit 1; fi; \
+	echo "Embedding Sparkle.framework from $$SPARKLE_FW"; \
+	mkdir -p "$(CONTENTS)/Frameworks"; \
+	rm -rf "$(CONTENTS)/Frameworks/Sparkle.framework"; \
+	cp -R "$$SPARKLE_FW" "$(CONTENTS)/Frameworks/Sparkle.framework"; \
+	if ! otool -l "$(MACOS)/$(EXECUTABLE_NAME)" | grep -q "@executable_path/../Frameworks"; then \
+		install_name_tool -add_rpath "@executable_path/../Frameworks" "$(MACOS)/$(EXECUTABLE_NAME)"; \
+	fi
 	@$(MAKE) sign
 	@echo "Built $(APP_BUNDLE) ($(VERSION))"
 
@@ -127,6 +139,14 @@ sign:
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/dBriefMLHost"; \
 		: 'Sign nested code INSIDE-OUT. The .metallib files in MacOS/ are Mach-O ("MetalLib executable"); they MUST be signed before the main executable, because signing $(EXECUTABLE_NAME) (the bundle main exe) triggers a bundle-level seal that rejects any unsigned nested code. (--deep handles this automatically on the self-signed path below.)'; \
 		find "$(MACOS)" -name '*.metallib' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+		: 'Sign the embedded Sparkle.framework inside-out (XPC services, Autoupdate/Updater.app helpers, then the framework) BEFORE the main executable, so the bundle-level seal accepts it. The self-signed branch below relies on --deep instead.'; \
+		if [ -d "$(CONTENTS)/Frameworks/Sparkle.framework" ]; then \
+			SPK="$(CONTENTS)/Frameworks/Sparkle.framework"; \
+			find "$$SPK" -name '*.xpc' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			find "$$SPK" -name 'Autoupdate' -type f -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			find "$$SPK" -name 'Updater.app' -type d -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			codesign --force --options runtime --timestamp --sign "$$IDENTITY" "$$SPK"; \
+		fi; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/$(EXECUTABLE_NAME)"; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
 		;; \
