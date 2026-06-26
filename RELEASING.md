@@ -1,6 +1,6 @@
 # Releasing dBrief
 
-dBrief ships as an **Apple Silicon**, **self-signed / un-notarized** macOS app (we are not in the Apple Developer Program). Releases are built locally and uploaded to GitHub by hand. The in-app updater ([`UpdateService`](Sources/dBrief/Services/UpdateService.swift)) polls the GitHub Releases API, so publishing a release is what makes the update prompt appear for existing users.
+dBrief ships as an **Apple Silicon**, **self-signed / un-notarized** macOS app (we are not in the Apple Developer Program). Releases are built locally and uploaded to GitHub by hand. The in-app updater uses [Sparkle](https://sparkle-project.org): it reads an EdDSA-signed `appcast.xml` published as a GitHub Release asset and downloads + installs the new DMG in-app. Publishing a release with its appcast is what makes existing installs offer the update. See [Sparkle in-app updates](#sparkle-in-app-updates).
 
 > **Why self-signed instead of ad-hoc.** macOS TCC (the Privacy database behind **Screen Recording**, etc.) pins each granted permission to the app's signing identity. Ad-hoc signing (`codesign --sign -`) produces a *different* identity on every build, so after each release the new binary no longer matches the stored grant — Screen Recording silently stops working even though its toggle still looks enabled, forcing a confusing toggle-off/on + restart. Signing every release with the **same self-signed certificate** gives TCC a stable identity to match, so permissions survive updates. `make app` handles this automatically (see [The signing certificate](#the-signing-certificate)). It does **not** affect Gatekeeper — the app is still un-notarized and quarantined on download.
 
@@ -132,6 +132,63 @@ Notes:
 - The hardened runtime needs the entitlements in `packaging/dBrief.entitlements` (JIT + library validation for the MLX/WhisperKit ML stack). If a notarization run is rejected, read the log with `xcrun notarytool log <submission-id> --keychain-profile dbrief` and add any flagged capability there.
 - Developer ID **supersedes** the self-signed cert; you no longer need to preserve `dbrief-signing.keychain-db`. Existing self-signed-build users re-grant Screen Recording once on the switch, then it's stable.
 - `make notarize` does **not** notarize the Homebrew-from-source path (those users still build self-signed locally) — it's only for the DMG you upload.
+
+## Sparkle in-app updates
+
+Updates are delivered in-app by [Sparkle](https://sparkle-project.org). The app
+reads `SUFeedURL` (an `appcast.xml` published as a GitHub Release asset) and
+verifies each download against the `SUPublicEDKey` baked into Info.plist.
+
+### One-time setup
+
+1. Install the Sparkle tools matching the resolved package version (`grep -A2 '"sparkle"' Package.resolved`):
+   ```bash
+   SPARKLE_VER=X.Y.Z
+   curl -L -o /tmp/Sparkle-$SPARKLE_VER.tar.xz \
+     https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VER/Sparkle-$SPARKLE_VER.tar.xz
+   mkdir -p /tmp/sparkle-tools && tar -xf /tmp/Sparkle-$SPARKLE_VER.tar.xz -C /tmp/sparkle-tools
+   ```
+2. `generate_keys` once (already done if `SUPublicEDKey` is set in Info.plist). **Back up the private key** to your vault:
+   ```bash
+   /tmp/sparkle-tools/bin/generate_keys -x ~/dbrief-sparkle-private-key.txt   # then move into your vault
+   ```
+   This is a second irreplaceable secret alongside the signing keychain — losing it strands all existing installs.
+
+### Each release (after `make notarize`)
+
+`make notarize` produces the stapled `dBrief-<version>.dmg`. Then:
+
+```bash
+mkdir -p /tmp/dbrief-appcast
+cp dBrief-<version>.dmg /tmp/dbrief-appcast/
+/tmp/sparkle-tools/bin/generate_appcast \
+  --download-url-prefix "https://github.com/Arc86/dBrief/releases/download/v<version>/" \
+  --full-release-notes-link "https://github.com/Arc86/dBrief/releases" \
+  /tmp/dbrief-appcast
+# → writes /tmp/dbrief-appcast/appcast.xml, EdDSA-signed with your private key
+```
+
+Upload **both** the DMG and the appcast to the GitHub release:
+
+```bash
+gh release create v<version> dBrief-<version>.dmg /tmp/dbrief-appcast/appcast.xml \
+  --title "dBrief <version>" --notes-file RELEASE_NOTES.md
+# (or `gh release upload v<version> …` if the release already exists)
+```
+
+Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed
+always resolves to the newest release's appcast. The feed is latest-only (one
+`<item>`) — sufficient for Sparkle's "is there something newer?" check. Richer
+multi-version notes are a possible follow-up.
+
+### Manual smoke test (do this once after wiring Sparkle, and when bumping Sparkle)
+
+1. Build + notarize version N, install it to /Applications, and launch it.
+2. Build + notarize version N+1, generate its appcast, and publish it to a test
+   release (or point `SUFeedURL` at a scratch feed).
+3. In the running N, **Settings → General → Software update → Check Now**.
+   Confirm Sparkle shows the update, downloads it, verifies the EdDSA signature,
+   installs, and relaunches into N+1 with no Gatekeeper prompt.
 
 ## Installing the DMG (what end users do)
 
