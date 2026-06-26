@@ -1,3 +1,9 @@
+## dBrief 1.3.1
+
+**dBrief is now notarized by Apple.** Fresh downloads open with a normal double-click — no more "can't be opened" Gatekeeper warning and no `xattr` workaround. In-app updates (added in 1.3.0) carry the notarization through automatically, so you stay current without ever re-downloading. Everything else is identical to 1.3.0 below.
+
+---
+
 ## dBrief 1.3.0
 
 This release is about **who** said what. dBrief now builds a private, on-device

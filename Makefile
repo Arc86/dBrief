@@ -174,9 +174,17 @@ dmg: app package-dmg
 package-dmg:
 	rm -rf "$(DMG_STAGING)" "$(DMG_NAME)"
 	mkdir -p "$(DMG_STAGING)"
+	: 'Tell Spotlight not to index the staged bundle — otherwise mdworker holds'
+	: 'the freshly-copied app open and hdiutil create fails with "Resource busy".'
+	touch "$(DMG_STAGING)/.metadata_never_index"
 	cp -R "$(APP_BUNDLE)" "$(DMG_STAGING)/"
 	ln -s /Applications "$(DMG_STAGING)/Applications"
-	hdiutil create -volname "$(APP_NAME)" -srcfolder "$(DMG_STAGING)" -ov -format UDZO "$(DMG_NAME)"
+	sync
+	@n=0; until hdiutil create -volname "$(APP_NAME)" -srcfolder "$(DMG_STAGING)" -ov -format UDZO "$(DMG_NAME)"; do \
+		n=$$((n+1)); \
+		if [ $$n -ge 6 ]; then echo "ERROR: hdiutil create failed after $$n attempts" >&2; exit 1; fi; \
+		echo "hdiutil busy (attempt $$n) — retrying in 3s…" >&2; sleep 3; \
+	done
 	@echo "Built $(DMG_NAME)"
 
 # Notarized Developer ID release (optional — requires Apple Developer Program
