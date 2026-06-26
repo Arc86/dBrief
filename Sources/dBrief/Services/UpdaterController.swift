@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Sparkle
 
@@ -29,6 +28,7 @@ final class UpdaterController {
         canCheckObservation = controller.updater.observe(
             \.canCheckForUpdates, options: [.initial, .new]
         ) { [weak self] updater, _ in
+            // Sparkle delivers this KVO change on the main thread; assumeIsolated is safe.
             MainActor.assumeIsolated {
                 self?.canCheckForUpdates = updater.canCheckForUpdates
             }
