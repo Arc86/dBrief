@@ -97,6 +97,7 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 - **Refreshed design** — a redesigned menu-bar popover, post-recording sheet, and About screen; a calm-mode "Reduce neon accents" toggle if you prefer flat colors
 - **Transcript chat** — ask follow-up questions about a recording using your configured AI
 - **YouTube / video URL** — transcribe any `yt-dlp`-supported URL without recording
+- **In-app updates** — dBrief checks for new versions and installs them with one click (via Sparkle)
 - **Performance benchmark** — a Power User panel showing transcription and AI speed per model (pure model vs. end-to-end realtime), plus a running total of how many minutes dBrief has transcribed for you
 
 ---
@@ -114,9 +115,9 @@ Audio mixing, filtering, normalization, and encoding use [FFmpeg](https://ffmpeg
 
 ## Install
 
-dBrief is **Apple Silicon only** and distributed **outside the Apple Developer Program**, so it is self-signed and un-notarized. That doesn't make it unsafe — it just changes how you open it the first time. Pick whichever path you prefer:
+dBrief is **Apple Silicon only**. The `.dmg` is signed with a Developer ID and **notarized by Apple**, so it opens like any other Mac app — no Gatekeeper workaround. Pick whichever path you prefer:
 
-### 1. Homebrew — recommended, no Gatekeeper prompt
+### 1. Homebrew
 
 ```bash
 brew install Arc86/dbrief/dbrief
@@ -127,16 +128,9 @@ Homebrew builds dBrief from source on your Mac, so the app is never quarantined 
 
 ### 2. Download the `.dmg`
 
-Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page, open it, and drag **dBrief** into Applications. Because the download is un-notarized, macOS blocks it on first launch. Clear it **once**, either way:
+Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page, open it, and drag **dBrief** into Applications. The download is notarized, so macOS opens it without a Gatekeeper prompt — it lands in your menu bar straight away.
 
-- **System Settings** → **Privacy & Security** → scroll to the security note about dBrief → **Open Anyway**, or
-- **Terminal** (most reliable):
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/dBrief.app
-  ```
-  The `-r` flag is important — it also clears the bundled `dBriefMLHost` helper inside the app.
-
-After that, dBrief launches normally and appears in your menu bar.
+> Updates are delivered in-app: dBrief checks for new versions automatically (once a day, or on demand from **Settings → General → Software update → Check Now**) and installs them with one click via [Sparkle](https://sparkle-project.org).
 
 ### 3. Build from source
 
@@ -163,13 +157,14 @@ This builds the app bundle in release mode and launches it. Locally built apps a
 
 ## Permissions
 
-dBrief asks for the minimum it needs. You can manage any of these in **Settings → General** at any time.
+dBrief asks for the minimum it needs. You can manage any of these in **Settings → Permissions** at any time.
 
 | Permission | Why | Required? |
 | --- | --- | --- |
 | Microphone | Recording your voice | Yes |
 | Screen Recording | Capturing system audio (both sides of the call) | Recommended |
 | Speech Recognition | Apple Speech transcription | Only if using Apple Speech |
+| Calendar | Pre-filling meeting title, attendees, and agenda | Only if using iCal calendar matching |
 | Notifications | Completion alerts | Optional |
 | Reminders | Apple Reminders integration | Only if using Reminders |
 
