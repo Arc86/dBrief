@@ -97,6 +97,18 @@ app: build
 	cp $(RESOURCES)/default.metallib $(MACOS)/mlx.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/default.metallib
 	cp $(RESOURCES)/default.metallib $(MACOS_RESOURCES)/mlx.metallib
+	@set -e; \
+	SPARKLE_FW="$$(find .build -type d -name 'Sparkle.framework' -path '*release*' | head -n 1)"; \
+	if [ -z "$$SPARKLE_FW" ]; then SPARKLE_FW="$$(find .build -type d -name 'Sparkle.framework' | head -n 1)"; fi; \
+	if [ -z "$$SPARKLE_FW" ]; then \
+		echo "ERROR: Sparkle.framework not found under .build — run 'swift build' first." >&2; exit 1; fi; \
+	echo "Embedding Sparkle.framework from $$SPARKLE_FW"; \
+	mkdir -p "$(CONTENTS)/Frameworks"; \
+	rm -rf "$(CONTENTS)/Frameworks/Sparkle.framework"; \
+	cp -R "$$SPARKLE_FW" "$(CONTENTS)/Frameworks/Sparkle.framework"; \
+	if ! otool -l "$(MACOS)/$(EXECUTABLE_NAME)" | grep -q "@executable_path/../Frameworks"; then \
+		install_name_tool -add_rpath "@executable_path/../Frameworks" "$(MACOS)/$(EXECUTABLE_NAME)"; \
+	fi
 	@$(MAKE) sign
 	@echo "Built $(APP_BUNDLE) ($(VERSION))"
 
