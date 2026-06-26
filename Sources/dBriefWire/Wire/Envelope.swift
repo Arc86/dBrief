@@ -13,7 +13,7 @@ public enum MLRequest: Sendable, Codable {
     case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String)
     case chatStream(systemPrompt: String, userMessage: String)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
-    case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?)
+    case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)
     case prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool)
@@ -87,5 +87,16 @@ public struct WireError: Sendable, Codable, Error {
         self.message = message
         self.model = model
         self.requiredGB = requiredGB
+    }
+}
+
+extension WireError: LocalizedError {
+    /// Surface the real `message` (and memory hint) instead of the generic
+    /// "operation couldn't be completed (… error 1.)" Foundation default.
+    public var errorDescription: String? {
+        if kind == .insufficientMemory, let requiredGB {
+            return "\(message) (needs ~\(requiredGB) GB)"
+        }
+        return message
     }
 }

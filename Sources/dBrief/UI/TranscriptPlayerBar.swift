@@ -3,6 +3,7 @@ import SwiftUI
 struct TranscriptPlayerBar: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.calmAppearance) private var calm
 
     let audioURL: URL
     @Binding var currentTime: TimeInterval
@@ -33,8 +34,8 @@ struct TranscriptPlayerBar: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
-                        .background(TranscriptDesignTokens.brandGradient, in: Circle())
-                        .shadow(color: Color(hex: "8b4dff").opacity(0.6), radius: 10, x: 0, y: 4)
+                        .background(TranscriptDesignTokens.brandFill(calm: calm), in: Circle())
+                        .shadow(color: calm ? .clear : Color(hex: "8b4dff").opacity(0.6), radius: calm ? 0 : 10, x: 0, y: calm ? 0 : 4)
                 }
                 .buttonStyle(.plain)
 

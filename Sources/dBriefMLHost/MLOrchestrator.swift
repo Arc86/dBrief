@@ -13,6 +13,7 @@ actor MLOrchestrator: MLBackend {
     private let insightsService: MLXInsightsService
     private let parakeetService: ParakeetTranscriptionService
     private let ttsService: TTSService
+    private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
     private var parakeetStateTask: Task<Void, Never>?
 
@@ -21,6 +22,7 @@ actor MLOrchestrator: MLBackend {
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
         self.ttsService = TTSService { state in emit(.plugin, state) }
+        self.kokoroService = KokoroTTSService { state in emit(.plugin, state) }
         let parakeet = ParakeetTranscriptionService()
         self.parakeetService = parakeet
         self.parakeetStateTask = Task {
@@ -119,12 +121,17 @@ actor MLOrchestrator: MLBackend {
 
     // MARK: - Text-to-speech (scaffold)
 
-    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?) async throws -> SpeechSynthesisResult {
+    func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             await insightsService.unload()
-            let result = try await ttsService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language)
+            if TTSEngine(rawValue: engine ?? "") == .kokoro {
+                let result = try await kokoroService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model)
+                await kokoroService.unload()
+                return result
+            }
+            let result = try await ttsService.synthesize(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model)
             await ttsService.unload()
             return result
         }
@@ -258,6 +265,7 @@ actor MLOrchestrator: MLBackend {
         await insightsService.unload()
         await parakeetService.unload()
         await ttsService.unload()
+        await kokoroService.unload()
         emit(.plugin, .idle)
     }
 
@@ -266,6 +274,7 @@ actor MLOrchestrator: MLBackend {
         await whisperService.unload()
         await parakeetService.unload()
         await ttsService.unload()
+        await kokoroService.unload()
         emit(.plugin, .idle)
     }
 }

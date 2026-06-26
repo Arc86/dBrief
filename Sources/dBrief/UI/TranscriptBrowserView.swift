@@ -11,6 +11,7 @@ struct TranscriptBrowserView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.calmAppearance) private var calm
 
     @State private var searchText = ""
 
@@ -56,7 +57,7 @@ struct TranscriptBrowserView: View {
         } detail: {
             mainPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background { TranscriptDesignTokens.ambientBackground(scheme: colorScheme) }
+                .background { TranscriptDesignTokens.ambientBackground(scheme: colorScheme, calm: calm) }
         }
         .navigationTitle("dBrief")
         .frame(minWidth: 760, minHeight: 480)
@@ -266,8 +267,8 @@ struct TranscriptBrowserView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 40)
-            .background(TranscriptDesignTokens.brandGradient, in: RoundedRectangle(cornerRadius: 10))
-            .shadow(color: Color(hex: "8b4dff").opacity(0.5), radius: 14, x: 0, y: 8)
+            .background(TranscriptDesignTokens.brandFill(calm: calm), in: RoundedRectangle(cornerRadius: 10))
+            .shadow(color: calm ? .clear : Color(hex: "8b4dff").opacity(0.5), radius: calm ? 0 : 14, x: 0, y: calm ? 0 : 8)
         }
         .buttonStyle(.plain)
         .disabled(!appState.isIdle)
@@ -350,6 +351,7 @@ private struct SidebarRecordingRow: View {
     let isSelected: Bool
     let onTap: () -> Void
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.calmAppearance) private var calm
     @State private var hovering = false
 
     private var doneColor: Color {
@@ -375,7 +377,7 @@ private struct SidebarRecordingRow: View {
             .overlay(alignment: .leading) {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(TranscriptDesignTokens.accentBar)
+                        .fill(TranscriptDesignTokens.accentBarFill(calm: calm))
                         .frame(width: 3)
                         .padding(.vertical, 10)
                 }
@@ -411,7 +413,7 @@ private struct SidebarRecordingRow: View {
     private var background: some View {
         if isSelected {
             RoundedRectangle(cornerRadius: 10)
-                .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme))
+                .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme, calm: calm))
                 .overlay(RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
         } else if hovering {
@@ -428,6 +430,7 @@ private struct LiveSidebarRow: View {
     let isSelected: Bool
     let onTap: () -> Void
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.calmAppearance) private var calm
     @State private var hovering = false
     @State private var pulse = false
 
@@ -461,7 +464,7 @@ private struct LiveSidebarRow: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme))
+                        .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme, calm: calm))
                         .overlay(RoundedRectangle(cornerRadius: 10)
                             .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
                 } else if hovering {
@@ -472,7 +475,7 @@ private struct LiveSidebarRow: View {
             .overlay(alignment: .leading) {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(TranscriptDesignTokens.accentBar)
+                        .fill(TranscriptDesignTokens.accentBarFill(calm: calm))
                         .frame(width: 3)
                         .padding(.vertical, 10)
                 }

@@ -106,4 +106,14 @@ final class Recording: Identifiable {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("chat.json")
     }
+
+    var spokenSummaryScriptURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("spokensummary.json")
+    }
+
+    var spokenSummaryAudioURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("spokensummary.m4a")
+    }
 }

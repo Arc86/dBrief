@@ -23,6 +23,10 @@ struct RetentionCleanupTests {
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("richtranscript.json").lastPathComponent))
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("insights.json").lastPathComponent))
         #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("chat.json").lastPathComponent))
+        // The spoken-summary script AND its audio age under the transcripts policy
+        // so the pair never splits.
+        #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("spokensummary.json").lastPathComponent))
+        #expect(RetentionCleanup.isTranscriptFile(base.appendingPathExtension("spokensummary.m4a").lastPathComponent))
     }
 
     @Test
@@ -34,6 +38,11 @@ struct RetentionCleanupTests {
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("insights.json")))
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("transcript.json")))
         #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("chat.json")))
+        // The spoken-summary `.m4a` is audio, but it's a derived sidecar — it must
+        // not be swept by the recordings policy alongside the master audio.
+        #expect(!RetentionCleanup.isRecordingFile(base.appendingPathExtension("spokensummary.m4a")))
+        // The real master audio is still a recording.
+        #expect(RetentionCleanup.isRecordingFile(base.appendingPathExtension("m4a")))
     }
 
     // MARK: - Sweeps

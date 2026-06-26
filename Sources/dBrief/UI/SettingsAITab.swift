@@ -1,4 +1,5 @@
 import SwiftUI
+import dBriefWire
 
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings

@@ -71,7 +71,13 @@ Four AI backends — local-first, remote optional:
 | **Local CLI** | Depends on the tool | Any CLI you configure (`claude`, `ollama`, `llm`…) |
 | **Remote Endpoint** | Network | OpenAI-compatible server |
 
-Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript.
+Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript. Analysis is **name-aware** — participant names from your calendar or manual entry are passed to the AI so people are spelled and attributed correctly.
+
+### Recognize speakers
+- **Voice Library** — a private, on-device library of voiceprints recognizes people by name **across** recordings, not just within one. Confident matches only, never uploaded, fully manageable in Settings → Voice Library.
+- **Confirm-first review** — optionally pause after diarization to check who's who (with audio snippets and name suggestions) before the AI runs.
+- **Rename & reassign** — rename, swap, move, or merge speakers from the transcript window; mark "this is me."
+- **Long recordings stay consistent** — speakers are unified by voice across auto-split parts, so one person keeps one name throughout.
 
 ### Export
 Drop a clean Markdown note — with YAML frontmatter — into wherever you already think:
@@ -85,7 +91,8 @@ Drop a clean Markdown note — with YAML frontmatter — into wherever you alrea
 - **Meeting profiles** — save different configurations for team meetings, sales calls, custom workflows
 - **Smart file naming** — `YYYY-MM-DD_HHMM_[meeting-title].m4a`
 - **Auto-segmentation** — recordings over 30 minutes split into chunks for better accuracy
-- **Rich transcript viewer** — word-level timing, audio sync, speaker rename
+- **Rich transcript viewer** — Summary-first layout, word-level timing, audio sync, a who-spoke-when timeline, search, and a resizable chat side panel
+- **Refreshed design** — a redesigned menu-bar popover, post-recording sheet, and About screen; a calm-mode "Reduce neon accents" toggle if you prefer flat colors
 - **Transcript chat** — ask follow-up questions about a recording using your configured AI
 - **YouTube / video URL** — transcribe any `yt-dlp`-supported URL without recording
 - **Performance benchmark** — a Power User panel showing transcription and AI speed per model (pure model vs. end-to-end realtime), plus a running total of how many minutes dBrief has transcribed for you

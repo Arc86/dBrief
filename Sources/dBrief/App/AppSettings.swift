@@ -48,6 +48,13 @@ final class AppSettings {
         static let summaryPrompt = "summaryPrompt"
         static let actionItemsPrompt = "actionItemsPrompt"
         static let tagsPrompt = "tagsPrompt"
+        static let spokenSummaryPrompt = "spokenSummaryPrompt"
+        static let ttsDeliveryInstruction = "ttsDeliveryInstruction"
+        static let ttsModelSize = "ttsModelSize"
+        static let ttsVoice = "ttsVoice"
+        static let ttsLanguage = "ttsLanguage"
+        static let ttsEngine = "ttsEngine"
+        static let ttsKokoroVoice = "ttsKokoroVoice"
         static let remoteChunkingEnabled = "remoteChunkingEnabled"
         static let remoteChunkMaxUploadMB = "remoteChunkMaxUploadMB"
         static let remoteChunkOverlapSeconds = "remoteChunkOverlapSeconds"
@@ -69,6 +76,7 @@ final class AppSettings {
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
         static let showMiniRecordingView = "showMiniRecordingView"
         static let showMenuBarRecordingDuration = "showMenuBarRecordingDuration"
+        static let reduceNeon = "reduceNeon"
         static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
@@ -475,6 +483,14 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(showMenuBarRecordingDuration, forKey: Keys.showMenuBarRecordingDuration) }
     }
 
+    /// Calm-appearance opt-in: swap the neon brand styling (gradient CTAs, glow
+    /// halos, the neon-on-black transcript backdrop) for plain colors — a solid
+    /// red record button, flat dark surfaces, no glow. Off by default so the
+    /// signature brand look is preserved unless the user opts in.
+    var reduceNeon: Bool {
+        didSet { UserDefaults.standard.set(reduceNeon, forKey: Keys.reduceNeon) }
+    }
+
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
     /// monotonically-increasing odometer that survives "Clear benchmark stats".
     var lifetimeTranscribedSeconds: Double {
@@ -528,6 +544,29 @@ final class AppSettings {
         use "mixed" only when the meeting had clearly distinct positive and negative segments). \
         Output valid JSON only. No markdown code fences, no explanation.
         """
+
+    static let defaultSpokenSummaryPrompt = """
+        You are an assistant that turns a meeting's written summary and action items \
+        into a short, natural-sounding spoken briefing to be read aloud by a \
+        text-to-speech voice. \
+        Always write the briefing in English, regardless of the language of the input. \
+        Produce flowing spoken prose only — no headings, bullet points, markdown, \
+        emoji, or list markers. \
+        Open with one sentence framing what the meeting was about, then narrate the \
+        key points and decisions conversationally, and finish by mentioning the most \
+        important action items and who owns them. \
+        Keep it concise (roughly 150-220 words), use complete sentences, and spell out \
+        abbreviations where it helps listening. \
+        Do not add meta commentary like "here is your summary" — start directly with \
+        the briefing.
+        """
+
+    /// Default calm-delivery style instruction for the Spoken Summary TTS voice.
+    /// Followed only by the 1.7B model.
+    static let defaultTTSDeliveryInstruction =
+        "Narrate in a calm, measured, professional tone. Speak at a relaxed, "
+        + "unhurried pace and pause briefly between sentences. Avoid sounding "
+        + "overly energetic or excited."
 
     static let teamMeetingVocabulary: [String] = [
         "Team standup", "sprint", "backlog", "blocker", "follow-up",
@@ -608,6 +647,60 @@ final class AppSettings {
 
     var tagsPrompt: String {
         didSet { UserDefaults.standard.set(tagsPrompt, forKey: Keys.tagsPrompt) }
+    }
+
+    /// Prompt for the second AI pass that rewrites insights into a spoken script
+    /// for the Spoken Summary feature. User-editable in Settings → AI Analysis.
+    var spokenSummaryPrompt: String {
+        didSet { UserDefaults.standard.set(spokenSummaryPrompt, forKey: Keys.spokenSummaryPrompt) }
+    }
+
+    /// Style/delivery instruction fed to the Spoken Summary TTS voice. Only the
+    /// 1.7B model follows it (the 0.6B variant ignores it). User-editable in
+    /// Settings → AI Analysis; an empty value sends no instruction.
+    var ttsDeliveryInstruction: String {
+        didSet { UserDefaults.standard.set(ttsDeliveryInstruction, forKey: Keys.ttsDeliveryInstruction) }
+    }
+
+    /// Qwen3-TTS model size used for spoken-summary synthesis. 1.7B is the most
+    /// natural (and the only one that follows `ttsDeliveryInstruction`); 0.6B is
+    /// lighter for 16 GB Macs. Settings → AI Analysis.
+    var ttsModelSize: TTSModelSize {
+        didSet { UserDefaults.standard.set(ttsModelSize.rawValue, forKey: Keys.ttsModelSize) }
+    }
+
+    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI Analysis.
+    var ttsVoice: TTSVoice {
+        didSet { UserDefaults.standard.set(ttsVoice.rawValue, forKey: Keys.ttsVoice) }
+    }
+
+    /// Qwen3-TTS output language used for spoken-summary synthesis. Settings → AI Analysis.
+    var ttsLanguage: TTSLanguage {
+        didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
+    }
+
+    /// Which on-device TTS engine synthesizes spoken summaries. Default Kokoro
+    /// (fast, ANE-resident); Qwen3 is the broader-multilingual alternative.
+    /// Settings → AI Analysis.
+    var ttsEngine: TTSEngine {
+        didSet { UserDefaults.standard.set(ttsEngine.rawValue, forKey: Keys.ttsEngine) }
+    }
+
+    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI Analysis.
+    var ttsKokoroVoice: KokoroVoice {
+        didSet { UserDefaults.standard.set(ttsKokoroVoice.rawValue, forKey: Keys.ttsKokoroVoice) }
+    }
+
+    /// Resolved parameters for a `synthesizeSpeech` call, branching on the selected
+    /// TTS engine. Kokoro derives language from its voice id and has no style
+    /// instruction or model-size control, so those are `nil` for it.
+    var ttsSynthesisParams: (engine: String, voice: String?, language: String?, instruction: String?, model: String?) {
+        switch ttsEngine {
+        case .kokoro:
+            return (ttsEngine.rawValue, ttsKokoroVoice.rawValue, nil, nil, nil)
+        case .qwen3:
+            return (ttsEngine.rawValue, ttsVoice.rawValue, ttsLanguage.rawValue, ttsDeliveryInstruction, ttsModelSize.rawValue)
+        }
     }
 
     var remoteChunkingEnabled: Bool {
@@ -846,12 +939,20 @@ final class AppSettings {
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
         self.showMiniRecordingView = defaults.object(forKey: Keys.showMiniRecordingView) as? Bool ?? true
         self.showMenuBarRecordingDuration = defaults.object(forKey: Keys.showMenuBarRecordingDuration) as? Bool ?? true
+        self.reduceNeon = defaults.object(forKey: Keys.reduceNeon) as? Bool ?? false
         self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
         self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
+        self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
+        self.ttsDeliveryInstruction = defaults.string(forKey: Keys.ttsDeliveryInstruction) ?? Self.defaultTTSDeliveryInstruction
+        self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
+        self.ttsVoice = (defaults.string(forKey: Keys.ttsVoice)).flatMap(TTSVoice.init(rawValue:)) ?? .ryan
+        self.ttsLanguage = (defaults.string(forKey: Keys.ttsLanguage)).flatMap(TTSLanguage.init(rawValue:)) ?? .english
+        self.ttsEngine = (defaults.string(forKey: Keys.ttsEngine)).flatMap(TTSEngine.init(rawValue:)) ?? .kokoro
+        self.ttsKokoroVoice = (defaults.string(forKey: Keys.ttsKokoroVoice)).flatMap(KokoroVoice.init(rawValue:)) ?? .afHeart
         self.remoteChunkingEnabled = defaults.object(forKey: Keys.remoteChunkingEnabled) as? Bool ?? true
         self.remoteChunkMaxUploadMB = max(1, defaults.object(forKey: Keys.remoteChunkMaxUploadMB) as? Int ?? 15)
         self.remoteChunkOverlapSeconds = max(

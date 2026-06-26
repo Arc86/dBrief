@@ -125,6 +125,8 @@ sign:
 		echo "Developer ID — hardened runtime + secure timestamp (notarization-ready)"; \
 		codesign --force --options runtime --timestamp --sign "$$IDENTITY" "$(MACOS)/ffmpeg"; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/dBriefMLHost"; \
+		: 'Sign nested code INSIDE-OUT. The .metallib files in MacOS/ are Mach-O ("MetalLib executable"); they MUST be signed before the main executable, because signing $(EXECUTABLE_NAME) (the bundle main exe) triggers a bundle-level seal that rejects any unsigned nested code. (--deep handles this automatically on the self-signed path below.)'; \
+		find "$(MACOS)" -name '*.metallib' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/$(EXECUTABLE_NAME)"; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
 		;; \

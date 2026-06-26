@@ -198,6 +198,7 @@ struct RecordingControlsView: View {
 struct LiveWaveStrip: View {
     let level: Float
     var active: Bool
+    @Environment(\.calmAppearance) private var calm
     private let barCount = 34
 
     var body: some View {
@@ -207,7 +208,7 @@ struct LiveWaveStrip: View {
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(0..<barCount, id: \.self) { i in
                     Capsule()
-                        .fill(Brand.gradient)
+                        .fill(Brand.accentFill(calm: calm))
                         .frame(width: barWidth, height: barHeight(i, maxH: geo.size.height))
                         .opacity(active ? 1 : 0.4)
                 }

@@ -12,10 +12,12 @@ final class FloatingMiniPlayerController {
     private var window: NSPanel?
     private var appState: AppState?
     private var recordingManager: RecordingManager?
+    private var appSettings: AppSettings?
 
-    func setUp(appState: AppState, recordingManager: RecordingManager) {
+    func setUp(appState: AppState, recordingManager: RecordingManager, appSettings: AppSettings) {
         self.appState = appState
         self.recordingManager = recordingManager
+        self.appSettings = appSettings
     }
 
     func show() {
@@ -44,6 +46,7 @@ final class FloatingMiniPlayerController {
             .environment(appState)
             .environment(recordingManager)
             .environment(self)
+            .environment(\.calmAppearance, appSettings?.reduceNeon ?? false)
 
         let hosting = NSHostingView(rootView: content)
         panel.contentView = hosting
@@ -227,6 +230,7 @@ private struct MiniPlayerView: View {
 
 private struct MiniWaveform: View {
     let level: Float
+    @Environment(\.calmAppearance) private var calm
     private let barCount = 20
 
     @State private var history: [Float] = Array(repeating: 0, count: 20)
@@ -235,7 +239,7 @@ private struct MiniWaveform: View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { idx in
                 Capsule()
-                    .fill(Brand.gradient)
+                    .fill(Brand.accentFill(calm: calm))
                     .frame(width: 2.5, height: barHeight(for: idx))
             }
         }

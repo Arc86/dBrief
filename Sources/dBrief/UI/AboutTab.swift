@@ -7,6 +7,7 @@ import SwiftUI
 /// hybrid Light/Dark BrandKit treatment so it reads in both schemes.
 struct AboutTab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.calmAppearance) private var calm
     @State private var update = UpdateService()
     @State private var phase: UpdatePhase = .idle
     @State private var animate = false
@@ -136,7 +137,7 @@ struct AboutTab: View {
                 Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Brand.gradientDiagonal)
+                    .fill(Brand.ctaFill(calm: calm))
                     .overlay(Image(systemName: "waveform")
                         .font(.system(size: 36, weight: .bold))
                         .foregroundStyle(.white))
@@ -196,8 +197,8 @@ struct AboutTab: View {
                 .font(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(Brand.gradientDiagonal, in: Capsule())
-                .shadow(color: Brand.violet.opacity(0.5), radius: 12, y: 5)
+                .background(Brand.ctaFill(calm: calm), in: Capsule())
+                .shadow(color: Brand.ctaGlow(calm: calm, base: Brand.violet), radius: calm ? 0 : 12, y: calm ? 0 : 5)
         case .checking:
             Text("Checking…")
                 .font(.system(size: 13.5, weight: .semibold))

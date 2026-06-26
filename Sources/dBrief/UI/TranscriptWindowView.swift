@@ -17,6 +17,7 @@ struct TranscriptDetailView: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(TranscriptChatStore.self) private var chatStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.calmAppearance) private var calm
 
     // Persisted display preferences
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
@@ -49,6 +50,12 @@ struct TranscriptDetailView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
     @State private var insights: RecordingInsights?
+    @State private var spokenSummaryService: SpokenSummaryService?
+    /// Dedicated player for the spoken-summary sheet so it never commandeers the
+    /// main transcript `audioPlayer` (which keeps the recording's position/state).
+    @State private var spokenSummaryPlayer = AudioPlayer()
+    @State private var hasSpokenSummary = false
+    private let spokenSummaryStore = SpokenSummaryStore()
     @State private var copied = false
     @State private var showDeleteConfirm = false
     @State private var isGenerating = false
@@ -217,6 +224,27 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
+        .sheet(item: $spokenSummaryService) { service in
+            SpokenSummaryPlayerView(
+                service: service,
+                audioPlayer: spokenSummaryPlayer,
+                onSave: {
+                    do {
+                        _ = try await service.save(for: recording)
+                        hasSpokenSummary = true
+                        spokenSummaryService = nil
+                    } catch {
+                        // service.save set phase = .failed; keep the sheet open so the error shows
+                    }
+                },
+                onClose: {
+                    service.discard()
+                    spokenSummaryService = nil
+                },
+                onRetry: { startSpokenSummary() }
+            )
+            .environment(\.calmAppearance, context.appSettings.reduceNeon)
+        }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { deleteRecording() }
@@ -447,7 +475,10 @@ struct TranscriptDetailView: View {
             isGenerating: isGenerating,
             canGenerate: richTranscript != nil,
             onGenerate: { Task { await generateSummary() } },
-            onSave: { updated in await saveInsights(updated) }
+            onSave: { updated in await saveInsights(updated) },
+            hasSpokenSummary: hasSpokenSummary,
+            onGenerateSpoken: { startSpokenSummary() },
+            onPlaySpoken: { Task { await playSavedSpokenSummary() } }
         )
     }
 
@@ -832,7 +863,7 @@ struct TranscriptDetailView: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
-                .background(TranscriptDesignTokens.brandGradient, in: RoundedRectangle(cornerRadius: 7))
+                .background(TranscriptDesignTokens.brandFill(calm: calm), in: RoundedRectangle(cornerRadius: 7))
             Text("dBrief Assistant")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
@@ -1256,6 +1287,8 @@ struct TranscriptDetailView: View {
             base.appendingPathExtension("richtranscript.json"),
             base.appendingPathExtension("insights.json"),
             base.appendingPathExtension("chat.json"),
+            base.appendingPathExtension("spokensummary.json"),
+            base.appendingPathExtension("spokensummary.m4a"),
             base.appendingPathExtension("json"),
         ]
         for url in candidates {
@@ -1373,6 +1406,42 @@ struct TranscriptDetailView: View {
 
     private func loadInsights() async {
         insights = (try? await context.insightsStore.load(for: recording)) ?? nil
+        refreshSpokenSummaryAvailability()
+    }
+
+    private func startSpokenSummary() {
+        guard let insights else { return }
+        let service = SpokenSummaryService(
+            appSettings: context.appSettings,
+            plugin: context.recordingManager.localPlugin,
+            store: spokenSummaryStore
+        )
+        spokenSummaryService = service
+        Task { await service.generate(insights: insights) }
+    }
+
+    private func playSavedSpokenSummary() async {
+        guard let audioURL = recording.spokenSummaryAudioURL,
+              let scriptURL = recording.spokenSummaryScriptURL,
+              FileManager.default.fileExists(atPath: audioURL.path) else { return }
+        let saved = try? await spokenSummaryStore.load(from: scriptURL)
+        let service = SpokenSummaryService(
+            appSettings: context.appSettings,
+            plugin: context.recordingManager.localPlugin,
+            store: spokenSummaryStore
+        )
+        service.presentSaved(audioURL: audioURL, script: saved?.script ?? "")
+        spokenSummaryService = service
+    }
+
+    private func refreshSpokenSummaryAvailability() {
+        guard let audioURL = recording.spokenSummaryAudioURL,
+              let scriptURL = recording.spokenSummaryScriptURL else {
+            hasSpokenSummary = false
+            return
+        }
+        hasSpokenSummary = FileManager.default.fileExists(atPath: audioURL.path)
+            && FileManager.default.fileExists(atPath: scriptURL.path)
     }
 
     private func saveInsights(_ updated: RecordingInsights) async {

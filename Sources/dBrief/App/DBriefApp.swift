@@ -76,7 +76,7 @@ final class AppContext {
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
         callDetectionService.start(appState: appState, appSettings: appSettings, recordingManager: recordingManager)
         recordingManager.requestNotificationPermission()
-        miniPlayer.setUp(appState: appState, recordingManager: recordingManager)
+        miniPlayer.setUp(appState: appState, recordingManager: recordingManager, appSettings: appSettings)
         recordingManager.miniPlayer = miniPlayer
 
         // Apply dock icon preference
@@ -202,6 +202,7 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.microsoftAuthService)
                 .environment(context.updateService)
+                .environment(\.calmAppearance, context.appSettings.reduceNeon)
         } label: {
             if context.appState.isRecording || context.appState.isPaused {
                 HStack(spacing: 4) {
@@ -242,6 +243,7 @@ struct DBriefApp: App {
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
                 .environment(context.updateService)
+                .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .frame(minWidth: 800, minHeight: 550)
                 .onChange(of: context.appSettings.recordHotkey) { _, newValue in
                     context.hotkeyService.update(hotkey: newValue)
@@ -258,6 +260,7 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.recordingManager)
                 .environment(context.transcriptChatStore)
+                .environment(\.calmAppearance, context.appSettings.reduceNeon)
         }
         .defaultSize(width: 1100, height: 720)
     }

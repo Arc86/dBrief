@@ -4,6 +4,7 @@ struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(\.calmAppearance) private var calm
 
     var body: some View {
         ZStack {
@@ -11,9 +12,9 @@ struct CallDetectedPopup: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)
 
-            // Signature brand gradient top bar
+            // Signature brand gradient top bar (solid coral in calm mode)
             VStack(spacing: 0) {
-                Brand.gradient.frame(height: 3)
+                Rectangle().fill(Brand.accentFill(calm: calm)).frame(height: 3)
                 Spacer()
             }
 
@@ -68,8 +69,8 @@ struct CallDetectedPopup: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 7)
-                            .background(Brand.gradientDiagonal, in: Capsule())
-                            .shadow(color: Brand.coral.opacity(0.5), radius: 10, y: 4)
+                            .background(Brand.ctaFill(calm: calm), in: Capsule())
+                            .shadow(color: Brand.ctaGlow(calm: calm), radius: calm ? 0 : 10, y: calm ? 0 : 4)
                         }
                         .buttonStyle(.plain)
                     }

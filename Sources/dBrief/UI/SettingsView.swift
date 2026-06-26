@@ -8,7 +8,9 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general        = "General"
         case recording      = "Recording"
-        case aiAndModels    = "AI & Models"
+        case transcription  = "Transcription"
+        case ai             = "AI Analysis"
+        case spokenVoice    = "Spoken Summary"
         case vocabulary     = "Vocabulary"
         case watchedFolders = "Watched Folders"
         case integrations   = "Integrations"
@@ -24,13 +26,34 @@ struct SettingsView: View {
             case .permissions:    "lock.shield"
             case .about:          "info.circle"
             case .recording:      "mic"
-            case .aiAndModels:    "brain"
+            case .transcription:  "waveform"
+            case .ai:             "brain"
+            case .spokenVoice:    "speaker.wave.2"
             case .vocabulary:     "text.word.spacing"
             case .watchedFolders: "folder.badge.gearshape"
             case .integrations:   "puzzlepiece.extension"
             case .voiceLibrary:   "person.wave.2"
             case .profiles:       "person.3"
             case .benchmark:      "speedometer"
+            }
+        }
+
+        /// Background tint for the System Settings–style colored icon badge.
+        var color: Color {
+            switch self {
+            case .general:        .gray
+            case .recording:      .red
+            case .transcription:  .blue
+            case .ai:             .purple
+            case .spokenVoice:    .pink
+            case .vocabulary:     .indigo
+            case .watchedFolders: .orange
+            case .integrations:   .teal
+            case .voiceLibrary:   .cyan
+            case .profiles:       .mint
+            case .benchmark:      .green
+            case .permissions:    .gray
+            case .about:          .blue
             }
         }
     }
@@ -47,10 +70,15 @@ struct SettingsView: View {
             List(visibleTabs, selection: $selectedTab) { tab in
                 Label {
                     Text(tab.rawValue)
+                        .font(.system(size: 14))
                 } icon: {
                     Image(systemName: tab.icon)
-                        .imageScale(.large)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(tab.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
+                .padding(.vertical, 3)
                 .tag(tab)
             }
             .listStyle(.sidebar)
@@ -69,7 +97,9 @@ struct SettingsView: View {
                 case .general:      SettingsGeneralTab()
                 case .permissions:  SettingsPermissionsTab()
                 case .recording:    SettingsRecordingTab()
-                case .aiAndModels:  SettingsAIModelsTab()
+                case .transcription: SettingsTranscriptionTab()
+                case .ai:           SettingsAITab()
+                case .spokenVoice:  SettingsSpokenVoiceTab()
                 case .vocabulary:     SettingsVocabularyTab()
                 case .watchedFolders: SettingsWatchedFoldersTab()
                 case .integrations: SettingsIntegrationsTab()
