@@ -19,7 +19,7 @@ final class AppContext {
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
-    let updateService = UpdateService()
+    let updaterController = UpdaterController()
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
     let miniPlayer = FloatingMiniPlayerController()
@@ -38,7 +38,6 @@ final class AppContext {
             appSettings: appSettings,
             recordingManager: recordingManager
         )
-        UpdateAvailableOverlayController.shared.configure(updateService: updateService)
         SpeakerReviewWindowController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -88,25 +87,6 @@ final class AppContext {
         hotkeyService.register(hotkey: appSettings.recordHotkey) { [weak self] in
             guard let self else { return }
             self.toggleRecording()
-        }
-
-        // Silent update check on launch, throttled to once per 24h
-        if appSettings.autoCheckUpdates {
-            let last = appSettings.lastUpdateCheckTime
-            let due = last == nil || Date().timeIntervalSince(last!) >= 24 * 60 * 60
-            if due {
-                await updateService.checkForUpdates(manual: false)
-                appSettings.lastUpdateCheckTime = Date()
-            }
-        }
-
-        // Surface the "Update available" popup once per new release. The menu-bar
-        // badge and Settings → Updates section remain as the persistent affordance.
-        if updateService.updateAvailable,
-           let latest = updateService.latestVersion,
-           latest != appSettings.lastNotifiedUpdateVersion {
-            appSettings.lastNotifiedUpdateVersion = latest
-            UpdateAvailableOverlayController.shared.show()
         }
 
         // Purge recordings/transcripts past their retention window.
@@ -201,7 +181,6 @@ struct DBriefApp: App {
                 .environment(context.recordingManager)
                 .environment(context.audioPlayer)
                 .environment(context.microsoftAuthService)
-                .environment(context.updateService)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
         } label: {
             if context.appState.isRecording || context.appState.isPaused {
@@ -242,7 +221,7 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
-                .environment(context.updateService)
+                .environment(context.updaterController)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .frame(minWidth: 800, minHeight: 550)
                 .onChange(of: context.appSettings.recordHotkey) { _, newValue in
@@ -283,7 +262,6 @@ struct MenuBarView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(UpdateService.self) private var updateService
 
     @State private var showYouTubeInput = false
 
@@ -418,17 +396,6 @@ struct MenuBarView: View {
                 .font(.headline)
 
             Spacer()
-
-            if updateService.updateAvailable {
-                Button {
-                    updateService.openReleasePage()
-                } label: {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .foregroundStyle(.orange)
-                }
-                .buttonStyle(.plain)
-                .help("Update available\(updateService.latestVersion.map { " — version \($0)" } ?? "")")
-            }
 
             statusPill
         }

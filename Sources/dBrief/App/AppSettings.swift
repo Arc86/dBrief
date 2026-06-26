@@ -81,9 +81,6 @@ final class AppSettings {
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
         static let recordHotkey = "recordHotkey"
-        static let autoCheckUpdates = "autoCheckUpdates"
-        static let lastUpdateCheckTime = "lastUpdateCheckTime"
-        static let lastNotifiedUpdateVersion = "lastNotifiedUpdateVersion"
         static let autoDeleteRecordingsEnabled = "autoDeleteRecordingsEnabled"
         static let autoDeleteRecordingsDays = "autoDeleteRecordingsDays"
         static let autoDeleteTranscriptsEnabled = "autoDeleteTranscriptsEnabled"
@@ -339,34 +336,6 @@ final class AppSettings {
     /// Reveals advanced settings and features across all tabs
     var powerUserMode: Bool {
         didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
-    }
-
-    /// Automatically check GitHub for app updates on launch (throttled to once/24h)
-    var autoCheckUpdates: Bool {
-        didSet { UserDefaults.standard.set(autoCheckUpdates, forKey: Keys.autoCheckUpdates) }
-    }
-
-    /// Last time the app checked for updates; persisted as seconds since 1970
-    var lastUpdateCheckTime: Date? {
-        didSet {
-            if let date = lastUpdateCheckTime {
-                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Keys.lastUpdateCheckTime)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Keys.lastUpdateCheckTime)
-            }
-        }
-    }
-
-    /// The latest version the user was already shown an "Update available" popup for.
-    /// Used to surface the popup only once per new release (the menu-bar badge stays).
-    var lastNotifiedUpdateVersion: String? {
-        didSet {
-            if let version = lastNotifiedUpdateVersion {
-                UserDefaults.standard.set(version, forKey: Keys.lastNotifiedUpdateVersion)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Keys.lastNotifiedUpdateVersion)
-            }
-        }
     }
 
     /// Global keyboard shortcut for toggling recording (user-configurable in Settings → General)
@@ -880,13 +849,6 @@ final class AppSettings {
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
         self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
-        self.autoCheckUpdates = defaults.object(forKey: Keys.autoCheckUpdates) as? Bool ?? true
-        if let interval = defaults.object(forKey: Keys.lastUpdateCheckTime) as? TimeInterval {
-            self.lastUpdateCheckTime = Date(timeIntervalSince1970: interval)
-        } else {
-            self.lastUpdateCheckTime = nil
-        }
-        self.lastNotifiedUpdateVersion = defaults.string(forKey: Keys.lastNotifiedUpdateVersion)
         self.recordHotkey = {
             if let data = defaults.data(forKey: Keys.recordHotkey),
                let hotkey = try? JSONDecoder().decode(RecordHotkey.self, from: data)

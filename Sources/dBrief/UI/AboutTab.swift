@@ -2,17 +2,14 @@ import AppKit
 import SwiftUI
 
 /// The About settings page: brand hero, an update-checker card wired to
-/// `UpdateService`, a build-info grid (real version/OS/engine values), an
+/// Sparkle, a build-info grid (real version/OS/engine values), an
 /// external-links list, and a privacy seal. Adapts the dark neon design to the
 /// hybrid Light/Dark BrandKit treatment so it reads in both schemes.
 struct AboutTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.calmAppearance) private var calm
-    @State private var update = UpdateService()
-    @State private var phase: UpdatePhase = .idle
+    @Environment(UpdaterController.self) private var updaterController
     @State private var animate = false
-
-    enum UpdatePhase { case idle, checking, upToDate, available }
 
     // MARK: Version / system facts
 
@@ -151,122 +148,33 @@ struct AboutTab: View {
         HStack(spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(updateIconTint)
+                    .fill(Color.primary.opacity(0.06))
                     .frame(width: 38, height: 38)
-                updateIcon
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(updateTitle)
+                Text("Keep dBrief up to date")
                     .font(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(.primary)
-                Text(updateSubtitle)
+                Text("You're on v\(shortVersion)")
                     .font(.brandMono(12))
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            updateButton
+            Button("Check for updates") { updaterController.checkForUpdates() }
+                .buttonStyle(.plain)
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+                .padding(.horizontal, 18).padding(.vertical, 10)
+                .background(Color.primary, in: Capsule())
+                .disabled(!updaterController.canCheckForUpdates)
         }
         .padding(16)
-        .background(updateCardTint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(updateCardStroke, lineWidth: 1))
-        .animation(.easeOut(duration: 0.25), value: phase)
-    }
-
-    @ViewBuilder private var updateIcon: some View {
-        switch phase {
-        case .idle:
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 16, weight: .semibold)).foregroundStyle(.secondary)
-        case .checking:
-            ProgressView().controlSize(.small)
-        case .upToDate:
-            Image(systemName: "checkmark")
-                .font(.system(size: 16, weight: .bold)).foregroundStyle(Brand.ready)
-        case .available:
-            Image(systemName: "sparkles")
-                .font(.system(size: 16, weight: .semibold)).foregroundStyle(Brand.violet)
-        }
-    }
-
-    @ViewBuilder private var updateButton: some View {
-        switch phase {
-        case .available:
-            Button("Download & install") { update.openReleasePage() }
-                .buttonStyle(.plain)
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(Brand.ctaFill(calm: calm), in: Capsule())
-                .shadow(color: Brand.ctaGlow(calm: calm, base: Brand.violet), radius: calm ? 0 : 12, y: calm ? 0 : 5)
-        case .checking:
-            Text("Checking…")
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(Color.primary.opacity(0.06), in: Capsule())
-        default:
-            Button(phase == .upToDate ? "Check again" : "Check for updates") { runCheck() }
-                .buttonStyle(.plain)
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(phase == .upToDate ? .primary : Color(nsColor: .windowBackgroundColor))
-                .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(phase == .upToDate
-                    ? AnyShapeStyle(Color.primary.opacity(0.08))
-                    : AnyShapeStyle(Color.primary), in: Capsule())
-        }
-    }
-
-    private func runCheck() {
-        guard phase != .checking else { return }
-        phase = .checking
-        Task {
-            await update.checkForUpdates(manual: true)
-            phase = update.updateAvailable ? .available : .upToDate
-        }
-    }
-
-    private var updateTitle: String {
-        switch phase {
-        case .idle: "Check for updates"
-        case .checking: "Checking for updates…"
-        case .upToDate: "dBrief is up to date"
-        case .available: "Update available — v\(update.latestVersion ?? "?")"
-        }
-    }
-    private var updateSubtitle: String {
-        switch phase {
-        case .idle: "You're on v\(shortVersion)"
-        case .checking: "Contacting GitHub releases"
-        case .upToDate: "v\(shortVersion) is the latest version"
-        case .available:
-            if let err = update.lastError { err }
-            else { "Tap to download the latest release" }
-        }
-    }
-    private var updateIconTint: Color {
-        switch phase {
-        case .idle: Color.primary.opacity(0.06)
-        case .checking: Brand.cyanTint
-        case .upToDate: Brand.ready.opacity(0.16)
-        case .available: Brand.violetTint
-        }
-    }
-    private var updateCardTint: Color {
-        switch phase {
-        case .idle: Color.primary.opacity(0.03)
-        case .checking: Brand.cyanTint
-        case .upToDate: Brand.ready.opacity(0.1)
-        case .available: Brand.violetTint
-        }
-    }
-    private var updateCardStroke: Color {
-        switch phase {
-        case .idle: Color.primary.opacity(0.08)
-        case .checking: Brand.cyan.opacity(0.3)
-        case .upToDate: Brand.ready.opacity(0.3)
-        case .available: Brand.violet.opacity(0.35)
-        }
+            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
     }
 
     // MARK: Build grid
