@@ -4,7 +4,9 @@ This release is about **who** said what. dBrief now builds a private, on-device
 library of voices so people you meet with are recognized by name across
 recordings — not just diarized within one. Around that sits a new way to confirm
 speaker names before analysis, much better speaker handling on long recordings,
-AI that knows who's likely in the room, and a top-to-bottom visual refresh.
+AI that knows who's likely in the room, spoken audio summaries you can listen to
+hands-free, a top-to-bottom visual refresh, and in-app updates so you stay current
+without re-downloading.
 
 ### Know who's talking — the Voice Library
 
@@ -26,6 +28,11 @@ AI that knows who's likely in the room, and a top-to-bottom visual refresh.
 
 - **The AI knows who's likely in the room.** Participant names — from your calendar event or what you typed in — are now passed to the analysis, so summaries and action items spell people's names correctly and attribute points to the right person.
 
+### Listen instead of read — Spoken Summary
+
+- **Hear your meeting back.** A new **Spoken Summary** turns a recording's summary and action items into a short, natural narration you can play — great for catching up hands-free. Generate it from the transcript window's Summary tab; once saved it plays back instantly.
+- **Two on-device voices.** Synthesis runs entirely on your Mac: **Kokoro** (fast, English) is the default, with multilingual **Qwen3** available. Pick the engine and voice in the new **Settings → Spoken Summary** tab, and audition it with **Preview voice** before committing.
+
 ### Rename and reassign speakers, properly
 
 - Click a speaker on any turn to **rename** them, **swap** two speakers who got mixed up, **move** a single turn or all of a person's turns to someone else, or mark **"this is me."** Renaming to a name that already exists swaps the two instead of losing anyone.
@@ -38,6 +45,7 @@ AI that knows who's likely in the room, and a top-to-bottom visual refresh.
 
 ### Other improvements
 
+- **In-app updates.** dBrief now updates itself with Sparkle — it checks for new versions (automatically, or via **Settings → General → Software update → Check Now**), then downloads, verifies, and installs them in place. No more re-downloading the DMG by hand. Updates are cryptographically signed (EdDSA), so only genuine dBrief releases install.
 - **Vocabulary has its own tab.** Domain terms moved out of Transcription into a dedicated **Vocabulary** settings tab — a cleaner inline editor for the names and jargon dBrief should spell correctly.
 - **Per-recording performance breakdown.** The Benchmark panel (Power User Mode) now lists recent transcriptions individually, each expandable into a step-by-step timeline (finalize, transcribe, diarize, AI, vocabulary, title) with a "slower than usual" flag.
 
