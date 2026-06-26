@@ -139,6 +139,14 @@ sign:
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/dBriefMLHost"; \
 		: 'Sign nested code INSIDE-OUT. The .metallib files in MacOS/ are Mach-O ("MetalLib executable"); they MUST be signed before the main executable, because signing $(EXECUTABLE_NAME) (the bundle main exe) triggers a bundle-level seal that rejects any unsigned nested code. (--deep handles this automatically on the self-signed path below.)'; \
 		find "$(MACOS)" -name '*.metallib' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+		: 'Sign the embedded Sparkle.framework inside-out (XPC services, Autoupdate/Updater.app helpers, then the framework) BEFORE the main executable, so the bundle-level seal accepts it. The self-signed branch below relies on --deep instead.'; \
+		if [ -d "$(CONTENTS)/Frameworks/Sparkle.framework" ]; then \
+			SPK="$(CONTENTS)/Frameworks/Sparkle.framework"; \
+			find "$$SPK" -name '*.xpc' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			find "$$SPK" -name 'Autoupdate' -type f -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			find "$$SPK" -name 'Updater.app' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			codesign --force --options runtime --timestamp --sign "$$IDENTITY" "$$SPK"; \
+		fi; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/$(EXECUTABLE_NAME)"; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(APP_BUNDLE)"; \
 		;; \
