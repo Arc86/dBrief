@@ -144,7 +144,7 @@ sign:
 			SPK="$(CONTENTS)/Frameworks/Sparkle.framework"; \
 			find "$$SPK" -name '*.xpc' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
 			find "$$SPK" -name 'Autoupdate' -type f -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
-			find "$$SPK" -name 'Updater.app' -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
+			find "$$SPK" -name 'Updater.app' -type d -exec codesign --force --options runtime --timestamp --sign "$$IDENTITY" {} \;; \
 			codesign --force --options runtime --timestamp --sign "$$IDENTITY" "$$SPK"; \
 		fi; \
 		codesign --force --options runtime --timestamp --entitlements "$(ENTITLEMENTS)" --sign "$$IDENTITY" "$(MACOS)/$(EXECUTABLE_NAME)"; \
