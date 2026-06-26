@@ -14,11 +14,11 @@ After transcription, dBrief uses an AI model to analyse the transcript and gener
 
 ## Choosing what to generate
 
-In the post-recording sheet (the window that appears after you stop), you can toggle which outputs to generate. You can also configure defaults in **Settings → AI & Models**.
+In the post-recording sheet (the window that appears after you stop), you can toggle which outputs to generate. You can also configure defaults in **Settings → AI Analysis**.
 
 ## Choosing an AI engine
 
-Go to **Settings → AI & Models** and select your engine. dBrief offers four options:
+Go to **Settings → AI Analysis** and select your engine. dBrief offers four options:
 
 | Engine | Where it runs | Requirements |
 |---|---|---|
@@ -35,11 +35,11 @@ AI analysis runs after transcription completes. The steps run sequentially: summ
 
 ## Customising prompts
 
-You can edit the prompts dBrief uses for each AI task in **Settings → AI & Models** (requires Power User Mode). Profiles can also override prompts on a per-meeting basis — see [Meeting Profiles](../profiles/what-are-profiles.md).
+You can edit the prompts dBrief uses for each AI task in **Settings → AI Analysis** (requires Power User Mode). Profiles can also override prompts on a per-meeting basis — see [Meeting Profiles](../profiles/what-are-profiles.md).
 
 ## Turning AI off
 
-If you only want transcripts, turn off **Enable AI processing** in **Settings → AI & Models → AI Analysis**. Recordings are then transcribed only — no summary, action items, or tags — and the AI options are hidden from the post-recording sheet.
+If you only want transcripts, turn off **Enable AI processing** in **Settings → AI Analysis**. Recordings are then transcribed only — no summary, action items, or tags — and the AI options are hidden from the post-recording sheet.
 
 ## Chatting with a transcript
 

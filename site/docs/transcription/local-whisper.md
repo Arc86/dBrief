@@ -18,13 +18,13 @@ You need a working internet connection for the initial download. After that, tra
 
 ## Choosing a model
 
-In **Settings → AI & Models → Transcription**, the selected model appears as a card showing its name, approximate memory use, and a **Recommended** badge on the suggested model. A one-line description under the card explains the trade-off, and the **ⓘ** button next to *Model* gives a plain-language overview. Smaller models (Tiny, Small) are faster and lighter; larger models are more accurate but need more memory. Open **Advanced** to switch where the model runs (compute units), enable **Show all models** to see every variant fetched from Hugging Face, refresh the list, or purge the cached model.
+In **Settings → Transcription**, the selected model appears as a card showing its name, approximate memory use, and a **Recommended** badge on the suggested model. A one-line description under the card explains the trade-off, and the **ⓘ** button next to *Model* gives a plain-language overview. Smaller models (Tiny, Small) are faster and lighter; larger models are more accurate but need more memory. Open **Advanced** to switch where the model runs (compute units), enable **Show all models** to see every variant fetched from Hugging Face, refresh the list, or purge the cached model.
 
 Use the **Download model** button to fetch a model ahead of time. Downloads show progress and can be cancelled. A green checkmark indicates a model is already on disk.
 
 ## Setup
 
-1. Go to **Settings → AI & Models → Transcription**
+1. Go to **Settings → Transcription**
 2. Select **Local Whisper** as your transcription engine
 3. Pick a model and click **Download model** (or just start a recording — dBrief downloads the model on demand)
 
@@ -35,7 +35,7 @@ out of your way, dBrief **prewarms the model while you record** — as soon as a
 recording starts, the model loads in the background, so transcription begins the
 moment you hit **Stop** instead of waiting on a load.
 
-For an even snappier first transcription, open **Settings → AI & Models →
+For an even snappier first transcription, open **Settings →
 Transcription → Advanced** and enable **Keep model warm**. This loads the model
 shortly after the app launches and again after your Mac wakes from sleep, so it's
 ready before you even start recording. It's **off by default** because it holds the
@@ -53,7 +53,7 @@ You can also run speaker detection **after the fact** on an already-transcribed 
 
 ## Deleting the model
 
-To free up disk space, go to **Settings → AI & Models → Transcription** and use **Purge local WhisperKit model**. You can re-download it at any time.
+To free up disk space, go to **Settings → Transcription** and use **Purge local WhisperKit model**. You can re-download it at any time.
 
 ## Accuracy
 

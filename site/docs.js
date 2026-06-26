@@ -47,6 +47,7 @@
         { slug: "ai-analysis/local-cli",          title: "Local CLI" },
         { slug: "ai-analysis/local-vs-remote",    title: "Local vs Remote" },
         { slug: "ai-analysis/transcript-chat",    title: "Transcript Chat" },
+        { slug: "ai-analysis/spoken-summary",     title: "Spoken Summary" },
         { slug: "ai-analysis/remote-endpoint",    title: "Remote Endpoint" },
       ],
     },

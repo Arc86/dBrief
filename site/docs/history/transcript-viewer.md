@@ -64,6 +64,7 @@ The recording's AI output lives in the **Summary** view — choose **Summary** i
 - **Copy** — the **Copy** button at the top of the panel copies the whole analysis as clean, formatted text, so you don't have to select it by hand.
 - **Editing** — click **Edit** to change the summary, add or remove action items, or edit the tags, then click **Save** (or **Cancel** to discard). Sentiment is shown for reference but isn't editable.
 - **Saving** updates the recording's saved analysis **and** rewrites the matching sections of the exported Markdown file in place — in your transcription folder or Obsidian vault — leaving the transcript and the rest of the note untouched. Other integrations (Apple Notes, Reminders, webhooks) are not re-sent, so editing won't create duplicates.
+- **Generate Spoken** — turn the summary into a short audio briefing you can listen to. See [Spoken Summary](../ai-analysis/spoken-summary.md).
 
 The AI analysis is saved automatically when a recording is processed. Recordings made before this feature was added show a "No saved analysis" message in the panel.
 

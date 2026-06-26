@@ -63,4 +63,4 @@ If you want cloud-style speed and quality but local-style privacy, you can point
 - **Choose remote (cloud)** if you want the best possible quality and speed, you have a reliable connection, and you're comfortable with the provider's handling of your data.
 - **Choose remote (your own server)** if you want strong quality and speed *and* want your data to stay on hardware you control.
 
-You can change engines at any time in **Settings → AI & Models**, and try a different one on a past recording from the [Recording History](../history/recording-history.md).
+You can change engines at any time in **Settings → AI Analysis**, and try a different one on a past recording from the [Recording History](../history/recording-history.md).

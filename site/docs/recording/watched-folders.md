@@ -15,7 +15,7 @@ Open **Settings → Watched Folders** and enable **Monitor folders for new audio
 - Your original file stays exactly where it is. dBrief imports a copy into your recordings, so the result shows up in History like any other recording, with transcripts and exports landing in your normal output folders.
 - Processing happens one file at a time and politely waits while you're recording or while another transcription is running.
 
-New files are transcribed and analyzed using your global preferences from **Settings → AI & Models** (transcription engine, AI analysis, output language, integrations, and so on).
+New files are transcribed and analyzed using your global preferences from **Settings → Transcription** and **Settings → AI Analysis** (transcription engine, AI analysis, output language, integrations, and so on).
 
 ## Notifications
 

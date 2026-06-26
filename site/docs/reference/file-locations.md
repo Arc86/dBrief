@@ -31,7 +31,7 @@ On-device models are stored in Application Support:
 └── MLX/           ← Gemma 4 E4B model
 ```
 
-To remove models, use the **Purge** options in **Settings → AI & Models** (Power User Mode for the Gemma model).
+To remove models, use the **Purge** options in **Settings → Transcription** and **Settings → AI Analysis** (Power User Mode for the Gemma model).
 
 ## Auto-delete (retention)
 

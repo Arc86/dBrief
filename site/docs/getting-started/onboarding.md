@@ -26,7 +26,7 @@ Pick how recordings are turned into text and summaries. Each option shows a one-
 - **Transcription** defaults to **Local Whisper** — accurate, multilingual, and fully on-device (it downloads a model the first time you transcribe).
 - **AI Analysis** defaults to the best on-device option for your Mac — **Apple Intelligence** on macOS 26+, otherwise the local **Gemma** model.
 
-Both defaults run entirely on your Mac with no account or server to set up. If you choose **Remote Endpoint** for either, the wizard reminds you to add your server URL and key in **Settings → AI & Models** before recording.
+Both defaults run entirely on your Mac with no account or server to set up. If you choose **Remote Endpoint** for either, the wizard reminds you to add your server URL and key in **Settings → Transcription** or **Settings → AI Analysis** before recording.
 
 ### 4. Ready
 
@@ -36,8 +36,8 @@ You're all set. dBrief lives in your menu bar — click the **dB** icon any time
 
 Everything the wizard covers can be changed at any time:
 
-- **Transcription engine** — **Settings → AI & Models → Transcription**
-- **AI engine** — **Settings → AI & Models → AI Analysis**
+- **Transcription engine** — **Settings → Transcription**
+- **AI engine** — **Settings → AI Analysis**
 - **Output folders** — **Settings → General → Folders**
 
 ## Revisiting the wizard

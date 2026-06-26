@@ -10,7 +10,7 @@ Want to watch the words appear *while* you record? Turn on [Live Transcription](
 
 ## Choosing an engine
 
-Go to **Settings → AI & Models → Transcription** and select your transcription engine.
+Go to **Settings → Transcription** and select your transcription engine.
 
 ## Engine comparison
 
@@ -25,7 +25,7 @@ The two on-device model engines (Local Whisper and Parakeet) run best on Apple S
 
 ## Speaker diarization (who said what)
 
-When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker diarization** in **Settings → AI & Models → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. The **Deepgram** remote provider also returns speaker labels when diarization is on; Apple Speech and other remote endpoints don't support it.
+When using **Local Whisper** or **Parakeet (Local)**, you can enable **Speaker diarization** in **Settings → Transcription**. dBrief then labels each segment with a speaker ("Speaker 1", "Speaker 2", …), which you can rename in the [transcript viewer](../history/transcript-viewer.md). Diarization adds processing time and extra memory, and is off by default. The **Deepgram** remote provider also returns speaker labels when diarization is on; Apple Speech and other remote endpoints don't support it.
 
 ## Cleanup
 
@@ -41,7 +41,7 @@ Recordings longer than 30 minutes are automatically split into 30-minute chunks 
 
 ## Transcription language
 
-For Apple Speech, Local Whisper, and remote endpoints, you can set the input language in **Settings → AI & Models → Transcription**. Leave it on **Auto-detect** to let the engine figure it out, or pick a specific language. Parakeet ignores language selection — choose the v2 (English) or v3 (multilingual) model variant instead.
+For Apple Speech, Local Whisper, and remote endpoints, you can set the input language in **Settings → Transcription**. Leave it on **Auto-detect** to let the engine figure it out, or pick a specific language. Parakeet ignores language selection — choose the v2 (English) or v3 (multilingual) model variant instead.
 
 ## Custom vocabulary
 

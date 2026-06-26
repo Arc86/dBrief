@@ -8,7 +8,7 @@ dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endp
 
 ## Setting up an endpoint
 
-1. Go to **Settings → AI & Models → AI Analysis**
+1. Go to **Settings → AI Analysis**
 2. Under the endpoint list, click the **+** menu and pick a provider preset (or **Custom…**)
 3. The preset prefills the base URL and a default model — just add your **API Key**. For a custom server, also set:
    - **Name** — a label (e.g. "GPT-4o" or "Local Ollama")

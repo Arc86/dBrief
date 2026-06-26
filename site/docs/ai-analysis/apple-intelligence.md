@@ -12,7 +12,7 @@ dBrief uses Apple's `FoundationModels` guided generation (`@Generable`/`@Guide`)
 
 ## Setup
 
-No download or configuration needed. If your Mac meets the requirements, Apple Intelligence is available immediately in **Settings → AI & Models**.
+No download or configuration needed. If your Mac meets the requirements, Apple Intelligence is available immediately in **Settings → AI Analysis**.
 
 If the option is greyed out, your Mac either doesn't have Apple Silicon or isn't running macOS 26.
 

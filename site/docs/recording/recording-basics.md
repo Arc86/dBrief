@@ -45,4 +45,4 @@ Titles are sanitised automatically — special characters and spaces are replace
 
 ## Settings
 
-Audio settings (input device, echo cancellation) are in **Settings → Recording**. Output folders, the record shortcut, call detection, and calendar are in **Settings → General**. Transcription and AI engines are in **Settings → AI & Models**.
+Audio settings (input device, echo cancellation) are in **Settings → Recording**. Output folders, the record shortcut, call detection, and calendar are in **Settings → General**. The transcription engine is in **Settings → Transcription** and the AI engine in **Settings → AI Analysis**.

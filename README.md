@@ -73,6 +73,8 @@ Four AI backends — local-first, remote optional:
 
 Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript. Analysis is **name-aware** — participant names from your calendar or manual entry are passed to the AI so people are spelled and attributed correctly.
 
+**Spoken Summary** — turn any recording's summary into a short, natural audio briefing with an on-device text-to-speech voice (Kokoro for fast English, or multilingual Qwen3), so you can catch up on a meeting hands-free.
+
 ### Recognize speakers
 - **Voice Library** — a private, on-device library of voiceprints recognizes people by name **across** recordings, not just within one. Confident matches only, never uploaded, fully manageable in Settings → Voice Library.
 - **Confirm-first review** — optionally pause after diarization to check who's who (with audio snippets and name suggestions) before the AI runs.
@@ -206,7 +208,7 @@ dBrief doesn't have to do the AI part. If you already use a cloud agent that wat
 The pattern is simple:
 
 1. **Set the export folder** to one your agent watches (an Obsidian vault synced to Notion, a Cloud Storage bucket, a Dropbox folder, an iCloud Drive folder, whatever).
-2. **Disable dBrief's AI processing** in Settings → AI & Models (or per-profile).
+2. **Disable dBrief's AI processing** in Settings → AI Analysis (or per-profile).
 3. **Record a meeting** as usual. dBrief drops a clean Markdown file in the folder.
 4. **The agent picks it up** — summarizes, extracts action items, files it, notifies you.
 

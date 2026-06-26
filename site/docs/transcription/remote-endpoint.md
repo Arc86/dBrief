@@ -8,7 +8,7 @@ dBrief can send audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoi
 
 ## Setting up an endpoint
 
-1. Go to **Settings → AI & Models → Transcription**
+1. Go to **Settings → Transcription**
 2. Under the endpoint list, click the **+** menu and pick a provider preset (or **Custom…**)
 3. The preset prefills the base URL and a default model — just add your **API Key**. For a custom server, also set:
    - **Name** — a label for this endpoint (e.g. "Local Whisper Large")

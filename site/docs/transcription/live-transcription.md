@@ -13,13 +13,13 @@ It's a **preview**: the text appears quickly but is rougher than the final resul
 
 ## Turning it on
 
-Go to **Settings → AI & Models → Transcription → Live Transcription** and enable **Transcribe live while recording**. It's off by default.
+Go to **Settings → Transcription → Live Transcription** and enable **Transcribe live while recording**. It's off by default.
 
 It runs entirely on your Mac and uses your **Transcription → Language** setting — which matters more than you'd expect for the live preview (see below).
 
 ## Language
 
-The live preview follows your **Settings → AI & Models → Transcription → Language** setting. For Apple Speech, **Auto** means *your Mac's system language* — **not** automatic detection. So if your Mac is set to English, the live preview is English even when you're speaking another language. Pick a specific language in that menu to change it.
+The live preview follows your **Settings → Transcription → Language** setting. For Apple Speech, **Auto** means *your Mac's system language* — **not** automatic detection. So if your Mac is set to English, the live preview is English even when you're speaking another language. Pick a specific language in that menu to change it.
 
 **One language at a time.** Apple's on-device speech recogniser handles a single language per session — it doesn't auto-detect, and it can't switch languages mid-conversation. If a meeting mixes languages (say Dutch and English), the live preview can only follow one of them; the other comes out rough. This is a limitation of Apple's live recogniser, not of dBrief.
 

@@ -8,11 +8,11 @@ Parakeet is a fast, accurate on-device speech recognition model. Like Local Whis
 
 ## Speaker diarization
 
-Turn on **Speaker diarization** in **Settings → AI & Models → Transcription** to label who said what. After Parakeet transcribes, dBrief runs SpeakerKit on the same audio and assigns each word the speaker who was talking at that moment, then groups the transcript into speaker turns. This adds processing time and ~500 MB of memory, and downloads the SpeakerKit model on first use. Speaker labels flow into the transcript viewer, markdown export, and integrations, just like with Local Whisper. As with any recording, you can rename speakers afterward by clicking a speaker badge.
+Turn on **Speaker diarization** in **Settings → Transcription** to label who said what. After Parakeet transcribes, dBrief runs SpeakerKit on the same audio and assigns each word the speaker who was talking at that moment, then groups the transcript into speaker turns. This adds processing time and ~500 MB of memory, and downloads the SpeakerKit model on first use. Speaker labels flow into the transcript viewer, markdown export, and integrations, just like with Local Whisper. As with any recording, you can rename speakers afterward by clicking a speaker badge.
 
 ## Model variants
 
-In **Settings → AI & Models → Transcription**, choose a variant:
+In **Settings → Transcription**, choose a variant:
 
 | Variant | Languages | Notes |
 |---|---|---|
@@ -35,7 +35,7 @@ Use the **Download model** button to fetch it ahead of time, with progress and a
 
 ## Setup
 
-1. Go to **Settings → AI & Models → Transcription**
+1. Go to **Settings → Transcription**
 2. Select **Parakeet (Local)** as your transcription engine
 3. Choose the v2 or v3 variant and click **Download model**
 

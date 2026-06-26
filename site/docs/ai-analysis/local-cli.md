@@ -12,7 +12,7 @@ dBrief invokes the command **once per recording** and asks it to return the summ
 
 ## Setup
 
-1. Go to **Settings → AI & Models**
+1. Go to **Settings → AI Analysis**
 2. Select **Local CLI** as your AI engine
 3. Under **Local CLI**, enter your **Command**, or pick one from the **Load Template** menu:
    - **Claude Code** — `claude -p "$DBRIEF_FULL_PROMPT"`
