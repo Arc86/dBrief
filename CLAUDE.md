@@ -21,13 +21,14 @@ The app version is the single source of truth in `Sources/dBrief/Resources/Info.
 
 ## Tests
 
-Tests live in `Tests/dBriefTests/` and use the `swift-testing` framework (v0.6.0+):
+Tests use the `swift-testing` framework (v0.6.0+) and live in two targets: the main `Tests/dBriefTests/` (~70 files) and `Tests/dBriefMLHostTests/` (helper-process tests: Parakeet segment building, `RequestRouter` dispatch, Whisper model-cache reuse — driven by the `dBriefMLHostStub` target, no real models). Representative coverage in `dBriefTests`:
 
 - **ProfileBehaviorTests.swift** — Meeting profile overrides, import/export, default profile protection
 - **WhisperPipelineTests.swift** — Recording finalization, title normalization, segment merging, file discovery
 - **RichTranscriptBuilderTests.swift** — Word timestamp propagation, speaker ID propagation, filler word defaults
 - **WhisperModelInfoTests.swift** — Model name parsing, memory estimation, turbo/quantized variants, sort ordering
 - **AppleSpeechResultMapperTests.swift** — `SpeechAnalyzer` chunk→`TranscriptionResult` mapping: word-level timestamps, empty-run/chunk dropping, language normalization
+- …plus ~66 more covering speaker reassignment/reconciliation, voice library matching/enrollment, transcript search & cleanup, calendar matching, provider adapters, retention cleanup, and wire/IPC framing.
 
 ## Architecture
 
