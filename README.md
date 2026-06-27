@@ -117,7 +117,13 @@ Audio mixing, filtering, normalization, and encoding use [FFmpeg](https://ffmpeg
 
 dBrief is **Apple Silicon only**. The `.dmg` is signed with a Developer ID and **notarized by Apple**, so it opens like any other Mac app — no Gatekeeper workaround. Pick whichever path you prefer:
 
-### 1. Homebrew
+### 1. Download the `.dmg` (recommended)
+
+Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page, open it, and drag **dBrief** into Applications. The download is notarized, so macOS opens it without a Gatekeeper prompt — it lands in your menu bar straight away.
+
+> Updates are delivered in-app: dBrief checks for new versions automatically (once a day, or on demand from **Settings → General → Software update → Check Now**) and installs them with one click via [Sparkle](https://sparkle-project.org).
+
+### 2. Homebrew
 
 ```bash
 brew install Arc86/dbrief/dbrief
@@ -125,12 +131,6 @@ ln -sf "$(brew --prefix)/opt/dbrief/dBrief.app" /Applications/dBrief.app
 ```
 
 Homebrew builds dBrief from source on your Mac, so the app is never quarantined and macOS opens it normally. Requires the Xcode command-line toolchain (`xcode-select --install`).
-
-### 2. Download the `.dmg`
-
-Grab the latest `.dmg` from the [Releases](https://github.com/Arc86/dBrief/releases) page, open it, and drag **dBrief** into Applications. The download is notarized, so macOS opens it without a Gatekeeper prompt — it lands in your menu bar straight away.
-
-> Updates are delivered in-app: dBrief checks for new versions automatically (once a day, or on demand from **Settings → General → Software update → Check Now**) and installs them with one click via [Sparkle](https://sparkle-project.org).
 
 ### 3. Build from source
 
