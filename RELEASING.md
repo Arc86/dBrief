@@ -66,7 +66,7 @@ cp dBrief-<version>.dmg /tmp/dbrief-appcast/
 /tmp/sparkle-tools/bin/generate_appcast \
   --ed-key-file ~/dbrief-sparkle-private-key.txt \
   --download-url-prefix "https://github.com/Arc86/dBrief/releases/download/v<version>/" \
-  --full-release-notes-link "https://github.com/Arc86/dBrief/releases" \
+  --full-release-notes-url "https://github.com/Arc86/dBrief/releases" \
   /tmp/dbrief-appcast
 # → writes /tmp/dbrief-appcast/appcast.xml, EdDSA-signed with your private key
 ```
