@@ -39,10 +39,7 @@ enum ObsidianFormatter {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        let sanitizedTags = insights.tags
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .map { $0.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression).lowercased() }
+        let sanitizedTags = ObsidianTag.sanitizeAll(insights.tags)
 
         var lines: [String] = []
 

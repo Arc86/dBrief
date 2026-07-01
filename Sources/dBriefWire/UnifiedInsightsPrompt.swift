@@ -1,5 +1,20 @@
 import Foundation
 
+/// The user's configured Summary / Action Items / Tags prompts, carried to the unified
+/// engines so on-device/CLI analysis honors the same prompts as the Remote Endpoint.
+/// Each field is optional; an empty/absent field falls back to the built-in rule.
+public struct InsightsGuidance: Sendable, Codable, Equatable {
+    public var summary: String?
+    public var actionItems: String?
+    public var tags: String?
+
+    public init(summary: String? = nil, actionItems: String? = nil, tags: String? = nil) {
+        self.summary = summary
+        self.actionItems = actionItems
+        self.tags = tags
+    }
+}
+
 /// Shared prompt contract for the "unified JSON" insights path used by both the
 /// local Gemma (MLX) engine (in the helper) and the Local CLI engine (in the app).
 /// Both ask a model to return a single JSON object (`title_concept`, `summary`,
@@ -62,11 +77,33 @@ public enum UnifiedInsightsPrompt {
         """
     }
 
+    /// Trimmed guidance string or `nil` when empty — so callers can pass an
+    /// `effective*Prompt` straight through and an unset value falls back to the
+    /// built-in rule below.
+    private static func guidance(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
     /// Shared analysis rules + output-language instruction, WITHOUT any output-format
     /// section. Used directly by the FoundationModels guided-generation path (where the
     /// `@Generable` schema defines the shape) and composed with the JSON block for the
     /// Gemma/Local-CLI text path.
-    public static func systemPromptForGuidedGeneration(outputLanguage: OutputLanguage, customVocabulary: String = "") -> String {
+    ///
+    /// `summaryGuidance` / `actionItemsGuidance` / `tagsGuidance` carry the user's
+    /// configured Summary / Action Items / Tags prompts. When non-empty they replace the
+    /// corresponding built-in rule, so the unified engines honor the same prompts as the
+    /// Remote Endpoint. The output container (the JSON envelope below, or the
+    /// `@Generable` schema for FoundationModels) always stays authoritative — see
+    /// `systemPrompt`.
+    public static func systemPromptForGuidedGeneration(
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = "",
+        summaryGuidance: String? = nil,
+        actionItemsGuidance: String? = nil,
+        tagsGuidance: String? = nil
+    ) -> String {
         let languageInstruction: String = {
             switch outputLanguage {
             case .english:
@@ -80,6 +117,13 @@ public enum UnifiedInsightsPrompt {
             }
         }()
 
+        let summaryRule = guidance(summaryGuidance)
+            ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
+        let actionItemsRule = guidance(actionItemsGuidance)
+            ?? "Extract ALL action items, even minor ones. Format: \"[WHO] to [TASK] [CONTEXT/DEADLINE]\"."
+        let tagsRule = guidance(tagsGuidance)
+            ?? "Provide 5-10 single words capturing the key topics discussed, and choose a sentiment of \"Positive\", \"Neutral\", or \"Negative\" based on the overall tone."
+
         return """
         You are an expert Senior Executive Assistant. Your goal is to extract structured meeting data from a transcript.
 
@@ -88,24 +132,70 @@ public enum UnifiedInsightsPrompt {
         ### RULES
         1. **NO REPETITION:** If a point is made twice, record it once.
         2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
-        3. **SUMMARY:** Write a thorough, multi-paragraph summary covering ALL major discussion topics.
-        4. **ACTION ITEMS:** Extract ALL action items, even minor ones. Format: "[WHO] to [TASK] [CONTEXT/DEADLINE]".
+        3. **SUMMARY:** \(summaryRule)
+        4. **ACTION ITEMS:** \(actionItemsRule)
         5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept.
-        6. **TAGS:** Provide 5-10 single words capturing the key topics discussed.
-        7. **SENTIMENT:** One of "Positive", "Neutral", or "Negative" based on the overall tone.
-        8. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
+        6. **TAGS & SENTIMENT:** \(tagsRule)
+        7. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.
         \(vocabularyBlock(customVocabulary))
         """
     }
 
-    public static func systemPrompt(outputLanguage: OutputLanguage, customVocabulary: String = "") -> String {
-        systemPromptForGuidedGeneration(outputLanguage: outputLanguage, customVocabulary: customVocabulary) + """
+    /// Convenience: build the guided-generation prompt from an `InsightsGuidance` bundle.
+    public static func systemPromptForGuidedGeneration(
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = "",
+        guidance: InsightsGuidance?
+    ) -> String {
+        systemPromptForGuidedGeneration(
+            outputLanguage: outputLanguage,
+            customVocabulary: customVocabulary,
+            summaryGuidance: guidance?.summary,
+            actionItemsGuidance: guidance?.actionItems,
+            tagsGuidance: guidance?.tags
+        )
+    }
+
+    /// Convenience: build the full JSON-contract prompt from an `InsightsGuidance` bundle.
+    public static func systemPrompt(
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = "",
+        guidance: InsightsGuidance?
+    ) -> String {
+        systemPrompt(
+            outputLanguage: outputLanguage,
+            customVocabulary: customVocabulary,
+            summaryGuidance: guidance?.summary,
+            actionItemsGuidance: guidance?.actionItems,
+            tagsGuidance: guidance?.tags
+        )
+    }
+
+    public static func systemPrompt(
+        outputLanguage: OutputLanguage,
+        customVocabulary: String = "",
+        summaryGuidance: String? = nil,
+        actionItemsGuidance: String? = nil,
+        tagsGuidance: String? = nil
+    ) -> String {
+        systemPromptForGuidedGeneration(
+            outputLanguage: outputLanguage,
+            customVocabulary: customVocabulary,
+            summaryGuidance: summaryGuidance,
+            actionItemsGuidance: actionItemsGuidance,
+            tagsGuidance: tagsGuidance
+        ) + """
 
 
         ### OUTPUT FORMAT (Strict JSON Only)
+        Regardless of any formatting, headings, or "output only…" phrasing mentioned in the rules above,
+        your ENTIRE response MUST be a single JSON object exactly as specified below — nothing before or after it.
+        Place the full summary text, INCLUDING any bullet points, headings, or line breaks the rules call for,
+        inside the "summary" string (use "\\n" for line breaks). Put each action item as its own string in the
+        "action_items" array, and the topic tags in the "tags" array.
         {
           "title_concept": "Short Descriptive Title",
-          "summary": "A detailed, multi-paragraph summary covering all key topics discussed...",
+          "summary": "The summary text, formatted as the SUMMARY rule requires...",
           "action_items": ["[Person] to [task] [context]", "..."],
           "tags": ["Tag1", "Tag2", "Tag3", "..."],
           "sentiment": "Positive" | "Neutral" | "Negative"

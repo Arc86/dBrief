@@ -7,12 +7,14 @@ public protocol LocalAIPluginProtocol: Sendable {
     func analyzeTranscriptStream(
         _ text: String,
         outputLanguage: OutputLanguage,
-        customVocabulary: String
+        customVocabulary: String,
+        guidance: InsightsGuidance?
     ) async -> AsyncThrowingStream<String, Error>
     func analyzeTranscript(
         _ text: String,
         outputLanguage: OutputLanguage,
-        customVocabulary: String
+        customVocabulary: String,
+        guidance: InsightsGuidance?
     ) async throws -> LocalInsightsResult
     func copyToClipboard(transcript: String, insights: LocalInsightsResult) async -> String
     func prepareModelsIfNeeded() async

@@ -143,4 +143,74 @@ struct UnifiedInsightsPromptTests {
         let guidedEmpty = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: .english)
         #expect(!guidedEmpty.contains("DOMAIN-SPECIFIC TERMS"))
     }
+
+    // MARK: - Per-field guidance (custom Summary / Action Items / Tags prompts)
+
+    @Test("Without guidance the built-in SUMMARY rule is used")
+    func defaultSummaryRuleWhenNoGuidance() {
+        let prompt = UnifiedInsightsPrompt.systemPrompt(outputLanguage: .english)
+        #expect(prompt.contains("thorough, multi-paragraph summary"))
+    }
+
+    @Test("Provided guidance replaces the built-in rules")
+    func guidanceReplacesRules() {
+        let prompt = UnifiedInsightsPrompt.systemPrompt(
+            outputLanguage: .english,
+            summaryGuidance: "Use 3-5 short bullet points.",
+            actionItemsGuidance: "List owners in CAPS.",
+            tagsGuidance: "Only product names."
+        )
+        #expect(prompt.contains("Use 3-5 short bullet points."))
+        #expect(prompt.contains("List owners in CAPS."))
+        #expect(prompt.contains("Only product names."))
+        // The replaced built-in summary wording is gone.
+        #expect(!prompt.contains("thorough, multi-paragraph summary"))
+    }
+
+    @Test("Empty/whitespace guidance falls back to the built-in rule")
+    func blankGuidanceFallsBack() {
+        let prompt = UnifiedInsightsPrompt.systemPrompt(
+            outputLanguage: .english,
+            summaryGuidance: "   \n  "
+        )
+        #expect(prompt.contains("thorough, multi-paragraph summary"))
+    }
+
+    @Test("The JSON envelope stays authoritative even with guidance")
+    func envelopeRemainsAuthoritative() {
+        // Mimics a real default tags prompt that says "output JSON only" — the envelope
+        // preamble must still assert the single-object contract so it can't hijack output.
+        let prompt = UnifiedInsightsPrompt.systemPrompt(
+            outputLanguage: .english,
+            summaryGuidance: "Output ONLY the summary, no JSON.",
+            tagsGuidance: "Output a JSON object with exactly two fields."
+        )
+        #expect(prompt.contains("ENTIRE response MUST be a single JSON object"))
+        #expect(prompt.contains("\"title_concept\""))
+        #expect(prompt.contains("\"action_items\""))
+    }
+
+    @Test("Guidance bundle convenience matches the explicit params")
+    func guidanceBundleMatchesParams() {
+        let bundle = InsightsGuidance(summary: "Bullets.", actionItems: "Owners.", tags: "Topics.")
+        let viaBundle = UnifiedInsightsPrompt.systemPrompt(outputLanguage: .english, guidance: bundle)
+        let viaParams = UnifiedInsightsPrompt.systemPrompt(
+            outputLanguage: .english,
+            summaryGuidance: "Bullets.",
+            actionItemsGuidance: "Owners.",
+            tagsGuidance: "Topics."
+        )
+        #expect(viaBundle == viaParams)
+    }
+
+    @Test("Guided-generation prompt also honors summary guidance")
+    func guidedPromptHonorsGuidance() {
+        let guided = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(
+            outputLanguage: .english,
+            summaryGuidance: "Use 3-5 short bullet points."
+        )
+        #expect(guided.contains("Use 3-5 short bullet points."))
+        // Still no JSON block in the guided variant.
+        #expect(!guided.contains("OUTPUT FORMAT"))
+    }
 }

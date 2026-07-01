@@ -494,17 +494,26 @@ struct TranscriptDetailView: View {
 
     private var transcriptList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(displayedTurns) { turn in
-                        transcriptRow(turn).id(turn.id)
-                    }
+            // A `List` (not `ScrollView { LazyVStack }`) so offscreen rows are
+            // recycled/released as you scroll. `LazyVStack` realizes-and-retains
+            // every row it has shown, and each turn renders one
+            // `.textSelection(.enabled)` Text per segment — those NSText-backed
+            // selection views accumulate without bound and exhaust memory on long
+            // transcripts (freeze → crash partway down). `List` keeps memory flat
+            // while preserving text selection. (Audio-scrub-to-end stayed fine
+            // because `scrollTo` only ever realized the destination rows.)
+            List {
+                ForEach(displayedTurns) { turn in
+                    transcriptRow(turn)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 3, leading: 36, bottom: 3, trailing: 36))
+                        .id(turn.id)
                 }
-                .padding(.horizontal, 36)
-                .padding(.vertical, 22)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlayScrollers()
             }
+            .listStyle(.plain)
+            .contentMargins(.vertical, 19, for: .scrollContent)
+            .overlayScrollers()
             .scrollContentBackground(.hidden)
             .scrollIndicators(.automatic)
             .onChange(of: audioPlayer.currentTime) { _, newTime in
@@ -695,8 +704,10 @@ struct TranscriptDetailView: View {
             participants: recording.participants,
             calendarAttendees: attendees,
             knownPeople: knownPeopleNames)
-        // Names to rename to: known people + other speakers (picking another speaker swaps).
-        let renameNames = cands.filter { !$0.isCurrent }.map(\.displayName)
+        // Rename targets, grouped by source. Picking a meeting/library name that already
+        // belongs to another speaker swaps them (handled in `SpeakerReassignment.rename`).
+        let meetingNames = cands.filter { $0.source == .meeting }.map(\.displayName)
+        let libraryNames = cands.filter { $0.source == .library }.map(\.displayName)
         // Move targets: the other existing speakers.
         let others = cands.compactMap { c -> SpeakerMoveTarget? in
             guard let sid = c.existingSpeakerId, !c.isCurrent else { return nil }
@@ -705,13 +716,24 @@ struct TranscriptDetailView: View {
         let segCount = SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId)
         let hasSegmentsBeyondTurn = segCount > turn.segments.count
 
-        // Rename
-        if renameNames.isEmpty {
+        // Rename — grouped into "In this meeting" and "Voice library", plus a custom fallback.
+        if meetingNames.isEmpty && libraryNames.isEmpty {
             Button("Rename…") { customRenameTurn = turn }
         } else {
             Menu("Rename to") {
-                ForEach(renameNames, id: \.self) { name in
-                    Button(name) { renameSpeaker(turn: turn, to: name) }
+                if !meetingNames.isEmpty {
+                    Section("In this meeting") {
+                        ForEach(meetingNames, id: \.self) { name in
+                            Button(name) { renameSpeaker(turn: turn, to: name) }
+                        }
+                    }
+                }
+                if !libraryNames.isEmpty {
+                    Section("Voice library") {
+                        ForEach(libraryNames, id: \.self) { name in
+                            Button(name) { renameSpeaker(turn: turn, to: name) }
+                        }
+                    }
                 }
                 Divider()
                 Button("Custom name…") { customRenameTurn = turn }

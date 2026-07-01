@@ -7,8 +7,8 @@ protocol MLBackend: Sendable {
     func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult
     func diarize(path: String) async throws -> [DiarizedTurn]
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]])
-    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String) async throws -> LocalInsightsResult
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, emitToken: @Sendable (String) -> Void) async throws
+    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
+    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult
@@ -66,10 +66,10 @@ final class RequestRouter: Sendable {
             case let .diarizeWithEmbeddings(path):
                 let r = try await backend.diarizeWithEmbeddings(path: path)
                 send(.diarizeWithEmbeddingsResult(turns: r.turns, embeddings: r.embeddings)); send(.finished)
-            case let .analyze(text, lang, vocab):
-                send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab))); send(.finished)
-            case let .analyzeStream(text, lang, vocab):
-                try await backend.analyzeStream(text: text, outputLanguage: lang, customVocabulary: vocab, emitToken: emitToken)
+            case let .analyze(text, lang, vocab, guidance):
+                send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance))); send(.finished)
+            case let .analyzeStream(text, lang, vocab, guidance):
+                try await backend.analyzeStream(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance, emitToken: emitToken)
                 send(.finished)
             case let .chatStream(system, user):
                 try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)

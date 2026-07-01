@@ -205,4 +205,17 @@ struct SpeakerReassignmentTests {
         #expect(nameOnly.map(\.displayName).sorted() == ["Carol", "Dave"])
         #expect(nameOnly.allSatisfy { $0.id.hasPrefix("name:") })
     }
+
+    @Test("candidates are tagged by source: meeting vs library, with meeting winning dedup")
+    func candidatesSourceTagging() {
+        let t = transcript(["S1"], labels: [SpeakerLabel(id: "S1", displayName: "Alice")])
+        let cands = SpeakerReassignment.candidates(in: t, currentSpeakerId: "S1",
+                                                   participants: ["Carol"],
+                                                   calendarAttendees: ["Dave"],
+                                                   knownPeople: ["Erin", "carol"])  // "carol" dups participant
+        #expect(cands.first { $0.existingSpeakerId == "S1" }?.source == .existingSpeaker)
+        // Carol + Dave come from the meeting; Erin from the library; "carol" deduped to meeting only.
+        #expect(cands.filter { $0.source == .meeting }.map(\.displayName).sorted() == ["Carol", "Dave"])
+        #expect(cands.filter { $0.source == .library }.map(\.displayName) == ["Erin"])
+    }
 }

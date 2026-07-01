@@ -64,8 +64,8 @@ struct MarkdownInsightsUpdaterTests {
     func tagsReplaced() {
         let insights = makeInsights(summary: "Old summary text.", items: ["Old item"], tags: ["new one", "second"])
         let result = MarkdownInsightsUpdater.update(markdown: sample, with: insights)
-        // body: lowercased, whitespace removed, #-prefixed, space-joined
-        #expect(result.contains("#newone #second"))
+        // body: sanitized via ObsidianTag (lowercased, whitespace -> hyphen, #-prefixed)
+        #expect(result.contains("#new-one #second"))
         #expect(!result.contains("#oldtag"))
         // frontmatter: whitespace -> hyphen, under the tags: key
         #expect(result.contains("  - new-one"))

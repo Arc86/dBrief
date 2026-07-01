@@ -62,15 +62,15 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return (turns, embeddings)
     }
 
-    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "") async throws -> LocalInsightsResult {
-        guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary)) else {
+    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
+        guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
             throw WireError(kind: .generic, message: "no insights")
         }
         return r
     }
 
-    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "") async -> AsyncThrowingStream<String, Error> {
-        await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary))
+    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
+        await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
     }
 
     func chatStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {

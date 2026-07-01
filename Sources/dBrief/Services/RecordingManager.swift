@@ -701,7 +701,8 @@ final class RecordingManager {
                 let titleStepIndex = appState.processingSteps.count
                 appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
                 do {
-                    if engine == .remoteEndpoint,
+                    if shouldGenerateTitle(for: recording),
+                       engine == .remoteEndpoint,
                        let endpoint = appSettings.effectiveDefaultAIEndpoint {
                         let titleStart = Date()
                         recording.generatedTitle = try await aiService.generateTitle(
@@ -1077,7 +1078,8 @@ final class RecordingManager {
             let titleStepIndex = appState.processingSteps.count
             appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
             do {
-                if engine == .remoteEndpoint,
+                if shouldGenerateTitle(for: recording),
+                   engine == .remoteEndpoint,
                    let endpoint = appSettings.effectiveDefaultAIEndpoint {
                     recording.generatedTitle = try await aiService.generateTitle(
                         transcription: titleInput,
@@ -1374,7 +1376,8 @@ final class RecordingManager {
             transcribe: transcribe,
             summary: summary && transcribe,
             actionItems: actionItems && transcribe,
-            tags: tags && transcribe
+            tags: tags && transcribe,
+            titleWasUserProvided: recording.titleWasUserProvided
         )
 
         do {
@@ -1406,6 +1409,7 @@ final class RecordingManager {
                 meetingTitleDraft: name,
                 finalizedAudioURL: audioURL
             )
+            recording.titleWasUserProvided = item.titleWasUserProvided
 
             appState.currentRecording = recording
             await processRecording(
@@ -1635,18 +1639,17 @@ final class RecordingManager {
             let insights = try await LocalAIService().analyzeTranscript(
                 contextualTranscription,
                 outputLanguage: appSettings.outputLanguage,
-                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", ")
+                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
+                summaryGuidance: appSettings.effectiveSummaryPrompt,
+                actionItemsGuidance: appSettings.effectiveActionItemsPrompt,
+                tagsGuidance: appSettings.effectiveTagsPrompt
             )
 
             if let summaryStepIndex {
                 recording.summary = insights.summary
                 markCompleted(summaryStepIndex)
             }
-            let trimmedTitle = insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            if !trimmedTitle.isEmpty {
-                let datePrefix = Self.dateOnlyString(recording.date)
-                recording.generatedTitle = "\(datePrefix) - \(trimmedTitle)"
-            }
+            applyGeneratedTitle(insights.titleConcept, to: recording)
             if let actionStepIndex {
                 recording.actionItems = insights.actionItems
                 markCompleted(actionStepIndex)
@@ -1675,6 +1678,18 @@ final class RecordingManager {
         #endif
     }
 
+    /// The user's configured Summary / Action Items / Tags prompts bundled for the
+    /// unified (single-call) engines — Gemma and Local CLI — so they honor the same
+    /// prompts the Remote Endpoint already uses. The unified prompt keeps ownership of
+    /// the JSON envelope; these only drive per-field content/style.
+    private var effectiveInsightsGuidance: InsightsGuidance {
+        InsightsGuidance(
+            summary: appSettings.effectiveSummaryPrompt,
+            actionItems: appSettings.effectiveActionItemsPrompt,
+            tags: appSettings.effectiveTagsPrompt
+        )
+    }
+
     private func runLocalQwenTasks(
         transcription: String,
         roster: String?,
@@ -1690,7 +1705,8 @@ final class RecordingManager {
                 let stream = await self.localAIPluginService.analyzeTranscriptStream(
                     contextualTranscription,
                     outputLanguage: self.appSettings.outputLanguage,
-                    customVocabulary: self.appSettings.effectiveCustomVocabulary.joined(separator: ", ")
+                    customVocabulary: self.appSettings.effectiveCustomVocabulary.joined(separator: ", "),
+                    guidance: self.effectiveInsightsGuidance
                 )
                 
                 var chunks: [String] = []
@@ -1723,10 +1739,7 @@ final class RecordingManager {
                 recording.summary = insights.summary
                 markCompleted(summaryStepIndex)
             }
-            if !insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
-                let datePrefix = Self.dateOnlyString(recording.date)
-                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))"
-            }
+            applyGeneratedTitle(insights.titleConcept, to: recording)
             if let actionStepIndex {
                 recording.actionItems = insights.actionItems
                 markCompleted(actionStepIndex)
@@ -1768,17 +1781,17 @@ final class RecordingManager {
                 transcript: contextualTranscription,
                 outputLanguage: appSettings.outputLanguage,
                 config: appSettings.localCLIConfig,
-                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", ")
+                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
+                summaryGuidance: appSettings.effectiveSummaryPrompt,
+                actionItemsGuidance: appSettings.effectiveActionItemsPrompt,
+                tagsGuidance: appSettings.effectiveTagsPrompt
             )
 
             if let summaryStepIndex {
                 recording.summary = insights.summary
                 markCompleted(summaryStepIndex)
             }
-            if !insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
-                let datePrefix = Self.dateOnlyString(recording.date)
-                recording.generatedTitle = "\(datePrefix) - \(insights.titleConcept.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))"
-            }
+            applyGeneratedTitle(insights.titleConcept, to: recording)
             if let actionStepIndex {
                 recording.actionItems = insights.actionItems
                 markCompleted(actionStepIndex)
@@ -2448,6 +2461,22 @@ final class RecordingManager {
     /// sidecar so the transcript browser can show it (the audio file is never
     /// renamed — it's referenced by the sidecar, segments, and markdown links).
     /// No-op when there's no generated title or sidecar. See #71.
+    /// Whether AI-generated titles should replace the display title for this recording.
+    /// False when the user supplied their own title (see `Recording.titleWasUserProvided` /
+    /// `PostRecordingSheet.isCustomTitle`), so a typed title is never overwritten.
+    private func shouldGenerateTitle(for recording: Recording) -> Bool {
+        !recording.titleWasUserProvided
+    }
+
+    /// Set the AI's inline title concept as the recording's generated title (with the shared
+    /// "YYYY-MM-DD - " prefix), unless the user supplied their own title or the concept is blank.
+    private func applyGeneratedTitle(_ rawConcept: String, to recording: Recording) {
+        guard shouldGenerateTitle(for: recording) else { return }
+        let concept = rawConcept.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !concept.isEmpty else { return }
+        recording.generatedTitle = "\(Self.dateOnlyString(recording.date)) - \(concept)"
+    }
+
     private func persistGeneratedTitle(for recording: Recording) {
         let title = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty, let audioURL = recording.finalizedAudioURL else { return }

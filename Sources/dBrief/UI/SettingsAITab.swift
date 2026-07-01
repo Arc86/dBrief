@@ -97,10 +97,16 @@ struct SettingsAITab: View {
                 }
                     .listRowBackground(Color.clear)
                 if appSettings.powerUserMode {
-                    Section("Prompts") {
+                    Section {
                         promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
                         promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
                         promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                    } header: {
+                        Text("Prompts")
+                    } footer: {
+                        if appSettings.aiEngine != .remoteEndpoint {
+                            Text("On-device and Local CLI engines merge these three prompts into a single structured call, so the model returns one JSON result. The output is always JSON regardless of any “output only…” wording — format the summary (e.g. bullets) inside its text.")
+                        }
                     }
                         .listRowBackground(Color.clear)
                 }

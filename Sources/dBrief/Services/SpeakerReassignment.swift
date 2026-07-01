@@ -8,10 +8,12 @@ enum SpeakerChoice: Equatable {
 }
 
 struct SpeakerCandidate: Identifiable, Equatable {
+    enum Source: Equatable { case existingSpeaker, meeting, library }
     let id: String              // existing speakerId, or "name:"+normalized for a name-only entry
     let displayName: String
     let existingSpeakerId: String?
     let isCurrent: Bool
+    let source: Source
 }
 
 enum SpeakerReassignment {
@@ -95,23 +97,29 @@ enum SpeakerReassignment {
 
         var result: [SpeakerCandidate] = seenIds.map { id in
             SpeakerCandidate(id: id, displayName: label(for: id),
-                             existingSpeakerId: id, isCurrent: id == currentSpeakerId)
+                             existingSpeakerId: id, isCurrent: id == currentSpeakerId,
+                             source: .existingSpeaker)
         }
         // Current speaker first.
         result.sort { ($0.isCurrent ? 0 : 1) < ($1.isCurrent ? 0 : 1) }
 
         // Name-only candidates: names not already an existing speaker's display name.
-        // Sources, in priority order: typed participants, calendar attendees, then
-        // known people from the voice library (de-duped by `takenNames`).
+        // Sources, in priority order: typed participants + calendar attendees (`.meeting`),
+        // then known people from the voice library (`.library`), de-duped by `takenNames`
+        // so a library person already in the meeting stays in the meeting group only.
         var takenNames = Set(result.map { normalize($0.displayName) })
-        for name in participants + calendarAttendees + knownPeople {
+        let tagged: [(String, SpeakerCandidate.Source)] =
+            (participants + calendarAttendees).map { ($0, .meeting) } +
+            knownPeople.map { ($0, .library) }
+        for (name, source) in tagged {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             let key = normalize(trimmed)
             if takenNames.contains(key) { continue }
             takenNames.insert(key)
             result.append(SpeakerCandidate(id: "name:" + key, displayName: trimmed,
-                                           existingSpeakerId: nil, isCurrent: false))
+                                           existingSpeakerId: nil, isCurrent: false,
+                                           source: source))
         }
         return result
     }

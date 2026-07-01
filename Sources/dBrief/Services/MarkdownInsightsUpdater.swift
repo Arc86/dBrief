@@ -45,11 +45,9 @@ enum MarkdownInsightsUpdater {
         lines.replaceSubrange((headerIndex + 1)..<end, with: replacement)
     }
 
-    /// `#tag` tokens: lowercase, whitespace removed, space-joined (matches MarkdownGenerator).
+    /// `#tag` tokens, sanitized for Obsidian (matches MarkdownGenerator).
     private static func bodyTagsLine(_ tags: [String]) -> String {
-        tags.map {
-            "#\($0.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression).lowercased())"
-        }.joined(separator: " ")
+        ObsidianTag.sanitizeAll(tags).map { "#\($0)" }.joined(separator: " ")
     }
 
     /// Replaces the `tags:` block inside the YAML frontmatter (the region before
@@ -60,9 +58,7 @@ enum MarkdownInsightsUpdater {
               let closingOffset = lines.dropFirst().firstIndex(of: "---") else { return }
         let closingIndex = closingOffset // index into `lines` (dropFirst preserves indices)
 
-        let tagLines = tags.map {
-            "  - \($0.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression))"
-        }
+        let tagLines = ObsidianTag.sanitizeAll(tags).map { "  - \($0)" }
 
         if let tagsKeyIndex = lines[1..<closingIndex].firstIndex(of: "tags:") {
             // Remove existing `  - ` list lines following `tags:`.

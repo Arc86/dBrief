@@ -13,7 +13,10 @@ actor LocalCLIService {
         transcript: String,
         outputLanguage: AppSettings.OutputLanguage,
         config: LocalCLIConfig,
-        customVocabulary: String = ""
+        customVocabulary: String = "",
+        summaryGuidance: String? = nil,
+        actionItemsGuidance: String? = nil,
+        tagsGuidance: String? = nil
     ) async throws -> LocalInsightsResult {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -27,7 +30,13 @@ actor LocalCLIService {
         }
 
         let truncated = UnifiedInsightsPrompt.truncate(transcript)
-        let systemPrompt = UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
+        let systemPrompt = UnifiedInsightsPrompt.systemPrompt(
+            outputLanguage: outputLanguage,
+            customVocabulary: customVocabulary,
+            summaryGuidance: summaryGuidance,
+            actionItemsGuidance: actionItemsGuidance,
+            tagsGuidance: tagsGuidance
+        )
         let userPrompt = UnifiedInsightsPrompt.userPrompt(transcript: truncated)
         let fullPrompt = systemPrompt + "\n\n" + userPrompt
 

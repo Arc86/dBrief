@@ -15,6 +15,11 @@ final class Recording: Identifiable {
     var tags: [String]?
     var sentiment: String?
     var generatedTitle: String?
+    /// True when the user typed/kept a custom meeting title (not the default fallback and
+    /// not the matched calendar event's title). When true, AI title generation is skipped so
+    /// the user's title is never overwritten. Set at sheet commit; carried through the queue
+    /// via `QueueItem`. Session-only otherwise.
+    var titleWasUserProvided: Bool = false
     var associatedApp: String?
     var obsidianFolderRelativePath: String?
     var meetingTitleDraft: String

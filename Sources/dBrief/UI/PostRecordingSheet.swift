@@ -408,9 +408,22 @@ struct PostRecordingSheet: View {
         return appName.isEmpty ? "meeting" : appName
     }
 
+    /// Whether `title` is a title the user genuinely provided — i.e. not the default fallback
+    /// ("meeting"/app name) and not the matched calendar event's title. Only user-provided
+    /// titles are protected from AI title generation; blank/default/calendar titles are not.
+    private func isCustomTitle(_ title: String, recording: Recording) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed == "meeting" || trimmed == fallbackMeetingTitle(recording: recording) { return false }
+        if let cal = recording.calendarEvent?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+           !cal.isEmpty, trimmed.compare(cal, options: .caseInsensitive) == .orderedSame { return false }
+        return true
+    }
+
     private func applyFieldsToRecording() {
         guard let recording = appState.currentRecording else { return }
         recording.meetingTitleDraft = sanitizedMeetingTitle
+        recording.titleWasUserProvided = isCustomTitle(sanitizedMeetingTitle, recording: recording)
         recording.participants = participantsText
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }

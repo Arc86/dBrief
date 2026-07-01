@@ -42,12 +42,13 @@ struct MarkdownGenerator {
         lines.append("title: \"\(title)\"")
         lines.append("date: \(formatDate(recording.date))")
 
-        if let tags = recording.tags, !tags.isEmpty {
-            lines.append("tags:")
-            for tag in tags {
-                let sanitized = tag.replacingOccurrences(of: #"\s+"#, with: "-", options: .regularExpression)
-                    .lowercased()
-                lines.append("  - \(sanitized)")
+        if let tags = recording.tags {
+            let sanitized = ObsidianTag.sanitizeAll(tags)
+            if !sanitized.isEmpty {
+                lines.append("tags:")
+                for tag in sanitized {
+                    lines.append("  - \(tag)")
+                }
             }
         }
 
@@ -108,11 +109,11 @@ struct MarkdownGenerator {
         if recording.tags != nil || recording.sentiment != nil {
             lines.append("## 🏷️ Tags")
             lines.append("")
-            if let tags = recording.tags, !tags.isEmpty {
-                let normalized = tags.map {
-                    "#\($0.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression).lowercased())"
+            if let tags = recording.tags {
+                let normalized = ObsidianTag.sanitizeAll(tags).map { "#\($0)" }
+                if !normalized.isEmpty {
+                    lines.append(normalized.joined(separator: " "))
                 }
-                lines.append(normalized.joined(separator: " "))
             }
             lines.append("")
             if let sentiment = recording.sentiment {

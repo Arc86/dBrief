@@ -33,15 +33,19 @@ actor LocalAIService {
         }
     }
 
+    // The @Guide descriptions are intentionally style-neutral: the concrete
+    // formatting (bullets vs. prose, structure, owners, etc.) is driven by the
+    // user's Summary / Action Items / Tags prompts injected into `instructions`
+    // (see `analyzeTranscript`). A prescriptive @Guide here would fight that.
     @Generable
     struct MeetingInsights {
-        @Guide(description: "A thorough, multi-paragraph summary covering all major topics. Use specific names, project names, tools, and deadlines mentioned in the transcript.")
+        @Guide(description: "The meeting summary, written and formatted exactly as the SUMMARY rule in the instructions requires.")
         var summary: String
 
-        @Guide(description: "Every action item, even minor ones. Each formatted as '[WHO] to [TASK] [CONTEXT/DEADLINE]'.")
+        @Guide(description: "The action items, each as its own string, following the ACTION ITEMS rule in the instructions.")
         var actionItems: [String]
 
-        @Guide(description: "Five to ten single-word tags capturing the key topics discussed.")
+        @Guide(description: "The topic tags, following the TAGS rule in the instructions.")
         var tags: [String]
 
         var sentiment: Sentiment
@@ -58,12 +62,21 @@ actor LocalAIService {
     func analyzeTranscript(
         _ transcription: String,
         outputLanguage: OutputLanguage,
-        customVocabulary: String = ""
+        customVocabulary: String = "",
+        summaryGuidance: String? = nil,
+        actionItemsGuidance: String? = nil,
+        tagsGuidance: String? = nil
     ) async throws -> LocalInsightsResult {
         try Self.ensureAvailable()
 
         let truncated = UnifiedInsightsPrompt.truncateForFoundationModels(transcription)
-        let instructions = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(outputLanguage: outputLanguage, customVocabulary: customVocabulary)
+        let instructions = UnifiedInsightsPrompt.systemPromptForGuidedGeneration(
+            outputLanguage: outputLanguage,
+            customVocabulary: customVocabulary,
+            summaryGuidance: summaryGuidance,
+            actionItemsGuidance: actionItemsGuidance,
+            tagsGuidance: tagsGuidance
+        )
         let userPrompt = UnifiedInsightsPrompt.userPrompt(transcript: truncated)
 
         let session = LanguageModelSession(instructions: instructions)
