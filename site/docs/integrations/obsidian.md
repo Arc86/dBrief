@@ -26,6 +26,8 @@ audio: 2026-04-06_1430_team-standup.m4a
 
 Followed by sections for the transcript (with timestamps), summary, action items, and tags/sentiment.
 
+Tags are automatically normalized into valid Obsidian hashtags before they're written — spaces and other characters Obsidian doesn't allow in a tag are converted to hyphens and everything is lowercased, so a tag like `Q3 planning` is written as `#q3-planning`. This keeps tags clickable in Obsidian instead of breaking the frontmatter or splitting into separate words.
+
 ## Filenames
 
 Files are named by date and title:

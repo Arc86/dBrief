@@ -37,6 +37,8 @@ AI analysis runs after transcription completes. The steps run sequentially: summ
 
 You can edit the prompts dBrief uses for each AI task in **Settings → AI Analysis** (requires Power User Mode). Profiles can also override prompts on a per-meeting basis — see [Meeting Profiles](../profiles/what-are-profiles.md).
 
+Your custom Summary, Action Items, and Tags prompts are honored by **every** engine — the on-device Gemma and Local CLI engines follow them just like Remote Endpoint does, so the analysis matches your instructions no matter which backend you run.
+
 ## Turning AI off
 
 If you only want transcripts, turn off **Enable AI processing** in **Settings → AI Analysis**. Recordings are then transcribed only — no summary, action items, or tags — and the AI options are hidden from the post-recording sheet.

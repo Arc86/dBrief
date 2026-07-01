@@ -35,6 +35,8 @@ When you stop, you can give the recording a title. This becomes part of the file
 
 Titles are sanitised automatically — special characters and spaces are replaced.
 
+If you type your own title, dBrief keeps it — the AI won't replace it with a generated title during processing. Leave the title on its default and AI titling fills one in for you as usual.
+
 ## What happens after you stop
 
 1. The audio is transcoded and saved to your output folder

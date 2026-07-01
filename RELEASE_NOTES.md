@@ -1,3 +1,13 @@
+## dBrief 1.3.3
+
+**Cleaner notes and titles you're in control of.** This release polishes how dBrief exports to Obsidian and how it handles the meeting title you type — plus your custom analysis prompts now reach the on-device engines too.
+
+- **Obsidian-safe tags.** Tags are now sanitized into valid Obsidian hashtags before they're written to your notes — spaces and other invalid characters are normalized, so a tag like `Q3 planning` becomes a clickable `#q3-planning` instead of breaking the frontmatter or splitting into pieces.
+- **Your title stays your title.** If you type (or keep) a custom meeting title in the post-recording sheet, dBrief no longer overwrites it with an AI-generated one during processing — even when the recording is queued and analyzed later. Leave the title on the default and AI titling works exactly as before.
+- **Custom analysis prompts everywhere.** Your Summary / Action Items / Tags prompts (Settings → AI Analysis) are now honored by the on-device **Gemma** and **Local CLI** engines, not just Remote Endpoint — so the analysis follows your instructions no matter which AI backend you run.
+
+---
+
 ## dBrief 1.3.2
 
 **Fixes microphone and calendar access on the notarized build.** The first notarized release (1.3.1) ran under Apple's hardened runtime, which — unlike the older self-signed builds — gates a few privacy resources behind explicit entitlements. Those were missing, so **Microphone**, **Calendar**, and **Apple Reminders** couldn't be enabled no matter what you toggled in System Settings (Screen Recording and Speech were unaffected). 1.3.2 adds the required entitlements; grant the prompts as normal and they work. If you installed 1.3.1, update to 1.3.2 and allow Microphone/Calendar when asked.
