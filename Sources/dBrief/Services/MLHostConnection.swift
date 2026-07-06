@@ -16,6 +16,10 @@ actor MLHostConnection {
     private var process: Process?
     private var stdinHandle: FileHandle?
     private var reader = FrameReader()
+    // One coder pair for all frames (actor-isolated) — a JSONDecoder/Encoder per
+    // frame is measurable overhead on chatty streams (tokens, state events).
+    private let frameDecoder = JSONDecoder()
+    private let frameEncoder = JSONEncoder()
     // Ordered hand-off of stdout chunks to `ingest`. The readability handler can
     // fire faster than `ingest` runs; feeding a single serial consumer (instead
     // of one Task per chunk) keeps frames — and thus a request's result vs its
@@ -151,7 +155,7 @@ actor MLHostConnection {
     private func ingest(_ data: Data) {
         reader.append(data)
         for frame in reader.drainFrames() {
-            guard let env = try? JSONDecoder().decode(EventEnvelope.self, from: frame) else { continue }
+            guard let env = try? frameDecoder.decode(EventEnvelope.self, from: frame) else { continue }
             if case let .state(state) = env.event {
                 stateContinuations[env.channel]?.yield(state)
             }
@@ -174,7 +178,7 @@ actor MLHostConnection {
     }
 
     private func write(_ envelope: RequestEnvelope) {
-        guard let stdinHandle, let payload = try? JSONEncoder().encode(envelope) else { return }
+        guard let stdinHandle, let payload = try? frameEncoder.encode(envelope) else { return }
         stdinHandle.write(FrameCodec.encode(payload))
     }
 }
