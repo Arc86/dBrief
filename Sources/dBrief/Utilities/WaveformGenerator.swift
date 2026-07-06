@@ -1,5 +1,6 @@
-import Foundation
+import Accelerate
 import AVFoundation
+import Foundation
 
 enum WaveformGenerator {
     /// Asynchronously extracts a downsampled waveform amplitude array from an audio file.
@@ -10,30 +11,53 @@ enum WaveformGenerator {
         }.value
     }
 
+    /// Frames decoded per read. Streaming in fixed blocks keeps memory O(block)
+    /// instead of O(file) — the previous whole-file read held ~650 MB of decoded
+    /// PCM for a 30-minute recording just to draw ~800 bars.
+    private static let blockFrames: AVAudioFrameCount = 65_536
+
     private static func generateSync(from url: URL, sampleCount: Int) -> [Float] {
         guard let audioFile = try? AVAudioFile(forReading: url) else { return [] }
-        let frameCount = AVAudioFrameCount(audioFile.length)
-        guard frameCount > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: frameCount),
-              (try? audioFile.read(into: buffer)) != nil,
-              let channelData = buffer.floatChannelData?[0]
+        let totalFrames = Int(audioFile.length)
+        guard totalFrames > 0, sampleCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: blockFrames)
         else { return [] }
 
-        let totalFrames = Int(buffer.frameLength)
         let framesPerBucket = max(1, totalFrames / sampleCount)
         var result: [Float] = []
         result.reserveCapacity(sampleCount)
 
-        var i = 0
-        while i < totalFrames && result.count < sampleCount {
-            let end = min(i + framesPerBucket, totalFrames)
-            var peak: Float = 0
-            for j in i..<end {
-                let abs = channelData[j] < 0 ? -channelData[j] : channelData[j]
-                if abs > peak { peak = abs }
+        var bucketPeak: Float = 0
+        var framesInBucket = 0
+        var framesRead = 0
+
+        while framesRead < totalFrames && result.count < sampleCount {
+            buffer.frameLength = 0
+            guard (try? audioFile.read(into: buffer, frameCount: blockFrames)) != nil,
+                  buffer.frameLength > 0,
+                  let channelData = buffer.floatChannelData?[0]
+            else { break }
+
+            let n = Int(buffer.frameLength)
+            var offset = 0
+            while offset < n && result.count < sampleCount {
+                let take = min(framesPerBucket - framesInBucket, n - offset)
+                var blockPeak: Float = 0
+                vDSP_maxmgv(channelData + offset, 1, &blockPeak, vDSP_Length(take))
+                bucketPeak = max(bucketPeak, blockPeak)
+                framesInBucket += take
+                offset += take
+                if framesInBucket == framesPerBucket {
+                    result.append(bucketPeak)
+                    bucketPeak = 0
+                    framesInBucket = 0
+                }
             }
-            result.append(peak)
-            i = end
+            framesRead += n
+        }
+        // Partial final bucket (file length not a multiple of the bucket size).
+        if framesInBucket > 0 && result.count < sampleCount {
+            result.append(bucketPeak)
         }
 
         let maxVal = result.max() ?? 1
