@@ -60,6 +60,17 @@ struct WebhookPayloadBuilder {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("webhook-\(UUID().uuidString).multipart")
         FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        do {
+            return try writeMultipartBody(to: tempURL, metadataJSON: metadataJSON, audioURL: audioURL, boundary: boundary)
+        } catch {
+            // Don't leave a partial temp file behind if the audio read fails
+            // mid-build — the caller's cleanup only runs once we return a URL.
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
+    }
+
+    private static func writeMultipartBody(to tempURL: URL, metadataJSON: Data, audioURL: URL, boundary: String) throws -> URL {
         let out = try FileHandle(forWritingTo: tempURL)
         defer { try? out.close() }
 

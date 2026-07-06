@@ -1178,19 +1178,13 @@ struct TranscriptDetailView: View {
         currentTime >= turn.startTime && currentTime < turn.endTime
     }
 
-    /// The turn containing `time`, via binary search — `displayedTurns` is
-    /// sorted by start and non-overlapping, and this runs on every 100 ms
-    /// playback tick.
+    /// The first turn containing `time`. A linear scan over the cached
+    /// `displayedTurns` (the O(n) speakerTurns() rebuild that made this hot is
+    /// now cached, per 4.1). Kept as first-match — not a binary search — because
+    /// diarized turns can overlap slightly at their boundaries, and the earlier
+    /// scroll-to code matched the first overlapping turn.
     private func activeTurn(at time: TimeInterval) -> SpeakerTurn? {
-        var lo = 0
-        var hi = displayedTurns.count
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            if displayedTurns[mid].startTime <= time { lo = mid + 1 } else { hi = mid }
-        }
-        guard lo > 0 else { return nil }
-        let candidate = displayedTurns[lo - 1]
-        return time < candidate.endTime ? candidate : nil
+        displayedTurns.first { time >= $0.startTime && time < $0.endTime }
     }
 
     private func seek(to time: TimeInterval) {

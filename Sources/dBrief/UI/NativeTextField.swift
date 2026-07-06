@@ -40,6 +40,12 @@ struct NativeTextView: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
+    /// Flush any pending debounced edit when the view is torn down (e.g. the
+    /// settings window closes) so it isn't lost.
+    static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        coordinator.flushPending()
+    }
+
     /// Commits edits to the bound value on a short debounce (and immediately on
     /// end-editing) instead of on every keystroke — the prompt/vocabulary/CLI
     /// bindings persist to UserDefaults in a `didSet`, so a per-character write
@@ -51,6 +57,8 @@ struct NativeTextView: NSViewRepresentable {
         /// distinguish a genuine external change from our own debounce lag.
         var lastPushed: String
         private var pendingCommit: DispatchWorkItem?
+        /// The latest not-yet-committed edit, flushed on end-editing or teardown.
+        private var pendingValue: String?
 
         init(text: Binding<String>) {
             self.text = text
@@ -60,6 +68,7 @@ struct NativeTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             let current = textView.string
+            pendingValue = current
             pendingCommit?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.commit(current) }
             pendingCommit = work
@@ -72,7 +81,14 @@ struct NativeTextView: NSViewRepresentable {
             commit(textView.string)
         }
 
+        /// Commit an outstanding edit immediately (view teardown).
+        func flushPending() {
+            pendingCommit?.cancel()
+            if let pendingValue { commit(pendingValue) }
+        }
+
         private func commit(_ value: String) {
+            pendingValue = nil
             lastPushed = value
             if text.wrappedValue != value { text.wrappedValue = value }
         }

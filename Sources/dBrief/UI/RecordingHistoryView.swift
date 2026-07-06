@@ -41,6 +41,8 @@ struct RecordingHistoryView: View {
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(RecordingManager.self) private var recordingManager
     @State private var recordings: [HistoryItem] = []
+    /// Tracks the in-flight load so overlapping loads can't resolve out of order.
+    @State private var loadTask: Task<Void, Never>?
     @State private var expandedItemId: UUID?
     @State private var hoveredItemId: UUID?
     @State private var loadedSummaries: [UUID: String] = [:]
@@ -423,10 +425,12 @@ struct RecordingHistoryView: View {
         // list stays visible until the new one arrives. Runs on menu open and
         // after processing, so it must not block the UI with the library size.
         let folder = appSettings.effectiveRecordingFolderURL
-        Task {
+        loadTask?.cancel()
+        loadTask = Task {
             let loaded = await Task.detached(priority: .userInitiated) {
                 Self.buildHistoryItems(in: folder)
             }.value
+            if Task.isCancelled { return }
             recordings = loaded
         }
     }

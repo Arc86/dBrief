@@ -51,13 +51,18 @@ final class TranscriptChatStore {
     }
 
     /// Drop least-recently-used sessions beyond the cap, flushing any pending
-    /// save first. A session that is mid-stream is never evicted (persisted
-    /// history survives eviction either way — it reloads from the sidecar).
+    /// save first. Only sessions whose history is backed by a sidecar are
+    /// evictable — an evicted session's messages must be recoverable from disk
+    /// on reopen. A mid-stream session, and a live (not-yet-persisted, e.g.
+    /// in-progress recording) session, are therefore never evicted; the latter's
+    /// history exists only in memory and would otherwise be silently lost.
     private func evictIfNeeded() {
         guard sessions.count > maxSessions else { return }
         for url in accessOrder.dropLast() {
             guard sessions.count > maxSessions else { return }
-            guard let service = sessions[url], !service.isStreaming else { continue }
+            guard let service = sessions[url],
+                  !service.isStreaming,
+                  service.isPersistenceEnabled else { continue }
             sessions[url] = nil
             accessOrder.removeAll { $0 == url }
             Task { await service.flushPendingSave() }
