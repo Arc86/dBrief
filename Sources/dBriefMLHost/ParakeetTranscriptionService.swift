@@ -36,11 +36,15 @@ actor ParakeetTranscriptionService {
 
     // MARK: - Public
 
+    /// Returns the transcript plus, when the in-memory audio path was used, the
+    /// decoded 16 kHz mono samples — the orchestrator reuses them for the
+    /// diarization/embedding passes instead of re-decoding the file (samples are
+    /// `nil` on the disk-backed long-audio route).
     func transcribe(
         fileURL: URL,
         language: String?,
         modelVariant: String
-    ) async throws -> dBriefWire.TranscriptionResult {
+    ) async throws -> (result: dBriefWire.TranscriptionResult, samples: [Float]?) {
         defer { stateContinuation.yield(.idle) }
 
         let modelInfo = ParakeetModelInfo.find(modelVariant)
@@ -56,7 +60,7 @@ actor ParakeetTranscriptionService {
         stateContinuation.yield(.transcribing)
 
         Logger.localAI.info("Parakeet: transcribing \(fileURL.lastPathComponent, privacy: .public) [\(modelVariant, privacy: .public)]")
-        let result = try await Self.transcribePadded(mgr, fileURL: fileURL)
+        let (result, samples) = try await Self.transcribePadded(mgr, fileURL: fileURL)
 
         let duration: Double
         if let audioFile = try? AVAudioFile(forReading: fileURL) {
@@ -66,11 +70,12 @@ actor ParakeetTranscriptionService {
         }
 
         let segments = Self.buildSegments(from: result.tokenTimings, fullText: result.text, duration: duration)
-        return dBriefWire.TranscriptionResult(
+        let transcription = dBriefWire.TranscriptionResult(
             text: result.text,
             segments: segments,
             language: language ?? "en"
         )
+        return (transcription, samples)
     }
 
     // MARK: - Trailing-silence padding
@@ -85,8 +90,9 @@ actor ParakeetTranscriptionService {
 
     /// Load the file to 16 kHz mono samples, append 1 s of silence, and transcribe
     /// the padded buffer. Falls back to FluidAudio's file-based path on load failure
-    /// or for very long audio (preserving its memory-efficient disk-backed route).
-    private static func transcribePadded(_ mgr: AsrManager, fileURL: URL) async throws -> ASRResult {
+    /// or for very long audio (preserving its memory-efficient disk-backed route —
+    /// samples are `nil` on that route).
+    private static func transcribePadded(_ mgr: AsrManager, fileURL: URL) async throws -> (ASRResult, [Float]?) {
         // FluidAudio 0.15.4 makes the TDT decoder state caller-owned. We do
         // single-shot full-file transcription (not streaming), so a fresh state
         // per call is correct.
@@ -94,10 +100,11 @@ actor ParakeetTranscriptionService {
         guard var samples = try? AudioConverter().resampleAudioFile(fileURL),
               samples.count <= maxInMemorySamples
         else {
-            return try await mgr.transcribe(fileURL, decoderState: &decoderState)
+            return (try await mgr.transcribe(fileURL, decoderState: &decoderState), nil)
         }
+        samples.reserveCapacity(samples.count + trailingSilenceSamples)
         samples.append(contentsOf: repeatElement(Float(0), count: trailingSilenceSamples))
-        return try await mgr.transcribe(samples, decoderState: &decoderState)
+        return (try await mgr.transcribe(samples, decoderState: &decoderState), samples)
     }
 
     // MARK: - Segment / word reconstruction

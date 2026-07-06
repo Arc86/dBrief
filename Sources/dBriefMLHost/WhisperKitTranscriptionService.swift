@@ -21,7 +21,20 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
+    /// Decode a file to WhisperKit's 16 kHz mono `[Float]` input. Exposed so the
+    /// orchestrator can decode once and share the buffer between transcription,
+    /// diarization, and the embedding pass.
+    func loadAudio(fileURL: URL) throws -> [Float] {
+        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
+        do {
+            return try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
+        } catch {
+            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
+            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
+        }
+    }
+
+    func transcribe(audioArray: [Float], fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
@@ -33,16 +46,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 model: modelInfo.displayName,
                 requiredGB: String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)
             )
-        }
-
-        // Load audio as float array — shared between WhisperKit and SpeakerKit
-        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
-        let audioArray: [Float]
-        do {
-            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
-        } catch {
-            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
-            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
         }
 
         let whisper = try await loadWhisperKit(config: whisperConfig)
@@ -447,15 +450,17 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         fileURL: URL,
         onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
     ) async throws -> [DiarizedTurn] {
-        let emitState = onState ?? stateHandler
         Logger.localAI.info("Standalone diarization for \(fileURL.lastPathComponent, privacy: .public)")
-        let audioArray: [Float]
-        do {
-            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
-        } catch {
-            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
-        }
+        return try await diarize(audioArray: try loadAudio(fileURL: fileURL), onState: onState)
+    }
 
+    /// Same as `diarize(fileURL:)` on already-decoded 16 kHz mono samples, so a
+    /// caller that transcribed the file can reuse its buffer.
+    func diarize(
+        audioArray: [Float],
+        onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
+    ) async throws -> [DiarizedTurn] {
+        let emitState = onState ?? stateHandler
         let downloadBase = try speakerKitDownloadBaseURL()
         // SpeakerKit downloads Pyannote models on first use with no progress
         // callback of its own; surface an indeterminate "downloading" state when
