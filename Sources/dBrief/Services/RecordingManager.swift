@@ -2551,7 +2551,13 @@ final class RecordingManager {
     }
 
     func discoverQueuedItems() -> [(audioURL: URL, item: QueueItem)] {
-        let folder = appSettings.effectiveRecordingFolderURL
+        Self.discoverQueuedItems(in: appSettings.effectiveRecordingFolderURL)
+    }
+
+    /// Enumerates queued items in `folder`. `nonisolated static` so it can run
+    /// off the main actor (see `refreshQueuedCount`) — it touches only the
+    /// filesystem and the passed URL, no actor state.
+    nonisolated static func discoverQueuedItems(in folder: URL) -> [(audioURL: URL, item: QueueItem)] {
         guard let enumerator = FileManager.default.enumerator(
             at: folder,
             includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey],
@@ -2583,6 +2589,17 @@ final class RecordingManager {
         return results
             .sorted { $0.date < $1.date }
             .map { ($0.url, $0.item) }
+    }
+
+    /// Refreshes `appState.queuedCount` without blocking the main actor: the
+    /// folder scan + JSON decode run detached, only the count hops back. Called
+    /// on popover open in place of the synchronous `discoverQueuedItems().count`.
+    func refreshQueuedCount() async {
+        let folder = appSettings.effectiveRecordingFolderURL
+        let count = await Task.detached(priority: .utility) {
+            Self.discoverQueuedItems(in: folder).count
+        }.value
+        appState.queuedCount = count
     }
 
     /// Derives the transcript JSON path from the finalized audio URL.
