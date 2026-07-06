@@ -131,8 +131,15 @@ struct TranscriptChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(chatService.messages) { message in
-                        MessageBubble(message: message)
-                            .id(message.id)
+                        // While a reply streams, only its bubble re-renders per
+                        // token; render it as plain text then (skipping the block
+                        // Markdown parse that would re-run over the whole growing
+                        // reply each token — O(n^2)) and parse once when done.
+                        MessageBubble(
+                            message: message,
+                            isStreaming: chatService.isStreaming && message.id == chatService.messages.last?.id
+                        )
+                        .id(message.id)
                     }
 
                     if chatService.isStreaming, let last = chatService.messages.last, last.role == .assistant && last.content.isEmpty {
@@ -246,6 +253,9 @@ struct TranscriptChatView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    /// True only for the assistant reply currently streaming — render plain
+    /// text while true, then Markdown once the reply completes.
+    var isStreaming: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var showReasoning = false
 
@@ -333,7 +343,7 @@ private struct MessageBubble: View {
     /// lists, bold) so the model's formatting isn't shown as raw syntax.
     @ViewBuilder
     private func bubbleContent(_ text: String) -> some View {
-        if message.role == .assistant {
+        if message.role == .assistant && !isStreaming {
             MarkdownText(text)
         } else {
             Text(text)
