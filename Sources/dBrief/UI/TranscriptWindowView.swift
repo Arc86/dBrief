@@ -122,13 +122,18 @@ struct TranscriptDetailView: View {
         return current.id == recording.id && context.appState.recordingState != .idle
     }
 
-    /// Live transcript assembled on the fly from the growing `liveTranscriptSegments`.
-    private var liveRichTranscript: RichTranscript {
+    /// Finalized live turns, cached so a volatile partial (which arrives many
+    /// times per second) doesn't re-run `speakerTurns()` over every finalized
+    /// segment. Rebuilt only when `liveTranscriptSegments` grows.
+    @State private var liveTurns: [SpeakerTurn] = []
+
+    /// Rebuilds `liveTurns` from the current `liveTranscriptSegments`.
+    private func refreshLiveTurns() {
         let segs = context.appState.liveTranscriptSegments.map { seg in
             RichSegment(start: seg.start, end: seg.end, text: seg.text,
                         originalText: seg.text, speakerId: seg.speaker)
         }
-        return RichTranscript(segments: segs)
+        liveTurns = RichTranscript(segments: segs).speakerTurns()
     }
 
     var body: some View {
@@ -994,15 +999,14 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var liveTranscriptList: some View {
-        let turns = liveRichTranscript.speakerTurns()
         let mic = context.appState.liveVolatileMic
         let system = context.appState.liveVolatileSystem
-        if turns.isEmpty && mic.isEmpty && system.isEmpty {
+        if liveTurns.isEmpty && mic.isEmpty && system.isEmpty {
             liveWaitingState
         } else {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(turns) { turn in
+                    ForEach(liveTurns) { turn in
                         liveTurnRow(turn).id(turn.id)
                     }
                     if !mic.isEmpty {
@@ -1016,8 +1020,13 @@ struct TranscriptDetailView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
                 .onChange(of: context.appState.liveTranscriptSegments.count) { _, _ in
+                    // A new finalized segment: refresh the cached turns (a volatile
+                    // partial alone leaves the count unchanged, so this doesn't
+                    // re-run speakerTurns() on every partial), then scroll.
+                    refreshLiveTurns()
                     withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
                 }
+                .onAppear { refreshLiveTurns() }
             }
         }
     }
