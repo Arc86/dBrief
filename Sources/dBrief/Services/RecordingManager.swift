@@ -69,6 +69,17 @@ final class RecordingManager {
         self.audioCaptureManager.statusNoteHandler = { [weak self] note in
             self?.showRecordingStatusNote(note)
         }
+        // Mirror the capture manager's meter into AppState from its own 10 Hz
+        // timer — one source of truth, no second polling loop. Peak drives the
+        // waveform at full rate; duration only shows whole seconds, so push it
+        // just once per second to avoid needless SwiftUI invalidations.
+        self.audioCaptureManager.stateTickHandler = { [weak self] duration, peak in
+            guard let self else { return }
+            self.appState.peakLevel = peak
+            if Int(duration) != Int(self.appState.recordingDuration) {
+                self.appState.recordingDuration = duration
+            }
+        }
     }
 
     /// Briefly shows a status note (e.g. "Switched to MacBook Microphone") during
@@ -180,8 +191,8 @@ final class RecordingManager {
         if let liveStreams {
             startLiveTranscription(streams: liveStreams)
         }
-
-        observeAudioState()
+        // Duration/peak now flow from AudioCaptureManager.stateTickHandler
+        // (wired in init) — no separate polling loop.
     }
 
     private func startLiveTranscription(streams: (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>)) {
@@ -2439,15 +2450,6 @@ final class RecordingManager {
         UNUserNotificationCenter.current().add(request)
     }
 
-    private func observeAudioState() {
-        Task {
-            while audioCaptureManager.isCapturing {
-                appState.recordingDuration = audioCaptureManager.duration
-                appState.peakLevel = audioCaptureManager.peakLevel
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
-    }
 
     private static func generateRawCaptureBaseURL() -> URL {
         FileManager.default.temporaryDirectory

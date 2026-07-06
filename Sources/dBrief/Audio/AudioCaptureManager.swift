@@ -44,6 +44,12 @@ final class AudioCaptureManager {
     /// user-facing note (e.g. "Switched to MacBook Microphone"). Set by `RecordingManager`.
     var statusNoteHandler: ((String) -> Void)?
 
+    /// Invoked (on the main actor) on each ~10 Hz meter tick with the current
+    /// duration and peak level. Set by `RecordingManager` to push these into
+    /// `AppState` — replacing a separate polling loop that mirrored the same two
+    /// values, so there is one source of truth and one timer.
+    var stateTickHandler: ((_ duration: TimeInterval, _ peakLevel: Float) -> Void)?
+
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
 
@@ -545,6 +551,7 @@ final class AudioCaptureManager {
                 guard let self, let startTime = self.startTime else { return }
                 self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
                 self.peakLevel = max(self.micWriter?.peakLevel ?? 0, self.systemWriter?.peakLevel ?? 0)
+                self.stateTickHandler?(self.duration, self.peakLevel)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
