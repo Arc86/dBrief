@@ -10,6 +10,11 @@ struct SettingsWatchedFoldersTab: View {
         Form {
             Section("Watched Folders") {
                 Toggle("Monitor folders for new audio files", isOn: $settings.watchedFoldersEnabled)
+                    .onChange(of: appSettings.watchedFoldersEnabled) { _, enabled in
+                        // Re-arm the poller when the feature is switched on; it
+                        // self-parks when switched off (no idle CPU wakeups).
+                        if enabled { context.watchedFolderService.start() }
+                    }
                 Text("Drop an audio file into a watched folder and dBrief transcribes, analyzes, and exports it automatically — no recording needed. Your original file stays where it is; a copy is imported into your recordings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

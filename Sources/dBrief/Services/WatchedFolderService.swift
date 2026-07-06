@@ -50,12 +50,22 @@ final class WatchedFolderService {
         static let knownFolders = "watchedFolderKnownFolders"
     }
 
+    /// Starts the polling loop, but only while the feature is enabled — an
+    /// idle app with watched folders off no longer wakes the CPU every 4 s.
+    /// The loop self-parks (drops its task) when the master toggle goes off;
+    /// re-enabling it calls `start()` again (see `SettingsWatchedFoldersTab`).
     func start() {
         guard monitorTask == nil else { return }
+        guard appSettings.watchedFoldersEnabled else { return }
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.runScanCycle()
-                try? await Task.sleep(for: self?.pollInterval ?? .seconds(4))
+                guard let self else { return }
+                guard self.appSettings.watchedFoldersEnabled else {
+                    self.monitorTask = nil   // park until re-enabled
+                    return
+                }
+                await self.runScanCycle()
+                try? await Task.sleep(for: self.pollInterval)
             }
         }
     }
