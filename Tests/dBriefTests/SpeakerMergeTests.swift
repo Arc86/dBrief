@@ -7,6 +7,72 @@ struct SpeakerMergeTests {
         TranscriptionResult.Word(word: text, start: start, end: end)
     }
 
+    /// Reference implementation of best-overlap speaker attribution: linear scan,
+    /// strictly-greater overlap wins, so ties keep the earliest turn in input order.
+    /// The production code must match this exactly for any turn layout.
+    private func oracleBestSpeaker(start: Double, end: Double, turns: [DiarizedTurn]) -> String? {
+        var bestId: String? = nil
+        var bestOverlap = 0.0
+        for turn in turns {
+            let overlap = min(end, turn.end) - max(start, turn.start)
+            if overlap > bestOverlap {
+                bestOverlap = overlap
+                bestId = turn.speakerId
+            }
+        }
+        return bestId
+    }
+
+    @Test("word attribution matches the linear-scan oracle on overlapping, unsorted turns")
+    func matchesOracleOnMessyTurns() {
+        // Deterministic pseudo-random layout: unsorted turns, overlaps, duplicate
+        // spans (tie cases), gaps, and words straddling turn boundaries.
+        var turns: [DiarizedTurn] = []
+        var seed: UInt64 = 0x5EED
+        func next(_ bound: Double) -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double(seed >> 33) / Double(UInt32.max) * bound
+        }
+        for i in 0..<60 {
+            let start = next(300)
+            let len = 0.5 + next(20)
+            turns.append(DiarizedTurn(speakerId: "Speaker \(i % 5 + 1)", start: start, end: start + len))
+        }
+        // Exact-duplicate spans with different speakers → tie must go to input order.
+        turns.append(DiarizedTurn(speakerId: "Speaker A", start: 100, end: 110))
+        turns.append(DiarizedTurn(speakerId: "Speaker B", start: 100, end: 110))
+
+        var words: [TranscriptionResult.Word] = []
+        var t = 0.0
+        var i = 0
+        while t < 320 {
+            let len = 0.2 + next(1.5)
+            words.append(word("w\(i)", t, t + len))
+            t += len + next(0.5)
+            i += 1
+        }
+        let input = TranscriptionResult(
+            text: words.map(\.word).joined(separator: " "),
+            segments: [TranscriptionResult.Segment(start: 0, end: 320, text: "", words: words)]
+        )
+
+        let out = SpeakerMerge.merge(input, turns: turns)
+        let labeled = out.segments.flatMap { $0.words ?? [] }
+        #expect(labeled.count == words.count)
+        for w in labeled {
+            #expect(w.speaker == oracleBestSpeaker(start: w.start, end: w.end, turns: turns),
+                    "word [\(w.start), \(w.end)]")
+        }
+
+        let preserved = SpeakerMerge.mergePreservingSegments(input, turns: turns)
+        for seg in preserved.segments {
+            #expect(seg.speaker == oracleBestSpeaker(start: seg.start, end: seg.end, turns: turns))
+            for w in seg.words ?? [] {
+                #expect(w.speaker == oracleBestSpeaker(start: w.start, end: w.end, turns: turns))
+            }
+        }
+    }
+
     @Test("no turns returns the result unchanged")
     func emptyTurnsPassthrough() {
         let input = TranscriptionResult(
