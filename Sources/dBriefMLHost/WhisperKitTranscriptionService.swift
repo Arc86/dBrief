@@ -95,10 +95,11 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // app. The normal path therefore uses higher concurrency for speed; the
         // safe-mode retry serializes to survive a deterministic trap.
         //
-        // 8 is the value validated as stable on macOS 26 (large-v3 turbo). Because a
-        // trap is now recoverable, this ceiling can be raised (toward WhisperKit's
-        // default of 16) — benchmark on the target hardware and weigh added throughput
-        // against how often a higher value forces a crash+safe-mode retry.
+        // 8 was validated as stable on macOS 26 (large-v3 turbo); raised to 12
+        // (toward WhisperKit's default of 16) since a trap is now recoverable via
+        // the crash-isolated helper + safe-mode retry. If the Benchmark tab shows
+        // no throughput gain over 8 — or safe-mode retries become frequent —
+        // drop this back (it is intentionally its own commit).
         //
         // Safe mode (post-crash retry) keeps the decoder off the ANE via
         // `.cpuAndGPU` (set by the caller), which is where the nil-logits trap
@@ -106,7 +107,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // retry no longer needs to serialize to a single worker: 4 workers makes
         // recovery ~2–3× faster (field data: 1 worker = 1.6× realtime vs ~4× at 8)
         // while staying well clear of the concurrency that triggers the trap.
-        options.concurrentWorkerCount = safeMode ? 4 : 8
+        options.concurrentWorkerCount = safeMode ? 4 : 12
 
         do {
             let transcribeStart = Date()
