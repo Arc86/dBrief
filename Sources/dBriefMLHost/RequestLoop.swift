@@ -4,7 +4,7 @@ import dBriefWire
 /// The seam the request router dispatches to. `MLOrchestrator` is the real
 /// implementation; tests substitute a mock.
 protocol MLBackend: Sendable {
-    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult
+    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult
     func diarize(path: String) async throws -> [DiarizedTurn]
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]])
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
@@ -58,8 +58,8 @@ final class RequestRouter: Sendable {
 
         do {
             switch envelope.request {
-            case let .transcribe(path, prompt, config, safeMode):
-                let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode)
+            case let .transcribe(path, prompt, config, safeMode, unloadAfter):
+                let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
                 send(.transcriptionResult(r)); send(.finished)
             case let .diarize(path):
                 send(.diarizeResult(try await backend.diarize(path: path))); send(.finished)

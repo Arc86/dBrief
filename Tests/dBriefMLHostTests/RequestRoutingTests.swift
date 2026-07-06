@@ -4,8 +4,8 @@ import dBriefWire
 @testable import dBriefMLHost
 
 actor MockBackend: MLBackend {
-    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult {
-        TranscriptionResult(text: "mock:\(path):safe=\(safeMode)")
+    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
+        TranscriptionResult(text: "mock:\(path):safe=\(safeMode):unload=\(unloadAfter)")
     }
     func diarize(path: String) async throws -> [DiarizedTurn] { [] }
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) { ([], [:]) }
@@ -42,12 +42,12 @@ actor MockBackend: MLBackend {
         let router = RequestRouter(backend: MockBackend()) { env in collected.append(env) }
         let id = UUID()
         await router.handle(RequestEnvelope(id: id,
-            request: .transcribe(path: "/x.m4a", initialPrompt: nil, config: .default, safeMode: true)))
+            request: .transcribe(path: "/x.m4a", initialPrompt: nil, config: .default, safeMode: true, unloadAfter: false)))
         let events = collected.events
         guard case let .transcriptionResult(tr) = events.first?.event else {
             Issue.record("expected result first"); return
         }
-        #expect(tr.text == "mock:/x.m4a:safe=true")
+        #expect(tr.text == "mock:/x.m4a:safe=true:unload=false")
         #expect(events.last.map { if case .finished = $0.event { true } else { false } } == true)
         #expect(events.allSatisfy { $0.id == id })
     }

@@ -2252,10 +2252,15 @@ final class RecordingManager {
                 // bulk of the transcript. Vocabulary spelling is instead applied as
                 // a reliable post-step (TranscriptSpellingService) in
                 // transcribeRecordingAudio. See WhisperKitTranscriptionService notes.
+                //
+                // For segmented recordings, keep the Whisper/SpeakerKit models
+                // resident in the helper until the last segment so each 30-min
+                // part doesn't pay a full model reload.
                 try await self.localAIPluginService.transcribe(
                     fileURL: url,
                     initialPrompt: nil,
-                    whisperConfig: whisperConfig
+                    whisperConfig: whisperConfig,
+                    unloadAfter: segmentIndex == nil || segmentIndex == segmentCount
                 )
             }
         case .parakeetLocal:

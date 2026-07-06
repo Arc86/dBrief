@@ -7,15 +7,16 @@ import Foundation
         let req = RequestEnvelope(
             id: UUID(),
             request: .transcribe(path: "/tmp/a.m4a", initialPrompt: "hi",
-                                 config: .default, safeMode: false)
+                                 config: .default, safeMode: false, unloadAfter: true)
         )
         let data = try JSONEncoder().encode(req)
         let decoded = try JSONDecoder().decode(RequestEnvelope.self, from: data)
         #expect(decoded.id == req.id)
-        if case let .transcribe(path, prompt, _, safe) = decoded.request {
+        if case let .transcribe(path, prompt, _, safe, unloadAfter) = decoded.request {
             #expect(path == "/tmp/a.m4a")
             #expect(prompt == "hi")
             #expect(safe == false)
+            #expect(unloadAfter == true)
         } else { Issue.record("wrong request case") }
     }
 

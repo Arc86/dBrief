@@ -11,6 +11,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var whisperKit: WhisperKit?
     private var loadedConfig: WhisperRuntimeConfig?
+    // Cached across calls (like `whisperKit`) so segmented recordings don't
+    // rebuild SpeakerKit per 30-min part; dropped in `unload()`.
+    private var speakerKit: SpeakerKit?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
@@ -118,6 +121,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // time ranges, so the loss is silent, but their text is empty. Detect
             // that collapse and recover by re-transcribing once without the prompt
             // (a no-prompt pass is reliably complete on the same audio).
+            // NOTE: this recovery doubles transcription time when it fires. It is
+            // dormant today — the app always passes initialPrompt: nil — and only
+            // matters for callers that opt into a decoder prompt.
             if !promptTokens.isEmpty {
                 // wkResults type is inferred (name collision), so count inline.
                 let total = wkResults.reduce(0) { $0 + $1.segments.count }
@@ -159,16 +165,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 stateHandler(.diarizing)
                 let diarStart = Date()
                 do {
-                    let downloadBase = try speakerKitDownloadBaseURL()
-                    let skConfig = PyannoteConfig(
-                        downloadBase: downloadBase.path,
-                        download: true,
-                        load: true,
-                        verbose: true
-                    )
-                    let speakerKit = try await SpeakerKit(skConfig)
+                    let speakerKit = try await loadSpeakerKit()
                     let diarResult = try await speakerKit.diarize(audioArray: audioArray)
-                    await speakerKit.unloadModels()
                     Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
                     // Convert the diarization turns to our wire type.
@@ -213,7 +211,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     let merged = SpeakerMerge.mergePreservingSegments(base, turns: turns)
 
                     let diarizationDuration = Date().timeIntervalSince(diarStart)
-                    await unload()
                     return dBriefWire.TranscriptionResult(
                         text: merged.text,
                         segments: merged.segments,
@@ -253,10 +250,10 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let detectedLanguage = wkResults.first(where: { !$0.language.isEmpty })?.language
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
-            await unload()
             return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage, inferenceTime: transcribeDuration)
         } catch {
-            await unload()
+            // Model lifecycle is owned by MLOrchestrator (it unloads after the
+            // last segment of a job, and on error); nothing to clean up here.
             throw error
         }
     }
@@ -300,10 +297,32 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     func unload() async {
+        await unloadSpeakerKit()
         guard let whisperKit else { return }
         await whisperKit.unloadModels()
         self.whisperKit = nil
         self.loadedConfig = nil
+    }
+
+    func unloadSpeakerKit() async {
+        guard let speakerKit else { return }
+        await speakerKit.unloadModels()
+        self.speakerKit = nil
+    }
+
+    /// Returns the cached SpeakerKit instance, building it on first use.
+    private func loadSpeakerKit() async throws -> SpeakerKit {
+        if let speakerKit { return speakerKit }
+        let downloadBase = try speakerKitDownloadBaseURL()
+        let skConfig = PyannoteConfig(
+            downloadBase: downloadBase.path,
+            download: true,
+            load: true,
+            verbose: true
+        )
+        let sk = try await SpeakerKit(skConfig)
+        self.speakerKit = sk
+        return sk
     }
 
     func purgeModels() async throws {
@@ -444,16 +463,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         if !speakerKitModelsPresent(at: downloadBase) {
             emitState(.downloading(progress: nil, stage: .speakerKitModel))
         }
-        let skConfig = PyannoteConfig(
-            downloadBase: downloadBase.path,
-            download: true,
-            load: true,
-            verbose: true
-        )
-        let speakerKit = try await SpeakerKit(skConfig)
+        let speakerKit = try await loadSpeakerKit()
         emitState(.diarizing)
         let diarResult = try await speakerKit.diarize(audioArray: audioArray)
-        await speakerKit.unloadModels()
         Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
         return diarResult.segments.compactMap { seg in
