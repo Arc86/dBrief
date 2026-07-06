@@ -162,6 +162,22 @@ struct TranscriptCleanupTests {
         #expect(cleaned.text == "Thank you for watching")
     }
 
+    @Test("clean() end-to-end fixture: tags, fillers, dashes, and ignored segments together")
+    func multiSegmentFixture() {
+        let result = TranscriptionResult(
+            text: "- So um <i>hello</i> [noise] there. Music. We agreed, you know, on the plan {applause} —",
+            segments: [
+                .init(start: 0, end: 2, text: "- So um <i>hello</i> [noise] there."),
+                .init(start: 2, end: 3, text: "Music."),
+                .init(start: 3, end: 6, text: "We agreed, you know, on the plan {applause} —"),
+            ]
+        )
+        let ignored = Set(TranscriptCleanup.defaultIgnoredSegments.map(TranscriptCleanup.normalizeForIgnoreMatch))
+        let cleaned = TranscriptCleanup.clean(result, removeFillerWords: true, ignoredSegments: ignored)
+        #expect(cleaned.segments.map(\.text) == ["So there.", "We agreed, on the plan"])
+        #expect(cleaned.text == "So there. We agreed, on the plan")
+    }
+
     @Test("Default ignore list catches a bracket-free music annotation after cleanup")
     func defaultListCatchesMusic() {
         let ignored = Set(TranscriptCleanup.defaultIgnoredSegments.map(TranscriptCleanup.normalizeForIgnoreMatch))
