@@ -11,22 +11,33 @@ import SwiftUI
 /// the backing view is part of the scroll view's document view and can find its
 /// enclosing scroll view).
 private struct OverlayScrollerStyler: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        /// Set once the enclosing scroll view has been styled, so the frequent
+        /// `updateNSView` passes (one per SwiftUI update of the scroll content)
+        /// don't each schedule a main-queue block.
+        var applied = false
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        apply(from: view)
+        apply(from: view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        apply(from: nsView)
+        apply(from: nsView, coordinator: context.coordinator)
     }
 
-    private func apply(from view: NSView) {
+    private func apply(from view: NSView, coordinator: Coordinator) {
+        guard !coordinator.applied else { return }
         // Runs after attachment so `enclosingScrollView` is resolvable.
         DispatchQueue.main.async {
             guard let scroll = view.enclosingScrollView else { return }
             scroll.scrollerStyle = .overlay
             scroll.autohidesScrollers = true
+            coordinator.applied = true
         }
     }
 }
