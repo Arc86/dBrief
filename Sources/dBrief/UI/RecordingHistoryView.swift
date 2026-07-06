@@ -45,7 +45,7 @@ struct RecordingHistoryView: View {
     @State private var hoveredItemId: UUID?
     @State private var loadedSummaries: [UUID: String] = [:]
 
-    struct HistoryItem: Identifiable {
+    struct HistoryItem: Identifiable, Sendable {
         let id = UUID()
         let url: URL
         let name: String
@@ -419,13 +419,25 @@ struct RecordingHistoryView: View {
     private static let segmentSuffix = try! NSRegularExpression(pattern: "_part\\d+$")
 
     private func loadRecordings() {
+        // Enumerate + decode metadata sidecars off the main actor; the current
+        // list stays visible until the new one arrives. Runs on menu open and
+        // after processing, so it must not block the UI with the library size.
         let folder = appSettings.effectiveRecordingFolderURL
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                Self.buildHistoryItems(in: folder)
+            }.value
+            recordings = loaded
+        }
+    }
+
+    nonisolated private static func buildHistoryItems(in folder: URL) -> [HistoryItem] {
         let all = RecordingDiscovery.discover(in: folder).filter { entry in
             let stem = entry.url.deletingPathExtension().lastPathComponent
             let range = NSRange(stem.startIndex..., in: stem)
             return Self.segmentSuffix.firstMatch(in: stem, range: range) == nil
         }
-        recordings = Array(all.prefix(20)).map { entry in
+        return Array(all.prefix(20)).map { entry in
             let base = entry.url.deletingPathExtension()
             let transcriptURL = base.appendingPathExtension("transcript.json")
             let hasTranscript = FileManager.default.fileExists(atPath: transcriptURL.path)

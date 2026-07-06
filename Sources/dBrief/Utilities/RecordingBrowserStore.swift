@@ -2,7 +2,7 @@ import Foundation
 
 /// A recording surfaced in the transcript browser sidebar. Keyed by its audio
 /// file `url` so selection stays stable across reloads (unlike a random UUID).
-struct RecordingBrowserItem: Identifiable, Hashable {
+struct RecordingBrowserItem: Identifiable, Hashable, Sendable {
     var id: URL { url }
     let url: URL
     /// Base filename stem, e.g. `2026-06-04_2229_meeting-title`.

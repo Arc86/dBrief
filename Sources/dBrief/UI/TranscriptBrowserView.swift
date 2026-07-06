@@ -279,9 +279,19 @@ struct TranscriptBrowserView: View {
     // MARK: - Helpers
 
     private func reload() {
-        items = RecordingBrowserStore.load(in: appSettings.effectiveRecordingFolderURL)
-        if let selection, !items.contains(where: { $0.url == selection }) {
-            self.selection = nil
+        // Scan the recordings folder + decode metadata sidecars off the main
+        // actor; the previously-loaded `items` stay visible until the new list
+        // arrives (no flash to empty). Runs on appear and when a recording
+        // finishes, so it must never block the UI.
+        let folder = appSettings.effectiveRecordingFolderURL
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                RecordingBrowserStore.load(in: folder)
+            }.value
+            items = loaded
+            if let selection, !items.contains(where: { $0.url == selection }) {
+                self.selection = nil
+            }
         }
     }
 
