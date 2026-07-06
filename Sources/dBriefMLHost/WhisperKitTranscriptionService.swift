@@ -495,27 +495,27 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         return tokenizer.encode(text: prompt)
     }
 
+    // Compiled once — these run on every segment of every transcription.
+    private static let specialTokenRegex = try! NSRegularExpression(pattern: #"<\|[^|>]+?\|>"#)
+    private static let whitespaceRunRegex = try! NSRegularExpression(pattern: #"\s+"#)
+    private static let timestampTokenRegex = try! NSRegularExpression(pattern: #"<\|([0-9]+(?:\.[0-9]+)?)\|>"#)
+
     private func cleanTranscriptArtifacts(_ text: String) -> String {
         let withFormattedTimestamps = formatWhisperTimestampTokens(in: text)
-        let cleaned = withFormattedTimestamps.replacingOccurrences(
-            of: #"<\|[^|>]+?\|>"#,
-            with: " ",
-            options: .regularExpression
+        var range = NSRange(withFormattedTimestamps.startIndex..., in: withFormattedTimestamps)
+        let cleaned = Self.specialTokenRegex.stringByReplacingMatches(
+            in: withFormattedTimestamps, range: range, withTemplate: " "
         )
-        let normalizedWhitespace = cleaned.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
+        range = NSRange(cleaned.startIndex..., in: cleaned)
+        let normalizedWhitespace = Self.whitespaceRunRegex.stringByReplacingMatches(
+            in: cleaned, range: range, withTemplate: " "
         )
         return normalizedWhitespace.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }
 
     private func formatWhisperTimestampTokens(in text: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"<\|([0-9]+(?:\.[0-9]+)?)\|>"#) else {
-            return text
-        }
         let nsRange = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, options: [], range: nsRange)
+        let matches = Self.timestampTokenRegex.matches(in: text, options: [], range: nsRange)
         guard !matches.isEmpty else { return text }
 
         var result = text
