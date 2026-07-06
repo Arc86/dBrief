@@ -1,6 +1,6 @@
 import Foundation
 
-struct RichTranscript: Codable, Sendable {
+struct RichTranscript: Codable, Sendable, Equatable {
     var version: Int = 1
     var segments: [RichSegment]
     var speakerLabels: [SpeakerLabel] = []
@@ -29,7 +29,7 @@ struct RichTranscript: Codable, Sendable {
     }
 }
 
-struct RichSegment: Codable, Sendable, Identifiable {
+struct RichSegment: Codable, Sendable, Identifiable, Equatable {
     var id: UUID = UUID()
     var start: Double
     var end: Double
@@ -41,14 +41,14 @@ struct RichSegment: Codable, Sendable, Identifiable {
     var isEdited: Bool = false
 }
 
-struct RichToken: Codable, Sendable {
+struct RichToken: Codable, Sendable, Equatable {
     var text: String
     var start: Double? = nil
     var end: Double? = nil
     var isFillerWord: Bool = false
 }
 
-struct SpeakerLabel: Codable, Sendable {
+struct SpeakerLabel: Codable, Sendable, Equatable {
     var id: String
     var displayName: String
     /// Links this label to a `KnownPerson.id` in the voice library, when the

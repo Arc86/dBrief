@@ -87,9 +87,13 @@ struct TranscriptDetailView: View {
     // Phase 3: after a rename changes who-said-what, offer to regenerate analysis.
     @State private var offerReanalysis = false
 
-    private var displayedTurns: [SpeakerTurn] {
-        richTranscript?.speakerTurns() ?? []
-    }
+    /// Turns derived from `richTranscript`, cached so playback ticks (10 Hz
+    /// `currentTime` updates) don't re-run the O(segments) merge on every body
+    /// evaluation. Rebuilt by `.onChange(of: richTranscript)` — `richTranscript`
+    /// is only ever replaced wholesale (load, re-diarize, rename, edit), and
+    /// unchanged arrays compare by COW buffer identity, so the check is O(1)
+    /// on ticks.
+    @State private var displayedTurns: [SpeakerTurn] = []
 
     private var uniqueSpeakerIds: [String] {
         guard let t = richTranscript else { return [] }
@@ -172,6 +176,9 @@ struct TranscriptDetailView: View {
         .navigationTitle("")
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .onChange(of: richTranscript) { _, newValue in
+            displayedTurns = newValue?.speakerTurns() ?? []
+        }
         .modifier(TranscriptSearchableModifier(
             enabled: !isLive,
             query: $searchQuery,
@@ -518,9 +525,7 @@ struct TranscriptDetailView: View {
             .scrollIndicators(.automatic)
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
-                guard let active = displayedTurns.first(where: {
-                    newTime >= $0.startTime && newTime < $0.endTime
-                }) else { return }
+                guard let active = activeTurn(at: newTime) else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
             }
             .onChange(of: searchScrollTick) { _, _ in
@@ -1164,6 +1169,21 @@ struct TranscriptDetailView: View {
         currentTime >= turn.startTime && currentTime < turn.endTime
     }
 
+    /// The turn containing `time`, via binary search — `displayedTurns` is
+    /// sorted by start and non-overlapping, and this runs on every 100 ms
+    /// playback tick.
+    private func activeTurn(at time: TimeInterval) -> SpeakerTurn? {
+        var lo = 0
+        var hi = displayedTurns.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if displayedTurns[mid].startTime <= time { lo = mid + 1 } else { hi = mid }
+        }
+        guard lo > 0 else { return nil }
+        let candidate = displayedTurns[lo - 1]
+        return time < candidate.endTime ? candidate : nil
+    }
+
     private func seek(to time: TimeInterval) {
         guard let audioURL = recording.finalizedAudioURL else { return }
         if audioPlayer.currentFileURL != audioURL { audioPlayer.play(url: audioURL) }
@@ -1335,10 +1355,13 @@ struct TranscriptDetailView: View {
         return "\(currentMatchIndex + 1) of \(searchResult.matches.count)"
     }
 
-    /// Recomputes matches over the currently displayed turns. Keeps
-    /// `currentMatchIndex` in bounds; callers decide when to reset it to 0.
+    /// Recomputes matches over the current transcript's turns. Derives them from
+    /// `richTranscript` (not the cached `displayedTurns`) because several callers
+    /// run synchronously right after assigning `richTranscript`, before the
+    /// `.onChange` refresh of the cache has fired. Keeps `currentMatchIndex` in
+    /// bounds; callers decide when to reset it to 0.
     private func recomputeSearch() {
-        let turns = displayedTurns.map { (id: $0.id, text: $0.text) }
+        let turns = (richTranscript?.speakerTurns() ?? []).map { (id: $0.id, text: $0.text) }
         let result = TranscriptSearch.search(turns: turns, query: searchQuery)
         searchResult = result
         matchesByTurn = Dictionary(grouping: result.matches, by: \.turnId)
