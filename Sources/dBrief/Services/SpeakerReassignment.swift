@@ -91,8 +91,9 @@ enum SpeakerReassignment {
 
         // Existing speakers in first-appearance order.
         var seenIds: [String] = []
+        var seenIdSet = Set<String>()
         for seg in transcript.segments {
-            if let id = seg.speakerId, !seenIds.contains(id) { seenIds.append(id) }
+            if let id = seg.speakerId, seenIdSet.insert(id).inserted { seenIds.append(id) }
         }
 
         var result: [SpeakerCandidate] = seenIds.map { id in
@@ -161,10 +162,11 @@ enum SpeakerReassignment {
     private static func speakerOwning(name: String, in transcript: RichTranscript, excluding: String) -> String? {
         let key = normalize(name)
         var ids: [String] = []
+        var idSet = Set<String>()
         for seg in transcript.segments {
-            if let id = seg.speakerId, !ids.contains(id) { ids.append(id) }
+            if let id = seg.speakerId, idSet.insert(id).inserted { ids.append(id) }
         }
-        for label in transcript.speakerLabels where !ids.contains(label.id) { ids.append(label.id) }
+        for label in transcript.speakerLabels where idSet.insert(label.id).inserted { ids.append(label.id) }
         return ids.first { $0 != excluding && normalize(displayName(in: transcript, id: $0)) == key }
     }
 
