@@ -42,15 +42,33 @@ actor AudioChunker {
         var chunks: [AudioChunk] = []
         var index = 0
 
+        // Prefer an ffmpeg stream-copy (no re-encode) when the source codec can
+        // land in an .m4a container as-is; fall back to AVAssetExportSession's
+        // full AAC re-encode when ffmpeg is missing or the copy fails.
+        let ffmpegPath = FFmpegLocator.resolve()
+        let canStreamCopy = ["m4a", "mp4", "aac"].contains(fileURL.pathExtension.lowercased())
+
         while currentStart < effectiveDuration {
             let currentEnd = min(effectiveDuration, currentStart + chunkDuration)
             let outputURL = tempDirectory.appendingPathComponent("chunk_\(index).m4a")
-            try await exportChunk(
-                asset: asset,
-                startSeconds: currentStart,
-                endSeconds: currentEnd,
-                outputURL: outputURL
-            )
+            var copied = false
+            if let ffmpegPath, canStreamCopy {
+                copied = Self.streamCopyChunk(
+                    ffmpegPath: ffmpegPath,
+                    fileURL: fileURL,
+                    startSeconds: currentStart,
+                    endSeconds: currentEnd,
+                    outputURL: outputURL
+                )
+            }
+            if !copied {
+                try await exportChunk(
+                    asset: asset,
+                    startSeconds: currentStart,
+                    endSeconds: currentEnd,
+                    outputURL: outputURL
+                )
+            }
             chunks.append(
                 AudioChunk(
                     index: index,
@@ -65,6 +83,48 @@ actor AudioChunker {
         }
 
         return chunks
+    }
+
+    /// Cut `[start, end]` out of the source with `-c copy` (packet-boundary cuts;
+    /// the caller's chunk overlap absorbs the imprecision). Returns false on any
+    /// failure so the caller can re-encode instead.
+    private static func streamCopyChunk(
+        ffmpegPath: String,
+        fileURL: URL,
+        startSeconds: Double,
+        endSeconds: Double,
+        outputURL: URL
+    ) -> Bool {
+        try? FileManager.default.removeItem(at: outputURL)
+        var arguments = [
+            "-y",
+            "-ss", String(format: "%.3f", startSeconds),
+            "-t", String(format: "%.3f", endSeconds - startSeconds),
+            "-i", fileURL.path,
+            "-c", "copy",
+            outputURL.path,
+        ]
+        if ffmpegPath == "/usr/bin/env" { arguments.insert("ffmpeg", at: 0) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpegPath)
+        process.arguments = arguments
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+        guard process.terminationStatus == 0,
+              let size = try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int64,
+              size > 0
+        else {
+            try? FileManager.default.removeItem(at: outputURL)
+            return false
+        }
+        return true
     }
 
     private func exportChunk(
