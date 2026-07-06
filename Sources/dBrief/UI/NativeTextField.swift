@@ -26,8 +26,13 @@ struct NativeTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let textView = nsView.documentView as! NSTextView
-        if textView.string != text {
+        // Don't clobber in-progress typing while a debounced commit is pending:
+        // only apply a genuine external change (binding differs from the value
+        // we last pushed). Our own debounced writes match `lastPushed`, so they
+        // never round-trip back onto the text view mid-edit.
+        if text != context.coordinator.lastPushed, textView.string != text {
             textView.string = text
+            context.coordinator.lastPushed = text
         }
     }
 
@@ -35,16 +40,41 @@ struct NativeTextView: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
+    /// Commits edits to the bound value on a short debounce (and immediately on
+    /// end-editing) instead of on every keystroke — the prompt/vocabulary/CLI
+    /// bindings persist to UserDefaults in a `didSet`, so a per-character write
+    /// re-serialized the whole string (and JSON-encoded the CLI config) on each
+    /// keypress.
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        /// The value we last pushed to the binding — lets `updateNSView`
+        /// distinguish a genuine external change from our own debounce lag.
+        var lastPushed: String
+        private var pendingCommit: DispatchWorkItem?
 
         init(text: Binding<String>) {
             self.text = text
+            self.lastPushed = text.wrappedValue
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            text.wrappedValue = textView.string
+            let current = textView.string
+            pendingCommit?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.commit(current) }
+            pendingCommit = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            pendingCommit?.cancel()
+            commit(textView.string)
+        }
+
+        private func commit(_ value: String) {
+            lastPushed = value
+            if text.wrappedValue != value { text.wrappedValue = value }
         }
     }
 }
