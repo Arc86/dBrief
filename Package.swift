@@ -7,10 +7,10 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.0.0"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.0.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.4"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
-        .package(url: "https://github.com/apple/swift-testing.git", from: "0.6.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.4"),
+        .package(url: "https://github.com/apple/swift-testing.git", from: "6.3.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.5"),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
     ],
     targets: [

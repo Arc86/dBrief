@@ -208,8 +208,8 @@ actor ParakeetTranscriptionService {
         let fm = FileManager.default
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
-            DownloadUtils.clearModelCache(forRepo: .parakeetV3, directory: modelsDir)
-            DownloadUtils.clearModelCache(forRepo: .parakeetV2, directory: modelsDir)
+            ModelHub.clearCache(for: .parakeetV3, directory: modelsDir)
+            ModelHub.clearCache(for: .parakeetV2, directory: modelsDir)
         }
         Logger.localAI.info("Parakeet: model cache purged")
     }

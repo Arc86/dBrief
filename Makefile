@@ -6,7 +6,7 @@ CONTENTS = $(APP_BUNDLE)/Contents
 MACOS = $(CONTENTS)/MacOS
 RESOURCES = $(CONTENTS)/Resources
 MACOS_RESOURCES = $(MACOS)/Resources
-MLX_PREBUILT_VERSION = 0.31.3
+MLX_PREBUILT_VERSION = 0.31.6
 MLX_PREBUILT_ZIP = .build/mlx-prebuilt/Cmlx-$(MLX_PREBUILT_VERSION).xcframework.zip
 MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/Versions/A/Resources/default.metallib
 
