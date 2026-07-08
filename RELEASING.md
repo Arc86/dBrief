@@ -63,13 +63,22 @@ codesign -dvvv dBrief.app/Contents/MacOS/dBrief 2>&1 | grep -E 'flags|Authority|
 ```bash
 mkdir -p /tmp/dbrief-appcast
 cp dBrief-<version>.dmg /tmp/dbrief-appcast/
+# Per-version release notes for Sparkle's update dialog. The file MUST share the
+# DMG's basename (dBrief-<version>) so generate_appcast pairs it with this item;
+# --embed-release-notes renders the Markdown to HTML and inlines it in the
+# appcast's <description>, so there is no extra asset to upload.
+cp RELEASE_NOTES.md /tmp/dbrief-appcast/dBrief-<version>.md
 /tmp/sparkle-tools/bin/generate_appcast \
   --ed-key-file ~/dbrief-sparkle-private-key.txt \
   --download-url-prefix "https://github.com/Arc86/dBrief/releases/download/v<version>/" \
   --full-release-notes-url "https://github.com/Arc86/dBrief/releases" \
+  --embed-release-notes \
   /tmp/dbrief-appcast
-# → writes /tmp/dbrief-appcast/appcast.xml, EdDSA-signed with your private key
+# → writes /tmp/dbrief-appcast/appcast.xml, EdDSA-signed with your private key.
+#   Confirm the release notes landed:  grep -c '<description>' /tmp/dbrief-appcast/appcast.xml   # expect 1
 ```
+
+Without a matching notes file (or the `--embed-release-notes` flag) the update dialog shows an empty notes pane and only the small "Full Release Notes…" link — the `.md` step above is what fills the pane. If you'd rather link the notes as a separate uploaded asset instead of embedding, drop the `--embed-release-notes` flag, name the file `dBrief-<version>.html`, and add it to the `gh release create` upload list in step 5; `generate_appcast` then emits a `sparkle:releaseNotesLink` (using `--download-url-prefix`) pointing at that asset.
 
 ## 5. Tag and publish the GitHub release
 
@@ -177,7 +186,7 @@ verifies each download against the `SUPublicEDKey` baked into Info.plist.
    ```
    This is a second irreplaceable secret alongside the signing identity — losing it strands all existing installs.
 
-The per-release appcast generation is [step 4](#4-generate-the-sparkle-appcast) above. The feed is latest-only (one `<item>`) — sufficient for Sparkle's "is there something newer?" check.
+The per-release appcast generation is [step 4](#4-generate-the-sparkle-appcast) above. The feed is latest-only (one `<item>`) — sufficient for Sparkle's "is there something newer?" check. Per-version release notes shown in the update dialog come from the `dBrief-<version>.md` file paired with the DMG in that step (embedded inline via `--embed-release-notes`); no app-side code is involved — Sparkle owns the notes pane.
 
 ### Manual smoke test (do this once after wiring Sparkle, and when bumping Sparkle)
 

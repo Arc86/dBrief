@@ -1,3 +1,23 @@
+## dBrief 1.3.5
+
+**Record your next meeting without waiting on the last one.** Back-to-back meetings used to be blocked — while a recording was still transcribing and analyzing, the Record button and hotkey were unavailable. Now capture and processing are fully independent, so you can start the next meeting the moment it begins.
+
+### Record while a recording is still processing
+
+- **The Record button and hotkey stay live during processing.** Hit ⌃⌥⌘R (or click Record) as soon as your next meeting starts, even while dBrief is still transcribing or summarizing the previous one.
+- **Nothing gets lost.** If a new recording finishes while an earlier one is still being processed, it's automatically queued and drains on its own, one at a time, once the current job completes — no manual "Process Queue" needed.
+- **Both show up clearly.** The transcript browser pins the live recording *and* the one being processed separately, and their live transcripts stay isolated so the new capture never bleeds into the earlier recording's view.
+
+### Polished speaker review
+
+- **The confirm-first speaker-review window sizes and scrolls better.** It fits its content more cleanly and scrolls comfortably when there are many speakers to confirm.
+
+### Under the hood
+
+- **Updated on-device ML and updater components.** FluidAudio, the MLX runtime, and Sparkle are all on newer releases — including a Sparkle fix that improves the update dialog for menu-bar apps like dBrief that run without a dock icon.
+
+---
+
 ## dBrief 1.3.4
 
 **Faster, lighter, and steadier.** This release is a top-to-bottom performance sweep — the same dBrief, using noticeably less CPU, GPU, and memory on the paths that do the most work. Nothing about how you use it changes; it just runs leaner. Plus a few worthwhile fixes.

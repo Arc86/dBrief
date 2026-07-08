@@ -45,6 +45,12 @@ If you type your own title, dBrief keeps it — the AI won't replace it with a g
 4. AI analysis runs (if enabled)
 5. Results are saved as a Markdown file and sent to any integrations you've configured
 
+## Recording back-to-back meetings
+
+You don't have to wait for a recording to finish processing before starting the next one. The **Record** button and the **⌃⌥⌘R** shortcut stay available while dBrief is still transcribing and analysing a previous recording, so you can capture back-to-back meetings without missing the start of one.
+
+Only one recording is processed at a time. If a new recording finishes while an earlier one is still being processed, it's queued automatically and drains on its own, one at a time, once the current job completes — you don't need to do anything. Both the recording in progress and the one being processed appear in the transcript browser.
+
 ## Settings
 
 Audio settings (input device, echo cancellation) are in **Settings → Recording**. Output folders, the record shortcut, call detection, and calendar are in **Settings → General**. The transcription engine is in **Settings → Transcription** and the AI engine in **Settings → AI Analysis**.

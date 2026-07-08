@@ -48,6 +48,7 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 - **Global hotkey** — `⌃ ⌥ ⌘ R` from anywhere on your Mac
 - **Mic + system audio** — both sides of the call, captured via ScreenCaptureKit
 - **Call detection** — auto-starts when Zoom, Teams, Meet, Slack, Webex or FaceTime fires up
+- **Record back-to-back** — start your next meeting while the previous one is still transcribing; finished recordings queue and process one at a time on their own
 
 ### Transcribe
 Four engines to choose from — privacy and quality your call:

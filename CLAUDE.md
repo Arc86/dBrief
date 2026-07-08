@@ -39,9 +39,18 @@ Tests use the `swift-testing` framework (v0.6.0+) and live in two targets: the m
 ### Core Object Graph
 
 - **AppContext** — root object, creates and wires everything at launch; owns all services below
-- **AppState** (`@Observable`) — recording state machine (`idle → recording → paused → processing`), processing step progress, current recording data, call detection state
+- **AppState** (`@Observable`) — **capture-only** recording state machine (`idle → recording → paused`), plus a decoupled background `processingJob` (`ProcessingJob`), processing step progress, current recording data, call detection state. Capture and processing are independent so a **new recording can start while a previous one is still processing** (see [Concurrent capture + processing](#concurrent-capture--processing-record-while-processing))
 - **AppSettings** (`@Observable`) — all user preferences persisted via `UserDefaults` with `didSet` observers; folder URLs use security-scoped bookmarks; integration tokens stored in Keychain via `KeychainHelper`. Split across extension files: `AppSettings+EffectiveSettings.swift` (profile-resolved computed properties), `AppSettings+Profiles.swift` (profile CRUD, import/export, factories), `AppSettings+Persistence.swift` (bookmark/endpoint/integration/profile persistence helpers)
 - **RecordingManager** — orchestrates the full record → finalize → transcribe → AI → markdown → integration dispatch pipeline
+
+### Concurrent Capture + Processing (record-while-processing)
+
+Capture and post-recording processing are decoupled so a **new recording can start while a previous one is still transcribing/analyzing** (the Record button and hotkey stay live during processing). `AppState.recordingState` is **capture-only** (`idle`/`recording`/`paused`); background processing is tracked separately by `AppState.processingJob` (a `ProcessingJob` — `Models/ProcessingJob.swift` — owning only what conflicts with a concurrent capture: its recording, a cancellable task, its queue sidecar, and its progressive segments). `processingSteps`/`liveInferenceText` stay `AppState` singletons since only **one job runs at a time** (the ML helper serializes GPU work anyway).
+
+- **Overflow queueing**: a recording finished mid-processing auto-enqueues as `QueueItem.autoQueued`; the queue **auto-drains one-at-a-time** when the current job finishes. Manual "Process Queue" still drains user-deferred items too.
+- **Cancellation / review**: confirm-first speaker review resumes inside the job's task; `cancelProcessing` cancels the task, tears down any pending review, awaits the task's unwind before draining (no two concurrent pipelines), and skips integration dispatch on cancellation.
+- **Idle gating**: `RecordingManager.isIdle`/`canDownloadModels` require **no active job** (distinct from `AppState.isIdle`, which is capture-only and drives the Record button).
+- **UI isolation**: the menu's Record button coexists with the processing banner; the transcript browser shows **dual "In Progress" pins** (capture + job); the transcript window and chat isolate live/progressive segments per recording so a concurrent capture can't leak into a processing recording's view.
 
 ### Source Layout
 
