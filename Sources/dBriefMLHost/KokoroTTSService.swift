@@ -95,7 +95,7 @@ final class KokoroTTSService: @unchecked Sendable {
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
         let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
         for repo in [Repo.kokoro, .kokoroAne, .kokoroAneZh, .kokoroAneJa] {
-            DownloadUtils.clearModelCache(forRepo: repo, directory: modelsDir)
+            ModelHub.clearCache(for: repo, directory: modelsDir)
         }
     }
 
