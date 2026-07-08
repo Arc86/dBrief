@@ -23,6 +23,9 @@ struct TranscriptBrowserView: View {
     @AppStorage("transcriptSidebarEarlierCollapsed") private var earlierCollapsed = false
 
     @State private var items: [RecordingBrowserItem] = []
+    /// Tracks the in-flight reload so overlapping reloads (appear + a recording
+    /// finishing close together) can't resolve out of order and leave a stale list.
+    @State private var reloadTask: Task<Void, Never>?
     @State private var selection: URL?
     /// Stable `Recording` for the current selection. Built once per selection
     /// (not per render) so the detail view's identity and state — including its
@@ -279,9 +282,21 @@ struct TranscriptBrowserView: View {
     // MARK: - Helpers
 
     private func reload() {
-        items = RecordingBrowserStore.load(in: appSettings.effectiveRecordingFolderURL)
-        if let selection, !items.contains(where: { $0.url == selection }) {
-            self.selection = nil
+        // Scan the recordings folder + decode metadata sidecars off the main
+        // actor; the previously-loaded `items` stay visible until the new list
+        // arrives (no flash to empty). Runs on appear and when a recording
+        // finishes, so it must never block the UI.
+        let folder = appSettings.effectiveRecordingFolderURL
+        reloadTask?.cancel()
+        reloadTask = Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                RecordingBrowserStore.load(in: folder)
+            }.value
+            if Task.isCancelled { return }
+            items = loaded
+            if let selection, !items.contains(where: { $0.url == selection }) {
+                self.selection = nil
+            }
         }
     }
 

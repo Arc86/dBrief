@@ -6,7 +6,10 @@ public enum MLChannel: String, Sendable, Codable {
 }
 
 public enum MLRequest: Sendable, Codable {
-    case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool)
+    /// `unloadAfter: false` keeps the Whisper/SpeakerKit models resident for the
+    /// next call — used by segmented (>30 min) recordings so each 30-min part
+    /// doesn't pay a full model reload; the last part passes `true`.
+    case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool)
     case diarize(path: String)
     case diarizeWithEmbeddings(path: String)
     case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)

@@ -55,9 +55,22 @@ public enum VocabularyCorrection {
         .sorted { $0.from.count > $1.from.count }
         guard !valid.isEmpty else { return result }
 
+        // Compile each correction's regex once for the whole transcript — `fix`
+        // runs on every segment and every word token.
+        let compiled: [(regex: NSRegularExpression, template: String)] = valid.compactMap { c in
+            let escaped = NSRegularExpression.escapedPattern(for: c.from)
+            guard let regex = try? NSRegularExpression(pattern: "\\b\(escaped)\\b", options: [.caseInsensitive]) else {
+                return nil
+            }
+            return (regex, NSRegularExpression.escapedTemplate(for: c.to))
+        }
+
         func fix(_ text: String) -> String {
             var out = text
-            for c in valid { out = replaceWholeWord(in: out, from: c.from, to: c.to) }
+            for c in compiled {
+                let range = NSRange(out.startIndex..., in: out)
+                out = c.regex.stringByReplacingMatches(in: out, options: [], range: range, withTemplate: c.template)
+            }
             return out
         }
 
@@ -97,16 +110,4 @@ public enum VocabularyCorrection {
         )
     }
 
-    /// Case-insensitive whole-word replacement of `from` with `to`. `to` is
-    /// inserted verbatim (canonical casing); surrounding text is untouched.
-    private static func replaceWholeWord(in text: String, from: String, to: String) -> String {
-        let escaped = NSRegularExpression.escapedPattern(for: from)
-        let pattern = "\\b\(escaped)\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return text
-        }
-        let range = NSRange(text.startIndex..., in: text)
-        let template = NSRegularExpression.escapedTemplate(for: to)
-        return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: template)
-    }
 }

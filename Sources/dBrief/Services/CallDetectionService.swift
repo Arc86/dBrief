@@ -210,6 +210,9 @@ private final class MicActivityMonitor: @unchecked Sendable {
     private var deviceID: AudioDeviceID = kAudioObjectUnknown
     private var isListening = false
     private var lastReportedState = false
+    // CoreAudio removes a listener only when given the *same* block instance
+    // that was added — keep it so stop() actually detaches.
+    private var listenerBlock: AudioObjectPropertyListenerBlock?
 
     init(onChange: @escaping @Sendable (Bool) -> Void) {
         self.onChange = onChange
@@ -230,11 +233,13 @@ private final class MicActivityMonitor: @unchecked Sendable {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        let status = AudioObjectAddPropertyListenerBlock(deviceID, &address, DispatchQueue.main) { [weak self] _, _ in
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             self?.checkMicState()
         }
+        let status = AudioObjectAddPropertyListenerBlock(deviceID, &address, DispatchQueue.main, block)
 
         if status == noErr {
+            listenerBlock = block
             isListening = true
             log.info("Mic activity monitoring started on device \(self.deviceID)")
         } else {
@@ -251,8 +256,9 @@ private final class MicActivityMonitor: @unchecked Sendable {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        AudioObjectRemovePropertyListenerBlock(deviceID, &address, DispatchQueue.main) { [weak self] _, _ in
-            self?.checkMicState()
+        if let block = listenerBlock {
+            AudioObjectRemovePropertyListenerBlock(deviceID, &address, DispatchQueue.main, block)
+            listenerBlock = nil
         }
         isListening = false
     }

@@ -87,9 +87,13 @@ struct TranscriptDetailView: View {
     // Phase 3: after a rename changes who-said-what, offer to regenerate analysis.
     @State private var offerReanalysis = false
 
-    private var displayedTurns: [SpeakerTurn] {
-        richTranscript?.speakerTurns() ?? []
-    }
+    /// Turns derived from `richTranscript`, cached so playback ticks (10 Hz
+    /// `currentTime` updates) don't re-run the O(segments) merge on every body
+    /// evaluation. Rebuilt by `.onChange(of: richTranscript)` — `richTranscript`
+    /// is only ever replaced wholesale (load, re-diarize, rename, edit), and
+    /// unchanged arrays compare by COW buffer identity, so the check is O(1)
+    /// on ticks.
+    @State private var displayedTurns: [SpeakerTurn] = []
 
     private var uniqueSpeakerIds: [String] {
         guard let t = richTranscript else { return [] }
@@ -118,13 +122,18 @@ struct TranscriptDetailView: View {
         return current.id == recording.id && context.appState.recordingState != .idle
     }
 
-    /// Live transcript assembled on the fly from the growing `liveTranscriptSegments`.
-    private var liveRichTranscript: RichTranscript {
+    /// Finalized live turns, cached so a volatile partial (which arrives many
+    /// times per second) doesn't re-run `speakerTurns()` over every finalized
+    /// segment. Rebuilt only when `liveTranscriptSegments` grows.
+    @State private var liveTurns: [SpeakerTurn] = []
+
+    /// Rebuilds `liveTurns` from the current `liveTranscriptSegments`.
+    private func refreshLiveTurns() {
         let segs = context.appState.liveTranscriptSegments.map { seg in
             RichSegment(start: seg.start, end: seg.end, text: seg.text,
                         originalText: seg.text, speakerId: seg.speaker)
         }
-        return RichTranscript(segments: segs)
+        liveTurns = RichTranscript(segments: segs).speakerTurns()
     }
 
     var body: some View {
@@ -172,6 +181,9 @@ struct TranscriptDetailView: View {
         .navigationTitle("")
         .toolbar { toolbarContent }
         .task { await loadTranscript() }
+        .onChange(of: richTranscript) { _, newValue in
+            displayedTurns = newValue?.speakerTurns() ?? []
+        }
         .modifier(TranscriptSearchableModifier(
             enabled: !isLive,
             query: $searchQuery,
@@ -518,9 +530,7 @@ struct TranscriptDetailView: View {
             .scrollIndicators(.automatic)
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
-                guard let active = displayedTurns.first(where: {
-                    newTime >= $0.startTime && newTime < $0.endTime
-                }) else { return }
+                guard let active = activeTurn(at: newTime) else { return }
                 withAnimation { proxy.scrollTo(active.id, anchor: .center) }
             }
             .onChange(of: searchScrollTick) { _, _ in
@@ -989,15 +999,14 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var liveTranscriptList: some View {
-        let turns = liveRichTranscript.speakerTurns()
         let mic = context.appState.liveVolatileMic
         let system = context.appState.liveVolatileSystem
-        if turns.isEmpty && mic.isEmpty && system.isEmpty {
+        if liveTurns.isEmpty && mic.isEmpty && system.isEmpty {
             liveWaitingState
         } else {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(turns) { turn in
+                    ForEach(liveTurns) { turn in
                         liveTurnRow(turn).id(turn.id)
                     }
                     if !mic.isEmpty {
@@ -1011,8 +1020,13 @@ struct TranscriptDetailView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
                 .onChange(of: context.appState.liveTranscriptSegments.count) { _, _ in
+                    // A new finalized segment: refresh the cached turns (a volatile
+                    // partial alone leaves the count unchanged, so this doesn't
+                    // re-run speakerTurns() on every partial), then scroll.
+                    refreshLiveTurns()
                     withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
                 }
+                .onAppear { refreshLiveTurns() }
             }
         }
     }
@@ -1162,6 +1176,15 @@ struct TranscriptDetailView: View {
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
         currentTime >= turn.startTime && currentTime < turn.endTime
+    }
+
+    /// The first turn containing `time`. A linear scan over the cached
+    /// `displayedTurns` (the O(n) speakerTurns() rebuild that made this hot is
+    /// now cached, per 4.1). Kept as first-match — not a binary search — because
+    /// diarized turns can overlap slightly at their boundaries, and the earlier
+    /// scroll-to code matched the first overlapping turn.
+    private func activeTurn(at time: TimeInterval) -> SpeakerTurn? {
+        displayedTurns.first { time >= $0.startTime && time < $0.endTime }
     }
 
     private func seek(to time: TimeInterval) {
@@ -1335,10 +1358,13 @@ struct TranscriptDetailView: View {
         return "\(currentMatchIndex + 1) of \(searchResult.matches.count)"
     }
 
-    /// Recomputes matches over the currently displayed turns. Keeps
-    /// `currentMatchIndex` in bounds; callers decide when to reset it to 0.
+    /// Recomputes matches over the current transcript's turns. Derives them from
+    /// `richTranscript` (not the cached `displayedTurns`) because several callers
+    /// run synchronously right after assigning `richTranscript`, before the
+    /// `.onChange` refresh of the cache has fired. Keeps `currentMatchIndex` in
+    /// bounds; callers decide when to reset it to 0.
     private func recomputeSearch() {
-        let turns = displayedTurns.map { (id: $0.id, text: $0.text) }
+        let turns = (richTranscript?.speakerTurns() ?? []).map { (id: $0.id, text: $0.text) }
         let result = TranscriptSearch.search(turns: turns, query: searchQuery)
         searchResult = result
         matchesByTurn = Dictionary(grouping: result.matches, by: \.turnId)

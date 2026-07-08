@@ -4,7 +4,7 @@ import dBriefWire
 /// The seam the request router dispatches to. `MLOrchestrator` is the real
 /// implementation; tests substitute a mock.
 protocol MLBackend: Sendable {
-    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult
+    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult
     func diarize(path: String) async throws -> [DiarizedTurn]
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]])
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
@@ -58,8 +58,8 @@ final class RequestRouter: Sendable {
 
         do {
             switch envelope.request {
-            case let .transcribe(path, prompt, config, safeMode):
-                let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode)
+            case let .transcribe(path, prompt, config, safeMode, unloadAfter):
+                let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
                 send(.transcriptionResult(r)); send(.finished)
             case let .diarize(path):
                 send(.diarizeResult(try await backend.diarize(path: path))); send(.finished)
@@ -127,8 +127,9 @@ final class StdoutWriter: @unchecked Sendable {
         let (stream, continuation) = AsyncStream<EventEnvelope>.makeStream(bufferingPolicy: .unbounded)
         self.continuation = continuation
         self.drain = Task {
+            let encoder = JSONEncoder()   // reused across frames; single drain task
             for await envelope in stream {
-                guard let payload = try? JSONEncoder().encode(envelope) else { continue }
+                guard let payload = try? encoder.encode(envelope) else { continue }
                 handle.write(FrameCodec.encode(payload))
             }
         }
@@ -155,12 +156,13 @@ final class RequestLoop: @unchecked Sendable {
     /// Blocks reading stdin until EOF (parent closed the pipe / is quitting).
     func run(input: FileHandle) async {
         var reader = FrameReader()
+        let decoder = JSONDecoder()   // reused across frames; single read loop
         while true {
             let chunk = input.availableData
             if chunk.isEmpty { break }   // EOF
             reader.append(chunk)
             for frame in reader.drainFrames() {
-                guard let env = try? JSONDecoder().decode(RequestEnvelope.self, from: frame) else { continue }
+                guard let env = try? decoder.decode(RequestEnvelope.self, from: frame) else { continue }
                 if case .cancel = env.request { cancel(env.id); continue }
                 let task = Task { await self.router.handle(env) }
                 store(task, for: env.id)

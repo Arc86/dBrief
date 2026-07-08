@@ -11,6 +11,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     private let stateHandler: @Sendable (LocalAIPluginState) -> Void
     private var whisperKit: WhisperKit?
     private var loadedConfig: WhisperRuntimeConfig?
+    // Cached across calls (like `whisperKit`) so segmented recordings don't
+    // rebuild SpeakerKit per 30-min part; dropped in `unload()`.
+    private var speakerKit: SpeakerKit?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.stateHandler = stateHandler
@@ -18,7 +21,20 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
+    /// Decode a file to WhisperKit's 16 kHz mono `[Float]` input. Exposed so the
+    /// orchestrator can decode once and share the buffer between transcription,
+    /// diarization, and the embedding pass.
+    func loadAudio(fileURL: URL) throws -> [Float] {
+        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
+        do {
+            return try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
+        } catch {
+            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
+            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
+        }
+    }
+
+    func transcribe(audioArray: [Float], fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
@@ -30,16 +46,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 model: modelInfo.displayName,
                 requiredGB: String(format: "%.1f", Double(requiredMemory) / 1_000_000_000)
             )
-        }
-
-        // Load audio as float array — shared between WhisperKit and SpeakerKit
-        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
-        let audioArray: [Float]
-        do {
-            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
-        } catch {
-            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
-            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
         }
 
         let whisper = try await loadWhisperKit(config: whisperConfig)
@@ -89,10 +95,11 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // app. The normal path therefore uses higher concurrency for speed; the
         // safe-mode retry serializes to survive a deterministic trap.
         //
-        // 8 is the value validated as stable on macOS 26 (large-v3 turbo). Because a
-        // trap is now recoverable, this ceiling can be raised (toward WhisperKit's
-        // default of 16) — benchmark on the target hardware and weigh added throughput
-        // against how often a higher value forces a crash+safe-mode retry.
+        // 8 was validated as stable on macOS 26 (large-v3 turbo); raised to 12
+        // (toward WhisperKit's default of 16) since a trap is now recoverable via
+        // the crash-isolated helper + safe-mode retry. If the Benchmark tab shows
+        // no throughput gain over 8 — or safe-mode retries become frequent —
+        // drop this back (it is intentionally its own commit).
         //
         // Safe mode (post-crash retry) keeps the decoder off the ANE via
         // `.cpuAndGPU` (set by the caller), which is where the nil-logits trap
@@ -100,7 +107,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         // retry no longer needs to serialize to a single worker: 4 workers makes
         // recovery ~2–3× faster (field data: 1 worker = 1.6× realtime vs ~4× at 8)
         // while staying well clear of the concurrency that triggers the trap.
-        options.concurrentWorkerCount = safeMode ? 4 : 8
+        options.concurrentWorkerCount = safeMode ? 4 : 12
 
         do {
             let transcribeStart = Date()
@@ -118,6 +125,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // time ranges, so the loss is silent, but their text is empty. Detect
             // that collapse and recover by re-transcribing once without the prompt
             // (a no-prompt pass is reliably complete on the same audio).
+            // NOTE: this recovery doubles transcription time when it fires. It is
+            // dormant today — the app always passes initialPrompt: nil — and only
+            // matters for callers that opt into a decoder prompt.
             if !promptTokens.isEmpty {
                 // wkResults type is inferred (name collision), so count inline.
                 let total = wkResults.reduce(0) { $0 + $1.segments.count }
@@ -159,16 +169,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 stateHandler(.diarizing)
                 let diarStart = Date()
                 do {
-                    let downloadBase = try speakerKitDownloadBaseURL()
-                    let skConfig = PyannoteConfig(
-                        downloadBase: downloadBase.path,
-                        download: true,
-                        load: true,
-                        verbose: true
-                    )
-                    let speakerKit = try await SpeakerKit(skConfig)
+                    let speakerKit = try await loadSpeakerKit()
                     let diarResult = try await speakerKit.diarize(audioArray: audioArray)
-                    await speakerKit.unloadModels()
                     Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
                     // Convert the diarization turns to our wire type.
@@ -213,7 +215,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     let merged = SpeakerMerge.mergePreservingSegments(base, turns: turns)
 
                     let diarizationDuration = Date().timeIntervalSince(diarStart)
-                    await unload()
                     return dBriefWire.TranscriptionResult(
                         text: merged.text,
                         segments: merged.segments,
@@ -253,10 +254,10 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let detectedLanguage = wkResults.first(where: { !$0.language.isEmpty })?.language
 
             Logger.localAI.info("Transcription: segments=\(mappedSegments.count), textLength=\(fullText.count), language=\(detectedLanguage ?? "unknown", privacy: .public)")
-            await unload()
             return dBriefWire.TranscriptionResult(text: fullText, segments: mappedSegments, language: detectedLanguage, inferenceTime: transcribeDuration)
         } catch {
-            await unload()
+            // Model lifecycle is owned by MLOrchestrator (it unloads after the
+            // last segment of a job, and on error); nothing to clean up here.
             throw error
         }
     }
@@ -300,10 +301,32 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     }
 
     func unload() async {
+        await unloadSpeakerKit()
         guard let whisperKit else { return }
         await whisperKit.unloadModels()
         self.whisperKit = nil
         self.loadedConfig = nil
+    }
+
+    func unloadSpeakerKit() async {
+        guard let speakerKit else { return }
+        await speakerKit.unloadModels()
+        self.speakerKit = nil
+    }
+
+    /// Returns the cached SpeakerKit instance, building it on first use.
+    private func loadSpeakerKit() async throws -> SpeakerKit {
+        if let speakerKit { return speakerKit }
+        let downloadBase = try speakerKitDownloadBaseURL()
+        let skConfig = PyannoteConfig(
+            downloadBase: downloadBase.path,
+            download: true,
+            load: true,
+            verbose: true
+        )
+        let sk = try await SpeakerKit(skConfig)
+        self.speakerKit = sk
+        return sk
     }
 
     func purgeModels() async throws {
@@ -428,15 +451,17 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         fileURL: URL,
         onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
     ) async throws -> [DiarizedTurn] {
-        let emitState = onState ?? stateHandler
         Logger.localAI.info("Standalone diarization for \(fileURL.lastPathComponent, privacy: .public)")
-        let audioArray: [Float]
-        do {
-            audioArray = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
-        } catch {
-            throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
-        }
+        return try await diarize(audioArray: try loadAudio(fileURL: fileURL), onState: onState)
+    }
 
+    /// Same as `diarize(fileURL:)` on already-decoded 16 kHz mono samples, so a
+    /// caller that transcribed the file can reuse its buffer.
+    func diarize(
+        audioArray: [Float],
+        onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
+    ) async throws -> [DiarizedTurn] {
+        let emitState = onState ?? stateHandler
         let downloadBase = try speakerKitDownloadBaseURL()
         // SpeakerKit downloads Pyannote models on first use with no progress
         // callback of its own; surface an indeterminate "downloading" state when
@@ -444,16 +469,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         if !speakerKitModelsPresent(at: downloadBase) {
             emitState(.downloading(progress: nil, stage: .speakerKitModel))
         }
-        let skConfig = PyannoteConfig(
-            downloadBase: downloadBase.path,
-            download: true,
-            load: true,
-            verbose: true
-        )
-        let speakerKit = try await SpeakerKit(skConfig)
+        let speakerKit = try await loadSpeakerKit()
         emitState(.diarizing)
         let diarResult = try await speakerKit.diarize(audioArray: audioArray)
-        await speakerKit.unloadModels()
         Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
         return diarResult.segments.compactMap { seg in
@@ -495,27 +513,27 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         return tokenizer.encode(text: prompt)
     }
 
+    // Compiled once — these run on every segment of every transcription.
+    private static let specialTokenRegex = try! NSRegularExpression(pattern: #"<\|[^|>]+?\|>"#)
+    private static let whitespaceRunRegex = try! NSRegularExpression(pattern: #"\s+"#)
+    private static let timestampTokenRegex = try! NSRegularExpression(pattern: #"<\|([0-9]+(?:\.[0-9]+)?)\|>"#)
+
     private func cleanTranscriptArtifacts(_ text: String) -> String {
         let withFormattedTimestamps = formatWhisperTimestampTokens(in: text)
-        let cleaned = withFormattedTimestamps.replacingOccurrences(
-            of: #"<\|[^|>]+?\|>"#,
-            with: " ",
-            options: .regularExpression
+        var range = NSRange(withFormattedTimestamps.startIndex..., in: withFormattedTimestamps)
+        let cleaned = Self.specialTokenRegex.stringByReplacingMatches(
+            in: withFormattedTimestamps, range: range, withTemplate: " "
         )
-        let normalizedWhitespace = cleaned.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
+        range = NSRange(cleaned.startIndex..., in: cleaned)
+        let normalizedWhitespace = Self.whitespaceRunRegex.stringByReplacingMatches(
+            in: cleaned, range: range, withTemplate: " "
         )
         return normalizedWhitespace.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }
 
     private func formatWhisperTimestampTokens(in text: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"<\|([0-9]+(?:\.[0-9]+)?)\|>"#) else {
-            return text
-        }
         let nsRange = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, options: [], range: nsRange)
+        let matches = Self.timestampTokenRegex.matches(in: text, options: [], range: nsRange)
         guard !matches.isEmpty else { return text }
 
         var result = text

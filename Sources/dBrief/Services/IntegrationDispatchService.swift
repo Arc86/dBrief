@@ -376,6 +376,14 @@ actor IntegrationDispatchService {
             includeAudio: includeAudio
         )
 
+        // A multipart body is staged on disk (never held in RAM); the same file
+        // serves every retry and is removed when dispatch finishes.
+        defer {
+            if case let .file(bodyURL) = payload.body {
+                try? FileManager.default.removeItem(at: bodyURL)
+            }
+        }
+
         var attempt = 0
         while true {
             do {
@@ -386,9 +394,16 @@ actor IntegrationDispatchService {
                 for header in config.headers where !header.key.isEmpty {
                     request.setValue(header.value, forHTTPHeaderField: header.key)
                 }
-                request.httpBody = payload.body
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let data: Data
+                let response: URLResponse
+                switch payload.body {
+                case .data(let body):
+                    request.httpBody = body
+                    (data, response) = try await URLSession.shared.data(for: request)
+                case .file(let bodyURL):
+                    (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyURL)
+                }
                 guard let http = response as? HTTPURLResponse else {
                     throw IntegrationError.executionFailed("Webhook returned invalid response")
                 }

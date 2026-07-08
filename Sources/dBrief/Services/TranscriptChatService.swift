@@ -182,6 +182,12 @@ final class TranscriptChatService {
     /// finished recording should preserve and reopen the carried-over live chat.
     var hasHistory: Bool { !messages.isEmpty }
 
+    /// Whether this session's messages are backed by an on-disk sidecar. A live
+    /// (in-progress recording) session has no sidecar until the recording
+    /// finalizes, so its history exists only in memory — it must never be
+    /// evicted from `TranscriptChatStore` or the carried-over Q&A is lost.
+    var isPersistenceEnabled: Bool { chatStore != nil && persistenceURL != nil }
+
     /// Warms the on-device model when the chat panel opens so the first answer streams
     /// sooner. No-op unless Apple Intelligence is the active (or fallback) chat engine.
     func prewarm() {

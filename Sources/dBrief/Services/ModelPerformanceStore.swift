@@ -13,8 +13,20 @@ actor ModelPerformanceStore {
     /// the file can't grow without limit over the app's lifetime.
     private let maxRecords = 5_000
 
+    /// In-memory copy of the log, loaded from disk once. This actor is the sole
+    /// writer, so the cache stays authoritative — `append` no longer re-decodes
+    /// the whole file (up to `maxRecords`) on every recording.
+    private var cache: [ModelPerformanceRecord]?
+
     init(url: URL = ModelPerformanceStore.defaultURL()) {
         self.url = url
+    }
+
+    private func loadedRecords() -> [ModelPerformanceRecord] {
+        if let cache { return cache }
+        let loaded = readFromDisk()
+        cache = loaded
+        return loaded
     }
 
     /// `~/Library/Application Support/com.dbrief.app/model-performance.json`,
@@ -29,6 +41,28 @@ actor ModelPerformanceStore {
     /// Load all recorded sessions. Returns an empty array when the log is absent
     /// or unreadable (a corrupt log shouldn't break the panel).
     func load() -> [ModelPerformanceRecord] {
+        loadedRecords()
+    }
+
+    /// Append a session and persist. Best-effort: failures are logged, not thrown.
+    func append(_ record: ModelPerformanceRecord) {
+        var records = loadedRecords()
+        records.append(record)
+        if records.count > maxRecords {
+            records.removeFirst(records.count - maxRecords)
+        }
+        cache = records
+        save(records)
+    }
+
+    /// Remove all recorded sessions (the "Clear stats" action). Does NOT touch
+    /// the lifetime transcribed-minutes odometer, which lives in `AppSettings`.
+    func clear() {
+        cache = []
+        try? fileManager.removeItem(at: url)
+    }
+
+    private func readFromDisk() -> [ModelPerformanceRecord] {
         guard fileManager.fileExists(atPath: url.path) else { return [] }
         do {
             let data = try Data(contentsOf: url)
@@ -39,22 +73,6 @@ actor ModelPerformanceStore {
             Logger.app.error("ModelPerformanceStore: failed to load: \(error.localizedDescription, privacy: .public)")
             return []
         }
-    }
-
-    /// Append a session and persist. Best-effort: failures are logged, not thrown.
-    func append(_ record: ModelPerformanceRecord) {
-        var records = load()
-        records.append(record)
-        if records.count > maxRecords {
-            records.removeFirst(records.count - maxRecords)
-        }
-        save(records)
-    }
-
-    /// Remove all recorded sessions (the "Clear stats" action). Does NOT touch
-    /// the lifetime transcribed-minutes odometer, which lives in `AppSettings`.
-    func clear() {
-        try? fileManager.removeItem(at: url)
     }
 
     private func save(_ records: [ModelPerformanceRecord]) {

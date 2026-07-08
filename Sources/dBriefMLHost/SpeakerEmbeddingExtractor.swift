@@ -31,6 +31,18 @@ actor SpeakerEmbeddingExtractor {
     func embeddings(forAudioAt fileURL: URL, segments: [TranscriptionResult.Segment]) async -> [String: [Float]] {
         do {
             let audio = try AudioConverter().resampleAudioFile(fileURL) // 16 kHz mono [Float]
+            return await embeddings(fromSamples: audio, segments: segments)
+        } catch {
+            Logger.localAI.error("Speaker embedding extraction failed (decode): \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
+    }
+
+    /// Same as `embeddings(forAudioAt:)` but reuses already-decoded 16 kHz mono
+    /// samples, so callers that decoded the file for transcription don't pay a
+    /// second full decode+resample of the recording.
+    func embeddings(fromSamples audio: [Float], segments: [TranscriptionResult.Segment]) async -> [String: [Float]] {
+        do {
             let speakered = segments.filter { $0.speaker != nil }.count
             let ranges = SpeakerClipRanges.build(segments: segments, totalSamples: audio.count)
             Logger.localAI.info("Embedding pass: \(audio.count) samples, \(speakered) speakered segs, \(ranges.count) qualifying speaker cluster(s)")
@@ -63,7 +75,7 @@ actor SpeakerEmbeddingExtractor {
             }
             return out
         } catch {
-            Logger.localAI.error("Speaker embedding extraction failed (decode or model load): \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Speaker embedding extraction failed (model load): \(error.localizedDescription, privacy: .public)")
             return [:]
         }
     }

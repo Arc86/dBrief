@@ -32,17 +32,34 @@ actor MLOrchestrator: MLBackend {
 
     // MARK: - Transcription
 
-    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult {
+    /// `unloadAfter: false` keeps Whisper (and a cached SpeakerKit) resident so the
+    /// next segment of a long recording reuses the warm models; the last segment
+    /// passes `true`. An error always unloads — the segmented job aborts as a
+    /// whole, and every other op here already evicts Whisper before running.
+    func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
-            let result = try await whisperService.transcribe(
-                fileURL: URL(fileURLWithPath: path),
-                initialPrompt: initialPrompt,
-                whisperConfig: config,
-                safeMode: safeMode
-            )
-            return await withEmbeddings(result, path: path)
+            do {
+                // Decode once — transcription, diarization (inside transcribe),
+                // and the embedding pass all consume the same 16 kHz mono buffer.
+                let audio = try whisperService.loadAudio(fileURL: URL(fileURLWithPath: path))
+                let result = try await whisperService.transcribe(
+                    audioArray: audio,
+                    fileURL: URL(fileURLWithPath: path),
+                    initialPrompt: initialPrompt,
+                    whisperConfig: config,
+                    safeMode: safeMode
+                )
+                // Unload before the embedding pass (as the pre-unloadAfter code
+                // did) so the extractor's model never coexists with Whisper on
+                // the final/only segment.
+                if unloadAfter { await whisperService.unload() }
+                return await withEmbeddings(result, samples: audio)
+            } catch {
+                await whisperService.unload()
+                throw error
+            }
         }
     }
 
@@ -50,7 +67,14 @@ actor MLOrchestrator: MLBackend {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
-            return try await whisperService.diarize(fileURL: URL(fileURLWithPath: path))
+            do {
+                let turns = try await whisperService.diarize(fileURL: URL(fileURLWithPath: path))
+                await whisperService.unloadSpeakerKit()
+                return turns
+            } catch {
+                await whisperService.unloadSpeakerKit()
+                throw error
+            }
         }
     }
 
@@ -64,13 +88,19 @@ actor MLOrchestrator: MLBackend {
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             let url = URL(fileURLWithPath: path)
-            let turns = try await whisperService.diarize(fileURL: url)
-            guard !turns.isEmpty else { return (turns, [:]) }
-            let segments = turns.map {
-                TranscriptionResult.Segment(start: $0.start, end: $0.end, text: "", speaker: $0.speakerId)
+            do {
+                let turns = try await whisperService.diarize(fileURL: url)
+                await whisperService.unloadSpeakerKit()
+                guard !turns.isEmpty else { return (turns, [:]) }
+                let segments = turns.map {
+                    TranscriptionResult.Segment(start: $0.start, end: $0.end, text: "", speaker: $0.speakerId)
+                }
+                let embeddings = await embeddingExtractor.embeddings(forAudioAt: url, segments: segments)
+                return (turns, embeddings)
+            } catch {
+                await whisperService.unloadSpeakerKit()
+                throw error
             }
-            let embeddings = await embeddingExtractor.embeddings(forAudioAt: url, segments: segments)
-            return (turns, embeddings)
         }
     }
 
@@ -86,12 +116,24 @@ actor MLOrchestrator: MLBackend {
         return r
     }
 
+    /// `withEmbeddings` on already-decoded 16 kHz mono samples — avoids the
+    /// extractor's own full re-decode of a file the caller just transcribed.
+    private func withEmbeddings(_ result: TranscriptionResult, samples: [Float]) async -> TranscriptionResult {
+        guard result.segments.contains(where: { $0.speaker != nil }) else { return result }
+        var r = result
+        r.speakerEmbeddings = await embeddingExtractor.embeddings(
+            fromSamples: samples,
+            segments: result.segments
+        )
+        return r
+    }
+
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
         try await mutex.withLock { [self] in
             await whisperService.unload()
             await insightsService.unload()
             let fileURL = URL(fileURLWithPath: path)
-            let result = try await parakeetService.transcribe(
+            let (result, samples) = try await parakeetService.transcribe(
                 fileURL: fileURL,
                 language: nil,
                 modelVariant: modelVariant
@@ -102,17 +144,29 @@ actor MLOrchestrator: MLBackend {
             // shared standalone diarization pass and merge speakers by overlap.
             // Route SpeakerKit's download/diarizing progress to the parakeet
             // channel so a first-time model fetch is visible, not a frozen step.
+            // Parakeet's decoded samples are reused for diarization and the
+            // embedding pass (previously each re-decoded the whole file); the
+            // disk-backed long-audio route returns nil samples and keeps the
+            // file-based path.
             await parakeetService.unload()
             let diarStart = Date()
             do {
-                let turns = try await whisperService.diarize(
-                    fileURL: fileURL,
-                    onState: { [emit] state in emit(.parakeet, state) }
-                )
+                let onState: @Sendable (LocalAIPluginState) -> Void = { [emit] state in emit(.parakeet, state) }
+                let turns: [DiarizedTurn]
+                if let samples {
+                    turns = try await whisperService.diarize(audioArray: samples, onState: onState)
+                } else {
+                    turns = try await whisperService.diarize(fileURL: fileURL, onState: onState)
+                }
+                await whisperService.unloadSpeakerKit()
                 var merged = SpeakerMerge.merge(result, turns: turns)
                 merged.diarizationTime = Date().timeIntervalSince(diarStart)
+                if let samples {
+                    return await withEmbeddings(merged, samples: samples)
+                }
                 return await withEmbeddings(merged, path: path)
             } catch {
+                await whisperService.unloadSpeakerKit()
                 Logger.localAI.error("Parakeet diarization failed: \(error.localizedDescription, privacy: .public) — returning transcript without speakers")
                 return result
             }

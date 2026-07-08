@@ -1,8 +1,16 @@
 import Foundation
 
 struct WebhookPayload {
+    enum Body {
+        case data(Data)
+        /// Multipart body staged on disk so the audio is never held in RAM;
+        /// the sender uploads via `URLSession.upload(fromFile:)` and deletes
+        /// the file when dispatch finishes.
+        case file(URL)
+    }
+
     let contentType: String
-    let body: Data
+    let body: Body
 }
 
 struct WebhookPayloadBuilder {
@@ -25,23 +33,63 @@ struct WebhookPayloadBuilder {
         )
 
         if includeAudio {
-            var multipart = MultipartFormData()
+            // Stream the multipart body to a temp file — reading the audio into
+            // Data and then encode()-copying it held the recording in memory
+            // twice during dispatch.
+            let boundary = UUID().uuidString
             let metadataData = try JSONSerialization.data(withJSONObject: metadata)
-            multipart.addField(name: "metadata", value: String(data: metadataData, encoding: .utf8) ?? "{}")
-
-            let audioData = try Data(contentsOf: bundle.audioFileURL)
-            multipart.addFile(
-                name: "audio_file",
-                fileName: bundle.audioFileURL.lastPathComponent,
-                contentType: Self.contentType(for: bundle.audioFileURL),
-                data: audioData
+            let bodyURL = try Self.writeMultipartBodyFile(
+                metadataJSON: metadataData,
+                audioURL: bundle.audioFileURL,
+                boundary: boundary
             )
-
-            return WebhookPayload(contentType: multipart.contentType, body: multipart.encode())
+            return WebhookPayload(
+                contentType: "multipart/form-data; boundary=\(boundary)",
+                body: .file(bodyURL)
+            )
         }
 
         let body = try JSONSerialization.data(withJSONObject: metadata)
-        return WebhookPayload(contentType: "application/json", body: body)
+        return WebhookPayload(contentType: "application/json", body: .data(body))
+    }
+
+    /// Writes the exact byte layout `MultipartFormData.encode()` produces for a
+    /// metadata field + audio file part, but streams the audio from disk in
+    /// 1 MB chunks. `WebhookPayloadBuilderTests` locks the equivalence.
+    static func writeMultipartBodyFile(metadataJSON: Data, audioURL: URL, boundary: String) throws -> URL {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("webhook-\(UUID().uuidString).multipart")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        do {
+            return try writeMultipartBody(to: tempURL, metadataJSON: metadataJSON, audioURL: audioURL, boundary: boundary)
+        } catch {
+            // Don't leave a partial temp file behind if the audio read fails
+            // mid-build — the caller's cleanup only runs once we return a URL.
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
+    }
+
+    private static func writeMultipartBody(to tempURL: URL, metadataJSON: Data, audioURL: URL, boundary: String) throws -> URL {
+        let out = try FileHandle(forWritingTo: tempURL)
+        defer { try? out.close() }
+
+        var head = Data("--\(boundary)\r\n".utf8)
+        head.append(Data("Content-Disposition: form-data; name=\"metadata\"\r\n\r\n".utf8))
+        head.append(metadataJSON)
+        head.append(Data("\r\n--\(boundary)\r\n".utf8))
+        head.append(Data("Content-Disposition: form-data; name=\"audio_file\"; filename=\"\(audioURL.lastPathComponent)\"\r\n".utf8))
+        head.append(Data("Content-Type: \(contentType(for: audioURL))\r\n\r\n".utf8))
+        try out.write(contentsOf: head)
+
+        let audio = try FileHandle(forReadingFrom: audioURL)
+        defer { try? audio.close() }
+        while let chunk = try audio.read(upToCount: 1 << 20), !chunk.isEmpty {
+            try out.write(contentsOf: chunk)
+        }
+
+        try out.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+        return tempURL
     }
 
     func payloadDictionary(

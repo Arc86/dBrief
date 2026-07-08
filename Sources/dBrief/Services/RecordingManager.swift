@@ -69,6 +69,17 @@ final class RecordingManager {
         self.audioCaptureManager.statusNoteHandler = { [weak self] note in
             self?.showRecordingStatusNote(note)
         }
+        // Mirror the capture manager's meter into AppState from its own 10 Hz
+        // timer — one source of truth, no second polling loop. Peak drives the
+        // waveform at full rate; duration only shows whole seconds, so push it
+        // just once per second to avoid needless SwiftUI invalidations.
+        self.audioCaptureManager.stateTickHandler = { [weak self] duration, peak in
+            guard let self else { return }
+            self.appState.peakLevel = peak
+            if Int(duration) != Int(self.appState.recordingDuration) {
+                self.appState.recordingDuration = duration
+            }
+        }
     }
 
     /// Briefly shows a status note (e.g. "Switched to MacBook Microphone") during
@@ -180,8 +191,8 @@ final class RecordingManager {
         if let liveStreams {
             startLiveTranscription(streams: liveStreams)
         }
-
-        observeAudioState()
+        // Duration/peak now flow from AudioCaptureManager.stateTickHandler
+        // (wired in init) — no separate polling loop.
     }
 
     private func startLiveTranscription(streams: (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>)) {
@@ -387,11 +398,16 @@ final class RecordingManager {
             try await ensureRecordingFinalized(recording: recording)
             perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
             appState.processingSteps[finalizationStepIndex].status = .completed
-            if !recording.finalizationWarnings.isEmpty {
+            // Only surface genuine problems (ffmpeg missing, merge/segmentation
+            // failures) as a red error step. A benign "track missing or empty" note —
+            // e.g. a listen-only meeting where the mic captured nothing — is expected
+            // and stays quietly in the metadata sidecar, not shown as a failure.
+            let finalizationProblems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
+            if !finalizationProblems.isEmpty {
                 appState.processingSteps.append(
                     ProcessingStep(
                         name: "Audio finalization warnings",
-                        status: .failed(recording.finalizationWarnings.joined(separator: "\n"))
+                        status: .failed(finalizationProblems.joined(separator: "\n"))
                     )
                 )
             }
@@ -2252,10 +2268,15 @@ final class RecordingManager {
                 // bulk of the transcript. Vocabulary spelling is instead applied as
                 // a reliable post-step (TranscriptSpellingService) in
                 // transcribeRecordingAudio. See WhisperKitTranscriptionService notes.
+                //
+                // For segmented recordings, keep the Whisper/SpeakerKit models
+                // resident in the helper until the last segment so each 30-min
+                // part doesn't pay a full model reload.
                 try await self.localAIPluginService.transcribe(
                     fileURL: url,
                     initialPrompt: nil,
-                    whisperConfig: whisperConfig
+                    whisperConfig: whisperConfig,
+                    unloadAfter: segmentIndex == nil || segmentIndex == segmentCount
                 )
             }
         case .parakeetLocal:
@@ -2434,15 +2455,6 @@ final class RecordingManager {
         UNUserNotificationCenter.current().add(request)
     }
 
-    private func observeAudioState() {
-        Task {
-            while audioCaptureManager.isCapturing {
-                appState.recordingDuration = audioCaptureManager.duration
-                appState.peakLevel = audioCaptureManager.peakLevel
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
-    }
 
     private static func generateRawCaptureBaseURL() -> URL {
         FileManager.default.temporaryDirectory
@@ -2544,7 +2556,13 @@ final class RecordingManager {
     }
 
     func discoverQueuedItems() -> [(audioURL: URL, item: QueueItem)] {
-        let folder = appSettings.effectiveRecordingFolderURL
+        Self.discoverQueuedItems(in: appSettings.effectiveRecordingFolderURL)
+    }
+
+    /// Enumerates queued items in `folder`. `nonisolated static` so it can run
+    /// off the main actor (see `refreshQueuedCount`) — it touches only the
+    /// filesystem and the passed URL, no actor state.
+    nonisolated static func discoverQueuedItems(in folder: URL) -> [(audioURL: URL, item: QueueItem)] {
         guard let enumerator = FileManager.default.enumerator(
             at: folder,
             includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey],
@@ -2576,6 +2594,17 @@ final class RecordingManager {
         return results
             .sorted { $0.date < $1.date }
             .map { ($0.url, $0.item) }
+    }
+
+    /// Refreshes `appState.queuedCount` without blocking the main actor: the
+    /// folder scan + JSON decode run detached, only the count hops back. Called
+    /// on popover open in place of the synchronous `discoverQueuedItems().count`.
+    func refreshQueuedCount() async {
+        let folder = appSettings.effectiveRecordingFolderURL
+        let count = await Task.detached(priority: .utility) {
+            Self.discoverQueuedItems(in: folder).count
+        }.value
+        appState.queuedCount = count
     }
 
     /// Derives the transcript JSON path from the finalized audio URL.

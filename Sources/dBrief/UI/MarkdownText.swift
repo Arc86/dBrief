@@ -73,25 +73,36 @@ struct MarkdownText: View {
         case spacer
     }
 
+    // Compiled once — parse runs per line of every rendered message.
+    private static let headingRegex = try! NSRegularExpression(pattern: #"^#{1,6}\s+"#)
+    private static let bulletRegex = try! NSRegularExpression(pattern: #"^[-*+]\s+"#)
+    private static let numberedRegex = try! NSRegularExpression(pattern: #"^\d+\.\s+"#)
+
+    private static func prefixMatch(_ regex: NSRegularExpression, _ line: String) -> Range<String.Index>? {
+        let ns = NSRange(line.startIndex..., in: line)
+        guard let m = regex.firstMatch(in: line, range: ns), let r = Range(m.range, in: line) else { return nil }
+        return r
+    }
+
     private static func parse(_ text: String) -> [Block] {
         text.components(separatedBy: "\n").map { rawLine in
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { return .spacer }
 
             // Heading: one-to-six leading '#'s followed by a space.
-            if let hash = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+            if let hash = prefixMatch(headingRegex, line) {
                 let level = line[hash].filter { $0 == "#" }.count
                 let content = String(line[hash.upperBound...])
                 return .heading(level: level, text: content)
             }
 
             // Bullet list: '-', '*', or '+' followed by a space.
-            if let bullet = line.range(of: #"^[-*+]\s+"#, options: .regularExpression) {
+            if let bullet = prefixMatch(bulletRegex, line) {
                 return .bullet(text: String(line[bullet.upperBound...]))
             }
 
             // Numbered list: digits, then '.', then a space.
-            if let number = line.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
+            if let number = prefixMatch(numberedRegex, line) {
                 let marker = line[number].trimmingCharacters(in: .whitespaces)
                     .replacingOccurrences(of: ".", with: "")
                 return .numbered(number: marker, text: String(line[number.upperBound...]))

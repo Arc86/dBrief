@@ -82,12 +82,33 @@ private func withTimeout<T: Sendable>(seconds: Double, _ op: @escaping @Sendable
         await conn.shutdown()
     }
 
+    /// Segmented recordings issue transcribes with `unloadAfter: false` for every
+    /// part but the last — each must return its own result over the same
+    /// connection (the flag changes model lifecycle in the helper, never framing).
+    @Test func sequentialSegmentTranscribesBothReturn() async throws {
+        let conn = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
+                                    supportBase: URL(fileURLWithPath: "/tmp"),
+                                    environment: ["STUB_MODE": "echo"])
+        let svc = LocalAIPluginService(connection: conn)
+        let part1 = try await withTimeout(seconds: 20) {
+            try await svc.transcribe(fileURL: URL(fileURLWithPath: "/part1.m4a"),
+                                     initialPrompt: nil, whisperConfig: .default, unloadAfter: false)
+        }
+        let part2 = try await withTimeout(seconds: 20) {
+            try await svc.transcribe(fileURL: URL(fileURLWithPath: "/part2.m4a"),
+                                     initialPrompt: nil, whisperConfig: .default, unloadAfter: true)
+        }
+        #expect(part1.text == "echo")
+        #expect(part2.text == "echo")
+        await conn.shutdown()
+    }
+
     @Test func secondCrashSurfacesCleanError() async {
         let conn = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
                                     supportBase: URL(fileURLWithPath: "/tmp"),
                                     environment: ["STUB_MODE": "crash-always"])
         await #expect(throws: MLHostError.helperCrashed) {
-            _ = try await conn.call(.transcribe(path: "/a.m4a", initialPrompt: nil, config: .default, safeMode: false))
+            _ = try await conn.call(.transcribe(path: "/a.m4a", initialPrompt: nil, config: .default, safeMode: false, unloadAfter: true))
         }
         await conn.shutdown()
     }

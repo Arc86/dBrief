@@ -71,11 +71,13 @@ public enum TranscriptCleanup {
         ignoredSegments: Set<String> = []
     ) -> TranscriptionResult {
         let fillers = removeFillerWords ? Set(defaultFillerWords) : []
+        // Compile the filler alternation once for the whole transcript, not per segment.
+        let fillerRegex = fillerRegex(for: fillers)
         let ignored = Set(ignoredSegments.map(normalizeForIgnoreMatch))
 
         var newSegments: [TranscriptionResult.Segment] = []
         for seg in result.segments {
-            let cleanedText = cleanText(seg.text, fillerWords: fillers)
+            let cleanedText = cleanText(seg.text, fillerRegex: fillerRegex)
             if isIgnoredSegment(cleanedText, ignored) { continue }
             let newWords: [TranscriptionResult.Word]?
             if let words = seg.words, removeFillerWords {
@@ -115,38 +117,63 @@ public enum TranscriptCleanup {
         )
     }
 
-    /// Clean a single string. Exposed for unit tests and reuse.
+    /// Clean a single string. Exposed for unit tests and reuse. Prefer `clean(_:...)` for
+    /// whole transcripts — it compiles the filler regex once instead of per call.
     public static func cleanText(_ text: String, fillerWords: Set<String>) -> String {
+        cleanText(text, fillerRegex: fillerRegex(for: fillerWords))
+    }
+
+    // Fixed cleanup patterns, compiled once. NSRegularExpression is immutable and
+    // documented thread-safe.
+    // Paired XML-ish tags, e.g. "<i>foo</i>" → drop content too (dotall).
+    private static let pairedTags = try! NSRegularExpression(pattern: #"<([A-Za-z][\w-]*)\b[^>]*>[\s\S]*?</\1>"#)
+    // Standalone / unbalanced tags, e.g. "<silence>" or "</p>".
+    private static let looseTags = try! NSRegularExpression(pattern: #"</?[A-Za-z][\w-]*\b[^>]*>"#)
+    // Whisper-style non-speech annotations in square/brace brackets.
+    private static let squareBrackets = try! NSRegularExpression(pattern: #"\[[^\]]*\]"#)
+    private static let braceBrackets = try! NSRegularExpression(pattern: #"\{[^}]*\}"#)
+    // Asterisk-wrapped stage directions, e.g. "*music*" or "*laughs*" (single line).
+    private static let asteriskDirections = try! NSRegularExpression(pattern: #"\*[^*\n]+\*"#)
+    private static let spaceRuns = try! NSRegularExpression(pattern: #"[ \t]{2,}"#)
+    private static let spaceBeforePunctuation = try! NSRegularExpression(pattern: #"\s+([,.!?;:])"#)
+    private static let spacedNewlines = try! NSRegularExpression(pattern: #" *\n *"#)
+    private static let leadingDashes = try! NSRegularExpression(pattern: #"^[\s\-–—]+"#)
+    private static let trailingDashes = try! NSRegularExpression(pattern: #"[\s\-–—]+$"#)
+    static let whitespaceRuns = try! NSRegularExpression(pattern: #"\s+"#)
+
+    /// Compile the filler-word alternation for one cleanup pass. Nil when disabled.
+    /// Unicode-aware boundaries; eats an immediately trailing comma so "um," doesn't
+    /// leave a dangling comma. Leaves sentence-ending periods intact (the
+    /// space-before-punctuation pass reattaches them).
+    private static func fillerRegex(for fillerWords: Set<String>) -> NSRegularExpression? {
+        guard !fillerWords.isEmpty else { return nil }
+        let alternation = fillerWords
+            .sorted { $0.count > $1.count } // longest first so multi-word phrases win
+            .map { NSRegularExpression.escapedPattern(for: $0) }
+            .joined(separator: "|")
+        return try? NSRegularExpression(pattern: "(?i)(?<![\\p{L}\\p{N}])(?:\(alternation))(?![\\p{L}\\p{N}]),?")
+    }
+
+    private static func cleanText(_ text: String, fillerRegex: NSRegularExpression?) -> String {
         var s = text
 
-        // Paired XML-ish tags, e.g. "<i>foo</i>" → drop content too (dotall).
-        s = s.regexReplace(#"<([A-Za-z][\w-]*)\b[^>]*>[\s\S]*?</\1>"#, with: " ")
-        // Standalone / unbalanced tags, e.g. "<silence>" or "</p>".
-        s = s.regexReplace(#"</?[A-Za-z][\w-]*\b[^>]*>"#, with: " ")
-        // Whisper-style non-speech annotations in square/brace brackets.
-        s = s.regexReplace(#"\[[^\]]*\]"#, with: " ")
-        s = s.regexReplace(#"\{[^}]*\}"#, with: " ")
-        // Asterisk-wrapped stage directions, e.g. "*music*" or "*laughs*" (single line).
-        s = s.regexReplace(#"\*[^*\n]+\*"#, with: " ")
+        s = s.regexReplace(pairedTags, with: " ")
+        s = s.regexReplace(looseTags, with: " ")
+        s = s.regexReplace(squareBrackets, with: " ")
+        s = s.regexReplace(braceBrackets, with: " ")
+        s = s.regexReplace(asteriskDirections, with: " ")
 
-        if !fillerWords.isEmpty {
-            let alternation = fillerWords
-                .sorted { $0.count > $1.count } // longest first so multi-word phrases win
-                .map { NSRegularExpression.escapedPattern(for: $0) }
-                .joined(separator: "|")
-            // Unicode-aware boundaries; eat an immediately trailing comma so "um," doesn't
-            // leave a dangling comma. Leave sentence-ending periods intact (the
-            // space-before-punctuation pass below reattaches them).
-            s = s.regexReplace("(?i)(?<![\\p{L}\\p{N}])(?:\(alternation))(?![\\p{L}\\p{N}]),?", with: " ")
+        if let fillerRegex {
+            s = s.regexReplace(fillerRegex, with: " ")
         }
 
         // Normalize whitespace and any space left in front of punctuation by removals.
-        s = s.regexReplace(#"[ \t]{2,}"#, with: " ")
-        s = s.regexReplace(#"\s+([,.!?;:])"#, with: "$1")
-        s = s.regexReplace(#" *\n *"#, with: "\n")
+        s = s.regexReplace(spaceRuns, with: " ")
+        s = s.regexReplace(spaceBeforePunctuation, with: "$1")
+        s = s.regexReplace(spacedNewlines, with: "\n")
         // Strip leading/trailing dash runs Whisper sometimes prepends ("- text", "text —").
-        s = s.regexReplace(#"^[\s\-–—]+"#, with: "")
-        s = s.regexReplace(#"[\s\-–—]+$"#, with: "")
+        s = s.regexReplace(leadingDashes, with: "")
+        s = s.regexReplace(trailingDashes, with: "")
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -162,7 +189,7 @@ public enum TranscriptCleanup {
     /// watching!" matches the stored "thank you for watching").
     static func normalizeForIgnoreMatch(_ text: String) -> String {
         let lowered = text.lowercased()
-        let collapsed = lowered.regexReplace(#"\s+"#, with: " ")
+        let collapsed = lowered.regexReplace(whitespaceRuns, with: " ")
         let trimChars = CharacterSet(charactersIn: " \t\n.,!?;:\"'`…-–—")
         return collapsed.trimmingCharacters(in: trimChars)
     }
@@ -176,8 +203,7 @@ public enum TranscriptCleanup {
 }
 
 private extension String {
-    func regexReplace(_ pattern: String, with template: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return self }
+    func regexReplace(_ regex: NSRegularExpression, with template: String) -> String {
         let range = NSRange(startIndex..., in: self)
         return regex.stringByReplacingMatches(in: self, range: range, withTemplate: template)
     }

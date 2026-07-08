@@ -50,6 +50,12 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         try await transcribeWithRetry(path: fileURL.path, prompt: initialPrompt, config: whisperConfig)
     }
 
+    /// `unloadAfter: false` keeps the helper's Whisper/SpeakerKit models resident
+    /// for the next segment of a long recording; pass `true` on the last one.
+    func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, unloadAfter: Bool) async throws -> TranscriptionResult {
+        try await transcribeWithRetry(path: fileURL.path, prompt: initialPrompt, config: whisperConfig, unloadAfter: unloadAfter)
+    }
+
     func diarize(fileURL: URL) async throws -> [DiarizedTurn] {
         guard case let .diarizeResult(turns) = try await connection.call(.diarize(path: fileURL.path)) else { return [] }
         return turns
@@ -129,19 +135,19 @@ extension LocalAIPluginService {
     /// (e.g. a WhisperKit nil-logits trap). The helper auto-relaunches on the
     /// next call. A thrown `WireError` (insufficient memory, audio load) does
     /// not retry.
-    func transcribeWithRetry(path: String, prompt: String?, config: WhisperRuntimeConfig) async throws -> TranscriptionResult {
+    func transcribeWithRetry(path: String, prompt: String?, config: WhisperRuntimeConfig, unloadAfter: Bool = true) async throws -> TranscriptionResult {
         do {
-            return try await runTranscribe(path: path, prompt: prompt, config: config, safeMode: false)
+            return try await runTranscribe(path: path, prompt: prompt, config: config, safeMode: false, unloadAfter: unloadAfter)
         } catch MLHostError.helperCrashed {
             var safe = config
             safe.computeUnits = .cpuAndGPU   // keep decoder off the ANE
-            return try await runTranscribe(path: path, prompt: prompt, config: safe, safeMode: true)
+            return try await runTranscribe(path: path, prompt: prompt, config: safe, safeMode: true, unloadAfter: unloadAfter)
         }
     }
 
-    private func runTranscribe(path: String, prompt: String?, config: WhisperRuntimeConfig, safeMode: Bool) async throws -> TranscriptionResult {
+    private func runTranscribe(path: String, prompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
         guard case let .transcriptionResult(r) = try await connection.call(
-            .transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode)
+            .transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
         ) else { throw WireError(kind: .generic, message: "no transcription") }
         return r
     }

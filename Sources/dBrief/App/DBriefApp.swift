@@ -369,7 +369,7 @@ struct MenuBarView: View {
             }
         }
         .task {
-            appState.queuedCount = recordingManager.discoverQueuedItems().count
+            await recordingManager.refreshQueuedCount()
         }
         .padding(12)
         // Let the window-style popover size to its content rather than forcing a

@@ -1,3 +1,33 @@
+## dBrief 1.3.4
+
+**Faster, lighter, and steadier.** This release is a top-to-bottom performance sweep — the same dBrief, using noticeably less CPU, GPU, and memory on the paths that do the most work. Nothing about how you use it changes; it just runs leaner. Plus a few worthwhile fixes.
+
+### Faster transcription, especially on long recordings
+
+- **Long recordings stop reloading the model.** A recording over 30 minutes is split into parts and transcribed piece by piece — which used to reload the Whisper (and diarization) models for *every* part. A 3-hour meeting reloaded them about six times. Now the models stay resident across all parts, so long recordings finish sooner.
+- **Each part is decoded once.** The audio for each part is now decoded a single time and shared across transcription, diarization, and voiceprints, instead of being re-decoded two or three times.
+
+### Much lower memory use
+
+- **Waveforms stream instead of loading whole.** Drawing the audio waveform used to decode the entire file into memory at once — hundreds of megabytes for a 30-minute recording. It now streams in small blocks.
+- **Webhook uploads stream from disk.** Sending audio to a webhook no longer holds the whole file in memory twice.
+- **Leaner chat and history.** The transcript-chat cache is now capped, and recent-recording lists load off the main thread so the app stays responsive.
+
+### Smoother, quieter UI
+
+- **Playback no longer re-computes the transcript ten times a second.** Speaker turns are cached, so scrubbing and playing back a transcript is smooth even on long recordings.
+- **Calmer live transcript and meters.** The live transcript stops re-merging every finalized line on each partial update, and the recording meter runs from a single source (peak level at 10 Hz, elapsed time at 1 Hz) instead of two overlapping loops.
+- **Snappier chat rendering.** Streaming AI replies render as plain text while they arrive and format once they're done, instead of re-parsing Markdown on every token.
+- **Less idle work.** The watched-folders poller no longer wakes every few seconds when the feature is off, and prompt-editor edits are batched instead of writing to disk on every keystroke.
+
+### Fixes
+
+- **A recorder resource is now released on stop.** The microphone-activity listener used for call detection wasn't being detached when recording stopped; it now is.
+- **No more spurious "finalization error" on a silent mic track.** A recording with an empty microphone track (e.g. system-audio only) no longer surfaces a benign empty track as an error.
+- **Speaker-review window no longer crashes on macOS 26.** The confirm-first speaker-review window could crash on macOS 26; that's fixed.
+
+---
+
 ## dBrief 1.3.3
 
 **Cleaner notes and titles you're in control of.** This release polishes how dBrief exports to Obsidian and how it handles the meeting title you type — plus your custom analysis prompts now reach the on-device engines too.
