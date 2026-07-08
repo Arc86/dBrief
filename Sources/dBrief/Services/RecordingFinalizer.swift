@@ -7,6 +7,22 @@ struct RecordingFinalizationResult: Sendable {
     let warnings: [String]
 }
 
+/// Classifies a finalization warning string into a benign, informational note
+/// versus a genuine problem. A "track missing or empty" note is expected and
+/// harmless — e.g. a listen-only meeting where the mic captured nothing — so the
+/// UI shows it informationally rather than as a red error step, while real
+/// problems (ffmpeg missing, merge/segmentation failures) stay surfaced as errors.
+enum FinalizationWarning {
+    /// Substring stamped into the benign "one source was silent/absent, the
+    /// recording still succeeded from the other track" warnings. Shared with the
+    /// message construction below so the two can never drift apart.
+    static let emptyTrackMarker = "track missing or empty"
+
+    static func isInformational(_ warning: String) -> Bool {
+        warning.contains(emptyTrackMarker)
+    }
+}
+
 actor RecordingFinalizer {
     private let fileManager = FileManager.default
 
@@ -40,10 +56,10 @@ actor RecordingFinalizer {
                 micURL:    tracks.micURL.flatMap    { hasAudioContent($0) ? $0 : nil }
             )
             if usableTracks.systemURL == nil, let url = tracks.systemURL {
-                warnings.append("System audio track missing or empty (\(url.lastPathComponent)); using mic-only output.")
+                warnings.append("System audio \(FinalizationWarning.emptyTrackMarker) (\(url.lastPathComponent)); using mic-only output.")
             }
             if usableTracks.micURL == nil, let url = tracks.micURL {
-                warnings.append("Mic track missing or empty (\(url.lastPathComponent)).")
+                warnings.append("Mic \(FinalizationWarning.emptyTrackMarker) (\(url.lastPathComponent)).")
             }
             do {
                 try transcodeWithFFmpeg(

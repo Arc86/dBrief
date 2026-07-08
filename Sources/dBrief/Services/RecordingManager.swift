@@ -398,11 +398,16 @@ final class RecordingManager {
             try await ensureRecordingFinalized(recording: recording)
             perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
             appState.processingSteps[finalizationStepIndex].status = .completed
-            if !recording.finalizationWarnings.isEmpty {
+            // Only surface genuine problems (ffmpeg missing, merge/segmentation
+            // failures) as a red error step. A benign "track missing or empty" note —
+            // e.g. a listen-only meeting where the mic captured nothing — is expected
+            // and stays quietly in the metadata sidecar, not shown as a failure.
+            let finalizationProblems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
+            if !finalizationProblems.isEmpty {
                 appState.processingSteps.append(
                     ProcessingStep(
                         name: "Audio finalization warnings",
-                        status: .failed(recording.finalizationWarnings.joined(separator: "\n"))
+                        status: .failed(finalizationProblems.joined(separator: "\n"))
                     )
                 )
             }
