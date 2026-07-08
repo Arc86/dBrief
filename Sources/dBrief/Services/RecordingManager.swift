@@ -27,7 +27,9 @@ final class RecordingManager {
     /// Exposed for TranscriptChatService — read-only reference; access serialized by the helper's AsyncMutex.
     var localPlugin: LocalAIPluginService { localAIPluginService }
     var miniPlayer: FloatingMiniPlayerController?
-    private var processingTask: Task<Void, Never>?
+    /// Set by the manual "Process Queue" button so the drain chain also processes
+    /// user-deferred items (not just auto-queued overflow); reset once the queue is drained.
+    private var drainAllQueued = false
     /// Auto-clears the transient `appState.recordingStatusNote` a few seconds after a switch.
     private var statusNoteClearTask: Task<Void, Never>?
     /// Observable per-model download state, read by the Settings download buttons.
@@ -346,14 +348,18 @@ final class RecordingManager {
         }
     }
 
+    /// Runs the full pipeline for one background `ProcessingJob`. The job is created and
+    /// installed on `AppState.processingJob` by `launchJob(...)` before this runs, and torn
+    /// down via `finishJob(for:)` at the pipeline's terminal points — NOT when this task
+    /// returns (a confirm-first review makes it return early while the job stays alive).
     func processRecording(
+        job: ProcessingJob,
         transcribe: Bool,
         summary: Bool,
         actionItems: Bool,
         tags: Bool
     ) async {
-        guard appState.recordingState != .processing else { return }
-        guard let recording = appState.currentRecording else { return }
+        let recording = job.recording
         let localAIAvailable: Bool = {
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
@@ -364,21 +370,20 @@ final class RecordingManager {
             return false
             #endif
         }()
-        appState.recordingState = .processing
         appState.showPostRecordingSheet = false
         appState.preflightWarning = nil
         appState.processingSteps = []
-        appState.liveTranscriptSegments = []
-        appState.liveVolatileMic = ""
-        appState.liveVolatileSystem = ""
-        appState.liveStatusMessage = ""
-        appState.isLiveTranscribing = false
         appState.liveInferenceText = nil
+        // NOTE: the capture live-preview fields (liveTranscriptSegments, liveVolatile*,
+        // isLiveTranscribing, liveStatusMessage) are deliberately NOT cleared here — a new
+        // recording may be capturing concurrently and owns them. This job's progressive
+        // segments go to `job.progressiveSegments` instead.
 
         // Make sure the calendar lookup started at stop has finished before the pipeline reads
         // calendarEvent for title/participants/AI context — a fast user can otherwise click
         // Process before the (network) Outlook lookup resolves. Completed/absent task → no-op.
-        // State is already .processing above, so this suspension can't re-enter processRecording.
+        // The job is already installed on `AppState.processingJob`, and `startProcessing`
+        // guards against a second job, so this suspension can't spawn a duplicate pipeline.
         await recording.calendarLookupTask?.value
 
         // Measured transcription-side performance for this session. Carried into
@@ -413,8 +418,13 @@ final class RecordingManager {
             }
         } catch {
             appState.processingSteps[finalizationStepIndex].status = .failed(error.localizedDescription)
-            appState.recordingState = .idle
-            appState.showPostRecordingSheet = true
+            // Re-offer the post-recording sheet only if the capture slot still holds THIS
+            // recording and capture is idle — otherwise a newer recording owns the sheet/
+            // controls and we'd show the wrong one over an active capture.
+            if appState.currentRecording === recording, appState.recordingState == .idle {
+                appState.showPostRecordingSheet = true
+            }
+            finishJob(for: recording)
             return
         }
 
@@ -783,7 +793,10 @@ final class RecordingManager {
             }
         }
 
-        // Step 4: Integration dispatch
+        // Step 4: Integration dispatch. Guard cancellation here so a job cancelled during
+        // analysis doesn't still push content to external destinations (the local markdown/
+        // sidecars above are harmless to keep). `cancelProcessing` owns teardown + drain.
+        guard !Task.isCancelled else { return }
         if hasEnabledIntegrations {
             let results = await integrationDispatchService.dispatch(
                 recording: recording,
@@ -808,8 +821,6 @@ final class RecordingManager {
             }
         }
 
-        appState.recordingState = .idle
-
         // Send completion notification
         let failedCount = appState.processingSteps.filter {
             if case .failed = $0.status { return true }
@@ -819,6 +830,69 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+
+        finishJob(for: recording)
+    }
+
+    /// Tears down a completed/failed job: removes its queue sidecar (if it came from the
+    /// queue), clears `AppState.processingJob`, and drains the next queued item. Idempotent
+    /// and matched by identity so a stale call can't clobber a newer job. NOT called on a
+    /// confirm-first review hold — the job stays alive there until analysis resumes.
+    private func finishJob(for recording: Recording) {
+        if let job = appState.processingJob, job.recording === recording {
+            if let url = job.queuedAudioURL { Self.removeQueueFile(for: url) }
+            appState.processingJob = nil
+        }
+        drainQueueIfNeeded()
+    }
+
+    /// Creates a `ProcessingJob` for `recording`, installs it as the single active job, and
+    /// runs `body` inside the job's own cancellable task. `processingRecording` is kept so
+    /// the results/completion UI targets this recording, not a newer capture slot.
+    @discardableResult
+    private func launchJob(
+        recording: Recording,
+        queuedAudioURL: URL? = nil,
+        _ body: @escaping (ProcessingJob) async -> Void
+    ) -> ProcessingJob {
+        let job = ProcessingJob(recording: recording, queuedAudioURL: queuedAudioURL)
+        appState.processingJob = job
+        appState.processingRecording = recording
+        job.task = Task { await body(job) }
+        return job
+    }
+
+    /// Starts the next eligible queued item as a background job, if no job is running.
+    /// Auto-queued overflow items always drain; user-deferred items only when
+    /// `drainAllQueued` is set (the manual "Process Queue" button). Chains: each finished
+    /// job's `finishJob` calls this again until nothing eligible remains.
+    func drainQueueIfNeeded() {
+        guard appState.processingJob == nil else { return }
+        let queued = discoverQueuedItems()
+        appState.queuedCount = queued.count
+        guard let (audioURL, item) = queued.first(where: { drainAllQueued || $0.item.autoQueued }) else {
+            drainAllQueued = false
+            return
+        }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+        let size = (attrs?[.size] as? Int64) ?? 0
+        let name = audioURL.deletingPathExtension().lastPathComponent
+        let recording = Recording(
+            fileURL: audioURL,
+            fileSize: size,
+            meetingTitleDraft: name,
+            finalizedAudioURL: audioURL
+        )
+        recording.titleWasUserProvided = item.titleWasUserProvided
+        launchJob(recording: recording, queuedAudioURL: audioURL) { job in
+            await self.processRecording(
+                job: job,
+                transcribe: item.transcribe,
+                summary: item.summary,
+                actionItems: item.actionItems,
+                tags: item.tags
+            )
+        }
     }
 
     /// Confirm-first: the user accepted/corrected speaker names. Apply them to the
@@ -867,13 +941,30 @@ final class RecordingManager {
     private func resumeAfterReview(session: SpeakerReviewSession, recording: Recording) async {
         switch session.origin {
         case .pipeline:
-            await runAnalysisAndExport(
-                recording: recording,
-                transcribe: session.transcribe,
-                summary: session.summary, actionItems: session.actionItems,
-                tags: session.tags, localAIAvailable: session.localAIAvailable,
-                perf: session.perf)
+            // Resume the held job's remaining pipeline INSIDE its own task so
+            // `cancelProcessing()` can cancel it and the auto-drain can't launch a second
+            // job while this resumed analysis is still running. `runAnalysisAndExport`
+            // ends by calling `finishJob(for:)`, which tears the job down and drains.
+            if let job = appState.processingJob, job.recording === recording {
+                job.task = Task {
+                    await self.runAnalysisAndExport(
+                        recording: recording,
+                        transcribe: session.transcribe,
+                        summary: session.summary, actionItems: session.actionItems,
+                        tags: session.tags, localAIAvailable: session.localAIAvailable,
+                        perf: session.perf)
+                }
+            } else {
+                // Defensive: job vanished (shouldn't happen) — run directly.
+                await runAnalysisAndExport(
+                    recording: recording,
+                    transcribe: session.transcribe,
+                    summary: session.summary, actionItems: session.actionItems,
+                    tags: session.tags, localAIAvailable: session.localAIAvailable,
+                    perf: session.perf)
+            }
         case .rediarize:
+            // A re-diarize from the transcript viewer isn't a pipeline job — no teardown.
             appState.speakerReviewCommit = SpeakerReviewCommit(
                 recordingID: recording.id, token: UUID(), offerReanalysis: true)
         }
@@ -953,7 +1044,10 @@ final class RecordingManager {
     /// Skips finalization and transcription — loads the saved transcript and reruns
     /// AI tasks, title generation, markdown export, and integration dispatch.
     func retryAIAnalysis(for recording: Recording) async {
-        guard appState.recordingState != .processing else { return }
+        // Retry works on an already-transcribed recording; refuse while a job runs (the
+        // GPU is busy and the progress UI is owned by that job). The button is disabled
+        // in that state anyway.
+        guard appState.processingJob == nil else { return }
 
         // Load transcript from disk if not already in memory
         if recording.transcription == nil {
@@ -986,11 +1080,19 @@ final class RecordingManager {
             #endif
         }()
 
-        // Set up processing state
-        appState.currentRecording = recording
-        appState.recordingState = .processing
+        // Run as a background job (no finalize/transcribe — reuses the saved transcript).
         appState.processingSteps = []
         appState.liveInferenceText = nil
+        let job = launchJob(recording: recording) { job in
+            await self.performRetryAnalysis(job: job, localAIAvailable: localAIAvailable)
+        }
+        await job.task?.value
+    }
+
+    /// Body of `retryAIAnalysis`, run inside the job's task so it's cancellable and torn
+    /// down via `finishJob(for:)`.
+    private func performRetryAnalysis(job: ProcessingJob, localAIAvailable: Bool) async {
+        let recording = job.recording
 
         // Measured AI performance for this retry session (logged below).
         var perfAIModel: String?
@@ -1141,7 +1243,10 @@ final class RecordingManager {
             appState.processingSteps[markdownStepIndex].status = .failed(error.localizedDescription)
         }
 
-        // Step 4: Integration dispatch
+        // Step 4: Integration dispatch. Guard cancellation here so a job cancelled during
+        // analysis doesn't still push content to external destinations (the local markdown/
+        // sidecars above are harmless to keep). `cancelProcessing` owns teardown + drain.
+        guard !Task.isCancelled else { return }
         if hasEnabledIntegrations {
             let results = await integrationDispatchService.dispatch(
                 recording: recording,
@@ -1166,8 +1271,6 @@ final class RecordingManager {
             }
         }
 
-        appState.recordingState = .idle
-
         // Send completion notification
         let failedCount = appState.processingSteps.filter {
             if case .failed = $0.status { return true }
@@ -1177,33 +1280,56 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+
+        finishJob(for: recording)
     }
 
     func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
-        processingTask = Task {
-            await processRecording(transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags)
-            processingTask = nil
+        guard let recording = appState.currentRecording else { return }
+        // Only one job processes at a time. If one is already running, defer this recording
+        // as auto-queued overflow — it drains automatically when the current job finishes,
+        // and capture returns to idle so the user can immediately record the next meeting.
+        if appState.processingJob != nil {
+            Task { await self.queueForLater(transcribe: transcribe, summary: summary,
+                                            actionItems: actionItems, tags: tags, autoQueued: true) }
+            return
+        }
+        launchJob(recording: recording) { job in
+            await self.processRecording(job: job, transcribe: transcribe, summary: summary,
+                                        actionItems: actionItems, tags: tags)
         }
     }
 
+    /// Manual "Process Queue" button: drain everything, including user-deferred items.
     func startProcessingQueue() {
-        processingTask = Task {
-            await processQueue()
-            processingTask = nil
-        }
+        drainAllQueued = true
+        drainQueueIfNeeded()
     }
 
     func cancelProcessing() async {
-        processingTask?.cancel()
-        processingTask = nil
+        let job = appState.processingJob
+        job?.task?.cancel()
+        appState.processingJob = nil
         appState.liveInferenceText = nil
         for i in appState.processingSteps.indices {
             if case .inProgress = appState.processingSteps[i].status {
                 appState.processingSteps[i].status = .failed("Cancelled by user")
             }
         }
-        appState.recordingState = .idle
-        await forceReleaseGPU()
+        // Tear down any confirm-first review the cancelled job had armed, so it can't be
+        // resumed later against a job that no longer exists.
+        if appState.pendingSpeakerReview?.recording === job?.recording {
+            appState.pendingSpeakerReview = nil
+            appState.recordingStatusNote = nil
+            SpeakerReviewWindowController.shared.dismissForCancelledJob()
+        }
+        // NOTE: do NOT reset `recordingState` — a new recording may be capturing
+        // concurrently, and forcing `.idle` would tear its Stop control away.
+        await forceReleaseGPU()   // evicts helper models (incl. a concurrent capture's Whisper prewarm — acceptable)
+        // Let the cancelled task fully unwind BEFORE draining the queue, so we never run two
+        // pipelines at once (the UI already reflects the cancel — this only gates the drain).
+        await job?.task?.value
+        drainQueueIfNeeded()
     }
 
     func pickFileForTranscription() {
@@ -1292,7 +1418,7 @@ final class RecordingManager {
     /// the same path as YouTube imports, so it lands in History with outputs in dBrief's
     /// folders rather than scattering sidecars next to the source.
     func processWatchedFile(_ sourceURL: URL) async {
-        guard appState.recordingState == .idle else { return }
+        guard appState.recordingState == .idle, appState.processingJob == nil else { return }
 
         let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
         let tempURL = FileManager.default.temporaryDirectory
@@ -1317,20 +1443,26 @@ final class RecordingManager {
         recording.importSourceURL = tempURL
         recording.duration = await durationSeconds(for: tempURL)
 
-        // Re-check idleness: the user may have started a recording while we awaited
-        // AVFoundation's duration probe. Don't clobber a live recording's state.
-        guard appState.recordingState == .idle else {
+        // Re-check idleness: the user may have started a recording or a job may have begun
+        // while we awaited AVFoundation's duration probe. Don't contend with either.
+        guard appState.recordingState == .idle, appState.processingJob == nil else {
             try? FileManager.default.removeItem(at: tempURL)
             return
         }
-        appState.currentRecording = recording
 
-        await processRecording(
-            transcribe: appSettings.autoTranscribe,
-            summary: appSettings.autoSummary && appSettings.autoTranscribe,
-            actionItems: appSettings.autoActionItems && appSettings.autoTranscribe,
-            tags: appSettings.autoTags && appSettings.autoTranscribe
-        )
+        // Headless: run as a background job (no capture slot, no post-recording sheet) and
+        // await completion so the watched-folder poller stays serial (its `isIdle` gate also
+        // defers new files while this job runs).
+        let job = launchJob(recording: recording) { job in
+            await self.processRecording(
+                job: job,
+                transcribe: self.appSettings.autoTranscribe,
+                summary: self.appSettings.autoSummary && self.appSettings.autoTranscribe,
+                actionItems: self.appSettings.autoActionItems && self.appSettings.autoTranscribe,
+                tags: self.appSettings.autoTags && self.appSettings.autoTranscribe
+            )
+        }
+        await job.task?.value
     }
 
     func skipProcessing() async {
@@ -1373,11 +1505,16 @@ final class RecordingManager {
         recording.capturedTracks = nil
     }
 
+    /// Finalizes the current recording and writes a `.queue.json` sidecar for later
+    /// processing. `autoQueued` marks overflow (a recording finished while a job was
+    /// running) — those drain automatically; explicit "Queue for later" (autoQueued:false)
+    /// waits for the manual "Process Queue" button. Returns capture to idle either way.
     func queueForLater(
         transcribe: Bool,
         summary: Bool,
         actionItems: Bool,
-        tags: Bool
+        tags: Bool,
+        autoQueued: Bool = false
     ) async {
         guard let recording = appState.currentRecording else { return }
 
@@ -1393,7 +1530,8 @@ final class RecordingManager {
             summary: summary && transcribe,
             actionItems: actionItems && transcribe,
             tags: tags && transcribe,
-            titleWasUserProvided: recording.titleWasUserProvided
+            titleWasUserProvided: recording.titleWasUserProvided,
+            autoQueued: autoQueued
         )
 
         do {
@@ -1405,40 +1543,10 @@ final class RecordingManager {
 
         appState.showPostRecordingSheet = false
         appState.recordingState = .idle
+        appState.currentRecording = nil
         appState.queuedCount = discoverQueuedItems().count
-    }
-
-    func processQueue() async {
-        guard appState.recordingState != .processing else { return }
-
-        let queued = discoverQueuedItems()
-        guard !queued.isEmpty else { return }
-
-        for (audioURL, item) in queued {
-            let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
-            let size = (attrs?[.size] as? Int64) ?? 0
-            let name = audioURL.deletingPathExtension().lastPathComponent
-
-            let recording = Recording(
-                fileURL: audioURL,
-                fileSize: size,
-                meetingTitleDraft: name,
-                finalizedAudioURL: audioURL
-            )
-            recording.titleWasUserProvided = item.titleWasUserProvided
-
-            appState.currentRecording = recording
-            await processRecording(
-                transcribe: item.transcribe,
-                summary: item.summary,
-                actionItems: item.actionItems,
-                tags: item.tags
-            )
-
-            Self.removeQueueFile(for: audioURL)
-        }
-
-        appState.queuedCount = discoverQueuedItems().count
+        // Auto-queued overflow starts immediately if no job is currently running.
+        drainQueueIfNeeded()
     }
 
     func purgeLocalWhisperModel() async throws {
@@ -1456,13 +1564,14 @@ final class RecordingManager {
     /// True when models may be downloaded (no active recording/processing that
     /// would contend for the GPU mutex and the shared state stream).
     var canDownloadModels: Bool {
-        appState.recordingState == .idle
+        appState.recordingState == .idle && appState.processingJob == nil
     }
 
-    /// True when no recording or processing is in flight — safe for the watched-folder
-    /// poller to start a headless transcription.
+    /// True when no recording AND no processing is in flight — safe for the watched-folder
+    /// poller to start a headless transcription. (Distinct from `AppState.isIdle`, which is
+    /// capture-only and drives the Record button.)
     var isIdle: Bool {
-        appState.recordingState == .idle
+        appState.recordingState == .idle && appState.processingJob == nil
     }
 
     /// Fetch the list of available WhisperKit model variants from HuggingFace,
@@ -1963,7 +2072,9 @@ final class RecordingManager {
         case .transcribing:
             appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
         case .newSegments(let segments):
-            appState.liveTranscriptSegments.append(contentsOf: segments)
+            // Progressive segments belong to THIS job's "In Progress" view, not the shared
+            // capture live-set (a new recording may be capturing concurrently).
+            appState.processingJob?.progressiveSegments.append(contentsOf: segments)
             return // don't update step name
         case .diarizing:
             appState.processingSteps[stepIndex].name = "Identifying speakers"

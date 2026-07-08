@@ -9,6 +9,12 @@ struct QueueItem: Codable, Sendable, Identifiable {
     /// Preserves the user's custom-title choice across the queue so AI title generation
     /// stays suppressed when the item is processed later. Defaults false for old queue files.
     var titleWasUserProvided: Bool = false
+    /// True when the item was auto-enqueued as overflow (a recording finished while another
+    /// job was already processing) rather than explicitly deferred by the user via the
+    /// "Queue" button. Only auto-queued items drain automatically when the current job
+    /// finishes; user-deferred items wait for the manual "Process Queue" button. Defaults
+    /// false for old queue files and for explicit "Queue for later".
+    var autoQueued: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -16,7 +22,8 @@ struct QueueItem: Codable, Sendable, Identifiable {
         summary: Bool,
         actionItems: Bool,
         tags: Bool,
-        titleWasUserProvided: Bool = false
+        titleWasUserProvided: Bool = false,
+        autoQueued: Bool = false
     ) {
         self.id = id
         self.transcribe = transcribe
@@ -24,6 +31,7 @@ struct QueueItem: Codable, Sendable, Identifiable {
         self.actionItems = actionItems
         self.tags = tags
         self.titleWasUserProvided = titleWasUserProvided
+        self.autoQueued = autoQueued
     }
 
     init(from decoder: Decoder) throws {
@@ -34,5 +42,6 @@ struct QueueItem: Codable, Sendable, Identifiable {
         actionItems = try c.decode(Bool.self, forKey: .actionItems)
         tags = try c.decode(Bool.self, forKey: .tags)
         titleWasUserProvided = try c.decodeIfPresent(Bool.self, forKey: .titleWasUserProvided) ?? false
+        autoQueued = try c.decodeIfPresent(Bool.self, forKey: .autoQueued) ?? false
     }
 }

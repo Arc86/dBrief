@@ -4,17 +4,29 @@ import dBriefWire
 @MainActor
 @Observable
 final class AppState {
+    /// Capture-only state machine. Processing is tracked separately via `processingJob`
+    /// so a new recording can start (capture `.idle`) while a previous recording is still
+    /// being processed in the background.
     enum RecordingState: Equatable {
         case idle
         case recording
         case paused
-        case processing
     }
 
     var recordingState: RecordingState = .idle
     var recordingDuration: TimeInterval = 0
     var peakLevel: Float = 0
+    /// The recording currently being **captured** (or awaiting the post-recording sheet).
+    /// Distinct from `processingJob.recording` — a new capture may overwrite this slot
+    /// while a prior recording is still processing.
     var currentRecording: Recording?
+    /// The single in-flight background processing job, or nil when none is running.
+    /// Non-nil also while a job is paused for confirm-first speaker review.
+    var processingJob: ProcessingJob?
+    /// The recording that `processingSteps` / `liveInferenceText` describe. Set when a job
+    /// starts and kept after it finishes (until the next job) so the results/completion UI
+    /// targets the processed recording, not the (possibly newer) capture `currentRecording`.
+    var processingRecording: Recording?
     var recentRecordings: [Recording] = []
     /// Non-nil while a recording is paused for confirm-first speaker review.
     var pendingSpeakerReview: SpeakerReviewSession?
@@ -58,7 +70,10 @@ final class AppState {
 
     var isRecording: Bool { recordingState == .recording }
     var isPaused: Bool { recordingState == .paused }
-    var isProcessing: Bool { recordingState == .processing }
+    /// True while a background processing job is running (independent of capture state).
+    var isProcessing: Bool { processingJob != nil }
+    /// True when **capture** is idle — drives the Record button/hotkey. A background
+    /// processing job may still be running.
     var isIdle: Bool { recordingState == .idle }
     var hasProcessingResults: Bool { !processingSteps.isEmpty }
 

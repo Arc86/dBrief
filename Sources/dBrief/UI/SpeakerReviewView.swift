@@ -45,20 +45,29 @@ struct SpeakerReviewView: View {
         }
     }
 
-    /// The card list scrolls inside whatever height the window assigns it
-    /// (`SpeakerReviewWindowController` sizes the window explicitly). Always a
-    /// ScrollView so a slightly-off height estimate scrolls rather than clips;
-    /// `.basedOnSize` suppresses the bounce when the content is shorter than the
-    /// frame, so a couple of speakers still look tight.
+    /// Beyond this many speakers the card list scrolls inside a capped height
+    /// instead of growing an unwieldy window.
+    private static let maxUnscrolledCards = 5
+    /// Capped card-area height once scrolling kicks in (≈ five cards).
+    private static let scrolledCardsHeight: CGFloat = 450
+
+    /// Cards hug their content so the window can size to fit exactly
+    /// (`SpeakerReviewWindowController` measures this view's `fittingSize`), which
+    /// needs an intrinsically-sized subtree — a bare `VStack`, not an unbounded
+    /// `ScrollView`. Only past `maxUnscrolledCards` do we cap the height and scroll.
+    @ViewBuilder
     private var cardsArea: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                ForEach(items) { card($0) }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+        let stack = VStack(spacing: 8) {
+            ForEach(items) { card($0) }
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+
+        if items.count > Self.maxUnscrolledCards {
+            ScrollView { stack }.frame(height: Self.scrolledCardsHeight)
+        } else {
+            stack
+        }
     }
 
     // MARK: Header / footer
