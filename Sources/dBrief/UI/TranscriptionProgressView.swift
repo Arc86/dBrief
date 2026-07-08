@@ -122,7 +122,7 @@ struct TranscriptionProgressView: View {
                     .tint(.red)
                 }
 
-                if !appState.liveTranscriptSegments.isEmpty {
+                if appState.processingJob?.progressiveSegments.isEmpty == false {
                     Button {
                         appState.pendingLiveTranscriptSelection = true
                         openWindow(id: "transcript")
@@ -146,7 +146,7 @@ struct TranscriptionProgressView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if isComplete, let recording = appState.currentRecording, recording.transcription != nil {
+            if isComplete, let recording = appState.processingRecording, recording.transcription != nil {
                 Divider()
                 HStack {
                     Button(copied ? "Copied!" : "Copy Notes") {

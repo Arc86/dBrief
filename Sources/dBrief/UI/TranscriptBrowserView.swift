@@ -37,11 +37,20 @@ struct TranscriptBrowserView: View {
         return items.first { $0.url == selection }
     }
 
-    /// The in-progress recording (recording or processing), pinned at the top of
-    /// the sidebar so it can be viewed live. `nil` when idle.
+    /// The recording currently being **captured** (recording/paused), pinned at the top
+    /// of the sidebar so it can be viewed live. `nil` when capture is idle.
     private var liveRecording: Recording? {
         guard appState.recordingState != .idle else { return nil }
         return appState.currentRecording
+    }
+
+    /// The recording being **processed** in the background, pinned separately so it can
+    /// coexist with a concurrent capture. `nil` when no job is running. Guarded against
+    /// duplicating the capture pin (they're always different recordings, but be safe).
+    private var processingRecording: Recording? {
+        guard let job = appState.processingJob else { return nil }
+        if let live = liveRecording, live.id == job.recording.id { return nil }
+        return job.recording
     }
 
     var body: some View {
@@ -95,8 +104,14 @@ struct TranscriptBrowserView: View {
             applyPendingLiveSelection()
         }
         .onChange(of: appState.recordingState) { _, newState in
-            // Reload once a recording finishes so it appears as a normal entry.
+            // Reload once a capture finishes so it appears as a normal entry.
             if newState == .idle { reload() }
+            rebuildDetailRecording()
+        }
+        .onChange(of: appState.isProcessing) { _, nowProcessing in
+            // Processing no longer changes `recordingState`, so reload when a background
+            // job finishes so the completed recording appears as a normal entry.
+            if !nowProcessing { reload() }
             rebuildDetailRecording()
         }
     }
@@ -144,7 +159,7 @@ struct TranscriptBrowserView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
 
-            if items.isEmpty && liveRecording == nil {
+            if items.isEmpty && liveRecording == nil && processingRecording == nil {
                 Spacer()
                 ContentUnavailableView(
                     "No Recordings",
@@ -154,13 +169,22 @@ struct TranscriptBrowserView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        if let live = liveRecording {
+                        if liveRecording != nil || processingRecording != nil {
                             sectionLabel("In Progress")
-                            LiveSidebarRow(
-                                recording: live,
-                                recordingState: appState.recordingState,
-                                isSelected: selection == live.fileURL,
-                                onTap: { selection = live.fileURL })
+                            if let live = liveRecording {
+                                LiveSidebarRow(
+                                    recording: live,
+                                    isProcessing: false,
+                                    isSelected: selection == live.fileURL,
+                                    onTap: { selection = live.fileURL })
+                            }
+                            if let proc = processingRecording {
+                                LiveSidebarRow(
+                                    recording: proc,
+                                    isProcessing: true,
+                                    isSelected: selection == proc.fileURL,
+                                    onTap: { selection = proc.fileURL })
+                            }
                         }
                         if !thisWeekItems.isEmpty {
                             sectionLabel("This week", count: thisWeekItems.count)
@@ -301,9 +325,13 @@ struct TranscriptBrowserView: View {
     }
 
     private func rebuildDetailRecording() {
-        // Selecting the pinned live entry shows the live `currentRecording` directly.
+        // Selecting a pinned in-progress entry shows that recording object directly.
         if let live = liveRecording, selection == live.fileURL {
             if detailRecording?.fileURL != live.fileURL { detailRecording = live }
+            return
+        }
+        if let proc = processingRecording, selection == proc.fileURL {
+            if detailRecording?.fileURL != proc.fileURL { detailRecording = proc }
             return
         }
         if let item = selectedItem {
@@ -324,7 +352,10 @@ struct TranscriptBrowserView: View {
 
     private func applyPendingLiveSelection() {
         guard appState.pendingLiveTranscriptSelection else { return }
-        if let live = liveRecording { selection = live.fileURL }
+        // Prefer the background processing job's row (the "Live Transcript" button in the
+        // processing progress view is the common source); fall back to the capture row.
+        if let proc = processingRecording { selection = proc.fileURL }
+        else if let live = liveRecording { selection = live.fileURL }
         appState.pendingLiveTranscriptSelection = false
     }
 
@@ -441,7 +472,7 @@ private struct SidebarRecordingRow: View {
 /// Pinned in-progress row — pulsing red/orange dot plus "Recording…/Processing…".
 private struct LiveSidebarRow: View {
     let recording: Recording
-    let recordingState: AppState.RecordingState
+    let isProcessing: Bool
     let isSelected: Bool
     let onTap: () -> Void
     @Environment(\.colorScheme) private var scheme
@@ -450,10 +481,10 @@ private struct LiveSidebarRow: View {
     @State private var pulse = false
 
     private var statusText: String {
-        recordingState == .processing ? "Processing…" : "Recording…"
+        isProcessing ? "Processing…" : "Recording…"
     }
     private var dotColor: Color {
-        recordingState == .processing ? .orange : .red
+        isProcessing ? .orange : .red
     }
 
     var body: some View {

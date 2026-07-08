@@ -115,21 +115,37 @@ struct TranscriptDetailView: View {
         return !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// True while this view shows the in-progress (recording or processing)
-    /// recording — drives the real-time live transcript + chat mode.
-    private var isLive: Bool {
+    /// True while this view shows the recording currently being **captured**.
+    private var isCaptureLive: Bool {
         guard let current = context.appState.currentRecording else { return false }
         return current.id == recording.id && context.appState.recordingState != .idle
     }
 
+    /// True while this view shows the recording currently being **processed** in the
+    /// background (progressive transcript arriving on the job).
+    private var isProcessingLive: Bool {
+        context.appState.processingJob?.recording.id == recording.id
+    }
+
+    /// True while this view shows the in-progress (recording or processing) recording —
+    /// drives the real-time live transcript + chat mode.
+    private var isLive: Bool { isCaptureLive || isProcessingLive }
+
+    /// The live segment source for this recording: the background job's progressive
+    /// segments when processing, otherwise the shared capture live-set.
+    private var liveSegments: [LiveTranscriptSegment] {
+        if isProcessingLive { return context.appState.processingJob?.progressiveSegments ?? [] }
+        return context.appState.liveTranscriptSegments
+    }
+
     /// Finalized live turns, cached so a volatile partial (which arrives many
     /// times per second) doesn't re-run `speakerTurns()` over every finalized
-    /// segment. Rebuilt only when `liveTranscriptSegments` grows.
+    /// segment. Rebuilt only when the live segments grow.
     @State private var liveTurns: [SpeakerTurn] = []
 
-    /// Rebuilds `liveTurns` from the current `liveTranscriptSegments`.
+    /// Rebuilds `liveTurns` from the current live segments.
     private func refreshLiveTurns() {
-        let segs = context.appState.liveTranscriptSegments.map { seg in
+        let segs = liveSegments.map { seg in
             RichSegment(start: seg.start, end: seg.end, text: seg.text,
                         originalText: seg.text, speakerId: seg.speaker)
         }
@@ -198,12 +214,13 @@ struct TranscriptDetailView: View {
                 recomputeSearch()
             }
         }
-        .onChange(of: context.appState.recordingState) { _, newState in
-            // When the live recording finishes, swap the live preview for the
-            // authoritative on-disk transcript. Keep a non-empty live chat and
-            // re-point it at that transcript (so the Q&A history carries over);
-            // drop an empty one so a fresh chat is built against the final text.
-            guard newState == .idle, context.appState.currentRecording?.id == recording.id else { return }
+        .onChange(of: isLive) { _, live in
+            // When this recording stops being live — capture ended AND no background job is
+            // processing it — swap the live preview for the authoritative on-disk transcript.
+            // Keep a non-empty live chat and re-point it at that transcript (so the Q&A
+            // history carries over); drop an empty one so a fresh chat is built against the
+            // final text.
+            guard !live else { return }
             showLiveChat = false
             let liveChat = chatStore.session(for: recording.fileURL)
             if liveChat?.hasHistory != true {
@@ -982,13 +999,13 @@ struct TranscriptDetailView: View {
     private var liveStatusBanner: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(context.appState.recordingState == .processing ? Color.orange : Color.red)
+                .fill(isProcessingLive ? Color.orange : Color.red)
                 .frame(width: 9, height: 9)
-            Text(context.appState.recordingState == .processing ? "Processing…" : "Recording — live transcript")
+            Text(isProcessingLive ? "Processing…" : "Recording — live transcript")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
-            Text("\(context.appState.liveTranscriptSegments.count) segments")
+            Text("\(liveSegments.count) segments")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -999,8 +1016,10 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var liveTranscriptList: some View {
-        let mic = context.appState.liveVolatileMic
-        let system = context.appState.liveVolatileSystem
+        // Volatile partials are a capture-only preview; a recording shown here because it's
+        // being processed must not display a concurrent capture's volatile text.
+        let mic = isCaptureLive ? context.appState.liveVolatileMic : ""
+        let system = isCaptureLive ? context.appState.liveVolatileSystem : ""
         if liveTurns.isEmpty && mic.isEmpty && system.isEmpty {
             liveWaitingState
         } else {
@@ -1019,7 +1038,7 @@ struct TranscriptDetailView: View {
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
-                .onChange(of: context.appState.liveTranscriptSegments.count) { _, _ in
+                .onChange(of: liveSegments.count) { _, _ in
                     // A new finalized segment: refresh the cached turns (a volatile
                     // partial alone leaves the count unchanged, so this doesn't
                     // re-run speakerTurns() on every partial), then scroll.
@@ -1282,8 +1301,9 @@ struct TranscriptDetailView: View {
             // Chat against the live, growing transcript: the provider re-reads the
             // current segments + volatile lines on each send().
             let appState = context.appState
+            let recordingID = recording.id
             service = TranscriptChatService(
-                transcriptProvider: { Self.liveTranscriptText(appState: appState) },
+                transcriptProvider: { Self.liveTranscriptText(appState: appState, recordingID: recordingID) },
                 speakerLabels: labels,
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin
@@ -1312,13 +1332,27 @@ struct TranscriptDetailView: View {
     /// Snapshot of the live transcript (finalized segments + in-progress lines),
     /// speaker-prefixed, for the live chat provider.
     @MainActor
-    private static func liveTranscriptText(appState: AppState) -> String {
-        var lines: [String] = appState.liveTranscriptSegments.map { seg in
+    private static func liveTranscriptText(appState: AppState, recordingID: UUID) -> String {
+        // Resolve the source for THIS recording specifically, so a concurrent capture can't
+        // feed its transcript into a processing recording's chat (or vice versa).
+        let isCapture = appState.currentRecording?.id == recordingID && appState.recordingState != .idle
+        let segments: [LiveTranscriptSegment]
+        if isCapture {
+            segments = appState.liveTranscriptSegments
+        } else if appState.processingJob?.recording.id == recordingID {
+            segments = appState.processingJob?.progressiveSegments ?? []
+        } else {
+            segments = []
+        }
+        var lines: [String] = segments.map { seg in
             if let speaker = seg.speaker { return "\(speaker): \(seg.text)" }
             return seg.text
         }
-        if !appState.liveVolatileMic.isEmpty { lines.append("You: \(appState.liveVolatileMic)") }
-        if !appState.liveVolatileSystem.isEmpty { lines.append("Participant: \(appState.liveVolatileSystem)") }
+        // Volatile partials are a capture-only preview.
+        if isCapture {
+            if !appState.liveVolatileMic.isEmpty { lines.append("You: \(appState.liveVolatileMic)") }
+            if !appState.liveVolatileSystem.isEmpty { lines.append("Participant: \(appState.liveVolatileSystem)") }
+        }
         return lines.joined(separator: "\n")
     }
 

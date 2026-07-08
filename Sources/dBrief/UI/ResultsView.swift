@@ -19,7 +19,9 @@ struct ResultsView: View {
     }
 
     var body: some View {
-        guard let recording = appState.currentRecording else { return AnyView(EmptyView()) }
+        // The results reflect the processed recording, which may differ from the capture
+        // slot (`currentRecording`) if a new recording started meanwhile.
+        guard let recording = appState.processingRecording else { return AnyView(EmptyView()) }
         return AnyView(content(recording: recording))
     }
 
@@ -263,7 +265,7 @@ struct ResultsView: View {
             Spacer()
             Button("Retry") {
                 Task {
-                    guard let recording = appState.currentRecording else { return }
+                    guard let recording = appState.processingRecording else { return }
                     appState.preflightWarning = nil
                     await recordingManager.retryAIAnalysis(for: recording)
                 }

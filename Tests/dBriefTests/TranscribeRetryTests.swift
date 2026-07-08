@@ -49,7 +49,7 @@ private func withTimeout<T: Sendable>(seconds: Double, _ op: @escaping @Sendable
     /// second that crashes once and recovers in safe mode — while a per-op task
     /// consumes the shared `stateStream` each time (as `withPluginStepAdapter`
     /// does). The retry result must still come back; if it hangs, the UI step
-    /// never completes (recordingState stuck on `.processing`).
+    /// never completes (the processing job stays stuck).
     @Test func secondOpCrashesAndStillReturnsWhileConsumingStateStream() async throws {
         let conn = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
                                     supportBase: URL(fileURLWithPath: "/tmp"),

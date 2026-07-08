@@ -124,6 +124,16 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Dismiss the window without treating it as Cancel — used when the owning processing
+    /// job is cancelled outright, so the review is moot and must not resume anything.
+    /// `isCompleting` suppresses the `windowWillClose` → `cancelReview` path; `show()`
+    /// resets it for the next review.
+    func dismissForCancelledJob() {
+        guard window != nil else { return }
+        isCompleting = true
+        teardown()
+    }
+
     // The user closed the window with the red button (no Confirm/Cancel pressed):
     // treat as Cancel so the held pipeline resumes and nothing is stranded.
     func windowWillClose(_ notification: Notification) {
