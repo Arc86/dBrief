@@ -27,17 +27,6 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
     /// Fixed content width — must match `SpeakerReviewView`'s `.frame(width:)`.
     private static let windowWidth: CGFloat = 392
 
-    /// Explicit window height so we never depend on `preferredContentSize`
-    /// self-sizing (which crashes — see `show()`). Tight for a few speakers,
-    /// capped so a long list scrolls inside the card area.
-    private static func windowHeight(forSpeakerCount count: Int) -> CGFloat {
-        let chrome: CGFloat = 124       // header + footer + dividers
-        let cardsPadding: CGFloat = 24  // cards area vertical padding
-        let perCard: CGFloat = 80       // one card + inter-card spacing
-        let n = max(1, count)
-        return min(max(chrome + cardsPadding + CGFloat(n) * perCard, 220), 600)
-    }
-
     func configure(appState: AppState, appSettings: AppSettings,
                    recordingManager: RecordingManager, audioPlayer: AudioPlayer) {
         self.appState = appState
@@ -72,19 +61,25 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         // self-sizing path (safe-area ↔ content-size feedback under a full-size-
         // content transparent titlebar) can reentrantly re-request a constraints
         // pass mid-cycle and crash with an uncaught AppKit exception on macOS 26.
-        // The content is a fixed-width column with an internally scrollable card
-        // list, so a computed height is safe. Mirrors CallDetectedOverlayController.
+        // The content is a fixed-width column with an intrinsically-sized card
+        // list, so a measured height is safe. Mirrors CallDetectedOverlayController.
         hosting.sizingOptions = []
 
-        let speakerCount = appState.pendingSpeakerReview?.items.count ?? 1
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth,
-                                height: Self.windowHeight(forSpeakerCount: speakerCount)),
+            contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: 200),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: true
         )
         win.contentViewController = hosting
+        // Size to the SwiftUI content's real fitting height (a one-shot AppKit
+        // measurement, not the crashing `preferredContentSize` auto-size path —
+        // the same pattern `FloatingMiniPlayer` uses safely). The view scrolls
+        // internally past its card cap, so clamp to a sane floor/ceiling.
+        hosting.view.layoutSubtreeIfNeeded()
+        let fitted = hosting.view.fittingSize.height
+        let height = min(max(fitted, 200), 640)
+        win.setContentSize(NSSize(width: Self.windowWidth, height: height))
         win.title = "Confirm Speakers"
         // Seamless glass: the material background fills the whole window (incl. under
         // the titlebar), matching the rest of the app's translucent windows.
