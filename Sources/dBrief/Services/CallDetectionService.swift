@@ -26,12 +26,30 @@ final class CallDetectionService {
         CallApp(bundleId: "com.google.Chrome.app.kjgfgldnnfobanfaklcjnmoidpaoolgp", name: "Google Meet", brandIcon: .google, sfSymbol: ""),
     ]
 
+    /// Browsers that can host a web call (Google Meet, etc.). Used both to identify a web call
+    /// on start and to detect a web call ending via per-process mic input.
+    static let knownBrowsers: [(bundleId: String, name: String)] = [
+        ("com.google.Chrome", "Chrome"),
+        ("com.apple.Safari", "Safari"),
+        ("company.thebrowser.Browser", "Arc"),
+        ("com.microsoft.edgemac", "Edge"),
+        ("org.mozilla.firefox", "Firefox"),
+        ("com.brave.Browser", "Brave"),
+    ]
+
     private var workspaceObservers: [NSObjectProtocol] = []
     private weak var appState: AppState?
     private weak var appSettings: AppSettings?
     private weak var recordingManager: RecordingManager?
     private var micMonitor: MicActivityMonitor?
     private var micActive = false
+
+    /// Per-process mic-input monitor used to detect a call *ending* (macOS 14.2+). Boxed as
+    /// `AnyObject` so the stored property needs no availability annotation.
+    private var callAudioMonitor: AnyObject?
+    /// Debounce timers, keyed by bundle id: a brief input drop (mute, device switch) must not
+    /// read as a call ending. Only a sustained input-off fires the call-end path.
+    private var callEndGraceTasks: [String: Task<Void, Never>] = [:]
 
     var detectedApps: Set<String> = []
 
@@ -72,8 +90,10 @@ final class CallDetectionService {
 
         workspaceObservers = [launchObserver, terminateObserver]
 
-        // Start mic activity monitoring
+        // Start mic activity monitoring (detects a call starting).
         startMicMonitoring()
+        // Start per-process mic-input monitoring (detects a call ending) on supported macOS.
+        startCallAudioMonitoring()
     }
 
     func stop() {
@@ -83,6 +103,12 @@ final class CallDetectionService {
         workspaceObservers = []
         micMonitor?.stop()
         micMonitor = nil
+        if #available(macOS 14.2, *) {
+            (callAudioMonitor as? CallAudioActivityMonitor)?.stop()
+        }
+        callAudioMonitor = nil
+        for task in callEndGraceTasks.values { task.cancel() }
+        callEndGraceTasks.removeAll()
     }
 
     func startMicMonitoring() {
@@ -95,8 +121,85 @@ final class CallDetectionService {
         micMonitor?.start()
     }
 
+    private func startCallAudioMonitoring() {
+        guard #available(macOS 14.2, *) else { return }
+        let monitored = Set(Self.knownCallApps.map(\.bundleId))
+            .union(Self.knownBrowsers.map(\.bundleId))
+        let monitor = CallAudioActivityMonitor(monitoredBundleIds: monitored) { [weak self] bundleId, isRunningInput in
+            Task { @MainActor in
+                self?.handleCallAudioInputChange(bundleId: bundleId, isRunningInput: isRunningInput)
+            }
+        }
+        callAudioMonitor = monitor
+        monitor.start()
+    }
+
+    /// A monitored call app's own mic input changed. Input resuming cancels any pending
+    /// call-end; input stopping (sustained past a grace period) means the meeting ended.
+    private func handleCallAudioInputChange(bundleId: String, isRunningInput: Bool) {
+        if isRunningInput {
+            callEndGraceTasks[bundleId]?.cancel()
+            callEndGraceTasks[bundleId] = nil
+            return
+        }
+
+        guard let appState, let appSettings else { return }
+        guard appSettings.callDetectionEnabled, appSettings.stopRecordingOnCallEnd != .off else { return }
+        guard appState.isRecording || appState.isPaused else { return }
+
+        callEndGraceTasks[bundleId]?.cancel()
+        callEndGraceTasks[bundleId] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.callEndGraceTasks[bundleId] = nil
+            self?.handleCallEnded(bundleId: bundleId)
+        }
+    }
+
+    /// Apply the user's stop-on-call-end preference for a call that has ended.
+    private func handleCallEnded(bundleId: String) {
+        guard let appState, let appSettings else { return }
+
+        let outcome = CallEndDecision.decide(
+            action: appSettings.stopRecordingOnCallEnd,
+            scope: appSettings.callEndScope,
+            isCapturing: appState.isRecording || appState.isPaused,
+            endedBundleId: bundleId,
+            initiatorBundleId: appState.callRecordingBundleId,
+            alreadyPrompting: appState.showCallEndedPopup
+        )
+
+        switch outcome {
+        case .ignore:
+            return
+        case .stop:
+            log.info("Call ended (\(bundleId, privacy: .public)) — auto-stopping recording")
+            appState.callRecordingBundleId = nil
+            Task { await recordingManager?.stopRecording() }
+        case .prompt:
+            log.info("Call ended (\(bundleId, privacy: .public)) — prompting to stop")
+            appState.callEndedApp = Self.displayName(forBundleId: bundleId)
+            appState.showCallEndedPopup = true
+        }
+    }
+
+    /// Human-readable name for a known call app or browser bundle id.
+    private static func displayName(forBundleId bundleId: String) -> String {
+        if let app = knownCallApps.first(where: { $0.bundleId == bundleId }) {
+            return app.name
+        }
+        if let browser = knownBrowsers.first(where: { $0.bundleId == bundleId }) {
+            return "Web call (\(browser.name))"
+        }
+        return "Call"
+    }
+
     private func handleMicActivityChange(isActive: Bool) {
         micActive = isActive
+        // Only mic *activation* is used here (to detect a call starting). Mic *deactivation*
+        // can't detect a call ending: dBrief holds the microphone open for the whole recording,
+        // so the aggregate default-input device never goes idle mid-recording. Call-end is
+        // detected per-process instead (see startCallAudioMonitoring / CallAudioActivityMonitor).
         guard isActive else { return }
         guard let appState, let appSettings else { return }
         guard appSettings.callDetectionEnabled else { return }
@@ -120,7 +223,7 @@ final class CallDetectionService {
         if appSettings.autoRecordCalls {
             log.info("Auto-starting recording for mic activity (\(appName, privacy: .public))")
             Task {
-                try? await recordingManager?.startRecording(associatedApp: appName)
+                try? await recordingManager?.startRecording(associatedApp: appName, callBundleId: bundleId)
             }
         } else {
             appState.detectedCallApp = appName
@@ -139,15 +242,7 @@ final class CallDetectionService {
             return (match.name, match.bundleId)
         }
 
-        let browserBundles: [(id: String, name: String)] = [
-            ("com.google.Chrome", "Chrome"),
-            ("com.apple.Safari", "Safari"),
-            ("company.thebrowser.Browser", "Arc"),
-            ("com.microsoft.edgemac", "Edge"),
-            ("org.mozilla.firefox", "Firefox"),
-            ("com.brave.Browser", "Brave"),
-        ]
-        if let browser = browserBundles.first(where: { $0.id == bundleId }) {
+        if let browser = Self.knownBrowsers.first(where: { $0.bundleId == bundleId }) {
             return ("Web call (\(browser.name))", bundleId)
         }
 
@@ -176,6 +271,12 @@ final class CallDetectionService {
             }
         } else {
             detectedApps.remove(match.name)
+            // On macOS 14.2+ the per-process mic monitor detects call-end (even while the app
+            // stays running); there, app termination is redundant and would double-fire. On
+            // older macOS, a quitting call app is the only available call-end signal.
+            if #unavailable(macOS 14.2) {
+                handleCallEnded(bundleId: bundleId)
+            }
         }
     }
 
@@ -191,7 +292,7 @@ final class CallDetectionService {
         if appSettings.autoRecordCalls {
             log.info("Auto-starting recording for \(appName, privacy: .public)")
             Task {
-                try? await recordingManager?.startRecording(associatedApp: appName)
+                try? await recordingManager?.startRecording(associatedApp: appName, callBundleId: bundleId)
             }
         } else {
             appState.detectedCallApp = appName

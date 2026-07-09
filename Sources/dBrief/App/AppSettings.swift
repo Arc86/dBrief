@@ -22,6 +22,8 @@ final class AppSettings {
         static let autoRecordCalls = "autoRecordCalls"
         static let autoDismissCallPromptSeconds = "autoDismissCallPromptSeconds"
         static let disabledCallApps = "disabledCallApps"
+        static let stopRecordingOnCallEnd = "stopRecordingOnCallEnd"
+        static let callEndScope = "callEndScope"
         static let transcriptionLanguage = "transcriptionLanguage"
         static let useBuiltInTranscription = "useBuiltInTranscription"
         static let transcriptionEngine = "transcriptionEngine"
@@ -232,6 +234,36 @@ final class AppSettings {
             switch self {
             case .optimistic: "Auto-label matched voices and keep processing."
             case .confirmFirst: "Pause to review speaker names before analysis."
+            }
+        }
+    }
+
+    /// What dBrief does when the call app that started a recording ends its meeting.
+    /// Best-effort: on macOS 14.2+ it fires when the call app stops using the mic
+    /// (even while the app stays running); on older macOS only when the app quits.
+    enum CallEndAction: String, CaseIterable, Codable, Hashable, Sendable {
+        case off        // never react to a call ending
+        case prompt     // show a "call ended — stop recording?" prompt (default)
+        case autoStop   // stop the recording automatically
+
+        var displayName: String {
+            switch self {
+            case .off: "Do nothing"
+            case .prompt: "Ask me"
+            case .autoStop: "Stop automatically"
+            }
+        }
+    }
+
+    /// Which recordings the call-end action applies to.
+    enum CallEndScope: String, CaseIterable, Codable, Hashable, Sendable {
+        case callInitiatedOnly   // only recordings dBrief started for a call (default)
+        case anyActiveRecording  // any active recording when a known call ends
+
+        var displayName: String {
+            switch self {
+            case .callInitiatedOnly: "Only recordings started for a call"
+            case .anyActiveRecording: "Any active recording"
             }
         }
     }
@@ -728,6 +760,16 @@ final class AppSettings {
         }
     }
 
+    /// What to do when the call app that started a recording ends its meeting.
+    var stopRecordingOnCallEnd: CallEndAction {
+        didSet { UserDefaults.standard.set(stopRecordingOnCallEnd.rawValue, forKey: Keys.stopRecordingOnCallEnd) }
+    }
+
+    /// Which recordings `stopRecordingOnCallEnd` applies to.
+    var callEndScope: CallEndScope {
+        didSet { UserDefaults.standard.set(callEndScope.rawValue, forKey: Keys.callEndScope) }
+    }
+
     // MARK: - Endpoints
 
     var transcriptionEndpoints: [Endpoint] {
@@ -935,6 +977,10 @@ final class AppSettings {
         }
         self.autoRecordCalls = defaults.object(forKey: Keys.autoRecordCalls) as? Bool ?? false
         self.disabledCallApps = Set(defaults.stringArray(forKey: Keys.disabledCallApps) ?? [])
+        self.stopRecordingOnCallEnd = defaults.string(forKey: Keys.stopRecordingOnCallEnd)
+            .flatMap(CallEndAction.init(rawValue:)) ?? .prompt
+        self.callEndScope = defaults.string(forKey: Keys.callEndScope)
+            .flatMap(CallEndScope.init(rawValue:)) ?? .callInitiatedOnly
 
         self.transcriptionEndpoints = Self.loadEndpoints(forKey: Keys.transcriptionEndpoints)
         self.aiEndpoints = Self.loadEndpoints(forKey: Keys.aiEndpoints)

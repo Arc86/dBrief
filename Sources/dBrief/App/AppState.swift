@@ -46,6 +46,17 @@ final class AppState {
     var detectedCallApp: String?
     var detectedCallAppBundleId: String?
 
+    /// Bundle id of the call app that started the current recording, or `nil` for a
+    /// manually started recording. Drives the `.callInitiatedOnly` stop-on-call-end scope.
+    var callRecordingBundleId: String?
+    /// Display name of the ended call, shown in the "call ended — stop recording?" prompt.
+    var callEndedApp: String?
+    var showCallEndedPopup = false {
+        didSet {
+            NotificationCenter.default.post(name: .callEndedPopupChanged, object: showCallEndedPopup)
+        }
+    }
+
     var processingSteps: [ProcessingStep] = []
     var liveInferenceText: String?
     var liveTranscriptSegments: [LiveTranscriptSegment] = []
