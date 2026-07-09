@@ -15,6 +15,12 @@ struct PostRecordingSheet: View {
     @State private var participantInput = ""
     @FocusState private var participantFieldFocused: Bool
     @State private var confirmingDelete = false
+    @State private var participantsBoxHeight: CGFloat = 0
+
+    /// Beyond ≈4–5 pill rows the participants box caps its height and scrolls
+    /// internally, so a large calendar attendee list can't push the action row
+    /// (Skip / Queue / Process) off the bottom of the menu-bar popover.
+    private static let participantsFieldMaxHeight: CGFloat = 168
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -341,19 +347,33 @@ struct PostRecordingSheet: View {
     /// `participantsText` (comma-separated) stays the canonical store so calendar
     /// auto-fill and `applyFieldsToRecording` keep working unchanged.
     private var participantsField: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(participantNames, id: \.self) { name in
-                ParticipantPill(name: name, color: Theme.speakerColor(for: name)) {
-                    removeParticipant(name)
+        ScrollView(.vertical) {
+            FlowLayout(spacing: 6) {
+                ForEach(participantNames, id: \.self) { name in
+                    ParticipantPill(name: name, color: Theme.speakerColor(for: name)) {
+                        removeParticipant(name)
+                    }
                 }
+                TextField("Add name…", text: $participantInput)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .frame(minWidth: 90)
+                    .focused($participantFieldFocused)
+                    .onSubmit(addParticipant)
             }
-            TextField("Add name…", text: $participantInput)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .frame(minWidth: 90)
-                .focused($participantFieldFocused)
-                .onSubmit(addParticipant)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ParticipantsHeightKey.self, value: proxy.size.height)
+                }
+            )
         }
+        // Grow with the content, then cap and scroll. Measured height (min 30 so
+        // the input row is always visible) drives the frame so the box hugs its
+        // content instead of a bare ScrollView eating the popover's height.
+        .frame(height: min(max(participantsBoxHeight, 30), Self.participantsFieldMaxHeight))
+        .scrollBounceBehavior(.basedOnSize)
+        .onPreferenceChange(ParticipantsHeightKey.self) { participantsBoxHeight = $0 }
         .padding(7)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
@@ -476,4 +496,11 @@ struct PostRecordingSheet: View {
         let end = event.endDate.formatted(date: .omitted, time: .shortened)
         return "\(title)  \(start)–\(end)"
     }
+}
+
+/// Reports the participants `FlowLayout`'s natural (wrapped) height so the box can
+/// size to fit up to a cap, then scroll.
+private struct ParticipantsHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
