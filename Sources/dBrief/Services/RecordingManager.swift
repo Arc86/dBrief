@@ -130,7 +130,7 @@ final class RecordingManager {
     var hasSystemAudioPermission: Bool { audioCaptureManager.hasSystemAudioPermission }
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
 
-    func startRecording(associatedApp: String? = nil) async throws {
+    func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {
         // A recording takes priority over any in-flight model download: cancel
         // active downloads so the recording pipeline is the sole consumer of the
         // services' state streams (and the GPU mutex is free).
@@ -144,6 +144,9 @@ final class RecordingManager {
             meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
         )
         appState.currentRecording = recording
+        // Tag the recording with the call app that started it (nil for manual starts),
+        // so the stop-on-call-end feature can match this call's own end signal.
+        appState.callRecordingBundleId = callBundleId
 
         // The calendar lookup happens at stopRecording (not here): only once recording stops
         // is the true span [start, start+duration] known, which the span-aware CalendarMatcher
@@ -300,6 +303,7 @@ final class RecordingManager {
         }
 
         appState.recordingState = .idle
+        appState.callRecordingBundleId = nil
         appState.showPostRecordingSheet = true
         miniPlayer?.dismiss()
     }

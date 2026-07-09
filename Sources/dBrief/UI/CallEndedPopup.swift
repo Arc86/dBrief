@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct CallDetectedPopup: View {
+struct CallEndedPopup: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
@@ -34,37 +34,36 @@ struct CallDetectedPopup: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    BrandKicker("Call detected", color: Brand.coral)
+                    BrandKicker("Call ended", color: Brand.coral)
 
-                    Text("\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected")
+                    Text("\(appState.callEndedApp ?? "Call") ended")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
-                    Text("Want dBrief to record and brief it?")
+                    Text("Stop recording and brief it?")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     HStack(spacing: 10) {
-                        Button("Not now") {
-                            appState.showCallDetectedPopup = false
+                        Button("Keep recording") {
+                            appState.showCallEndedPopup = false
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
 
                         Button {
-                            appState.showCallDetectedPopup = false
+                            appState.showCallEndedPopup = false
+                            appState.callRecordingBundleId = nil
                             Task {
-                                try? await recordingManager.startRecording(
-                                    associatedApp: appState.detectedCallApp,
-                                    callBundleId: appState.detectedCallAppBundleId
-                                )
+                                await recordingManager.stopRecording()
                             }
                         } label: {
                             HStack(spacing: 7) {
-                                RecordGlyph(size: 14)
-                                Text("Record")
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Stop")
                             }
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
@@ -82,9 +81,9 @@ struct CallDetectedPopup: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-            // Dismiss button — top-trailing, on top
+            // Dismiss button — top-trailing, on top. Dismissing keeps recording.
             Button {
-                appState.showCallDetectedPopup = false
+                appState.showCallEndedPopup = false
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
@@ -92,13 +91,11 @@ struct CallDetectedPopup: View {
                     .padding(10)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel("Keep recording")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .frame(width: 380, height: 132)
-        // Clip to the card shape so the gradient top bar follows the rounded
-        // corners instead of overhanging them as a straight line.
+        // Clip to the card shape so the gradient top bar follows the rounded corners.
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
-

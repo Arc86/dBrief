@@ -77,6 +77,22 @@ struct SettingsGeneralTab: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    Picker("When a call ends:", selection: $settings.stopRecordingOnCallEnd) {
+                        ForEach(AppSettings.CallEndAction.allCases, id: \.self) { action in
+                            Text(action.displayName).tag(action)
+                        }
+                    }
+                    if appSettings.stopRecordingOnCallEnd != .off {
+                        Picker("Apply to:", selection: $settings.callEndScope) {
+                            ForEach(AppSettings.CallEndScope.allCases, id: \.self) { scope in
+                                Text(scope.displayName).tag(scope)
+                            }
+                        }
+                    }
+                    Text("Detects when the meeting app stops using the microphone (Teams, Zoom, Slack, Meet). On older macOS, only works when the meeting app fully quits.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .listRowBackground(Color.clear)
