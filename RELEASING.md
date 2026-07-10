@@ -40,6 +40,8 @@ make run                                                                        
 
 First, curate the highlights for this version in [`RELEASE_NOTES.md`](RELEASE_NOTES.md) (headline user-facing changes — auto-generated commit lists read poorly on their own) and commit. Then build, sign, and notarize in one atomic step:
 
+> **Exclude dev-only tooling.** These notes are user-facing (they feed both the Sparkle update dialog and the GitHub release body), so leave out changes that only affect development or release workflow — e.g. the **beta build channel** (`make beta`/`make run-beta`), Makefile/CI plumbing, and test-only scaffolding. Users of the notarized production build never see those, so they don't belong in the changelog.
+
 ```bash
 make notarize \
   CODESIGN_IDENTITY="Developer ID Application: Jesper Mol (9WFDLY652Y)" \
