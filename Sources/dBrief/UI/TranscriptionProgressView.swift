@@ -78,7 +78,14 @@ struct TranscriptionProgressView: View {
                             .progressViewStyle(.linear)
                             .frame(height: 4)
                             .padding(.leading, 24)
+                            .padding(.top, 4)
                             .animation(.linear(duration: 0.3), value: progress)
+                    }
+                    if case .inProgress = step.status, let detail = step.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 24)
                     }
                     if case .failed(let message) = step.status, !message.isEmpty {
                         ScrollView {
@@ -122,7 +129,11 @@ struct TranscriptionProgressView: View {
                     .tint(.red)
                 }
 
-                if appState.processingJob?.progressiveSegments.isEmpty == false {
+                // Show once WhisperKit streams segments, or once transcription proper is
+                // under way for any engine (Parakeet/Apple don't stream but the window
+                // still shows the progress bar + ETA and fills in when done).
+                if appState.processingJob?.progressiveSegments.isEmpty == false
+                    || appState.processingJob?.transcriptionStartedAt != nil {
                     Button {
                         appState.pendingLiveTranscriptSelection = true
                         openWindow(id: "transcript")

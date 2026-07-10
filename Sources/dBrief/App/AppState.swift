@@ -98,6 +98,9 @@ struct ProcessingStep: Identifiable {
     var name: String
     var status: Status
     var progress: Double?   // 0.0–1.0 for determinate, nil for indeterminate spinner
+    /// Optional secondary line under the step (e.g. "about 2 min left" during
+    /// transcription). Nil when there's nothing to show.
+    var detail: String?
 
     enum Status {
         case pending

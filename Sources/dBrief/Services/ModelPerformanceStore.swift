@@ -41,6 +41,23 @@ actor ModelPerformanceStore {
         loadedRecords()
     }
 
+    /// Average end-to-end transcription realtime ratio (audio-seconds transcribed
+    /// per wall-second) for a given model, used to estimate a live ETA. Averages
+    /// `audioDuration / transcriptionTime` over every record for that model that
+    /// carries both timings; returns `nil` when there's no usable history, so the
+    /// caller falls back to an indeterminate spinner rather than a fake bar.
+    func averageTranscriptionRealtime(forModel model: String) -> Double? {
+        let ratios = loadedRecords().compactMap { record -> Double? in
+            guard record.transcriptionModel == model,
+                  let audio = record.audioDuration, audio > 0,
+                  let wall = record.transcriptionTime, wall > 0
+            else { return nil }
+            return audio / wall
+        }
+        guard !ratios.isEmpty else { return nil }
+        return ratios.reduce(0, +) / Double(ratios.count)
+    }
+
     /// Append a session and persist. Best-effort: failures are logged, not thrown.
     func append(_ record: ModelPerformanceRecord) {
         var records = loadedRecords()

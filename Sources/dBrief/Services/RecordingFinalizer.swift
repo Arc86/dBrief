@@ -31,7 +31,8 @@ actor RecordingFinalizer {
         recording: Recording,
         baseFolder: URL,
         segmentationEnabled: Bool = true,
-        echoSuppressionEnabled: Bool = true
+        echoSuppressionEnabled: Bool = true,
+        onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> RecordingFinalizationResult {
         let snapshot = await MainActor.run { Snapshot(recording: recording) }
         let normalizedTitle = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
@@ -67,7 +68,8 @@ actor RecordingFinalizer {
                     tracks: usableTracks,
                     outputURL: masterURL,
                     snapshot: snapshot,
-                    echoSuppressionEnabled: echoSuppressionEnabled
+                    echoSuppressionEnabled: echoSuppressionEnabled,
+                    onProgress: onProgress
                 )
                 if let url = tracks.systemURL, fileManager.fileExists(atPath: url.path) {
                     try? fileManager.removeItem(at: url)
@@ -198,7 +200,8 @@ actor RecordingFinalizer {
         tracks: CapturedTracks,
         outputURL: URL,
         snapshot: Snapshot,
-        echoSuppressionEnabled: Bool
+        echoSuppressionEnabled: Bool,
+        onProgress: (@Sendable (Double) -> Void)? = nil
     ) throws {
         let isoDate = ISO8601DateFormatter().string(from: snapshot.date)
         let title = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
@@ -281,7 +284,13 @@ actor RecordingFinalizer {
             throw RecordingFinalizerError.ffmpegFailed("No input tracks to finalize.")
         }
 
-        let result = runFFmpeg(ffmpegPath: ffmpegPath, arguments: args)
+        // Stream ffmpeg's -progress output into a determinate progress fraction when
+        // we know the target duration and a caller wants updates. The merge/encode is
+        // single-pass, so out_time advances monotonically to the recording length.
+        let progress: FFmpegProgress? = onProgress.flatMap { handler in
+            snapshot.duration > 0 ? FFmpegProgress(duration: snapshot.duration, handler: handler) : nil
+        }
+        let result = runFFmpeg(ffmpegPath: ffmpegPath, arguments: args, progress: progress)
         guard result.status == 0 else {
             throw RecordingFinalizerError.ffmpegFailed(result.stderr)
         }
@@ -350,40 +359,105 @@ actor RecordingFinalizer {
         }
     }
 
-    private func runFFmpeg(ffmpegPath: String, arguments: [String]) -> ProcessResult {
+    private func runFFmpeg(
+        ffmpegPath: String,
+        arguments: [String],
+        progress: FFmpegProgress? = nil
+    ) -> ProcessResult {
         if ffmpegPath == "/usr/bin/env" {
             return runProcess(
                 executable: ffmpegPath,
-                arguments: ["ffmpeg"] + arguments
+                arguments: ["ffmpeg"] + arguments,
+                progress: progress
             )
         }
-        return runProcess(executable: ffmpegPath, arguments: arguments)
+        return runProcess(executable: ffmpegPath, arguments: arguments, progress: progress)
     }
 
-    private func runProcess(executable: String, arguments: [String]) -> ProcessResult {
+    private func runProcess(
+        executable: String,
+        arguments: [String],
+        progress: FFmpegProgress? = nil
+    ) -> ProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
+        // When a caller wants progress, ask ffmpeg to emit machine-readable key/value
+        // progress on stdout and silence the stderr stats spam. Prepended so it applies
+        // before the output file argument.
+        process.arguments = progress == nil ? arguments : ["-progress", "pipe:1", "-nostats"] + arguments
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Parse -progress output live off stdout as it streams. The readability handler
+        // runs on a background queue while waitUntilExit() blocks this thread, so it
+        // updates the fraction without waiting for the encode to finish.
+        if let progress, progress.duration > 0 {
+            let duration = progress.duration
+            let handler = progress.handler
+            let buffer = ProgressLineBuffer()
+            stdoutPipe.fileHandleForReading.readabilityHandler = { fh in
+                let data = fh.availableData
+                guard !data.isEmpty else { return }
+                for line in buffer.append(data) {
+                    if let seconds = RecordingFinalizer.parseFFmpegProgressSeconds(from: line) {
+                        handler(min(0.99, max(0, seconds / duration)))
+                    }
+                }
+            }
+        }
+
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
             return ProcessResult(status: -1, stdout: "", stderr: error.localizedDescription)
         }
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        // Detach the live reader before draining the remaining pipe data.
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        let stdout = progress == nil
+            ? (String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+            : ""
         let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         return ProcessResult(
             status: Int(process.terminationStatus),
             stdout: stdout,
             stderr: stderr
         )
+    }
+
+    /// Duration + handler bundle for streaming ffmpeg `-progress` into a 0…1 fraction.
+    private struct FFmpegProgress {
+        let duration: TimeInterval
+        let handler: @Sendable (Double) -> Void
+    }
+
+    /// Parse the seconds elapsed from one ffmpeg `-progress` output line. Prefers the
+    /// unambiguous microsecond field, falling back to the `HH:MM:SS.ffffff` timecode.
+    /// Returns `nil` for non-time lines and `N/A` placeholders. Pure — unit-tested.
+    static func parseFFmpegProgressSeconds(from line: String) -> Double? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if let range = trimmed.range(of: "out_time_us=") {
+            if let us = Double(trimmed[range.upperBound...]), us >= 0 { return us / 1_000_000 }
+            return nil
+        }
+        if let range = trimmed.range(of: "out_time=") {
+            return parseTimecodeSeconds(String(trimmed[range.upperBound...]))
+        }
+        return nil
+    }
+
+    /// Parse an `HH:MM:SS.ffffff` timecode into seconds. Pure — unit-tested.
+    static func parseTimecodeSeconds(_ timecode: String) -> Double? {
+        let parts = timecode.split(separator: ":")
+        guard parts.count == 3,
+              let h = Double(parts[0]), let m = Double(parts[1]), let s = Double(parts[2])
+        else { return nil }
+        return h * 3600 + m * 60 + s
     }
 
     private func writeMetadata(_ payload: RecordingMetadataPayload, to url: URL) throws {
@@ -428,6 +502,23 @@ private struct ProcessResult: Sendable {
     let status: Int
     let stdout: String
     let stderr: String
+}
+
+/// Accumulates streamed ffmpeg `-progress` bytes and yields complete lines. Only ever
+/// touched from a single `FileHandle` readability queue, so the mutable state is safe
+/// despite `@unchecked Sendable`.
+private final class ProgressLineBuffer: @unchecked Sendable {
+    private var partial = ""
+
+    func append(_ data: Data) -> [String] {
+        partial += String(decoding: data, as: UTF8.self)
+        var lines: [String] = []
+        while let newline = partial.firstIndex(of: "\n") {
+            lines.append(String(partial[..<newline]))
+            partial = String(partial[partial.index(after: newline)...])
+        }
+        return lines
+    }
 }
 
 private struct Snapshot: Sendable {

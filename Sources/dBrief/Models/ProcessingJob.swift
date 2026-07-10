@@ -35,6 +35,13 @@ final class ProcessingJob {
     /// reserved for a concurrently-active capture's live preview.
     var progressiveSegments: [LiveTranscriptSegment] = []
 
+    /// When actual transcription (not model download/load) began, used to drive the
+    /// live progress/ETA estimate. Set on the engine's first "transcribing" signal
+    /// (or at call time for engines with no in-app download phase), and cleared when
+    /// transcription proper ends (e.g. the vocabulary-correction post-step begins) so
+    /// the ETA ticker stops writing.
+    var transcriptionStartedAt: Date?
+
     init(recording: Recording, queuedAudioURL: URL? = nil) {
         self.recording = recording
         self.queuedAudioURL = queuedAudioURL
