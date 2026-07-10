@@ -26,6 +26,7 @@ DerivedData/
 .superpowers/
 .worktrees/
 .serena/
+graphify-out/
 
 # Internal development artifacts (not for the public repo)
 # Anchored to the repo root so it does NOT match the published site/docs/.
