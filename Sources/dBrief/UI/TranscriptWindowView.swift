@@ -1052,18 +1052,44 @@ struct TranscriptDetailView: View {
 
     private var liveWaitingState: some View {
         // Surface live status (e.g. "Preparing language…" while a first-run speech
-        // asset downloads) when present; otherwise the default listening/preparing copy.
+        // asset downloads) when present; otherwise the default copy.
         let status = context.appState.liveStatusMessage
-        let headline = !status.isEmpty
-            ? status
-            : (context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
+        // The in-progress transcription step carries the determinate progress + ETA
+        // (WS3), so a file being processed shows a real bar instead of a bare spinner —
+        // including for engines (Parakeet/Apple) that don't stream partial segments.
+        let inProgressStep = context.appState.processingSteps.first {
+            if case .inProgress = $0.status { return true }
+            return false
+        }
+        let headline: String
+        let subtitle: String
+        if isProcessingLive {
+            headline = status.isEmpty ? "Transcribing your recording…" : status
+            subtitle = "The transcript appears here as it's processed."
+        } else {
+            headline = !status.isEmpty
+                ? status
+                : (context.appState.isLiveTranscribing ? "Listening…" : "Preparing live transcription…")
+            subtitle = "Spoken words appear here as you record."
+        }
         return VStack(spacing: 12) {
             Spacer()
-            ProgressView()
+            if isProcessingLive, let progress = inProgressStep?.progress {
+                ProgressView(value: progress, total: 1.0)
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: 240)
+            } else {
+                ProgressView()
+            }
             Text(headline)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("Spoken words appear here as you record.")
+            if isProcessingLive, let detail = inProgressStep?.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()

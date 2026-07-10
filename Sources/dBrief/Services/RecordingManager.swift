@@ -404,7 +404,17 @@ final class RecordingManager {
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
         do {
             let finalizeStart = Date()
-            try await ensureRecordingFinalized(recording: recording)
+            try await ensureRecordingFinalized(recording: recording) { [weak self] fraction in
+                // Streamed from ffmpeg on a background queue → hop to the main actor to
+                // drive the "Finalizing audio" step's determinate bar.
+                Task { @MainActor in
+                    guard let self,
+                          self.appState.processingSteps.indices.contains(finalizationStepIndex),
+                          case .inProgress = self.appState.processingSteps[finalizationStepIndex].status
+                    else { return }
+                    self.appState.processingSteps[finalizationStepIndex].progress = fraction
+                }
+            }
             perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
             appState.processingSteps[finalizationStepIndex].status = .completed
             // Only surface genuine problems (ffmpeg missing, merge/segmentation
@@ -462,6 +472,21 @@ final class RecordingManager {
                     }
                 }()
                 appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
+                // Apple Speech and remote endpoints don't emit a "transcribing" state, so
+                // mark the ETA start now (they have no in-app model-download phase). Local
+                // Whisper/Parakeet set it on their first transcribing/segment signal.
+                switch appSettings.effectiveTranscriptionEngine {
+                case .appleSpeech, .remoteEndpoint:
+                    job.transcriptionStartedAt = Date()
+                case .localWhisper, .parakeetLocal:
+                    break
+                }
+                let etaTask = startTranscriptionETATicker(
+                    job: job,
+                    stepIndex: stepIndex,
+                    audioDuration: recording.duration
+                )
+                defer { etaTask.cancel() }
                 do {
                     let txStart = Date()
                     let stepResult = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
@@ -1047,6 +1072,34 @@ final class RecordingManager {
     /// Retries AI analysis for a recording that already has a transcript on disk.
     /// Skips finalization and transcription — loads the saved transcript and reruns
     /// AI tasks, title generation, markdown export, and integration dispatch.
+    /// Re-transcribe a recording that has finalized audio but no transcript yet — e.g.
+    /// after the user Stopped a long transcription to free resources. Runs the full
+    /// pipeline from transcription onward using the global auto-processing defaults.
+    ///
+    /// `recording` must carry `finalizedAudioURL` (the existing master m4a) so
+    /// `ensureRecordingFinalized` early-returns and the audio is transcribed as-is —
+    /// **never re-encoded through ffmpeg** (repeated encodes degrade quality). Passing the
+    /// audio URL as `queuedAudioURL` lets `finishJob` sweep any leftover `.queue.json`
+    /// sidecar a prior Stop wrote.
+    func retranscribe(for recording: Recording) async {
+        guard appState.processingJob == nil else { return }
+        guard let audioURL = recording.finalizedAudioURL else { return }
+        appState.showPostRecordingSheet = false
+        appState.preflightWarning = nil
+        appState.processingSteps = []
+        appState.liveInferenceText = nil
+        let job = launchJob(recording: recording, queuedAudioURL: audioURL) { job in
+            await self.processRecording(
+                job: job,
+                transcribe: true,
+                summary: self.appSettings.autoSummary,
+                actionItems: self.appSettings.autoActionItems,
+                tags: self.appSettings.autoTags
+            )
+        }
+        await job.task?.value
+    }
+
     func retryAIAnalysis(for recording: Recording) async {
         // Retry works on an already-transcribed recording; refuse while a job runs (the
         // GPU is busy and the progress UI is owned by that job). The button is disabled
@@ -1320,6 +1373,26 @@ final class RecordingManager {
                 appState.processingSteps[i].status = .failed("Cancelled by user")
             }
         }
+        // Non-destructive Stop: if a FRESH job (not one already drained from the queue) is
+        // stopped before a transcript was saved — finalized audio exists but no
+        // `.transcript.json` — persist a user-deferred queue entry so the recording isn't
+        // stranded. It won't auto-drain (autoQueued: false); the History "Transcribe" chip
+        // or the manual "Process Queue" button resumes it, reusing the finalized master (no
+        // ffmpeg re-encode). Skipped when a transcript already exists (Re-run AI covers that).
+        if let job, job.queuedAudioURL == nil,
+           job.recording.finalizedAudioURL != nil,
+           loadSavedTranscript(for: job.recording) == nil {
+            let item = QueueItem(
+                transcribe: true,
+                summary: appSettings.autoSummary,
+                actionItems: appSettings.autoActionItems,
+                tags: appSettings.autoTags,
+                titleWasUserProvided: job.recording.titleWasUserProvided,
+                autoQueued: false
+            )
+            try? saveQueueItem(item, for: job.recording)
+            appState.queuedCount = discoverQueuedItems().count
+        }
         // Tear down any confirm-first review the cancelled job had armed, so it can't be
         // resumed later against a job that no longer exists.
         if appState.pendingSpeakerReview?.recording === job?.recording {
@@ -1367,6 +1440,23 @@ final class RecordingManager {
 
         guard response == .OK, let url = panel.url else { return }
 
+        // A manually-picked file is already a finished audio file, so it must take the
+        // import path (move + stream-copy segmentation, no DSP) — NOT the raw-capture
+        // finalize path, which would pointlessly loudnorm + AAC re-encode the whole file.
+        // Mirror `processWatchedFile`: copy to a temp file and set `importSourceURL` so
+        // `ensureRecordingFinalized` relocates the *copy* (the user's original is left
+        // untouched, since `importExistingAudio` moves its source into the Recordings folder).
+        let ext = url.pathExtension.isEmpty ? "m4a" : url.pathExtension
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+        do {
+            try FileManager.default.copyItem(at: url, to: tempURL)
+        } catch {
+            appState.lastError = "Couldn't read \(url.lastPathComponent). \(error.localizedDescription)"
+            return
+        }
+
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs?[.size] as? Int64) ?? 0
         let recording = Recording(
@@ -1375,6 +1465,7 @@ final class RecordingManager {
             meetingTitleDraft: defaultMeetingTitle(from: nil),
             finalizedAudioURL: nil
         )
+        recording.importSourceURL = tempURL
         appState.currentRecording = recording
         appState.showPostRecordingSheet = true
 
@@ -2008,6 +2099,68 @@ final class RecordingManager {
         }
     }
 
+    /// Drive the transcription step's determinate progress bar + "time left" label.
+    /// Ticks once a second: prefers true segment coverage (WhisperKit streaming),
+    /// otherwise estimates from the model's historical realtime ratio. Stays silent
+    /// (leaving the download/load bar untouched) until `job.transcriptionStartedAt`
+    /// is set, i.e. actual transcription has begun. Cancel it when the step ends.
+    private func startTranscriptionETATicker(
+        job: ProcessingJob,
+        stepIndex: Int,
+        audioDuration: TimeInterval
+    ) -> Task<Void, Never> {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Prefer the model's measured realtime ratio; on a first-ever run there's no
+            // history yet (and any pre-fix 0-duration records are excluded), so fall back
+            // to a conservative per-engine default. Without it the bar has no signal until
+            // segments stream — and engines that deliver segments in a late batch (observed:
+            // WhisperKit on a multi-hour in-memory file) leave the bar pinned at 0 for the
+            // whole run. The default deliberately under-estimates speed so the bar trails
+            // real progress (finishing a touch early) rather than racing to 99% and stalling.
+            let ratio = await self.modelPerformanceStore
+                .averageTranscriptionRealtime(forModel: self.transcriptionModelDisplayName)
+                ?? self.fallbackRealtimeRatio(for: self.appSettings.effectiveTranscriptionEngine)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                guard self.appState.processingSteps.indices.contains(stepIndex),
+                      case .inProgress = self.appState.processingSteps[stepIndex].status
+                else { return }
+                // Before transcription proper (model download/load) the bar is owned by
+                // applyPluginState's download progress — don't fight it.
+                guard let startedAt = job.transcriptionStartedAt else { continue }
+                let estimate = TranscriptionProgressEstimate.compute(
+                    audioDuration: audioDuration,
+                    realtimeRatio: ratio,
+                    elapsed: Date().timeIntervalSince(startedAt),
+                    // Furthest-decoded end, not the last-appended segment: with VAD +
+                    // concurrent workers, segments stream out of order, so `.last` lags
+                    // true coverage and would inflate the remaining-time estimate.
+                    latestSegmentEnd: job.progressiveSegments.map(\.end).max()
+                )
+                if let progress = estimate.progress {
+                    self.appState.processingSteps[stepIndex].progress = progress
+                }
+                self.appState.processingSteps[stepIndex].detail = estimate.remaining
+            }
+        }
+    }
+
+    /// Conservative audio-seconds-per-wall-second used to animate the transcription
+    /// bar before any real timing history exists for the active model. Intentionally
+    /// on the low side of typical Apple-Silicon throughput so the bar under-promises
+    /// (trails actual progress) instead of overshooting to 99% and sitting there; once
+    /// a session is recorded, `averageTranscriptionRealtime` supersedes these.
+    private func fallbackRealtimeRatio(for engine: AppSettings.TranscriptionEngine) -> Double {
+        switch engine {
+        case .localWhisper: return 10   // large-v3 turbo measures ~16×; smaller/quantized less
+        case .parakeetLocal: return 20  // TDT is markedly faster than Whisper
+        case .appleSpeech: return 5
+        case .remoteEndpoint: return 3  // network-bound and highly variable
+        }
+    }
+
     private func withPluginStepAdapter<T>(
         stepIndex: Int,
         operation: @escaping @Sendable () async throws -> T
@@ -2046,6 +2199,9 @@ final class RecordingManager {
             break
         case .transcribing:
             appState.processingSteps[stepIndex].name = "Transcribing (Parakeet)"
+            if appState.processingJob?.transcriptionStartedAt == nil {
+                appState.processingJob?.transcriptionStartedAt = Date()
+            }
         case .newSegments:
             break // Parakeet doesn't produce live segments
         case .diarizing:
@@ -2075,10 +2231,18 @@ final class RecordingManager {
             break
         case .transcribing:
             appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
+            if appState.processingJob?.transcriptionStartedAt == nil {
+                appState.processingJob?.transcriptionStartedAt = Date()
+            }
         case .newSegments(let segments):
             // Progressive segments belong to THIS job's "In Progress" view, not the shared
             // capture live-set (a new recording may be capturing concurrently).
             appState.processingJob?.progressiveSegments.append(contentsOf: segments)
+            // First streamed segment implies transcription proper is under way — used by
+            // the ETA ticker to switch to true segment-coverage progress.
+            if appState.processingJob?.transcriptionStartedAt == nil {
+                appState.processingJob?.transcriptionStartedAt = Date()
+            }
             return // don't update step name
         case .diarizing:
             appState.processingSteps[stepIndex].name = "Identifying speakers"
@@ -2261,6 +2425,11 @@ final class RecordingManager {
         }
         if appState.processingSteps.indices.contains(stepIndex) {
             appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
+            // Transcription proper is done; the ETA ticker must stop driving the bar
+            // (vocabulary correction has no meaningful progress fraction).
+            appState.processingJob?.transcriptionStartedAt = nil
+            appState.processingSteps[stepIndex].progress = nil
+            appState.processingSteps[stepIndex].detail = nil
         }
         let speller = TranscriptSpellingService(appSettings: appSettings, localPlugin: localAIPluginService)
         let spellStart = Date()
@@ -2445,8 +2614,21 @@ final class RecordingManager {
         }
     }
 
-    private func ensureRecordingFinalized(recording: Recording) async throws {
-        if recording.finalizedAudioURL != nil {
+    private func ensureRecordingFinalized(
+        recording: Recording,
+        onProgress: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
+        if let finalized = recording.finalizedAudioURL {
+            // Paths that arrive pre-finalized (History "Transcribe"/retranscribe, watched
+            // files, imports resumed from a queue) skip the capture-finalize branch below,
+            // which is the only place that establishes `duration`. Without it, the
+            // Benchmark realtime ratio, "Avg. audio", and the lifetime odometer all read 0
+            // and the transcription ETA bar has no length to work with. Probe the master
+            // here so a re-transcribe reports the true audio length.
+            if recording.duration <= 0 {
+                let probed = await durationSeconds(for: finalized)
+                if probed > 0 { recording.duration = probed }
+            }
             return
         }
 
@@ -2489,7 +2671,8 @@ final class RecordingManager {
             recording: recording,
             baseFolder: appSettings.effectiveRecordingFolderURL,
             segmentationEnabled: segmentationEnabled,
-            echoSuppressionEnabled: recording.echoSuppressionApplied
+            echoSuppressionEnabled: recording.echoSuppressionApplied,
+            onProgress: onProgress
         )
         recording.capturedTracks = nil  // scratch files have been consumed
 

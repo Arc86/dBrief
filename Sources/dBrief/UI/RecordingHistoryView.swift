@@ -273,6 +273,20 @@ struct RecordingHistoryView: View {
                                 await recordingManager.retryAIAnalysis(for: recording)
                             }
                         }
+                    } else {
+                        // Finalized audio but no transcript — e.g. a Stopped transcription.
+                        // Re-transcribe from the existing master (no ffmpeg re-encode).
+                        actionChip(title: "Transcribe", systemImage: "waveform") {
+                            Task {
+                                let recording = Recording(
+                                    fileURL: item.url,
+                                    fileSize: item.size,
+                                    meetingTitleDraft: item.name,
+                                    finalizedAudioURL: item.url
+                                )
+                                await recordingManager.retranscribe(for: recording)
+                            }
+                        }
                     }
 
                     if item.hasRichTranscript {
