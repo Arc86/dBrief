@@ -1,7 +1,19 @@
 APP_NAME = dBrief
 EXECUTABLE_NAME = dBrief
 BUILD_DIR = .build/release
-APP_BUNDLE = $(APP_NAME).app
+# Build channel. Defaults produce the production app; the `beta` target overrides
+# these to build a fully separate `dBrief-Beta.app` (`com.dbrief.app.beta`) with
+# its own bundle id, name, and signing cert — so it gets independent macOS TCC
+# permission grants and Application Support / Keychain data instead of colliding
+# with the installed production build. `BUNDLE_DIR_NAME` is the on-disk .app name
+# (no spaces, to keep Make happy); `DISPLAY_NAME` is what the user sees.
+BUNDLE_DIR_NAME ?= $(APP_NAME)
+BUNDLE_ID ?= com.dbrief.app
+DISPLAY_NAME ?= dBrief
+# When non-empty, strip the Sparkle feed URL from the built Info.plist so a dev
+# channel never offers to auto-update itself to a production release.
+STRIP_SU_FEED ?=
+APP_BUNDLE = $(BUNDLE_DIR_NAME).app
 CONTENTS = $(APP_BUNDLE)/Contents
 MACOS = $(CONTENTS)/MacOS
 RESOURCES = $(CONTENTS)/Resources
@@ -38,7 +50,7 @@ NOTARY_PROFILE ?=
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
-.PHONY: app run clean build sign dmg package-dmg notarize
+.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta
 
 build:
 	swift build -c release --arch arm64
@@ -75,6 +87,17 @@ app: build
 	chmod +x $(MACOS)/ffmpeg
 	cp packaging/FFMPEG-NOTICE.txt $(RESOURCES)/FFMPEG-NOTICE.txt
 	cp Sources/dBrief/Resources/Info.plist $(CONTENTS)/Info.plist
+	: 'Stamp channel identity into the bundle Info.plist. No-ops for the release'
+	: 'defaults; the `beta` target passes distinct values so macOS treats it as a'
+	: 'separate app (own TCC grants, UserDefaults, Application Support, Keychain).'
+	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(BUNDLE_ID)" "$(CONTENTS)/Info.plist"
+	/usr/libexec/PlistBuddy -c "Set :CFBundleName $(DISPLAY_NAME)" "$(CONTENTS)/Info.plist"
+	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $(DISPLAY_NAME)" "$(CONTENTS)/Info.plist"
+	/usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName $(BUNDLE_ID)" "$(CONTENTS)/Info.plist"
+	@if [ -n "$(STRIP_SU_FEED)" ]; then \
+		echo "Stripping SUFeedURL (dev channel — no auto-update to production)"; \
+		/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$(CONTENTS)/Info.plist" 2>/dev/null || true; \
+	fi
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
@@ -213,6 +236,26 @@ run: app
 	pkill -f "$(PWD)/$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE_NAME)" || true
 	open "$(PWD)/$(APP_BUNDLE)"
 	@echo "Launched $(APP_BUNDLE)"
+
+# Beta channel: a fully separate `dBrief-Beta.app` that coexists with the
+# installed production build without fighting over macOS permissions or data.
+# Distinct bundle id → its own TCC grants (mic, Screen Recording, Calendar…),
+# UserDefaults, Application Support, and Keychain; its own stable self-signed
+# cert means those permission grants persist across every beta rebuild. Sparkle
+# auto-update is disabled so the beta can't replace itself with a prod release.
+beta:
+	$(MAKE) app \
+		BUNDLE_DIR_NAME="dBrief-Beta" \
+		BUNDLE_ID="com.dbrief.app.beta" \
+		DISPLAY_NAME="dBrief Beta" \
+		SIGNING_CERT_NAME="dBrief Beta Self-Signed" \
+		STRIP_SU_FEED=1
+	@echo "Built dBrief-Beta.app — drag to /Applications or run 'make run-beta'."
+
+run-beta: beta
+	pkill -f "$(PWD)/dBrief-Beta.app/Contents/MacOS/$(EXECUTABLE_NAME)" || true
+	open "$(PWD)/dBrief-Beta.app"
+	@echo "Launched dBrief-Beta.app"
 
 clean:
 	swift package clean

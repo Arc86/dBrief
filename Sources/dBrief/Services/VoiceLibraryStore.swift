@@ -23,10 +23,7 @@ actor VoiceLibraryStore {
     }
 
     static func defaultURL() -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport
-            .appendingPathComponent("com.dbrief.app", isDirectory: true)
-            .appendingPathComponent("VoiceLibrary", isDirectory: true)
+        AppSupportPaths.subdirectory("VoiceLibrary")
             .appendingPathComponent("library.json")
     }
 

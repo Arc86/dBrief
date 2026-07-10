@@ -42,7 +42,7 @@ enum KeychainHelper {
     private static func baseQuery(for key: KeychainSecretKey) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.dbrief.app",
+            kSecAttrService as String: AppSupportPaths.bundleIdentifier,
             kSecAttrAccount as String: key.rawValue,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
