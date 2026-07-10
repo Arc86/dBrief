@@ -28,6 +28,14 @@ final class CallAudioActivityMonitor: @unchecked Sendable {
     /// Listener on the system-wide process list, so newly launched apps get input listeners.
     private var listListenerBlock: AudioObjectPropertyListenerBlock?
 
+    /// Reliable fallback poll. The `kAudioProcessPropertyIsRunningInput` change-listener proved
+    /// unreliable in practice — for some apps (observed: Zoom releasing the mic when you *leave* a
+    /// meeting while the app stays open) CoreAudio never delivers the property-change callback, so
+    /// the listener-only path missed call-end entirely. Re-reading each monitored process's input
+    /// state on a short timer catches the drop-to-inactive transition regardless.
+    private var pollTimer: DispatchSourceTimer?
+    private static let pollInterval: DispatchTimeInterval = .seconds(2)
+
     init(
         monitoredBundleIds: Set<String>,
         onChange: @escaping @Sendable (_ bundleId: String, _ isRunningInput: Bool) -> Void
@@ -54,11 +62,15 @@ final class CallAudioActivityMonitor: @unchecked Sendable {
         }
 
         refreshProcessListeners()
+        startPolling()
     }
 
     func stop() {
         guard isListening else { return }
         isListening = false
+
+        pollTimer?.cancel()
+        pollTimer = nil
 
         if let block = listListenerBlock {
             var address = Self.processListAddress
@@ -72,6 +84,24 @@ final class CallAudioActivityMonitor: @unchecked Sendable {
         }
         processListeners.removeAll()
         lastInputState.removeAll()
+    }
+
+    /// Periodic re-scan + input re-read. Runs on the main queue (same as the CoreAudio listener
+    /// callbacks and `CallDetectionService`'s `@MainActor` callers), so it shares the same
+    /// serialization — no extra locking around `processListeners` / `lastInputState`. `reportInputState`
+    /// dedupes against the last-seen value, so this and the change-listener never double-fire.
+    private func startPolling() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self, self.isListening else { return }
+            self.refreshProcessListeners()
+            for (processID, entry) in self.processListeners {
+                self.reportInputState(processID: processID, bundleId: entry.bundleId)
+            }
+        }
+        timer.resume()
+        pollTimer = timer
     }
 
     /// Enumerate process objects, attach input listeners to monitored apps we haven't seen yet,
