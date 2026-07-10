@@ -29,13 +29,10 @@ actor ModelPerformanceStore {
         return loaded
     }
 
-    /// `~/Library/Application Support/com.dbrief.app/model-performance.json`,
+    /// `~/Library/Application Support/<bundle id>/model-performance.json`,
     /// alongside the `LocalAIPlugin` model cache.
     static func defaultURL() -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport
-            .appendingPathComponent("com.dbrief.app", isDirectory: true)
-            .appendingPathComponent("model-performance.json")
+        AppSupportPaths.base.appendingPathComponent("model-performance.json")
     }
 
     /// Load all recorded sessions. Returns an empty array when the log is absent

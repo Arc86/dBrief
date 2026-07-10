@@ -31,9 +31,8 @@ actor YouTubeDownloadService {
 
     /// Path where the app stores a self-downloaded yt-dlp binary.
     nonisolated static func appSupportYtDlpURL() -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support
-            .appendingPathComponent("com.dbrief.app/LocalAIPlugin/ytdlp/yt-dlp")
+        AppSupportPaths.base
+            .appendingPathComponent("LocalAIPlugin/ytdlp/yt-dlp")
     }
 
     /// Returns the path to a usable yt-dlp executable, or nil if not found.

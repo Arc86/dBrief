@@ -13,13 +13,11 @@ enum MLHostLocator {
         return Bundle.main.bundleURL.appendingPathComponent("dBriefMLHost")
     }
 
-    /// Use the app's real bundle id literally so the path is stable whether the
-    /// app is bundled or run via `swift run`.
+    /// Namespaced under the app's bundle id (see `AppSupportPaths`) so a beta
+    /// channel gets its own model cache. The helper inherits this via
+    /// `--support-base`, keeping app + helper on the same directory.
     static func supportBase() -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport
-            .appendingPathComponent("com.dbrief.app", isDirectory: true)
-            .appendingPathComponent("LocalAIPlugin", isDirectory: true)
+        AppSupportPaths.subdirectory("LocalAIPlugin")
     }
 }
 
