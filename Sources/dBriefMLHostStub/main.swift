@@ -3,6 +3,7 @@ import dBriefWire
 
 // Test-only helper that speaks the frame protocol with canned behavior.
 // Behaviors via env: STUB_MODE = echo | crash-once | crash-always | crash-second | error
+//                              | finished-first | multi-frame
 // Cross-restart flag files persist a stub's "have I crashed yet" state. Their
 // paths come from env (STUB_FLAG_1 / STUB_FLAG_2) so concurrently-running tests
 // each get an isolated flag and don't race over a shared file.
@@ -73,6 +74,21 @@ while true {
         case "error":
             send(EventEnvelope(id: env.id, channel: .plugin,
                 event: .error(WireError(kind: .insufficientMemory, message: "no ram", model: "L", requiredGB: "9.9"))))
+        case "finished-first":
+            // Violates the ordering invariant: the terminal `.finished` overtakes
+            // the result frame. The parent must fail loud, not hang.
+            send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
+            send(EventEnvelope(id: env.id, channel: .plugin,
+                event: .transcriptionResult(TranscriptionResult(text: "too late"))))
+        case "multi-frame":
+            // Worst real reply shape (Parakeet + diarization): state frames
+            // interleaved around the result, then the terminal `.finished`.
+            send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.transcribing)))
+            send(EventEnvelope(id: env.id, channel: .plugin,
+                event: .transcriptionResult(TranscriptionResult(text: "multi"))))
+            send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.diarizing)))
+            send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.diarizing)))
+            send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
         default: // echo: emit a state, then a result
             send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.transcribing)))
             send(EventEnvelope(id: env.id, channel: .plugin,

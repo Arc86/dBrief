@@ -4,6 +4,11 @@ import dBriefWire
 enum MLHostError: Error, Equatable {
     case helperCrashed
     case helperUnavailable
+    /// A request's terminal `.finished` arrived before any value-bearing event —
+    /// the wire ordering invariant was violated (see the `ingestContinuation` and
+    /// `StdoutWriter` single-consumer notes). Failing loud beats a leaked
+    /// continuation that hangs the caller forever.
+    case protocolViolation
 }
 
 /// Owns the child helper process, frames IO over its pipes, correlates replies
@@ -63,7 +68,11 @@ actor MLHostConnection {
                 onEvent: { event in
                     switch event {
                     case .state, .token: return        // non-terminal for call()
-                    case .finished: return             // terminal handled after a value
+                    // Normally a no-op (the value resolved the call already). If it
+                    // resolves here, `.finished` overtook the result frame — fail loud,
+                    // because `ingest` drops the pending entry on `.finished` and the
+                    // late result could never resume this continuation (permanent hang).
+                    case .finished: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
                     case .error(let w): if resolved.tryResolve() { cont.resume(throwing: w) }
                     default: if resolved.tryResolve() { cont.resume(returning: event) }
                     }
