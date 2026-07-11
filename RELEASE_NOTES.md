@@ -1,3 +1,25 @@
+## dBrief 1.3.6
+
+**dBrief knows when your meeting ends — and shows you how long transcription has left.** This release closes the loop on call detection (it can now stop recording when the call wraps, not just start when it begins) and replaces the indeterminate "working…" spinner with a real progress bar and time estimate.
+
+### Stop recording when the call ends
+
+- **A new "When a call ends" option** in **Settings → General → Call Detection**: *Do nothing*, *Ask me* (the default), or *Stop automatically*. Leave a Zoom/Teams/Slack/Meet meeting and dBrief can wrap the recording for you — no more recordings that run for an hour after everyone's gone.
+- **Scope it your way.** An **Apply to** picker chooses whether this acts only on recordings that a detected call started, or on any recording that's currently running.
+- **It waits to be sure.** A short grace period ignores brief mic drops (mute, a device switch), so muting yourself never ends the recording — only actually leaving the meeting does.
+
+### See how long transcription will take
+
+- **A real progress bar with a time estimate.** The "Finalizing audio" and transcription steps now show determinate progress and an estimated time left, instead of an indeterminate spinner. Long recordings — where transcript segments arrive in late bursts — no longer leave the bar pinned near zero.
+
+### Fixes
+
+- **Re-transcribing now records its stats.** Transcribing an existing recording from History (or re-transcribing) properly measures its audio duration again, so the Benchmark panel shows the real ×realtime speed and "Avg. audio" instead of 0, and the lifetime "transcribed by dBrief" total advances.
+- **The participants list can't push the buttons off-screen.** Linking a recording to a calendar event with a long attendee list used to grow the Participants box until the Skip / Queue / Process buttons dropped below the menu — the list now caps its height and scrolls internally.
+- **A rare transcription hang is fixed.** A specific out-of-order message on the on-device ML pipe could leave a transcription waiting forever with no error; it now fails cleanly and recovers instead.
+
+---
+
 ## dBrief 1.3.5
 
 **Record your next meeting without waiting on the last one.** Back-to-back meetings used to be blocked — while a recording was still transcribing and analyzing, the Record button and hotkey were unavailable. Now capture and processing are fully independent, so you can start the next meeting the moment it begins.
