@@ -180,4 +180,31 @@ struct VoiceLibraryStoreTests {
         #expect(await store.removeVoiceprint(personId: "p", capturedAt: late.capturedAt))
         #expect(await store.load().people.isEmpty)   // last sample → person removed
     }
+
+    @Test("setCompany sets, trims, and clears to nil on empty")
+    func setCompanyTrimsAndClears() async {
+        let store = VoiceLibraryStore(url: tempURL())
+        let id = await store.upsert(name: "Alice", voiceprint: print1([1]))
+        await store.setCompany(id: id, to: "  Acme  ")
+        #expect(await store.load().people.first(where: { $0.id == id })?.company == "Acme")
+        await store.setCompany(id: id, to: "   ")
+        #expect(await store.load().people.first(where: { $0.id == id })?.company == nil)
+    }
+
+    @Test("suggestCompanyIfEmpty fills only when empty, never overwrites")
+    func suggestFillOnly() async {
+        let store = VoiceLibraryStore(url: tempURL())
+        let id = await store.upsert(name: "Bob", voiceprint: print1([1]))
+        #expect(await store.suggestCompanyIfEmpty(id: id, to: "Acme") == true)
+        #expect(await store.load().people.first(where: { $0.id == id })?.company == "Acme")
+        #expect(await store.suggestCompanyIfEmpty(id: id, to: "Globex") == false)
+        #expect(await store.load().people.first(where: { $0.id == id })?.company == "Acme")
+    }
+
+    @Test("old libraries without company decode with nil")
+    func lenientDecode() throws {
+        let json = #"{"version":1,"people":[{"id":"x","name":"Carol","voiceprints":[]}]}"#
+        let lib = try JSONDecoder().decode(VoiceLibrary.self, from: Data(json.utf8))
+        #expect(lib.people.first?.company == nil)
+    }
 }

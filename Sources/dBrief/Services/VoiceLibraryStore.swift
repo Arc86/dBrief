@@ -121,6 +121,31 @@ actor VoiceLibraryStore {
         return true
     }
 
+    /// Sets (or clears) a person's company. Trims; an empty string clears to nil.
+    /// No-op when the id is missing.
+    func setCompany(id: String, to company: String?) {
+        var lib = load()
+        guard let idx = lib.people.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = company?.trimmingCharacters(in: .whitespacesAndNewlines)
+        lib.people[idx].company = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        save(lib)
+    }
+
+    /// Fill-only company suggestion: sets `company` only when it is currently nil/empty.
+    /// Returns whether a value was written. Never overwrites an existing company.
+    @discardableResult
+    func suggestCompanyIfEmpty(id: String, to company: String) -> Bool {
+        let trimmed = company.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        var lib = load()
+        guard let idx = lib.people.firstIndex(where: { $0.id == id }) else { return false }
+        let current = lib.people[idx].company?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard current == nil || current!.isEmpty else { return false }
+        lib.people[idx].company = trimmed
+        save(lib)
+        return true
+    }
+
     /// Removes a person entirely.
     @discardableResult
     func delete(id: String) -> Bool {

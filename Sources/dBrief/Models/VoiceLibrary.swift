@@ -11,6 +11,7 @@ struct Voiceprint: Codable, Sendable, Equatable {
 struct KnownPerson: Codable, Sendable, Equatable, Identifiable {
     var id: String           // stable opaque key (UUID string); never changes on rename
     var name: String         // display spelling (first seen)
+    var company: String?     // nil = "No company"; auto-suggested from calendar, user-editable
     var voiceprints: [Voiceprint]
 }
 
