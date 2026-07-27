@@ -197,6 +197,10 @@ struct SettingsVoiceLibraryTab: View {
                     }
                 }
                 .listStyle(.sidebar)
+                // .sidebar keeps the collapsible group headers, but brings the
+                // translucent sidebar material with it — hide that backdrop so the
+                // list matches the settings pane's solid background.
+                .scrollContentBackground(.hidden)
                 .frame(maxHeight: .infinity)
             }
 
