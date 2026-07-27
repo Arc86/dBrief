@@ -17,6 +17,13 @@ struct SettingsVoiceLibraryTab: View {
     @State private var collapsedGroups: Set<String> = []
     @State private var expandedPrints: Set<String> = []     // person ids showing voiceprints
     @State private var companyDraft = ""
+    // True whenever `companyDraft` holds an uncommitted edit. Guards `reload()` (which
+    // otherwise runs after every mutation — delete/rename/merge — and would silently
+    // discard in-progress typing) and drives the flush-on-selection-change below.
+    @State private var companyDraftDirty = false
+    // Suppresses the `companyDraft` onChange from marking the draft dirty when *we*
+    // (not the user) assign it programmatically (selection change, reload, commit).
+    @State private var isProgrammaticCompanyUpdate = false
 
     // Rename / merge / delete state (unchanged from the prior implementation).
     @State private var renaming: KnownPerson?
@@ -30,6 +37,9 @@ struct SettingsVoiceLibraryTab: View {
     }
     private var groups: [VoiceLibraryFilter.Group] { VoiceLibraryFilter.grouped(people: visiblePeople) }
     private var selectedPerson: KnownPerson? { library.people.first { $0.id == selectedId } }
+    /// Distinct from the empty-library state: the library has people, but the current
+    /// search/company filter matches none of them.
+    private var hasNoSearchResults: Bool { !library.people.isEmpty && visiblePeople.isEmpty }
 
     var body: some View {
         Group {
@@ -43,8 +53,19 @@ struct SettingsVoiceLibraryTab: View {
             }
         }
         .task { if !loaded { await reload(); loaded = true } }
-        .onChange(of: selectedId) { _, _ in
-            companyDraft = selectedPerson?.company ?? ""
+        .onChange(of: selectedId) { oldId, newId in
+            // Flush any uncommitted edit against the OLD selection before touching the
+            // draft — selectedId has already changed to `newId` by the time this fires,
+            // so reading `companyDraft` against `selectedId`/`selectedPerson` here would
+            // write the just-typed text onto the newly selected person instead.
+            flushCompanyDraft(previousId: oldId)
+            let newCompany = library.people.first { $0.id == newId }?.company ?? ""
+            applyCompanyDraft(newCompany)
+        }
+        .onChange(of: companyDraft) { _, _ in
+            if !isProgrammaticCompanyUpdate {
+                companyDraftDirty = true
+            }
         }
         .alert("Forget this voice?", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
             Button("Forget", role: .destructive) {
@@ -103,6 +124,29 @@ struct SettingsVoiceLibraryTab: View {
         }
     }
 
+    /// Shown inside the list pane when the library has people but the current
+    /// search/company filter matches none of them — distinct from `emptyState`
+    /// (no people saved yet at all), whose copy stays unchanged.
+    private var noSearchResultsView: some View {
+        VStack(spacing: 6) {
+            Text("No people match your search.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("Try a different name or company, or clear the filters below.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Button("Clear Filters") {
+                query = ""
+                companyFilter.removeAll()
+            }
+            .font(.caption)
+            .buttonStyle(.link)
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 12)
+    }
+
     // MARK: - List pane
 
     private var listPane: some View {
@@ -137,19 +181,24 @@ struct SettingsVoiceLibraryTab: View {
                 .fixedSize()
             }
 
-            List(selection: $selectedId) {
-                ForEach(groups) { group in
-                    Section(isExpanded: expandedBinding(for: group)) {
-                        ForEach(group.people) { person in
-                            listRow(person)
+            if hasNoSearchResults {
+                noSearchResultsView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $selectedId) {
+                    ForEach(groups) { group in
+                        Section(isExpanded: expandedBinding(for: group)) {
+                            ForEach(group.people) { person in
+                                listRow(person)
+                            }
+                        } header: {
+                            Text("\(group.label) (\(group.people.count))")
                         }
-                    } header: {
-                        Text("\(group.label) (\(group.people.count))")
                     }
                 }
+                .listStyle(.sidebar)
+                .frame(maxHeight: .infinity)
             }
-            .listStyle(.sidebar)
-            .frame(maxHeight: .infinity)
 
             Divider()
             privacyFooter
@@ -336,10 +385,39 @@ struct SettingsVoiceLibraryTab: View {
     private func commitCompany() {
         guard let id = selectedId else { return }
         let value = companyDraft
+        // Clear dirty synchronously (before the await) so any further typing that
+        // happens while this Task is in flight (Return keeps focus in the field) is
+        // detected as a *new* dirty edit by the companyDraft onChange, and therefore
+        // survives the reload() at the end of this same commit (see FIX 4).
+        companyDraftDirty = false
         Task {
             await context.voiceLibraryStore.setCompany(id: id, to: value)
             await reload()
         }
+    }
+
+    /// Commits the draft against `previousId` (the selection being navigated away
+    /// from) if it's dirty and actually differs from that person's stored company;
+    /// otherwise a no-op. Always clears the dirty flag — the draft is about to be
+    /// replaced by `applyCompanyDraft` for the new selection either way.
+    private func flushCompanyDraft(previousId: String?) {
+        defer { companyDraftDirty = false }
+        guard companyDraftDirty, let id = previousId else { return }
+        let value = companyDraft
+        let storedValue = library.people.first(where: { $0.id == id })?.company ?? ""
+        guard value != storedValue else { return }
+        Task {
+            await context.voiceLibraryStore.setCompany(id: id, to: value)
+            await reload()
+        }
+    }
+
+    /// Assigns `companyDraft` without marking it dirty — the one path programmatic
+    /// resets (selection change, reload, commit) should use instead of `companyDraft = `.
+    private func applyCompanyDraft(_ value: String) {
+        isProgrammaticCompanyUpdate = true
+        companyDraft = value
+        isProgrammaticCompanyUpdate = false
     }
 
     // MARK: - Local UI state helpers
@@ -373,6 +451,11 @@ struct SettingsVoiceLibraryTab: View {
         if let id = selectedId, !library.people.contains(where: { $0.id == id }) {
             selectedId = nil
         }
-        companyDraft = selectedPerson?.company ?? ""
+        // A mutation elsewhere (voiceprint delete, rename, merge) must not clobber an
+        // uncommitted company edit still in progress — only resync the draft from the
+        // store when there's nothing pending to lose.
+        if !companyDraftDirty {
+            applyCompanyDraft(selectedPerson?.company ?? "")
+        }
     }
 }

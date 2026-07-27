@@ -73,14 +73,9 @@ enum VoiceLibraryFilter {
     private static func sorted(_ people: [KnownPerson], by sort: Sort) -> [KnownPerson] {
         switch sort {
         case .lastHeard:
-            return people.sorted { a, b in
-                switch (VoiceLibraryDisplay.lastSeen(a), VoiceLibraryDisplay.lastSeen(b)) {
-                case let (la?, lb?): return la != lb ? la > lb : a.name.lowercased() < b.name.lowercased()
-                case (_?, nil): return true
-                case (nil, _?): return false
-                case (nil, nil): return a.name.lowercased() < b.name.lowercased()
-                }
-            }
+            // Delegates to the shared helper rather than duplicating the same
+            // newest-first/name-tiebreak logic (VoiceLibraryDisplay.sortedByLastSeen).
+            return VoiceLibraryDisplay.sortedByLastSeen(people)
         case .name:
             return people.sorted { $0.name.lowercased() < $1.name.lowercased() }
         case .voiceprintCount:
