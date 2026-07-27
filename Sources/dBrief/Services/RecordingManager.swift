@@ -596,10 +596,11 @@ final class RecordingManager {
                         // Enroll named speakers' voiceprints into the global voice library.
                         if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty {
                             for entry in VoiceEnrollment.enrollable(speakerLabels: rich.speakerLabels, embeddings: embeddings) {
-                                await voiceLibraryStore.upsert(
+                                let enrolledId = await voiceLibraryStore.upsert(
                                     name: entry.name,
                                     voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date())
                                 )
+                                await suggestCompany(forPersonId: enrolledId, name: entry.name, recording: recording)
                             }
                         }
                     }
@@ -2950,7 +2951,19 @@ final class RecordingManager {
             name: trimmed,
             voiceprint: Voiceprint(embedding: embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
         Logger.transcription.info("Enrolled voiceprint for a manually-named speaker")
+        await suggestCompany(forPersonId: id, name: trimmed, recording: recording)
         return id.isEmpty ? nil : id
+    }
+
+    /// Fill-only company suggestion: if the enrolled name matches a calendar attendee
+    /// with a corporate email domain, seed the person's company (never overwrites).
+    private func suggestCompany(forPersonId personId: String, name: String, recording: Recording) async {
+        guard !personId.isEmpty else { return }
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty,
+              let attendee = recording.calendarEvent?.attendees.first(where: { $0.name.lowercased() == key }),
+              let company = CompanyName.fromDomain(attendee.emailDomain) else { return }
+        await voiceLibraryStore.suggestCompanyIfEmpty(id: personId, to: company)
     }
 
     /// Speaker ids with a non-empty voice embedding available right now (from the
