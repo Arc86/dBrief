@@ -57,4 +57,16 @@ struct VoiceLibraryFilterTests {
         #expect(CompanyName.fromDomain(nil) == nil)
         #expect(CompanyName.fromDomain("") == nil)
     }
+
+    @Test("CompanyName nils a subdomain of a denylisted consumer domain")
+    func companyNameConsumerSubdomain() {
+        #expect(CompanyName.fromDomain("mail.gmail.com") == nil)
+        #expect(CompanyName.fromDomain("acme.com") == "Acme")
+    }
+
+    @Test("company filter matches even when the stored company has incidental whitespace")
+    func companyFilterTrimsWhitespace() {
+        let people = [p("Alice", company: "  Acme  ")]
+        #expect(VoiceLibraryFilter.apply(people: people, query: "", companies: ["Acme"], sort: .name).map(\.name) == ["Alice"])
+    }
 }

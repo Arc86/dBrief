@@ -31,7 +31,7 @@ enum VoiceLibraryFilter {
             let matchesQuery = q.isEmpty
                 || person.name.lowercased().contains(q)
                 || (person.company?.lowercased().contains(q) ?? false)
-            let matchesCompany = companies.isEmpty || (person.company.map(companies.contains) ?? false)
+            let matchesCompany = companies.isEmpty || (normalizedCompany(person).map(companies.contains) ?? false)
             return matchesQuery && matchesCompany
         }
         return sorted(filtered, by: sort)
@@ -42,8 +42,7 @@ enum VoiceLibraryFilter {
     static func grouped(people: [KnownPerson]) -> [Group] {
         var buckets: [String: [KnownPerson]] = [:]
         for person in people {
-            let key = person.company?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let label = (key?.isEmpty ?? true) ? noCompanyLabel : key!
+            let label = normalizedCompany(person) ?? noCompanyLabel
             buckets[label, default: []].append(person)
         }
         let named = buckets.keys.filter { $0 != noCompanyLabel }
@@ -57,11 +56,18 @@ enum VoiceLibraryFilter {
 
     /// Distinct non-nil company labels, case-insensitive sorted.
     static func companies(in people: [KnownPerson]) -> [String] {
-        let names = people.compactMap { person -> String? in
-            let c = person.company?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (c?.isEmpty ?? true) ? nil : c
-        }
+        let names = people.compactMap { normalizedCompany($0) }
         return Array(Set(names)).sorted { $0.lowercased() < $1.lowercased() }
+    }
+
+    /// The person's company, trimmed of whitespace, or nil when absent/blank. The single
+    /// source of truth for "what counts as this person's company" so `apply`, `grouped`,
+    /// and `companies` can't drift apart on trimming behavior.
+    private static func normalizedCompany(_ person: KnownPerson) -> String? {
+        guard let trimmed = person.company?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     private static func sorted(_ people: [KnownPerson], by sort: Sort) -> [KnownPerson] {
@@ -98,7 +104,10 @@ enum CompanyName {
     /// "acme.com" -> "Acme"; "mail.acme.co.uk" -> "Acme"; consumer/empty/invalid -> nil.
     static func fromDomain(_ domain: String?) -> String? {
         guard let raw = domain?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty else { return nil }
-        guard !consumerDomains.contains(raw) else { return nil }
+        // Reject an exact denylist match or any subdomain of one (e.g. "mail.gmail.com"),
+        // not just an exact string match, so a consumer subdomain doesn't slip through to
+        // label parsing and produce a bogus company name.
+        guard !consumerDomains.contains(where: { raw == $0 || raw.hasSuffix("." + $0) }) else { return nil }
         let labels = raw.split(separator: ".").map(String.init)
         guard labels.count >= 2 else { return nil }
         // Second-level label, skipping a trailing 2-letter ccTLD's public suffix
