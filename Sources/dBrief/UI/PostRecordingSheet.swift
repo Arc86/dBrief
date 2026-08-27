@@ -11,8 +11,11 @@ struct PostRecordingSheet: View {
     @State private var actionItems = true
     @State private var tags = true
     @State private var meetingTitle = ""
-    @State private var participantsText = ""
+    @State private var participantNames: [String] = []
     @State private var participantInput = ""
+    /// The pill currently being edited in place (nil = none). Single-valued, so exactly one
+    /// pill is ever swapped for a text field.
+    @State private var editingParticipant: String?
     @FocusState private var participantFieldFocused: Bool
     @State private var confirmingDelete = false
     @State private var participantsBoxHeight: CGFloat = 0
@@ -344,14 +347,24 @@ struct PostRecordingSheet: View {
     }
 
     /// Participant entry as removable pills plus an inline "Add name…" field.
-    /// `participantsText` (comma-separated) stays the canonical store so calendar
-    /// auto-fill and `applyFieldsToRecording` keep working unchanged.
+    /// `participantNames` is the canonical store — a *list*, never a comma-joined string:
+    /// directory calendars supply names like "den Boer, Bart", and a joined-then-split
+    /// round-trip used to shred each of those into two people.
     private var participantsField: some View {
         ScrollView(.vertical) {
             FlowLayout(spacing: 6) {
                 ForEach(participantNames, id: \.self) { name in
-                    ParticipantPill(name: name, color: Theme.speakerColor(for: name)) {
-                        removeParticipant(name)
+                    if editingParticipant == name {
+                        ParticipantEditField(
+                            name: name,
+                            onCommit: { commitParticipantEdit(from: name, to: $0) },
+                            onCancel: { editingParticipant = nil })
+                    } else {
+                        ParticipantPill(
+                            name: name,
+                            color: Theme.speakerColor(for: name),
+                            onRemove: { removeParticipant(name) },
+                            onEdit: { editingParticipant = name })
                     }
                 }
                 TextField("Add name…", text: $participantInput)
@@ -381,27 +394,25 @@ struct PostRecordingSheet: View {
         .onTapGesture { participantFieldFocused = true }
     }
 
-    private var participantNames: [String] {
-        participantsText
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-    }
-
+    /// Adds the typed name(s). A typed comma separates people ("Alice, Bob") — unlike a
+    /// calendar's "den Boer, Bart", which `CalendarEvent.attendeeNames` has already folded
+    /// into one name before it ever reaches this field.
     private func addParticipant() {
-        let name = participantInput.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        var names = participantNames
-        if !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
-            names.append(name)
-            participantsText = names.joined(separator: ", ")
+        for name in PersonName.typedNames(participantInput)
+        where !participantNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            participantNames.append(name)
         }
         participantInput = ""
     }
 
     private func removeParticipant(_ name: String) {
-        let names = participantNames.filter { $0.caseInsensitiveCompare(name) != .orderedSame }
-        participantsText = names.joined(separator: ", ")
+        participantNames.removeAll { $0.caseInsensitiveCompare(name) == .orderedSame }
+        if editingParticipant == name { editingParticipant = nil }
+    }
+
+    private func commitParticipantEdit(from oldName: String, to newName: String) {
+        participantNames = PersonName.replacing(oldName, in: participantNames, with: newName)
+        editingParticipant = nil
     }
 
     private var enabledDestinationNames: [String] {
@@ -444,10 +455,7 @@ struct PostRecordingSheet: View {
         guard let recording = appState.currentRecording else { return }
         recording.meetingTitleDraft = sanitizedMeetingTitle
         recording.titleWasUserProvided = isCustomTitle(sanitizedMeetingTitle, recording: recording)
-        recording.participants = participantsText
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        recording.participants = participantNames
     }
 
     /// Guarded auto-fill: only fills the title when it's still a fallback and only fills
@@ -460,9 +468,8 @@ struct PostRecordingSheet: View {
         if isFallback, !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             meetingTitle = event.title
         }
-        if participantsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !event.participantsText.isEmpty {
-            participantsText = event.participantsText
+        if participantNames.isEmpty, !event.attendeeNames.isEmpty {
+            participantNames = event.attendeeNames
         }
     }
 
@@ -486,7 +493,7 @@ struct PostRecordingSheet: View {
         if !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             meetingTitle = event.title
         }
-        participantsText = event.participantsText
+        participantNames = event.attendeeNames
     }
 
     private func pickerLabel(_ event: CalendarEvent) -> String {
@@ -503,4 +510,58 @@ struct PostRecordingSheet: View {
 private struct ParticipantsHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// A participant pill in its editing state: a capsule-shaped text field that takes the pill's
+/// place. Return commits, Escape reverts, and clicking away commits rather than discarding.
+///
+/// Deliberately inline rather than a popover (which is how speaker renaming works in the
+/// transcript window): this sheet lives in the `MenuBarExtra` panel, a non-activating window
+/// in an `LSUIElement` app, where a popover-hosted text field can't reliably take keyboard
+/// focus — the same reason Settings has to flip the activation policy. Fields hosted by the
+/// panel itself (this one, the title field, "Add name…") do get input.
+private struct ParticipantEditField: View {
+    let name: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.calmAppearance) private var calm
+    @State private var text: String
+    /// Set by Escape so the focus-loss commit below doesn't undo the cancel.
+    @State private var cancelled = false
+    @FocusState private var focused: Bool
+
+    init(name: String, onCommit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        self.name = name
+        self.onCommit = onCommit
+        self.onCancel = onCancel
+        _text = State(initialValue: name)
+    }
+
+    var body: some View {
+        TextField("Name", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12.5))
+            .focused($focused)
+            // Hug the text like the pill it replaces; FlowLayout needs a concrete width.
+            .frame(width: max(80, CGFloat(text.count) * 7.2 + 20))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(
+                    calm ? Color.primary.opacity(0.35) : Brand.violet.opacity(0.55),
+                    lineWidth: 1)
+            )
+            .onSubmit { onCommit(text) }
+            .onExitCommand {
+                cancelled = true
+                onCancel()
+            }
+            .onAppear { focused = true }
+            .onChange(of: focused) { _, isFocused in
+                guard !isFocused, !cancelled else { return }
+                onCommit(text)
+            }
+    }
 }

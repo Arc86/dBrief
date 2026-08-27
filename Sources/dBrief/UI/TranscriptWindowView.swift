@@ -724,7 +724,7 @@ struct TranscriptDetailView: View {
     @ViewBuilder
     private func speakerMenuContent(turn: SpeakerTurn, isMe: Bool) -> some View {
         let transcript = richTranscript ?? RichTranscript(segments: [])
-        let attendees = recording.calendarCandidates.flatMap { $0.attendees.map(\.name) }
+        let attendees = recording.calendarCandidates.flatMap(\.attendeeNames)
         let cands = SpeakerReassignment.candidates(
             in: transcript,
             currentSpeakerId: turn.speakerId,

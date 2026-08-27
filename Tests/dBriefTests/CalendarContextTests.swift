@@ -17,9 +17,9 @@ struct CalendarContextTests {
     }
 
     @Test
-    func participantsTextJoinsAttendees() {
+    func attendeeNamesListsAttendees() {
         let event = makeEvent(body: "")
-        #expect(event.participantsText == "Alice, Bob")
+        #expect(event.attendeeNames == ["Alice", "Bob"])
     }
 
     @Test

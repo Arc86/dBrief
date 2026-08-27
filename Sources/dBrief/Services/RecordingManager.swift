@@ -442,6 +442,10 @@ final class RecordingManager {
             return
         }
 
+        // The audio (and its sidecar) now exist — record who was in this meeting before any
+        // long-running step, so the names survive even if processing is cancelled later.
+        persistMeetingContext(for: recording)
+
         // Warm the Apple Intelligence model during transcription so the AI step starts
         // without first-call load latency. Fire-and-forget; no-op for other engines.
         if appSettings.effectiveAIProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence {
@@ -522,7 +526,7 @@ final class RecordingManager {
                     var allDecisions: [String: VoiceIdentityResolver.Decision] = [:]
                     if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty, hasLibrary {
                         let roster = recording.participants
-                            + (recording.calendarEvent?.attendees.map(\.name) ?? [])
+                            + (recording.calendarEvent?.attendeeNames ?? [])
                         let decisions = VoiceIdentityResolver.resolve(
                             clusterEmbeddings: embeddings, library: library, roster: roster)
                         allDecisions = decisions
@@ -686,7 +690,7 @@ final class RecordingManager {
             let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
             let roster = AnalysisRoster.hint(
                 participants: recording.participants,
-                attendees: recording.calendarEvent?.attendees.map(\.name) ?? []
+                attendees: recording.calendarEvent?.attendeeNames ?? []
             )
 
             let aiStart = Date()
@@ -1019,7 +1023,7 @@ final class RecordingManager {
         var decisions: [String: VoiceIdentityResolver.Decision] = [:]
         if !embeddings.isEmpty, !library.people.isEmpty {
             let roster = recording.participants
-                + (recording.calendarEvent?.attendees.map(\.name) ?? [])
+                + (recording.calendarEvent?.attendeeNames ?? [])
             decisions = VoiceIdentityResolver.resolve(
                 clusterEmbeddings: embeddings, library: library, roster: roster)
         }
@@ -1180,7 +1184,7 @@ final class RecordingManager {
             let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
             let roster = AnalysisRoster.hint(
                 participants: recording.participants,
-                attendees: recording.calendarEvent?.attendees.map(\.name) ?? []
+                attendees: recording.calendarEvent?.attendeeNames ?? []
             )
 
             let aiStart = Date()
@@ -2790,19 +2794,51 @@ final class RecordingManager {
 
     private func persistGeneratedTitle(for recording: Recording) {
         let title = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !title.isEmpty, let audioURL = recording.finalizedAudioURL else { return }
+        guard !title.isEmpty else { return }
+        updateMetadataSidecar(for: recording, describing: "generated title") { payload in
+            guard payload.generatedTitle != title else { return false }
+            payload.generatedTitle = title
+            return true
+        }
+    }
+
+    /// Persist who was in this meeting (confirmed participants + matched calendar attendees)
+    /// into the metadata sidecar. Both live only on the in-memory `Recording`, but the
+    /// transcript browser rebuilds a `Recording` from disk when you reopen a past recording —
+    /// without this, assigning a speaker there could only offer voice-library names.
+    private func persistMeetingContext(for recording: Recording) {
+        let participants = PersonName.displayList(recording.participants)
+        let attendees = recording.calendarEvent?.attendeeNames ?? []
+        guard !participants.isEmpty || !attendees.isEmpty else { return }
+        updateMetadataSidecar(for: recording, describing: "meeting participants") { payload in
+            guard payload.participants != participants || payload.calendarAttendees != attendees
+            else { return false }
+            payload.participants = participants
+            payload.calendarAttendees = attendees
+            return true
+        }
+    }
+
+    /// Read-modify-write the recording's metadata sidecar. Best-effort: a missing or
+    /// unreadable sidecar, or a `mutate` that reports no change, is a silent no-op.
+    private func updateMetadataSidecar(
+        for recording: Recording,
+        describing what: String,
+        _ mutate: (inout RecordingMetadataPayload) -> Bool
+    ) {
+        guard let audioURL = recording.finalizedAudioURL else { return }
         let metaURL = audioURL.deletingPathExtension().appendingPathExtension("json")
         guard let data = try? Data(contentsOf: metaURL),
-              var payload = try? JSONDecoder().decode(RecordingMetadataPayload.self, from: data) else { return }
-        guard payload.generatedTitle != title else { return }
-        payload.generatedTitle = title
+              var payload = try? JSONDecoder().decode(RecordingMetadataPayload.self, from: data)
+        else { return }
+        guard mutate(&payload) else { return }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let out = try? encoder.encode(payload) else { return }
         do {
             try out.write(to: metaURL, options: .atomic)
         } catch {
-            Logger.recording.error("Failed to persist generated title to metadata sidecar: \(error.localizedDescription, privacy: .public)")
+            Logger.recording.error("Failed to persist \(what, privacy: .public) to metadata sidecar: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -2961,7 +2997,8 @@ final class RecordingManager {
         guard !personId.isEmpty else { return }
         let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !key.isEmpty,
-              let attendee = recording.calendarEvent?.attendees.first(where: { $0.name.lowercased() == key }),
+              let attendee = recording.calendarEvent?.attendees
+                  .first(where: { PersonName.display($0.name).lowercased() == key }),
               let company = CompanyName.fromDomain(attendee.emailDomain) else { return }
         await voiceLibraryStore.suggestCompanyIfEmpty(id: personId, to: company)
     }
