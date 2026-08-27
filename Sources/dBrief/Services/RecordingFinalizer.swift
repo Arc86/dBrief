@@ -496,6 +496,53 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     /// existed — so the transcript browser can prefer it when present and fall
     /// back to the (draft) filename otherwise. See #71.
     var generatedTitle: String? = nil
+    /// The people in this meeting, written back at processing start: the names typed/confirmed
+    /// in the post-recording sheet, and the matched calendar event's attendees. Both are
+    /// session-only on `Recording`, so without them a recording reopened from the transcript
+    /// browser can only offer voice-library names when assigning speakers. Decoded leniently
+    /// (empty for sidecars written before these fields existed).
+    var participants: [String] = []
+    var calendarAttendees: [String] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case dateISO8601, durationSeconds, meetingTitle, masterFileName
+        case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees
+    }
+
+    init(
+        dateISO8601: String,
+        durationSeconds: TimeInterval,
+        meetingTitle: String,
+        masterFileName: String,
+        segmentFileNames: [String],
+        warnings: [String],
+        generatedTitle: String? = nil,
+        participants: [String] = [],
+        calendarAttendees: [String] = []
+    ) {
+        self.dateISO8601 = dateISO8601
+        self.durationSeconds = durationSeconds
+        self.meetingTitle = meetingTitle
+        self.masterFileName = masterFileName
+        self.segmentFileNames = segmentFileNames
+        self.warnings = warnings
+        self.generatedTitle = generatedTitle
+        self.participants = participants
+        self.calendarAttendees = calendarAttendees
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dateISO8601 = try c.decode(String.self, forKey: .dateISO8601)
+        durationSeconds = try c.decode(TimeInterval.self, forKey: .durationSeconds)
+        meetingTitle = try c.decode(String.self, forKey: .meetingTitle)
+        masterFileName = try c.decode(String.self, forKey: .masterFileName)
+        segmentFileNames = try c.decode([String].self, forKey: .segmentFileNames)
+        warnings = try c.decode([String].self, forKey: .warnings)
+        generatedTitle = try c.decodeIfPresent(String.self, forKey: .generatedTitle)
+        participants = try c.decodeIfPresent([String].self, forKey: .participants) ?? []
+        calendarAttendees = try c.decodeIfPresent([String].self, forKey: .calendarAttendees) ?? []
+    }
 }
 
 private struct ProcessResult: Sendable {

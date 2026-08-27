@@ -377,6 +377,9 @@ struct TranscriptBrowserView: View {
         // Carry the persisted AI title so the detail view's navigation title
         // reflects it after post-processing (not the stale filename). See #71.
         recording.generatedTitle = item.generatedTitle
+        // …and the meeting's people, so assigning a speaker offers the names from this
+        // meeting (participants + calendar attendees) and not just the voice library.
+        recording.participants = item.meetingNames
         return recording
     }
 }

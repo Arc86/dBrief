@@ -266,13 +266,30 @@ struct ParticipantPill: View {
     let name: String
     var color: Color = Brand.violet
     var onRemove: () -> Void
+    /// When set, the name itself becomes a button that hands editing back to the caller
+    /// (which swaps this pill for an inline text field). Nil keeps the pill read-only.
+    var onEdit: (() -> Void)? = nil
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 6) {
             BrandStatusDot(color: color, size: 6)
-            Text(name)
-                .font(.system(size: 12.5))
-                .foregroundStyle(.primary)
+            if let onEdit {
+                Button(action: onEdit) {
+                    Text(name)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.primary)
+                        .underline(hovering, color: .primary.opacity(0.35))
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .help("Click to edit this name")
+            } else {
+                Text(name)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.primary)
+            }
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))

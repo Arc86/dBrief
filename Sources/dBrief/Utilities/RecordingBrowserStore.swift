@@ -15,6 +15,10 @@ struct RecordingBrowserItem: Identifiable, Hashable, Sendable {
     /// AI-generated title persisted to the metadata sidecar after post-processing.
     /// Preferred over the filename-derived title when present. See #71.
     var generatedTitle: String? = nil
+    /// People known to have been in this meeting — the confirmed participants followed by the
+    /// matched calendar event's attendees, de-duped. Restored from the metadata sidecar so the
+    /// transcript viewer can offer them when assigning speakers.
+    var meetingNames: [String] = []
 
     /// Human title: the AI-generated title when present, else the meeting-title
     /// segment of the filename, else a date-based "Meeting …" label (dB2 look).
@@ -74,14 +78,18 @@ enum RecordingBrowserStore {
 
             var duration: TimeInterval = 0
             var generatedTitle: String?
+            var meetingNames: [String] = []
             let metaURL = base.appendingPathExtension("json")
             if let data = try? Data(contentsOf: metaURL),
                let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                // Key must match RecordingMetadataPayload's encoded field name.
+                // Keys must match RecordingMetadataPayload's encoded field names.
                 if let d = meta["durationSeconds"] as? TimeInterval {
                     duration = d
                 }
                 generatedTitle = meta["generatedTitle"] as? String
+                let participants = meta["participants"] as? [String] ?? []
+                let attendees = meta["calendarAttendees"] as? [String] ?? []
+                meetingNames = PersonName.displayList(participants + attendees)
             }
 
             return RecordingBrowserItem(
@@ -92,7 +100,8 @@ enum RecordingBrowserStore {
                 duration: duration,
                 hasTranscript: hasTranscript,
                 hasRichTranscript: hasRich,
-                generatedTitle: generatedTitle
+                generatedTitle: generatedTitle,
+                meetingNames: meetingNames
             )
         }
     }

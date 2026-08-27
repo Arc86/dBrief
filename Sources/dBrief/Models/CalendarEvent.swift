@@ -67,10 +67,12 @@ struct CalendarEvent: Sendable, Equatable, Codable, Identifiable {
         return "\(key)|\(startDate.timeIntervalSince1970)|\(endDate.timeIntervalSince1970)|\(names)"
     }
 
-    /// Comma-separated attendee names, for pre-filling the participants field and mapping
-    /// diarization speakers in order of first appearance.
-    var participantsText: String {
-        attendees.map(\.name).joined(separator: ", ")
+    /// Attendee display names, for pre-filling the participants field and mapping diarization
+    /// speakers in order of first appearance. Normalized through `PersonName` so a directory
+    /// name like "den Boer, Bart" arrives as one person ("Bart den Boer") — this is a list of
+    /// names, never a comma-joined string, precisely so no caller can split it apart again.
+    var attendeeNames: [String] {
+        PersonName.displayList(attendees.map(\.name))
     }
 
     /// Derived meeting modality: "online" when flagged online, "onsite" when a physical

@@ -26,12 +26,26 @@ struct CalendarEventTests {
         )
     }
 
-    // MARK: - participantsText
+    // MARK: - attendeeNames
 
     @Test
-    func participantsTextJoinsAttendeeNames() {
+    func attendeeNamesListsAttendees() {
         let e = event(attendees: [person("Alice", "alice@acme.com"), person("Bob", nil)])
-        #expect(e.participantsText == "Alice, Bob")
+        #expect(e.attendeeNames == ["Alice", "Bob"])
+    }
+
+    /// Directory calendars hand us "Last, First"; one attendee must stay one name.
+    @Test
+    func attendeeNamesNormalizeDirectoryStyleNames() {
+        let e = event(attendees: [person("den Boer, Bart", "bart@acme.com"),
+                                  person("De Roni, Marco", nil)])
+        #expect(e.attendeeNames == ["Bart den Boer", "Marco De Roni"])
+    }
+
+    @Test
+    func attendeeNamesDropBlanksAndDuplicates() {
+        let e = event(attendees: [person("Alice", nil), person("  ", nil), person("alice", nil)])
+        #expect(e.attendeeNames == ["Alice"])
     }
 
     // MARK: - modality
