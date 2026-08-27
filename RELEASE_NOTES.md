@@ -1,3 +1,21 @@
+## dBrief 1.3.7
+
+**Your voice library grew up, and one attendee is one person again.** The Voice Library tab becomes a searchable two-pane list with companies, and the participants list stops splitting names like "den Boer, Bart" into two people.
+
+### Voice Library: search, companies, two panes
+
+- **A proper master-detail layout.** **Settings → Voice Library** now has a searchable people list beside a detail pane — search by name or company, filter by company, sort, and collapse company groups. Everything you could do before (rename with merge-on-collision, merge, forget a person, delete a single voiceprint) works the same way.
+- **Each person can carry a company**, and dBrief fills it in for you where it can: when a voice is enrolled, it matches the name against the meeting's calendar attendees and derives the company from their email domain. It only ever fills a blank — your own entry is never overwritten.
+- **Fixes:** a company edit in progress is no longer discarded when the list reloads after a rename, merge, or voiceprint delete; a search that matches nothing now says so instead of showing a blank pane; and the people list no longer renders as a translucent panel against the settings window.
+
+### One attendee is one person again
+
+- **Names like "den Boer, Bart" stay whole.** Directory calendars (Exchange/Outlook) hand over attendee names surname-first, and dBrief was splitting each one into two participants — so a five-person meeting showed eight names, and the broken names carried into the AI summary, the speaker mapping, and your voice library. Each attendee is now one participant, shown naturally as "Bart den Boer".
+- **Participant names are editable.** Click a name in the post-recording sheet to correct it in place — Return commits, Escape reverts. No more deleting the chip and retyping it.
+- **The meeting's people are remembered.** Reopen a past recording, click a speaker label, and the names from that meeting now appear under **In this meeting**, above your voice library — instead of the library alone. Applies to recordings processed from this version onward.
+
+---
+
 ## dBrief 1.3.6
 
 **dBrief knows when your meeting ends — and shows you how long transcription has left.** This release closes the loop on call detection (it can now stop recording when the call wraps, not just start when it begins) and replaces the indeterminate "working…" spinner with a real progress bar and time estimate.
