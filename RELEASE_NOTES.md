@@ -1,3 +1,16 @@
+## dBrief 1.3.8
+
+**Choose exactly which calendars dBrief listens to.** Calendar matching now respects a per-calendar allow-list, a tunable match window, and an option to see the whole day's meetings when picking manually.
+
+### Calendar matching, your way
+
+- **Pick which calendars count.** A new **Calendars** menu in **Settings → General → Calendar** lets you limit iCal matching to specific calendars — handy when work and personal calendars share a name. **All Calendars** stays the default and automatically covers calendars added later; an explicit selection never silently widens back to everything if one of your chosen calendars disappears.
+- **Control how close a match has to be.** A new **Automatic match window** picker (0–60 minutes, default 15) decides how far a non-overlapping event's start time can be from the recording start and still auto-fill the meeting. Set it to **Only overlapping** for the strictest matching.
+- **See the whole day when picking manually.** **Show all meetings from the recording day** expands the post-recording Meeting picker with every event on that calendar day — suggested matches first, then the rest chronologically, all-day events last — without changing what dBrief picks automatically.
+- **All-day events are now labeled** in the Meeting picker instead of showing a confusing time range.
+
+---
+
 ## dBrief 1.3.7
 
 **Your voice library grew up, and one attendee is one person again.** The Voice Library tab becomes a searchable two-pane list with companies, and the participants list stops splitting names like "den Boer, Bart" into two people.
