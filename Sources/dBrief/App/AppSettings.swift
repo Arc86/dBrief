@@ -6,6 +6,18 @@ import dBriefWire
 @MainActor
 @Observable
 final class AppSettings {
+    static let calendarMatchWindowOptions = [0, 5, 10, 15, 30, 60]
+
+    /// Maps stale or externally-written preferences to a value rendered by the Settings menu.
+    static func normalizedCalendarMatchWindowMinutes(_ value: Int) -> Int {
+        guard let lower = calendarMatchWindowOptions.first,
+              let upper = calendarMatchWindowOptions.last else { return 15 }
+        let bounded = min(max(value, lower), upper)
+        return calendarMatchWindowOptions.min {
+            abs($0 - bounded) < abs($1 - bounded)
+        } ?? 15
+    }
+
     // MARK: - Storage Keys
 
     enum Keys {
@@ -82,6 +94,9 @@ final class AppSettings {
         static let lifetimeTranscribedSeconds = "lifetimeTranscribedSeconds"
         static let parakeetModelVariant = "parakeetModelVariant"
         static let calendarSource = "calendarSource"
+        static let calendarMatchWindowMinutes = "calendarMatchWindowMinutes"
+        static let showAllMeetingsFromRecordingDay = "showAllMeetingsFromRecordingDay"
+        static let selectedICalCalendarIDs = "selectedICalCalendarIDs"
         static let recordHotkey = "recordHotkey"
         static let autoDeleteRecordingsEnabled = "autoDeleteRecordingsEnabled"
         static let autoDeleteRecordingsDays = "autoDeleteRecordingsDays"
@@ -744,6 +759,40 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(calendarSource.rawValue, forKey: Keys.calendarSource) }
     }
 
+    /// Maximum difference between an event's start and the recording start when the two do
+    /// not overlap. `0` restricts automatic matching to overlapping events. Values come from
+    /// the Settings preset menu and are normalized on load for forward/backward compatibility.
+    var calendarMatchWindowMinutes: Int {
+        didSet { UserDefaults.standard.set(calendarMatchWindowMinutes, forKey: Keys.calendarMatchWindowMinutes) }
+    }
+
+    /// Expands the post-recording Meeting picker with every event overlapping the local
+    /// calendar day on which the recording began. It never broadens automatic matching.
+    var showAllMeetingsFromRecordingDay: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                showAllMeetingsFromRecordingDay,
+                forKey: Keys.showAllMeetingsFromRecordingDay
+            )
+        }
+    }
+
+    /// EventKit calendars allowed to contribute meeting context. `nil` means all current and
+    /// future calendars; an empty set deliberately means none. Keeping those states distinct
+    /// prevents an explicit filter from ever broadening back to all calendars unexpectedly.
+    var selectedICalCalendarIDs: Set<String>? {
+        didSet {
+            if let selectedICalCalendarIDs {
+                UserDefaults.standard.set(
+                    selectedICalCalendarIDs.sorted(),
+                    forKey: Keys.selectedICalCalendarIDs
+                )
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.selectedICalCalendarIDs)
+            }
+        }
+    }
+
     var autoRecordCalls: Bool {
         didSet { UserDefaults.standard.set(autoRecordCalls, forKey: Keys.autoRecordCalls) }
     }
@@ -974,6 +1023,26 @@ final class AppSettings {
             self.calendarSource = legacy ? .iCal : .disabled
         } else {
             self.calendarSource = .iCal
+        }
+        let storedCalendarMatchWindow = defaults.object(
+            forKey: Keys.calendarMatchWindowMinutes
+        ) as? Int ?? 15
+        let normalizedCalendarMatchWindow = Self.normalizedCalendarMatchWindowMinutes(
+            storedCalendarMatchWindow
+        )
+        self.calendarMatchWindowMinutes = normalizedCalendarMatchWindow
+        if normalizedCalendarMatchWindow != storedCalendarMatchWindow {
+            defaults.set(normalizedCalendarMatchWindow, forKey: Keys.calendarMatchWindowMinutes)
+        }
+        self.showAllMeetingsFromRecordingDay = defaults.object(
+            forKey: Keys.showAllMeetingsFromRecordingDay
+        ) as? Bool ?? false
+        if defaults.object(forKey: Keys.selectedICalCalendarIDs) != nil {
+            self.selectedICalCalendarIDs = Set(
+                defaults.stringArray(forKey: Keys.selectedICalCalendarIDs) ?? []
+            )
+        } else {
+            self.selectedICalCalendarIDs = nil
         }
         self.autoRecordCalls = defaults.object(forKey: Keys.autoRecordCalls) as? Bool ?? false
         self.disabledCallApps = Set(defaults.stringArray(forKey: Keys.disabledCallApps) ?? [])

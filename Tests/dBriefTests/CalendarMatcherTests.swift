@@ -102,6 +102,92 @@ struct CalendarMatcherTests {
         #expect(best == soon)
     }
 
+    @Test("Custom fallback window controls non-overlapping matches")
+    func customFallbackWindow() {
+        let rs = t(9 * hour + 50 * minute)
+        let re = t(9 * hour + 50 * minute + 2)
+        let soon = event("Kickoff", 10 * hour, 11 * hour, attendees: ["A"])
+
+        let tooStrict = CalendarMatcher.selectBestMatch(
+            from: [soon],
+            recordingStart: rs,
+            recordingEnd: re,
+            fallbackWindow: 5 * minute
+        )
+        let inclusiveBoundary = CalendarMatcher.selectBestMatch(
+            from: [soon],
+            recordingStart: rs,
+            recordingEnd: re,
+            fallbackWindow: 10 * minute
+        )
+
+        #expect(tooStrict == nil)
+        #expect(inclusiveBoundary == soon)
+    }
+
+    @Test("Zero fallback window still includes overlapping events")
+    func overlapOnly() {
+        let rs = t(10 * hour)
+        let re = t(10 * hour + 30 * minute)
+        let overlapping = event("Review", 9.75 * hour, 10.25 * hour)
+        let nearby = event("Next", 10.5 * hour, 11 * hour)
+
+        let ranked = CalendarMatcher.rankedMatches(
+            from: [nearby, overlapping],
+            recordingStart: rs,
+            recordingEnd: re,
+            fallbackWindow: 0
+        )
+
+        #expect(ranked == [overlapping])
+    }
+
+    @Test("Full-day picker keeps suggestions first, then timed events, then all-day events")
+    func fullDayDisplayCandidates() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let rs = t(10 * hour)
+        let suggested = event("Suggested", 10 * hour, 10.5 * hour, attendees: ["A"])
+        let earlier = event("Earlier", 8 * hour, 8.5 * hour)
+        let later = event("Later", 13 * hour, 14 * hour)
+        let allDay = event("Conference", 0, 24 * hour, allDay: true)
+        let tomorrow = event("Tomorrow", 26 * hour, 27 * hour)
+
+        let displayed = CalendarMatcher.displayCandidates(
+            from: [tomorrow, later, allDay, suggested, earlier],
+            automaticMatches: [suggested],
+            recordingStart: rs,
+            includeFullRecordingDay: true,
+            calendar: utc
+        )
+
+        #expect(displayed == [suggested, earlier, later, allDay])
+    }
+
+    @Test("Full-day picker preserves an automatic match across midnight")
+    func crossMidnightAutomaticMatch() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let rs = t(23 * hour + 55 * minute)
+        let nextDay = event("Midnight sync", 24 * hour + 5 * minute, 25 * hour)
+
+        let automatic = CalendarMatcher.rankedMatches(
+            from: [nextDay],
+            recordingStart: rs,
+            recordingEnd: rs.addingTimeInterval(minute),
+            fallbackWindow: 15 * minute
+        )
+        let displayed = CalendarMatcher.displayCandidates(
+            from: [nextDay],
+            automaticMatches: automatic,
+            recordingStart: rs,
+            includeFullRecordingDay: true,
+            calendar: utc
+        )
+
+        #expect(displayed == [nextDay])
+    }
+
     @Test("No qualifying events returns nil")
     func noMatch() {
         let rs = t(10 * hour)

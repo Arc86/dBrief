@@ -315,18 +315,41 @@ final class RecordingManager {
     private func lookupCalendarCandidates(for recording: Recording) async {
         let start = recording.date
         let end = start.addingTimeInterval(recording.duration)
-        let candidates: [CalendarEvent]
+        let includeFullRecordingDay = appSettings.showAllMeetingsFromRecordingDay
+        let fallbackWindow = TimeInterval(appSettings.calendarMatchWindowMinutes * 60)
+        let events: [CalendarEvent]
         switch appSettings.effectiveCalendarSource {
         case .iCal:
-            candidates = await calendarService.findCandidates(recordingStart: start, recordingEnd: end)
+            events = await calendarService.findEvents(
+                recordingStart: start,
+                recordingEnd: end,
+                includeFullRecordingDay: includeFullRecordingDay,
+                selectedCalendarIDs: appSettings.selectedICalCalendarIDs
+            )
         case .outlook:
-            candidates = await outlookCalendarService.findCandidates(recordingStart: start, recordingEnd: end)
+            events = await outlookCalendarService.findEvents(
+                recordingStart: start,
+                recordingEnd: end,
+                includeFullRecordingDay: includeFullRecordingDay
+            )
         case .disabled:
-            candidates = []
+            events = []
         }
-        recording.calendarCandidates = candidates
+
+        let automaticMatches = CalendarMatcher.rankedMatches(
+            from: events,
+            recordingStart: start,
+            recordingEnd: end,
+            fallbackWindow: fallbackWindow
+        )
+        recording.calendarCandidates = CalendarMatcher.displayCandidates(
+            from: events,
+            automaticMatches: automaticMatches,
+            recordingStart: start,
+            includeFullRecordingDay: includeFullRecordingDay
+        )
         if recording.calendarEvent == nil {
-            recording.calendarEvent = candidates.first
+            recording.calendarEvent = automaticMatches.first
         }
     }
 

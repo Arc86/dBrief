@@ -3,7 +3,7 @@ import Foundation
 /// Pure best-match selection for calendar events. No EventKit dependency, fully testable.
 enum CalendarMatcher {
     /// Window for the "starting soon" fallback when an event does not overlap the recording.
-    static let fallbackWindow: TimeInterval = 15 * 60  // 15 minutes
+    static let defaultFallbackWindow: TimeInterval = 15 * 60
 
     /// Score bonus when the event was active at the moment recording began.
     private static let activeAtStartBonus: Double = 0.10
@@ -23,15 +23,17 @@ enum CalendarMatcher {
     static func rankedMatches(
         from candidates: [CalendarEvent],
         recordingStart rs: Date,
-        recordingEnd re: Date
+        recordingEnd re: Date,
+        fallbackWindow: TimeInterval = defaultFallbackWindow
     ) -> [CalendarEvent] {
         let recLen = max(0, re.timeIntervalSince(rs))
+        let safeFallbackWindow = max(0, fallbackWindow)
 
         let scored: [(event: CalendarEvent, score: Double, overlap: Double)] = candidates.compactMap { event in
             let es = event.startDate
             let ee = event.endDate
             let overlap = max(0, min(re, ee).timeIntervalSince(max(rs, es)))
-            let qualifies = overlap > 0 || abs(es.timeIntervalSince(rs)) <= fallbackWindow
+            let qualifies = overlap > 0 || abs(es.timeIntervalSince(rs)) <= safeFallbackWindow
             guard qualifies else { return nil }
 
             let evLen = max(0, ee.timeIntervalSince(es))
@@ -54,8 +56,48 @@ enum CalendarMatcher {
     static func selectBestMatch(
         from candidates: [CalendarEvent],
         recordingStart: Date,
-        recordingEnd: Date
+        recordingEnd: Date,
+        fallbackWindow: TimeInterval = defaultFallbackWindow
     ) -> CalendarEvent? {
-        rankedMatches(from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd).first
+        rankedMatches(
+            from: candidates,
+            recordingStart: recordingStart,
+            recordingEnd: recordingEnd,
+            fallbackWindow: fallbackWindow
+        ).first
+    }
+
+    /// Events displayed by the post-recording Meeting picker. Automatic matches always come
+    /// first in their relevance order. When requested, the remaining events overlapping the
+    /// recording's local calendar day follow chronologically, with all-day blocks last.
+    /// Expanding this list never expands the set eligible for automatic selection.
+    static func displayCandidates(
+        from candidates: [CalendarEvent],
+        automaticMatches: [CalendarEvent],
+        recordingStart: Date,
+        includeFullRecordingDay: Bool,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [CalendarEvent] {
+        var seen = Set<String>()
+        let uniqueAutomaticMatches = automaticMatches.filter { seen.insert($0.id).inserted }
+        guard includeFullRecordingDay,
+              let day = calendar.dateInterval(of: .day, for: recordingStart) else {
+            return uniqueAutomaticMatches
+        }
+
+        let remaining = candidates
+            .filter { event in
+                event.endDate > day.start
+                    && event.startDate < day.end
+                    && seen.insert(event.id).inserted
+            }
+            .sorted { lhs, rhs in
+                if lhs.isAllDay != rhs.isAllDay { return !lhs.isAllDay }
+                if lhs.startDate != rhs.startDate { return lhs.startDate < rhs.startDate }
+                if lhs.endDate != rhs.endDate { return lhs.endDate < rhs.endDate }
+                return lhs.id < rhs.id
+            }
+
+        return uniqueAutomaticMatches + remaining
     }
 }

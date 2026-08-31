@@ -26,24 +26,49 @@ actor CalendarService {
         }
     }
 
-    /// Ranked calendar events plausibly matching the recording span `[recordingStart, recordingEnd]`,
-    /// best-first. Empty if access is denied. Matching at recording stop (rather than start) lets
-    /// `CalendarMatcher` score candidates against the true recording span.
-    func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
+    /// Calendar events around the recording, optionally expanded to cover its full local day.
+    /// Empty if access is denied. Ranking stays in `CalendarMatcher` so automatic matching and
+    /// the broader manual picker remain separate concerns.
+    func findEvents(
+        recordingStart: Date,
+        recordingEnd: Date,
+        includeFullRecordingDay: Bool,
+        selectedCalendarIDs: Set<String>?
+    ) async -> [CalendarEvent] {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
             return []
         }
 
+        let calendars: [EKCalendar]?
+        let availableCalendars = store.calendars(for: .event)
+        let resolvedCalendarIDs = ICalCalendarFilter.resolvedIdentifiers(
+            available: availableCalendars.map(\.calendarIdentifier),
+            selected: selectedCalendarIDs
+        )
+        if let resolvedCalendarIDs {
+            guard !resolvedCalendarIDs.isEmpty else { return [] }
+            calendars = availableCalendars.filter {
+                resolvedCalendarIDs.contains($0.calendarIdentifier)
+            }
+        } else {
+            calendars = nil
+        }
+
+        var queryStart = recordingStart.addingTimeInterval(-searchWindow)
+        var queryEnd = recordingEnd.addingTimeInterval(searchWindow)
+        if includeFullRecordingDay,
+           let day = Calendar.autoupdatingCurrent.dateInterval(of: .day, for: recordingStart) {
+            queryStart = min(queryStart, day.start)
+            queryEnd = max(queryEnd, day.end)
+        }
+
         let predicate = store.predicateForEvents(
-            withStart: recordingStart.addingTimeInterval(-searchWindow),
-            end: recordingEnd.addingTimeInterval(searchWindow),
-            calendars: nil
+            withStart: queryStart,
+            end: queryEnd,
+            calendars: calendars
         )
 
-        let candidates = store.events(matching: predicate).compactMap { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.rankedMatches(
-            from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
-        )
+        return store.events(matching: predicate).compactMap { Self.makeCalendarEvent(from: $0) }
     }
 
     /// Maps an EKEvent into our Sendable value type, extracting attendee names + emails,
@@ -88,5 +113,18 @@ actor CalendarService {
         let cleanEmail = (email?.isEmpty == false) ? email : nil
         if name.isEmpty, cleanEmail == nil { return nil }
         return CalendarEvent.Person(name: name.isEmpty ? (cleanEmail ?? "") : name, email: cleanEmail)
+    }
+}
+
+/// Resolves a persisted iCal allow-list against calendars that currently exist. `nil` keeps
+/// EventKit's all-calendars behavior; an explicit selection can only shrink and never broadens
+/// when one or more selected calendars disappear.
+enum ICalCalendarFilter {
+    static func resolvedIdentifiers(
+        available: [String],
+        selected: Set<String>?
+    ) -> Set<String>? {
+        guard let selected else { return nil }
+        return selected.intersection(Set(available))
     }
 }

@@ -10,12 +10,20 @@ actor OutlookCalendarService {
         self.authService = authService
     }
 
-    /// Ranked calendar events plausibly matching the recording span, best-first. Empty on failure.
-    func findCandidates(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
+    /// Calendar events around the recording, optionally expanded to cover its full local day.
+    /// Empty on failure. Ranking is performed by `CalendarMatcher` after the fetch.
+    func findEvents(
+        recordingStart: Date,
+        recordingEnd: Date,
+        includeFullRecordingDay: Bool
+    ) async -> [CalendarEvent] {
         do {
             let token = try await authService.getValidAccessToken()
-            return try await fetchCandidates(
-                recordingStart: recordingStart, recordingEnd: recordingEnd, token: token
+            return try await fetchEvents(
+                recordingStart: recordingStart,
+                recordingEnd: recordingEnd,
+                includeFullRecordingDay: includeFullRecordingDay,
+                token: token
             )
         } catch {
             Logger.calendar.error("Outlook calendar fetch failed: \(error.localizedDescription)")
@@ -25,15 +33,24 @@ actor OutlookCalendarService {
 
     // MARK: - Private
 
-    private func fetchCandidates(
+    private func fetchEvents(
         recordingStart: Date,
         recordingEnd: Date,
+        includeFullRecordingDay: Bool,
         token: String
     ) async throws -> [CalendarEvent] {
+        var queryStart = recordingStart.addingTimeInterval(-searchWindow)
+        var queryEnd = recordingEnd.addingTimeInterval(searchWindow)
+        if includeFullRecordingDay,
+           let day = Calendar.autoupdatingCurrent.dateInterval(of: .day, for: recordingStart) {
+            queryStart = min(queryStart, day.start)
+            queryEnd = max(queryEnd, day.end)
+        }
+
         var components = URLComponents(string: Self.calendarViewURL)!
         components.queryItems = [
-            URLQueryItem(name: "startDateTime", value: graphDateString(recordingStart.addingTimeInterval(-searchWindow))),
-            URLQueryItem(name: "endDateTime",   value: graphDateString(recordingEnd.addingTimeInterval(searchWindow))),
+            URLQueryItem(name: "startDateTime", value: graphDateString(queryStart)),
+            URLQueryItem(name: "endDateTime",   value: graphDateString(queryEnd)),
             URLQueryItem(name: "$select",       value: "id,subject,bodyPreview,body,attendees,organizer,location,isOnlineMeeting,isAllDay,start,end"),
         ]
 
@@ -47,10 +64,7 @@ actor OutlookCalendarService {
         }
 
         let result = try JSONDecoder().decode(CalendarViewResponse.self, from: data)
-        let candidates = result.value.compactMap { Self.makeCalendarEvent(from: $0) }
-        return CalendarMatcher.rankedMatches(
-            from: candidates, recordingStart: recordingStart, recordingEnd: recordingEnd
-        )
+        return result.value.compactMap { Self.makeCalendarEvent(from: $0) }
     }
 
     // MARK: - JSON types

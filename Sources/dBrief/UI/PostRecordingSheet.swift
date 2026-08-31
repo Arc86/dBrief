@@ -499,6 +499,9 @@ struct PostRecordingSheet: View {
     private func pickerLabel(_ event: CalendarEvent) -> String {
         let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "(untitled)" : event.title
+        if event.isAllDay {
+            return "\(title)  All day"
+        }
         let start = event.startDate.formatted(date: .omitted, time: .shortened)
         let end = event.endDate.formatted(date: .omitted, time: .shortened)
         return "\(title)  \(start)–\(end)"
