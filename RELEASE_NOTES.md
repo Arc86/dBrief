@@ -1,3 +1,28 @@
+## dBrief 1.3.9
+
+**Nothing is lost anymore, even if dBrief or your Mac doesn't shut down cleanly.** This release is about durability: an interrupted recording — a crash, a forced quit, a power loss — is now recovered into History automatically the next time dBrief launches, instead of leaving orphaned audio files behind.
+
+### Recover interrupted recordings
+
+- **A crashed or force-quit recording is no longer gone.** dBrief now checkpoints an in-progress capture to disk as it records. If the app (or the Mac) goes down mid-recording, the next launch finds it, finalizes the audio, and drops it straight into History — you'll see a dismissible banner confirming what was recovered.
+- **If recovery can't finish** (e.g. the recording's storage location is disconnected), the raw capture stays safe on disk and the banner tells you so, with a **"Show recovery files"** button (Settings → About) to go find it directly.
+- **A new "Export diagnostics…" button** in **Settings → About** builds a support report covering app/storage/recovery/recording-lifecycle events — never audio, transcripts, meeting titles, names, file paths, or credentials.
+
+### Steadier finalization
+
+- **ffmpeg failures during merge/transcode are handled more gracefully**, reducing spurious finalization errors on already-tricky recordings.
+
+### Security
+
+- **Remote endpoint API keys move to Keychain.** Transcription/AI endpoint credentials stored in plain UserDefaults are migrated to Keychain automatically and safely — a key is only cleared from the old location after its Keychain write is confirmed, so a transient failure can't lose a credential.
+
+### Fixes
+
+- **Permission guidance is more consistent.** Onboarding and Settings → Permissions now derive their "Request access" / "Open System Settings" prompts from one shared rule, so a denied permission always points you to the right next step.
+- **About screen animations respect Reduce Motion.**
+
+---
+
 ## dBrief 1.3.8
 
 **Choose exactly which calendars dBrief listens to.** Calendar matching now respects a per-calendar allow-list, a tunable match window, and an option to see the whole day's meetings when picking manually.
