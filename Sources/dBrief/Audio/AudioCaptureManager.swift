@@ -52,6 +52,8 @@ final class AudioCaptureManager {
 
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
+    private(set) var lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics()
+    private(set) var lastSystemCaptureFailure: DurabilityDiagnosticFailure?
 
     /// URLs of the two track files written during the last recording.
     /// Cleared only by the next `startRecording`.
@@ -149,33 +151,48 @@ final class AudioCaptureManager {
 
         aecSettingEnabled = acousticEchoCancellationEnabled
         selectedInputUID = inputDeviceUID ?? ""
+        startTime = nil
+        pauseStartTime = nil
+        pauseAccumulator = 0
+        duration = 0
         trackURLs = CapturedTracks(
             systemURL: hasSystemAudioPermission ? systemURL : nil,
             micURL: hasMicrophonePermission ? micURL : nil
         )
+        lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics()
+        lastSystemCaptureFailure = nil
 
         log.info("Starting recording — system=\(self.hasSystemAudioPermission, privacy: .public) mic=\(self.hasMicrophonePermission, privacy: .public)")
 
-        if hasSystemAudioPermission {
-            let writer = AudioTrackWriter(url: systemURL, role: .system)
-            self.systemWriter = writer
-            try await startSystemPipeline(writer: writer)
-        }
-        if hasMicrophonePermission {
-            let writer = AudioTrackWriter(url: micURL, role: .mic)
-            self.micWriter = writer
-            try startMicPipeline(writer: writer, inputDeviceUID: inputDeviceUID)
+        do {
+            if hasSystemAudioPermission {
+                let writer = AudioTrackWriter(url: systemURL, role: .system)
+                self.systemWriter = writer
+                try await startSystemPipeline(writer: writer)
+            }
+            if hasMicrophonePermission {
+                let writer = AudioTrackWriter(url: micURL, role: .mic)
+                self.micWriter = writer
+                try startMicPipeline(writer: writer, inputDeviceUID: inputDeviceUID)
+            }
+        } catch {
+            // Capture setup is transactional. A system stream can already be
+            // running when mic setup fails; close every partial pipeline so its
+            // recovery files remain readable instead of leaking live resources.
+            await stopRecording()
+            throw error
         }
 
         isCapturing = true
         startTime = Date()
-        pauseAccumulator = 0
         startTimer()
         log.info("Recording started")
     }
 
     func stopRecording() async {
-        guard isCapturing else { return }
+        guard isCapturing || systemCapture != nil || micEngine != nil
+                || systemWriter != nil || micWriter != nil
+        else { return }
         stopTimer()
         // Tear down observers before the engine is nilled (the config-change token
         // is bound to `micEngine`).
@@ -195,6 +212,7 @@ final class AudioCaptureManager {
 
         if let systemCapture {
             try? await systemCapture.stop()
+            lastSystemCaptureFailure = systemCapture.unexpectedStopFailure
             self.systemCapture = nil
         }
         if let micEngine {
@@ -203,6 +221,11 @@ final class AudioCaptureManager {
             self.micEngine = nil
         }
 
+        lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics(
+            system: systemWriter?.diagnostics ?? .init(),
+            microphone: micWriter?.diagnostics ?? .init(),
+            systemStreamFailures: lastSystemCaptureFailure == nil ? 0 : 1
+        )
         systemWriter?.close(); systemWriter = nil
         micWriter?.close(); micWriter = nil
 
@@ -210,6 +233,8 @@ final class AudioCaptureManager {
 
         appliedInputUID = ""
         appliedVoiceProcessing = false
+        startTime = nil
+        pauseStartTime = nil
         isCapturing = false
         peakLevel = 0
         log.info("Recording stopped")
@@ -260,6 +285,12 @@ final class AudioCaptureManager {
         let filter = try await SystemAudioCapture.createContentFilter()
         let capture = try SystemAudioCapture(filter: filter)
         capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: systemLiveContinuation)
+        capture.unexpectedStopHandler = { [weak self] failure in
+            Task { @MainActor [weak self] in
+                self?.lastSystemCaptureFailure = failure
+                self?.statusNoteHandler?("System audio capture stopped unexpectedly")
+            }
+        }
         self.systemCapture = capture
         try await capture.start()
         log.info("System capture started")

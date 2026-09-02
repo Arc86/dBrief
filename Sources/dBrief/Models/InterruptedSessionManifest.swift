@@ -1,7 +1,7 @@
 import Foundation
 
-/// Minimal on-disk contract for an active capture session. Phase 4 will write
-/// these manifests atomically; Phase 2 establishes safe discovery behavior.
+/// Minimal on-disk contract for an active capture session. It intentionally
+/// contains no meeting title, participant name, transcript, or source app.
 struct InterruptedSessionManifest: Codable, Equatable, Sendable {
     static let currentVersion = 1
     static let fileName = "session.json"
@@ -51,12 +51,36 @@ struct InterruptedSessionManifest: Codable, Equatable, Sendable {
         self.state = state
         self.tracks = tracks
     }
+
+    func updatingState(_ newState: State) -> InterruptedSessionManifest {
+        InterruptedSessionManifest(
+            version: version,
+            id: id,
+            startedAt: startedAt,
+            state: newState,
+            tracks: tracks
+        )
+    }
+}
+
+struct InterruptedSessionTrack: Equatable, Sendable {
+    let kind: InterruptedSessionManifest.Track.Kind
+    let url: URL
 }
 
 struct InterruptedSessionCandidate: Equatable, Sendable {
     let manifest: InterruptedSessionManifest
     let manifestURL: URL
-    let existingTrackURLs: [URL]
+    let existingTracks: [InterruptedSessionTrack]
+
+    var existingTrackURLs: [URL] { existingTracks.map(\.url) }
+
+    var capturedTracks: CapturedTracks {
+        CapturedTracks(
+            systemURL: existingTracks.first { $0.kind == .systemAudio }?.url,
+            micURL: existingTracks.first { $0.kind == .microphone }?.url
+        )
+    }
 }
 
 enum InterruptedSessionDiscovery {
@@ -87,12 +111,13 @@ enum InterruptedSessionDiscovery {
                   manifest.state.isRecoverable
             else { continue }
 
-            let existingTracks = manifest.tracks.compactMap { track in
-                safeTrackURL(
+            let existingTracks = manifest.tracks.compactMap { track -> InterruptedSessionTrack? in
+                guard let url = safeTrackURL(
                     relativePath: track.relativePath,
                     sessionDirectory: sessionDirectory,
                     fileManager: fileManager
-                )
+                ) else { return nil }
+                return InterruptedSessionTrack(kind: track.kind, url: url)
             }
             guard !existingTracks.isEmpty else { continue }
 
@@ -100,7 +125,7 @@ enum InterruptedSessionDiscovery {
                 InterruptedSessionCandidate(
                     manifest: manifest,
                     manifestURL: manifestURL,
-                    existingTrackURLs: existingTracks
+                    existingTracks: existingTracks
                 )
             )
         }

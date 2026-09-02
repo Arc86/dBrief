@@ -12,6 +12,19 @@ struct CapturedTracks: Sendable {
     var micURL: URL?
 }
 
+struct AudioTrackWriteDiagnostics: Sendable {
+    var buffersWritten: Int64 = 0
+    var framesWritten: Int64 = 0
+    var droppedBuffers: Int64 = 0
+    var writeErrors: Int64 = 0
+}
+
+struct AudioCaptureWriteDiagnostics: Sendable {
+    var system = AudioTrackWriteDiagnostics()
+    var microphone = AudioTrackWriteDiagnostics()
+    var systemStreamFailures: Int64 = 0
+}
+
 final class AudioTrackWriter: @unchecked Sendable {
     enum Role: String, Sendable { case system, mic }
 
@@ -22,6 +35,9 @@ final class AudioTrackWriter: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private var _peakLevel: Float = 0
     private var droppedCount = 0
+    private var buffersWritten: Int64 = 0
+    private var framesWritten: Int64 = 0
+    private var writeErrorCount: Int64 = 0
 
     init(url: URL, role: Role) {
         self.url = url
@@ -37,6 +53,17 @@ final class AudioTrackWriter: @unchecked Sendable {
     /// to this format so a single continuous track stays valid.
     var establishedFormat: AVAudioFormat? {
         lock.withLock { audioFile?.processingFormat }
+    }
+
+    var diagnostics: AudioTrackWriteDiagnostics {
+        lock.withLock {
+            AudioTrackWriteDiagnostics(
+                buffersWritten: buffersWritten,
+                framesWritten: framesWritten,
+                droppedBuffers: Int64(droppedCount),
+                writeErrors: writeErrorCount
+            )
+        }
     }
 
     func write(_ buffer: AVAudioPCMBuffer) throws {
@@ -62,6 +89,7 @@ final class AudioTrackWriter: @unchecked Sendable {
                     audioFile = try AVAudioFile(forWriting: url, settings: settings)
                     log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
                 } catch {
+                    writeErrorCount += 1
                     log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open an audio track")
                     throw error
                 }
@@ -81,7 +109,14 @@ final class AudioTrackWriter: @unchecked Sendable {
             }
 
             _peakLevel = Self.peakLevel(of: buffer)
-            try file.write(from: buffer)
+            do {
+                try file.write(from: buffer)
+                buffersWritten += 1
+                framesWritten += Int64(buffer.frameLength)
+            } catch {
+                writeErrorCount += 1
+                throw error
+            }
         }
     }
 

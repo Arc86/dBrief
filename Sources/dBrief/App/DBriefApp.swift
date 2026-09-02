@@ -74,6 +74,7 @@ final class AppContext {
         log.info("Refreshing permission status...")
         await recordingManager.checkPermissions()
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
+        await recordingManager.recoverInterruptedSessions()
         callDetectionService.start(appState: appState, appSettings: appSettings, recordingManager: recordingManager)
         recordingManager.requestNotificationPermission()
         miniPlayer.setUp(appState: appState, recordingManager: recordingManager, appSettings: appSettings)
@@ -184,7 +185,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // doesn't inherit orphaned GPU allocations that keep it at high
         // utilization until reboot.
         Task { @MainActor in
-            // Flush any debounced chat save first so an exchange sent moments
+            // Close active audio writers first. This makes the recovery tracks
+            // readable even if a later shutdown task stalls or is interrupted.
+            await self.recordingManager?.prepareForTermination()
+            // Flush any debounced chat save so an exchange sent moments
             // before quit survives — the _exit() below skips normal teardown.
             await self.transcriptChatStore?.flushAll()
             await self.recordingManager?.forceReleaseGPU()

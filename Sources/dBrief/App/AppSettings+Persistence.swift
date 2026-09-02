@@ -89,13 +89,13 @@ extension AppSettings {
         let trimmed = overridePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return fallback }
 
-        let url = URL(fileURLWithPath: trimmed, isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            return url
-        } catch {
-            return fallback
-        }
+        // Preserve the user's selected destination even while an external drive
+        // or network share is temporarily unavailable. Silently falling back to
+        // another folder makes a recording appear to vanish when that volume
+        // later reconnects and History switches back to the configured path.
+        // Finalization now reports an unavailable destination and retains the
+        // recovery tracks for a later retry.
+        return URL(fileURLWithPath: trimmed, isDirectory: true)
     }
 
     // MARK: Endpoint Persistence

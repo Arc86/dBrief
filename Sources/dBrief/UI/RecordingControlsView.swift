@@ -177,6 +177,32 @@ struct RecordingControlsView: View {
                     .foregroundStyle(.red)
                     .lineLimit(3)
             }
+
+            if let notice = appState.durabilityNotice {
+                let noticeColor: Color = appState.durabilityNoticeIsWarning ? .orange : .green
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: appState.durabilityNoticeIsWarning
+                        ? "externaldrive.badge.exclamationmark"
+                        : "externaldrive.badge.checkmark")
+                        .foregroundStyle(noticeColor)
+                    Text(notice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button {
+                        appState.durabilityNotice = nil
+                        appState.durabilityNoticeIsWarning = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .accessibilityLabel("Dismiss recovery notice")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(noticeColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
         }
     }
 

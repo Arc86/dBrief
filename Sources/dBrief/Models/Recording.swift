@@ -39,6 +39,10 @@ final class Recording: Identifiable {
     /// Session-only; never persisted.
     @ObservationIgnored var calendarLookupTask: Task<Void, Never>?
     var capturedTracks: CapturedTracks?
+    /// Atomic recovery manifest for an in-progress local capture. Removed only
+    /// after a verified master audio file and metadata sidecar exist, or after
+    /// the user explicitly discards the recording.
+    var recoveryManifestURL: URL?
     /// Whether echo cancellation should be applied when finalizing this recording's
     /// mic track. Captured at recording *start* (user setting AND a real speaker→mic
     /// echo path existing) so the offline sidechain duck matches the route at the

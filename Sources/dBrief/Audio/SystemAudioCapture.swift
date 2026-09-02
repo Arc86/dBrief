@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreMedia
+import OSLog
 @preconcurrency import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, @unchecked Sendable {
@@ -31,6 +32,15 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
         set { delegate.audioBufferHandler = newValue }
     }
 
+    var unexpectedStopHandler: (@Sendable (DurabilityDiagnosticFailure) -> Void)? {
+        get { delegate.unexpectedStopHandler }
+        set { delegate.unexpectedStopHandler = newValue }
+    }
+
+    var unexpectedStopFailure: DurabilityDiagnosticFailure? {
+        delegate.unexpectedStopFailure
+    }
+
     func start() async throws {
         try stream.addStreamOutput(delegate, type: .audio, sampleHandlerQueue: .global(qos: .userInteractive))
         try await stream.startCapture()
@@ -52,10 +62,22 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
 private final class StreamDelegate: NSObject, SCStreamDelegate, SCStreamOutput, @unchecked Sendable {
     private let lock = NSLock()
     private var _audioBufferHandler: (@Sendable (CMSampleBuffer) -> Void)?
+    private var _unexpectedStopHandler: (@Sendable (DurabilityDiagnosticFailure) -> Void)?
+    private var _unexpectedStopFailure: DurabilityDiagnosticFailure?
 
     var audioBufferHandler: (@Sendable (CMSampleBuffer) -> Void)? {
         get { lock.withLock { _audioBufferHandler } }
         set { lock.withLock { _audioBufferHandler = newValue } }
+    }
+
+    var unexpectedStopHandler: (@Sendable (DurabilityDiagnosticFailure) -> Void)? {
+        get { lock.withLock { _unexpectedStopHandler } }
+        set { lock.withLock { _unexpectedStopHandler = newValue } }
+    }
+
+
+    var unexpectedStopFailure: DurabilityDiagnosticFailure? {
+        lock.withLock { _unexpectedStopFailure }
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -64,7 +86,12 @@ private final class StreamDelegate: NSObject, SCStreamDelegate, SCStreamOutput, 
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        // Stream stopped unexpectedly
+        let failure = DurabilityDiagnosticFailure(error: error)
+        lock.withLock { _unexpectedStopFailure = failure }
+        Logger.audio.error(
+            "System audio stream stopped unexpectedly: domain=\(failure.domain, privacy: .public) code=\(failure.code, privacy: .public)"
+        )
+        unexpectedStopHandler?(failure)
     }
 }
 

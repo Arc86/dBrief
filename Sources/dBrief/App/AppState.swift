@@ -71,6 +71,10 @@ final class AppState {
     /// When set, the transcript browser should select the in-progress live recording on open.
     var pendingLiveTranscriptSelection: Bool = false
     var lastError: String?
+    /// Launch-time durability/recovery result shown near the recording controls.
+    /// Contains no recording title or file path.
+    var durabilityNotice: String?
+    var durabilityNoticeIsWarning = false
     /// Transient note shown during recording when dBrief auto-switches the input
     /// device or echo cancellation mid-recording (e.g. "Switched to MacBook Microphone").
     /// Auto-cleared a few seconds after it's set; nil when there's nothing to show.

@@ -142,19 +142,128 @@ final class RecordingManager {
         audioCaptureManager.microphoneAuthorizationState
     }
 
+    /// Promotes any interrupted Application Support capture into the normal
+    /// recordings library. Recovery never starts transcription or integrations;
+    /// it only makes the audio durable and visible in History.
+    func recoverInterruptedSessions() async {
+        let candidates = InterruptedSessionDiscovery.discover(
+            in: InterruptedSessionStore.defaultRootURL
+        )
+        guard !candidates.isEmpty else { return }
+
+        var recoveredCount = 0
+        var failedCount = 0
+        for candidate in candidates {
+            let tracks = candidate.capturedTracks
+            DurabilityJournal.shared.record(.init(
+                sessionID: candidate.manifest.id,
+                name: "interrupted_capture_discovered",
+                outcome: .warning,
+                measurements: captureTrackMeasurements(tracks)
+            ))
+
+            let recording = Recording(
+                id: candidate.manifest.id,
+                date: candidate.manifest.startedAt,
+                fileURL: candidate.manifestURL.deletingLastPathComponent()
+                    .appendingPathComponent("capture"),
+                meetingTitleDraft: "Recovered recording"
+            )
+            recording.capturedTracks = tracks
+            recording.recoveryManifestURL = candidate.manifestURL
+            recording.fileSize = Self.totalTrackFileSize(tracks)
+            if let probeURL = tracks.micURL ?? tracks.systemURL {
+                recording.duration = await durationSeconds(for: probeURL)
+            }
+
+            do {
+                try await ensureRecordingFinalized(recording: recording)
+                recoveredCount += 1
+                DurabilityJournal.shared.record(.init(
+                    sessionID: recording.id,
+                    name: "interrupted_capture_recovered",
+                    outcome: .succeeded,
+                    measurements: ["masterBytes": Self.fileSize(at: recording.fileURL)]
+                ))
+            } catch {
+                failedCount += 1
+                DurabilityJournal.shared.record(.init(
+                    sessionID: recording.id,
+                    name: "interrupted_capture_recovered",
+                    outcome: .failed,
+                    measurements: captureTrackMeasurements(tracks),
+                    failure: .init(error: error)
+                ))
+            }
+        }
+
+        if failedCount == 0 {
+            appState.durabilityNoticeIsWarning = false
+            appState.durabilityNotice = recoveredCount == 1
+                ? "Recovered an interrupted recording. It is available in History."
+                : "Recovered \(recoveredCount) interrupted recordings. They are available in History."
+        } else {
+            appState.durabilityNoticeIsWarning = true
+            appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) remain safe in Recording Recovery; reconnect the configured storage and restart dBrief to retry."
+        }
+    }
+
+    /// Closes an active audio file before AppDelegate's hard process exit. The
+    /// durable manifest stays recoverable and is finalized on next launch.
+    func prepareForTermination() async {
+        // The recovery manifest is installed before capture setup begins, so
+        // this also covers quitting during the brief start-up window before the
+        // UI state has switched from idle to recording.
+        guard let recording = appState.currentRecording,
+              recording.recoveryManifestURL != nil
+        else { return }
+
+        await audioCaptureManager.stopRecording()
+        recording.capturedTracks = audioCaptureManager.trackURLs
+        recording.fileSize = Self.totalTrackFileSize(recording.capturedTracks)
+        recording.duration = audioCaptureManager.duration
+        try? persistRecoveryManifest(for: recording, state: .finalizing)
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "capture_checkpointed_for_termination",
+            outcome: recording.fileSize > 0 ? .succeeded : .failed,
+            measurements: captureTrackMeasurements(recording.capturedTracks)
+        ))
+    }
+
     func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {
         // A recording takes priority over any in-flight model download: cancel
         // active downloads so the recording pipeline is the sole consumer of the
         // services' state streams (and the GPU mutex is free).
         cancelAllActiveDownloads()
 
-        let baseURL = Self.generateRawCaptureBaseURL()
+        let sessionID = UUID()
+        let startedAt = Date()
+        let recoverySession: InterruptedCaptureSession
+        do {
+            recoverySession = try InterruptedSessionStore.createSession(
+                id: sessionID,
+                startedAt: startedAt
+            )
+        } catch {
+            DurabilityJournal.shared.record(.init(
+                sessionID: sessionID,
+                name: "capture_recovery_session_created",
+                outcome: .failed,
+                failure: .init(error: error)
+            ))
+            throw error
+        }
+        let baseURL = recoverySession.captureBaseURL
 
         let recording = Recording(
+            id: sessionID,
+            date: startedAt,
             fileURL: baseURL,
             associatedApp: associatedApp,
             meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
         )
+        recording.recoveryManifestURL = recoverySession.manifestURL
         appState.currentRecording = recording
         // Tag the recording with the call app that started it (nil for manual starts),
         // so the stop-on-call-end feature can match this call's own end signal.
@@ -184,12 +293,41 @@ final class RecordingManager {
             Logger.recording.info("Echo cancellation auto-disabled: output route has no speaker→mic echo path (headphones/external)")
         }
 
-        try await audioCaptureManager.startRecording(
-            to: baseURL,
-            inputDeviceUID: appSettings.audioInputDeviceUID,
-            acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
-        )
+        do {
+            try await audioCaptureManager.startRecording(
+                to: baseURL,
+                inputDeviceUID: appSettings.audioInputDeviceUID,
+                acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
+            )
+            try persistRecoveryManifest(for: recording, state: .capturing)
+        } catch {
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "capture_started",
+                outcome: .failed,
+                measurements: captureTrackMeasurements(audioCaptureManager.trackURLs),
+                failure: .init(error: error)
+            ))
+            let trackBytes = Self.totalTrackFileSize(audioCaptureManager.trackURLs)
+            if trackBytes == 0, let manifestURL = recording.recoveryManifestURL {
+                try? InterruptedSessionStore.removeSession(
+                    containing: manifestURL,
+                    finalState: .discarded
+                )
+            }
+            appState.currentRecording = nil
+            throw error
+        }
         appState.recordingState = .recording
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "capture_started",
+            outcome: .succeeded,
+            measurements: [
+                "microphoneEnabled": audioCaptureManager.hasMicrophonePermission ? 1 : 0,
+                "systemAudioEnabled": audioCaptureManager.hasSystemAudioPermission ? 1 : 0,
+            ]
+        ))
 
         // Warm the local Whisper model while the user records, so the model
         // load+prewarm cost hides behind the (typically minutes-long) recording
@@ -287,6 +425,7 @@ final class RecordingManager {
             // `recording.fileURL` is an extension-less scratch base that's never
             // written to disk — so sum the per-track CAF files that do exist.
             recording.fileSize = Self.totalTrackFileSize(tracks)
+            try? persistRecoveryManifest(for: recording, state: .finalizing)
 
             // Duration: probe the captured audio so the value is authoritative
             // rather than relying on the live-update timer having fired (it can
@@ -297,6 +436,35 @@ final class RecordingManager {
                 probedDuration = await durationSeconds(for: probeURL)
             }
             recording.duration = probedDuration > 0 ? probedDuration : audioCaptureManager.duration
+
+            var measurements = captureTrackMeasurements(tracks)
+            let writeDiagnostics = audioCaptureManager.lastCaptureWriteDiagnostics
+            measurements["durationMilliseconds"] = Int64(recording.duration * 1_000)
+            measurements["microphoneBuffers"] = writeDiagnostics.microphone.buffersWritten
+            measurements["systemBuffers"] = writeDiagnostics.system.buffersWritten
+            measurements["microphoneDroppedBuffers"] = writeDiagnostics.microphone.droppedBuffers
+            measurements["systemDroppedBuffers"] = writeDiagnostics.system.droppedBuffers
+            measurements["microphoneWriteErrors"] = writeDiagnostics.microphone.writeErrors
+            measurements["systemWriteErrors"] = writeDiagnostics.system.writeErrors
+            measurements["systemStreamFailures"] = writeDiagnostics.systemStreamFailures
+            let hadCaptureWarnings = writeDiagnostics.microphone.droppedBuffers > 0
+                || writeDiagnostics.system.droppedBuffers > 0
+                || writeDiagnostics.microphone.writeErrors > 0
+                || writeDiagnostics.system.writeErrors > 0
+                || writeDiagnostics.systemStreamFailures > 0
+            let captureOutcome: DurabilityEvent.Outcome = recording.fileSize == 0
+                ? .failed
+                : (hadCaptureWarnings ? .warning : .succeeded)
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "capture_stopped",
+                outcome: captureOutcome,
+                measurements: measurements,
+                failure: audioCaptureManager.lastSystemCaptureFailure
+            ))
+            if recording.fileSize == 0 {
+                appState.lastError = "No audio was written. The recovery session was kept so this failure can be investigated."
+            }
 
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
@@ -368,11 +536,27 @@ final class RecordingManager {
     func pauseRecording() {
         audioCaptureManager.pauseRecording()
         appState.recordingState = .paused
+        if let recording = appState.currentRecording {
+            try? persistRecoveryManifest(for: recording, state: .paused)
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "capture_paused",
+                outcome: .succeeded
+            ))
+        }
     }
 
     func resumeRecording() throws {
         try audioCaptureManager.resumeRecording()
         appState.recordingState = .recording
+        if let recording = appState.currentRecording {
+            try? persistRecoveryManifest(for: recording, state: .capturing)
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "capture_resumed",
+                outcome: .succeeded
+            ))
+        }
     }
 
     /// Switch the microphone input device while recording (manual hot-swap). Persists
@@ -399,6 +583,17 @@ final class RecordingManager {
         tags: Bool
     ) async {
         let recording = job.recording
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "processing_started",
+            outcome: .started,
+            measurements: [
+                "transcriptionRequested": transcribe ? 1 : 0,
+                "summaryRequested": summary ? 1 : 0,
+                "actionItemsRequested": actionItems ? 1 : 0,
+                "tagsRequested": tags ? 1 : 0,
+            ]
+        ))
         let localAIAvailable: Bool = {
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
@@ -638,6 +833,12 @@ final class RecordingManager {
                     let msg = error.localizedDescription
                     Logger.transcription.error("Transcription failed; details shown in the processing UI")
                     appState.processingSteps[stepIndex].status = .failed(msg)
+                    DurabilityJournal.shared.record(.init(
+                        sessionID: recording.id,
+                        name: "transcription",
+                        outcome: .failed,
+                        failure: .init(error: error)
+                    ))
                 }
             }
         }
@@ -890,6 +1091,15 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "processing_completed",
+            outcome: failedCount == 0 ? .succeeded : .warning,
+            measurements: [
+                "stepCount": Int64(appState.processingSteps.count),
+                "failedStepCount": Int64(failedCount),
+            ]
+        ))
 
         finishJob(for: recording)
     }
@@ -1368,6 +1578,15 @@ final class RecordingManager {
             fileName: recording.fileName,
             failed: failedCount
         )
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "processing_completed",
+            outcome: failedCount == 0 ? .succeeded : .warning,
+            measurements: [
+                "stepCount": Int64(appState.processingSteps.count),
+                "failedStepCount": Int64(failedCount),
+            ]
+        ))
 
         finishJob(for: recording)
     }
@@ -1615,6 +1834,28 @@ final class RecordingManager {
             appState.recordingState = .idle
         }
         guard let recording = appState.currentRecording else { return }
+
+        if let manifestURL = recording.recoveryManifestURL {
+            do {
+                try InterruptedSessionStore.removeSession(
+                    containing: manifestURL,
+                    finalState: .discarded
+                )
+            } catch {
+                DurabilityJournal.shared.record(.init(
+                    sessionID: recording.id,
+                    name: "recovery_session_discarded",
+                    outcome: .warning,
+                    failure: .init(error: error)
+                ))
+            }
+            recording.recoveryManifestURL = nil
+        }
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "recording_discarded_by_user",
+            outcome: .succeeded
+        ))
 
         var urls: [URL] = [recording.fileURL]
         if let tracks = recording.capturedTracks {
@@ -2660,6 +2901,7 @@ final class RecordingManager {
                 let probed = await durationSeconds(for: finalized)
                 if probed > 0 { recording.duration = probed }
             }
+            completeRecoverySession(for: recording)
             return
         }
 
@@ -2697,14 +2939,40 @@ final class RecordingManager {
         }
 
         let tracks = recording.capturedTracks ?? CapturedTracks(systemURL: nil, micURL: recording.fileURL)
-        let result = try await recordingFinalizer.finalize(
-            tracks: tracks,
-            recording: recording,
-            baseFolder: appSettings.effectiveRecordingFolderURL,
-            segmentationEnabled: segmentationEnabled,
-            echoSuppressionEnabled: recording.echoSuppressionApplied,
-            onProgress: onProgress
-        )
+        try? persistRecoveryManifest(for: recording, state: .finalizing)
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "audio_finalization",
+            outcome: .started,
+            measurements: captureTrackMeasurements(tracks)
+        ))
+        let result: RecordingFinalizationResult
+        do {
+            result = try await recordingFinalizer.finalize(
+                tracks: tracks,
+                recording: recording,
+                baseFolder: appSettings.effectiveRecordingFolderURL,
+                segmentationEnabled: segmentationEnabled,
+                echoSuppressionEnabled: recording.echoSuppressionApplied,
+                onProgress: onProgress
+            )
+        } catch {
+            var measurements = captureTrackMeasurements(tracks)
+            if let finalizationError = error as? RecordingFinalizerError {
+                measurements.merge(
+                    finalizationError.diagnosticMeasurements,
+                    uniquingKeysWith: { _, new in new }
+                )
+            }
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "audio_finalization",
+                outcome: .failed,
+                measurements: measurements,
+                failure: .init(error: error)
+            ))
+            throw error
+        }
         recording.capturedTracks = nil  // scratch files have been consumed
 
         recording.fileURL = result.masterAudioURL
@@ -2726,6 +2994,26 @@ final class RecordingManager {
         if masterDuration > 0 {
             recording.duration = masterDuration
         }
+        let masterBytes = Self.fileSize(at: result.masterAudioURL)
+        var finalizationMeasurements: [String: Int64] = [
+            "masterBytes": masterBytes,
+            "durationMilliseconds": Int64(recording.duration * 1_000),
+            "segmentCount": Int64(result.segmentAudioURLs.count),
+            "warningCount": Int64(result.warnings.count),
+        ]
+        if let ffmpegDiagnostics = result.ffmpegDiagnostics {
+            finalizationMeasurements.merge(
+                ffmpegDiagnostics.measurements,
+                uniquingKeysWith: { _, new in new }
+            )
+        }
+        DurabilityJournal.shared.record(.init(
+            sessionID: recording.id,
+            name: "audio_finalization",
+            outcome: .succeeded,
+            measurements: finalizationMeasurements
+        ))
+        completeRecoverySession(for: recording)
     }
 
     /// Sum of the on-disk sizes of the captured per-track CAF files. Missing
@@ -2742,6 +3030,70 @@ final class RecordingManager {
             }
         }
         return total
+    }
+
+    static func fileSize(at url: URL, fileManager: FileManager = .default) -> Int64 {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber
+        else { return 0 }
+        return size.int64Value
+    }
+
+    private func captureTrackMeasurements(_ tracks: CapturedTracks?) -> [String: Int64] {
+        guard let tracks else {
+            return ["trackCount": 0, "trackBytes": 0]
+        }
+        let systemBytes = tracks.systemURL.map { Self.fileSize(at: $0) } ?? 0
+        let microphoneBytes = tracks.micURL.map { Self.fileSize(at: $0) } ?? 0
+        return [
+            "trackCount": Int64([tracks.systemURL, tracks.micURL].compactMap { $0 }.count),
+            "trackBytes": systemBytes + microphoneBytes,
+            "systemTrackBytes": systemBytes,
+            "microphoneTrackBytes": microphoneBytes,
+        ]
+    }
+
+    private func persistRecoveryManifest(
+        for recording: Recording,
+        state: InterruptedSessionManifest.State
+    ) throws {
+        guard let manifestURL = recording.recoveryManifestURL else { return }
+        let sessionDirectory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        let trackPairs: [(InterruptedSessionManifest.Track.Kind, URL?)] = [
+            (.microphone, recording.capturedTracks?.micURL ?? audioCaptureManager.trackURLs?.micURL),
+            (.systemAudio, recording.capturedTracks?.systemURL ?? audioCaptureManager.trackURLs?.systemURL),
+        ]
+        let tracks = trackPairs.compactMap { kind, url -> InterruptedSessionManifest.Track? in
+            guard let url,
+                  url.deletingLastPathComponent().standardizedFileURL == sessionDirectory
+            else { return nil }
+            return .init(kind: kind, relativePath: url.lastPathComponent)
+        }
+        let manifest = InterruptedSessionManifest(
+            id: recording.id,
+            startedAt: recording.date,
+            state: state,
+            tracks: tracks
+        )
+        try InterruptedSessionStore.write(manifest, to: manifestURL)
+    }
+
+    private func completeRecoverySession(for recording: Recording) {
+        guard let manifestURL = recording.recoveryManifestURL else { return }
+        do {
+            try InterruptedSessionStore.removeSession(
+                containing: manifestURL,
+                finalState: .completed
+            )
+        } catch {
+            DurabilityJournal.shared.record(.init(
+                sessionID: recording.id,
+                name: "recovery_session_cleanup",
+                outcome: .warning,
+                failure: .init(error: error)
+            ))
+        }
+        recording.recoveryManifestURL = nil
     }
 
     private func durationSeconds(for fileURL: URL) async -> Double {
@@ -2783,13 +3135,6 @@ final class RecordingManager {
         )
         UNUserNotificationCenter.current().add(request)
     }
-
-
-    private static func generateRawCaptureBaseURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("dbrief-raw-\(UUID().uuidString)")
-    }
-
     private static func dateOnlyString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The About settings page: brand hero, an update-checker card wired to
 /// Sparkle, a build-info grid (real version/OS/engine values), an
@@ -11,6 +12,7 @@ struct AboutTab: View {
     @Environment(UpdaterController.self) private var updaterController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
+    @State private var diagnosticsStatus: String?
 
     // MARK: Version / system facts
 
@@ -34,7 +36,10 @@ struct AboutTab: View {
         [
             InfoRow(key: "Version", value: shortVersion),
             InfoRow(key: "Build", value: buildNumber),
-            InfoRow(key: "Channel", value: "Stable"),
+            InfoRow(
+                key: "Channel",
+                value: AppSupportPaths.bundleIdentifier.hasSuffix(".beta") ? "Beta" : "Stable"
+            ),
             InfoRow(key: "macOS", value: osDescription),
             InfoRow(key: "Transcription", value: appSettings.effectiveTranscriptionEngine.displayName),
             InfoRow(key: "Analysis", value: appSettings.effectiveAIEngine.displayName),
@@ -69,6 +74,7 @@ struct AboutTab: View {
                 hero
                 updateCard
                 section("Build") { buildGrid }
+                section("Diagnostics") { diagnosticsPanel }
                 section("Links") { linksList }
                 privacySeal
                 footer
@@ -79,6 +85,83 @@ struct AboutTab: View {
         }
         .onAppear { animate = !reduceMotion }
         .onChange(of: reduceMotion) { _, reduced in animate = !reduced }
+    }
+
+    // MARK: Diagnostics
+
+    private var diagnosticsPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "stethoscope")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Brand.cyan)
+                    .frame(width: 32, height: 32)
+                    .background(Brand.cyan.opacity(0.1), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Create a support report")
+                        .font(.system(size: 14.5, weight: .semibold))
+                    Text("Exports app, storage, recovery, and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths, and credentials are excluded.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: 10) {
+                Button("Export diagnostics…") { exportDiagnostics() }
+                    .buttonStyle(.borderedProminent)
+
+                Button("Show recovery files") { showRecoveryFolder() }
+                    .buttonStyle(.bordered)
+                    .disabled(!FileManager.default.fileExists(
+                        atPath: InterruptedSessionStore.defaultRootURL.path
+                    ))
+            }
+
+            if let diagnosticsStatus {
+                Text(diagnosticsStatus)
+                    .font(.caption)
+                    .foregroundStyle(diagnosticsStatus.hasPrefix("Couldn’t") ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    @MainActor
+    private func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.title = "Export dBrief Diagnostics"
+        panel.nameFieldStringValue = "dBrief-Diagnostics-\(Self.diagnosticsTimestamp()).json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let report = DBriefDiagnosticsExporter.makeReport(
+                recordingFolderURL: appSettings.effectiveRecordingFolderURL
+            )
+            try DBriefDiagnosticsExporter.writeReport(report, to: url)
+            diagnosticsStatus = "Diagnostics exported. Review the report before sharing it with support."
+        } catch {
+            diagnosticsStatus = "Couldn’t export diagnostics. \(error.localizedDescription)"
+        }
+    }
+
+    private func showRecoveryFolder() {
+        NSWorkspace.shared.activateFileViewerSelecting([
+            InterruptedSessionStore.defaultRootURL
+        ])
+    }
+
+    private static func diagnosticsTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
     }
 
     // MARK: Hero
