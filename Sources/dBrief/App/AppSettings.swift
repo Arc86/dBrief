@@ -102,6 +102,8 @@ final class AppSettings {
         static let autoDeleteRecordingsDays = "autoDeleteRecordingsDays"
         static let autoDeleteTranscriptsEnabled = "autoDeleteTranscriptsEnabled"
         static let autoDeleteTranscriptsDays = "autoDeleteTranscriptsDays"
+        static let lastRetentionCleanupDate = "lastRetentionCleanupDate"
+        static let lastRetentionCleanupSummary = "lastRetentionCleanupSummary"
     }
 
     // MARK: - Recording
@@ -138,6 +140,23 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(autoDeleteTranscriptsDays, forKey: Keys.autoDeleteTranscriptsDays) }
     }
 
+    /// Most recent automatic or user-triggered retention sweep. Persisted so the
+    /// scheduler can enforce a daily cadence across launches and Settings can show
+    /// users when their privacy policy last ran.
+    var lastRetentionCleanupDate: Date? {
+        didSet {
+            if let lastRetentionCleanupDate {
+                UserDefaults.standard.set(lastRetentionCleanupDate, forKey: Keys.lastRetentionCleanupDate)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.lastRetentionCleanupDate)
+            }
+        }
+    }
+
+    var lastRetentionCleanupSummary: String {
+        didSet { UserDefaults.standard.set(lastRetentionCleanupSummary, forKey: Keys.lastRetentionCleanupSummary) }
+    }
+
     // MARK: - Integrations (Obsidian)
 
     var obsidianEnabled: Bool {
@@ -163,19 +182,19 @@ final class AppSettings {
     }
 
     var notionToken: String {
-        didSet { KeychainHelper.set(notionToken, for: .notion) }
+        didSet { saveKeychainSecret(notionToken, for: .notion) }
     }
 
     var evernoteToken: String {
-        didSet { KeychainHelper.set(evernoteToken, for: .evernote) }
+        didSet { saveKeychainSecret(evernoteToken, for: .evernote) }
     }
 
     var googleKeepToken: String {
-        didSet { KeychainHelper.set(googleKeepToken, for: .googleKeep) }
+        didSet { saveKeychainSecret(googleKeepToken, for: .googleKeep) }
     }
 
     var oneNoteToken: String {
-        didSet { KeychainHelper.set(oneNoteToken, for: .oneNote) }
+        didSet { saveKeychainSecret(oneNoteToken, for: .oneNote) }
     }
 
     // MARK: - Post-Recording Defaults
@@ -882,6 +901,8 @@ final class AppSettings {
         self.autoDeleteRecordingsDays = max(1, defaults.object(forKey: Keys.autoDeleteRecordingsDays) as? Int ?? 30)
         self.autoDeleteTranscriptsEnabled = defaults.object(forKey: Keys.autoDeleteTranscriptsEnabled) as? Bool ?? false
         self.autoDeleteTranscriptsDays = max(1, defaults.object(forKey: Keys.autoDeleteTranscriptsDays) as? Int ?? 30)
+        self.lastRetentionCleanupDate = defaults.object(forKey: Keys.lastRetentionCleanupDate) as? Date
+        self.lastRetentionCleanupSummary = defaults.string(forKey: Keys.lastRetentionCleanupSummary) ?? ""
 
         self.obsidianVaultURL = Self.loadBookmarkURL(key: Keys.obsidianVaultBookmark)
         self.obsidianEnabled = defaults.object(forKey: Keys.obsidianEnabled) as? Bool ?? false
@@ -889,10 +910,10 @@ final class AppSettings {
             forKey: Keys.obsidianDefaultFolderRelativePath
         ) ?? ""
         self.integrations = Self.loadIntegrationSettings(forKey: Keys.integrationSettings)
-        self.notionToken = KeychainHelper.get(for: .notion)
-        self.evernoteToken = KeychainHelper.get(for: .evernote)
-        self.googleKeepToken = KeychainHelper.get(for: .googleKeep)
-        self.oneNoteToken = KeychainHelper.get(for: .oneNote)
+        self.notionToken = Self.loadKeychainSecret(for: .notion)
+        self.evernoteToken = Self.loadKeychainSecret(for: .evernote)
+        self.googleKeepToken = Self.loadKeychainSecret(for: .googleKeep)
+        self.oneNoteToken = Self.loadKeychainSecret(for: .oneNote)
 
         self.autoTranscribe = defaults.object(forKey: Keys.autoTranscribe) as? Bool ?? true
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true

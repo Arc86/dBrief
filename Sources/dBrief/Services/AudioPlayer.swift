@@ -35,9 +35,9 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
             player?.play()
             isPlaying = true
             startTimer()
-            log.info("Playing \(url.lastPathComponent, privacy: .public)")
+            log.info("Audio playback started")
         } catch {
-            log.error("Playback failed: \(error.localizedDescription, privacy: .public)")
+            log.error("Playback failed for the selected recording")
         }
     }
 

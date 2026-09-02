@@ -33,6 +33,21 @@ struct RetentionCleanupResult: Sendable {
     }
 }
 
+/// Pure cadence decision used by the long-running menu-bar scheduler. Keeping the
+/// date arithmetic separate makes clock-edge behavior deterministic in tests.
+enum RetentionSchedule {
+    static let dailyInterval: TimeInterval = 24 * 60 * 60
+
+    static func isDue(
+        lastRun: Date?,
+        now: Date = Date(),
+        interval: TimeInterval = dailyInterval
+    ) -> Bool {
+        guard let lastRun else { return true }
+        return now.timeIntervalSince(lastRun) >= interval
+    }
+}
+
 /// Age-based cleanup of recordings and transcripts in the output folders.
 ///
 /// Stateless on purpose: callers (the launch sweep in `AppContext` and the
@@ -125,7 +140,7 @@ enum RetentionCleanup {
                     result.filesDeleted += 1
                     result.bytesFreed += size
                 } catch {
-                    log.error("Retention cleanup failed to delete \(fileURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    log.error("Retention cleanup failed to delete a matching file")
                 }
             }
         }

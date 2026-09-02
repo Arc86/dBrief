@@ -202,15 +202,17 @@ struct BrandStatusDot: View {
 
     @State private var on = true
     @Environment(\.calmAppearance) private var calm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
             .shadow(color: calm ? .clear : color.opacity(0.9), radius: calm ? 0 : size * 0.9)
-            .opacity(pulse ? (on ? 1 : 0.35) : 1)
-            .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: on)
-            .onAppear { if pulse { on = false } }
+            .opacity(pulse && !reduceMotion ? (on ? 1 : 0.35) : 1)
+            .animation(pulse && !reduceMotion ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: on)
+            .onAppear { if pulse && !reduceMotion { on = false } }
+            .accessibilityHidden(true)
     }
 }
 

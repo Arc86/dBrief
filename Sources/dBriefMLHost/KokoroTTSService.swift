@@ -65,7 +65,7 @@ final class KokoroTTSService: @unchecked Sendable {
                 samples.append(contentsOf: result.samples)
             }
         } catch {
-            Logger.localAI.error("Kokoro generation failed: \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Kokoro generation failed")
             throw WireError(kind: .generic, message: "Kokoro generation failed: \(error.localizedDescription)")
         }
 
@@ -193,7 +193,7 @@ final class KokoroTTSService: @unchecked Sendable {
         do {
             try await mgr.initialize()
         } catch {
-            Logger.localAI.error("Kokoro init failed: \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Kokoro initialization failed")
             throw WireError(kind: .generic, message: "Kokoro model load failed: \(error.localizedDescription)")
         }
         self.manager = mgr

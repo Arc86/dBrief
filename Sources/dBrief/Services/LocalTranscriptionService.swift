@@ -91,7 +91,7 @@ actor LocalTranscriptionService {
                 }
             }
         }
-        log.info("Local transcription complete: \(text.prefix(80), privacy: .public)...")
+        log.info("Local transcription complete: textLength=\(text.count) segments=\(segments.count)")
 
         return TranscriptionResult(
             text: text,

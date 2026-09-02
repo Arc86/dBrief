@@ -127,8 +127,20 @@ final class RecordingManager {
         await audioCaptureManager.checkPermissions()
     }
 
+    func refreshPermissions() {
+        audioCaptureManager.refreshPermissions()
+    }
+
+    @discardableResult
+    func requestMicrophonePermission() async -> Bool {
+        await audioCaptureManager.requestMicrophonePermission()
+    }
+
     var hasSystemAudioPermission: Bool { audioCaptureManager.hasSystemAudioPermission }
     var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
+    var microphoneAuthorizationState: PermissionAuthorizationState {
+        audioCaptureManager.microphoneAuthorizationState
+    }
 
     func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {
         // A recording takes priority over any in-flight model download: cancel
@@ -558,17 +570,8 @@ final class RecordingManager {
                                 resolved[sid] = ResolvedSpeaker(name: name, personId: d.personId)
                             }
                         }
-                        // Per-speaker decision log (cosine + reason) — kept for support
-                        // and threshold calibration; cheap, runs only when diarized.
-                        for sid in embeddings.keys.sorted() {
-                            let emb = embeddings[sid] ?? []
-                            let scores = library.people.map { p -> String in
-                                let s = p.voiceprints.reduce(Float(-1)) { max($0, VoiceMatch.cosineSimilarity(emb, $1.embedding)) }
-                                return "\(p.name)=\(String(format: "%.3f", s))"
-                            }.joined(separator: " ")
-                            let d = decisions[sid]
-                            Logger.transcription.info("VoiceID \(sid, privacy: .public): [\(scores, privacy: .public)] → \(d?.reason.rawValue ?? "nil", privacy: .public) name=\(d?.name ?? "-", privacy: .public) conf=\(String(format: "%.3f", d?.confidence ?? 0), privacy: .public)")
-                        }
+                        // Keep diagnostics aggregate-only: names, speaker ids, voice-match
+                        // scores, and confidence values are private meeting/biometric data.
                         Logger.transcription.info("Voice library matched \(resolved.count) of \(embeddings.count) speaker(s)")
                     } else if hasLibrary {
                         Logger.transcription.error("Voice library present but no speaker embeddings on this recording — speakers left unnamed (no ordinal guess)")
@@ -633,7 +636,7 @@ final class RecordingManager {
                     }
                 } catch {
                     let msg = error.localizedDescription
-                    Logger.transcription.error("Transcription failed: \(msg, privacy: .public)")
+                    Logger.transcription.error("Transcription failed; details shown in the processing UI")
                     appState.processingSteps[stepIndex].status = .failed(msg)
                 }
             }
@@ -2861,7 +2864,7 @@ final class RecordingManager {
         do {
             try out.write(to: metaURL, options: .atomic)
         } catch {
-            Logger.recording.error("Failed to persist \(what, privacy: .public) to metadata sidecar: \(error.localizedDescription, privacy: .public)")
+            Logger.recording.error("Failed to persist \(what, privacy: .public) to the recording metadata sidecar")
         }
     }
 
@@ -2877,7 +2880,7 @@ final class RecordingManager {
         do {
             try await insightsStore.save(insights, for: recording)
         } catch {
-            Logger.recording.error("Failed to write insights sidecar: \(error.localizedDescription, privacy: .public)")
+            Logger.recording.error("Failed to write the recording insights sidecar")
         }
     }
 

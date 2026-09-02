@@ -80,7 +80,7 @@ actor AppleSpeechAnalyzerService {
 
         let chunks = try await collector.value
         let result = AppleSpeechResultMapper.map(chunks, language: language)
-        log.info("SpeechAnalyzer transcription complete: \(result.text.prefix(80), privacy: .public)...")
+        log.info("SpeechAnalyzer transcription complete: textLength=\(result.text.count) segments=\(result.segments.count)")
         return result
     }
 

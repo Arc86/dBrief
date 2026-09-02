@@ -28,6 +28,7 @@ final class AppContext {
     let whisperPrewarmCoordinator: WhisperPrewarmCoordinator
     let watchedFolderService: WatchedFolderService
     private var permissionsChecked = false
+    private var retentionSchedulerTask: Task<Void, Never>?
 
     init() {
         log.info("AppContext init")
@@ -70,7 +71,7 @@ final class AppContext {
     private func ensureReady() async {
         guard !permissionsChecked else { return }
         permissionsChecked = true
-        log.info("Checking permissions...")
+        log.info("Refreshing permission status...")
         await recordingManager.checkPermissions()
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
         callDetectionService.start(appState: appState, appSettings: appSettings, recordingManager: recordingManager)
@@ -91,6 +92,7 @@ final class AppContext {
 
         // Purge recordings/transcripts past their retention window.
         await runRetentionCleanupIfNeeded()
+        startRetentionCleanupScheduler()
 
         whisperPrewarmCoordinator.scheduleLaunchPrewarm()
 
@@ -103,24 +105,56 @@ final class AppContext {
     /// Runs the enabled auto-delete sweeps off the main thread. Folder URLs are
     /// resolved here (on the main actor) and the file work hops to a background task.
     private func runRetentionCleanupIfNeeded() async {
+        guard appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled else {
+            return
+        }
         let recordingsFolder = appSettings.effectiveRecordingFolderURL
         let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
+        var combined = RetentionCleanupResult()
 
         if appSettings.autoDeleteRecordingsEnabled {
             let days = appSettings.autoDeleteRecordingsDays
-            await Task.detached(priority: .utility) {
+            let result = await Task.detached(priority: .utility) {
                 RetentionCleanup.cleanup(category: .recordings, olderThanDays: days, in: [recordingsFolder])
             }.value
+            combined.filesDeleted += result.filesDeleted
+            combined.bytesFreed += result.bytesFreed
         }
         if appSettings.autoDeleteTranscriptsEnabled {
             let days = appSettings.autoDeleteTranscriptsDays
-            await Task.detached(priority: .utility) {
+            let result = await Task.detached(priority: .utility) {
                 RetentionCleanup.cleanup(
                     category: .transcripts,
                     olderThanDays: days,
                     in: [recordingsFolder, transcriptionFolder]
                 )
             }.value
+            combined.filesDeleted += result.filesDeleted
+            combined.bytesFreed += result.bytesFreed
+        }
+
+        appSettings.lastRetentionCleanupDate = Date()
+        appSettings.lastRetentionCleanupSummary = combined.summary
+    }
+
+    /// dBrief commonly runs for weeks without relaunching. Check a few times per
+    /// day and execute at most once per 24 hours so enabled retention policies keep
+    /// their promise without a restart.
+    private func startRetentionCleanupScheduler() {
+        retentionSchedulerTask?.cancel()
+        retentionSchedulerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(6 * 60 * 60))
+                } catch {
+                    return
+                }
+                guard let self, !Task.isCancelled else { return }
+                guard RetentionSchedule.isDue(lastRun: self.appSettings.lastRetentionCleanupDate) else {
+                    continue
+                }
+                await self.runRetentionCleanupIfNeeded()
+            }
         }
     }
 
@@ -167,6 +201,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct DBriefApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var context = AppContext()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init() {
         appDelegate.recordingManager = context.recordingManager
@@ -195,11 +230,24 @@ struct DBriefApp: App {
                             .font(.caption)
                     }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(context.appState.isPaused ? "dBrief, paused" : "dBrief, recording")
+                .accessibilityValue(context.appSettings.showMenuBarRecordingDuration
+                    ? formatMenuBarDuration(context.appState.recordingDuration)
+                    : "")
             } else if context.appState.isProcessing {
-                Image(systemName: "circle.dotted")
-                    .symbolRenderingMode(.hierarchical)
-                    .symbolEffect(.pulse, options: .repeating)
-                    .foregroundStyle(.blue)
+                if reduceMotion {
+                    Image(systemName: "circle.dotted")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("dBrief, processing")
+                } else {
+                    Image(systemName: "circle.dotted")
+                        .symbolRenderingMode(.hierarchical)
+                        .symbolEffect(.pulse, options: .repeating)
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("dBrief, processing")
+                }
             } else if context.appState.queuedCount > 0 {
                 HStack(spacing: 2) {
                     Image(systemName: "waveform")
@@ -208,9 +256,12 @@ struct DBriefApp: App {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("dBrief, \(context.appState.queuedCount) queued")
             } else {
                 Image(systemName: "waveform")
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityLabel("dBrief, ready")
             }
         }
         .menuBarExtraStyle(.window)
@@ -408,6 +459,8 @@ struct MenuBarView: View {
                 .font(.brandMono(11))
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Status: \(statusLabel)")
     }
 
     private var statusLabel: String {

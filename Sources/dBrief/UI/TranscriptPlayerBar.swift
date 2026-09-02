@@ -38,6 +38,7 @@ struct TranscriptPlayerBar: View {
                         .shadow(color: calm ? .clear : Color(hex: "8b4dff").opacity(0.6), radius: calm ? 0 : 10, x: 0, y: calm ? 0 : 4)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isThisFile && audioPlayer.isPlaying ? "Pause recording" : "Play recording")
 
                 Text(formatTime(displayTime))
                     .font(.system(size: 12).monospacedDigit())
@@ -79,6 +80,8 @@ struct TranscriptPlayerBar: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .accessibilityLabel("Playback speed")
+                .accessibilityValue(speedLabel(audioPlayer.playbackRate))
             }
         }
         .padding(.horizontal, 20)

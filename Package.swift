@@ -41,7 +41,7 @@ let package = Package(
                 "dBriefWire",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            exclude: ["Resources", "Images"],
+            exclude: ["Resources"],
             linkerSettings: [
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("AVFoundation"),

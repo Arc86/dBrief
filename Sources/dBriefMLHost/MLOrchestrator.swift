@@ -167,7 +167,7 @@ actor MLOrchestrator: MLBackend {
                 return await withEmbeddings(merged, path: path)
             } catch {
                 await whisperService.unloadSpeakerKit()
-                Logger.localAI.error("Parakeet diarization failed: \(error.localizedDescription, privacy: .public) — returning transcript without speakers")
+                Logger.localAI.error("Parakeet diarization failed — returning transcript without speakers")
                 return result
             }
         }

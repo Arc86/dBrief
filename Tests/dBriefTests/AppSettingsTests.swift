@@ -126,4 +126,24 @@ struct AppSettingsTests {
         let reloaded = AppSettings()
         #expect(reloaded.selectedICalCalendarIDs == [])
     }
+
+    @Test func retentionRunStatusPersists() {
+        let dateKey = "lastRetentionCleanupDate"
+        let summaryKey = "lastRetentionCleanupSummary"
+        UserDefaults.standard.removeObject(forKey: dateKey)
+        UserDefaults.standard.removeObject(forKey: summaryKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: dateKey)
+            UserDefaults.standard.removeObject(forKey: summaryKey)
+        }
+
+        let expectedDate = Date(timeIntervalSince1970: 1_750_000_000)
+        let settings = AppSettings()
+        settings.lastRetentionCleanupDate = expectedDate
+        settings.lastRetentionCleanupSummary = "Deleted 2 files (4 KB)."
+
+        let reloaded = AppSettings()
+        #expect(reloaded.lastRetentionCleanupDate == expectedDate)
+        #expect(reloaded.lastRetentionCleanupSummary == "Deleted 2 files (4 KB).")
+    }
 }

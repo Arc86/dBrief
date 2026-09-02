@@ -114,7 +114,7 @@ actor IntegrationDispatchService {
             return IntegrationDispatchResult(destination: destination, status: .success, message: "Sent", remoteID: remoteID)
         } catch {
             let latency = Date().timeIntervalSince(start)
-            integrationLog.error("Integration failure: \(destination.rawValue, privacy: .public) in \(latency, privacy: .public)s - \(error.localizedDescription, privacy: .public)")
+            integrationLog.error("Integration failure: \(destination.rawValue, privacy: .public) in \(latency, privacy: .public)s")
             return IntegrationDispatchResult(destination: destination, status: .failed, message: error.localizedDescription, remoteID: nil)
         }
     }

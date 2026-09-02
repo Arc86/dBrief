@@ -36,6 +36,7 @@ struct YouTubeURLInputView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Close URL input")
                 .disabled(isLoading || isDownloadingYtDlp)
             }
 

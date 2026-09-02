@@ -90,7 +90,7 @@ struct SettingsAITab: View {
                 }
                     .listRowBackground(Color.clear)
                 Section("Post-Recording Defaults") {
-                    Toggle("Auto-transcribe after recording", isOn: $settings.autoTranscribe)
+                    Toggle("Preselect transcription after recording", isOn: $settings.autoTranscribe)
                     Toggle("Generate summary", isOn: $settings.autoSummary)
                     Toggle("Extract action items", isOn: $settings.autoActionItems)
                     Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)

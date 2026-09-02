@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-package-beta:
+    name: Test and package beta
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show build environment
+        run: |
+          swift --version
+          uname -a
+          test "$(uname -m)" = "arm64"
+
+      - name: Run test suite
+        run: swift test
+
+      - name: Assemble beta app
+        run: make beta CODESIGN_IDENTITY=-
+
+      - name: Verify beta bundle
+        run: |
+          test -d dBrief-Beta.app
+          test ! -e dBrief.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dBrief-Beta.app/Contents/Info.plist)" = "com.dbrief.app.beta"
+          if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' dBrief-Beta.app/Contents/Info.plist >/dev/null 2>&1; then
+            echo "Beta bundle must not contain the production Sparkle feed URL." >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 dBrief-Beta.app
+
+      - name: Archive beta bundle
+        run: ditto -c -k --sequesterRsrc --keepParent dBrief-Beta.app dBrief-Beta.zip
+
+      - name: Upload beta bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dBrief-Beta-${{ github.sha }}
+          path: dBrief-Beta.zip
+          if-no-files-found: error
+          retention-days: 14

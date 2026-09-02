@@ -50,7 +50,7 @@ final class TTSService: @unchecked Sendable {
                 options: GenerationOptions(instruction: resolvedInstruction)
             )
         } catch {
-            Logger.localAI.error("TTS generation failed: \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("TTS generation failed")
             throw WireError(kind: .generic, message: "TTS generation failed: \(error.localizedDescription)")
         }
 

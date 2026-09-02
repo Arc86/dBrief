@@ -25,17 +25,17 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     /// orchestrator can decode once and share the buffer between transcription,
     /// diarization, and the embedding pass.
     func loadAudio(fileURL: URL) throws -> [Float] {
-        Logger.localAI.info("Loading audio from \(fileURL.lastPathComponent, privacy: .public)")
+        Logger.localAI.info("Loading audio for Whisper transcription")
         do {
             return try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path)
         } catch {
-            Logger.localAI.error("Audio load failed: \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Audio load failed for the requested transcription")
             throw TranscriptionServiceError.audioLoadFailed(error.localizedDescription)
         }
     }
 
     func transcribe(audioArray: [Float], fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
-        Logger.localAI.info("Transcribing: \(fileURL.lastPathComponent, privacy: .public) with model \(whisperConfig.modelName, privacy: .public)")
+        Logger.localAI.info("Transcribing with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
         let modelInfo = WhisperModelInfo.parse(whisperConfig.modelName)
@@ -223,7 +223,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                         diarizationTime: diarizationDuration
                     )
                 } catch {
-                    Logger.localAI.error("Diarization failed: \(error.localizedDescription, privacy: .public) — continuing without speaker labels")
+                    Logger.localAI.error("Diarization failed — continuing without speaker labels")
                 }
             }
 
@@ -451,7 +451,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         fileURL: URL,
         onState: (@Sendable (LocalAIPluginState) -> Void)? = nil
     ) async throws -> [DiarizedTurn] {
-        Logger.localAI.info("Standalone diarization for \(fileURL.lastPathComponent, privacy: .public)")
+        Logger.localAI.info("Standalone diarization started")
         return try await diarize(audioArray: try loadAudio(fileURL: fileURL), onState: onState)
     }
 

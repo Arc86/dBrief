@@ -306,9 +306,28 @@ struct SettingsGeneralTab: View {
                 )
 
                 if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
-                    Text("Cleanup also runs automatically when dBrief launches.")
+                    Text("Cleanup runs at launch and then daily while dBrief stays open.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if let lastRun = appSettings.lastRetentionCleanupDate {
+                        LabeledContent("Last cleanup") {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(lastRun.formatted(date: .abbreviated, time: .shortened))
+                                if !appSettings.lastRetentionCleanupSummary.isEmpty {
+                                    Text(appSettings.lastRetentionCleanupSummary)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .font(.caption)
+                        }
+                    } else {
+                        LabeledContent("Last cleanup") {
+                            Text("Not run yet")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
             .listRowBackground(Color.clear)
@@ -523,6 +542,8 @@ struct SettingsGeneralTab: View {
                 RetentionCleanup.cleanup(category: category, olderThanDays: days, in: folders)
             }.value
             cleanupMessage[category] = result.summary
+            appSettings.lastRetentionCleanupDate = Date()
+            appSettings.lastRetentionCleanupSummary = result.summary
             runningCleanup = nil
         }
     }

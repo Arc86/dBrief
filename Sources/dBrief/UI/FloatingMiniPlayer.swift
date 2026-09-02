@@ -149,6 +149,7 @@ private struct MiniPlayerView: View {
                         .foregroundStyle(.primary)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(controller.isCollapsed ? "Expand recording controls" : "Collapse recording controls")
             }
 
             if !controller.isCollapsed {

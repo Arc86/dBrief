@@ -60,9 +60,9 @@ final class AudioTrackWriter: @unchecked Sendable {
                 ]
                 do {
                     audioFile = try AVAudioFile(forWriting: url, settings: settings)
-                    log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened \(self.url.lastPathComponent, privacy: .public) @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
+                    log.info("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] opened @ \(format.sampleRate, privacy: .public)Hz \(format.channelCount, privacy: .public)ch")
                 } catch {
-                    log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open: \(error.localizedDescription, privacy: .public)")
+                    log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] failed to open an audio track")
                     throw error
                 }
             }

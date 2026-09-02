@@ -81,11 +81,13 @@ struct TranscriptBrowserView: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .help("Refresh")
+                .accessibilityLabel("Refresh recordings")
 
                 Button { openWindow(id: "settings") } label: {
                     Image(systemName: "gearshape")
                 }
                 .help("Open Settings (⌘,)")
+                .accessibilityLabel("Open Settings")
             }
         }
         .onAppear {
@@ -480,6 +482,7 @@ private struct LiveSidebarRow: View {
     let onTap: () -> Void
     @Environment(\.colorScheme) private var scheme
     @Environment(\.calmAppearance) private var calm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var pulse = false
 
@@ -499,8 +502,9 @@ private struct LiveSidebarRow: View {
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Circle().fill(dotColor).frame(width: 6, height: 6)
-                        .opacity(pulse ? 1 : 0.4)
-                        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                        .opacity(reduceMotion || pulse ? 1 : 0.4)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                        .accessibilityHidden(true)
                     Text(statusText)
                 }
                 .font(.system(size: 11).monospaced())
@@ -533,6 +537,9 @@ private struct LiveSidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .onAppear { pulse = true }
+        .onAppear { pulse = !reduceMotion }
+        .accessibilityLabel(recording.generatedTitle ?? recording.meetingTitleDraft)
+        .accessibilityValue(statusText)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

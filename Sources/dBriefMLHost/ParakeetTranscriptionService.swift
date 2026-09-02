@@ -59,7 +59,7 @@ actor ParakeetTranscriptionService {
         let mgr = try await loadManager(for: modelVariant)
         stateContinuation.yield(.transcribing)
 
-        Logger.localAI.info("Parakeet: transcribing \(fileURL.lastPathComponent, privacy: .public) [\(modelVariant, privacy: .public)]")
+        Logger.localAI.info("Parakeet: transcription started [\(modelVariant, privacy: .public)]")
         let (result, samples) = try await Self.transcribePadded(mgr, fileURL: fileURL)
 
         let duration: Double

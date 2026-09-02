@@ -3,6 +3,27 @@ import Testing
 @testable import dBrief
 
 struct RetentionCleanupTests {
+    // MARK: - Schedule
+
+    @Test
+    func scheduleIsDueWhenNeverRunOrAtDailyBoundary() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        #expect(RetentionSchedule.isDue(lastRun: nil, now: now))
+        #expect(RetentionSchedule.isDue(
+            lastRun: now.addingTimeInterval(-RetentionSchedule.dailyInterval),
+            now: now
+        ))
+    }
+
+    @Test
+    func scheduleIsNotDueBeforeDailyBoundary() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        #expect(!RetentionSchedule.isDue(
+            lastRun: now.addingTimeInterval(-(RetentionSchedule.dailyInterval - 1)),
+            now: now
+        ))
+    }
+
     // MARK: - Classification
 
     @Test

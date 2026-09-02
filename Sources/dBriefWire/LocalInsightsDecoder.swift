@@ -7,8 +7,7 @@ import os
 public enum LocalInsightsDecoder {
     public static func decodeAndNormalize(_ raw: String) throws -> LocalInsightsResult {
         guard let jsonPayload = extractFirstJSONObject(raw) else {
-            let preview = String(raw.prefix(500))
-            Logger.ai.error("Local insights JSON parse failed. Raw output prefix: \(preview, privacy: .public)")
+            Logger.ai.error("Local insights JSON parse failed: outputLength=\(raw.count)")
             throw NSError(domain: "LocalInsightsDecoder", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model output did not contain valid JSON object."])
         }
         guard let data = jsonPayload.data(using: .utf8) else {

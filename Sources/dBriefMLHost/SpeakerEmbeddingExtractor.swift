@@ -33,7 +33,7 @@ actor SpeakerEmbeddingExtractor {
             let audio = try AudioConverter().resampleAudioFile(fileURL) // 16 kHz mono [Float]
             return await embeddings(fromSamples: audio, segments: segments)
         } catch {
-            Logger.localAI.error("Speaker embedding extraction failed (decode): \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Speaker embedding extraction failed while decoding audio")
             return [:]
         }
     }
@@ -71,11 +71,11 @@ actor SpeakerEmbeddingExtractor {
             if skipped.isEmpty {
                 Logger.localAI.info("Extracted \(out.count) speaker embedding(s)")
             } else {
-                Logger.localAI.error("Extracted \(out.count) embedding(s); skipped \(skipped.count): \(skipped.joined(separator: ", "), privacy: .public)")
+                Logger.localAI.error("Extracted \(out.count) embedding(s); skipped \(skipped.count)")
             }
             return out
         } catch {
-            Logger.localAI.error("Speaker embedding extraction failed (model load): \(error.localizedDescription, privacy: .public)")
+            Logger.localAI.error("Speaker embedding extraction failed while loading the model")
             return [:]
         }
     }

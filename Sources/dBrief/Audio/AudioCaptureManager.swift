@@ -89,12 +89,37 @@ final class AudioCaptureManager {
         systemLiveContinuation?.finish(); systemLiveContinuation = nil
     }
 
-    func checkPermissions() async {
-        hasMicrophonePermission = await Self.requestMicAccess()
+    var microphoneAuthorizationState: PermissionAuthorizationState {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .notDetermined: .notDetermined
+        case .restricted: .restricted
+        case .denied: .denied
+        case .authorized: .granted
+        @unknown default: .restricted
+        }
+    }
+
+    /// Refreshes current TCC state without presenting a system prompt.
+    func refreshPermissions() {
+        hasMicrophonePermission = microphoneAuthorizationState.isGranted
         hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
         if !hasSystemAudioPermission {
             log.warning("Screen recording permission not granted")
         }
+    }
+
+    /// Kept async for existing callers; unlike the old implementation this is a
+    /// status refresh only and is safe to call during app initialization.
+    func checkPermissions() async {
+        refreshPermissions()
+    }
+
+    /// Explicit user-initiated microphone permission request.
+    @discardableResult
+    func requestMicrophonePermission() async -> Bool {
+        let granted = await Self.requestMicAccess()
+        hasMicrophonePermission = granted
+        return granted
     }
 
     /// Starts recording. `baseURL` is WITHOUT extension — the manager appends
@@ -106,10 +131,13 @@ final class AudioCaptureManager {
     ) async throws {
         guard !isCapturing else { return }
 
-        if !hasMicrophonePermission {
-            hasMicrophonePermission = await Self.requestMicAccess()
+        refreshPermissions()
+        // A recording action can serve as the explicit microphone request when
+        // no other source is available. Do not prompt a user who deliberately
+        // configured system-audio-only recording.
+        if !hasSystemAudioPermission, microphoneAuthorizationState == .notDetermined {
+            _ = await requestMicrophonePermission()
         }
-        hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
 
         guard hasMicrophonePermission || hasSystemAudioPermission else {
             throw AudioCaptureError.noMicrophoneAccess

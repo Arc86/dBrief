@@ -257,7 +257,7 @@ final class SpokenSummaryService: Identifiable {
         guard process.terminationStatus == 0 else {
             let data = stdErr.fileHandleForReading.readDataToEndOfFile()
             let stderr = String(data: data, encoding: .utf8) ?? "ffmpeg failed"
-            Logger.ai.error("SpokenSummaryService: ffmpeg transcode failed — \(stderr, privacy: .public)")
+            Logger.ai.error("SpokenSummaryService: ffmpeg transcode failed with exit status \(process.terminationStatus, privacy: .public)")
             throw SpokenSummaryError.transcodeFailed(stderr)
         }
     }

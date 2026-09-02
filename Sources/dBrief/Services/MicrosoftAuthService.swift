@@ -42,8 +42,8 @@ final class MicrosoftAuthService {
     private let log = Logger.calendar
 
     init() {
-        let accessToken = KeychainHelper.get(for: .microsoftAccessToken)
-        let refreshToken = KeychainHelper.get(for: .microsoftRefreshToken)
+        let accessToken = Self.loadSecretForStartup(.microsoftAccessToken)
+        let refreshToken = Self.loadSecretForStartup(.microsoftRefreshToken)
         isSignedIn = !accessToken.isEmpty || !refreshToken.isEmpty
         if isSignedIn {
             accountInfo = loadPersistedAccountInfo()
@@ -95,7 +95,7 @@ final class MicrosoftAuthService {
         }
 
         let tokens = try await exchangeCode(code, codeVerifier: codeVerifier)
-        storeTokens(tokens)
+        try storeTokens(tokens)
         isSignedIn = true
         let info = try? await fetchAccountInfo(accessToken: tokens.accessToken)
         accountInfo = info
@@ -107,9 +107,17 @@ final class MicrosoftAuthService {
         log.info("Microsoft sign-out")
         activeAuthSession?.cancel()
         activeAuthSession = nil
-        KeychainHelper.set("", for: .microsoftAccessToken)
-        KeychainHelper.set("", for: .microsoftRefreshToken)
-        KeychainHelper.set("", for: .microsoftTokenExpiry)
+        for key in [
+            KeychainSecretKey.microsoftAccessToken,
+            .microsoftRefreshToken,
+            .microsoftTokenExpiry,
+        ] {
+            do {
+                try KeychainHelper.set("", for: key)
+            } catch {
+                log.error("Microsoft credential removal failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         isSignedIn = false
         accountInfo = nil
         UserDefaults.standard.removeObject(forKey: Self.displayNameKey)
@@ -119,8 +127,8 @@ final class MicrosoftAuthService {
     /// Returns a valid access token, refreshing automatically if expired.
     /// Throws `MicrosoftAuthError.notSignedIn` if no refresh token is available.
     func getValidAccessToken() async throws -> String {
-        let accessToken = KeychainHelper.get(for: .microsoftAccessToken)
-        let expiryString = KeychainHelper.get(for: .microsoftTokenExpiry)
+        let accessToken = try KeychainHelper.get(for: .microsoftAccessToken)
+        let expiryString = try KeychainHelper.get(for: .microsoftTokenExpiry)
 
         if !accessToken.isEmpty,
            let expiry = ISO8601DateFormatter().date(from: expiryString),
@@ -128,7 +136,7 @@ final class MicrosoftAuthService {
             return accessToken
         }
 
-        let refreshToken = KeychainHelper.get(for: .microsoftRefreshToken)
+        let refreshToken = try KeychainHelper.get(for: .microsoftRefreshToken)
         guard !refreshToken.isEmpty else {
             isSignedIn = false
             throw MicrosoftAuthError.notSignedIn
@@ -136,7 +144,7 @@ final class MicrosoftAuthService {
 
         do {
             let tokens = try await refreshAccessToken(refreshToken)
-            storeTokens(tokens)
+            try storeTokens(tokens)
             return tokens.accessToken
         } catch {
             isSignedIn = false
@@ -204,13 +212,27 @@ final class MicrosoftAuthService {
         return try JSONDecoder().decode(TokenResponse.self, from: data)
     }
 
-    private func storeTokens(_ tokens: TokenResponse) {
-        KeychainHelper.set(tokens.accessToken, for: .microsoftAccessToken)
+    private func storeTokens(_ tokens: TokenResponse) throws {
+        try KeychainHelper.set(tokens.accessToken, for: .microsoftAccessToken)
         if let rt = tokens.refreshToken {
-            KeychainHelper.set(rt, for: .microsoftRefreshToken)
+            try KeychainHelper.set(rt, for: .microsoftRefreshToken)
         }
         let expiry = Date().addingTimeInterval(TimeInterval(tokens.expiresIn))
-        KeychainHelper.set(ISO8601DateFormatter().string(from: expiry), for: .microsoftTokenExpiry)
+        try KeychainHelper.set(
+            ISO8601DateFormatter().string(from: expiry),
+            for: .microsoftTokenExpiry
+        )
+    }
+
+    private static func loadSecretForStartup(_ key: KeychainSecretKey) -> String {
+        do {
+            return try KeychainHelper.get(for: key)
+        } catch {
+            Logger.calendar.error(
+                "Microsoft credential lookup failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return ""
+        }
     }
 
     private static let displayNameKey = "microsoft.accountDisplayName"

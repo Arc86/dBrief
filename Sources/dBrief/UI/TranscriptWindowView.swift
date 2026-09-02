@@ -18,6 +18,7 @@ struct TranscriptDetailView: View {
     @Environment(TranscriptChatStore.self) private var chatStore
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.calmAppearance) private var calm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Persisted display preferences
     @AppStorage("transcriptFontSize") private var fontSize: Int = 16
@@ -437,6 +438,7 @@ struct TranscriptDetailView: View {
             }
             .disabled(richTranscript == nil)
             .help("Copy full transcript")
+            .accessibilityLabel(copied ? "Transcript copied" : "Copy full transcript")
 
             Button {
                 showDiarizeConfirm = true
@@ -446,6 +448,7 @@ struct TranscriptDetailView: View {
             }
             .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
             .help("Detect speakers")
+            .accessibilityLabel("Detect speakers")
 
             Menu {
                 Stepper(value: $fontSize, in: 12...24) {
@@ -548,12 +551,20 @@ struct TranscriptDetailView: View {
             .onChange(of: audioPlayer.currentTime) { _, newTime in
                 currentTime = newTime
                 guard let active = activeTurn(at: newTime) else { return }
-                withAnimation { proxy.scrollTo(active.id, anchor: .center) }
+                if reduceMotion {
+                    proxy.scrollTo(active.id, anchor: .center)
+                } else {
+                    withAnimation { proxy.scrollTo(active.id, anchor: .center) }
+                }
             }
             .onChange(of: searchScrollTick) { _, _ in
                 guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
                 let turnId = searchResult.matches[currentMatchIndex].turnId
-                withAnimation { proxy.scrollTo(turnId, anchor: .center) }
+                if reduceMotion {
+                    proxy.scrollTo(turnId, anchor: .center)
+                } else {
+                    withAnimation { proxy.scrollTo(turnId, anchor: .center) }
+                }
             }
         }
     }
@@ -1043,7 +1054,11 @@ struct TranscriptDetailView: View {
                     // partial alone leaves the count unchanged, so this doesn't
                     // re-run speakerTurns() on every partial), then scroll.
                     refreshLiveTurns()
-                    withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
+                    if reduceMotion {
+                        proxy.scrollTo("live-bottom", anchor: .bottom)
+                    } else {
+                        withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
+                    }
                 }
                 .onAppear { refreshLiveTurns() }
             }
@@ -1507,7 +1522,7 @@ struct TranscriptDetailView: View {
             do {
                 try await store.save(transcript, for: recording)
             } catch {
-                Logger.recording.error("TranscriptDetailView: failed to save: \(error.localizedDescription, privacy: .public)")
+                Logger.recording.error("TranscriptDetailView: failed to save recording files")
             }
         }
     }
@@ -1565,7 +1580,7 @@ struct TranscriptDetailView: View {
                 }
             }
         } catch {
-            Logger.recording.error("Failed to save insights: \(error.localizedDescription, privacy: .public)")
+            Logger.recording.error("Failed to save insights sidecar")
         }
     }
 
@@ -1641,14 +1656,16 @@ struct PulsingDot: View {
     let color: Color
     var size: CGFloat = 6
     @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .scaleEffect(on ? 1.15 : 0.85)
-            .opacity(on ? 1 : 0.5)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
+            .scaleEffect(reduceMotion ? 1 : (on ? 1.15 : 0.85))
+            .opacity(reduceMotion ? 1 : (on ? 1 : 0.5))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = !reduceMotion }
+            .accessibilityHidden(true)
     }
 }
 
@@ -1656,14 +1673,16 @@ struct PulsingDot: View {
 struct PresenceDot: View {
     let border: Color
     @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Circle()
             .fill(Color(hex: "30d158"))
             .frame(width: 9, height: 9)
             .overlay(Circle().strokeBorder(border, lineWidth: 2))
-            .scaleEffect(on ? 1.1 : 0.9)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
+            .scaleEffect(reduceMotion ? 1 : (on ? 1.1 : 0.9))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = !reduceMotion }
+            .accessibilityHidden(true)
     }
 }
 

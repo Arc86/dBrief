@@ -7,9 +7,11 @@ import SwiftUI
 struct OnboardingView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var step = 0
-    @State private var hasSpeechPermission = false
-    @State private var hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+    @State private var speechStatus = SFSpeechRecognizer.authorizationStatus()
+    @State private var calendarStatus = EKEventStore.authorizationStatus(for: .event)
+    @AppStorage("permissions.didRequestScreenCapture") private var didRequestScreenCapture = false
 
     private let stepCount = 4
 
@@ -36,8 +38,12 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: step)
         .task {
-            hasSpeechPermission = SFSpeechRecognizer.authorizationStatus() == .authorized
-            hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+            refreshPermissionStatuses()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                refreshPermissionStatuses()
+            }
         }
     }
 
@@ -130,57 +136,48 @@ struct OnboardingView: View {
             Text("Permissions")
                 .font(.title3.weight(.semibold))
 
-            bodyText("dBrief needs a microphone to record. The rest are optional and unlock more features.")
+            bodyText("Enable at least one audio source. Use Microphone for your voice, Screen Recording for system audio, or both for calls.")
 
             VStack(spacing: 8) {
                 permissionRow(
-                    granted: recordingManager.hasMicrophonePermission,
+                    state: recordingManager.microphoneAuthorizationState,
                     title: "Microphone",
-                    subtitle: "Required to record audio",
-                    required: true,
-                    action: nil
+                    subtitle: "Records your voice",
+                    action: handleMicrophonePermission
                 )
 
                 permissionRow(
-                    granted: recordingManager.hasSystemAudioPermission,
+                    state: systemAudioPermissionState,
                     title: "Screen Recording",
                     subtitle: "Captures system audio (other people on calls)",
-                    required: false,
-                    action: recordingManager.hasSystemAudioPermission ? nil : { CGRequestScreenCaptureAccess() }
+                    action: handleScreenRecordingPermission
                 )
 
                 permissionRow(
-                    granted: hasSpeechPermission,
+                    state: speechPermissionState,
                     title: "Speech Recognition",
                     subtitle: "For built-in Apple transcription",
-                    required: false,
-                    action: hasSpeechPermission ? nil : {
-                        Task { hasSpeechPermission = await LocalTranscriptionService.requestAccess() }
-                    }
+                    action: handleSpeechPermission
                 )
 
                 permissionRow(
-                    granted: hasCalendarPermission,
+                    state: calendarPermissionState,
                     title: "Calendar",
                     subtitle: "Pre-fills meeting title and participants",
-                    required: false,
-                    action: hasCalendarPermission ? nil : {
-                        Task {
-                            let store = EKEventStore()
-                            _ = try? await store.requestFullAccessToEvents()
-                            hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
-                        }
-                    }
+                    action: handleCalendarPermission
                 )
+            }
+
+            if !canContinueWithAudioPermissions {
+                Label("Enable Microphone, Screen Recording, or both to continue.", systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 10) {
                 Button("Refresh") {
-                    Task {
-                        await recordingManager.checkPermissions()
-                        hasSpeechPermission = SFSpeechRecognizer.authorizationStatus() == .authorized
-                        hasCalendarPermission = EKEventStore.authorizationStatus(for: .event) == .fullAccess
-                    }
+                    refreshPermissionStatuses()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
@@ -190,32 +187,24 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(!recordingManager.hasMicrophonePermission)
+                .disabled(!canContinueWithAudioPermissions)
             }
         }
     }
 
     private func permissionRow(
-        granted: Bool,
+        state: PermissionAuthorizationState,
         title: String,
         subtitle: String,
-        required: Bool,
-        action: (() -> Void)?
+        action: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: granted ? "checkmark.circle.fill" : (required ? "exclamationmark.circle.fill" : "circle"))
+            Image(systemName: permissionIcon(for: state))
                 .font(.system(size: 18))
-                .foregroundStyle(granted ? .green : (required ? .red : .secondary))
+                .foregroundStyle(state.isGranted ? .green : .orange)
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(title).font(.callout.weight(.medium))
-                    if required {
-                        Text("Required")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.red)
-                    }
-                }
+                Text(title).font(.callout.weight(.medium))
                 Text(subtitle)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -224,19 +213,138 @@ struct OnboardingView: View {
 
             Spacer(minLength: 4)
 
-            if granted {
-                Text("On")
+            if state.isGranted {
+                Text("Granted")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.green)
-            } else if let action {
-                Button("Grant", action: action)
+            } else if let actionTitle = permissionActionTitle(for: state) {
+                Button(actionTitle, action: action)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+            } else {
+                Text("Restricted")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var systemAudioPermissionState: PermissionAuthorizationState {
+        if recordingManager.hasSystemAudioPermission { return .granted }
+        return didRequestScreenCapture ? .denied : .notDetermined
+    }
+
+    private var speechPermissionState: PermissionAuthorizationState {
+        switch speechStatus {
+        case .notDetermined: .notDetermined
+        case .denied: .denied
+        case .restricted: .restricted
+        case .authorized: .granted
+        @unknown default: .restricted
+        }
+    }
+
+    private var calendarPermissionState: PermissionAuthorizationState {
+        switch calendarStatus {
+        case .notDetermined, .writeOnly: .notDetermined
+        case .denied: .denied
+        case .restricted: .restricted
+        case .fullAccess: .granted
+        @unknown default: .restricted
+        }
+    }
+
+    private var canContinueWithAudioPermissions: Bool {
+        PermissionRecoveryPolicy.canContinue(audioSourceStates: [
+            recordingManager.microphoneAuthorizationState,
+            systemAudioPermissionState,
+        ])
+    }
+
+    private func permissionActionTitle(for state: PermissionAuthorizationState) -> String? {
+        switch PermissionRecoveryPolicy.action(for: state) {
+        case .requestAccess: "Grant"
+        case .openSystemSettings: "Open Settings"
+        case .explainRestriction, .none: nil
+        }
+    }
+
+    private func permissionIcon(for state: PermissionAuthorizationState) -> String {
+        switch state {
+        case .granted: "checkmark.circle.fill"
+        case .restricted: "lock.circle.fill"
+        case .denied: "exclamationmark.circle.fill"
+        case .notDetermined: "circle"
+        }
+    }
+
+    private func refreshPermissionStatuses() {
+        recordingManager.refreshPermissions()
+        speechStatus = SFSpeechRecognizer.authorizationStatus()
+        calendarStatus = EKEventStore.authorizationStatus(for: .event)
+    }
+
+    private func handleMicrophonePermission() {
+        switch PermissionRecoveryPolicy.action(for: recordingManager.microphoneAuthorizationState) {
+        case .requestAccess:
+            Task { _ = await recordingManager.requestMicrophonePermission() }
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_Microphone")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
+    private func handleScreenRecordingPermission() {
+        switch PermissionRecoveryPolicy.action(for: systemAudioPermissionState) {
+        case .requestAccess:
+            didRequestScreenCapture = true
+            _ = CGRequestScreenCaptureAccess()
+            refreshPermissionStatuses()
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_ScreenCapture")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
+    private func handleSpeechPermission() {
+        switch PermissionRecoveryPolicy.action(for: speechPermissionState) {
+        case .requestAccess:
+            Task {
+                _ = await LocalTranscriptionService.requestAccess()
+                refreshPermissionStatuses()
+            }
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_SpeechRecognition")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
+    private func handleCalendarPermission() {
+        switch PermissionRecoveryPolicy.action(for: calendarPermissionState) {
+        case .requestAccess:
+            Task {
+                let store = EKEventStore()
+                _ = try? await store.requestFullAccessToEvents()
+                refreshPermissionStatuses()
+            }
+        case .openSystemSettings:
+            openSystemSettingsPane("Privacy_Calendars")
+        case .explainRestriction, .none:
+            break
+        }
+    }
+
+    private func openSystemSettingsPane(_ anchor: String) {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Step 2: Engines

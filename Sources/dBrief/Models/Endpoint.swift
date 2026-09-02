@@ -52,6 +52,18 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
         self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .openAICompatible
     }
 
+    /// Endpoint metadata is stored in preferences, while credentials are stored
+    /// separately in the Keychain under this endpoint's stable UUID. Decoding
+    /// still accepts `apiKey` so older plaintext records can be migrated.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(baseURL, forKey: .baseURL)
+        try c.encode(modelName, forKey: .modelName)
+        try c.encode(provider, forKey: .provider)
+    }
+
     /// Whether this endpoint uses the whisper-asr-webservice API format (/asr)
     var isWhisperASR: Bool {
         provider == .openAICompatible

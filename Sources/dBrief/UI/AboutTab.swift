@@ -9,6 +9,7 @@ struct AboutTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.calmAppearance) private var calm
     @Environment(UpdaterController.self) private var updaterController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
 
     // MARK: Version / system facts
@@ -76,7 +77,8 @@ struct AboutTab: View {
             .frame(maxWidth: 640, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .onAppear { animate = true }
+        .onAppear { animate = !reduceMotion }
+        .onChange(of: reduceMotion) { _, reduced in animate = !reduced }
     }
 
     // MARK: Hero
@@ -91,15 +93,15 @@ struct AboutTab: View {
                     .frame(width: 112, height: 112)
                     .blur(radius: 22)
                     .opacity(0.5)
-                    .rotationEffect(.degrees(animate ? 360 : 0))
-                    .animation(.linear(duration: 14).repeatForever(autoreverses: false), value: animate)
+                    .rotationEffect(.degrees(animate && !reduceMotion ? 360 : 0))
+                    .animation(reduceMotion ? nil : .linear(duration: 14).repeatForever(autoreverses: false), value: animate)
 
                 logoImage
                     .frame(width: 92, height: 92)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
-                    .offset(y: animate ? -6 : 0)
-                    .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: animate)
+                    .offset(y: animate && !reduceMotion ? -6 : 0)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 3).repeatForever(autoreverses: true), value: animate)
             }
             .frame(width: 92, height: 92)
 

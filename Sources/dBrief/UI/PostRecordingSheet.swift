@@ -182,6 +182,7 @@ struct PostRecordingSheet: View {
                     }
                     .buttonStyle(.plain)
                     .help("Delete recording")
+                    .accessibilityLabel("Delete recording")
 
                     Button("Skip") {
                         applyFieldsToRecording()

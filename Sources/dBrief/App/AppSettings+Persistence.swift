@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let endpointPersistenceLog = Logger.app
 
 // MARK: - Persistence Helpers
 
@@ -98,16 +101,99 @@ extension AppSettings {
     // MARK: Endpoint Persistence
 
     func saveEndpoints(_ endpoints: [Endpoint], forKey key: String) {
-        if let data = try? JSONEncoder().encode(endpoints) {
+        do {
+            // Store and verify every credential before replacing legacy JSON.
+            // If the Keychain is unavailable, the previous preference record is
+            // left untouched so an existing plaintext key cannot be lost.
+            for endpoint in endpoints {
+                try KeychainHelper.setEndpointAPIKey(endpoint.apiKey, endpointID: endpoint.id)
+            }
+            let data = try JSONEncoder().encode(endpoints)
             UserDefaults.standard.set(data, forKey: key)
+        } catch {
+            endpointPersistenceLog.error(
+                "Endpoint settings were not persisted because credential storage failed: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
     static func loadEndpoints(forKey key: String) -> [Endpoint] {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let endpoints = try? JSONDecoder().decode([Endpoint].self, from: data)
+              let legacyEndpoints = try? JSONDecoder().decode([Endpoint].self, from: data)
         else { return [] }
-        return endpoints
+
+        let plan = EndpointSecretMigrationPlan(legacyEndpoints: legacyEndpoints)
+        var successfulEndpointIDs = Set<UUID>()
+
+        for candidate in plan.candidates {
+            do {
+                try KeychainHelper.setEndpointAPIKey(
+                    candidate.secret,
+                    endpointID: candidate.endpointID
+                )
+                successfulEndpointIDs.insert(candidate.endpointID)
+            } catch {
+                endpointPersistenceLog.error(
+                    "Legacy endpoint credential migration failed; the original preference record was retained: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        // Only replace the legacy preference blob once every plaintext secret in
+        // it has a verified Keychain copy. Partial success intentionally leaves
+        // the entire original blob available for a safe retry on next launch.
+        if !plan.candidates.isEmpty,
+           successfulEndpointIDs.count == plan.candidates.count
+        {
+            do {
+                let sanitized = plan.endpointsAfterPersisting(
+                    successfulEndpointIDs: successfulEndpointIDs
+                )
+                UserDefaults.standard.set(try JSONEncoder().encode(sanitized), forKey: key)
+            } catch {
+                endpointPersistenceLog.error(
+                    "Migrated endpoint metadata could not be saved; the legacy preference record was retained: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        return legacyEndpoints.map { endpoint in
+            var hydrated = endpoint
+            do {
+                let keychainValue = try KeychainHelper.endpointAPIKey(endpointID: endpoint.id)
+                if !keychainValue.isEmpty {
+                    hydrated.apiKey = keychainValue
+                }
+            } catch {
+                endpointPersistenceLog.error(
+                    "An endpoint credential could not be read from the Keychain: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            return hydrated
+        }
+    }
+
+    // MARK: Keychain-backed Integration Secrets
+
+    func saveKeychainSecret(_ value: String, for key: KeychainSecretKey) {
+        do {
+            try KeychainHelper.set(value, for: key)
+        } catch {
+            endpointPersistenceLog.error(
+                "An integration credential could not be saved: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    static func loadKeychainSecret(for key: KeychainSecretKey) -> String {
+        do {
+            return try KeychainHelper.get(for: key)
+        } catch {
+            endpointPersistenceLog.error(
+                "An integration credential could not be read: \(error.localizedDescription, privacy: .public)"
+            )
+            return ""
+        }
     }
 
     // MARK: Watched Folders Persistence

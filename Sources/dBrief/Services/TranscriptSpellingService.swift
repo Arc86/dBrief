@@ -45,7 +45,7 @@ final class TranscriptSpellingService {
             Self.log.info("Vocabulary spell-fix applied \(corrections.count) correction(s)")
             return corrected
         } catch {
-            Self.log.error("Vocabulary spell-fix skipped: \(error.localizedDescription, privacy: .public)")
+            Self.log.error("Vocabulary spell-fix skipped after the correction service failed")
             return result
         }
     }

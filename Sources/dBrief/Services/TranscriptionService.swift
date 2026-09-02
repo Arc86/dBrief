@@ -734,7 +734,7 @@ actor TranscriptionService {
         }
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            Logger.transcription.error("HTTP \(httpResponse.statusCode, privacy: .public) from \(url.host ?? "?", privacy: .public) (\(fileName, privacy: .public)): \(responseBody, privacy: .public)")
+            Logger.transcription.error("Remote transcription HTTP \(httpResponse.statusCode, privacy: .public) from \(url.host ?? "?", privacy: .public); responseLength=\(data.count)")
             throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
         }
         return data
@@ -812,7 +812,7 @@ actor TranscriptionService {
         }
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            Logger.transcription.error("\(providerName, privacy: .public) HTTP \(httpResponse.statusCode, privacy: .public): \(responseBody, privacy: .public)")
+            Logger.transcription.error("\(providerName, privacy: .public) HTTP \(httpResponse.statusCode, privacy: .public); responseLength=\(data.count)")
             throw TranscriptionError.serverError(httpResponse.statusCode, responseBody)
         }
         return data

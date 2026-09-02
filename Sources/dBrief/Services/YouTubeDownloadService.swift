@@ -195,7 +195,7 @@ actor YouTubeDownloadService {
 
         args.append(trimmed)
 
-        Self.log.info("Starting yt-dlp audio download: \(trimmed, privacy: .public)")
+        Self.log.info("Starting yt-dlp audio download")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ytdlp)
@@ -217,7 +217,7 @@ actor YouTubeDownloadService {
             let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             let msg = String(data: errData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? "exit \(process.terminationStatus)"
-            Self.log.error("yt-dlp failed: \(msg, privacy: .public)")
+            Self.log.error("yt-dlp failed with exit status \(process.terminationStatus, privacy: .public)")
             throw YouTubeDownloadError.downloadFailed(msg)
         }
 
@@ -227,7 +227,7 @@ actor YouTubeDownloadService {
             throw YouTubeDownloadError.noAudioFileFound
         }
 
-        Self.log.info("Audio download complete: \(audioFile.lastPathComponent, privacy: .public)")
+        Self.log.info("yt-dlp audio download complete")
 
         // Downsample to 16 kHz mono m4a (Whisper's native rate; also ~halves the
         // file). Best-effort: if ffmpeg is unavailable or the pass fails, fall
