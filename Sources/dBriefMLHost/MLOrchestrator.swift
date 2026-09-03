@@ -40,13 +40,25 @@ actor MLOrchestrator: MLBackend {
         try await mutex.withLock { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
+            let fileURL = URL(fileURLWithPath: path)
             do {
-                // Decode once — transcription, diarization (inside transcribe),
-                // and the embedding pass all consume the same 16 kHz mono buffer.
-                let audio = try whisperService.loadAudio(fileURL: URL(fileURLWithPath: path))
+                let audioDuration = WhisperAudioLoadingPolicy.durationSeconds(for: fileURL)
+                let loadIncrementally = WhisperAudioLoadingPolicy.shouldLoadIncrementally(
+                    durationSeconds: audioDuration,
+                    diarizationEnabled: config.diarizationEnabled
+                )
+
+                // Diarization and voice embeddings need random access to the full
+                // 16 kHz buffer, so they retain the decode-once path. Long,
+                // non-diarized recordings go directly through WhisperKit's
+                // bounded-memory file stream instead.
+                let audio: [Float]? = loadIncrementally
+                    ? nil
+                    : try whisperService.loadAudio(fileURL: fileURL)
                 let result = try await whisperService.transcribe(
-                    audioArray: audio,
-                    fileURL: URL(fileURLWithPath: path),
+                    bufferedAudio: audio,
+                    fileURL: fileURL,
+                    audioDuration: audioDuration,
                     initialPrompt: initialPrompt,
                     whisperConfig: config,
                     safeMode: safeMode
@@ -55,7 +67,10 @@ actor MLOrchestrator: MLBackend {
                 // did) so the extractor's model never coexists with Whisper on
                 // the final/only segment.
                 if unloadAfter { await whisperService.unload() }
-                return await withEmbeddings(result, samples: audio)
+                if let audio {
+                    return await withEmbeddings(result, samples: audio)
+                }
+                return result
             } catch {
                 await whisperService.unload()
                 throw error

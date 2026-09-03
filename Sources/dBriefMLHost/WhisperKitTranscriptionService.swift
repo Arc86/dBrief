@@ -34,7 +34,14 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
     }
 
-    func transcribe(audioArray: [Float], fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig, safeMode: Bool = false) async throws -> dBriefWire.TranscriptionResult {
+    func transcribe(
+        bufferedAudio: [Float]?,
+        fileURL: URL,
+        audioDuration: TimeInterval?,
+        initialPrompt: String?,
+        whisperConfig: WhisperRuntimeConfig,
+        safeMode: Bool = false
+    ) async throws -> dBriefWire.TranscriptionResult {
         Logger.localAI.info("Transcribing with model \(whisperConfig.modelName, privacy: .public)")
 
         // Memory gate before loading the model
@@ -113,10 +120,22 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             let transcribeStart = Date()
             // wkResults type inferred as WhisperKit's TranscriptionResult — kept local to avoid
             // the module/class name collision when naming the type in function signatures.
-            var wkResults = try await whisper.transcribe(
-                audioArray: audioArray,
-                decodeOptions: options
-            )
+            let runTranscription = { (decodeOptions: DecodingOptions) async throws in
+                if let bufferedAudio {
+                    return try await whisper.transcribe(
+                        audioArray: bufferedAudio,
+                        decodeOptions: decodeOptions
+                    )
+                }
+
+                Logger.localAI.info("Using incremental Whisper audio loading")
+                return try await whisper.transcribe(
+                    audioPath: fileURL.path,
+                    audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental),
+                    decodeOptions: decodeOptions
+                )
+            }
+            var wkResults = try await runTranscription(options)
 
             // A custom-vocabulary initialPrompt is fed to Whisper as conditioning
             // ("previous text") tokens. When that domain is unrelated to the audio
@@ -140,7 +159,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                     )
                     var noPromptOptions = options
                     noPromptOptions.promptTokens = nil
-                    let retry = try await whisper.transcribe(audioArray: audioArray, decodeOptions: noPromptOptions)
+                    let retry = try await runTranscription(noPromptOptions)
                     let retryNonEmpty = retry.reduce(0) {
                         $0 + $1.segments.filter { !$0.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty }.count
                     }
@@ -151,7 +170,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // Logged at .notice so it persists to the unified log (unlike .info), making
             // transcription speed comparable across runs/settings via `log show`. Includes
             // worker count, model, and audio length so the record is self-explanatory.
-            let audioSeconds = Double(audioArray.count) / 16_000.0
+            let audioSeconds = audioDuration
+                ?? bufferedAudio.map { Double($0.count) / 16_000.0 }
+                ?? 0
             let speedFactor = audioSeconds > 0 ? audioSeconds / transcribeDuration : 0
             // os_log redacts interpolated strings as <private> by default; mark the
             // (non-sensitive) timing values .public so they appear in the log.
@@ -166,11 +187,16 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
             // Diarization must be inlined here because wkResults type can only be inferred
             // from the transcribe() return — cannot be named explicitly in a function signature.
             if whisperConfig.diarizationEnabled {
+                guard let bufferedAudio else {
+                    throw TranscriptionServiceError.audioLoadFailed(
+                        "Incremental loading cannot be combined with speaker diarization."
+                    )
+                }
                 stateHandler(.diarizing)
                 let diarStart = Date()
                 do {
                     let speakerKit = try await loadSpeakerKit()
-                    let diarResult = try await speakerKit.diarize(audioArray: audioArray)
+                    let diarResult = try await speakerKit.diarize(audioArray: bufferedAudio)
                     Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
                     // Convert the diarization turns to our wire type.
