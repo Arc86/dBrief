@@ -16,6 +16,7 @@ final class AppContext {
     let chatStore = ChatStore()
     let modelPerformanceStore = ModelPerformanceStore()
     let voiceLibraryStore = VoiceLibraryStore()
+    let processingJobStore = ProcessingJobStore()
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
@@ -33,7 +34,16 @@ final class AppContext {
     init() {
         log.info("AppContext init")
         registerFontAwesomeBrands()
-        self.recordingManager = RecordingManager(appState: appState, appSettings: appSettings, transcriptStore: transcriptStore, insightsStore: insightsStore, voiceLibraryStore: voiceLibraryStore, modelPerformanceStore: modelPerformanceStore, microsoftAuthService: microsoftAuthService)
+        self.recordingManager = RecordingManager(
+            appState: appState,
+            appSettings: appSettings,
+            transcriptStore: transcriptStore,
+            insightsStore: insightsStore,
+            voiceLibraryStore: voiceLibraryStore,
+            modelPerformanceStore: modelPerformanceStore,
+            processingJobStore: processingJobStore,
+            microsoftAuthService: microsoftAuthService
+        )
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -75,6 +85,7 @@ final class AppContext {
         await recordingManager.checkPermissions()
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
         await recordingManager.recoverInterruptedSessions()
+        await recordingManager.resumeInterruptedProcessingJob()
         callDetectionService.start(appState: appState, appSettings: appSettings, recordingManager: recordingManager)
         recordingManager.requestNotificationPermission()
         miniPlayer.setUp(appState: appState, recordingManager: recordingManager, appSettings: appSettings)
@@ -109,6 +120,9 @@ final class AppContext {
         guard appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled else {
             return
         }
+        // An interrupted Phase 5A job may be actively reading an old recording.
+        // Defer its age-based sweep until a later scheduler run after processing ends.
+        guard !recordingManager.hasActiveProcessingJob else { return }
         let recordingsFolder = appSettings.effectiveRecordingFolderURL
         let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
         var combined = RetentionCleanupResult()

@@ -7,6 +7,12 @@ import UserNotifications
 import UniformTypeIdentifiers
 import OSLog
 
+struct FinalizedRecordingMatch: Equatable, Sendable {
+    let audioURL: URL
+    let metadataURL: URL
+    let segmentURLs: [URL]
+}
+
 @MainActor
 @Observable
 final class RecordingManager {
@@ -45,6 +51,7 @@ final class RecordingManager {
     private let insightsStore: InsightsStore
     private let voiceLibraryStore: VoiceLibraryStore
     private let modelPerformanceStore: ModelPerformanceStore
+    private let processingJobStore: ProcessingJobStore
     private let richTranscriptBuilder = RichTranscriptBuilder()
     private let youtubeDownloadService = YouTubeDownloadService()
     private let calendarService = CalendarService()
@@ -56,13 +63,23 @@ final class RecordingManager {
         static let gemma4_e4b: Int64 = 4_800_000_000  // ~4.8 GB
     }
 
-    init(appState: AppState, appSettings: AppSettings, transcriptStore: TranscriptStore, insightsStore: InsightsStore, voiceLibraryStore: VoiceLibraryStore, modelPerformanceStore: ModelPerformanceStore, microsoftAuthService: MicrosoftAuthService) {
+    init(
+        appState: AppState,
+        appSettings: AppSettings,
+        transcriptStore: TranscriptStore,
+        insightsStore: InsightsStore,
+        voiceLibraryStore: VoiceLibraryStore,
+        modelPerformanceStore: ModelPerformanceStore,
+        processingJobStore: ProcessingJobStore,
+        microsoftAuthService: MicrosoftAuthService
+    ) {
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
         self.insightsStore = insightsStore
         self.voiceLibraryStore = voiceLibraryStore
         self.modelPerformanceStore = modelPerformanceStore
+        self.processingJobStore = processingJobStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
@@ -141,6 +158,7 @@ final class RecordingManager {
     var microphoneAuthorizationState: PermissionAuthorizationState {
         audioCaptureManager.microphoneAuthorizationState
     }
+    var hasActiveProcessingJob: Bool { appState.processingJob != nil }
 
     /// Promotes any interrupted Application Support capture into the normal
     /// recordings library. Recovery never starts transcription or integrations;
@@ -206,6 +224,200 @@ final class RecordingManager {
             appState.durabilityNoticeIsWarning = true
             appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) remain safe in Recording Recovery; reconnect the configured storage and restart dBrief to retry."
         }
+    }
+
+    /// Resumes at most one job that was running when the process exited. Phase 5A
+    /// only crosses the finalization/transcription boundary; a job that already has
+    /// a durable transcript is parked for a later explicit retry rather than
+    /// replaying AI, Markdown, or non-idempotent integrations.
+    func resumeInterruptedProcessingJob() async {
+        guard appState.processingJob == nil else { return }
+        let discovery = await processingJobStore.discover()
+
+        if !discovery.issues.isEmpty {
+            appState.durabilityNoticeIsWarning = true
+            appState.durabilityNotice = "Some saved processing jobs could not be read and were left untouched."
+        }
+
+        for var record in discovery.jobs {
+            switch record.launchRecoveryAction {
+            case .none:
+                continue
+            case .parkAtPhase5ABoundary:
+                record.markTranscriptionBoundaryReached(at: Date())
+                try? await processingJobStore.save(record)
+                if let path = record.source.finalizedAudioPath {
+                    let audioURL = URL(fileURLWithPath: path)
+                    if Self.loadQueueItem(for: audioURL)?.id == record.id {
+                        Self.removeQueueFile(for: audioURL)
+                    }
+                }
+                continue
+            case .resumeToPhase5ABoundary:
+                break
+            }
+
+            guard let recording = await recordingForRecovery(record) else {
+                record.markFailed(.missingInput, at: Date())
+                try? await processingJobStore.save(record)
+                appState.durabilityNoticeIsWarning = true
+                appState.durabilityNotice = "A saved processing job could not find its recording. Its recovery data was left untouched."
+                continue
+            }
+
+            updatePersistedSource(&record.source, from: recording)
+            let queueURL = Self.queueURL(for: recording)
+            let queuedAudioURL = queueURL.flatMap {
+                FileManager.default.fileExists(atPath: $0.path)
+                    ? recording.finalizedAudioURL
+                    : nil
+            }
+            appState.durabilityNoticeIsWarning = false
+            appState.durabilityNotice = "Resuming interrupted audio processing."
+            let request = record.request
+            launchJob(
+                recording: recording,
+                queuedAudioURL: queuedAudioURL,
+                existingRecord: record
+            ) { job in
+                await self.processRecording(
+                    job: job,
+                    transcribe: request.transcribe,
+                    summary: false,
+                    actionItems: false,
+                    tags: false,
+                    stopAtPhase5ABoundary: true
+                )
+            }
+            return
+        }
+    }
+
+    private func recordingForRecovery(_ record: PersistedProcessingJob) async -> Recording? {
+        let fileManager = FileManager.default
+        var finalizedAudioURL = record.source.finalizedAudioPath.map(URL.init(fileURLWithPath:))
+        var metadataURL = record.source.metadataPath.map(URL.init(fileURLWithPath:))
+        var segmentURLs = record.source.segmentAudioPaths.map(URL.init(fileURLWithPath:))
+
+        if let audioURL = finalizedAudioURL,
+           !fileManager.fileExists(atPath: audioURL.path) {
+            finalizedAudioURL = nil
+        }
+        let recordingFolder = appSettings.effectiveRecordingFolderURL
+        let discoveredMatch: FinalizedRecordingMatch? = if finalizedAudioURL == nil {
+            await Task.detached(priority: .utility) {
+                Self.findFinalizedRecording(
+                    recordingID: record.recordingID,
+                    in: recordingFolder
+                )
+            }.value
+        } else {
+            nil
+        }
+        if let match = discoveredMatch {
+            finalizedAudioURL = match.audioURL
+            metadataURL = match.metadataURL
+            segmentURLs = match.segmentURLs
+        }
+
+        let recording: Recording
+        if let finalizedAudioURL {
+            let attributes = try? fileManager.attributesOfItem(atPath: finalizedAudioURL.path)
+            let fileSize = (attributes?[.size] as? Int64) ?? record.source.fileSize
+            recording = Recording(
+                id: record.recordingID,
+                date: record.source.recordingDate,
+                fileURL: finalizedAudioURL,
+                duration: record.source.duration,
+                fileSize: fileSize,
+                associatedApp: record.source.associatedApp,
+                meetingTitleDraft: record.source.meetingTitle,
+                finalizedAudioURL: finalizedAudioURL,
+                segmentAudioURLs: segmentURLs.filter { fileManager.fileExists(atPath: $0.path) },
+                metadataURL: metadataURL
+            )
+        } else if let stagedPath = record.source.stagedInputPath {
+            let stagedURL = URL(fileURLWithPath: stagedPath)
+            guard fileManager.fileExists(atPath: stagedURL.path) else { return nil }
+            recording = Recording(
+                id: record.recordingID,
+                date: record.source.recordingDate,
+                fileURL: stagedURL,
+                duration: record.source.duration,
+                fileSize: record.source.fileSize,
+                associatedApp: record.source.associatedApp,
+                meetingTitleDraft: record.source.meetingTitle
+            )
+            recording.importSourceURL = stagedURL
+        } else if let manifestPath = record.source.recoveryManifestPath,
+                  let candidate = InterruptedSessionDiscovery.discover(
+                      in: InterruptedSessionStore.defaultRootURL
+                  ).first(where: { $0.manifestURL.path == manifestPath }) {
+            recording = Recording(
+                id: record.recordingID,
+                date: record.source.recordingDate,
+                fileURL: candidate.manifestURL.deletingLastPathComponent()
+                    .appendingPathComponent("capture"),
+                duration: record.source.duration,
+                fileSize: Self.totalTrackFileSize(candidate.capturedTracks),
+                associatedApp: record.source.associatedApp,
+                meetingTitleDraft: record.source.meetingTitle
+            )
+            recording.capturedTracks = candidate.capturedTracks
+            recording.recoveryManifestURL = candidate.manifestURL
+            if recording.duration <= 0, let probe = candidate.capturedTracks.micURL
+                ?? candidate.capturedTracks.systemURL {
+                recording.duration = await durationSeconds(for: probe)
+            }
+        } else {
+            return nil
+        }
+
+        recording.participants = record.source.participants
+        recording.calendarEvent = record.source.calendarEvent
+        recording.echoSuppressionApplied = record.source.echoSuppressionApplied
+        recording.titleWasUserProvided = record.request.titleWasUserProvided
+        return recording
+    }
+
+    /// Finds a finalized master by the stable recording UUID embedded in its
+    /// metadata. This closes the crash window after the finalizer moved the audio
+    /// but before the processing-job manifest learned the destination path.
+    nonisolated static func findFinalizedRecording(
+        recordingID: UUID,
+        in folder: URL,
+        fileManager: FileManager = .default
+    ) -> FinalizedRecordingMatch? {
+        guard let enumerator = fileManager.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        let decoder = JSONDecoder()
+        for case let metadataURL as URL in enumerator {
+            guard metadataURL.pathExtension.lowercased() == "json",
+                  let data = try? Data(contentsOf: metadataURL),
+                  let payload = try? decoder.decode(RecordingMetadataPayload.self, from: data),
+                  payload.recordingID == recordingID,
+                  payload.masterFileName == URL(fileURLWithPath: payload.masterFileName).lastPathComponent
+            else { continue }
+
+            let directory = metadataURL.deletingLastPathComponent()
+            let audioURL = directory.appendingPathComponent(payload.masterFileName)
+            guard fileManager.fileExists(atPath: audioURL.path) else { continue }
+            let segments = payload.segmentFileNames.compactMap { name -> URL? in
+                guard name == URL(fileURLWithPath: name).lastPathComponent else { return nil }
+                let url = directory.appendingPathComponent(name)
+                return fileManager.fileExists(atPath: url.path) ? url : nil
+            }
+            return FinalizedRecordingMatch(
+                audioURL: audioURL,
+                metadataURL: metadataURL,
+                segmentURLs: segments
+            )
+        }
+        return nil
     }
 
     /// Closes an active audio file before AppDelegate's hard process exit. The
@@ -580,7 +792,8 @@ final class RecordingManager {
         transcribe: Bool,
         summary: Bool,
         actionItems: Bool,
-        tags: Bool
+        tags: Bool,
+        stopAtPhase5ABoundary: Bool = false
     ) async {
         let recording = job.recording
         DurabilityJournal.shared.record(.init(
@@ -632,6 +845,7 @@ final class RecordingManager {
 
         let finalizationStepIndex = appState.processingSteps.count
         appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
+        var finalizationFailureStage: PersistedProcessingJob.FailureStage = .finalization
         do {
             let finalizeStart = Date()
             try await ensureRecordingFinalized(recording: recording) { [weak self] fraction in
@@ -645,6 +859,8 @@ final class RecordingManager {
                     self.appState.processingSteps[finalizationStepIndex].progress = fraction
                 }
             }
+            finalizationFailureStage = .persistence
+            try await persistCheckpoint(.audioFinalized, for: job)
             perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
             appState.processingSteps[finalizationStepIndex].status = .completed
             // Only surface genuine problems (ffmpeg missing, merge/segmentation
@@ -662,19 +878,30 @@ final class RecordingManager {
             }
         } catch {
             appState.processingSteps[finalizationStepIndex].status = .failed(error.localizedDescription)
+            await markPersistedJobFailed(finalizationFailureStage, job: job)
+            await ensureRetryQueue(for: job)
             // Re-offer the post-recording sheet only if the capture slot still holds THIS
             // recording and capture is idle — otherwise a newer recording owns the sheet/
             // controls and we'd show the wrong one over an active capture.
             if appState.currentRecording === recording, appState.recordingState == .idle {
                 appState.showPostRecordingSheet = true
             }
-            finishJob(for: recording)
+            await finishJob(for: recording, completed: false)
             return
         }
 
         // The audio (and its sidecar) now exist — record who was in this meeting before any
         // long-running step, so the names survive even if processing is cancelled later.
         persistMeetingContext(for: recording)
+
+        // A recovered finalization-only job stops at Phase 5A's safe boundary. Later
+        // phases are intentionally not replayed because integration delivery is not
+        // idempotent yet.
+        if stopAtPhase5ABoundary, !transcribe {
+            await markTranscriptionBoundaryReached(job)
+            await finishJob(for: recording, completed: false)
+            return
+        }
 
         // Warm the Apple Intelligence model during transcription so the AI step starts
         // without first-call load latency. Fire-and-forget; no-op for other engines.
@@ -694,7 +921,22 @@ final class RecordingManager {
                 let stepIndex = appState.processingSteps.count
                 appState.processingSteps.append(ProcessingStep(name: "Loaded saved transcript", status: .inProgress))
                 recording.transcription = saved
-                appState.processingSteps[stepIndex].status = .completed
+                do {
+                    try await persistCheckpoint(.transcribed, for: job)
+                    try completeLegacyQueueCheckpoint(for: job)
+                    appState.processingSteps[stepIndex].status = .completed
+                    if stopAtPhase5ABoundary {
+                        await markTranscriptionBoundaryReached(job)
+                        await finishJob(for: recording, completed: false)
+                        return
+                    }
+                } catch {
+                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
+                    await markPersistedJobFailed(.persistence, job: job)
+                    await ensureRetryQueue(for: job)
+                    await finishJob(for: recording, completed: false)
+                    return
+                }
             } else {
                 let stepIndex = appState.processingSteps.count
                 let stepName: String = {
@@ -721,6 +963,7 @@ final class RecordingManager {
                     audioDuration: recording.duration
                 )
                 defer { etaTask.cancel() }
+                var failureStage: PersistedProcessingJob.FailureStage = .transcription
                 do {
                     let txStart = Date()
                     let stepResult = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
@@ -731,9 +974,17 @@ final class RecordingManager {
                     perfSpellCorrectionTime = stepResult.spellCorrectionTime
                     perfTranscriptionModel = transcriptionModelDisplayName
                     perfAudioDuration = recording.duration
-                    // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
-                    appSettings.lifetimeTranscribedSeconds += recording.duration
                     recording.transcription = result
+                    // The transcript and job checkpoint form one durability boundary. The
+                    // downstream pipeline cannot start until both writes have been verified.
+                    failureStage = .persistence
+                    try saveTranscript(result, for: recording)
+                    try await persistCheckpoint(.transcribed, for: job)
+                    try completeLegacyQueueCheckpoint(for: job)
+                    // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
+                    // Count only after the durable boundary so a persistence retry cannot
+                    // increment it for work that was never safely committed.
+                    appSettings.lifetimeTranscribedSeconds += recording.duration
                     appState.processingSteps[stepIndex].status = .completed
                     if let warnings = result.warnings, !warnings.isEmpty {
                         appState.processingSteps.append(
@@ -743,8 +994,11 @@ final class RecordingManager {
                             )
                         )
                     }
-                    // Persist transcript to disk for retry resilience
-                    saveTranscript(result, for: recording)
+                    if stopAtPhase5ABoundary {
+                        await markTranscriptionBoundaryReached(job)
+                        await finishJob(for: recording, completed: false)
+                        return
+                    }
                     // Resolve diarized speakers against the voice library (Phase 2):
                     // confident matches become real names automatically. Load the
                     // library unconditionally (cheap) so we can also suppress the
@@ -833,12 +1087,16 @@ final class RecordingManager {
                     let msg = error.localizedDescription
                     Logger.transcription.error("Transcription failed; details shown in the processing UI")
                     appState.processingSteps[stepIndex].status = .failed(msg)
+                    await markPersistedJobFailed(failureStage, job: job)
+                    await ensureRetryQueue(for: job)
                     DurabilityJournal.shared.record(.init(
                         sessionID: recording.id,
                         name: "transcription",
                         outcome: .failed,
                         failure: .init(error: error)
                     ))
+                    await finishJob(for: recording, completed: false)
+                    return
                 }
             }
         }
@@ -1101,19 +1359,141 @@ final class RecordingManager {
             ]
         ))
 
-        finishJob(for: recording)
+        await finishJob(for: recording)
     }
 
     /// Tears down a completed/failed job: removes its queue sidecar (if it came from the
     /// queue), clears `AppState.processingJob`, and drains the next queued item. Idempotent
     /// and matched by identity so a stale call can't clobber a newer job. NOT called on a
     /// confirm-first review hold — the job stays alive there until analysis resumes.
-    private func finishJob(for recording: Recording) {
+    private func finishJob(for recording: Recording, completed: Bool = true) async {
         if let job = appState.processingJob, job.recording === recording {
-            if let url = job.queuedAudioURL { Self.removeQueueFile(for: url) }
+            if completed {
+                if var record = job.persistedRecord {
+                    record.markFullyCompleted(at: Date())
+                    do {
+                        try await processingJobStore.save(record)
+                        job.persistedRecord = record
+                    } catch {
+                        appState.lastError = "Processing finished, but its completion checkpoint couldn't be saved."
+                    }
+                }
+                if let url = job.queuedAudioURL { Self.removeQueueFile(for: url) }
+            }
             appState.processingJob = nil
         }
+        if !completed {
+            // A failed item must not be immediately selected again by a manual
+            // drain chain. It stays as a user-deferred retry instead.
+            drainAllQueued = false
+        }
         drainQueueIfNeeded()
+    }
+
+    private func updatePersistedSource(
+        _ source: inout PersistedProcessingJob.Source,
+        from recording: Recording
+    ) {
+        source.duration = recording.duration
+        source.fileSize = recording.fileSize
+        source.meetingTitle = recording.meetingTitleDraft
+        source.associatedApp = recording.associatedApp
+        source.participants = recording.participants
+        source.calendarEvent = recording.calendarEvent
+        source.echoSuppressionApplied = recording.echoSuppressionApplied
+        source.recoveryManifestPath = recording.recoveryManifestURL?.path
+        source.stagedInputPath = recording.importSourceURL?.path
+        source.finalizedAudioPath = recording.finalizedAudioURL?.path
+        source.segmentAudioPaths = recording.segmentAudioURLs.map(\.path)
+        source.metadataPath = recording.metadataURL?.path
+    }
+
+    private func persistCheckpoint(
+        _ stage: ProcessingCheckpointStage,
+        for job: ProcessingJob
+    ) async throws {
+        guard var record = job.persistedRecord else { return }
+        updatePersistedSource(&record.source, from: job.recording)
+        _ = record.markCompleted(stage, at: Date())
+        try await processingJobStore.save(record)
+        job.persistedRecord = record
+    }
+
+    private func markPersistedJobFailed(
+        _ stage: PersistedProcessingJob.FailureStage,
+        job: ProcessingJob
+    ) async {
+        guard var record = job.persistedRecord else { return }
+        updatePersistedSource(&record.source, from: job.recording)
+        record.markFailed(stage, at: Date())
+        do {
+            try await processingJobStore.save(record)
+            job.persistedRecord = record
+        } catch {
+            Logger.recording.error("Failed to persist processing-job failure state")
+        }
+    }
+
+    private func markPersistedJobCancelled(_ job: ProcessingJob) async {
+        guard var record = job.persistedRecord else { return }
+        updatePersistedSource(&record.source, from: job.recording)
+        record.markCancelled(at: Date())
+        do {
+            try await processingJobStore.save(record)
+            job.persistedRecord = record
+        } catch {
+            Logger.recording.error("Failed to persist processing-job cancellation state")
+        }
+    }
+
+    private func markTranscriptionBoundaryReached(_ job: ProcessingJob) async {
+        guard var record = job.persistedRecord else { return }
+        updatePersistedSource(&record.source, from: job.recording)
+        record.markTranscriptionBoundaryReached(at: Date())
+        do {
+            try await processingJobStore.save(record)
+            job.persistedRecord = record
+        } catch {
+            Logger.recording.error("Failed to persist the Phase 5A completion boundary")
+        }
+    }
+
+    /// A legacy queue sidecar is retired at the same verified boundary as the
+    /// durable job checkpoint, not at the end of AI/export processing. Phase 5A
+    /// deliberately does not replay that later work after a restart.
+    private func completeLegacyQueueCheckpoint(for job: ProcessingJob) throws {
+        guard let audioURL = job.queuedAudioURL else { return }
+        let queueURL = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
+        if FileManager.default.fileExists(atPath: queueURL.path) {
+            try FileManager.default.removeItem(at: queueURL)
+        }
+        guard !FileManager.default.fileExists(atPath: queueURL.path) else {
+            throw NSError(domain: "RecordingManager", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "The completed queue checkpoint could not be retired."
+            ])
+        }
+        job.queuedAudioURL = nil
+        appState.queuedCount = discoverQueuedItems().count
+    }
+
+    /// Keep existing History/manual-queue recovery available for failed or
+    /// cancelled jobs while the durable store becomes the source of truth.
+    private func ensureRetryQueue(for job: ProcessingJob) async {
+        guard job.recording.finalizedAudioURL != nil else { return }
+
+        let request = job.persistedRecord?.request
+        let item = QueueItem(
+            id: job.id,
+            transcribe: request?.transcribe ?? true,
+            summary: request?.summary ?? appSettings.autoSummary,
+            actionItems: request?.actionItems ?? appSettings.autoActionItems,
+            tags: request?.tags ?? appSettings.autoTags,
+            titleWasUserProvided: request?.titleWasUserProvided
+                ?? job.recording.titleWasUserProvided,
+            autoQueued: false
+        )
+        try? saveQueueItem(item, for: job.recording)
+        appState.queuedCount = discoverQueuedItems().count
     }
 
     /// Creates a `ProcessingJob` for `recording`, installs it as the single active job, and
@@ -1121,15 +1501,107 @@ final class RecordingManager {
     /// the results/completion UI targets this recording, not a newer capture slot.
     @discardableResult
     private func launchJob(
+        id: UUID = UUID(),
         recording: Recording,
         queuedAudioURL: URL? = nil,
+        persistedRequest: PersistedProcessingJob.Request? = nil,
+        existingRecord: PersistedProcessingJob? = nil,
         _ body: @escaping (ProcessingJob) async -> Void
     ) -> ProcessingJob {
-        let job = ProcessingJob(recording: recording, queuedAudioURL: queuedAudioURL)
+        let job = ProcessingJob(
+            id: existingRecord?.id ?? id,
+            recording: recording,
+            queuedAudioURL: queuedAudioURL
+        )
         appState.processingJob = job
         appState.processingRecording = recording
-        job.task = Task { await body(job) }
+        job.task = Task {
+            do {
+                if var existingRecord {
+                    existingRecord.markRunning(at: Date())
+                    try await self.processingJobStore.save(existingRecord)
+                    job.persistedRecord = existingRecord
+                } else if let persistedRequest {
+                    if var stored = try await self.processingJobStore.load(id: job.id) {
+                        stored.markRunning(at: Date())
+                        try await self.processingJobStore.save(stored)
+                        job.persistedRecord = stored
+                    } else {
+                        let record = self.makePersistedJob(
+                            id: job.id,
+                            recording: recording,
+                            request: persistedRequest
+                        )
+                        job.persistedRecord = try await self.processingJobStore.create(
+                            record,
+                            stagingInputURL: recording.importSourceURL
+                        )
+                    }
+                    if let stagedPath = job.persistedRecord?.source.stagedInputPath {
+                        recording.importSourceURL = URL(fileURLWithPath: stagedPath)
+                    }
+                }
+            } catch {
+                self.appState.lastError = "Couldn't save processing progress. The recording was not processed."
+                if self.appState.processingJob === job {
+                    self.appState.processingJob = nil
+                }
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await body(job)
+        }
         return job
+    }
+
+    private func makePersistedJob(
+        id: UUID,
+        recording: Recording,
+        request: PersistedProcessingJob.Request,
+        status: PersistedProcessingJob.Status = .running
+    ) -> PersistedProcessingJob {
+        let now = Date()
+        return PersistedProcessingJob(
+            id: id,
+            recordingID: recording.id,
+            createdAt: now,
+            updatedAt: now,
+            status: status,
+            request: request,
+            source: PersistedProcessingJob.Source(
+                recordingDate: recording.date,
+                duration: recording.duration,
+                fileSize: recording.fileSize,
+                meetingTitle: recording.meetingTitleDraft,
+                associatedApp: recording.associatedApp,
+                participants: recording.participants,
+                calendarEvent: recording.calendarEvent,
+                echoSuppressionApplied: recording.echoSuppressionApplied,
+                recoveryManifestPath: recording.recoveryManifestURL?.path,
+                stagedInputPath: recording.importSourceURL?.path,
+                finalizedAudioPath: recording.finalizedAudioURL?.path,
+                segmentAudioPaths: recording.segmentAudioURLs.map(\.path),
+                metadataPath: recording.metadataURL?.path
+            )
+        )
+    }
+
+    private func processingRequest(
+        transcribe: Bool,
+        summary: Bool,
+        actionItems: Bool,
+        tags: Bool,
+        titleWasUserProvided: Bool,
+        autoResume: Bool
+    ) -> PersistedProcessingJob.Request {
+        PersistedProcessingJob.Request(
+            transcribe: transcribe,
+            summary: summary,
+            actionItems: actionItems,
+            tags: tags,
+            titleWasUserProvided: titleWasUserProvided,
+            autoResume: autoResume
+        )
     }
 
     /// Starts the next eligible queued item as a background job, if no job is running.
@@ -1148,13 +1620,27 @@ final class RecordingManager {
         let size = (attrs?[.size] as? Int64) ?? 0
         let name = audioURL.deletingPathExtension().lastPathComponent
         let recording = Recording(
+            id: item.id,
             fileURL: audioURL,
             fileSize: size,
             meetingTitleDraft: name,
             finalizedAudioURL: audioURL
         )
         recording.titleWasUserProvided = item.titleWasUserProvided
-        launchJob(recording: recording, queuedAudioURL: audioURL) { job in
+        let request = processingRequest(
+            transcribe: item.transcribe,
+            summary: item.summary,
+            actionItems: item.actionItems,
+            tags: item.tags,
+            titleWasUserProvided: item.titleWasUserProvided,
+            autoResume: item.autoQueued
+        )
+        launchJob(
+            id: item.id,
+            recording: recording,
+            queuedAudioURL: audioURL,
+            persistedRequest: request
+        ) { job in
             await self.processRecording(
                 job: job,
                 transcribe: item.transcribe,
@@ -1329,13 +1815,36 @@ final class RecordingManager {
         appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveInferenceText = nil
-        let job = launchJob(recording: recording, queuedAudioURL: audioURL) { job in
+        let queuedItem = Self.loadQueueItem(for: audioURL)
+        let request = queuedItem.map {
+            processingRequest(
+                transcribe: $0.transcribe,
+                summary: $0.summary,
+                actionItems: $0.actionItems,
+                tags: $0.tags,
+                titleWasUserProvided: $0.titleWasUserProvided,
+                autoResume: true
+            )
+        } ?? processingRequest(
+            transcribe: true,
+            summary: appSettings.autoSummary,
+            actionItems: appSettings.autoActionItems,
+            tags: appSettings.autoTags,
+            titleWasUserProvided: recording.titleWasUserProvided,
+            autoResume: true
+        )
+        let job = launchJob(
+            id: queuedItem?.id ?? UUID(),
+            recording: recording,
+            queuedAudioURL: audioURL,
+            persistedRequest: request
+        ) { job in
             await self.processRecording(
                 job: job,
                 transcribe: true,
-                summary: self.appSettings.autoSummary,
-                actionItems: self.appSettings.autoActionItems,
-                tags: self.appSettings.autoTags
+                summary: request.summary,
+                actionItems: request.actionItems,
+                tags: request.tags
             )
         }
         await job.task?.value
@@ -1588,7 +2097,7 @@ final class RecordingManager {
             ]
         ))
 
-        finishJob(for: recording)
+        await finishJob(for: recording)
     }
 
     func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
@@ -1601,7 +2110,15 @@ final class RecordingManager {
                                             actionItems: actionItems, tags: tags, autoQueued: true) }
             return
         }
-        launchJob(recording: recording) { job in
+        let request = processingRequest(
+            transcribe: transcribe,
+            summary: summary,
+            actionItems: actionItems,
+            tags: tags,
+            titleWasUserProvided: recording.titleWasUserProvided,
+            autoResume: true
+        )
+        launchJob(recording: recording, persistedRequest: request) { job in
             await self.processRecording(job: job, transcribe: transcribe, summary: summary,
                                         actionItems: actionItems, tags: tags)
         }
@@ -1633,6 +2150,7 @@ final class RecordingManager {
            job.recording.finalizedAudioURL != nil,
            loadSavedTranscript(for: job.recording) == nil {
             let item = QueueItem(
+                id: job.id,
                 transcribe: true,
                 summary: appSettings.autoSummary,
                 actionItems: appSettings.autoActionItems,
@@ -1656,6 +2174,10 @@ final class RecordingManager {
         // Let the cancelled task fully unwind BEFORE draining the queue, so we never run two
         // pipelines at once (the UI already reflects the cancel — this only gates the drain).
         await job?.task?.value
+        if let job {
+            await markPersistedJobCancelled(job)
+        }
+        drainAllQueued = false
         drainQueueIfNeeded()
     }
 
@@ -1798,7 +2320,15 @@ final class RecordingManager {
         // Headless: run as a background job (no capture slot, no post-recording sheet) and
         // await completion so the watched-folder poller stays serial (its `isIdle` gate also
         // defers new files while this job runs).
-        let job = launchJob(recording: recording) { job in
+        let request = processingRequest(
+            transcribe: appSettings.autoTranscribe,
+            summary: appSettings.autoSummary && appSettings.autoTranscribe,
+            actionItems: appSettings.autoActionItems && appSettings.autoTranscribe,
+            tags: appSettings.autoTags && appSettings.autoTranscribe,
+            titleWasUserProvided: recording.titleWasUserProvided,
+            autoResume: true
+        )
+        let job = launchJob(recording: recording, persistedRequest: request) { job in
             await self.processRecording(
                 job: job,
                 transcribe: self.appSettings.autoTranscribe,
@@ -3261,6 +3791,12 @@ final class RecordingManager {
         try? FileManager.default.removeItem(at: queueURL)
     }
 
+    private nonisolated static func loadQueueItem(for audioURL: URL) -> QueueItem? {
+        let url = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(QueueItem.self, from: data)
+    }
+
     func discoverQueuedItems() -> [(audioURL: URL, item: QueueItem)] {
         Self.discoverQueuedItems(in: appSettings.effectiveRecordingFolderURL)
     }
@@ -3320,15 +3856,26 @@ final class RecordingManager {
     }
 
     /// Saves the transcription result as JSON alongside the audio file.
-    private func saveTranscript(_ result: TranscriptionResult, for recording: Recording) {
-        guard let url = Self.transcriptURL(for: recording) else { return }
-        do {
-            let data = try JSONEncoder().encode(result)
-            try data.write(to: url, options: .atomic)
-            recording.transcriptURL = url
-        } catch {
-            // Non-critical: log but don't fail the pipeline
+    private func saveTranscript(_ result: TranscriptionResult, for recording: Recording) throws {
+        guard let url = Self.transcriptURL(for: recording) else {
+            throw NSError(domain: "RecordingManager", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Cannot determine the transcript checkpoint path."
+            ])
         }
+        let data = try JSONEncoder().encode(result)
+        try data.write(to: url, options: .atomic)
+        let verified = try JSONDecoder().decode(
+            TranscriptionResult.self,
+            from: Data(contentsOf: url)
+        )
+        guard verified.text == result.text,
+              verified.segments.count == result.segments.count
+        else {
+            throw NSError(domain: "RecordingManager", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Transcript checkpoint verification failed."
+            ])
+        }
+        recording.transcriptURL = url
     }
 
     /// Loads a previously saved transcription from disk.

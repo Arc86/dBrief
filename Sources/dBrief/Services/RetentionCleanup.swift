@@ -117,6 +117,10 @@ enum RetentionCleanup {
         for folder in folders {
             guard seen.insert(folder.standardizedFileURL.path).inserted else { continue }
             guard fileManager.fileExists(atPath: folder.path) else { continue }
+            // A queue sidecar represents unfinished processing. Protect its master,
+            // metadata, segments, derived transcript outputs, and the queue marker
+            // itself until the durable transcription checkpoint retires that marker.
+            let queuedBases = queuedRecordingBases(in: folder, fileManager: fileManager)
             guard let enumerator = fileManager.enumerator(
                 at: folder,
                 includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey],
@@ -125,6 +129,9 @@ enum RetentionCleanup {
 
             for case let fileURL as URL in enumerator {
                 guard matches(fileURL, category: category) else { continue }
+                if isProtectedByQueue(fileURL, queuedBases: queuedBases) {
+                    continue
+                }
                 let values = try? fileURL.resourceValues(
                     forKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey]
                 )
@@ -149,5 +156,45 @@ enum RetentionCleanup {
             log.info("Retention cleanup (\(category.displayName, privacy: .public)) removed \(result.filesDeleted) files, \(result.bytesFreed) bytes")
         }
         return result
+    }
+
+    private static func queuedRecordingBases(
+        in folder: URL,
+        fileManager: FileManager
+    ) -> Set<String> {
+        guard let enumerator = fileManager.enumerator(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var bases = Set<String>()
+        for case let url as URL in enumerator
+        where url.lastPathComponent.lowercased().hasSuffix(".queue.json") {
+            bases.insert(
+                url.deletingPathExtension().deletingPathExtension()
+                    .standardizedFileURL.path
+            )
+        }
+        return bases
+    }
+
+    private static func isProtectedByQueue(
+        _ url: URL,
+        queuedBases: Set<String>
+    ) -> Bool {
+        let lowerName = url.lastPathComponent.lowercased()
+        let knownSuffixes = [".queue.json"] + transcriptSuffixes
+        let base = knownSuffixes.first(where: { lowerName.hasSuffix($0) }).map { suffix in
+            let stem = String(url.lastPathComponent.dropLast(suffix.count))
+            return url.deletingLastPathComponent().appendingPathComponent(stem)
+                .standardizedFileURL.path
+        } ?? url.deletingPathExtension().standardizedFileURL.path
+        if queuedBases.contains(base) { return true }
+
+        // Segments are named `<master>_partNN.<ext>`.
+        guard let range = base.range(of: #"_part[0-9]+$"#, options: .regularExpression)
+        else { return false }
+        return queuedBases.contains(String(base[..<range.lowerBound]))
     }
 }

@@ -104,6 +104,50 @@ struct RetentionCleanupTests {
     }
 
     @Test
+    func recordingsSweepProtectsQueuedMasterMetadataAndSegments() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent(
+            "retention-queued-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+
+        let base = folder.appendingPathComponent("unfinished")
+        let queuedFiles = [
+            base.appendingPathExtension("m4a"),
+            base.appendingPathExtension("json"),
+            base.appendingPathExtension("queue.json"),
+            folder.appendingPathComponent("unfinished_part01.m4a"),
+            base.appendingPathExtension("transcript.json"),
+        ]
+        let unqueued = folder.appendingPathComponent("finished.m4a")
+        for url in queuedFiles + [unqueued] {
+            try Data(count: 4).write(to: url)
+        }
+
+        let result = RetentionCleanup.cleanup(
+            category: .recordings,
+            olderThanDays: 1,
+            in: [folder],
+            now: Date().addingTimeInterval(10 * 86_400)
+        )
+
+        #expect(result.filesDeleted == 1)
+        #expect(!fm.fileExists(atPath: unqueued.path))
+        for url in queuedFiles {
+            #expect(fm.fileExists(atPath: url.path))
+        }
+
+        let transcriptResult = RetentionCleanup.cleanup(
+            category: .transcripts,
+            olderThanDays: 1,
+            in: [folder],
+            now: Date().addingTimeInterval(10 * 86_400)
+        )
+        #expect(transcriptResult.filesDeleted == 0)
+        #expect(fm.fileExists(atPath: base.appendingPathExtension("transcript.json").path))
+    }
+
+    @Test
     func transcriptsSweepDeletesNotesButKeepsAudio() throws {
         let fm = FileManager.default
         let folder = fm.temporaryDirectory.appendingPathComponent("retention-\(UUID().uuidString)", isDirectory: true)

@@ -198,6 +198,11 @@ struct WhisperPipelineTests {
         // A metadata sidecar is written so discovery/history can read it.
         #expect(fm.fileExists(atPath: result.metadataURL.path))
         #expect(result.metadataURL.pathExtension == "json")
+        let metadata = try JSONDecoder().decode(
+            RecordingMetadataPayload.self,
+            from: Data(contentsOf: result.metadataURL)
+        )
+        #expect(metadata.recordingID == recording.id)
     }
 
     @Test

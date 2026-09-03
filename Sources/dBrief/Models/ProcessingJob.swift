@@ -15,6 +15,9 @@ import dBriefWire
 @MainActor
 @Observable
 final class ProcessingJob {
+    /// Stable identity shared with the on-disk processing-job record.
+    let id: UUID
+
     /// The recording being processed. Held here (not read from `AppState.currentRecording`,
     /// which the capture slot may have overwritten with a newer recording).
     let recording: Recording
@@ -42,7 +45,12 @@ final class ProcessingJob {
     /// the ETA ticker stops writing.
     var transcriptionStartedAt: Date?
 
-    init(recording: Recording, queuedAudioURL: URL? = nil) {
+    /// Latest verified durable state. Nil for operations that intentionally
+    /// remain outside Phase 5A (for example, manual AI-only retries).
+    var persistedRecord: PersistedProcessingJob?
+
+    init(id: UUID = UUID(), recording: Recording, queuedAudioURL: URL? = nil) {
+        self.id = id
         self.recording = recording
         self.queuedAudioURL = queuedAudioURL
     }

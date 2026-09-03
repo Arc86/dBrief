@@ -143,6 +143,7 @@ actor RecordingFinalizer {
         }
 
         let metadataPayload = RecordingMetadataPayload(
+            recordingID: snapshot.id,
             dateISO8601: ISO8601DateFormatter().string(from: snapshot.date),
             durationSeconds: snapshot.duration,
             meetingTitle: normalizedTitle,
@@ -235,6 +236,7 @@ actor RecordingFinalizer {
         }
 
         let metadataPayload = RecordingMetadataPayload(
+            recordingID: snapshot.id,
             dateISO8601: ISO8601DateFormatter().string(from: snapshot.date),
             durationSeconds: snapshot.duration,
             meetingTitle: normalizedTitle,
@@ -607,6 +609,10 @@ enum RecordingFinalizerError: Error, LocalizedError {
 }
 
 struct RecordingMetadataPayload: Codable, Equatable, Sendable {
+    /// Stable identity used to reconnect a processing job with a finalized
+    /// master if the app exits after finalization but before its job checkpoint
+    /// is updated. Missing for recordings created before Phase 5A.
+    let recordingID: UUID?
     let dateISO8601: String
     let durationSeconds: TimeInterval
     let meetingTitle: String
@@ -628,11 +634,12 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     var calendarAttendees: [String] = []
 
     private enum CodingKeys: String, CodingKey {
-        case dateISO8601, durationSeconds, meetingTitle, masterFileName
+        case recordingID, dateISO8601, durationSeconds, meetingTitle, masterFileName
         case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees
     }
 
     init(
+        recordingID: UUID? = nil,
         dateISO8601: String,
         durationSeconds: TimeInterval,
         meetingTitle: String,
@@ -643,6 +650,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         participants: [String] = [],
         calendarAttendees: [String] = []
     ) {
+        self.recordingID = recordingID
         self.dateISO8601 = dateISO8601
         self.durationSeconds = durationSeconds
         self.meetingTitle = meetingTitle
@@ -656,6 +664,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        recordingID = try c.decodeIfPresent(UUID.self, forKey: .recordingID)
         dateISO8601 = try c.decode(String.self, forKey: .dateISO8601)
         durationSeconds = try c.decode(TimeInterval.self, forKey: .durationSeconds)
         meetingTitle = try c.decode(String.self, forKey: .meetingTitle)
@@ -720,6 +729,7 @@ private actor FinalizationMutex {
 }
 
 private struct Snapshot: Sendable {
+    let id: UUID
     let date: Date
     let duration: TimeInterval
     let meetingTitle: String
@@ -727,6 +737,7 @@ private struct Snapshot: Sendable {
 
     @MainActor
     init(recording: Recording) {
+        self.id = recording.id
         self.date = recording.date
         self.duration = recording.duration
         self.meetingTitle = recording.meetingTitleDraft
