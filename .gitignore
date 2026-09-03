@@ -33,4 +33,5 @@ graphify-out/
 /docs/
 tasks/
 MEMORY_FIXES_SUMMARY.md
+DEVELOPMENT_ROADMAP.md
 monitor_inference.sh
