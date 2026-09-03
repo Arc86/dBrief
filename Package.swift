@@ -6,12 +6,12 @@ let package = Package(
     name: "dBrief",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.0.0"),
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.1.0"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.4"),
-        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.4"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "6.3.2"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.5"),
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.9.4"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.6"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.9.6"),
     ],
     targets: [
         .target(

@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Show build environment
         run: |
@@ -50,7 +50,7 @@ jobs:
         run: ditto -c -k --sequesterRsrc --keepParent dBrief-Beta.app dBrief-Beta.zip
 
       - name: Upload beta bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dBrief-Beta-${{ github.sha }}
           path: dBrief-Beta.zip
