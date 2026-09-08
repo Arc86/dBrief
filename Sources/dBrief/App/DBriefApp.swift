@@ -127,29 +127,26 @@ final class AppContext {
         let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
         var combined = RetentionCleanupResult()
 
-        if appSettings.autoDeleteRecordingsEnabled {
-            let days = appSettings.autoDeleteRecordingsDays
-            let result = await Task.detached(priority: .utility) {
-                RetentionCleanup.cleanup(category: .recordings, olderThanDays: days, in: [recordingsFolder])
-            }.value
-            combined.filesDeleted += result.filesDeleted
-            combined.bytesFreed += result.bytesFreed
-        }
-        if appSettings.autoDeleteTranscriptsEnabled {
-            let days = appSettings.autoDeleteTranscriptsDays
-            let result = await Task.detached(priority: .utility) {
-                RetentionCleanup.cleanup(
-                    category: .transcripts,
-                    olderThanDays: days,
-                    in: [recordingsFolder, transcriptionFolder]
-                )
-            }.value
-            combined.filesDeleted += result.filesDeleted
-            combined.bytesFreed += result.bytesFreed
-        }
+        do {
+            if appSettings.autoDeleteRecordingsEnabled {
+                let days = appSettings.autoDeleteRecordingsDays
+                let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: [recordingsFolder])
+                combined.filesDeleted += result.filesDeleted
+                combined.bytesFreed += result.bytesFreed
+            }
+            if appSettings.autoDeleteTranscriptsEnabled {
+                let days = appSettings.autoDeleteTranscriptsDays
+                let result = try await recordingManager.runRetentionCleanup(category: .transcripts, days: days,
+                    folders: [recordingsFolder, transcriptionFolder])
+                combined.filesDeleted += result.filesDeleted
+                combined.bytesFreed += result.bytesFreed
+            }
 
-        appSettings.lastRetentionCleanupDate = Date()
-        appSettings.lastRetentionCleanupSummary = combined.summary
+            appSettings.lastRetentionCleanupDate = Date()
+            appSettings.lastRetentionCleanupSummary = combined.summary
+        } catch {
+            appSettings.lastRetentionCleanupSummary = "Cleanup deferred: recovery data could not be safely cleaned, or recording/processing is active."
+        }
     }
 
     /// dBrief commonly runs for weeks without relaunching. Check a few times per
@@ -333,6 +330,8 @@ struct MenuBarView: View {
     @Environment(RecordingManager.self) private var recordingManager
 
     @State private var showYouTubeInput = false
+    @State private var showQueueManagement = false
+    @State private var showRecentRecordings = true
 
     var body: some View {
         VStack(spacing: 10) {
@@ -355,31 +354,34 @@ struct MenuBarView: View {
                     if appState.isProcessing {
                         Divider()
                         TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
-                    } else if appState.hasProcessingResults {
+                    } else if appState.hasProcessingResults, !showQueueManagement {
                         Divider()
                         ResultsView()
                     }
 
+                    Divider()
+
+                    // Primary library entry stays visible independently of list
+                    // disclosure, processing progress, and completion results.
+                    Button {
+                        openWindow(id: "transcript")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
+                        Label("Transcript viewer", systemImage: "rectangle.split.2x1")
+                            .font(.callout.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 3)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .help("Open the transcript viewer")
+
                     if appState.isIdle, !appState.hasProcessingResults {
-                        Divider()
-                        RecordingHistoryView()
+                        RecordingHistoryView(expanded: $showRecentRecordings)
                     }
 
-                    if appState.queuedCount > 0, appState.isIdle {
-                        Divider()
-                        HStack {
-                            Label("\(appState.queuedCount) queued", systemImage: "tray.full")
-                                .font(.callout)
-                                .foregroundStyle(.orange)
-                            Spacer()
-                            Button("Process Queue") {
-                                recordingManager.startProcessingQueue()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .tint(.orange)
-                        }
-                    }
+                    Divider()
+                    ProcessingQueueView(expanded: $showQueueManagement)
 
                     Divider()
 
@@ -439,6 +441,14 @@ struct MenuBarView: View {
         }
         .task {
             await recordingManager.refreshQueuedCount()
+        }
+        // Keep both section headers visible without making the menu taller than
+        // the screen. Opening either list folds the other, but never stops playback.
+        .onChange(of: showQueueManagement) { _, expanded in
+            if expanded { showRecentRecordings = false }
+        }
+        .onChange(of: showRecentRecordings) { _, expanded in
+            if expanded { showQueueManagement = false }
         }
         .padding(12)
         // Let the window-style popover size to its content rather than forcing a

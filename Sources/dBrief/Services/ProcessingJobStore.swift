@@ -89,6 +89,7 @@ actor ProcessingJobStore {
     }
 
     func save(_ job: PersistedProcessingJob) throws {
+        try job.markdownExport?.validate()
         guard job.version == PersistedProcessingJob.currentVersion else {
             throw StoreError.unsupportedVersion(job.version)
         }
@@ -133,7 +134,10 @@ actor ProcessingJobStore {
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
-        ) else { return Discovery() }
+        ) else {
+            return fileManager.fileExists(atPath: rootURL.path)
+                ? Discovery(issues: [Issue(kind: .corrupt)]) : Discovery()
+        }
 
         var discovery = Discovery()
         for directory in directories {
@@ -171,6 +175,12 @@ actor ProcessingJobStore {
                 discovery.issues.append(Issue(kind: .mismatchedIdentifier))
                 continue
             }
+            do {
+                try job.markdownExport?.validate()
+            } catch {
+                discovery.issues.append(Issue(kind: .corrupt))
+                continue
+            }
             discovery.jobs.append(job)
         }
 
@@ -186,10 +196,12 @@ actor ProcessingJobStore {
     func remove(id: UUID) throws {
         let directory = directoryURL(for: id)
         guard fileManager.fileExists(atPath: directory.path) else { return }
+        guard try load(id: id) != nil else { throw StoreError.verificationFailed }
         try fileManager.removeItem(at: directory)
     }
 
     private func validate(_ job: PersistedProcessingJob, directoryID: UUID) throws {
+        try job.markdownExport?.validate()
         guard job.version == PersistedProcessingJob.currentVersion else {
             throw StoreError.unsupportedVersion(job.version)
         }

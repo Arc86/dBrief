@@ -4,6 +4,7 @@ import EventKit
 import SwiftUI
 
 struct SettingsGeneralTab: View {
+    @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
     @Environment(MicrosoftAuthService.self) private var microsoftAuthService
     @Environment(UpdaterController.self) private var updaterController
@@ -538,12 +539,14 @@ struct SettingsGeneralTab: View {
         }
 
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                RetentionCleanup.cleanup(category: category, olderThanDays: days, in: folders)
-            }.value
-            cleanupMessage[category] = result.summary
-            appSettings.lastRetentionCleanupDate = Date()
-            appSettings.lastRetentionCleanupSummary = result.summary
+            do {
+                let result = try await recordingManager.runRetentionCleanup(category: category, days: days, folders: folders)
+                cleanupMessage[category] = result.summary
+                appSettings.lastRetentionCleanupDate = Date()
+                appSettings.lastRetentionCleanupSummary = result.summary
+            } catch {
+                cleanupMessage[category] = "Cleanup could not finish safely. Wait for processing to finish and check storage before retrying."
+            }
             runningCleanup = nil
         }
     }

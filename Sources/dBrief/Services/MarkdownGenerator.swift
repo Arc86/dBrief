@@ -9,8 +9,22 @@ struct MarkdownGenerator {
         aiEndpoint: Endpoint?,
         includeTranscript: Bool = false
     ) throws -> URL {
+        let plan = prepare(recording: recording, outputFolder: outputFolder,
+                           transcriptionEndpoint: transcriptionEndpoint,
+                           aiEndpoint: aiEndpoint, includeTranscript: includeTranscript)
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
+        try plan.content.write(to: plan.destination, atomically: true, encoding: .utf8)
+        return plan.destination
+    }
 
+    @MainActor
+    func prepare(
+        recording: Recording,
+        outputFolder: URL,
+        transcriptionEndpoint: Endpoint?,
+        aiEndpoint: Endpoint?,
+        includeTranscript: Bool = false
+    ) -> MarkdownExportPlan {
         let title = generatedTitle(for: recording)
         let datePrefix = formatDateOnly(recording.date)
         let outputURL = outputFolder.appendingPathComponent("\(datePrefix) - \(title).md")
@@ -23,8 +37,8 @@ struct MarkdownGenerator {
             includeTranscript: includeTranscript
         )
 
-        try content.write(to: outputURL, atomically: true, encoding: .utf8)
-        return outputURL
+        return MarkdownExportPlan(destination: outputURL, content: content,
+                                  generatedTitle: recording.generatedTitle)
     }
 
     @MainActor

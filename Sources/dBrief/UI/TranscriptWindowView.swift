@@ -280,7 +280,7 @@ struct TranscriptDetailView: View {
             Button("Delete", role: .destructive) { deleteRecording() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)” and its audio will be permanently removed.")
+            Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)”, its audio, local sidecars, queued work, and saved recovery content will be permanently removed. Separately exported Markdown and content already sent to integrations are kept.")
         }
         .confirmationDialog("Detect speakers?",
                             isPresented: $showDiarizeConfirm, titleVisibility: .visible) {
@@ -1399,23 +1399,19 @@ struct TranscriptDetailView: View {
 
     private func deleteRecording() {
         guard let audioURL = recording.finalizedAudioURL else { return }
-        let base = audioURL.deletingPathExtension()
-        let candidates = [
-            audioURL,
-            base.appendingPathExtension("md"),
-            base.appendingPathExtension("transcript.json"),
-            base.appendingPathExtension("richtranscript.json"),
-            base.appendingPathExtension("insights.json"),
-            base.appendingPathExtension("chat.json"),
-            base.appendingPathExtension("spokensummary.json"),
-            base.appendingPathExtension("spokensummary.m4a"),
-            base.appendingPathExtension("json"),
-        ]
-        for url in candidates {
-            try? FileManager.default.removeItem(at: url)
+        Task {
+            do {
+                try await context.recordingManager.deleteRecording(audioURL)
+                if audioPlayer.currentFileURL == audioURL { audioPlayer.stop() }
+                onDeleted()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't delete the recording"
+                alert.informativeText = "Deletion could not finish. Some files may remain; wait for processing to finish and check storage before retrying."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
         }
-        if audioPlayer.currentFileURL == audioURL { audioPlayer.stop() }
-        onDeleted()
     }
 
     // MARK: - Search

@@ -1,7 +1,9 @@
 import Foundation
 
 struct RichTranscript: Codable, Sendable, Equatable {
-    var version: Int = 1
+    static let currentVersion = 1
+
+    var version: Int = currentVersion
     var segments: [RichSegment]
     var speakerLabels: [SpeakerLabel] = []
     /// The speaker the user has marked as themselves ("this is me"). Persisted
@@ -13,7 +15,7 @@ struct RichTranscript: Codable, Sendable, Equatable {
         case version, segments, speakerLabels, meSpeakerId
     }
 
-    init(version: Int = 1, segments: [RichSegment], speakerLabels: [SpeakerLabel] = [], meSpeakerId: String? = nil) {
+    init(version: Int = currentVersion, segments: [RichSegment], speakerLabels: [SpeakerLabel] = [], meSpeakerId: String? = nil) {
         self.version = version
         self.segments = segments
         self.speakerLabels = speakerLabels
@@ -22,7 +24,7 @@ struct RichTranscript: Codable, Sendable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
         segments = try c.decode([RichSegment].self, forKey: .segments)
         speakerLabels = try c.decodeIfPresent([SpeakerLabel].self, forKey: .speakerLabels) ?? []
         meSpeakerId = try c.decodeIfPresent(String.self, forKey: .meSpeakerId)

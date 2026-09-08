@@ -106,7 +106,8 @@ enum RetentionCleanup {
         olderThanDays days: Int,
         in folders: [URL],
         fileManager: FileManager = .default,
-        now: Date = Date()
+        now: Date = Date(),
+        protectedBases: Set<String> = []
     ) -> RetentionCleanupResult {
         guard days >= 0 else { return RetentionCleanupResult() }
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
@@ -120,7 +121,7 @@ enum RetentionCleanup {
             // A queue sidecar represents unfinished processing. Protect its master,
             // metadata, segments, derived transcript outputs, and the queue marker
             // itself until the durable transcription checkpoint retires that marker.
-            let queuedBases = queuedRecordingBases(in: folder, fileManager: fileManager)
+            let queuedBases = queuedRecordingBases(in: folder, fileManager: fileManager).union(protectedBases)
             guard let enumerator = fileManager.enumerator(
                 at: folder,
                 includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey],
@@ -172,8 +173,8 @@ enum RetentionCleanup {
         for case let url as URL in enumerator
         where url.lastPathComponent.lowercased().hasSuffix(".queue.json") {
             bases.insert(
-                url.deletingPathExtension().deletingPathExtension()
-                    .standardizedFileURL.path
+                url.deletingLastPathComponent().resolvingSymlinksInPath()
+                    .appendingPathComponent(url.deletingPathExtension().deletingPathExtension().lastPathComponent).standardizedFileURL.path
             )
         }
         return bases
@@ -187,9 +188,10 @@ enum RetentionCleanup {
         let knownSuffixes = [".queue.json"] + transcriptSuffixes
         let base = knownSuffixes.first(where: { lowerName.hasSuffix($0) }).map { suffix in
             let stem = String(url.lastPathComponent.dropLast(suffix.count))
-            return url.deletingLastPathComponent().appendingPathComponent(stem)
+            return url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(stem)
                 .standardizedFileURL.path
-        } ?? url.deletingPathExtension().standardizedFileURL.path
+        } ?? url.deletingLastPathComponent().resolvingSymlinksInPath()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent).standardizedFileURL.path
         if queuedBases.contains(base) { return true }
 
         // Segments are named `<master>_partNN.<ext>`.

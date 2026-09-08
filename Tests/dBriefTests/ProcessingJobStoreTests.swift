@@ -132,15 +132,36 @@ struct ProcessingJobStoreTests {
     }
 
     @Test
-    func launchRecoveryNeverReplaysPastThePhase5ABoundary() {
+    func launchRecoveryNeverReplaysPastMarkdown() {
         var unfinished = makeJob()
-        #expect(unfinished.launchRecoveryAction == .resumeToPhase5ABoundary)
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
 
         _ = unfinished.markCompleted(.audioFinalized, at: Date(timeIntervalSince1970: 200))
-        #expect(unfinished.launchRecoveryAction == .resumeToPhase5ABoundary)
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
 
         _ = unfinished.markCompleted(.transcribed, at: Date(timeIntervalSince1970: 300))
-        #expect(unfinished.launchRecoveryAction == .parkAtPhase5ABoundary)
+        unfinished.markTranscriptionBoundaryReached(at: Date(timeIntervalSince1970: 301))
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
+
+        unfinished.markRunning(at: Date(timeIntervalSince1970: 310))
+        _ = unfinished.markCompleted(.diarized, at: Date(timeIntervalSince1970: 320))
+        unfinished.markWaitingForSpeakerReview(at: Date(timeIntervalSince1970: 321))
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
+
+        unfinished.markRunning(at: Date(timeIntervalSince1970: 330))
+        _ = unfinished.markCompleted(.speakerReviewCompleted, at: Date(timeIntervalSince1970: 340))
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
+
+        _ = unfinished.markCompleted(.analyzed, at: Date(timeIntervalSince1970: 350))
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
+
+        unfinished.markAnalysisBoundaryReached(at: Date(timeIntervalSince1970: 351))
+        #expect(unfinished.launchRecoveryAction == .resumeToMarkdownBoundary)
+
+        _ = unfinished.markCompleted(.markdownGenerated, at: Date(timeIntervalSince1970: 360))
+        #expect(unfinished.launchRecoveryAction == .parkAtMarkdownBoundary)
+        unfinished.markMarkdownBoundaryReached(at: Date(timeIntervalSince1970: 361))
+        #expect(unfinished.launchRecoveryAction == .none)
 
         unfinished.markFailed(.transcription, at: Date(timeIntervalSince1970: 400))
         #expect(unfinished.launchRecoveryAction == .none)
@@ -155,7 +176,68 @@ struct ProcessingJobStoreTests {
             autoResume: true
         )
         _ = finalizationOnly.markCompleted(.audioFinalized, at: Date(timeIntervalSince1970: 200))
-        #expect(finalizationOnly.launchRecoveryAction == .parkAtPhase5ABoundary)
+        #expect(finalizationOnly.launchRecoveryAction == .resumeToMarkdownBoundary)
+    }
+
+    @Test
+    func legacyJobsDecodeWithoutExportOrAnalysisFlags() throws {
+        let bytes = try JSONEncoder().encode(makeJob())
+        let decoded = try JSONDecoder().decode(PersistedProcessingJob.self, from: bytes)
+        #expect(decoded.markdownExport == nil)
+        #expect(decoded.analysisOutputSaved == nil)
+        #expect(decoded.speakerReviewRequired == nil)
+    }
+
+    @Test
+    func futureExportPlanIsLeftUntouchedByDiscovery() async throws {
+        let fixture = try TemporaryFixture()
+        defer { fixture.remove() }
+        let store = ProcessingJobStore(rootURL: fixture.url)
+        var job = makeJob()
+        var plan = MarkdownExportPlan(destination: fixture.url.appendingPathComponent("note.md"),
+                                      content: "Future format", generatedTitle: nil)
+        plan.version = 99
+        job.markdownExport = plan
+        let url = try manifestURL(for: job.id, root: fixture.url)
+        let data = try JSONEncoder().encode(job)
+        try data.write(to: url)
+        let discovery = await store.discover()
+        #expect(discovery.jobs.isEmpty)
+        #expect(discovery.issues.count == 1)
+        #expect(try Data(contentsOf: url) == data)
+        await #expect(throws: MarkdownOutputStore.OutputError.self) {
+            try await store.save(job)
+        }
+        #expect(try Data(contentsOf: url) == data)
+    }
+
+    @Test
+    func frozenExportSurvivesCrashBeforeAndAfterPublication() async throws {
+        let fixture = try TemporaryFixture()
+        defer { fixture.remove() }
+        let store = ProcessingJobStore(rootURL: fixture.url.appendingPathComponent("jobs"))
+        let output = MarkdownOutputStore()
+        var job = makeJob()
+        job.analysisOutputSaved = true
+        _ = job.markCompleted(.analyzed, at: Date())
+        let destination = fixture.url.appendingPathComponent("note.md")
+        let plan = MarkdownExportPlan(destination: destination, content: "# Frozen note", generatedTitle: "Frozen")
+        job.markdownExport = plan
+        try await store.save(job)
+
+        // Simulate restart after plan persistence, before publication.
+        let recovered = try #require(try await store.load(id: job.id))
+        #expect(recovered.analysisOutputSaved == true)
+        _ = try await output.publish(try #require(recovered.markdownExport))
+        // Restart after publication, before checkpoint persistence: reuse one file.
+        _ = try await MarkdownOutputStore().publish(try #require(recovered.markdownExport))
+        #expect(try String(contentsOf: destination, encoding: .utf8) == plan.content)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.url.path).sorted() == ["jobs", "note.md"])
+
+        _ = job.markCompleted(.markdownGenerated, at: Date())
+        try await store.save(job)
+        let completed = try #require(try await store.load(id: job.id))
+        #expect(completed.launchRecoveryAction == .parkAtMarkdownBoundary)
     }
 
     private func manifestURL(for id: UUID, root: URL) throws -> URL {

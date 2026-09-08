@@ -2,6 +2,7 @@ import AppKit
 import EventKit
 import Foundation
 import os
+import dBriefWire
 
 private let integrationLog = Logger.integrations
 
@@ -9,71 +10,59 @@ actor IntegrationDispatchService {
     private let webhookPayloadBuilder = WebhookPayloadBuilder()
     private let reminderStore = EKEventStore()
 
-    func dispatch(
+    func prepareBatch(
+        jobID: UUID,
         recording: Recording,
         settings: AppSettings,
-        generatedMarkdownURL: URL?
-    ) async -> [IntegrationDispatchResult] {
-        let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
-        let recordingSnapshot = await MainActor.run { RecordingSnapshot(recording: recording) }
-        let bundle = buildBundle(recording: recordingSnapshot, markdownURL: generatedMarkdownURL)
-
-        var results: [IntegrationDispatchResult] = []
-
-        if snapshot.config.appleNotes.enabled {
-            results.append(await perform(.appleNotes) {
-                try self.sendToAppleNotes(bundle: bundle, config: snapshot.config.appleNotes)
-            })
+        generatedMarkdownURL: URL?,
+        requireTranscript: Bool = false
+    ) async throws -> IntegrationDeliveryBatch {
+        let config = await MainActor.run { settings.integrations }
+        let digests = try IntegrationDeliveryBatch.configurationDigests(config)
+        let recordingSnapshot = try await MainActor.run {
+            try RecordingSnapshot(recording: recording, recoverTranscript: !digests.isEmpty)
         }
+        if requireTranscript, !digests.isEmpty, recordingSnapshot.transcript == nil {
+            throw IntegrationError.missingConfiguration("The saved transcript is unavailable. Restore it before sending integrations.")
+        }
+        let bundle = try buildBundle(recording: recordingSnapshot, markdownURL: generatedMarkdownURL)
+        return IntegrationDeliveryBatch(
+            id: jobID, recordingID: recordingSnapshot.id, createdAt: Date(), bundle: bundle,
+            deliveries: IntegrationDestination.available.compactMap { destination in
+                guard let digest = digests[destination] else { return nil }
+                return .init(id: UUID(), destination: destination, configurationDigest: digest)
+            }
+        )
+    }
 
-        if snapshot.config.appleReminders.enabled {
-            if bundle.actionItems.isEmpty {
-                results.append(
-                    IntegrationDispatchResult(
-                        destination: .appleReminders,
-                        status: .skipped,
-                        message: "No action items",
-                        remoteID: nil
-                    )
-                )
-            } else {
-                results.append(await perform(.appleReminders) {
-                    try await self.sendToAppleReminders(bundle: bundle, config: snapshot.config.appleReminders)
-                })
+    func send(
+        batch: IntegrationDeliveryBatch,
+        delivery: IntegrationDeliveryBatch.Delivery,
+        settings: AppSettings
+    ) async -> IntegrationDispatchResult {
+        let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
+        let bundle = batch.bundle
+        if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
+            return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
+        }
+        return await perform(delivery.destination) {
+            try Task.checkCancellation()
+            guard try IntegrationDeliveryBatch.configurationDigests(snapshot.config)[delivery.destination]
+                    == delivery.configurationDigest else {
+                throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
+            }
+            switch delivery.destination {
+            case .appleNotes:
+                return try self.sendToAppleNotes(bundle: bundle, config: snapshot.config.appleNotes)
+            case .appleReminders:
+                return try await self.sendToAppleReminders(bundle: bundle, config: snapshot.config.appleReminders)
+            case .webhook:
+                return try await self.sendToWebhook(recordingID: batch.recordingID, bundle: bundle,
+                                                    config: snapshot.config.webhook, deliveryID: delivery.id)
+            default:
+                throw IntegrationError.unsupported("This integration is not available")
             }
         }
-
-        if IntegrationDestination.available.contains(.notion), snapshot.config.notion.enabled {
-            results.append(await perform(.notion) {
-                try await self.sendToNotion(bundle: bundle, config: snapshot.config.notion, token: snapshot.notionToken)
-            })
-        }
-
-        if IntegrationDestination.available.contains(.evernote), snapshot.config.evernote.enabled {
-            results.append(await perform(.evernote) {
-                try await self.sendToEvernote(bundle: bundle, config: snapshot.config.evernote, token: snapshot.evernoteToken)
-            })
-        }
-
-        if IntegrationDestination.available.contains(.googleKeep), snapshot.config.googleKeep.enabled {
-            results.append(await perform(.googleKeep) {
-                try await self.sendToGoogleKeep(bundle: bundle, config: snapshot.config.googleKeep, token: snapshot.googleKeepToken)
-            })
-        }
-
-        if IntegrationDestination.available.contains(.oneNote), snapshot.config.oneNote.enabled {
-            results.append(await perform(.oneNote) {
-                try await self.sendToOneNote(bundle: bundle, config: snapshot.config.oneNote, token: snapshot.oneNoteToken)
-            })
-        }
-
-        if snapshot.config.webhook.enabled {
-            results.append(await perform(.webhook) {
-                try await self.sendToWebhook(recording: recordingSnapshot, bundle: bundle, config: snapshot.config.webhook)
-            })
-        }
-
-        return results
     }
 
     func testConnection(destination: IntegrationDestination, settings: AppSettings) async throws {
@@ -119,11 +108,11 @@ actor IntegrationDispatchService {
         }
     }
 
-    private func buildBundle(recording: RecordingSnapshot, markdownURL: URL?) -> IntegrationContentBundle {
+    private func buildBundle(recording: RecordingSnapshot, markdownURL: URL?) throws -> IntegrationContentBundle {
         let title = recording.generatedTitle?.isEmpty == false ? recording.generatedTitle! : recording.fileName
         let markdown: String?
         if let markdownURL {
-            markdown = try? String(contentsOf: markdownURL, encoding: .utf8)
+            markdown = try String(contentsOf: markdownURL, encoding: .utf8)
         } else {
             markdown = nil
         }
@@ -155,24 +144,28 @@ actor IntegrationDispatchService {
             script = """
             tell application "Notes"
                 tell folder "\(folder)" of account "\(account)"
-                    make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                    set createdNote to make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                    return id of createdNote
                 end tell
             end tell
             """
         } else {
             script = """
             tell application "Notes"
-                make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                set createdNote to make new note with properties {name:"\(escapedTitle)", body:"\(escapedBody)"}
+                return id of createdNote
             end tell
             """
         }
 
-        _ = try runAppleScript(script)
-        return nil
+        return try runAppleScript(script)
     }
 
     private func sendToAppleReminders(bundle: IntegrationContentBundle, config: AppleRemindersConfig) async throws -> String? {
         try await assertRemindersPermission()
+        reminderStore.reset()
+        defer { reminderStore.reset() }
+        try Task.checkCancellation()
 
         let targetCalendar: EKCalendar
         if !config.listName.isEmpty,
@@ -185,16 +178,16 @@ actor IntegrationDispatchService {
             throw IntegrationError.executionFailed("No reminders list available")
         }
 
-        var created = 0
+        var created: [EKReminder] = []
         for item in bundle.actionItems where !item.isEmpty {
             let reminder = EKReminder(eventStore: reminderStore)
             reminder.title = item
             reminder.calendar = targetCalendar
             try reminderStore.save(reminder, commit: false)
-            created += 1
+            created.append(reminder)
         }
         try reminderStore.commit()
-        return "\(created)"
+        return created.map(\.calendarItemIdentifier).joined(separator: ",")
     }
 
     private func sendToNotion(bundle: IntegrationContentBundle, config: NotionConfig, token: String) async throws -> String? {
@@ -360,17 +353,17 @@ actor IntegrationDispatchService {
         return nil
     }
 
-    private func sendToWebhook(recording: RecordingSnapshot, bundle: IntegrationContentBundle, config: WebhookConfig) async throws -> String? {
+    private func sendToWebhook(recordingID: UUID, bundle: IntegrationContentBundle, config: WebhookConfig, deliveryID: UUID) async throws -> String? {
         guard let url = URL(string: config.url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw IntegrationError.invalidURL(config.url)
         }
 
         let includeAudio = config.fields.contains(.audio)
         let payload = try webhookPayloadBuilder.build(
-            recordingID: recording.id,
-            fileName: recording.fileURL.lastPathComponent,
-            createdAt: recording.date,
-            durationSeconds: recording.duration,
+            recordingID: recordingID,
+            fileName: bundle.audioFileURL.lastPathComponent,
+            createdAt: bundle.createdAt,
+            durationSeconds: bundle.durationSeconds,
             bundle: bundle,
             fields: config.fields,
             includeAudio: includeAudio
@@ -384,41 +377,42 @@ actor IntegrationDispatchService {
             }
         }
 
-        var attempt = 0
-        while true {
-            do {
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.timeoutInterval = max(5, config.timeoutSeconds)
-                request.setValue(payload.contentType, forHTTPHeaderField: "Content-Type")
-                for header in config.headers where !header.key.isEmpty {
-                    request.setValue(header.value, forHTTPHeaderField: header.key)
-                }
+        // One request per durable attempt: arbitrary webhook servers may create an
+        // item even when their response is lost. The stable key lets receivers that
+        // implement idempotency deduplicate an explicitly confirmed retry.
+        try Task.checkCancellation()
+        var request = Self.webhookRequest(url: url, config: config,
+                                         contentType: payload.contentType, deliveryID: deliveryID)
 
-                let data: Data
-                let response: URLResponse
-                switch payload.body {
-                case .data(let body):
-                    request.httpBody = body
-                    (data, response) = try await URLSession.shared.data(for: request)
-                case .file(let bodyURL):
-                    (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyURL)
-                }
-                guard let http = response as? HTTPURLResponse else {
-                    throw IntegrationError.executionFailed("Webhook returned invalid response")
-                }
-                guard (200...299).contains(http.statusCode) else {
-                    let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-                    throw IntegrationError.transport(statusCode: http.statusCode, body: body)
-                }
-                return nil
-            } catch {
-                if attempt >= max(0, config.retryCount) {
-                    throw error
-                }
-                attempt += 1
-            }
+        let data: Data
+        let response: URLResponse
+        switch payload.body {
+        case .data(let body):
+            request.httpBody = body
+            (data, response) = try await URLSession.shared.data(for: request)
+        case .file(let bodyURL):
+            (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyURL)
         }
+        guard let http = response as? HTTPURLResponse else {
+            throw IntegrationError.executionFailed("Webhook returned invalid response")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw IntegrationError.transport(statusCode: http.statusCode, body: body)
+        }
+        return nil
+    }
+
+    nonisolated static func webhookRequest(url: URL, config: WebhookConfig, contentType: String, deliveryID: UUID) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = max(5, config.timeoutSeconds)
+        for header in config.headers where !header.key.isEmpty {
+            request.setValue(header.value, forHTTPHeaderField: header.key)
+        }
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(deliveryID.uuidString.lowercased(), forHTTPHeaderField: "Idempotency-Key")
+        return request
     }
 
     private func performJSONRequest(
@@ -634,7 +628,7 @@ private struct IntegrationSettingsSnapshot: Sendable {
     }
 }
 
-private struct RecordingSnapshot: Sendable {
+struct RecordingSnapshot: Sendable {
     let id: UUID
     let date: Date
     let fileURL: URL
@@ -649,13 +643,24 @@ private struct RecordingSnapshot: Sendable {
     let calendarEvent: CalendarEvent?
 
     @MainActor
-    init(recording: Recording) {
+    init(recording: Recording, recoverTranscript: Bool = false) throws {
         self.id = recording.id
         self.date = recording.date
         self.fileURL = recording.fileURL
         self.duration = recording.duration
         self.generatedTitle = recording.generatedTitle
-        self.transcript = recording.transcription?.text
+        if let text = recording.transcription?.text {
+            self.transcript = text
+        } else if recoverTranscript,
+                  let url = recording.transcriptURL ?? recording.finalizedAudioURL?
+                    .deletingPathExtension().appendingPathExtension("transcript.json"),
+                  FileManager.default.fileExists(atPath: url.path) {
+            // Markdown recovery can skip materializing earlier outputs in memory.
+            // Reload the canonical transcript; never invoke an ASR model here.
+            self.transcript = try JSONDecoder().decode(TranscriptionResult.self, from: Data(contentsOf: url)).text
+        } else {
+            self.transcript = nil
+        }
         self.summary = recording.summary
         self.actionItems = recording.actionItems ?? []
         self.tags = recording.tags ?? []

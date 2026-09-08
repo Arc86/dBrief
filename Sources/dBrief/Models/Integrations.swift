@@ -174,7 +174,7 @@ enum IntegrationError: LocalizedError {
     }
 }
 
-struct IntegrationContentBundle: Sendable {
+struct IntegrationContentBundle: Codable, Equatable, Sendable {
     let title: String
     let createdAt: Date
     let durationSeconds: TimeInterval

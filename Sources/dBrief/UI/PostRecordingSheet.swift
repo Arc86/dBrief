@@ -31,12 +31,17 @@ struct PostRecordingSheet: View {
             HStack(alignment: .top, spacing: 10) {
                 ZStack {
                     Circle().fill(Brand.violetTint).frame(width: 30, height: 30)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .heavy))
-                        .foregroundStyle(Brand.violet2)
+                    if recordingManager.postRecordingAction.isBusy {
+                        ProgressView().controlSize(.small)
+                            .accessibilityLabel("Saving recording")
+                    } else {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(Brand.violet2)
+                    }
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Recording complete")
+                    Text(recordingManager.postRecordingAction.action?.title ?? "Recording complete")
                         .font(.system(size: 15, weight: .bold))
                         .fixedSize(horizontal: false, vertical: true)
                     profilePill
@@ -165,6 +170,8 @@ struct PostRecordingSheet: View {
 
             Divider()
 
+            postRecordingStatus
+
             if confirmingDelete {
                 deleteConfirmation
             } else {
@@ -239,6 +246,7 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .disabled(recordingManager.postRecordingAction.isBusy)
         .padding(.vertical, 4)
         .onAppear {
             transcribe = appSettings.effectiveAutoTranscribe
@@ -254,16 +262,48 @@ struct PostRecordingSheet: View {
             // The calendar lookup runs in RecordingManager.stopRecording; here we only react to
             // its result. If the best match already arrived, pre-fill from it (guarded so we
             // never clobber a title/participants the user typed).
-            if let recording = appState.currentRecording, let event = recording.calendarEvent {
+            if !recordingManager.postRecordingAction.isBusy,
+               let recording = appState.currentRecording, let event = recording.calendarEvent {
                 applyCalendarEvent(event, to: recording)
             }
         }
         .onChange(of: appState.currentRecording?.calendarEvent?.id) { _, _ in
             // Reactive pre-fill: the async candidate lookup set the best match after the sheet
             // appeared. Auto-fill is guarded; an explicit picker pick is handled in selectCalendarEvent.
-            guard let recording = appState.currentRecording,
+            guard !recordingManager.postRecordingAction.isBusy,
+                  let recording = appState.currentRecording,
                   let event = recording.calendarEvent else { return }
             applyCalendarEvent(event, to: recording)
+        }
+    }
+
+    @ViewBuilder
+    private var postRecordingStatus: some View {
+        let state = recordingManager.postRecordingAction
+        if state.isBusy {
+            VStack(alignment: .leading, spacing: 5) {
+                if let progress = state.progress {
+                    ProgressView(value: progress)
+                        .accessibilityLabel("Audio saving progress")
+                }
+                Text(state.progress == 1
+                     ? "Finishing save… Please keep dBrief open."
+                     : "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if state.recordingID == appState.currentRecording?.id, let error = state.error {
+            Label("Couldn’t finish: \(error) Try again, or choose another action.", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(Brand.coral)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        } else if appState.processingJob != nil {
+            Text("Another recording is processing. Process saves this recording and queues it to run automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -341,7 +381,7 @@ struct PostRecordingSheet: View {
     }
 
     private var processDisabled: Bool {
-        sanitizedMeetingTitle.isEmpty
+        recordingManager.postRecordingAction.isBusy || sanitizedMeetingTitle.isEmpty
             || (transcribe
                 && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
                 && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
@@ -453,6 +493,7 @@ struct PostRecordingSheet: View {
     }
 
     private func applyFieldsToRecording() {
+        guard !recordingManager.postRecordingAction.isBusy else { return }
         guard let recording = appState.currentRecording else { return }
         recording.meetingTitleDraft = sanitizedMeetingTitle
         recording.titleWasUserProvided = isCustomTitle(sanitizedMeetingTitle, recording: recording)

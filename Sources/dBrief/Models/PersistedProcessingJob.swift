@@ -1,21 +1,24 @@
 import Foundation
 
-/// Durable intent and resume state for the finalization → transcription slice of
-/// the processing pipeline. Stage outputs remain in their canonical recording
-/// sidecars; this record stores only the information needed to find and resume
-/// them.
+/// Durable intent, stage checkpoints, and a frozen pending Markdown export.
+/// Transcript and analysis sidecars remain the canonical stage outputs.
 struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
     static let currentVersion = 1
 
     enum Status: String, Codable, Equatable, Sendable {
         case queued
         case running
+        case waitingForSpeakerReview
         case failed
         case cancelled
         /// Transcription is durable, but a later Phase 5 stage was interrupted.
-        /// Phase 5A never automatically replays beyond this boundary because doing
-        /// so could duplicate integrations.
+        /// Kept as a migration state for jobs created by Phase 5A builds.
         case transcriptionComplete
+        /// Analysis is durable; Phase 5B does not automatically replay Markdown
+        /// generation or integration delivery.
+        case analysisComplete
+        /// Markdown is durable; integration delivery still requires explicit action.
+        case markdownComplete
         case completed
     }
 
@@ -23,12 +26,17 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         case persistence
         case finalization
         case transcription
+        case diarization
+        case speakerReview
+        case analysis
+        case markdown
+        case integrations
         case missingInput
     }
 
     enum LaunchRecoveryAction: Equatable, Sendable {
-        case resumeToPhase5ABoundary
-        case parkAtPhase5ABoundary
+        case resumeToMarkdownBoundary
+        case parkAtMarkdownBoundary
         case none
     }
 
@@ -70,6 +78,15 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
     var source: Source
     var checkpoint: ProcessingCheckpoint
     var failureStage: FailureStage?
+    /// Frozen confirm-first decision for deterministic recovery. Nil on Phase 5A
+    /// manifests, which recompute it once and persist the result.
+    var speakerReviewRequired: Bool?
+    /// Nil on older jobs. New jobs freeze whether analysis produced a sidecar,
+    /// independent of the AI-enabled setting at the time recovery runs.
+    var analysisOutputSaved: Bool?
+    var markdownExport: MarkdownExportPlan?
+    /// Explicit removal from queue/recovery is not a deletion of the recording.
+    var dismissedFromQueue: Bool? = nil
 
     init(
         version: Int = currentVersion,
@@ -81,7 +98,10 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         request: Request,
         source: Source,
         checkpoint: ProcessingCheckpoint? = nil,
-        failureStage: FailureStage? = nil
+        failureStage: FailureStage? = nil,
+        speakerReviewRequired: Bool? = nil,
+        analysisOutputSaved: Bool? = nil,
+        markdownExport: MarkdownExportPlan? = nil
     ) {
         self.version = version
         self.id = id
@@ -93,9 +113,13 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         self.source = source
         self.checkpoint = checkpoint ?? ProcessingCheckpoint(jobID: id, updatedAt: updatedAt)
         self.failureStage = failureStage
+        self.speakerReviewRequired = speakerReviewRequired
+        self.analysisOutputSaved = analysisOutputSaved
+        self.markdownExport = markdownExport
     }
 
     mutating func markRunning(at date: Date) {
+        dismissedFromQueue = false
         status = .running
         failureStage = nil
         updatedAt = date
@@ -126,8 +150,26 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         updatedAt = date
     }
 
+    mutating func markWaitingForSpeakerReview(at date: Date) {
+        status = .waitingForSpeakerReview
+        failureStage = nil
+        updatedAt = date
+    }
+
+    mutating func markAnalysisBoundaryReached(at date: Date) {
+        status = .analysisComplete
+        failureStage = nil
+        updatedAt = date
+    }
+
     mutating func markFullyCompleted(at date: Date) {
         status = .completed
+        failureStage = nil
+        updatedAt = date
+    }
+
+    mutating func markMarkdownBoundaryReached(at date: Date) {
+        status = .markdownComplete
         failureStage = nil
         updatedAt = date
     }
@@ -137,16 +179,22 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         return stage != .audioFinalized
     }
 
-    /// Phase 5A recovery policy is deliberately narrower than the eventual full
-    /// pipeline recovery: only a job that was running may resume, and no launch
-    /// replay crosses into AI/export/integration work.
+    /// Recovery advances through local Markdown publication but never automatically
+    /// repeats integration delivery. Earlier beta boundary states migrate forward.
     var launchRecoveryAction: LaunchRecoveryAction {
-        guard status == .running else { return .none }
-        if hasDurableTranscription
-            || (!request.transcribe
-                && checkpoint.lastCompletedStage == .audioFinalized) {
-            return .parkAtPhase5ABoundary
+        if dismissedFromQueue == true { return .none }
+        switch status {
+        case .completed, .failed, .cancelled, .markdownComplete:
+            return .none
+        case .waitingForSpeakerReview:
+            return .resumeToMarkdownBoundary
+        case .queued:
+            return .none
+        case .running, .transcriptionComplete, .analysisComplete:
+            if checkpoint.hasCompleted(.markdownGenerated) {
+                return .parkAtMarkdownBoundary
+            }
+            return .resumeToMarkdownBoundary
         }
-        return .resumeToPhase5ABoundary
     }
 }

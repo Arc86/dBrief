@@ -12,7 +12,7 @@ enum ProcessingCheckpointStage: String, CaseIterable, Codable, Hashable, Sendabl
     case markdownGenerated
     case integrationsDispatched
 
-    fileprivate var order: Int {
+    var order: Int {
         Self.allCases.firstIndex(of: self) ?? 0
     }
 }
@@ -56,5 +56,10 @@ struct ProcessingCheckpoint: Codable, Equatable, Sendable {
         let nextIndex = lastCompletedStage.order + 1
         guard ProcessingCheckpointStage.allCases.indices.contains(nextIndex) else { return nil }
         return ProcessingCheckpointStage.allCases[nextIndex]
+    }
+
+    func hasCompleted(_ stage: ProcessingCheckpointStage) -> Bool {
+        guard let lastCompletedStage else { return false }
+        return lastCompletedStage.order >= stage.order
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct QueueItem: Codable, Sendable, Identifiable {
     var id: UUID = UUID()
@@ -43,5 +44,19 @@ struct QueueItem: Codable, Sendable, Identifiable {
         tags = try c.decode(Bool.self, forKey: .tags)
         titleWasUserProvided = try c.decodeIfPresent(Bool.self, forKey: .titleWasUserProvided) ?? false
         autoQueued = try c.decodeIfPresent(Bool.self, forKey: .autoQueued) ?? false
+    }
+
+    /// Legacy queue files have no ID. A deterministic path identity prevents a
+    /// new recovery job being created each time that same marker is scanned.
+    static func load(from url: URL) throws -> Self {
+        let data = try Data(contentsOf: url)
+        var item = try JSONDecoder().decode(Self.self, from: data)
+        let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if payload?["id"] == nil {
+            let bytes = Array(SHA256.hash(data: Data(url.resolvingSymlinksInPath().standardizedFileURL.path.utf8)).prefix(16))
+            item.id = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+        }
+        return item
     }
 }

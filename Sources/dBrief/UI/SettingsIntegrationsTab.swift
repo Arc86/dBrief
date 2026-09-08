@@ -328,18 +328,9 @@ struct SettingsIntegrationsTab: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
                 }
-                HStack {
-                    Text("Retries")
-                    Spacer()
-                    Stepper(value: binding(
-                        { appSettings.integrations.webhook.retryCount },
-                        { appSettings.integrations.webhook.retryCount = $0 }
-                    ), in: 0 ... 5) {
-                        Text("\(appSettings.integrations.webhook.retryCount)")
-                            .frame(width: 30, alignment: .trailing)
-                    }
-                    .frame(width: 100)
-                }
+                Text("Unconfirmed sends can be retried from History → Integrations. Each delivery includes an Idempotency-Key; duplicate protection depends on your receiver supporting it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Text("Headers")
                     .font(.subheadline)

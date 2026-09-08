@@ -36,6 +36,9 @@ struct ProcessingCheckpointTests {
         #expect(!regressedStageChanged)
         #expect(checkpoint.updatedAt == advancedDate)
         #expect(checkpoint.nextStage == .diarized)
+        #expect(checkpoint.hasCompleted(.audioFinalized))
+        #expect(checkpoint.hasCompleted(.transcribed))
+        #expect(!checkpoint.hasCompleted(.diarized))
     }
 
     @Test

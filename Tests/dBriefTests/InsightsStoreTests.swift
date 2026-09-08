@@ -22,11 +22,40 @@ struct InsightsStoreTests {
             actionItems: ["a"],
             tags: ["t"],
             sentiment: "Positive",
+            generatedTitle: "Generated",
             markdownPath: "/tmp/x.md"
         )
         try await store.save(insights, to: url)
         let loaded = try await store.load(from: url)
         #expect(loaded == insights)
+    }
+
+    @Test("legacy analysis without generated title still decodes")
+    func legacyGeneratedTitleDecode() throws {
+        let json = """
+        {"version":1,"summary":"S","actionItems":[],"tags":[],"sentiment":"","markdownPath":null}
+        """
+        let decoded = try JSONDecoder().decode(
+            RecordingInsights.self,
+            from: Data(json.utf8)
+        )
+        #expect(decoded.generatedTitle == nil)
+    }
+
+    @Test("future analysis versions fail without changing the file")
+    func futureVersionIsRejected() async throws {
+        let store = InsightsStore()
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bytes = Data("""
+        {"version":99,"summary":"S","actionItems":[],"tags":[],"sentiment":"","markdownPath":null}
+        """.utf8)
+        try bytes.write(to: url)
+
+        await #expect(throws: InsightsStoreError.self) {
+            _ = try await store.load(from: url)
+        }
+        #expect(try Data(contentsOf: url) == bytes)
     }
 
     @Test("load returns nil when file is absent")

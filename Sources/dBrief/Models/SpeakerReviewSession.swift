@@ -66,10 +66,13 @@ final class SpeakerReviewSession: Identifiable {
     let localAIAvailable: Bool
     let perf: TranscriptionPerf
     let origin: Origin
+    /// Launch recovery stops after Markdown, before any integration dispatch.
+    let stopBeforeIntegrations: Bool
 
     init(recording: Recording, masterAudioURL: URL?, items: [SpeakerReviewItem],
          transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
-         localAIAvailable: Bool, perf: TranscriptionPerf, origin: Origin = .pipeline) {
+         localAIAvailable: Bool, perf: TranscriptionPerf, origin: Origin = .pipeline,
+         stopBeforeIntegrations: Bool = false) {
         self.recording = recording
         self.masterAudioURL = masterAudioURL
         self.items = items
@@ -80,5 +83,6 @@ final class SpeakerReviewSession: Identifiable {
         self.localAIAvailable = localAIAvailable
         self.perf = perf
         self.origin = origin
+        self.stopBeforeIntegrations = stopBeforeIntegrations
     }
 }

@@ -59,4 +59,21 @@ struct TranscriptStoreTests {
         #expect(loaded.segments[0].originalText == "Original text")
         #expect(loaded.segments[0].text == "Edited text")
     }
+
+    @Test("future rich-transcript versions are rejected without modification")
+    func futureVersionIsRejected() async throws {
+        let store = TranscriptStore()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("richtranscript.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let future = RichTranscript(version: 99, segments: [])
+        let bytes = try JSONEncoder().encode(future)
+        try bytes.write(to: url)
+
+        await #expect(throws: TranscriptStoreError.self) {
+            _ = try await store.load(from: url)
+        }
+        #expect(try Data(contentsOf: url) == bytes)
+    }
 }
