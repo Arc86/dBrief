@@ -43,7 +43,7 @@ struct LibraryJobSummary: Codable, Sendable {
 }
 
 struct LibraryDocument {
-    static let extensions = ["json", "transcript.json", "richtranscript.json", "insights.json", "queue.json", "md"]
+    static let extensions = ["json", "transcript.json", "richtranscript.json", "insights.json", "queue.json", "md", "reprocessing.json"]
     let item: RecordingBrowserItem
     let body: String
     let sourceReads: Int
@@ -89,7 +89,8 @@ struct LibraryDocument {
         unfinishedActions = actions.filter {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !completed.contains($0)
         }.count
-        if let stamp = metadata["lastProcessingCompletion"],
+        let provenance = try object("reprocessing.json")
+        if let stamp = provenance?["completion"] ?? metadata["lastProcessingCompletion"],
            let bytes = try? JSONSerialization.data(withJSONObject: stamp),
            let value = try? JSONDecoder().decode(ProcessingCompletionStamp.self, from: bytes) {
             processedAt = value.completedAt

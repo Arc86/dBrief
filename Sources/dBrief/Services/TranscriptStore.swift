@@ -37,7 +37,10 @@ actor TranscriptStore {
         }
         let data = try JSONEncoder().encode(transcript)
         try Task.checkCancellation()
-        try data.write(to: url, options: .atomic)
+        try RecordingResultMutation.withWrite(to: url) {
+            try Task.checkCancellation()
+            try data.write(to: url, options: .atomic)
+        }
         let verified = try JSONDecoder().decode(
             RichTranscript.self,
             from: Data(contentsOf: url)
@@ -70,7 +73,7 @@ actor TranscriptStore {
 
     func delete(for recording: Recording) async throws {
         let url = try await sidecarURL(for: recording)
-        try fileManager.removeItem(at: url)
+        try RecordingResultMutation.withWrite(to: url) { try fileManager.removeItem(at: url) }
         RecordingLibraryChange.notify()
     }
 

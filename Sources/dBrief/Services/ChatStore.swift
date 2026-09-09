@@ -13,15 +13,29 @@ actor ChatStore {
         return try JSONDecoder().decode(ChatHistory.self, from: data)
     }
 
-    func save(_ history: ChatHistory, to url: URL) async throws {
+    func save(_ history: ChatHistory, to url: URL, validity: RecordingDerivativeValidity? = nil) async throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(history)
-        try data.write(to: url, options: .atomic)
+        try RecordingResultMutation.withWrite(to: url) {
+            try Task.checkCancellation()
+            if let validity {
+                try validity.withValidResult { try data.write(to: url, options: .atomic) }
+            } else {
+                try data.write(to: url, options: .atomic)
+            }
+        }
     }
 
-    func delete(at url: URL) async {
-        try? fileManager.removeItem(at: url)
+    func delete(at url: URL, validity: RecordingDerivativeValidity? = nil) async {
+        try? RecordingResultMutation.withWrite(to: url) {
+            try Task.checkCancellation()
+            if let validity {
+                try validity.withValidResult { try fileManager.removeItem(at: url) }
+            } else {
+                try fileManager.removeItem(at: url)
+            }
+        }
     }
 
     // Convenience Recording-based overloads

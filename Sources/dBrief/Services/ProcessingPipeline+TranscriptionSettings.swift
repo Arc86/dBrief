@@ -20,19 +20,35 @@ extension ProcessingPipeline {
         let modelName: String?
 
         @MainActor init(settings: AppSettings) {
-            engine = settings.effectiveTranscriptionEngine
-            language = settings.effectiveTranscriptionLanguage
-            whisper = settings.whisperRuntimeConfig
-            parakeetLanguage = settings.transcriptionLanguage.isEmpty ? nil : settings.transcriptionLanguage
-            parakeetModelVariant = settings.parakeetModelVariant
-            diarize = settings.diarizationEnabled
-            endpoint = settings.effectiveDefaultTranscriptionEndpoint
-            chunking = .init(enabled: settings.remoteChunkingEnabled, maxUploadMB: settings.remoteChunkMaxUploadMB,
-                             overlapSeconds: settings.remoteChunkOverlapSeconds, retryCount: settings.remoteChunkRetryCount)
             // Local CLI correction uses the configured chat fallback, as before.
             let spellingEngine = settings.effectiveAIEngine == .localCLI ? settings.chatFallbackEngine : settings.effectiveAIEngine
-            spelling = .init(terms: settings.effectiveCustomVocabulary, engine: spellingEngine,
-                             endpoint: settings.effectiveDefaultAIEndpoint)
+            self.init(engine: settings.effectiveTranscriptionEngine,
+                language: settings.effectiveTranscriptionLanguage, whisper: settings.whisperRuntimeConfig,
+                parakeetLanguage: settings.transcriptionLanguage.isEmpty ? nil : settings.transcriptionLanguage,
+                parakeetModelVariant: settings.parakeetModelVariant, diarize: settings.diarizationEnabled,
+                endpoint: settings.effectiveDefaultTranscriptionEndpoint,
+                chunking: .init(enabled: settings.remoteChunkingEnabled, maxUploadMB: settings.remoteChunkMaxUploadMB,
+                                overlapSeconds: settings.remoteChunkOverlapSeconds, retryCount: settings.remoteChunkRetryCount),
+                removeFillerWords: settings.effectiveRemoveFillerWords, ignoredSegments: settings.effectiveIgnoredSegments,
+                spelling: .init(terms: settings.effectiveCustomVocabulary, engine: spellingEngine,
+                                endpoint: settings.effectiveDefaultAIEndpoint))
+        }
+
+        /// Explicit inputs let durable reprocessing run without borrowing mutable
+        /// global settings. The ordinary initializer retains its raw/effective policy.
+        init(engine: AppSettings.TranscriptionEngine, language: String, whisper: WhisperRuntimeConfig,
+             parakeetLanguage: String?, parakeetModelVariant: String, diarize: Bool,
+             endpoint: Endpoint?, chunking: TranscriptionService.ChunkingConfiguration,
+             removeFillerWords: Bool, ignoredSegments: Set<String>, spelling: TranscriptSpellingService.Request) {
+            self.engine = engine
+            self.language = language
+            self.whisper = whisper
+            self.parakeetLanguage = parakeetLanguage
+            self.parakeetModelVariant = parakeetModelVariant
+            self.diarize = diarize
+            self.endpoint = endpoint
+            self.chunking = chunking
+            self.spelling = spelling
             switch engine {
             case .appleSpeech:
                 modelDisplayName = "Apple Speech"
@@ -49,8 +65,8 @@ extension ProcessingPipeline {
                 modelDisplayName = name.isEmpty ? "Remote Endpoint" : name
                 modelName = endpoint.flatMap { TranscriptionService.modelName(for: $0) }
             }
-            cleanup = .init(removeFillerWords: settings.effectiveRemoveFillerWords,
-                            ignoredSegments: settings.effectiveIgnoredSegments, modelName: modelName)
+            cleanup = .init(removeFillerWords: removeFillerWords,
+                            ignoredSegments: ignoredSegments, modelName: modelName)
         }
     }
 }

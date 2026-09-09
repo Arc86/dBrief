@@ -11,6 +11,7 @@ struct SummaryView: View {
     let insights: RecordingInsights?
     let isGenerating: Bool
     let canGenerate: Bool
+    var isReadOnly = false
     var onGenerate: () -> Void = {}
     var onSave: (RecordingInsights) async -> Void = { _ in }
     var onCopy: (String) async -> Bool = { _ in false }
@@ -58,6 +59,7 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { sync() }
         .onChange(of: insights) { _, _ in if !isEditing { sync() } }
+        .onChange(of: isReadOnly) { _, locked in if locked { isEditing = false; sync() } }
         .alert("Action status could not be saved", isPresented: $actionSaveFailed) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -83,6 +85,11 @@ struct SummaryView: View {
     private func content(for insights: RecordingInsights) -> some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
+                if insights.basedOnPreviousTranscript == true {
+                    Label("Based on the previous transcript", systemImage: "exclamationmark.circle")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                }
                 header(for: insights)
                 Divider()
                 ScrollView {
@@ -274,7 +281,7 @@ struct SummaryView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(isUpdatingActions || isSaving)
+        .disabled(isReadOnly || isUpdatingActions || isSaving)
         .accessibilityLabel(Text(item.text))
         .accessibilityValue(done ? "Completed" : "Unfinished")
         .accessibilityHint(done ? "Mark this action unfinished" : "Mark this action complete")
@@ -335,27 +342,30 @@ struct SummaryView: View {
                 }
                 .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme, prominent: true))
                 .keyboardShortcut(.defaultAction)
-                .disabled(isSaving)
+                .disabled(isReadOnly || isSaving)
             } else {
                 Button { sync(); isEditing = true } label: {
                     Label("Edit", systemImage: "pencil")
                 }
                 .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
-                .disabled(isUpdatingActions)
+                .disabled(isReadOnly || isUpdatingActions)
                 if hasSpokenSummary {
                     Button { onPlaySpoken() } label: {
                         Label("Play Spoken", systemImage: "play.circle")
                     }
                     .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                    .disabled(isReadOnly)
                     Button { onGenerateSpoken() } label: {
                         Label("Regenerate", systemImage: "waveform")
                     }
                     .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                    .disabled(isReadOnly)
                 } else {
                     Button { onGenerateSpoken() } label: {
                         Label("Spoken Summary", systemImage: "waveform")
                     }
                     .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                    .disabled(isReadOnly)
                 }
             }
         }
@@ -438,7 +448,7 @@ struct SummaryView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .toggleStyle(.checkbox)
-                    .disabled(isUpdatingActions || isSaving)
+                    .disabled(isReadOnly || isUpdatingActions || isSaving)
                 }
             }
             .padding(.leading, 2)
@@ -531,6 +541,7 @@ struct SummaryView: View {
             if canGenerate {
                 Button("Generate Summary", action: onGenerate)
                     .buttonStyle(.borderedProminent)
+                    .disabled(isReadOnly)
             }
         }
     }
@@ -548,7 +559,7 @@ struct SummaryView: View {
     // MARK: - Save
 
     private func setActionCompleted(_ action: String, completed: Bool) {
-        guard !isUpdatingActions else { return }
+        guard !isReadOnly, !isUpdatingActions else { return }
         isUpdatingActions = true
         Task {
             defer { isUpdatingActions = false }
@@ -560,6 +571,7 @@ struct SummaryView: View {
     }
 
     private func save(base: RecordingInsights) async {
+        guard !isReadOnly else { return }
         isSaving = true
         defer { isSaving = false }
         var updated = base

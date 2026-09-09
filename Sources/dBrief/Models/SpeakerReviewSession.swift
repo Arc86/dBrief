@@ -51,6 +51,7 @@ final class SpeakerReviewSession: Identifiable {
     /// Where the hold was armed — determines what Confirm/Cancel does next.
     enum Origin {
         case pipeline    // fresh-transcription hold; resume runs AI → markdown → export
+        case reprocessing
         case rediarize   // transcript-viewer re-diarize; commit names only, viewer reloads
     }
 

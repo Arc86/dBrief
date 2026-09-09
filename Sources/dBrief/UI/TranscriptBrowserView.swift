@@ -57,7 +57,7 @@ struct TranscriptBrowserView: View {
     /// coexist with a concurrent capture. `nil` when no job is running. Guarded against
     /// duplicating the capture pin (they're always different recordings, but be safe).
     private var processingRecording: Recording? {
-        guard let job = appState.processingJob else { return nil }
+        guard let job = appState.processingJob, job.reprocessingAttemptID == nil else { return nil }
         if let live = liveRecording, live.id == job.recording.id { return nil }
         return job.recording
     }
@@ -168,13 +168,24 @@ struct TranscriptBrowserView: View {
     }
 
     var body: some View {
+        Group {
+            if recordingManager.reprocessingRecoveryReady { browserContent }
+            else { ReprocessingRecoveryView() }
+        }
+        .onChange(of: recordingManager.reprocessingRecoveryReady) { _, ready in
+            if ready { reload(); rebuildDetailRecording() }
+            else { library.suspend(); detailRecording = nil }
+        }
+    }
+
+    private var browserContent: some View {
         selectionLifecycle
         .onReceive(NotificationCenter.default.publisher(for: .recordingLibraryChanged).receive(on: RunLoop.main)) { _ in
-            library.refresh()
+            if recordingManager.reprocessingRecoveryReady { library.refresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).receive(on: RunLoop.main)) { _ in
             library.refreshTimeContext()
-            library.refresh()
+            if recordingManager.reprocessingRecoveryReady { library.refresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
             library.refreshTimeContext()
@@ -183,12 +194,13 @@ struct TranscriptBrowserView: View {
             library.refreshTimeContext()
         }
         .task(id: appSettings.effectiveRecordingFolderURL) {
+            guard recordingManager.reprocessingRecoveryReady else { return }
             library.open(appSettings.effectiveRecordingFolderURL, configuredQueueFolders: queueDiscoveryFolders)
             // Discover external sidecar edits and file moves while this window is
             // open. Unchanged files are only stat'ed; their contents stay cached.
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
-                library.refresh()
+                if recordingManager.reprocessingRecoveryReady { library.refresh() }
             }
         }
         .onChange(of: appState.pendingTranscriptSelectionURL) { _, _ in
@@ -218,7 +230,7 @@ struct TranscriptBrowserView: View {
             LibraryWorkDetailView(item: work,
                 disabled: !recordingManager.canPerformLibraryWork || library.isQuerying || library.error != nil) {
                 try await recordingManager.performLibraryWork(work)
-                library.refresh()
+                if recordingManager.reprocessingRecoveryReady { library.refresh() }
             }
             .id(work.id)
         } else if let recording = detailRecording {
@@ -397,6 +409,7 @@ struct TranscriptBrowserView: View {
             item: item,
             isSelected: selection == item.url,
             onTap: { selectRecording(item.url) })
+        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript) }
     }
 
     /// Section header for the meeting list. Passing `collapsed`/`onToggle` makes it
@@ -487,6 +500,7 @@ struct TranscriptBrowserView: View {
     // MARK: - Helpers
 
     private func reload() {
+        guard recordingManager.reprocessingRecoveryReady else { return }
         library.open(appSettings.effectiveRecordingFolderURL, configuredQueueFolders: queueDiscoveryFolders)
     }
 

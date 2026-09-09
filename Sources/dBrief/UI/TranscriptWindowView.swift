@@ -76,9 +76,8 @@ struct TranscriptDetailView: View {
     @State private var customRenameTurn: SpeakerTurn?
 
     // Diarization (after-the-fact speaker detection)
-    @State private var isDiarizing = false
-    @State private var showDiarizeConfirm = false
-    @State private var diarizeError: String?
+    @State private var reprocessingOperation: ReprocessingOperation?
+    @State private var spokenSummaryTask: Task<Void, Never>?
 
     // Voice library (Phase 2): known-people names offered as rename candidates,
     // and a normalized-name → personId map to link a label on rename.
@@ -125,8 +124,13 @@ struct TranscriptDetailView: View {
 
     /// True while this view shows the recording currently being **processed** in the
     /// background (progressive transcript arriving on the job).
+    private var isReprocessing: Bool {
+        context.recordingManager.isReprocessing(recording.finalizedAudioURL ?? recording.fileURL)
+    }
+
     private var isProcessingLive: Bool {
-        context.appState.processingJob?.recording.id == recording.id
+        guard context.appState.processingJob?.reprocessingAttemptID == nil, !isReprocessing else { return false }
+        return context.appState.processingJob?.recording.id == recording.id
     }
 
     /// True while this view shows the in-progress (recording or processing) recording —
@@ -156,7 +160,11 @@ struct TranscriptDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isLive {
+            if !context.recordingManager.reprocessingRecoveryReady && !isCaptureLive {
+                ReprocessingRecoveryView()
+                    .environment(context.recordingManager)
+                    .environment(context.appState)
+            } else if isLive {
                 // In-progress recording: keep the real-time transcript visible and
                 // slide chat in as a right-hand side panel, so you can watch the
                 // transcript grow while chatting with it.
@@ -178,7 +186,10 @@ struct TranscriptDetailView: View {
                 VStack(spacing: 0) {
                     documentHeader
                     Divider()
-                    if offerReanalysis { reanalysisBanner }
+                    if isReprocessing {
+                        Label("Reprocessing pending — current results are read-only. Manage the attempt in Queue & Recovery.", systemImage: "clock")
+                            .font(.callout).foregroundStyle(.secondary).padding(12)
+                    } else if offerReanalysis { reanalysisBanner }
                     HStack(spacing: 0) {
                         bodyContent
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -197,8 +208,22 @@ struct TranscriptDetailView: View {
         // centered toolbar label, so an empty string (not titleVisibility) is
         // what actually removes the duplicate.
         .navigationTitle("")
-        .toolbar { toolbarContent }
-        .task { await loadTranscript() }
+        .toolbar {
+            if context.recordingManager.reprocessingRecoveryReady || isCaptureLive { toolbarContent }
+        }
+        .task(id: context.recordingManager.reprocessingRecoveryReady) {
+            await loadTranscript()
+        }
+        .onChange(of: context.recordingManager.reprocessingRecoveryReady) { _, ready in
+            if !ready { invalidateDerivedWork(); richTranscript = nil; insights = nil }
+        }
+        .onChange(of: isReprocessing, initial: true) { _, locked in
+            if locked { invalidateDerivedWork() }
+        }
+        .onChange(of: context.recordingManager.reprocessingResultsRevision) { _, _ in
+            invalidateDerivedWork()
+            Task { await reloadReprocessedResults() }
+        }
         .onChange(of: richTranscript) { _, newValue in
             displayedTurns = newValue?.speakerTurns() ?? []
         }
@@ -254,7 +279,6 @@ struct TranscriptDetailView: View {
                 if commit.offerReanalysis && hasSummary { offerReanalysis = true }
             }
         }
-        .overlay { if isDiarizing { diarizingOverlay } }
         .sheet(isPresented: $showPrivacyReceipt) {
             PrivacyReceiptView(recording: recording)
         }
@@ -263,6 +287,7 @@ struct TranscriptDetailView: View {
                 service: service,
                 audioPlayer: spokenSummaryPlayer,
                 onSave: {
+                    guard !isReprocessing else { return }
                     do {
                         _ = try await service.save(for: recording)
                         hasSpokenSummary = true
@@ -272,7 +297,8 @@ struct TranscriptDetailView: View {
                     }
                 },
                 onClose: {
-                    service.discard()
+                    spokenSummaryTask?.cancel()
+                    service.invalidateForReprocessing()
                     spokenSummaryService = nil
                 },
                 onRetry: { startSpokenSummary() }
@@ -286,20 +312,15 @@ struct TranscriptDetailView: View {
         } message: {
             Text("“\(recording.generatedTitle ?? recording.meetingTitleDraft)”, its audio, local sidecars, queued work, and saved recovery content will be permanently removed. Separately exported Markdown and content already sent to integrations are kept.")
         }
-        .confirmationDialog("Detect speakers?",
-                            isPresented: $showDiarizeConfirm, titleVisibility: .visible) {
-            Button("Detect Speakers") { Task { await runDiarization() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Runs on-device speaker detection for this recording and assigns speakers to the transcript. This replaces any current speakers and custom names. The first run downloads the speaker model.")
+        .sheet(isPresented: Binding(get: { reprocessingOperation != nil }, set: { if !$0 { reprocessingOperation = nil } })) {
+            if let operation = reprocessingOperation {
+                ReprocessingSheet(recording: recording, operation: operation)
+                    .environment(context.appSettings)
+                    .environment(context.recordingManager)
+                    .environment(context.appState)
+            }
         }
-        .alert("Speaker detection failed", isPresented: Binding(
-            get: { diarizeError != nil },
-            set: { if !$0 { diarizeError = nil } })) {
-            Button("OK", role: .cancel) { diarizeError = nil }
-        } message: {
-            Text(diarizeError ?? "")
-        }
+
     }
 
     // MARK: - Document header
@@ -373,24 +394,6 @@ struct TranscriptDetailView: View {
         return metrics
     }
 
-    private var diarizingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Detecting speakers…")
-                    .font(.callout)
-                Text("First run downloads the speaker model, which can take a while.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
-            .frame(maxWidth: 320)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        }
-    }
-
     // MARK: - Toolbar
 
     @ToolbarContentBuilder
@@ -444,15 +447,12 @@ struct TranscriptDetailView: View {
             .help("Copy full transcript")
             .accessibilityLabel(copied ? "Transcript copied" : "Copy full transcript")
 
-            Button {
-                showDiarizeConfirm = true
-            } label: {
-                Image(systemName: "person.2.wave.2")
-                    .foregroundStyle(Color.secondary)
+            if !isLive {
+                ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil)
+                    .environment(context.appSettings)
+                    .environment(context.recordingManager)
+                    .environment(context.appState)
             }
-            .disabled(isDiarizing || richTranscript == nil || recording.finalizedAudioURL == nil)
-            .help("Detect speakers")
-            .accessibilityLabel("Detect speakers")
 
             Menu {
                 Stepper(value: $fontSize, in: 12...24) {
@@ -517,11 +517,13 @@ struct TranscriptDetailView: View {
         SummaryView(
             insights: insights,
             isGenerating: isGenerating,
-            canGenerate: richTranscript != nil,
+            canGenerate: richTranscript != nil && !isReprocessing,
+            isReadOnly: isReprocessing,
             onGenerate: { Task { await generateSummary() } },
             onSave: { updated in await saveInsights(updated) },
             onCopy: { text in await RecordingClipboard.copy(text, for: recording) },
             onSetActionCompleted: { action, completed in
+                guard !isReprocessing else { throw CancellationError() }
                 guard let url = recording.insightsSidecarURL else { throw InsightsStoreError.noSidecarURL }
                 let saved = try await context.insightsStore.setActionCompleted(action, completed: completed, at: url)
                 insights = saved
@@ -735,6 +737,7 @@ struct TranscriptDetailView: View {
             }
         }
         .menuStyle(.borderlessButton)
+        .disabled(isReprocessing)
         .fixedSize()
         // The "Custom name…" typing fallback. Each turn's label carries the popover, but
         // `customRenameTurn` is single-valued and `SpeakerTurn.id` is stable, so exactly one
@@ -968,7 +971,9 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var chatContent: some View {
-        if let chatService {
+        if isReprocessing {
+            ContentUnavailableView("Chat paused", systemImage: "clock", description: Text("Finish or discard the pending reprocessing attempt to use chat."))
+        } else if let chatService {
             TranscriptChatView(chatService: chatService)
         } else {
             VStack(spacing: 12) {
@@ -1189,6 +1194,7 @@ struct TranscriptDetailView: View {
                 .foregroundStyle(.secondary)
             Button("Rebuild") { rebuildTranscript() }
                 .buttonStyle(.bordered)
+                .disabled(isReprocessing)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1198,6 +1204,7 @@ struct TranscriptDetailView: View {
 
     /// Rename the whole speaker (swap on name collision — see `SpeakerReassignment.rename`).
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
+        guard !isReprocessing else { return }
         customRenameTurn = nil
         guard var transcript = richTranscript, let id = turn.speakerId else { return }
         // Link to a voice-library person when the chosen name is already known.
@@ -1208,13 +1215,16 @@ struct TranscriptDetailView: View {
         recomputeSearch()
         // Growth loop (Phase 3): enroll this speaker's voiceprint, then link the
         // resulting (new or existing) library person id onto the label.
+        let revision = context.recordingManager.reprocessingResultsRevision
         Task {
+            guard !isReprocessing else { return }
             guard let personId = await context.recordingManager
                 .enrollVoiceprintOnRename(recording: recording, speakerId: id, name: newName) else {
                 if hasSummary { offerReanalysis = true }
                 return
             }
             await loadKnownPeople()   // refresh rename candidates + name→id map
+            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
             if var t = richTranscript,
                let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
                t.speakerLabels[i].personId != personId {
@@ -1231,12 +1241,17 @@ struct TranscriptDetailView: View {
     /// enrollment path as rename; no-op (and the menu item is hidden) when no
     /// embedding is available.
     private func saveVoice(turn: SpeakerTurn, name: String) {
+        guard !isReprocessing else { return }
         guard let id = turn.speakerId else { return }
+        let revision = context.recordingManager.reprocessingResultsRevision
         Task {
+            guard !isReprocessing else { return }
             guard let personId = await context.recordingManager
                 .enrollVoiceprintOnRename(recording: recording, speakerId: id, name: name) else { return }
+            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
             enrolledSpeakerIds.insert(id)
             await loadKnownPeople()
+            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
             if var t = richTranscript,
                let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
                t.speakerLabels[i].personId != personId {
@@ -1249,6 +1264,7 @@ struct TranscriptDetailView: View {
 
     /// Move this turn (or all of the speaker's segments) to another existing speaker.
     private func reassignTurn(turn: SpeakerTurn, toSpeakerId: String, scope: ReassignScope) {
+        guard !isReprocessing else { return }
         guard var transcript = richTranscript else { return }
         let ids = Set(turn.segments.map(\.id))
         transcript = SpeakerReassignment.apply(.existing(speakerId: toSpeakerId), to: transcript,
@@ -1280,81 +1296,17 @@ struct TranscriptDetailView: View {
     }
 
     private func setMeSpeaker(_ id: String?) {
+        guard !isReprocessing else { return }
         guard var transcript = richTranscript else { return }
         transcript.meSpeakerId = id
         richTranscript = transcript
         saveTranscript(transcript)
     }
 
-    private func runDiarization() async {
-        let receiptContext = await recording.privacyContext()
-        guard !Task.isCancelled else { return }
-        await PrivacyTrace.$context.withValue(receiptContext) {
-            await runDiarizationInRecordingContext()
-        }
-    }
-
-    private func runDiarizationInRecordingContext() async {
-        guard let audioURL = recording.finalizedAudioURL,
-              let transcript = richTranscript else { return }
-        isDiarizing = true
-        defer { isDiarizing = false }
-        do {
-            // Confirm-first: resolve the new clusters against the voice library and
-            // hold for review before committing names (mirrors the fresh-transcription
-            // pipeline). Optimistic mode keeps the silent assign below.
-            if context.appSettings.speakerIdMode == .confirmFirst {
-                let (turns, embeddings) = try await context.recordingManager.localPlugin
-                    .diarizeWithEmbeddings(fileURL: audioURL)
-                guard !turns.isEmpty else {
-                    diarizeError = "No speakers were detected in this recording."
-                    return
-                }
-                // When a hold is armed the review window owns the commit; the viewer
-                // reloads via `speakerReviewCommit`. Otherwise fall through to assign.
-                guard !Task.isCancelled, richTranscript == transcript else { return }
-                if try await context.recordingManager.presentReDiarizeReview(
-                    recording: recording, turns: turns,
-                    embeddings: embeddings, baseTranscript: transcript, validateSource: {
-                        guard richTranscript == transcript else { throw CancellationError() }
-                    }) {
-                    return
-                }
-                guard !Task.isCancelled, richTranscript == transcript else { return }
-                applyDiarization(turns, to: transcript)
-                return
-            }
-
-            let turns = try await context.recordingManager.localPlugin.diarize(fileURL: audioURL)
-            guard !turns.isEmpty else {
-                diarizeError = "No speakers were detected in this recording."
-                return
-            }
-            guard !Task.isCancelled, richTranscript == transcript else { return }
-            applyDiarization(turns, to: transcript)
-        } catch {
-            guard !Task.isCancelled, !(error is CancellationError) else { return }
-            diarizeError = error.localizedDescription
-        }
-    }
-
-    /// Silent (optimistic) commit of a re-diarization onto the viewer's transcript.
-    private func applyDiarization(_ turns: [DiarizedTurn], to transcript: RichTranscript) {
-        let updated = SpeakerAssigner.assign(turns, to: transcript)
-        richTranscript = updated
-        recomputeSearch()
-        if !showSpeakerNames { showSpeakerNames = true }
-        saveTranscript(updated)
-    }
-
-    /// Re-runs the AI pipeline for this recording, then reloads the new insights.
+    /// Every analysis request uses the same durable reprocessing path.
     private func generateSummary() async {
-        guard !isGenerating else { return }
-        isGenerating = true
-        defer { isGenerating = false }
-        await context.recordingManager.retryAIAnalysis(for: recording)
-        await loadInsights()
-        if hasSummary { mode = .summary }
+        guard !isReprocessing else { return }
+        reprocessingOperation = .analysis
     }
 
     private func copyTranscript() {
@@ -1368,12 +1320,14 @@ struct TranscriptDetailView: View {
     }
 
     private func buildChatService() {
+        guard !isReprocessing else { return }
         // Reuse an existing session for this recording so the conversation
         // survives switching recordings and coming back.
-        if let existing = chatStore.session(for: recording.fileURL) {
+        if let existing = chatStore.session(for: recording.fileURL), !existing.isInvalidatedForReprocessing {
             chatService = existing
             return
         }
+        chatStore.remove(for: recording.fileURL)
         let labels = richTranscript?.speakerLabels ?? []
         let service: TranscriptChatService
         if isLive {
@@ -1553,6 +1507,7 @@ struct TranscriptDetailView: View {
     // MARK: - Persistence
 
     private func saveTranscript(_ transcript: RichTranscript) {
+        guard !isReprocessing else { return }
         // Keep processing/review snapshots aware of edits before the disk await.
         recording.richTranscript = transcript
         let store = context.transcriptStore
@@ -1566,11 +1521,17 @@ struct TranscriptDetailView: View {
     }
 
     private func loadInsights() async {
-        insights = (try? await context.insightsStore.load(for: recording)) ?? nil
+        guard context.recordingManager.reprocessingRecoveryReady else { return }
+        let revision = context.recordingManager.reprocessingResultsRevision
+        let loaded = (try? await context.insightsStore.load(for: recording)) ?? nil
+        guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady,
+              revision == context.recordingManager.reprocessingResultsRevision else { return }
+        insights = loaded
         refreshSpokenSummaryAvailability()
     }
 
     private func startSpokenSummary() {
+        guard !isReprocessing else { return }
         guard let insights else { return }
         let service = SpokenSummaryService(
             recording: recording,
@@ -1579,14 +1540,18 @@ struct TranscriptDetailView: View {
             store: spokenSummaryStore
         )
         spokenSummaryService = service
-        Task { await service.generate(insights: insights) }
+        spokenSummaryTask?.cancel()
+        spokenSummaryTask = Task { await service.generate(insights: insights) }
     }
 
     private func playSavedSpokenSummary() async {
+        guard !isReprocessing else { return }
+        let revision = context.recordingManager.reprocessingResultsRevision
         guard let audioURL = recording.spokenSummaryAudioURL,
               let scriptURL = recording.spokenSummaryScriptURL,
               FileManager.default.fileExists(atPath: audioURL.path) else { return }
         let saved = try? await spokenSummaryStore.load(from: scriptURL)
+        guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
         let service = SpokenSummaryService(
             recording: recording,
             appSettings: context.appSettings,
@@ -1608,9 +1573,13 @@ struct TranscriptDetailView: View {
     }
 
     private func saveInsights(_ updated: RecordingInsights) async {
+        guard !isReprocessing else { return }
+        let revision = context.recordingManager.reprocessingResultsRevision
         do {
             try await context.insightsStore.save(updated, for: recording)
-            insights = try await context.insightsStore.load(for: recording)
+            let saved = try await context.insightsStore.load(for: recording)
+            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
+            insights = saved
             if let path = updated.markdownPath {
                 let url = URL(fileURLWithPath: path)
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -1620,6 +1589,7 @@ struct TranscriptDetailView: View {
                                                              destination: .local(provider: .fileSystem))) {
                             // Re-read after receipt I/O so concurrent user edits
                             // aren't replaced using an older in-memory note.
+                            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { throw CancellationError() }
                             let existing = try String(contentsOf: url, encoding: .utf8)
                             let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: updated)
                             try rewritten.write(to: url, atomically: true, encoding: .utf8)
@@ -1646,11 +1616,14 @@ struct TranscriptDetailView: View {
     }
 
     private func loadTranscript() async {
+        guard context.recordingManager.reprocessingRecoveryReady || isCaptureLive else { return }
+        let revision = context.recordingManager.reprocessingResultsRevision
         richTranscript = nil
         loadFailed = false
         insights = nil
         await loadKnownPeople()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
+              revision == context.recordingManager.reprocessingResultsRevision else { return }
 
         // Live recording: nothing on disk yet — the view renders from the
         // in-memory live segments, and chat uses the live provider.
@@ -1660,10 +1633,12 @@ struct TranscriptDetailView: View {
         }
 
         await loadInsights()
+        guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
+              revision == context.recordingManager.reprocessingResultsRevision else { return }
 
         // Restore any in-progress chat session for this recording.
         var resumedChat = false
-        if let existing = chatStore.session(for: recording.fileURL) {
+        if let existing = chatStore.session(for: recording.fileURL), !existing.isInvalidatedForReprocessing {
             chatService = existing
             if !existing.messages.isEmpty { resumedChat = true }
         } else {
@@ -1674,7 +1649,10 @@ struct TranscriptDetailView: View {
             richTranscript = cached
         } else {
             do {
-                richTranscript = try await context.transcriptStore.load(for: recording)
+                let loaded = try await context.transcriptStore.load(for: recording)
+                guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
+              revision == context.recordingManager.reprocessingResultsRevision else { return }
+                richTranscript = loaded
             } catch {
                 if let result = recording.transcription {
                     richTranscript = RichTranscriptBuilder().build(from: result)
@@ -1691,7 +1669,30 @@ struct TranscriptDetailView: View {
         recomputeSearch()
     }
 
+    private func invalidateDerivedWork() {
+        customRenameTurn = nil
+        chatService?.invalidateForReprocessing()
+        chatStore.session(for: recording.fileURL)?.invalidateForReprocessing()
+        chatStore.remove(for: recording.fileURL)
+        chatService = nil
+        spokenSummaryTask?.cancel()
+        spokenSummaryTask = nil
+        spokenSummaryService?.invalidateForReprocessing()
+        spokenSummaryService = nil
+        spokenSummaryPlayer.stop()
+    }
+
+    private func reloadReprocessedResults() async {
+        recording.richTranscript = nil
+        enrolledSpeakerIds = []
+        embeddedSpeakerIds = []
+        offerReanalysis = false
+        await loadTranscript()
+        if assistantOpen && !isReprocessing { buildChatService() }
+    }
+
     private func rebuildTranscript() {
+        guard !isReprocessing else { return }
         guard let result = recording.transcription else { return }
         let built = RichTranscriptBuilder().build(from: result)
         richTranscript = built

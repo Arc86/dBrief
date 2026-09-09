@@ -18,6 +18,24 @@ final class SpokenSummaryService: Identifiable {
     /// `.sheet(isPresented:)` + inner `if let` hits on macOS).
     nonisolated let id = UUID()
 
+    private final class WeakService {
+        weak var value: SpokenSummaryService?
+        init(_ value: SpokenSummaryService) { self.value = value }
+    }
+    private static var activeServices: [WeakService] = []
+
+    static func invalidateForReprocessing(audioURL: URL) {
+        let key = audioURL.standardizedFileURL.resolvingSymlinksInPath()
+        activeServices.removeAll { $0.value == nil }
+        for entry in activeServices {
+            guard let service = entry.value else { continue }
+            let source = service.recording.finalizedAudioURL ?? service.recording.fileURL
+            if source.standardizedFileURL.resolvingSymlinksInPath() == key {
+                service.invalidateForReprocessing()
+            }
+        }
+    }
+
     enum Phase: Equatable {
         case idle
         case rewriting
@@ -43,12 +61,24 @@ final class SpokenSummaryService: Identifiable {
     private var tempAudioURL: URL?
     private var script: String = ""
     private var stateTask: Task<Void, Never>?
+    private var generationTask: Task<Void, Never>?
+    private var invalidated = false
+
+    /// Permanently retire a derivative tied to an earlier result revision.
+    func invalidateForReprocessing() {
+        invalidated = true
+        generationTask?.cancel()
+        generationTask = nil
+        reset()
+    }
 
     init(recording: Recording, appSettings: AppSettings, plugin: LocalAIPluginService?, store: SpokenSummaryStore) {
         self.recording = recording
         self.appSettings = appSettings
         self.plugin = plugin
         self.store = store
+        Self.activeServices.removeAll { $0.value == nil }
+        Self.activeServices.append(WeakService(self))
     }
 
     // MARK: - Pipeline
@@ -56,6 +86,7 @@ final class SpokenSummaryService: Identifiable {
     /// Present an already-saved summary for playback (no temp file, no Save).
     /// Used when the user taps "Play Spoken" on the Summary screen.
     func presentSaved(audioURL: URL, script: String) {
+        guard !invalidated else { return }
         discardTemp()
         self.script = script
         resultIsSaved = true
@@ -63,9 +94,18 @@ final class SpokenSummaryService: Identifiable {
     }
 
     func generate(insights: RecordingInsights) async {
-        let context = await recording.privacyContext()
-        guard !Task.isCancelled else { return }
-        await PrivacyTrace.$context.withValue(context) { await generateInRecordingContext(insights: insights) }
+        guard !invalidated, !Task.isCancelled, generationTask == nil else { return }
+        let task = Task { [weak self] in
+            guard let self, !self.invalidated else { return }
+            let context = await self.recording.privacyContext()
+            guard !self.invalidated, !Task.isCancelled else { return }
+            await PrivacyTrace.$context.withValue(context) { await self.generateInRecordingContext(insights: insights) }
+        }
+        generationTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { task.cancel() }
+        generationTask = nil
     }
 
     private func generateInRecordingContext(insights: RecordingInsights) async {
@@ -74,6 +114,8 @@ final class SpokenSummaryService: Identifiable {
         phase = .rewriting
         do {
             let raw = try await generateScript(insights: insights)
+            try Task.checkCancellation()
+            guard !invalidated else { return }
             let cleaned = SpokenSummaryScript.clean(raw)
             guard !cleaned.isEmpty else {
                 phase = .failed(message: "The AI returned an empty script.")
@@ -106,18 +148,19 @@ final class SpokenSummaryService: Identifiable {
                 model: tts.model,
                 engine: tts.engine
             )
+            try Task.checkCancellation()
+            guard !invalidated else { discardTemp(); return }
             stopObservingModelState()
             phase = .ready(audioURL: outURL, script: cleaned)
         } catch {
             stopObservingModelState()
             discardTemp()
-            phase = .failed(message: error.localizedDescription)
+            if !invalidated && !Task.isCancelled { phase = .failed(message: error.localizedDescription) }
         }
     }
 
     func discard() {
-        discardTemp()
-        phase = .idle
+        invalidateForReprocessing()
     }
 
     func reset() {
@@ -130,39 +173,50 @@ final class SpokenSummaryService: Identifiable {
     // MARK: - Save
 
     func save(for recording: Recording) async throws -> URL {
-        guard recording.id == self.recording.id else { throw SpokenSummaryError.notReady }
+        guard !invalidated, !Task.isCancelled, recording.id == self.recording.id else { throw SpokenSummaryError.notReady }
         let context = await recording.privacyContext()
         return try await PrivacyTrace.$context.withValue(context) { try await saveInRecordingContext() }
     }
 
     private func saveInRecordingContext() async throws -> URL {
-        guard let tempAudioURL,
+        guard !invalidated, !Task.isCancelled, let tempAudioURL,
               let audioURL = recording.spokenSummaryAudioURL,
               let scriptURL = recording.spokenSummaryScriptURL else {
-            phase = .failed(message: SpokenSummaryError.notReady.localizedDescription)
             throw SpokenSummaryError.notReady
         }
-        // Capture as locals (Sendable URLs) for the detached closure.
         let wavURL = tempAudioURL
-        let m4aURL = audioURL
+        let candidateURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbrief-spokensummary-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: candidateURL) }
         do {
             try await PrivacyTrace.perform(.init(stage: .audioExport, data: [.generatedAudio, .text, .metadata],
                                                  destination: .local(provider: .fileSystem))) {
                 try await Task.detached(priority: .userInitiated) {
-                    try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
+                    try SpokenSummaryService.transcodeToM4A(from: wavURL, to: candidateURL)
                 }.value
+                try Task.checkCancellation()
+                guard !invalidated else { throw CancellationError() }
                 let summary = SpokenSummary(
-                    script: script,
-                    audioFileName: audioURL.lastPathComponent,
+                    script: script, audioFileName: audioURL.lastPathComponent,
                     voice: appSettings.ttsVoice.rawValue,
                     language: appSettings.ttsLanguage.rawValue,
-                    engine: appSettings.effectiveAIEngine.rawValue,
-                    generatedAt: Date()
+                    engine: appSettings.effectiveAIEngine.rawValue, generatedAt: Date()
                 )
-                try await store.save(summary, to: scriptURL)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                let scriptData = try encoder.encode(summary)
+                let audioData = try Data(contentsOf: candidateURL)
+                // No await between checking this revision and publishing the pair.
+                try RecordingResultMutation.withWrite(to: audioURL) {
+                    try Task.checkCancellation()
+                    guard !invalidated else { throw CancellationError() }
+                    try audioData.write(to: audioURL, options: .atomic)
+                    try scriptData.write(to: scriptURL, options: .atomic)
+                }
             }
         } catch {
-            phase = .failed(message: error.localizedDescription)
+            if !invalidated { phase = .failed(message: error.localizedDescription) }
             throw error
         }
         discardTemp()

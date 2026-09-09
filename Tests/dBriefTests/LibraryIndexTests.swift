@@ -14,6 +14,25 @@ struct LibraryIndexTests {
         try JSONSerialization.data(withJSONObject: object).write(to: base.appendingPathExtension(ext), options: .atomic)
     }
 
+    @Test func reprocessingCompletionUpdatesRecentViewWithoutChangingMetadata() async throws {
+        let (root, folder, index) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let audio = folder.appendingPathComponent("meeting.wav")
+        try Data([1]).write(to: audio)
+        let base = audio.deletingPathExtension()
+        try write(["generatedTitle": "User title"], base: base, ext: "json")
+        let metadata = try Data(contentsOf: base.appendingPathExtension("json"))
+        _ = try await index.refresh(in: folder)
+        #expect(try await index.smartResults(in: folder, view: .recentlyProcessed).recordings.isEmpty)
+        let stamp = ProcessingCompletionStamp(jobID: UUID(), completedAt: Date())
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(stamp))
+        try write(["completion": object], base: base, ext: "reprocessing.json")
+        #expect(try await index.refresh(in: folder).indexedRecordings == 1)
+        #expect(try await index.smartResults(in: folder, view: .recentlyProcessed).recordings.map(\.generatedTitle) == ["User title"])
+        #expect(try Data(contentsOf: base.appendingPathExtension("json")) == metadata)
+        #expect(RetentionCleanup.isTranscriptFile("meeting.reprocessing.json"))
+    }
+
     @Test func searchesEveryFieldAndPrefersEditedTranscript() async throws {
         let (root, folder, index) = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }

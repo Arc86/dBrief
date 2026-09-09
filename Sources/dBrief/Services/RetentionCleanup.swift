@@ -71,6 +71,7 @@ enum RetentionCleanup {
         ".transcript.json",
         ".richtranscript.json",
         ".insights.json",
+        ".reprocessing.json",
         ".chat.json",
         ".spokensummary.json",
         // The spoken-summary audio is a derived artifact that travels with its

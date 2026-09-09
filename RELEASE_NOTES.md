@@ -1,3 +1,10 @@
+## Beta build 6 — recording reprocessing
+
+- **Retranscribe saved audio.** Use Reprocess → Retranscribe from the transcript viewer or recording menu to correct the spoken language or choose another transcription engine/model without deleting sidecars.
+- **Choose only the work you need.** Re-run AI analysis using the edited transcript, or detect speakers again while preserving transcript words and timings. Settings apply to the selected attempt; AI output language is separate from spoken language.
+- **Keep results until replacements succeed.** Work is staged privately. Stopped and failed attempts stay in Queue & Recovery with Resume and Discard actions, and one previous result set can be restored.
+- **Keep dependent results consistent.** Transcript-only runs mark retained analysis as based on the previous transcript. Replacements and restores invalidate chat and spoken summaries. Reprocessing does not automatically export notes, send integrations, or enroll voices.
+
 ## Unreleased — changes since 1.3.9 (through Beta build 5)
 
 Processing can now resume from saved stages, queued recordings can be managed directly, and integration retries no longer require repeating transcription or analysis.

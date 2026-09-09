@@ -133,7 +133,9 @@ struct RecordingHistoryView: View {
             }
 
             if expanded {
-                if recordings.isEmpty {
+                if !recordingManager.reprocessingRecoveryReady {
+                    ReprocessingRecoveryView().frame(height: 170)
+                } else if recordings.isEmpty {
                     RecordingListEmptyState(title: "No recordings found", message: "Your recent recordings will appear here.", systemImage: "waveform")
                 } else {
                     ScrollView {
@@ -153,10 +155,16 @@ struct RecordingHistoryView: View {
                 miniPlayer
             }
         }
-        .onAppear {
-            loadRecordings()
+        .onAppear { loadRecordings() }
+        .onChange(of: recordingManager.reprocessingRecoveryReady) { _, ready in
+            if ready { loadRecordings() }
+            else { loadTask?.cancel(); loadedSummaries = [:]; recordings = [] }
         }
         .onChange(of: appState.queuedCount) { _, _ in loadRecordings() }
+        .onChange(of: recordingManager.reprocessingResultsRevision) { _, _ in
+            loadedSummaries = [:]
+            loadRecordings()
+        }
     }
 
     private func historyRow(_ item: HistoryItem) -> some View {
@@ -215,33 +223,12 @@ struct RecordingHistoryView: View {
                     }
                 }
 
-                if item.hasTranscript {
-                    actionChip(title: "Re-run AI", systemImage: "arrow.trianglehead.2.clockwise") {
-                        Task {
-                            let recording = Recording(
-                                fileURL: item.url,
-                                fileSize: item.size,
-                                meetingTitleDraft: item.name,
-                                finalizedAudioURL: item.url
-                            )
-                            await recordingManager.retryAIAnalysis(for: recording)
-                        }
-                    }
-                } else {
-                    // Finalized audio but no transcript — e.g. a Stopped transcription.
-                    // Re-transcribe from the existing master (no ffmpeg re-encode).
-                    actionChip(title: "Transcribe", systemImage: "waveform") {
-                        Task {
-                            let recording = Recording(
-                                fileURL: item.url,
-                                fileSize: item.size,
-                                meetingTitleDraft: item.name,
-                                finalizedAudioURL: item.url
-                            )
-                            await recordingManager.retranscribe(for: recording)
-                        }
-                    }
-                }
+                ReprocessingMenu(recording: Recording(
+                    fileURL: item.url, fileSize: item.size,
+                    meetingTitleDraft: item.name, finalizedAudioURL: item.url
+                ), hasTranscript: item.hasTranscript)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
 
                 if item.hasRichTranscript {
                     actionChip(title: "Transcript", systemImage: "doc.text") {
@@ -260,6 +247,7 @@ struct RecordingHistoryView: View {
                 actionChip(title: "Delete", systemImage: "trash", destructive: true) {
                     deleteItem(item)
                 }
+                .disabled(recordingManager.isReprocessing(item.url))
             }
         }
     }
@@ -270,9 +258,19 @@ struct RecordingHistoryView: View {
 
     @MainActor
     private func loadSummary(for item: HistoryItem) {
+        guard recordingManager.reprocessingRecoveryReady else { return }
         guard loadedSummaries[item.id] == nil else { return }
+        let revision = recordingManager.reprocessingResultsRevision
         Task {
+            guard recordingManager.reprocessingRecoveryReady,
+                  revision == recordingManager.reprocessingResultsRevision else { return }
             let base = item.url.deletingPathExtension()
+            if let data = try? Data(contentsOf: base.appendingPathExtension("insights.json")),
+               let insights = try? JSONDecoder().decode(RecordingInsights.self, from: data),
+               !insights.summary.isEmpty {
+                loadedSummaries[item.id] = insights.summary
+                return
+            }
             if let mdURL = item.markdownURL,
                let content = try? String(contentsOf: mdURL, encoding: .utf8) {
                 let lines = content.components(separatedBy: "\n")
@@ -364,9 +362,11 @@ struct RecordingHistoryView: View {
         }
     }
 
-    private static let segmentSuffix = try! NSRegularExpression(pattern: "_part\\d+$")
+    nonisolated private static let segmentSuffix = try! NSRegularExpression(pattern: "_part\\d+$")
 
     private func loadRecordings() {
+        guard recordingManager.reprocessingRecoveryReady else { return }
+        let revision = recordingManager.reprocessingResultsRevision
         // Enumerate + decode metadata sidecars off the main actor; the current
         // list stays visible until the new one arrives. Runs on menu open and
         // after processing, so it must not block the UI with the library size.
@@ -376,7 +376,8 @@ struct RecordingHistoryView: View {
             let loaded = await Task.detached(priority: .userInitiated) {
                 Self.buildHistoryItems(in: folder)
             }.value
-            if Task.isCancelled { return }
+            guard !Task.isCancelled, recordingManager.reprocessingRecoveryReady,
+                  revision == recordingManager.reprocessingResultsRevision else { return }
             recordings = loaded
         }
     }
