@@ -173,6 +173,24 @@ actor YouTubeDownloadService {
         }
     }
 
+    /// Accept only explicit web URLs, never relative paths or yt-dlp options.
+    nonisolated static func validatedVideoURL(_ input: String) throws -> String {
+        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(), ["https", "http"].contains(scheme),
+              let host = components.host, !host.isEmpty, components.url != nil,
+              components.user == nil, components.password == nil,
+              !value.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+            throw YouTubeDownloadError.invalidURL
+        }
+        return value
+    }
+
+    /// Every metadata/download invocation terminates options before its URL.
+    nonisolated static func urlOperand(_ validatedURL: String) -> [String] {
+        ["--", validatedURL]
+    }
+
     // MARK: - YouTube audio download
 
     /// Download the best-quality audio track from the given URL.
@@ -180,13 +198,11 @@ actor YouTubeDownloadService {
     /// Blocks the actor thread for the duration of the download (mirrors the
     /// existing pattern used by RecordingFinalizer / LocalTranscriptionService).
     func downloadAudio(from urlString: String) throws -> (audioURL: URL, title: String) {
+        // Validate before discovery or any helper invocation. Foundation also
+        // accepts relative URLs, which yt-dlp could interpret as command options.
+        let trimmed = try Self.validatedVideoURL(urlString)
         guard let ytdlp = Self.findYtDlp() else {
             throw YouTubeDownloadError.ytDlpNotFound
-        }
-
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, URL(string: trimmed) != nil else {
-            throw YouTubeDownloadError.invalidURL
         }
 
         // Scratch directory for this download
@@ -197,7 +213,7 @@ actor YouTubeDownloadService {
         let runtimeArguments = Self.javaScriptRuntimeArguments()
 
         // Fetch title first (quick), using the same challenge runtime as download.
-        let title = Self.runBlocking(ytdlp, args: runtimeArguments + ["--get-title", "--no-playlist", trimmed])
+        let title = Self.runBlocking(ytdlp, args: runtimeArguments + ["--get-title", "--no-playlist"] + Self.urlOperand(trimmed))
             .flatMap { $0.isEmpty ? nil : $0 } ?? "youtube-video"
 
         // Download best audio as m4a. (The 16 kHz / mono downsample happens in a
@@ -222,7 +238,7 @@ actor YouTubeDownloadService {
             args.append(contentsOf: ["--ffmpeg-location", ffmpeg])
         }
 
-        args.append(trimmed)
+        args.append(contentsOf: Self.urlOperand(trimmed))
 
         Self.log.info("Starting yt-dlp audio download")
 

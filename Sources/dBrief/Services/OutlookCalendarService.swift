@@ -58,7 +58,7 @@ actor OutlookCalendarService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("outlook.timezone=\"UTC\"", forHTTPHeaderField: "Prefer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }

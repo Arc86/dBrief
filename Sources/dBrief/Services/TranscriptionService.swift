@@ -579,7 +579,7 @@ actor TranscriptionService {
         }
         request.timeoutInterval = 10
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranscriptionError.invalidResponse
         }

@@ -245,16 +245,39 @@ extension AppSettings {
     // MARK: Integration Settings Persistence
 
     func saveIntegrationSettings(_ settings: IntegrationSettings) {
-        if let data = try? JSONEncoder().encode(settings) {
-            UserDefaults.standard.set(data, forKey: Keys.integrationSettings)
+        do {
+            let saved = try WebhookSettingsPersistence(secrets: .keychain).encodeForSaving(settings)
+            UserDefaults.standard.set(saved.metadata, forKey: Keys.integrationSettings)
+            isApplyingIntegrationPersistence = true
+            integrations = saved.settings
+            isApplyingIntegrationPersistence = false
+            integrationPersistenceError = nil
+        } catch {
+            integrationPersistenceError = "Integration changes could not be saved because webhook credential storage failed. Your previous saved settings have been retained. Retry credential storage."
+            endpointPersistenceLog.error("Integration settings were not saved because webhook credential storage failed.")
         }
     }
 
-    static func loadIntegrationSettings(forKey key: String) -> IntegrationSettings {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let value = try? JSONDecoder().decode(IntegrationSettings.self, from: data)
-        else { return IntegrationSettings() }
-        return value
+    func retryIntegrationCredentialStorage() {
+        if integrations.webhook.credentialsUnavailable {
+            let result = Self.loadIntegrationSettings(forKey: Keys.integrationSettings)
+            isApplyingIntegrationPersistence = true
+            integrations = result.settings
+            isApplyingIntegrationPersistence = false
+            integrationPersistenceError = result.errorMessage
+        } else {
+            saveIntegrationSettings(integrations)
+        }
+    }
+
+    static func loadIntegrationSettings(forKey key: String) -> WebhookSettingsPersistence.LoadResult {
+        let result = WebhookSettingsPersistence(secrets: .keychain).load(
+            data: UserDefaults.standard.data(forKey: key)
+        )
+        if let sanitized = result.sanitizedData {
+            UserDefaults.standard.set(sanitized, forKey: key)
+        }
+        return result
     }
 
     // MARK: Profiles Persistence

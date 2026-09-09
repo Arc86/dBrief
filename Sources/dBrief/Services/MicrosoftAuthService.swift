@@ -188,7 +188,7 @@ final class MicrosoftAuthService {
             "redirect_uri": Self.redirectURI,
             "code_verifier": codeVerifier,
         ])
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw MicrosoftAuthError.tokenExchangeFailed
         }
@@ -205,7 +205,7 @@ final class MicrosoftAuthService {
             "refresh_token": refreshToken,
             "scope": Self.scopes,
         ])
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw MicrosoftAuthError.refreshFailed
         }
@@ -263,7 +263,7 @@ final class MicrosoftAuthService {
         components.queryItems = [URLQueryItem(name: "$select", value: "displayName,mail,userPrincipalName")]
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             log.error("Failed to fetch account info: HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             throw MicrosoftAuthError.accountInfoFailed

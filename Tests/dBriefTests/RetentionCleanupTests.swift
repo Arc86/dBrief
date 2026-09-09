@@ -101,6 +101,8 @@ struct RetentionCleanupTests {
             try Data(count: 16).write(to: url)
         }
 
+        try writeRetentionOwner(for: audio, segments: [segment.lastPathComponent])
+
         // Push "now" past the cutoff so the just-created files count as old.
         let future = Date().addingTimeInterval(10 * 86_400)
         let result = RetentionCleanup.cleanup(
@@ -110,10 +112,10 @@ struct RetentionCleanupTests {
             now: future
         )
 
-        #expect(result.filesDeleted == 3) // audio + segment + metadata
+        #expect(result.filesDeleted == 2) // audio + segment; metadata proves ownership of surviving transcripts
         #expect(!fm.fileExists(atPath: audio.path))
         #expect(!fm.fileExists(atPath: segment.path))
-        #expect(!fm.fileExists(atPath: metadata.path))
+        #expect(fm.fileExists(atPath: metadata.path))
         // Transcript artifacts are left alone by the recordings policy.
         #expect(fm.fileExists(atPath: markdown.path))
         #expect(fm.fileExists(atPath: rich.path))
@@ -140,6 +142,7 @@ struct RetentionCleanupTests {
             try Data(count: 4).write(to: url)
         }
 
+        try writeRetentionOwner(for: unqueued)
         let result = RetentionCleanup.cleanup(
             category: .recordings,
             olderThanDays: 1,
@@ -147,7 +150,7 @@ struct RetentionCleanupTests {
             now: Date().addingTimeInterval(10 * 86_400)
         )
 
-        #expect(result.filesDeleted == 1)
+        #expect(result.filesDeleted == 2)
         #expect(!fm.fileExists(atPath: unqueued.path))
         for url in queuedFiles {
             #expect(fm.fileExists(atPath: url.path))
@@ -180,6 +183,7 @@ struct RetentionCleanupTests {
             try Data(count: 16).write(to: url)
         }
 
+        try writeRetentionOwner(for: audio, markdown: markdown)
         let future = Date().addingTimeInterval(10 * 86_400)
         let result = RetentionCleanup.cleanup(
             category: .transcripts,
@@ -223,6 +227,7 @@ struct RetentionCleanupTests {
 
         let audio = folder.appendingPathComponent("old.m4a")
         try Data(count: 16).write(to: audio)
+        try writeRetentionOwner(for: audio)
         let missing = fm.temporaryDirectory.appendingPathComponent("retention-missing-\(UUID().uuidString)", isDirectory: true)
 
         let future = Date().addingTimeInterval(10 * 86_400)
@@ -235,6 +240,6 @@ struct RetentionCleanupTests {
             now: future
         )
 
-        #expect(result.filesDeleted == 1)
+        #expect(result.filesDeleted == 2)
     }
 }

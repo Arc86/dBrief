@@ -317,7 +317,7 @@ actor AIService {
         }
         request.timeoutInterval = 10
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request, session: session)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIServiceError.invalidResponse
         }

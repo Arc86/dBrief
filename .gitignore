@@ -32,6 +32,7 @@ DerivedData/
 .superpowers/
 .worktrees/
 .serena/
+.impeccable/
 graphify-out/
 
 # Internal development artifacts (not for the public repo)
@@ -41,3 +42,4 @@ tasks/
 MEMORY_FIXES_SUMMARY.md
 DEVELOPMENT_ROADMAP.md
 monitor_inference.sh
+/security-audit/

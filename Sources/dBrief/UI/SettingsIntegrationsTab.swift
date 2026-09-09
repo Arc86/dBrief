@@ -9,6 +9,7 @@ struct SettingsIntegrationsTab: View {
     var body: some View {
         NavigationStack {
             Form {
+                credentialStorageStatus
                 Section("Integrations") {
                     ForEach(IntegrationDestination.available, id: \.self) { destination in
                         NavigationLink(value: destination) {
@@ -48,6 +49,7 @@ struct SettingsIntegrationsTab: View {
     @ViewBuilder
     private func integrationDetail(_ destination: IntegrationDestination) -> some View {
         Form {
+            credentialStorageStatus
             switch destination {
             case .obsidian:
                 obsidianDetail
@@ -306,6 +308,19 @@ struct SettingsIntegrationsTab: View {
         }
     }
 
+    @ViewBuilder
+    private var credentialStorageStatus: some View {
+        if let message = appSettings.integrationPersistenceError {
+            Section("Credential storage") {
+                Text(message)
+                    .foregroundStyle(.orange)
+                Button("Retry credential storage") {
+                    appSettings.retryIntegrationCredentialStorage()
+                }
+            }
+        }
+    }
+
     private var webhookDetail: some View {
         Section("Configuration") {
             Toggle("Enable Webhook", isOn: binding(
@@ -314,7 +329,7 @@ struct SettingsIntegrationsTab: View {
             ))
 
             if appSettings.integrations.webhook.enabled {
-                TextField("Webhook URL", text: binding(
+                SecureField("Webhook URL", text: binding(
                     { appSettings.integrations.webhook.url },
                     { appSettings.integrations.webhook.url = $0 }
                 ))
@@ -342,7 +357,7 @@ struct SettingsIntegrationsTab: View {
                             { headerValue(index: index).key },
                             { updateHeader(index: index, key: $0, value: headerValue(index: index).value) }
                         ))
-                        TextField("Value", text: binding(
+                        SecureField("Value", text: binding(
                             { headerValue(index: index).value },
                             { updateHeader(index: index, key: headerValue(index: index).key, value: $0) }
                         ))
@@ -376,6 +391,7 @@ struct SettingsIntegrationsTab: View {
                 testButton(for: .webhook)
             }
         }
+        .disabled(appSettings.integrations.webhook.credentialsUnavailable)
     }
 
     private func deliveryFieldsEditor(

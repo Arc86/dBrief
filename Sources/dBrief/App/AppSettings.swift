@@ -177,8 +177,13 @@ final class AppSettings {
         }
     }
 
+    var integrationPersistenceError: String? = nil
+    @ObservationIgnored var isApplyingIntegrationPersistence = false
+
     var integrations: IntegrationSettings {
-        didSet { saveIntegrationSettings(integrations) }
+        didSet {
+            if !isApplyingIntegrationPersistence { saveIntegrationSettings(integrations) }
+        }
     }
 
     var notionToken: String {
@@ -913,7 +918,9 @@ final class AppSettings {
         self.obsidianDefaultFolderRelativePath = defaults.string(
             forKey: Keys.obsidianDefaultFolderRelativePath
         ) ?? ""
-        self.integrations = Self.loadIntegrationSettings(forKey: Keys.integrationSettings)
+        let integrationLoad = Self.loadIntegrationSettings(forKey: Keys.integrationSettings)
+        self.integrations = integrationLoad.settings
+        self.integrationPersistenceError = integrationLoad.errorMessage
         self.notionToken = Self.loadKeychainSecret(for: .notion)
         self.evernoteToken = Self.loadKeychainSecret(for: .evernote)
         self.googleKeepToken = Self.loadKeychainSecret(for: .googleKeep)
