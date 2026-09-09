@@ -227,7 +227,11 @@ struct RecordingHistoryView: View {
                     fileURL: item.url, fileSize: item.size,
                     meetingTitleDraft: item.name, finalizedAudioURL: item.url
                 ), hasTranscript: item.hasTranscript)
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .font(.caption2)
+                .foregroundStyle(.primary)
                 .fixedSize()
 
                 if item.hasRichTranscript {
