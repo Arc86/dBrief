@@ -109,7 +109,7 @@ actor PrivacyHTTPTrace {
     }
 
     /// Called only after local body preparation/preflight. The default transport
-    /// retains URLSession's ordinary redirect policy while observing each hop.
+    /// accepts only same-origin redirects while observing each accepted hop.
     static func upload(_ request: URLRequest, fromFile file: URL, operation: PrivacyOperation,
                        textQueryItems: Set<String> = [], textInBody: Bool = true, modelQueryItem: String? = nil,
                        session: URLSession = .shared, using upload: FileUpload? = nil) async throws -> (Data, URLResponse) {
@@ -141,7 +141,7 @@ actor PrivacyHTTPTrace {
         do {
             try Task.checkCancellation()
             let (bytes, response) = try await session.bytes(for: request,
-                delegate: trace.map { PrivacyHTTPTaskDelegate(trace: $0) })
+                delegate: PrivacyHTTPTaskDelegate(trace: trace))
             return (bytes, response, trace)
         } catch {
             await trace?.finish(error: error)
@@ -149,11 +149,17 @@ actor PrivacyHTTPTrace {
         }
     }
 
+    /// Authentication, calendar and connection-test requests also carry secrets,
+    /// but do not belong to a recording's privacy receipt.
+    static func untracedData(for request: URLRequest, session: URLSession = .shared) async throws -> (Data, URLResponse) {
+        try await session.data(for: request, delegate: PrivacyHTTPTaskDelegate(trace: nil))
+    }
+
     private static func perform(operation: PrivacyOperation, textQueryItems: Set<String> = [],
                                 textInBody: Bool = true, modelQueryItem: String? = nil,
                                 send: @Sendable (PrivacyHTTPTaskDelegate?) async throws -> (Data, URLResponse)) async throws -> (Data, URLResponse) {
         try Task.checkCancellation()
-        guard let context = PrivacyTrace.context else { return try await send(nil) }
+        guard let context = PrivacyTrace.context else { return try await send(PrivacyHTTPTaskDelegate(trace: nil)) }
         let trace = PrivacyHTTPTrace(operation: operation, context: context, textQueryItems: textQueryItems,
                                      textInBody: textInBody, modelQueryItem: modelQueryItem)
         await trace.start()
@@ -170,16 +176,36 @@ actor PrivacyHTTPTrace {
 }
 
 private final class PrivacyHTTPTaskDelegate: NSObject, URLSessionTaskDelegate, Sendable {
-    let trace: PrivacyHTTPTrace
-    init(trace: PrivacyHTTPTrace) { self.trace = trace }
+    let trace: PrivacyHTTPTrace?
+    init(trace: PrivacyHTTPTrace?) { self.trace = trace }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        guard SensitiveRedirectPolicy.allows(from: response.url, to: request.url) else {
+            // Returning nil delivers the original 3xx to normal HTTP error
+            // handling. Never record an attempt at a destination we rejected.
+            completionHandler(nil)
+            return
+        }
         Task {
-            await trace.redirect(to: request)
+            await trace?.redirect(to: request)
             completionHandler(request)
         }
+    }
+}
+
+/// Credentials and request bodies may only follow the original web origin.
+enum SensitiveRedirectPolicy {
+    static func allows(from source: URL?, to destination: URL?) -> Bool {
+        guard let source, let destination,
+              let scheme = source.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              destination.scheme?.lowercased() == scheme,
+              let host = source.host?.lowercased(), !host.isEmpty,
+              destination.host?.lowercased() == host,
+              destination.user == nil, destination.password == nil else { return false }
+        let defaultPort = scheme == "https" ? 443 : 80
+        return (source.port ?? defaultPort) == (destination.port ?? defaultPort)
     }
 }

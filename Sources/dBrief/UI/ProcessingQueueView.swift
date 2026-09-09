@@ -10,18 +10,19 @@ struct ProcessingQueueView: View {
     private enum Item: Equatable {
         case queued(URL)
         case recovery(UUID)
+        case reprocessing(UUID)
     }
 
-    private var editing: Bool { manager.queueMutationInProgress || manager.queuePauseWriteInProgress || manager.queueEnqueueInProgress || manager.recoveryMaintenanceInProgress || manager.processingCancellationInProgress || manager.reviewingIntegrationDeliveries }
-    private var hasPendingWork: Bool { !manager.pendingQueueItems.isEmpty || !manager.recoveryQueueEntries.isEmpty }
+    private var editing: Bool { manager.reprocessingAdmissionBusy || !manager.reprocessingRecoveryReady || manager.queueMutationInProgress || manager.queuePauseWriteInProgress || manager.queueEnqueueInProgress || manager.recoveryMaintenanceInProgress || manager.processingCancellationInProgress || manager.reviewingIntegrationDeliveries }
+    private var hasPendingWork: Bool { !manager.pendingQueueItems.isEmpty || !manager.recoveryQueueEntries.isEmpty || !manager.reprocessingAttempts.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             RecordingListSectionHeader(title: "Queue & Recovery", subtitle: RecordingListPresentation.queueSummary(
-                pending: manager.pendingQueueItems.count, recovery: manager.recoveryQueueEntries.count,
+                pending: manager.pendingQueueItems.count + visibleReprocessing.filter { $0.status == .queued }.count, recovery: manager.recoveryQueueEntries.count + visibleReprocessing.filter { $0.status != .queued }.count,
                 paused: manager.queuePaused, processing: appState.processingJob != nil,
                 hasError: manager.queueLoadError != nil), expanded: $expanded) {
-                if manager.queueLoadError != nil || !manager.recoveryQueueEntries.isEmpty {
+                if manager.queueLoadError != nil || !manager.recoveryQueueEntries.isEmpty || visibleReprocessing.contains(where: { $0.status != .queued }) {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange).accessibilityLabel("Queue needs attention")
                 }
@@ -32,6 +33,7 @@ struct ProcessingQueueView: View {
             }
 
             if expanded {
+                if !manager.reprocessingRecoveryReady { ReprocessingRecoveryView() }
                 if let job = appState.processingJob {
                     HStack(spacing: 8) {
                         Image(systemName: "waveform").foregroundStyle(.secondary)
@@ -57,6 +59,9 @@ struct ProcessingQueueView: View {
                         LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(manager.pendingQueueItems.enumerated()), id: \.element.audioURL) { index, entry in
                                 queuedRow(index: index, audioURL: entry.audioURL, item: entry.item, available: entry.fileSize != nil)
+                            }
+                            ForEach(visibleReprocessing) { attempt in
+                                reprocessingRow(attempt)
                             }
                             if !manager.recoveryQueueEntries.isEmpty {
                                 if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
@@ -92,12 +97,13 @@ struct ProcessingQueueView: View {
                         Task {
                             if await manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
                                 await manager.drainQueueIfNeeded()
+                                await manager.drainReprocessingQueue()
                             }
                         }
                     }
                     .help("Pause prevents the next job from starting; the current job can finish. This setting survives a restart.")
                     Spacer(minLength: 4)
-                    if !manager.pendingQueueItems.isEmpty {
+                    if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
                         Button("Process Queue") { Task { await manager.startProcessingQueue() } }
                             .buttonStyle(.borderedProminent)
                             .disabled(manager.queueLoadError != nil)
@@ -111,6 +117,34 @@ struct ProcessingQueueView: View {
         .task { await manager.refreshWorkQueue() }
         .onChange(of: appState.processingJob?.id) { _, _ in Task { await manager.refreshWorkQueue() } }
         .onChange(of: appState.queuedCount) { _, _ in Task { await manager.refreshWorkQueue() } }
+    }
+
+    private var visibleReprocessing: [ReprocessingStore.Attempt] {
+        manager.reprocessingAttempts.filter { $0.id != appState.processingJob?.reprocessingAttemptID }
+    }
+
+    private func reprocessingRow(_ attempt: ReprocessingStore.Attempt) -> some View {
+        let key = Item.reprocessing(attempt.id)
+        let request = try? JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration)
+        return RecordingListRow(title: request?.title ?? attempt.audioURL.deletingPathExtension().lastPathComponent,
+            expanded: expandedItem == key, toggle: { expandedItem = expandedItem == key ? nil : key }) {
+                Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
+            } metadata: {
+                Text("\(request?.options.operation.title ?? "Reprocessing") · \(attempt.status == .queued ? "Queued" : "Needs attention")")
+                    .font(.caption).foregroundStyle(.secondary)
+            } actions: {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let message = attempt.message { Text(message).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                    HStack {
+                        RecordingListAction(title: "Resume", systemImage: "play") {
+                            Task { await manager.resumeReprocessing(attempt.id) }
+                        }.disabled(appState.processingJob != nil || editing)
+                        RecordingListAction(title: "Discard attempt", systemImage: "minus.circle") {
+                            Task { await manager.discardReprocessing(attempt.id) }
+                        }.disabled(editing)
+                    }
+                }
+            }
     }
 
     private func queuedRow(index: Int, audioURL: URL, item: QueueItem, available: Bool) -> some View {

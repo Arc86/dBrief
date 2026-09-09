@@ -44,6 +44,8 @@ final class AppContext {
             processingJobStore: processingJobStore,
             microsoftAuthService: microsoftAuthService
         )
+        self.recordingManager.transcriptChatStore = transcriptChatStore
+        self.recordingManager.reprocessingRecoveryReady = false
         CallDetectedOverlayController.shared.configure(
             appState: appState,
             appSettings: appSettings,
@@ -84,8 +86,11 @@ final class AppContext {
         log.info("Refreshing permission status...")
         await recordingManager.checkPermissions()
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
-        await recordingManager.recoverInterruptedSessions()
-        await recordingManager.resumeInterruptedProcessingJob()
+        await recordingManager.recoverReprocessingAttempts()
+        if recordingManager.reprocessingRecoveryReady {
+            await recordingManager.recoverInterruptedSessions()
+            await recordingManager.resumeInterruptedProcessingJob()
+        }
         callDetectionService.start(appState: appState, appSettings: appSettings, recordingManager: recordingManager)
         recordingManager.requestNotificationPermission()
         miniPlayer.setUp(appState: appState, recordingManager: recordingManager, appSettings: appSettings)

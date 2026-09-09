@@ -4,9 +4,48 @@ import dBriefWire
 import FoundationModels
 #endif
 
+/// Shared with an actor write so retiring a session also rejects saves already
+/// enqueued before the recording lock was acquired and subsequently released.
+final class RecordingDerivativeValidity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var valid = true
+
+    func invalidate() {
+        lock.lock()
+        defer { lock.unlock() }
+        valid = false
+    }
+
+    func withValidResult<T>(_ body: () throws -> T) throws -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        guard valid else { throw CancellationError() }
+        return try body()
+    }
+}
+
 @MainActor
 @Observable
 final class TranscriptChatService {
+    private final class WeakService {
+        weak var value: TranscriptChatService?
+        init(_ value: TranscriptChatService) { self.value = value }
+    }
+    private static var activeServices: [WeakService] = []
+
+    static func invalidateForReprocessing(audioURL: URL) {
+        let key = audioURL.standardizedFileURL.resolvingSymlinksInPath()
+        activeServices.removeAll { $0.value == nil }
+        for entry in activeServices {
+            guard let service = entry.value, let recording = service.privacyRecording else { continue }
+            let source = recording.finalizedAudioURL ?? recording.fileURL
+            if source.standardizedFileURL.resolvingSymlinksInPath() == key {
+                service.invalidateForReprocessing()
+            }
+        }
+    }
+
+    var isInvalidatedForReprocessing: Bool { invalidated }
     private(set) var messages: [ChatMessage] = []
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
@@ -36,6 +75,26 @@ final class TranscriptChatService {
     /// True when `messages` has changed since the last successful write — lets
     /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
     private var hasUnsavedChanges = false
+    private var invalidated = false
+    private let validity = RecordingDerivativeValidity()
+    private var sendTask: Task<Void, Never>?
+
+    /// Retire this session without deleting the currently published conversation.
+    /// A retired session can never republish derivatives after an attempt unlocks.
+    func invalidateForReprocessing() {
+        invalidated = true
+        validity.invalidate()
+        sendTask?.cancel()
+        saveTask?.cancel()
+        loadTask?.cancel()
+        sendTask = nil
+        saveTask = nil
+        loadTask = nil
+        chatStore = nil
+        persistenceURL = nil
+        hasUnsavedChanges = false
+        isStreaming = false
+    }
 
     init(
         transcriptProvider: @escaping @MainActor () -> String,
@@ -49,6 +108,8 @@ final class TranscriptChatService {
         self.appSettings = appSettings
         self.localPlugin = localPlugin
         self.privacyRecording = recording
+        Self.activeServices.removeAll { $0.value == nil }
+        Self.activeServices.append(WeakService(self))
     }
 
     /// Convenience init for a fixed (completed-recording) transcript.
@@ -69,9 +130,19 @@ final class TranscriptChatService {
     }
 
     func send(_ userText: String) async {
-        guard !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
-        let context = await privacyRecording?.privacyContext()
-        await PrivacyTrace.$context.withValue(context) { await sendInRecordingContext(userText) }
+        guard !invalidated, !Task.isCancelled, sendTask == nil,
+              !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
+        let task = Task { [weak self] in
+            guard let self, !self.invalidated else { return }
+            let context = await self.privacyRecording?.privacyContext()
+            guard !self.invalidated, !Task.isCancelled else { return }
+            await PrivacyTrace.$context.withValue(context) { await self.sendInRecordingContext(userText) }
+        }
+        sendTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { task.cancel() }
+        sendTask = nil
     }
 
     private func sendInRecordingContext(_ userText: String) async {
@@ -81,6 +152,7 @@ final class TranscriptChatService {
         // Make sure any persisted history has been adopted before we append, so
         // sending before the disk load finishes can't drop the saved conversation.
         await loadTask?.value
+        guard !invalidated, !Task.isCancelled else { return }
 
         messages.append(ChatMessage(role: .user, content: trimmed))
 
@@ -89,6 +161,7 @@ final class TranscriptChatService {
         let assistantIdx = messages.count - 1
 
         isStreaming = true
+        defer { isStreaming = false }
         streamingError = nil
 
         let systemPrompt = buildSystemPrompt()
@@ -97,26 +170,33 @@ final class TranscriptChatService {
         do {
             let stream = await buildStream(systemPrompt: systemPrompt, userMessage: fullUserMessage)
             for try await chunk in stream {
+                guard !invalidated, !Task.isCancelled, messages.indices.contains(assistantIdx) else { return }
                 assistantMessage.content += chunk
                 messages[assistantIdx] = assistantMessage
             }
         } catch {
+            guard !invalidated, !Task.isCancelled, messages.indices.contains(assistantIdx) else { return }
             streamingError = error.localizedDescription
             messages[assistantIdx].content = "Error: \(error.localizedDescription)"
         }
 
         isStreaming = false
+        guard !invalidated, !Task.isCancelled else { return }
         scheduleSave()
     }
 
     func clearMessages() {
+        guard !invalidated, !isStreaming else { return }
         messages = []
         streamingError = nil
         // Clearing the conversation removes the on-disk sidecar too.
         saveTask?.cancel()
         hasUnsavedChanges = false
         if let chatStore, let persistenceURL {
-            Task { await chatStore.delete(at: persistenceURL) }
+            saveTask = Task {
+                guard !invalidated, !Task.isCancelled else { return }
+                await chatStore.delete(at: persistenceURL, validity: validity)
+            }
         }
     }
 
@@ -126,6 +206,7 @@ final class TranscriptChatService {
     /// safe to call again (e.g. when a live session finishes and gains a stable
     /// finalized audio URL). Does not itself load; call `loadPersisted()` after.
     func enablePersistence(store: ChatStore, url: URL) {
+        guard !invalidated else { return }
         chatStore = store
         persistenceURL = url
     }
@@ -134,6 +215,7 @@ final class TranscriptChatService {
     /// in `loadTask` so `send()` can await it before appending. Call after
     /// `enablePersistence`.
     func startLoadingPersisted() {
+        guard !invalidated else { return }
         loadTask = Task { await loadPersisted() }
     }
 
@@ -143,7 +225,7 @@ final class TranscriptChatService {
     func loadPersisted() async {
         guard let chatStore, let persistenceURL, messages.isEmpty else { return }
         guard let history = try? await chatStore.load(from: persistenceURL),
-              !history.messages.isEmpty else { return }
+              !history.messages.isEmpty, !invalidated, !Task.isCancelled else { return }
         messages = history.messages
     }
 
@@ -156,9 +238,9 @@ final class TranscriptChatService {
     /// exchange isn't lost when the user quits within the debounce window.
     func flushPendingSave() async {
         saveTask?.cancel()
-        guard hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        guard !invalidated, !Task.isCancelled, hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
         let history = ChatHistory(messages: messages, engine: appSettings.effectiveAIEngine.rawValue)
-        try? await chatStore.save(history, to: persistenceURL)
+        try? await chatStore.save(history, to: persistenceURL, validity: validity)
         hasUnsavedChanges = false
     }
 
@@ -166,16 +248,16 @@ final class TranscriptChatService {
     /// into a single atomic save and snapshots `messages` on the main actor so
     /// the actor write sees a consistent value.
     private func scheduleSave() {
-        guard let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        guard !invalidated, !Task.isCancelled, let chatStore, let persistenceURL, !messages.isEmpty else { return }
         hasUnsavedChanges = true
         let snapshot = messages
         let engine = appSettings.effectiveAIEngine.rawValue
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
+            guard !invalidated, !Task.isCancelled else { return }
             let history = ChatHistory(messages: snapshot, engine: engine)
-            try? await chatStore.save(history, to: persistenceURL)
+            try? await chatStore.save(history, to: persistenceURL, validity: validity)
             hasUnsavedChanges = false
         }
     }

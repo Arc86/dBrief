@@ -71,6 +71,7 @@ enum RetentionCleanup {
         ".transcript.json",
         ".richtranscript.json",
         ".insights.json",
+        ".reprocessing.json",
         ".chat.json",
         ".spokensummary.json",
         // The spoken-summary audio is a derived artifact that travels with its
@@ -111,20 +112,19 @@ enum RetentionCleanup {
             return cleanup(category: category, olderThanDays: days, in: folders, now: now, protectedBases: protectedBases)
         }
         let fm = FileManager.default
+        let ownership = RetentionOwnership(folders: folders, trustedAudio: Set(extraRecordingIDs.keys))
         var candidates: [URL: [URL]] = [:]
         for folder in Set(folders) {
             let protected = queuedRecordingBases(in: folder, fileManager: fm).union(protectedBases)
-            let files: [URL] = {
-                guard let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
-                return enumerator.compactMap { $0 as? URL }
-            }()
+            let files = RetentionOwnership.regularFiles(in: [folder], fileManager: fm)
             for url in files {
                 var receipts: [URL]
                 if url.lastPathComponent.hasSuffix(".privacy.json") {
                     if await store.isPendingReceipt(url) { continue }
+                    guard (try? await store.load(from: url)) != nil else { continue }
                     receipts = [url]
                 }
-                else if audioExtensions.contains(url.pathExtension.lowercased()), !isTranscriptFile(url.lastPathComponent) {
+                else if ownership.audio.contains(url) {
                     receipts = [PrivacyReceiptLifecycle.receiptURL(for: url)]
                     let stem = url.deletingPathExtension().lastPathComponent
                     if let range = stem.range(of: #"_part[0-9]+$"#, options: .regularExpression) {
@@ -149,7 +149,8 @@ enum RetentionCleanup {
                 }
             }
         }
-        var result = cleanup(category: category, olderThanDays: days, in: folders, now: now, protectedBases: protectedBases)
+        var result = cleanup(category: category, olderThanDays: days, in: folders, now: now,
+                             protectedBases: protectedBases, trustedAudio: Set(extraRecordingIDs.keys))
         for (receipt, targets) in candidates {
             do {
                 guard try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: receipt) else { continue }
@@ -179,49 +180,43 @@ enum RetentionCleanup {
         in folders: [URL],
         fileManager: FileManager = .default,
         now: Date = Date(),
-        protectedBases: Set<String> = []
+        protectedBases: Set<String> = [],
+        trustedAudio: Set<URL> = []
     ) -> RetentionCleanupResult {
         guard days >= 0 else { return RetentionCleanupResult() }
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
 
-        var seen = Set<String>()
+        let ownership = RetentionOwnership(folders: folders, trustedAudio: trustedAudio, fileManager: fileManager)
+        let queuedBases = folders.reduce(into: protectedBases) {
+            $0.formUnion(queuedRecordingBases(in: $1, fileManager: fileManager))
+        }
         var result = RetentionCleanupResult()
-
-        for folder in folders {
-            guard seen.insert(folder.standardizedFileURL.path).inserted else { continue }
-            guard fileManager.fileExists(atPath: folder.path) else { continue }
-            // A queue sidecar represents unfinished processing. Protect its master,
-            // metadata, segments, derived transcript outputs, and the queue marker
-            // itself until the durable transcription checkpoint retires that marker.
-            let queuedBases = queuedRecordingBases(in: folder, fileManager: fileManager).union(protectedBases)
-            guard let enumerator = fileManager.enumerator(
-                at: folder,
-                includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-
-            for case let fileURL as URL in enumerator {
-                guard matches(fileURL, category: category) else { continue }
-                if isProtectedByQueue(fileURL, queuedBases: queuedBases) {
-                    continue
-                }
-                let values = try? fileURL.resourceValues(
-                    forKeys: [.isRegularFileKey, .creationDateKey, .fileSizeKey]
-                )
-                guard values?.isRegularFile ?? false else { continue }
-                // Treat a missing creation date as "brand new" so we never delete
-                // files we can't reason about.
-                let created = values?.creationDate ?? .distantFuture
-                guard created < cutoff else { continue }
-
-                let size = Int64(values?.fileSize ?? 0)
-                do {
-                    try fileManager.removeItem(at: fileURL)
-                    result.filesDeleted += 1
-                    result.bytesFreed += size
-                } catch {
-                    log.error("Retention cleanup failed to delete a matching file")
-                }
+        // Linked notes precede insights, and ownership metadata comes last.
+        // Check dependencies again after earlier candidates have been removed.
+        func rank(_ url: URL) -> Int {
+            if url.pathExtension == "md" { return 0 }
+            if url.lastPathComponent.hasSuffix(".insights.json") { return 2 }
+            return ownership.dependencies[url] == nil ? 1 : 3
+        }
+        let candidates = ownership.artifacts.sorted {
+            rank($0) == rank($1) ? $0.path < $1.path : rank($0) < rank($1)
+        }
+        for fileURL in candidates {
+            guard matches(fileURL, category: category),
+                  !isProtectedByQueue(fileURL, queuedBases: queuedBases),
+                  ownership.owners[fileURL]?.contains(where: { isProtectedByQueue($0, queuedBases: queuedBases) }) != true,
+                  RetentionOwnership.isRegularUnlinked(fileURL, fileManager: fileManager) else { continue }
+            if ownership.dependencies[fileURL]?.contains(where: { fileManager.fileExists(atPath: $0.path) }) == true {
+                continue
+            }
+            let values = try? fileURL.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
+            guard let created = values?.creationDate, created < cutoff else { continue }
+            do {
+                try fileManager.removeItem(at: fileURL)
+                result.filesDeleted += 1
+                result.bytesFreed += Int64(values?.fileSize ?? 0)
+            } catch {
+                log.error("Retention cleanup failed to delete an owned file")
             }
         }
 

@@ -64,6 +64,7 @@ final class ProcessingJob {
 
     /// Latest verified durable state. Nil for operations that intentionally
     /// remain outside Phase 5A (for example, manual AI-only retries).
+    var reprocessingAttemptID: UUID?
     var persistedRecord: PersistedProcessingJob?
     /// Retained across a held speaker-review task and independent of capture.
     var privacyContext: PrivacyTrace.Context?

@@ -292,7 +292,7 @@ struct SettingsGeneralTab: View {
 
                 retentionControls(
                     title: "Auto-delete recordings",
-                    help: "Removes audio files older than the selected age from the recordings folder. Transcripts and notes are kept.",
+                    help: "Removes recordings identified by dBrief metadata that are older than the selected age. Unrecognized files, transcripts, and notes are kept.",
                     enabled: $settings.autoDeleteRecordingsEnabled,
                     days: $settings.autoDeleteRecordingsDays,
                     category: .recordings
@@ -300,7 +300,7 @@ struct SettingsGeneralTab: View {
 
                 retentionControls(
                     title: "Auto-delete transcripts",
-                    help: "Removes transcript, insights, and Markdown note files older than the selected age. Audio recordings are kept.",
+                    help: "Removes transcript files and linked Markdown exports identified by dBrief metadata that are older than the selected age. Unrecognized files and audio recordings are kept.",
                     enabled: $settings.autoDeleteTranscriptsEnabled,
                     days: $settings.autoDeleteTranscriptsDays,
                     category: .transcripts

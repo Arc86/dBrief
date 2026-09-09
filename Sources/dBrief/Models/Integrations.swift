@@ -113,16 +113,75 @@ struct OneNoteConfig: Codable, Hashable, Sendable {
 struct WebhookHeader: Codable, Hashable, Sendable, Identifiable {
     var id: UUID = UUID()
     var key: String = ""
+    /// Runtime-only value; legacy decoding is retained solely for migration.
     var value: String = ""
+
+    private enum CodingKeys: String, CodingKey { case id, key, value }
+
+    init(id: UUID = UUID(), key: String = "", value: String = "") {
+        self.id = id
+        self.key = key
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
+        value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(key, forKey: .key)
+    }
 }
 
 struct WebhookConfig: Codable, Hashable, Sendable {
     var enabled: Bool = false
+    var credentialID: UUID = UUID()
+    /// The full destination can contain path/query credentials. Never serialize it.
     var url: String = ""
     var headers: [WebhookHeader] = []
     var timeoutSeconds: Double = 30
     var retryCount: Int = 1
     var fields: [DeliveryField] = [.transcript, .summary, .tags, .sentiment, .meetingInfo]
+    var credentialsUnavailable = false
+    var needsSecretMigration = false
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, credentialID, url, headers, timeoutSeconds, retryCount, fields
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        // Legacy metadata has no credential reference. Its placeholder identity
+        // is replaced with a verified immutable revision during migration.
+        credentialID = try container.decodeIfPresent(UUID.self, forKey: .credentialID)
+            ?? UUID(uuidString: "09364B51-0CAC-42F5-895D-1065815026A5")!
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        headers = try container.decodeIfPresent([WebhookHeader].self, forKey: .headers) ?? []
+        timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 30
+        retryCount = try container.decodeIfPresent(Int.self, forKey: .retryCount) ?? 1
+        fields = try container.decodeIfPresent([DeliveryField].self, forKey: .fields)
+            ?? [.transcript, .summary, .tags, .sentiment, .meetingInfo]
+        needsSecretMigration = !container.contains(.credentialID) || container.contains(.url)
+            || headers.contains { !$0.value.isEmpty }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(credentialID, forKey: .credentialID)
+        try container.encode(headers, forKey: .headers)
+        try container.encode(timeoutSeconds, forKey: .timeoutSeconds)
+        try container.encode(retryCount, forKey: .retryCount)
+        try container.encode(fields, forKey: .fields)
+    }
 }
 
 struct IntegrationSettings: Codable, Hashable, Sendable {

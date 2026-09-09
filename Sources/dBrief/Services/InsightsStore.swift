@@ -73,7 +73,10 @@ actor InsightsStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(insights)
         try Task.checkCancellation()
-        try data.write(to: url, options: .atomic)
+        try RecordingResultMutation.withWrite(to: url) {
+            try Task.checkCancellation()
+            try data.write(to: url, options: .atomic)
+        }
         guard let verified = try read(from: url), verified == insights else {
             throw InsightsStoreError.verificationFailed
         }

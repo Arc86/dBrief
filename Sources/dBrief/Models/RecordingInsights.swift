@@ -20,6 +20,7 @@ struct RecordingInsights: Codable, Sendable, Equatable {
     /// Absolute path of the markdown file generated for this recording, so an
     /// edit knows which `.md` to update. Nil/missing → markdown update skipped.
     var markdownPath: String?
+    var basedOnPreviousTranscript: Bool? = nil
     var modelProvenance: AnalysisModelProvenance? = nil
 
     var completedActions: Set<String> {

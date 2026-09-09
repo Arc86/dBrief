@@ -18,6 +18,9 @@ actor SpokenSummaryStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(summary)
-        try data.write(to: url, options: .atomic)
+        try RecordingResultMutation.withWrite(to: url) {
+            try Task.checkCancellation()
+            try data.write(to: url, options: .atomic)
+        }
     }
 }

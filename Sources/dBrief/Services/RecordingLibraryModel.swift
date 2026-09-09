@@ -40,6 +40,18 @@ final class RecordingLibraryModel {
         selectedView = selectionStore.load()
     }
 
+    /// Prevent an in-flight read from publishing across a result-set replacement.
+    func suspend() {
+        refreshTask?.cancel()
+        queryTask?.cancel()
+        refreshTask = nil
+        queryTask = nil
+        isRefreshing = false
+        isQuerying = false
+        pendingRefresh = false
+        pendingRebuild = false
+    }
+
     func open(_ folder: URL, configuredQueueFolders: [URL] = []) {
         self.configuredQueueFolders = configuredQueueFolders
         guard self.folder != folder else { refresh(); return }

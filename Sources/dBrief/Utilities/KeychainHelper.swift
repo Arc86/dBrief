@@ -46,6 +46,14 @@ enum KeychainHelper {
         try get(account: endpointAccount(for: endpointID))
     }
 
+    static func setWebhookCredentials(_ value: String, credentialID: UUID) throws {
+        try set(value, account: "integration.webhook.\(credentialID.uuidString.lowercased()).credentials")
+    }
+
+    static func webhookCredentials(credentialID: UUID) throws -> String {
+        try get(account: "integration.webhook.\(credentialID.uuidString.lowercased()).credentials")
+    }
+
     private static func set(_ value: String, account: String) throws {
         if value.isEmpty {
             try delete(account: account)

@@ -59,7 +59,7 @@ extension ProcessingPipeline {
         try await lifecycle.removeSnapshots(for: audioURL)
         let base = audioURL.deletingPathExtension()
         var candidates = [audioURL] + ["md", "transcript.json", "richtranscript.json", "insights.json", "chat.json",
-            "spokensummary.json", "spokensummary.m4a", "json", "queue.json"].map { base.appendingPathExtension($0) }
+            "spokensummary.json", "spokensummary.m4a", "reprocessing.json", "json", "queue.json"].map { base.appendingPathExtension($0) }
         let prefix = base.lastPathComponent + "_part"
         let siblings = try fm.contentsOfDirectory(at: base.deletingLastPathComponent(), includingPropertiesForKeys: nil)
         candidates += siblings.filter {

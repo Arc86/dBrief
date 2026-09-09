@@ -378,7 +378,7 @@ actor IntegrationDispatchService {
         request.timeoutInterval = 30
         request.httpBody = Data(html.utf8)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw IntegrationError.executionFailed("OneNote returned invalid response")
         }
@@ -473,7 +473,7 @@ actor IntegrationDispatchService {
         additionalHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw IntegrationError.executionFailed("Request returned invalid response")
         }
@@ -502,7 +502,7 @@ actor IntegrationDispatchService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         extraHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.untracedData(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw IntegrationError.executionFailed("Connection test returned invalid response")
         }
