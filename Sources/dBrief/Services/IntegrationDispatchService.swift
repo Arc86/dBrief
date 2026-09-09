@@ -9,23 +9,36 @@ private let integrationLog = Logger.integrations
 actor IntegrationDispatchService {
     private let webhookPayloadBuilder = WebhookPayloadBuilder()
     private let reminderStore = EKEventStore()
+    private let session: URLSession
+    private let privacyStore: PrivacyReceiptStore
+    private let privacyPendingRoot: URL
 
+    init(session: URLSession = .shared, privacyStore: PrivacyReceiptStore = .shared,
+         privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending")) {
+        self.session = session
+        self.privacyStore = privacyStore
+        self.privacyPendingRoot = privacyPendingRoot
+    }
+
+    /// UI-owned fields/configuration are copied before entering this actor.
+    /// Canonical transcript recovery and Markdown reads happen here off MainActor.
     func prepareBatch(
-        jobID: UUID,
-        recording: Recording,
-        settings: AppSettings,
-        generatedMarkdownURL: URL?,
-        requireTranscript: Bool = false
-    ) async throws -> IntegrationDeliveryBatch {
-        let config = await MainActor.run { settings.integrations }
+        jobID: UUID, recording: RecordingSnapshot, config: IntegrationSettings,
+        generatedMarkdownURL: URL?, requireTranscript: Bool = false
+    ) throws -> IntegrationDeliveryBatch {
+        try Task.checkCancellation()
         let digests = try IntegrationDeliveryBatch.configurationDigests(config)
-        let recordingSnapshot = try await MainActor.run {
-            try RecordingSnapshot(recording: recording, recoverTranscript: !digests.isEmpty)
+        var recordingSnapshot = recording
+        if !digests.isEmpty, recordingSnapshot.transcript == nil,
+           let url = recordingSnapshot.transcriptURL, FileManager.default.fileExists(atPath: url.path) {
+            recordingSnapshot.transcript = try JSONDecoder().decode(TranscriptionResult.self, from: Data(contentsOf: url)).text
         }
+        try Task.checkCancellation()
         if requireTranscript, !digests.isEmpty, recordingSnapshot.transcript == nil {
             throw IntegrationError.missingConfiguration("The saved transcript is unavailable. Restore it before sending integrations.")
         }
         let bundle = try buildBundle(recording: recordingSnapshot, markdownURL: generatedMarkdownURL)
+        try Task.checkCancellation()
         return IntegrationDeliveryBatch(
             id: jobID, recordingID: recordingSnapshot.id, createdAt: Date(), bundle: bundle,
             deliveries: IntegrationDestination.available.compactMap { destination in
@@ -35,30 +48,45 @@ actor IntegrationDispatchService {
         )
     }
 
-    func send(
-        batch: IntegrationDeliveryBatch,
-        delivery: IntegrationDeliveryBatch.Delivery,
-        settings: AppSettings
-    ) async -> IntegrationDispatchResult {
-        let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
+    /// Configuration is frozen for this one attempt. Standalone delivery retries
+    /// establish their own recording scope, even when another job is running.
+    func send(batch: IntegrationDeliveryBatch, delivery: IntegrationDeliveryBatch.Delivery,
+              config: IntegrationSettings) async -> IntegrationDispatchResult {
+        let context: PrivacyTrace.Context
+        if let current = PrivacyTrace.context, current.recordingID == batch.recordingID {
+            context = current
+        } else {
+            let scope = RecordingPrivacyScope(recordingID: batch.recordingID, store: privacyStore,
+                                              pendingRootURL: privacyPendingRoot)
+            context = await scope.context()
+            await scope.bind(to: batch.bundle.audioFileURL)
+            if !PrivacyTrace.coversAllProcessingStages { await privacyStore.noteGap(at: context.receiptURL) }
+        }
+        return await PrivacyTrace.$context.withValue(context) {
+            await sendInRecordingContext(batch: batch, delivery: delivery, config: config)
+        }
+    }
+
+    private func sendInRecordingContext(batch: IntegrationDeliveryBatch, delivery: IntegrationDeliveryBatch.Delivery,
+                                        config: IntegrationSettings) async -> IntegrationDispatchResult {
         let bundle = batch.bundle
         if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
         }
         return await perform(delivery.destination) {
             try Task.checkCancellation()
-            guard try IntegrationDeliveryBatch.configurationDigests(snapshot.config)[delivery.destination]
+            guard try IntegrationDeliveryBatch.configurationDigests(config)[delivery.destination]
                     == delivery.configurationDigest else {
                 throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
             }
             switch delivery.destination {
             case .appleNotes:
-                return try self.sendToAppleNotes(bundle: bundle, config: snapshot.config.appleNotes)
+                return try await self.sendToAppleNotes(bundle: bundle, config: config.appleNotes)
             case .appleReminders:
-                return try await self.sendToAppleReminders(bundle: bundle, config: snapshot.config.appleReminders)
+                return try await self.sendToAppleReminders(bundle: bundle, config: config.appleReminders)
             case .webhook:
                 return try await self.sendToWebhook(recordingID: batch.recordingID, bundle: bundle,
-                                                    config: snapshot.config.webhook, deliveryID: delivery.id)
+                                                    config: config.webhook, deliveryID: delivery.id)
             default:
                 throw IntegrationError.unsupported("This integration is not available")
             }
@@ -132,7 +160,7 @@ actor IntegrationDispatchService {
         )
     }
 
-    private func sendToAppleNotes(bundle: IntegrationContentBundle, config: AppleNotesConfig) throws -> String? {
+    private func sendToAppleNotes(bundle: IntegrationContentBundle, config: AppleNotesConfig) async throws -> String? {
         let content = renderPlainContent(bundle: bundle, fields: config.fields)
         let escapedTitle = escapeAppleScript(bundle.title)
         let escapedBody = escapeAppleScript(content)
@@ -158,36 +186,45 @@ actor IntegrationDispatchService {
             """
         }
 
-        return try runAppleScript(script)
+        return try await PrivacyTrace.perform(.init(stage: .integration, data: [.text, .metadata],
+                                                     destination: .externallyManaged(provider: .appleNotes))) {
+            try runAppleScript(script)
+        }
     }
 
     private func sendToAppleReminders(bundle: IntegrationContentBundle, config: AppleRemindersConfig) async throws -> String? {
         try await assertRemindersPermission()
-        reminderStore.reset()
-        defer { reminderStore.reset() }
-        try Task.checkCancellation()
+        return try await PrivacyTrace.perform(.init(stage: .integration, data: [.text, .metadata],
+                                                     destination: .externallyManaged(provider: .appleReminders))) {
+            // Receipt I/O suspends before this closure. Keep EventKit objects
+            // and the transaction together so another actor call cannot reset
+            // the store while this attempt retains a calendar or staged item.
+            reminderStore.reset()
+            defer { reminderStore.reset() }
+            try Task.checkCancellation()
 
-        let targetCalendar: EKCalendar
-        if !config.listName.isEmpty,
-           let match = reminderStore.calendars(for: .reminder).first(where: { $0.title == config.listName })
-        {
-            targetCalendar = match
-        } else if let fallback = reminderStore.defaultCalendarForNewReminders() {
-            targetCalendar = fallback
-        } else {
-            throw IntegrationError.executionFailed("No reminders list available")
-        }
+            let targetCalendar: EKCalendar
+            if !config.listName.isEmpty,
+               let match = reminderStore.calendars(for: .reminder).first(where: { $0.title == config.listName })
+            {
+                targetCalendar = match
+            } else if let fallback = reminderStore.defaultCalendarForNewReminders() {
+                targetCalendar = fallback
+            } else {
+                throw IntegrationError.executionFailed("No reminders list available")
+            }
 
-        var created: [EKReminder] = []
-        for item in bundle.actionItems where !item.isEmpty {
-            let reminder = EKReminder(eventStore: reminderStore)
-            reminder.title = item
-            reminder.calendar = targetCalendar
-            try reminderStore.save(reminder, commit: false)
-            created.append(reminder)
+            var created: [EKReminder] = []
+            for item in bundle.actionItems where !item.isEmpty {
+                let reminder = EKReminder(eventStore: reminderStore)
+                reminder.title = item
+                reminder.calendar = targetCalendar
+                try reminderStore.save(reminder, commit: false)
+                created.append(reminder)
+            }
+            try reminderStore.commit()
+            return created.map(\.calendarItemIdentifier).joined(separator: ",")
         }
-        try reminderStore.commit()
-        return created.map(\.calendarItemIdentifier).joined(separator: ",")
     }
 
     private func sendToNotion(bundle: IntegrationContentBundle, config: NotionConfig, token: String) async throws -> String? {
@@ -384,14 +421,19 @@ actor IntegrationDispatchService {
         var request = Self.webhookRequest(url: url, config: config,
                                          contentType: payload.contentType, deliveryID: deliveryID)
 
+        var categories: Set<PrivacyOperation.DataCategory> = [.text, .metadata]
+        if case .file = payload.body { categories.insert(.recordingAudio) }
+        let operation = PrivacyOperation(stage: .integration, data: categories,
+                                         destination: .remote(url: url, provider: .webhook))
         let data: Data
         let response: URLResponse
         switch payload.body {
         case .data(let body):
             request.httpBody = body
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await PrivacyHTTPTrace.data(for: request, operation: operation, session: session)
         case .file(let bodyURL):
-            (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyURL)
+            (data, response) = try await PrivacyHTTPTrace.upload(request, fromFile: bodyURL,
+                                                               operation: operation, session: session)
         }
         guard let http = response as? HTTPURLResponse else {
             throw IntegrationError.executionFailed("Webhook returned invalid response")
@@ -634,7 +676,8 @@ struct RecordingSnapshot: Sendable {
     let fileURL: URL
     let duration: TimeInterval
     let generatedTitle: String?
-    let transcript: String?
+    var transcript: String?
+    let transcriptURL: URL?
     let summary: String?
     let actionItems: [String]
     let tags: [String]
@@ -643,24 +686,15 @@ struct RecordingSnapshot: Sendable {
     let calendarEvent: CalendarEvent?
 
     @MainActor
-    init(recording: Recording, recoverTranscript: Bool = false) throws {
+    init(recording: Recording) {
         self.id = recording.id
         self.date = recording.date
         self.fileURL = recording.fileURL
         self.duration = recording.duration
         self.generatedTitle = recording.generatedTitle
-        if let text = recording.transcription?.text {
-            self.transcript = text
-        } else if recoverTranscript,
-                  let url = recording.transcriptURL ?? recording.finalizedAudioURL?
-                    .deletingPathExtension().appendingPathExtension("transcript.json"),
-                  FileManager.default.fileExists(atPath: url.path) {
-            // Markdown recovery can skip materializing earlier outputs in memory.
-            // Reload the canonical transcript; never invoke an ASR model here.
-            self.transcript = try JSONDecoder().decode(TranscriptionResult.self, from: Data(contentsOf: url)).text
-        } else {
-            self.transcript = nil
-        }
+        self.transcript = recording.transcription?.text
+        self.transcriptURL = recording.transcriptURL ?? recording.finalizedAudioURL?
+            .deletingPathExtension().appendingPathExtension("transcript.json")
         self.summary = recording.summary
         self.actionItems = recording.actionItems ?? []
         self.tags = recording.tags ?? []

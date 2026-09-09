@@ -74,7 +74,8 @@ public enum SpeakerMerge {
             segments: segments,
             language: result.language,
             warnings: result.warnings,
-            speakerCount: speakerCount > 0 ? speakerCount : nil
+            speakerCount: speakerCount > 0 ? speakerCount : nil,
+            modelName: result.modelName
         )
     }
 
@@ -96,7 +97,8 @@ public enum SpeakerMerge {
             segments: segments,
             language: result.language,
             warnings: result.warnings,
-            speakerCount: speakerCount > 0 ? speakerCount : nil
+            speakerCount: speakerCount > 0 ? speakerCount : nil,
+            modelName: result.modelName
         )
     }
 
@@ -147,7 +149,8 @@ public enum SpeakerMerge {
             segments: outSegments,
             language: result.language,
             warnings: result.warnings,
-            speakerCount: speakers.isEmpty ? nil : speakers.count
+            speakerCount: speakers.isEmpty ? nil : speakers.count,
+            modelName: result.modelName
         )
     }
 

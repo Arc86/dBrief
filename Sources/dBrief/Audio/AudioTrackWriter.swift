@@ -34,6 +34,7 @@ final class AudioTrackWriter: @unchecked Sendable {
     private let lock = NSLock()
     private var audioFile: AVAudioFile?
     private var _peakLevel: Float = 0
+    private var pendingPeakLevel: Float = 0
     private var droppedCount = 0
     private var buffersWritten: Int64 = 0
     private var framesWritten: Int64 = 0
@@ -46,6 +47,15 @@ final class AudioTrackWriter: @unchecked Sendable {
 
     var peakLevel: Float {
         lock.withLock { _peakLevel }
+    }
+
+    /// The UI ticks more slowly than audio callbacks. Keep the strongest sample
+    /// since the last tick so a following quiet buffer cannot hide a brief peak.
+    func consumePeakLevel() -> Float {
+        lock.withLock {
+            defer { pendingPeakLevel = 0 }
+            return pendingPeakLevel
+        }
     }
 
     /// The format the on-disk file was opened with (nil until the first buffer is
@@ -108,7 +118,8 @@ final class AudioTrackWriter: @unchecked Sendable {
                 return
             }
 
-            _peakLevel = Self.peakLevel(of: buffer)
+            _peakLevel = AudioLevelMeter.peak(in: buffer)
+            pendingPeakLevel = max(pendingPeakLevel, _peakLevel)
             do {
                 try file.write(from: buffer)
                 buffersWritten += 1
@@ -121,17 +132,17 @@ final class AudioTrackWriter: @unchecked Sendable {
     }
 
     func close() {
-        lock.withLock { audioFile = nil }
+        lock.withLock {
+            audioFile = nil
+            _peakLevel = 0
+            pendingPeakLevel = 0
+        }
     }
 
-    private static func peakLevel(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData else { return 0 }
-        let frames = Int(buffer.frameLength)
-        var peak: Float = 0
-        for i in 0..<frames {
-            let sample = abs(channelData[0][i])
-            if sample > peak { peak = sample }
-        }
-        return peak
+    /// Conversion failure prevents part of the captured audio from reaching this
+    /// track. Include it in the existing write-error durability warning/receipt.
+    func recordConversionFailure() {
+        lock.withLock { writeErrorCount += 1 }
     }
+
 }

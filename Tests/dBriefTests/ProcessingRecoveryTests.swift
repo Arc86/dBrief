@@ -5,7 +5,7 @@ import Testing
 @Suite("Processing recovery")
 struct ProcessingRecoveryTests {
     @Test
-    func findsFinalizedMasterByStableRecordingID() throws {
+    func findsFinalizedMasterByStableRecordingID() async throws {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("processing-recovery-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -28,7 +28,7 @@ struct ProcessingRecoveryTests {
         )
         try JSONEncoder().encode(payload).write(to: metadata)
 
-        let match = RecordingManager.findFinalizedRecording(
+        let match = await ProcessingPipeline().findFinalizedRecording(
             recordingID: recordingID,
             in: folder
         )
@@ -37,7 +37,7 @@ struct ProcessingRecoveryTests {
         #expect(match?.metadataURL.resolvingSymlinksInPath().path == metadata.resolvingSymlinksInPath().path)
         #expect(match?.segmentURLs.map { $0.resolvingSymlinksInPath().path }
             == [segment.resolvingSymlinksInPath().path])
-        #expect(RecordingManager.findFinalizedRecording(
+        #expect(await ProcessingPipeline().findFinalizedRecording(
             recordingID: UUID(),
             in: folder
         ) == nil)

@@ -5,7 +5,20 @@ import Foundation
 extension AppSettings {
     func setActiveProfile(_ id: UUID) {
         guard profiles.contains(where: { $0.id == id }) else { return }
+        automaticProfileId = nil
+        automaticProfileRecordingID = nil
         activeProfileId = id
+    }
+
+    func routeAutomatically(to profileID: UUID, for recordingID: UUID) {
+        automaticProfileId = profileID
+        automaticProfileRecordingID = recordingID
+    }
+
+    func finishAutomaticRouting(for recordingID: UUID) {
+        guard automaticProfileRecordingID == recordingID else { return }
+        automaticProfileId = nil
+        automaticProfileRecordingID = nil
     }
 
     @discardableResult
@@ -28,6 +41,10 @@ extension AppSettings {
     func resetDefaultProfileToBuiltInDefaults() {
         guard let index = profiles.firstIndex(where: { $0.preset == .default }) else { return }
         profiles[index].overrides = .empty
+        profiles[index].postRecordingPolicy = .review
+        profiles[index].automaticMatchingEnabled = false
+        profiles[index].matchingRules = []
+        profiles[index].matchPriority = 0
         profiles[index].name = "Default"
         profiles[index].iconSystemName = MeetingProfile.defaultIcon(for: .default)
         profiles[index].iconBackgroundColorKey = MeetingProfile.defaultIconBackgroundColor(for: .default)

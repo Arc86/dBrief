@@ -59,6 +59,7 @@ struct TranscriptDetailView: View {
     private let spokenSummaryStore = SpokenSummaryStore()
     @State private var copied = false
     @State private var showDeleteConfirm = false
+    @State private var showPrivacyReceipt = false
     @State private var isGenerating = false
 
     // Transcript search (finished-recording transcript only)
@@ -135,7 +136,7 @@ struct TranscriptDetailView: View {
     /// The live segment source for this recording: the background job's progressive
     /// segments when processing, otherwise the shared capture live-set.
     private var liveSegments: [LiveTranscriptSegment] {
-        if isProcessingLive { return context.appState.processingJob?.progressiveSegments ?? [] }
+        if isProcessingLive { return context.appState.processingJob?.transcriptPreviewSegments ?? [] }
         return context.appState.liveTranscriptSegments
     }
 
@@ -254,6 +255,9 @@ struct TranscriptDetailView: View {
             }
         }
         .overlay { if isDiarizing { diarizingOverlay } }
+        .sheet(isPresented: $showPrivacyReceipt) {
+            PrivacyReceiptView(recording: recording)
+        }
         .sheet(item: $spokenSummaryService) { service in
             SpokenSummaryPlayerView(
                 service: service,
@@ -460,6 +464,14 @@ struct TranscriptDetailView: View {
             }
             .help("Display options")
 
+            Button {
+                showPrivacyReceipt = true
+            } label: {
+                Label("Privacy receipt", systemImage: "hand.raised")
+            }
+            .help("Show processing evidence for this recording")
+            .accessibilityLabel("Privacy receipt")
+
             Button(role: .destructive) {
                 showDeleteConfirm = true
             } label: {
@@ -508,6 +520,13 @@ struct TranscriptDetailView: View {
             canGenerate: richTranscript != nil,
             onGenerate: { Task { await generateSummary() } },
             onSave: { updated in await saveInsights(updated) },
+            onCopy: { text in await RecordingClipboard.copy(text, for: recording) },
+            onSetActionCompleted: { action, completed in
+                guard let url = recording.insightsSidecarURL else { throw InsightsStoreError.noSidecarURL }
+                let saved = try await context.insightsStore.setActionCompleted(action, completed: completed, at: url)
+                insights = saved
+                return saved
+            },
             hasSpokenSummary: hasSpokenSummary,
             onGenerateSpoken: { startSpokenSummary() },
             onPlaySpoken: { Task { await playSavedSpokenSummary() } }
@@ -1005,6 +1024,10 @@ struct TranscriptDetailView: View {
             Divider()
             liveTranscriptList
         }
+        // This observer must live outside the conditional empty/list branches:
+        // the first arriving segment is what makes the list exist at all.
+        .onChange(of: liveSegments.count, initial: true) { _, _ in refreshLiveTurns() }
+        .onChange(of: recording.transcription?.text) { _, _ in refreshLiveTurns() }
     }
 
     private var liveStatusBanner: some View {
@@ -1053,14 +1076,12 @@ struct TranscriptDetailView: View {
                     // A new finalized segment: refresh the cached turns (a volatile
                     // partial alone leaves the count unchanged, so this doesn't
                     // re-run speakerTurns() on every partial), then scroll.
-                    refreshLiveTurns()
                     if reduceMotion {
                         proxy.scrollTo("live-bottom", anchor: .bottom)
                     } else {
                         withAnimation { proxy.scrollTo("live-bottom", anchor: .bottom) }
                     }
                 }
-                .onAppear { refreshLiveTurns() }
             }
         }
     }
@@ -1068,7 +1089,7 @@ struct TranscriptDetailView: View {
     private var liveWaitingState: some View {
         // Surface live status (e.g. "Preparing language…" while a first-run speech
         // asset downloads) when present; otherwise the default copy.
-        let status = context.appState.liveStatusMessage
+        let status = isCaptureLive ? context.appState.liveStatusMessage : ""
         // The in-progress transcription step carries the determinate progress + ETA
         // (WS3), so a file being processed shows a real bar instead of a bare spinner —
         // including for engines (Parakeet/Apple) that don't stream partial segments.
@@ -1079,8 +1100,13 @@ struct TranscriptDetailView: View {
         let headline: String
         let subtitle: String
         if isProcessingLive {
-            headline = status.isEmpty ? "Transcribing your recording…" : status
-            subtitle = "The transcript appears here as it's processed."
+            if recording.transcription != nil {
+                headline = "No speech found in this recording"
+                subtitle = "Processing can continue without transcript text."
+            } else {
+                headline = inProgressStep?.name ?? "Preparing transcript…"
+                subtitle = "Streaming engines show words as they arrive. Other engines show the transcript when transcription finishes."
+            }
         } else {
             headline = !status.isEmpty
                 ? status
@@ -1261,6 +1287,14 @@ struct TranscriptDetailView: View {
     }
 
     private func runDiarization() async {
+        let receiptContext = await recording.privacyContext()
+        guard !Task.isCancelled else { return }
+        await PrivacyTrace.$context.withValue(receiptContext) {
+            await runDiarizationInRecordingContext()
+        }
+    }
+
+    private func runDiarizationInRecordingContext() async {
         guard let audioURL = recording.finalizedAudioURL,
               let transcript = richTranscript else { return }
         isDiarizing = true
@@ -1278,11 +1312,15 @@ struct TranscriptDetailView: View {
                 }
                 // When a hold is armed the review window owns the commit; the viewer
                 // reloads via `speakerReviewCommit`. Otherwise fall through to assign.
-                if await context.recordingManager.presentReDiarizeReview(
+                guard !Task.isCancelled, richTranscript == transcript else { return }
+                if try await context.recordingManager.presentReDiarizeReview(
                     recording: recording, turns: turns,
-                    embeddings: embeddings, baseTranscript: transcript) {
+                    embeddings: embeddings, baseTranscript: transcript, validateSource: {
+                        guard richTranscript == transcript else { throw CancellationError() }
+                    }) {
                     return
                 }
+                guard !Task.isCancelled, richTranscript == transcript else { return }
                 applyDiarization(turns, to: transcript)
                 return
             }
@@ -1292,8 +1330,10 @@ struct TranscriptDetailView: View {
                 diarizeError = "No speakers were detected in this recording."
                 return
             }
+            guard !Task.isCancelled, richTranscript == transcript else { return }
             applyDiarization(turns, to: transcript)
         } catch {
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
             diarizeError = error.localizedDescription
         }
     }
@@ -1320,10 +1360,8 @@ struct TranscriptDetailView: View {
     private func copyTranscript() {
         guard let transcript = richTranscript else { return }
         let text = transcript.segments.map { $0.text }.joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = true
         Task {
+            copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))
             copied = false
         }
@@ -1347,7 +1385,8 @@ struct TranscriptDetailView: View {
                 transcriptProvider: { Self.liveTranscriptText(appState: appState, recordingID: recordingID) },
                 speakerLabels: labels,
                 appSettings: context.appSettings,
-                localPlugin: context.recordingManager.localPlugin
+                localPlugin: context.recordingManager.localPlugin,
+                recording: recording
             )
         } else {
             let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
@@ -1356,7 +1395,8 @@ struct TranscriptDetailView: View {
                 transcriptText: text,
                 speakerLabels: labels,
                 appSettings: context.appSettings,
-                localPlugin: context.recordingManager.localPlugin
+                localPlugin: context.recordingManager.localPlugin,
+                recording: recording
             )
             // A finished recording has a stable sidecar location: bind it for
             // on-disk persistence and adopt any previously-saved conversation.
@@ -1381,7 +1421,7 @@ struct TranscriptDetailView: View {
         if isCapture {
             segments = appState.liveTranscriptSegments
         } else if appState.processingJob?.recording.id == recordingID {
-            segments = appState.processingJob?.progressiveSegments ?? []
+            segments = appState.processingJob?.transcriptPreviewSegments ?? []
         } else {
             segments = []
         }
@@ -1513,6 +1553,8 @@ struct TranscriptDetailView: View {
     // MARK: - Persistence
 
     private func saveTranscript(_ transcript: RichTranscript) {
+        // Keep processing/review snapshots aware of edits before the disk await.
+        recording.richTranscript = transcript
         let store = context.transcriptStore
         Task {
             do {
@@ -1531,6 +1573,7 @@ struct TranscriptDetailView: View {
     private func startSpokenSummary() {
         guard let insights else { return }
         let service = SpokenSummaryService(
+            recording: recording,
             appSettings: context.appSettings,
             plugin: context.recordingManager.localPlugin,
             store: spokenSummaryStore
@@ -1545,6 +1588,7 @@ struct TranscriptDetailView: View {
               FileManager.default.fileExists(atPath: audioURL.path) else { return }
         let saved = try? await spokenSummaryStore.load(from: scriptURL)
         let service = SpokenSummaryService(
+            recording: recording,
             appSettings: context.appSettings,
             plugin: context.recordingManager.localPlugin,
             store: spokenSummaryStore
@@ -1566,13 +1610,21 @@ struct TranscriptDetailView: View {
     private func saveInsights(_ updated: RecordingInsights) async {
         do {
             try await context.insightsStore.save(updated, for: recording)
-            insights = updated
+            insights = try await context.insightsStore.load(for: recording)
             if let path = updated.markdownPath {
                 let url = URL(fileURLWithPath: path)
-                if FileManager.default.fileExists(atPath: url.path),
-                   let existing = try? String(contentsOf: url, encoding: .utf8) {
-                    let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: updated)
-                    try? rewritten.write(to: url, atomically: true, encoding: .utf8)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let receiptContext = await recording.privacyContext()
+                    try? await PrivacyTrace.$context.withValue(receiptContext) {
+                        try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text, .metadata],
+                                                             destination: .local(provider: .fileSystem))) {
+                            // Re-read after receipt I/O so concurrent user edits
+                            // aren't replaced using an older in-memory note.
+                            let existing = try String(contentsOf: url, encoding: .utf8)
+                            let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: updated)
+                            try rewritten.write(to: url, atomically: true, encoding: .utf8)
+                        }
+                    }
                 }
             }
         } catch {
@@ -1588,7 +1640,9 @@ struct TranscriptDetailView: View {
         knownPersonIds = Dictionary(
             library.people.map { ($0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0.id) },
             uniquingKeysWith: { first, _ in first })
-        embeddedSpeakerIds = context.recordingManager.embeddedSpeakerIds(for: recording)
+        let available = await context.recordingManager.embeddedSpeakerIds(for: recording)
+        guard !Task.isCancelled else { return }
+        embeddedSpeakerIds = available
     }
 
     private func loadTranscript() async {
@@ -1596,6 +1650,7 @@ struct TranscriptDetailView: View {
         loadFailed = false
         insights = nil
         await loadKnownPeople()
+        guard !Task.isCancelled else { return }
 
         // Live recording: nothing on disk yet — the view renders from the
         // in-memory live segments, and chat uses the live provider.

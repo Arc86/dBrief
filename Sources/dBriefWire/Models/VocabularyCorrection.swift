@@ -106,7 +106,8 @@ public enum VocabularyCorrection {
             speakerCount: result.speakerCount,
             inferenceTime: result.inferenceTime,
             diarizationTime: result.diarizationTime,
-            speakerEmbeddings: result.speakerEmbeddings
+            speakerEmbeddings: result.speakerEmbeddings,
+            modelName: result.modelName
         )
     }
 

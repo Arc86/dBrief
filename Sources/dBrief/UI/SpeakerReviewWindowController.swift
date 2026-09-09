@@ -47,8 +47,8 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         isCompleting = false
 
         let root = SpeakerReviewView(
-            onConfirm: { [weak self] edits in self?.complete { await recordingManager.finishReview(confirmed: edits) } },
-            onCancel: { [weak self] in self?.complete { await recordingManager.cancelReview() } }
+            onConfirm: { [weak self] id, edits in self?.complete(sessionID: id) { await recordingManager.finishReview(sessionID: id, confirmed: edits) } },
+            onCancel: { [weak self] id in self?.complete(sessionID: id) { await recordingManager.cancelReview(sessionID: id) } }
         )
         .environment(appState)
         .environment(appSettings)
@@ -103,8 +103,8 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Resolve the review (confirm or cancel): run the resume work, then tear down.
-    private func complete(_ work: @escaping () async -> Void) {
-        guard !isCompleting else { return }
+    private func complete(sessionID: UUID, _ work: @escaping () async -> Void) {
+        guard !isCompleting, appState?.pendingSpeakerReview?.id == sessionID else { return }
         isCompleting = true
         Task { await work() }
         teardown()
@@ -134,7 +134,9 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard !isCompleting else { return }
         isCompleting = true
-        if let recordingManager { Task { await recordingManager.cancelReview() } }
+        if let recordingManager, let id = appState?.pendingSpeakerReview?.id {
+            Task { await recordingManager.cancelReview(sessionID: id) }
+        }
         window = nil
         if let appSettings, !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.accessory)

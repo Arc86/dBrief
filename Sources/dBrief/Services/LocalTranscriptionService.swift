@@ -5,7 +5,7 @@ import os
 
 private let log = Logger.localTranscription
 
-/// On-device transcription using Apple's SFSpeechRecognizer.
+/// Apple-managed transcription; SFSpeechRecognizer may use a server.
 actor LocalTranscriptionService {
     func transcribe(fileURL: URL, language: String) async throws -> TranscriptionResult {
         let preparedURL = try OggOpusConverter.preparedURL(for: fileURL)
@@ -28,33 +28,58 @@ actor LocalTranscriptionService {
         request.requiresOnDeviceRecognition = false
         request.shouldReportPartialResults = true
 
-        let (text, segments) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(String, [TranscriptionResult.Segment]), Error>) in
-            let lock = NSLock()
-            var didResume = false
-            var recognitionTask: SFSpeechRecognitionTask?
-            let timeoutWorkItem = DispatchWorkItem {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !didResume else { return }
-                recognitionTask?.cancel()
-                didResume = true
-                continuation.resume(throwing: LocalTranscriptionError.timeout)
-            }
-
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(
-                deadline: .now() + 10 * 60,
-                execute: timeoutWorkItem
-            )
-
-            recognitionTask = recognizer.recognitionTask(with: request) { result, error in
-                lock.lock()
-                guard !didResume else {
-                    lock.unlock()
-                    return
+        try Task.checkCancellation()
+        let token = await PrivacyTrace.begin(.init(stage: .transcription, data: [.recordingAudio, .metadata],
+                                                   destination: .externallyManaged(provider: .appleSpeech)))
+        let output: (text: String, segments: [TranscriptionResult.Segment], outcome: PrivacyAttempt.Outcome)
+        do {
+            try Task.checkCancellation()
+            output = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(String, [TranscriptionResult.Segment], PrivacyAttempt.Outcome), Error>) in
+                let lock = NSLock()
+                var didResume = false
+                var recognitionTask: SFSpeechRecognitionTask?
+                let timeoutWorkItem = DispatchWorkItem {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    guard !didResume else { return }
+                    recognitionTask?.cancel()
+                    didResume = true
+                    continuation.resume(throwing: LocalTranscriptionError.timeout)
                 }
 
-                if let error {
-                    if let result {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                    deadline: .now() + 10 * 60,
+                    execute: timeoutWorkItem
+                )
+
+                recognitionTask = recognizer.recognitionTask(with: request) { result, error in
+                    lock.lock()
+                    guard !didResume else {
+                        lock.unlock()
+                        return
+                    }
+
+                    if let error {
+                        if let result {
+                            let text = result.bestTranscription.formattedString
+                            let segs = result.bestTranscription.segments.map { seg in
+                                TranscriptionResult.Segment(
+                                    start: seg.timestamp,
+                                    end: seg.timestamp + seg.duration,
+                                    text: seg.substring
+                                )
+                            }
+                            didResume = true
+                            lock.unlock()
+                            timeoutWorkItem.cancel()
+                            continuation.resume(returning: (text, segs, PrivacyTrace.outcome(for: error)))
+                            return
+                        }
+                        didResume = true
+                        lock.unlock()
+                        timeoutWorkItem.cancel()
+                        continuation.resume(throwing: error)
+                    } else if let result, result.isFinal {
                         let text = result.bestTranscription.formattedString
                         let segs = result.bestTranscription.segments.map { seg in
                             TranscriptionResult.Segment(
@@ -66,31 +91,20 @@ actor LocalTranscriptionService {
                         didResume = true
                         lock.unlock()
                         timeoutWorkItem.cancel()
-                        continuation.resume(returning: (text, segs))
-                        return
+                        continuation.resume(returning: (text, segs, .succeeded))
+                    } else {
+                        lock.unlock()
                     }
-                    didResume = true
-                    lock.unlock()
-                    timeoutWorkItem.cancel()
-                    continuation.resume(throwing: error)
-                } else if let result, result.isFinal {
-                    let text = result.bestTranscription.formattedString
-                    let segs = result.bestTranscription.segments.map { seg in
-                        TranscriptionResult.Segment(
-                            start: seg.timestamp,
-                            end: seg.timestamp + seg.duration,
-                            text: seg.substring
-                        )
-                    }
-                    didResume = true
-                    lock.unlock()
-                    timeoutWorkItem.cancel()
-                    continuation.resume(returning: (text, segs))
-                } else {
-                    lock.unlock()
                 }
             }
+        } catch {
+            await PrivacyTrace.finish(token, outcome: PrivacyTrace.outcome(for: error))
+            throw error
         }
+        // Apple may return useful partial text alongside an error. Preserve the
+        // text without turning the recognizer's failure into successful evidence.
+        await PrivacyTrace.finish(token, outcome: output.outcome)
+        let (text, segments, _) = output
         log.info("Local transcription complete: textLength=\(text.count) segments=\(segments.count)")
 
         return TranscriptionResult(

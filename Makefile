@@ -94,6 +94,9 @@ app: build
 	/usr/libexec/PlistBuddy -c "Set :CFBundleName $(DISPLAY_NAME)" "$(CONTENTS)/Info.plist"
 	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $(DISPLAY_NAME)" "$(CONTENTS)/Info.plist"
 	/usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName $(BUNDLE_ID)" "$(CONTENTS)/Info.plist"
+	@if [ "$(BUNDLE_ID)" = "com.dbrief.app.beta" ]; then \
+		python3 scripts/stamp-beta-build.py "$(CONTENTS)/Info.plist" packaging/beta-build-number; \
+	fi
 	@if [ -n "$(STRIP_SU_FEED)" ]; then \
 		echo "Stripping SUFeedURL (dev channel — no auto-update to production)"; \
 		/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$(CONTENTS)/Info.plist" 2>/dev/null || true; \
@@ -243,6 +246,8 @@ run: app
 # UserDefaults, Application Support, and Keychain; its own stable self-signed
 # cert means those permission grants persist across every beta rebuild. Sparkle
 # auto-update is disabled so the beta can't replace itself with a prod release.
+# Every assembly reserves the next tracked packaging/beta-build-number and stamps
+# CFBundleVersion before signing. About shows it separately from the app version.
 beta:
 	$(MAKE) app \
 		BUNDLE_DIR_NAME="dBrief-Beta" \

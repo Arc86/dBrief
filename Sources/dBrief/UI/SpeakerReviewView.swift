@@ -6,8 +6,8 @@ import SwiftUI
 /// `SpeakerReviewWindowController`, which owns the window lifecycle; this view reports
 /// the outcome through `onConfirm` / `onCancel`.
 struct SpeakerReviewView: View {
-    let onConfirm: ([String: ConfirmedSpeaker]) -> Void
-    let onCancel: () -> Void
+    let onConfirm: (UUID, [String: ConfirmedSpeaker]) -> Void
+    let onCancel: (UUID) -> Void
 
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
@@ -16,6 +16,7 @@ struct SpeakerReviewView: View {
 
     /// Edited name + resolved personId per speaker id, seeded from the session.
     @State private var edits: [String: ConfirmedSpeaker] = [:]
+    @State private var editingSessionID: UUID?
     @State private var library = VoiceLibrary()
 
     private var items: [SpeakerReviewItem] { appState.pendingSpeakerReview?.items ?? [] }
@@ -35,13 +36,14 @@ struct SpeakerReviewView: View {
         // Take over the titlebar inset ourselves so the header sits just below the
         // traffic lights instead of leaving SwiftUI's safe-area gap on top of ours.
         .ignoresSafeArea(.container, edges: .top)
-        .task {
-            if edits.isEmpty {
-                for item in items {
-                    edits[item.id] = ConfirmedSpeaker(name: item.proposedName, personId: item.personId)
-                }
-            }
-            library = await recordingManager.loadVoiceLibrary()
+        .task(id: appState.pendingSpeakerReview?.id) {
+            guard let session = appState.pendingSpeakerReview else { return }
+            editingSessionID = session.id
+            edits = Dictionary(session.items.map { ($0.id, ConfirmedSpeaker(name: $0.proposedName, personId: $0.personId)) },
+                               uniquingKeysWith: { first, _ in first })
+            let loaded = await recordingManager.loadVoiceLibrary()
+            guard !Task.isCancelled, appState.pendingSpeakerReview?.id == session.id else { return }
+            library = loaded
         }
     }
 
@@ -99,12 +101,14 @@ struct SpeakerReviewView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button("Cancel", role: .cancel) { onCancel() }
+            Button("Cancel", role: .cancel) {
+                if let id = editingSessionID, appState.pendingSpeakerReview?.id == id { onCancel(id) }
+            }
             Spacer()
             Text("\(items.count) speaker\(items.count == 1 ? "" : "s")")
                 .font(.caption).foregroundStyle(.secondary)
             Button {
-                onConfirm(edits)
+                if let id = editingSessionID, appState.pendingSpeakerReview?.id == id { onConfirm(id, edits) }
             } label: {
                 Label("Confirm", systemImage: "checkmark")
             }

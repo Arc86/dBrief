@@ -14,6 +14,7 @@ final class Recording: Identifiable {
     var actionItems: [String]?
     var tags: [String]?
     var sentiment: String?
+    var analysisModelProvenance: AnalysisModelProvenance?
     var generatedTitle: String?
     /// True when the user typed/kept a custom meeting title (not the default fallback and
     /// not the matched calendar event's title). When true, AI title generation is skipped so
@@ -21,6 +22,9 @@ final class Recording: Identifiable {
     /// via `QueueItem`. Session-only otherwise.
     var titleWasUserProvided: Bool = false
     var associatedApp: String?
+    var profileSelection = RecordingProfileSelection()
+    var awaitingProfileContext = false
+    var privacyScope: RecordingPrivacyScope?
     var obsidianFolderRelativePath: String?
     var meetingTitleDraft: String
     /// Participant names entered by the user, mapped to diarization speakers in order of first appearance.
@@ -85,6 +89,26 @@ final class Recording: Identifiable {
         self.metadataURL = metadataURL
         self.transcriptURL = transcriptURL
         self.finalizationWarnings = finalizationWarnings
+    }
+
+    /// Publish successful analysis fields and their generation origin together.
+    /// Failure/progress/title events cannot relabel retained analysis content.
+    func applyAnalysisField(_ event: ProcessingPipeline.AnalysisEvent, modelName: String?) {
+        var provenance = analysisModelProvenance ?? .init()
+        switch event {
+        case .summary(let value):
+            summary = value
+            provenance.summary = modelName
+        case .actionItems(let values):
+            actionItems = values
+            provenance.actionItems = modelName
+        case .tags(let values, let value):
+            tags = values
+            sentiment = value
+            provenance.tags = modelName
+        default: return
+        }
+        analysisModelProvenance = provenance
     }
 
     var formattedDuration: String {

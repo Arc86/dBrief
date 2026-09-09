@@ -3,6 +3,13 @@ import dBriefWire
 import OSLog
 
 actor TranscriptionService {
+    typealias FileUpload = @Sendable (URLRequest, URL) async throws -> (Data, URLResponse)
+    private let fileUpload: FileUpload?
+
+    init(upload: FileUpload? = nil) {
+        self.fileUpload = upload
+    }
+
     struct ChunkingConfiguration: Sendable {
         var enabled: Bool
         var maxUploadMB: Int
@@ -32,12 +39,24 @@ actor TranscriptionService {
         var values: [String: String]
     }
 
-    private enum ChunkTranscriptionOutcome: Sendable {
+    enum ChunkTranscriptionOutcome: Sendable {
         case success(AudioChunk, TranscriptionResult)
         case failed(AudioChunk, String)
     }
 
     private static let formatCacheKey = "transcriptionResponseFormatCache"
+
+    /// Shares the exact request-model policy with durable transcript provenance.
+    /// A Whisper-ASR server selects its model independently of the client field.
+    nonisolated static func modelName(for endpoint: Endpoint) -> String? {
+        switch endpoint.provider {
+        case .deepgram: return endpoint.modelName.isEmpty ? "nova-3" : endpoint.modelName
+        case .elevenLabs: return endpoint.modelName.isEmpty ? "scribe_v1" : endpoint.modelName
+        case .anthropic, .openAICompatible:
+            guard !endpoint.isWhisperASR, !endpoint.modelName.isEmpty else { return nil }
+            return endpoint.modelName
+        }
+    }
 
     func transcribe(
         fileURL: URL,
@@ -52,6 +71,9 @@ actor TranscriptionService {
             throw TranscriptionError.invalidEndpoint
         }
 
+        try Task.checkCancellation()
+        let policy = RemoteUploadPolicy(endpoint: endpoint, configuredMaxUploadMB: chunking.maxUploadMB)
+        let chunkBytes = try policy.chunkSize(forFileBytes: RemoteUploadPolicy.fileByteCount(fileURL))
         let fileExtension = fileURL.pathExtension.lowercased()
         let contentType = Self.contentType(forExtension: fileExtension)
 
@@ -59,23 +81,20 @@ actor TranscriptionService {
         // no client-side chunking.
         switch endpoint.provider {
         case .deepgram:
-            let audioData = try Data(contentsOf: fileURL)
-            let data = try await sendDeepgramRequest(url: url, endpoint: endpoint, audioData: audioData, contentType: contentType, language: language, diarize: diarize)
+            let data = try await sendDeepgramRequest(url: url, endpoint: endpoint, fileURL: fileURL, contentType: contentType, language: language, diarize: diarize)
             return CloudASRMappers.parseDeepgram(data, language: language.isEmpty ? nil : language)
         case .elevenLabs:
-            let audioData = try Data(contentsOf: fileURL)
-            let data = try await sendElevenLabsRequest(url: url, endpoint: endpoint, audioData: audioData, fileName: fileURL.lastPathComponent, contentType: contentType, language: language, diarize: diarize)
+            let data = try await sendElevenLabsRequest(url: url, endpoint: endpoint, fileURL: fileURL, fileName: fileURL.lastPathComponent, contentType: contentType, language: language, diarize: diarize)
             return CloudASRMappers.parseElevenLabs(data)
         case .anthropic, .openAICompatible:
             break
         }
 
         if endpoint.isWhisperASR {
-            let audioData = try Data(contentsOf: fileURL)
             let data = try await sendRequest(
                 url: url,
                 endpoint: endpoint,
-                fileData: audioData,
+                fileContent: .file(fileURL),
                 fileName: fileURL.lastPathComponent,
                 contentType: contentType,
                 language: language,
@@ -86,18 +105,7 @@ actor TranscriptionService {
             return try parseResponse(data)
         }
 
-        let maxUploadBytes = max(1, chunking.maxUploadMB) * 1_024 * 1_024
-        // Use resourceValues for reliable Int-typed file size; fall back to Int64.max so
-        // an unreadable size always triggers chunking rather than sending a potentially
-        // oversized file (which would result in a 413 from the remote endpoint).
-        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
-            .map { Int64($0) } ?? Int64.max
-        // Always chunk when the file exceeds the upload threshold — chunking.enabled only
-        // controls proactive splitting; it must not block chunking that is required to
-        // stay within endpoint file-size limits.
-        let shouldChunk = fileSize > Int64(maxUploadBytes)
-
-        if shouldChunk {
+        if let maxUploadBytes = chunkBytes {
             return try await transcribeChunked(
                 fileURL: fileURL,
                 endpoint: endpoint,
@@ -226,11 +234,10 @@ actor TranscriptionService {
             language: language,
             initialPrompt: initialPrompt
         )
-        let audioData = try Data(contentsOf: fileURL)
         return try await transcribeWithRetry(
             endpoint: endpoint,
             url: url,
-            fileData: audioData,
+            fileContent: .file(fileURL),
             fileName: fileURL.lastPathComponent,
             contentType: contentType,
             language: language,
@@ -251,13 +258,6 @@ actor TranscriptionService {
         retryCount: Int,
         progress: (@Sendable (ChunkProgress) -> Void)?
     ) async throws -> TranscriptionResult {
-        let resolvedFormat = try await resolveBestResponseFormat(
-            endpoint: endpoint,
-            url: url,
-            language: language,
-            initialPrompt: initialPrompt
-        )
-
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("dbrief-chunks-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -275,17 +275,29 @@ actor TranscriptionService {
             throw TranscriptionError.chunkingFailed("No chunks were produced from audio.")
         }
 
+        for chunk in chunks {
+            guard try RemoteUploadPolicy.fileByteCount(chunk.url) <= Int64(maxUploadBytes) else {
+                throw TranscriptionError.chunkingFailed("An exported chunk exceeds the upload limit. The original audio has been kept.")
+            }
+        }
+
+        let resolvedFormat = try await resolveBestResponseFormat(
+            endpoint: endpoint,
+            url: url,
+            language: language,
+            initialPrompt: initialPrompt
+        )
+
         var outcomes: [ChunkTranscriptionOutcome] = []
         outcomes.reserveCapacity(chunks.count)
 
         for (idx, chunk) in chunks.enumerated() {
             progress?(ChunkProgress(current: idx + 1, total: chunks.count))
             do {
-                let data = try Data(contentsOf: chunk.url)
                 let result = try await transcribeWithRetry(
                     endpoint: endpoint,
                     url: url,
-                    fileData: data,
+                    fileContent: .file(chunk.url),
                     fileName: chunk.url.lastPathComponent,
                     contentType: Self.contentType(forExtension: chunk.url.pathExtension.lowercased()),
                     language: language,
@@ -295,17 +307,18 @@ actor TranscriptionService {
                 )
                 outcomes.append(.success(chunk, result))
             } catch {
+                try rethrowCancellation(error)
                 outcomes.append(.failed(chunk, error.localizedDescription))
             }
         }
 
-        return try mergeChunkOutcomes(outcomes, overlapSeconds: overlapSeconds)
+        return try mergeChunkOutcomes(outcomes)
     }
 
     private func transcribeWithRetry(
         endpoint: Endpoint,
         url: URL,
-        fileData: Data,
+        fileContent: MultipartFormData.Content,
         fileName: String,
         contentType: String,
         language: String,
@@ -315,11 +328,12 @@ actor TranscriptionService {
     ) async throws -> TranscriptionResult {
         var lastError: Error?
         for attempt in 0...retryCount {
+            try Task.checkCancellation()
             do {
                 return try await transcribeWithFormatFallback(
                     endpoint: endpoint,
                     url: url,
-                    fileData: fileData,
+                    fileContent: fileContent,
                     fileName: fileName,
                     contentType: contentType,
                     language: language,
@@ -327,16 +341,24 @@ actor TranscriptionService {
                     preferredFormat: preferredFormat
                 )
             } catch {
+                try rethrowCancellation(error)
                 lastError = error
                 if attempt < retryCount, shouldRetryAfterError(error) {
                     let delay = UInt64(pow(2.0, Double(attempt)) * 1_000_000_000)
-                    try? await Task.sleep(nanoseconds: delay)
+                    try await Task.sleep(nanoseconds: delay)
                 } else {
                     break
                 }
             }
         }
         throw lastError ?? TranscriptionError.invalidResponse
+    }
+
+    private func rethrowCancellation(_ error: Error) throws {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled {
+            throw error
+        }
+        try Task.checkCancellation()
     }
 
     private func shouldRetryAfterError(_ error: Error) -> Bool {
@@ -371,7 +393,7 @@ actor TranscriptionService {
     private func transcribeWithFormatFallback(
         endpoint: Endpoint,
         url: URL,
-        fileData: Data,
+        fileContent: MultipartFormData.Content,
         fileName: String,
         contentType: String,
         language: String,
@@ -383,7 +405,7 @@ actor TranscriptionService {
             preferredData = try await sendRequest(
                 url: url,
                 endpoint: endpoint,
-                fileData: fileData,
+                fileContent: fileContent,
                 fileName: fileName,
                 contentType: contentType,
                 language: language,
@@ -401,7 +423,7 @@ actor TranscriptionService {
                     let data = try await sendRequest(
                         url: url,
                         endpoint: endpoint,
-                        fileData: fileData,
+                        fileContent: fileContent,
                         fileName: fileName,
                         contentType: contentType,
                         language: language,
@@ -451,15 +473,16 @@ actor TranscriptionService {
             || lowercasedBody.contains("invalid")
     }
 
-    private func mergeChunkOutcomes(
-        _ outcomes: [ChunkTranscriptionOutcome],
-        overlapSeconds: Double
+    func mergeChunkOutcomes(
+        _ outcomes: [ChunkTranscriptionOutcome]
     ) throws -> TranscriptionResult {
         var mergedText = ""
         var mergedSegments: [TranscriptionResult.Segment] = []
         var language: String?
         var warnings: [String] = []
         var successCount = 0
+        var previousChunk: AudioChunk?
+        var previousLastSegment: TranscriptionResult.Segment?
 
         for outcome in outcomes {
             switch outcome {
@@ -473,25 +496,46 @@ actor TranscriptionService {
                     language = value
                 }
 
-                let incomingText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let dedupedText = dedupeBoundaryText(previous: mergedText, incoming: incomingText)
-                if !dedupedText.isEmpty {
-                    if !mergedText.isEmpty { mergedText += " " }
-                    mergedText += dedupedText
-                }
-
+                let overlapEnd = min(previousChunk?.endSeconds ?? chunk.startSeconds, chunk.endSeconds)
+                var acceptedSegments: [TranscriptionResult.Segment] = []
+                var droppedPrefix = false
+                var lastSegmentOfThisChunk: TranscriptionResult.Segment?
                 for segment in result.segments {
                     let shifted = TranscriptionResult.Segment(
                         start: segment.start + chunk.startSeconds,
                         end: segment.end + chunk.startSeconds,
                         text: segment.text,
-                        words: segment.words
+                        words: segment.words?.map { word in
+                            .init(word: word.word,
+                                  start: word.start + chunk.startSeconds,
+                                  end: word.end + chunk.startSeconds,
+                                  probability: word.probability,
+                                  speaker: word.speaker)
+                        },
+                        speaker: segment.speaker
                     )
-                    if shouldDropSegment(shifted, existing: mergedSegments, overlapSeconds: overlapSeconds) {
+                    lastSegmentOfThisChunk = shifted
+                    // Only a prefix duplicated across a real audio overlap is
+                    // removable. Repeated speech within a chunk or after the
+                    // overlap must survive, even when its words are identical.
+                    if acceptedSegments.isEmpty,
+                       shouldDropSegment(shifted, previous: previousLastSegment,
+                                         overlapStart: chunk.startSeconds, overlapEnd: overlapEnd) {
+                        droppedPrefix = true
                         continue
                     }
-                    mergedSegments.append(shifted)
+                    acceptedSegments.append(shifted)
                 }
+                let contribution = droppedPrefix
+                    ? acceptedSegments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                    : result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !contribution.isEmpty {
+                    if !mergedText.isEmpty { mergedText += " " }
+                    mergedText += contribution
+                }
+                mergedSegments.append(contentsOf: acceptedSegments)
+                previousChunk = chunk
+                previousLastSegment = lastSegmentOfThisChunk
             }
         }
 
@@ -507,31 +551,17 @@ actor TranscriptionService {
         )
     }
 
-    private func dedupeBoundaryText(previous: String, incoming: String) -> String {
-        let prevWords = previous.split(whereSeparator: \.isWhitespace).map(String.init)
-        let inWords = incoming.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !prevWords.isEmpty, !inWords.isEmpty else { return incoming }
-
-        let maxOverlap = min(12, min(prevWords.count, inWords.count))
-        for overlap in stride(from: maxOverlap, through: 3, by: -1) {
-            let prevTail = prevWords.suffix(overlap).map(normalizedToken)
-            let inHead = inWords.prefix(overlap).map(normalizedToken)
-            if prevTail == inHead {
-                let remainder = inWords.dropFirst(overlap).joined(separator: " ")
-                return remainder
-            }
-        }
-        return incoming
-    }
-
     private func shouldDropSegment(
         _ candidate: TranscriptionResult.Segment,
-        existing: [TranscriptionResult.Segment],
-        overlapSeconds: Double
+        previous: TranscriptionResult.Segment?,
+        overlapStart: Double,
+        overlapEnd: Double
     ) -> Bool {
-        guard let last = existing.last else { return false }
-        guard candidate.start <= last.end + overlapSeconds else { return false }
-        return normalizedToken(candidate.text) == normalizedToken(last.text)
+        guard let previous, overlapEnd > overlapStart,
+              candidate.start < overlapEnd, candidate.end > overlapStart,
+              candidate.start < previous.end, candidate.end > previous.start,
+              candidate.speaker == previous.speaker else { return false }
+        return normalizedToken(candidate.text) == normalizedToken(previous.text)
     }
 
     private func formatSeconds(_ value: Double) -> String {
@@ -622,7 +652,7 @@ actor TranscriptionService {
                 _ = try await sendRequest(
                     url: url,
                     endpoint: endpoint,
-                    fileData: probeData,
+                    fileContent: .data(probeData),
                     fileName: "probe.wav",
                     contentType: "audio/wav",
                     language: language,
@@ -632,6 +662,7 @@ actor TranscriptionService {
                 )
                 return cached
             } catch {
+                try rethrowCancellation(error)
                 invalidateCachedResponseFormat(for: endpoint)
             }
         }
@@ -642,7 +673,7 @@ actor TranscriptionService {
                 _ = try await sendRequest(
                     url: url,
                     endpoint: endpoint,
-                    fileData: probeData,
+                    fileContent: .data(probeData),
                     fileName: "probe.wav",
                     contentType: "audio/wav",
                     language: language,
@@ -653,6 +684,7 @@ actor TranscriptionService {
                 saveCachedResponseFormat(format, for: endpoint)
                 return format
             } catch {
+                try rethrowCancellation(error)
                 continue
             }
         }
@@ -666,7 +698,7 @@ actor TranscriptionService {
     private func sendRequest(
         url: URL,
         endpoint: Endpoint,
-        fileData: Data,
+        fileContent: MultipartFormData.Content,
         fileName: String,
         contentType: String,
         language: String,
@@ -674,14 +706,20 @@ actor TranscriptionService {
         responseFormat: String?,
         timeout: TimeInterval
     ) async throws -> Data {
+        let policy = RemoteUploadPolicy(endpoint: endpoint, configuredMaxUploadMB: Int.max)
+        switch fileContent {
+        case .data(let data): try policy.validateFileByteCount(Int64(data.count))
+        case .file(let fileURL): try policy.validateFileByteCount(RemoteUploadPolicy.fileByteCount(fileURL))
+        }
         var requestURL = url
         var form = MultipartFormData()
-        form.addFile(
-            name: endpoint.isWhisperASR ? "audio_file" : "file",
-            fileName: fileName,
-            contentType: contentType,
-            data: fileData
-        )
+        let fieldName = endpoint.isWhisperASR ? "audio_file" : "file"
+        switch fileContent {
+        case .data(let data):
+            form.addFile(name: fieldName, fileName: fileName, contentType: contentType, data: data)
+        case .file(let fileURL):
+            form.addFile(name: fieldName, fileName: fileName, contentType: contentType, fileURL: fileURL)
+        }
 
         if endpoint.isWhisperASR {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
@@ -724,10 +762,22 @@ actor TranscriptionService {
         if !endpoint.apiKey.isEmpty {
             request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = form.encode()
         request.timeoutInterval = timeout
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let isProbe: Bool
+        switch fileContent {
+        case .data: isProbe = true // Only synthetic format probes use in-memory data.
+        case .file: isProbe = false
+        }
+        var categories: Set<PrivacyOperation.DataCategory> = [isProbe ? .syntheticAudio : .recordingAudio, .metadata]
+        if !initialPrompt.isEmpty { categories.insert(.text) }
+        let operation = PrivacyOperation(stage: isProbe ? .formatProbe : .transcription,
+            data: categories,
+            destination: .remote(url: requestURL, provider: .openAICompatible,
+                model: Self.modelName(for: endpoint)),
+            responseFormat: responseFormat.flatMap(PrivacyOperation.ResponseFormat.init(rawValue:)))
+        let (data, response) = try await uploadMultipart(form, request: request, operation: operation,
+            textQueryItems: endpoint.isWhisperASR ? ["initial_prompt"] : [], textInBody: !endpoint.isWhisperASR)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranscriptionError.invalidResponse
@@ -745,14 +795,16 @@ actor TranscriptionService {
     private func sendDeepgramRequest(
         url: URL,
         endpoint: Endpoint,
-        audioData: Data,
+        fileURL: URL,
         contentType: String,
         language: String,
         diarize: Bool
     ) async throws -> Data {
+        try RemoteUploadPolicy(endpoint: endpoint, configuredMaxUploadMB: Int.max)
+            .validateFileByteCount(RemoteUploadPolicy.fileByteCount(fileURL))
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         var queryItems = [
-            URLQueryItem(name: "model", value: endpoint.modelName.isEmpty ? "nova-3" : endpoint.modelName),
+            URLQueryItem(name: "model", value: Self.modelName(for: endpoint)),
             URLQueryItem(name: "smart_format", value: "true"),
             URLQueryItem(name: "punctuate", value: "true"),
         ]
@@ -770,10 +822,13 @@ actor TranscriptionService {
         if !endpoint.apiKey.isEmpty {
             request.setValue("Token \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = audioData
         request.timeoutInterval = 300
 
-        return try await runDataRequest(request, providerName: "Deepgram")
+        let operation = PrivacyOperation(stage: .transcription, data: [.recordingAudio, .metadata],
+            destination: .remote(url: request.url!, provider: .deepgram,
+                model: Self.modelName(for: endpoint)))
+        return try await runFileRequest(request, fileURL: fileURL, providerName: "Deepgram", operation: operation,
+                                        modelQueryItem: "model")
     }
 
     // MARK: - ElevenLabs
@@ -781,17 +836,19 @@ actor TranscriptionService {
     private func sendElevenLabsRequest(
         url: URL,
         endpoint: Endpoint,
-        audioData: Data,
+        fileURL: URL,
         fileName: String,
         contentType: String,
         language: String,
         diarize: Bool
     ) async throws -> Data {
+        try RemoteUploadPolicy(endpoint: endpoint, configuredMaxUploadMB: Int.max)
+            .validateFileByteCount(RemoteUploadPolicy.fileByteCount(fileURL))
         var form = MultipartFormData()
-        form.addField(name: "model_id", value: endpoint.modelName.isEmpty ? "scribe_v1" : endpoint.modelName)
+        form.addField(name: "model_id", value: Self.modelName(for: endpoint) ?? "scribe_v1")
         if !language.isEmpty { form.addField(name: "language_code", value: language) }
         if diarize { form.addField(name: "diarize", value: "true") }
-        form.addFile(name: "file", fileName: fileName, contentType: contentType, data: audioData)
+        form.addFile(name: "file", fileName: fileName, contentType: contentType, fileURL: fileURL)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -799,14 +856,31 @@ actor TranscriptionService {
         if !endpoint.apiKey.isEmpty {
             request.setValue(endpoint.apiKey, forHTTPHeaderField: "xi-api-key")
         }
-        request.httpBody = form.encode()
         request.timeoutInterval = 300
 
-        return try await runDataRequest(request, providerName: "ElevenLabs")
+        let uploadRequest = request
+        let operation = PrivacyOperation(stage: .transcription, data: [.recordingAudio, .metadata],
+            destination: .remote(url: url, provider: .elevenLabs,
+                model: Self.modelName(for: endpoint)))
+        return try await form.withBodyFile { [self] bodyURL in
+            try await runFileRequest(uploadRequest, fileURL: bodyURL, providerName: "ElevenLabs", operation: operation)
+        }
     }
 
-    private func runDataRequest(_ request: URLRequest, providerName: String) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for: request)
+    private func uploadMultipart(_ form: MultipartFormData, request: URLRequest, operation: PrivacyOperation,
+                                 textQueryItems: Set<String>, textInBody: Bool) async throws -> (Data, URLResponse) {
+        try await form.withBodyFile { [fileUpload] bodyURL in
+            try Task.checkCancellation()
+            return try await PrivacyHTTPTrace.upload(request, fromFile: bodyURL, operation: operation,
+                textQueryItems: textQueryItems, textInBody: textInBody, using: fileUpload)
+        }
+    }
+
+    private func runFileRequest(_ request: URLRequest, fileURL: URL, providerName: String,
+                                operation: PrivacyOperation, modelQueryItem: String? = nil) async throws -> Data {
+        try Task.checkCancellation()
+        let (data, response) = try await PrivacyHTTPTrace.upload(request, fromFile: fileURL,
+            operation: operation, modelQueryItem: modelQueryItem, using: fileUpload)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranscriptionError.invalidResponse
         }

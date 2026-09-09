@@ -44,16 +44,18 @@ actor RecordingFinalizer {
     private let fileManager = FileManager.default
     private let serialization = FinalizationMutex()
     private let processRunner = FFmpegProcessRunner()
+    private let metadataStore: RecordingMetadataStore
+
+    init(metadataStore: RecordingMetadataStore = .shared) { self.metadataStore = metadataStore }
 
     func finalize(
         tracks: CapturedTracks,
-        recording: Recording,
+        snapshot: RecordingFinalizationSnapshot,
         baseFolder: URL,
         segmentationEnabled: Bool = true,
         echoSuppressionEnabled: Bool = true,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> RecordingFinalizationResult {
-        let snapshot = await MainActor.run { Snapshot(recording: recording) }
         return try await serialization.withLock { [self] in
             try await finalizeLocked(
                 tracks: tracks,
@@ -68,7 +70,7 @@ actor RecordingFinalizer {
 
     private func finalizeLocked(
         tracks: CapturedTracks,
-        snapshot: Snapshot,
+        snapshot: RecordingFinalizationSnapshot,
         baseFolder: URL,
         segmentationEnabled: Bool,
         echoSuppressionEnabled: Bool,
@@ -149,10 +151,12 @@ actor RecordingFinalizer {
             meetingTitle: normalizedTitle,
             masterFileName: masterURL.lastPathComponent,
             segmentFileNames: segmentURLs.map(\.lastPathComponent),
-            warnings: warnings
+            warnings: warnings,
+            associatedApp: snapshot.associatedApp
         )
         let metadataURL = masterURL.deletingPathExtension().appendingPathExtension("json")
-        try writeMetadata(metadataPayload, to: metadataURL)
+        try await metadataStore.create(metadataPayload, at: metadataURL)
+        try Task.checkCancellation()
 
         // Raw capture is the last-resort recovery source. Consume it only after
         // both durable outputs exist. If metadata or output validation fails,
@@ -179,11 +183,10 @@ actor RecordingFinalizer {
     /// the source is assumed to already be a finished audio file.
     func importExistingAudio(
         sourceURL: URL,
-        recording: Recording,
+        snapshot: RecordingFinalizationSnapshot,
         baseFolder: URL,
         segmentationEnabled: Bool = true
     ) async throws -> RecordingFinalizationResult {
-        let snapshot = await MainActor.run { Snapshot(recording: recording) }
         return try await serialization.withLock { [self] in
             try await importExistingAudioLocked(
                 sourceURL: sourceURL,
@@ -196,7 +199,7 @@ actor RecordingFinalizer {
 
     private func importExistingAudioLocked(
         sourceURL: URL,
-        snapshot: Snapshot,
+        snapshot: RecordingFinalizationSnapshot,
         baseFolder: URL,
         segmentationEnabled: Bool
     ) async throws -> RecordingFinalizationResult {
@@ -242,10 +245,12 @@ actor RecordingFinalizer {
             meetingTitle: normalizedTitle,
             masterFileName: masterURL.lastPathComponent,
             segmentFileNames: segmentURLs.map(\.lastPathComponent),
-            warnings: warnings
+            warnings: warnings,
+            associatedApp: snapshot.associatedApp
         )
         let metadataURL = masterURL.deletingPathExtension().appendingPathExtension("json")
-        try writeMetadata(metadataPayload, to: metadataURL)
+        try await metadataStore.create(metadataPayload, at: metadataURL)
+        try Task.checkCancellation()
         guard hasNonEmptyFile(masterURL), hasNonEmptyFile(metadataURL) else {
             throw RecordingFinalizerError.ffmpegFailed(
                 "Imported output verification failed; the source was retained."
@@ -266,7 +271,7 @@ actor RecordingFinalizer {
         ffmpegPath: String,
         tracks: CapturedTracks,
         outputURL: URL,
-        snapshot: Snapshot,
+        snapshot: RecordingFinalizationSnapshot,
         echoSuppressionEnabled: Bool,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> FFmpegRunDiagnostics {
@@ -556,12 +561,7 @@ actor RecordingFinalizer {
         return h * 3600 + m * 60 + s
     }
 
-    private func writeMetadata(_ payload: RecordingMetadataPayload, to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(payload)
-        try data.write(to: url, options: .atomic)
-    }
+
 }
 
 enum RecordingFinalizerError: Error, LocalizedError {
@@ -632,10 +632,14 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     /// (empty for sidecars written before these fields existed).
     var participants: [String] = []
     var calendarAttendees: [String] = []
+    /// Retained even when a recording is never queued or processed.
+    var associatedApp: String? = nil
+    var lastProcessingCompletion: ProcessingCompletionStamp? = nil
 
     private enum CodingKeys: String, CodingKey {
         case recordingID, dateISO8601, durationSeconds, meetingTitle, masterFileName
-        case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees
+        case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees, associatedApp
+        case lastProcessingCompletion
     }
 
     init(
@@ -648,7 +652,8 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         warnings: [String],
         generatedTitle: String? = nil,
         participants: [String] = [],
-        calendarAttendees: [String] = []
+        calendarAttendees: [String] = [],
+        associatedApp: String? = nil
     ) {
         self.recordingID = recordingID
         self.dateISO8601 = dateISO8601
@@ -660,6 +665,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         self.generatedTitle = generatedTitle
         self.participants = participants
         self.calendarAttendees = calendarAttendees
+        self.associatedApp = associatedApp
     }
 
     init(from decoder: Decoder) throws {
@@ -674,6 +680,8 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         generatedTitle = try c.decodeIfPresent(String.self, forKey: .generatedTitle)
         participants = try c.decodeIfPresent([String].self, forKey: .participants) ?? []
         calendarAttendees = try c.decodeIfPresent([String].self, forKey: .calendarAttendees) ?? []
+        associatedApp = try c.decodeIfPresent(String.self, forKey: .associatedApp)
+        lastProcessingCompletion = try c.decodeIfPresent(ProcessingCompletionStamp.self, forKey: .lastProcessingCompletion)
     }
 }
 
@@ -728,7 +736,7 @@ private actor FinalizationMutex {
     }
 }
 
-private struct Snapshot: Sendable {
+struct RecordingFinalizationSnapshot: Sendable {
     let id: UUID
     let date: Date
     let duration: TimeInterval

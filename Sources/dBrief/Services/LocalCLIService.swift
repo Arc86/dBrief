@@ -40,13 +40,18 @@ actor LocalCLIService {
         let userPrompt = UnifiedInsightsPrompt.userPrompt(transcript: truncated)
         let fullPrompt = systemPrompt + "\n\n" + userPrompt
 
-        let output = try await Self.runShellCommand(
-            config.command,
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            fullPrompt: fullPrompt,
-            timeoutSeconds: config.timeoutSeconds
-        )
+        guard !config.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw LocalCLIServiceError.emptyCommand
+        }
+        let output = try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
+            return try await Self.runShellCommand(
+                config.command,
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                fullPrompt: fullPrompt,
+                timeoutSeconds: config.timeoutSeconds
+            )
+        }
 
         let cleaned = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { throw LocalCLIServiceError.emptyOutput }

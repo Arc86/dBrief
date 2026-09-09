@@ -37,6 +37,7 @@ public enum MLRequest: Sendable, Codable {
 }
 
 public enum MLEvent: Sendable, Codable {
+    case privacy(MLPrivacyEvent)                // typed execution metadata, never a result
     case state(LocalAIPluginState)              // progress, carried per-channel
     case token(String)                          // one chunk of a streaming response
     case transcriptionResult(TranscriptionResult)
@@ -49,6 +50,22 @@ public enum MLEvent: Sendable, Codable {
     case voidResult                             // terminal success for no-value ops
     case error(WireError)                       // terminal thrown (non-crash) error
     case finished                               // terminal marker for streaming ops
+}
+
+/// No content, paths, speaker identities or arbitrary diagnostic strings cross
+/// this evidence channel. These events are correlated by RequestEnvelope.id.
+public enum MLPrivacyEvent: Sendable, Codable, Equatable {
+    case supported(version: Int)
+    case started(id: UUID, operation: MLPrivacyOperation)
+    case finished(id: UUID, outcome: MLPrivacyOutcome)
+}
+
+public enum MLPrivacyOperation: String, Sendable, Codable {
+    case speakerDiarization, speakerEmbedding
+}
+
+public enum MLPrivacyOutcome: String, Sendable, Codable {
+    case succeeded, failed, cancelled
 }
 
 public struct RequestEnvelope: Sendable, Codable {

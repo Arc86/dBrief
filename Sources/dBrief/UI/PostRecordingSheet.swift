@@ -25,7 +25,78 @@ struct PostRecordingSheet: View {
     /// (Skip / Queue / Process) off the bottom of the menu-bar popover.
     private static let participantsFieldMaxHeight: CGFloat = 168
 
+    private var reviewProfile: MeetingProfile {
+        let id = appState.currentRecording?.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
+            ?? appSettings.activeProfileId
+        return appSettings.profiles.first(where: { $0.id == id })
+            ?? appSettings.profiles.first(where: { $0.id == appSettings.activeProfileId })
+            ?? appSettings.activeProfile
+    }
+
+    private func loadProfileTaskDefaults() {
+        transcribe = reviewProfile.overrides.autoTranscribe ?? appSettings.autoTranscribe
+        summary = reviewProfile.overrides.autoSummary ?? appSettings.autoSummary
+        actionItems = reviewProfile.overrides.autoActionItems ?? appSettings.autoActionItems
+        tags = reviewProfile.overrides.autoTags ?? appSettings.autoTags
+    }
+
+    private var reviewAIEnabled: Bool {
+        reviewProfile.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled
+    }
+
+    private var reviewNeedsTranscriptionEndpoint: Bool {
+        let engine = reviewProfile.overrides.transcriptionEngine ?? appSettings.transcriptionEngine
+        let endpoint = reviewProfile.overrides.transcriptionEndpointId.flatMap { id in
+            appSettings.transcriptionEndpoints.first(where: { $0.id == id })
+        } ?? appSettings.defaultTranscriptionEndpoint
+        return engine == .remoteEndpoint && endpoint == nil
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let recording = appState.currentRecording {
+                if recording.awaitingProfileContext {
+                    Text("Checking calendar context for profile selection…")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if recording.profileSelection.isManual {
+                    Text("Profile chosen manually for this recording")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if let match = recording.profileSelection.match,
+                          let profile = appSettings.profiles.first(where: { $0.id == match.profileID }) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(recording.profileSelection.isDeferred
+                             ? "Suggested: \(profile.name) — waiting for the current job"
+                             : "Selected automatically: \(profile.name)")
+                            .font(.caption.weight(.semibold))
+                        Text(match.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        if recording.profileSelection.isDeferred {
+                            Button("Keep current profile") { recordingManager.cancelPostRecordingAutomation() }
+                        }
+                    }
+                }
+            }
+            if let request = recordingManager.postRecordingAutomation.request {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(request.profile.postRecordingPolicy == .process
+                             ? "Processing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds"
+                             : "Queueing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds")
+                            .font(.headline).monospacedDigit()
+                        Text("Choose Review instead to change this recording’s options.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Review instead") { recordingManager.cancelPostRecordingAutomation() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                .padding(12)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            }
+            reviewContent.disabled(recordingManager.postRecordingAutomation.isPending)
+        }
+    }
+
+    private var reviewContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Success banner
             HStack(alignment: .top, spacing: 10) {
@@ -111,14 +182,14 @@ struct PostRecordingSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)
 
-                if appSettings.effectiveAIProcessingEnabled {
+                if reviewAIEnabled {
                     BrandCheckRow(title: "Generate summary", isOn: $summary, enabled: transcribe)
                     BrandCheckRow(title: "Extract action items", isOn: $actionItems, enabled: transcribe)
                     BrandCheckRow(title: "Analyze tags & sentiment", isOn: $tags, enabled: transcribe)
                 }
             }
 
-            if appSettings.effectiveAIProcessingEnabled {
+            if reviewAIEnabled {
                 if !transcribe {
                     Text("Transcription is required for AI analysis.")
                         .font(.caption)
@@ -130,9 +201,7 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            if appSettings.effectiveTranscriptionEngine == .remoteEndpoint,
-               appSettings.effectiveDefaultTranscriptionEndpoint == nil,
-               transcribe {
+            if reviewNeedsTranscriptionEndpoint && transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
                     .font(.caption)
                     .foregroundStyle(Brand.coral)
@@ -143,10 +212,12 @@ struct PostRecordingSheet: View {
 
                 ObsidianFolderPicker(
                     title: "Obsidian output folder",
-                    currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
+                    currentRelativePath: recording.obsidianFolderRelativePath
+                        ?? reviewProfile.overrides.obsidianDefaultFolderRelativePath
+                        ?? appSettings.obsidianDefaultFolderRelativePath
                 ) { relativePath in
                     recording.obsidianFolderRelativePath = relativePath
-                    if appSettings.activeProfile.isProtectedDefault {
+                    if reviewProfile.isProtectedDefault {
                         appSettings.obsidianDefaultFolderRelativePath = relativePath
                     }
                 }
@@ -249,10 +320,7 @@ struct PostRecordingSheet: View {
         .disabled(recordingManager.postRecordingAction.isBusy)
         .padding(.vertical, 4)
         .onAppear {
-            transcribe = appSettings.effectiveAutoTranscribe
-            summary = appSettings.effectiveAutoSummary
-            actionItems = appSettings.effectiveAutoActionItems
-            tags = appSettings.effectiveAutoTags
+            loadProfileTaskDefaults()
             if let recording = appState.currentRecording {
                 let existing = recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 meetingTitle = existing.isEmpty ? fallbackMeetingTitle(recording: recording) : existing
@@ -268,12 +336,23 @@ struct PostRecordingSheet: View {
             }
         }
         .onChange(of: appState.currentRecording?.calendarEvent?.id) { _, _ in
+            defer { recordingManager.refreshPostRecordingProfileSelection() }
             // Reactive pre-fill: the async candidate lookup set the best match after the sheet
             // appeared. Auto-fill is guarded; an explicit picker pick is handled in selectCalendarEvent.
             guard !recordingManager.postRecordingAction.isBusy,
                   let recording = appState.currentRecording,
                   let event = recording.calendarEvent else { return }
             applyCalendarEvent(event, to: recording)
+        }
+        .onChange(of: meetingTitle) { _, title in
+            guard !recordingManager.postRecordingAction.isBusy,
+                  let recording = appState.currentRecording else { return }
+            recording.meetingTitleDraft = title
+            recordingManager.refreshPostRecordingProfileSelection()
+        }
+        .onChange(of: reviewProfile.id) { _, _ in
+            guard !recordingManager.postRecordingAction.isBusy else { return }
+            loadProfileTaskDefaults()
         }
     }
 
@@ -347,9 +426,9 @@ struct PostRecordingSheet: View {
         Menu {
             ForEach(appSettings.profiles) { p in
                 Button {
-                    appSettings.setActiveProfile(p.id)
+                    recordingManager.selectPostRecordingProfile(p.id)
                 } label: {
-                    if p.id == appSettings.activeProfileId {
+                    if p.id == reviewProfile.id {
                         Label(p.name, systemImage: "checkmark")
                     } else {
                         Text(p.name)
@@ -361,7 +440,7 @@ struct PostRecordingSheet: View {
                 Text("Profile:")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Text(appSettings.activeProfile.name)
+                Text(reviewProfile.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                 Image(systemName: "chevron.up.chevron.down")
@@ -378,13 +457,13 @@ struct PostRecordingSheet: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .disabled(appState.processingJob != nil)
+        .help(appState.processingJob == nil ? "Choose a profile for this recording" : "Profile changes wait for the current job to finish")
     }
 
     private var processDisabled: Bool {
         recordingManager.postRecordingAction.isBusy || sanitizedMeetingTitle.isEmpty
-            || (transcribe
-                && appSettings.effectiveTranscriptionEngine == .remoteEndpoint
-                && appSettings.effectiveDefaultTranscriptionEndpoint == nil)
+            || (transcribe && reviewNeedsTranscriptionEndpoint)
     }
 
     /// Participant entry as removable pills plus an inline "Add name…" field.

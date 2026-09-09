@@ -38,6 +38,23 @@ final class ProcessingJob {
     /// reserved for a concurrently-active capture's live preview.
     var progressiveSegments: [LiveTranscriptSegment] = []
 
+    /// Once transcription completes, keep its authoritative output visible while
+    /// speaker/analysis/export work continues, including non-streaming engines.
+    var transcriptPreviewSegments: [LiveTranscriptSegment] {
+        guard let result = recording.transcription else { return progressiveSegments }
+        if !result.segments.isEmpty {
+            return result.segments.map { .init(start: $0.start, end: $0.end, text: $0.text, speaker: $0.speaker) }
+        }
+        guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        return [.init(start: 0, end: recording.duration, text: result.text)]
+    }
+
+    var transcriptButtonTitle: String? {
+        if recording.transcription != nil { return "View Transcript" }
+        if !progressiveSegments.isEmpty { return "Live Transcript" }
+        return transcriptionStartedAt == nil ? nil : "Transcription Progress"
+    }
+
     /// When actual transcription (not model download/load) began, used to drive the
     /// live progress/ETA estimate. Set on the engine's first "transcribing" signal
     /// (or at call time for engines with no in-app download phase), and cleared when
@@ -48,6 +65,12 @@ final class ProcessingJob {
     /// Latest verified durable state. Nil for operations that intentionally
     /// remain outside Phase 5A (for example, manual AI-only retries).
     var persistedRecord: PersistedProcessingJob?
+    /// Retained across a held speaker-review task and independent of capture.
+    var privacyContext: PrivacyTrace.Context?
+    /// A resumed partial journal cannot establish whether skipped earlier work
+    /// had warnings. A saved delivery batch may carry its own clean provenance.
+    var observesProcessingFromStart = true
+    var successfulCompletion: ProcessingCompletionStamp?
 
     init(id: UUID = UUID(), recording: Recording, queuedAudioURL: URL? = nil) {
         self.id = id

@@ -21,17 +21,14 @@ enum ParakeetError: LocalizedError {
 
 actor ParakeetTranscriptionService {
 
-    nonisolated let stateStream: AsyncStream<LocalAIPluginState>
-    private let stateContinuation: AsyncStream<LocalAIPluginState>.Continuation
+    private let fallbackStateHandler: MLProgress.Sink
+    nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
 
     private var loadedVariant: String?
     private var asrManager: AsrManager?
 
-    init() {
-        var continuation: AsyncStream<LocalAIPluginState>.Continuation!
-        self.stateStream = AsyncStream<LocalAIPluginState> { continuation = $0 }
-        self.stateContinuation = continuation
-        continuation.yield(.idle)
+    init(stateHandler: @escaping MLProgress.Sink = { _ in }) {
+        self.fallbackStateHandler = stateHandler
     }
 
     // MARK: - Public
@@ -45,7 +42,7 @@ actor ParakeetTranscriptionService {
         language: String?,
         modelVariant: String
     ) async throws -> (result: dBriefWire.TranscriptionResult, samples: [Float]?) {
-        defer { stateContinuation.yield(.idle) }
+        defer { stateHandler(.idle) }
 
         let modelInfo = ParakeetModelInfo.find(modelVariant)
         let requiredBytes = Int64(modelInfo.estimatedMemoryMB) * 1_000_000
@@ -57,7 +54,7 @@ actor ParakeetTranscriptionService {
         }
 
         let mgr = try await loadManager(for: modelVariant)
-        stateContinuation.yield(.transcribing)
+        stateHandler(.transcribing)
 
         Logger.localAI.info("Parakeet: transcription started [\(modelVariant, privacy: .public)]")
         let (result, samples) = try await Self.transcribePadded(mgr, fileURL: fileURL)
@@ -220,9 +217,9 @@ actor ParakeetTranscriptionService {
     }
 
     /// Download + load the given variant, then unload. Emits download progress
-    /// on `stateStream`. Unloads on failure too.
+    /// through the request-owned state callback. Unloads on failure too.
     func prepareModel(variant: String) async throws {
-        defer { stateContinuation.yield(.idle) }
+        defer { stateHandler(.idle) }
         do {
             _ = try await loadManager(for: variant)
             unload()
@@ -259,16 +256,16 @@ actor ParakeetTranscriptionService {
 
         let models = try await AsrModels.downloadAndLoad(
             version: version,
-            progressHandler: { [stateContinuation] progress in
+            progressHandler: { [stateHandler] progress in
                 let stage: DownloadStage = {
                     if case .compiling = progress.phase { return .parakeetModelLoading }
                     return .parakeetModel
                 }()
-                stateContinuation.yield(.downloading(progress: progress.fractionCompleted, stage: stage))
+                stateHandler(.downloading(progress: progress.fractionCompleted, stage: stage))
             }
         )
 
-        stateContinuation.yield(.downloading(progress: nil, stage: .parakeetModelLoading))
+        stateHandler(.downloading(progress: nil, stage: .parakeetModelLoading))
 
         let mgr = AsrManager()
         try await mgr.loadModels(models)

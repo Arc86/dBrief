@@ -66,6 +66,9 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         var finalizedAudioPath: String?
         var segmentAudioPaths: [String]
         var metadataPath: String?
+        /// Retains the selected profile across interruption. Older jobs use the
+        /// saved manual profile; new jobs stop recovery if this profile is gone.
+        var profileID: UUID? = nil
     }
 
     let version: Int
@@ -73,6 +76,7 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
     let recordingID: UUID
     let createdAt: Date
     var updatedAt: Date
+    var completedAt: Date? = nil
     var status: Status
     var request: Request
     var source: Source
@@ -162,7 +166,8 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         updatedAt = date
     }
 
-    mutating func markFullyCompleted(at date: Date) {
+    mutating func markFullyCompleted(at date: Date, successful: Bool = true) {
+        if successful, status != .completed, completedAt == nil { completedAt = date }
         status = .completed
         failureStage = nil
         updatedAt = date

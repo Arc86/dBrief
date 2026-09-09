@@ -5,6 +5,9 @@ import dBriefWire
 
 extension AppSettings {
     var activeProfile: MeetingProfile {
+        if let automaticProfileId, let profile = profiles.first(where: { $0.id == automaticProfileId }) {
+            return profile
+        }
         if let profile = profiles.first(where: { $0.id == activeProfileId }) {
             return profile
         }

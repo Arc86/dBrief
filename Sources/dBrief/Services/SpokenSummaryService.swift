@@ -33,6 +33,7 @@ final class SpokenSummaryService: Identifiable {
     /// replayed (no temp file, no Save/Discard) rather than a fresh generation.
     private(set) var resultIsSaved = false
 
+    private let recording: Recording
     private let appSettings: AppSettings
     private let plugin: LocalAIPluginService?
     private let store: SpokenSummaryStore
@@ -43,7 +44,8 @@ final class SpokenSummaryService: Identifiable {
     private var script: String = ""
     private var stateTask: Task<Void, Never>?
 
-    init(appSettings: AppSettings, plugin: LocalAIPluginService?, store: SpokenSummaryStore) {
+    init(recording: Recording, appSettings: AppSettings, plugin: LocalAIPluginService?, store: SpokenSummaryStore) {
+        self.recording = recording
         self.appSettings = appSettings
         self.plugin = plugin
         self.store = store
@@ -61,6 +63,12 @@ final class SpokenSummaryService: Identifiable {
     }
 
     func generate(insights: RecordingInsights) async {
+        let context = await recording.privacyContext()
+        guard !Task.isCancelled else { return }
+        await PrivacyTrace.$context.withValue(context) { await generateInRecordingContext(insights: insights) }
+    }
+
+    private func generateInRecordingContext(insights: RecordingInsights) async {
         discardTemp()
         resultIsSaved = false
         phase = .rewriting
@@ -122,6 +130,12 @@ final class SpokenSummaryService: Identifiable {
     // MARK: - Save
 
     func save(for recording: Recording) async throws -> URL {
+        guard recording.id == self.recording.id else { throw SpokenSummaryError.notReady }
+        let context = await recording.privacyContext()
+        return try await PrivacyTrace.$context.withValue(context) { try await saveInRecordingContext() }
+    }
+
+    private func saveInRecordingContext() async throws -> URL {
         guard let tempAudioURL,
               let audioURL = recording.spokenSummaryAudioURL,
               let scriptURL = recording.spokenSummaryScriptURL else {
@@ -132,18 +146,21 @@ final class SpokenSummaryService: Identifiable {
         let wavURL = tempAudioURL
         let m4aURL = audioURL
         do {
-            try await Task.detached(priority: .userInitiated) {
-                try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
-            }.value
-            let summary = SpokenSummary(
-                script: script,
-                audioFileName: audioURL.lastPathComponent,
-                voice: appSettings.ttsVoice.rawValue,
-                language: appSettings.ttsLanguage.rawValue,
-                engine: appSettings.effectiveAIEngine.rawValue,
-                generatedAt: Date()
-            )
-            try await store.save(summary, to: scriptURL)
+            try await PrivacyTrace.perform(.init(stage: .audioExport, data: [.generatedAudio, .text, .metadata],
+                                                 destination: .local(provider: .fileSystem))) {
+                try await Task.detached(priority: .userInitiated) {
+                    try SpokenSummaryService.transcodeToM4A(from: wavURL, to: m4aURL)
+                }.value
+                let summary = SpokenSummary(
+                    script: script,
+                    audioFileName: audioURL.lastPathComponent,
+                    voice: appSettings.ttsVoice.rawValue,
+                    language: appSettings.ttsLanguage.rawValue,
+                    engine: appSettings.effectiveAIEngine.rawValue,
+                    generatedAt: Date()
+                )
+                try await store.save(summary, to: scriptURL)
+            }
         } catch {
             phase = .failed(message: error.localizedDescription)
             throw error
@@ -169,14 +186,17 @@ final class SpokenSummaryService: Identifiable {
 
         case .qwenLocal:
             guard let plugin else { throw SpokenSummaryError.engineUnavailable("Local AI plugin not available.") }
-            let stream = await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage)
+            let stream = await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage, stage: .spokenSummaryScript)
             return try await collect(stream)
 
         case .appleIntelligence:
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
                 let session = LanguageModelSession(instructions: systemPrompt)
-                let response = try await session.respond(to: userMessage, options: GenerationOptions(temperature: 0.6))
+                let response = try await PrivacyTrace.perform(.init(stage: .spokenSummaryScript, data: [.text, .metadata],
+                                                                   destination: .local(provider: .appleIntelligence))) {
+                    try await session.respond(to: userMessage, options: GenerationOptions(temperature: 0.6))
+                }
                 return response.content
             }
             #endif
@@ -186,7 +206,7 @@ final class SpokenSummaryService: Identifiable {
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
                 throw SpokenSummaryError.engineUnavailable("No AI endpoint configured. Add one in Settings → AI Analysis.")
             }
-            return try await collect(aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint))
+            return try await collect(aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: .spokenSummaryScript))
         }
     }
 

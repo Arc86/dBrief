@@ -1,7 +1,7 @@
 import Foundation
 
 /// One speaker card in the confirm-first review window.
-struct SpeakerReviewItem: Identifiable, Equatable {
+struct SpeakerReviewItem: Identifiable, Equatable, Sendable {
     var id: String                 // diarization speaker id
     var proposedName: String       // matched name, or the raw "Speaker N"
     var reason: VoiceIdentityResolver.Reason
@@ -17,7 +17,7 @@ struct SpeakerReviewItem: Identifiable, Equatable {
 }
 
 /// A user's confirmed identity for one speaker (output of the review window).
-struct ConfirmedSpeaker: Equatable {
+struct ConfirmedSpeaker: Equatable, Sendable {
     let name: String
     let personId: String?
 }

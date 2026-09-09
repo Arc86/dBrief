@@ -37,7 +37,7 @@ actor MarkdownOutputStore {
         return plan
     }
 
-    func publish(_ plan: MarkdownExportPlan, alreadyCompleted: Bool = false) throws -> URL {
+    func publish(_ plan: MarkdownExportPlan, alreadyCompleted: Bool = false) async throws -> URL {
         try plan.validate()
         try Task.checkCancellation()
         if alreadyCompleted {
@@ -50,26 +50,45 @@ actor MarkdownOutputStore {
             try verify(plan)
             return plan.destination
         }
-        let folder = plan.destination.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let temporary = folder.appendingPathComponent(".dbrief-export-\(UUID().uuidString).tmp")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try Data(plan.content.utf8).write(to: temporary, options: .atomic)
-        try Task.checkCancellation()
-        // Publish a fully written sibling atomically, refusing to replace a target
-        // created since the existence check. No hard-link support is required.
-        let result = temporary.withUnsafeFileSystemRepresentation { source in
-            plan.destination.withUnsafeFileSystemRepresentation { destination in
-                renamex_np(source!, destination!, UInt32(RENAME_EXCL))
+        return try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text, .metadata],
+                                                     destination: .local(provider: .fileSystem))) {
+            let folder = plan.destination.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let temporary = folder.appendingPathComponent(".dbrief-export-\(UUID().uuidString).tmp")
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try Data(plan.content.utf8).write(to: temporary, options: .atomic)
+            try Task.checkCancellation()
+            // Publish a fully written sibling atomically, refusing to replace a target
+            // created since the existence check. No hard-link support is required.
+            let result = temporary.withUnsafeFileSystemRepresentation { source in
+                plan.destination.withUnsafeFileSystemRepresentation { destination in
+                    renamex_np(source!, destination!, UInt32(RENAME_EXCL))
+                }
             }
-        }
-        if result != 0 {
-            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            guard exists(plan.destination) else { throw failure }
+            if result != 0 {
+                let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                guard exists(plan.destination) else { throw failure }
+                try verify(plan)
+            }
             try verify(plan)
+            return plan.destination
         }
-        try verify(plan)
-        return plan.destination
+    }
+
+    /// Explicit AI retry historically regenerates its destination. Keep that
+    /// policy separate from restartable publication, which never replaces edits.
+    func regenerate(_ plan: MarkdownExportPlan) async throws -> URL {
+        try plan.validate()
+        try Task.checkCancellation()
+        return try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text, .metadata],
+                                                     destination: .local(provider: .fileSystem))) {
+            try Task.checkCancellation()
+            try FileManager.default.createDirectory(at: plan.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try plan.content.write(to: plan.destination, atomically: true, encoding: .utf8)
+            try Task.checkCancellation()
+            try verify(plan)
+            return plan.destination
+        }
     }
 
     private func verify(_ plan: MarkdownExportPlan) throws {

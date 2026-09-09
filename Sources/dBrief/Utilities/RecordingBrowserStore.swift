@@ -2,7 +2,7 @@ import Foundation
 
 /// A recording surfaced in the transcript browser sidebar. Keyed by its audio
 /// file `url` so selection stays stable across reloads (unlike a random UUID).
-struct RecordingBrowserItem: Identifiable, Hashable, Sendable {
+struct RecordingBrowserItem: Identifiable, Hashable, Codable, Sendable {
     var id: URL { url }
     let url: URL
     /// Base filename stem, e.g. `2026-06-04_2229_meeting-title`.
@@ -19,6 +19,7 @@ struct RecordingBrowserItem: Identifiable, Hashable, Sendable {
     /// matched calendar event's attendees, de-duped. Restored from the metadata sidecar so the
     /// transcript viewer can offer them when assigning speakers.
     var meetingNames: [String] = []
+    var libraryStatus: LibraryRecordingStatus? = nil
 
     /// Human title: the AI-generated title when present, else the meeting-title
     /// segment of the filename, else a date-based "Meeting …" label (dB2 look).
@@ -43,10 +44,11 @@ struct RecordingBrowserItem: Identifiable, Hashable, Sendable {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    /// We have no persisted "Failed" state on disk, so status is derived from
-    /// whether a transcript exists.
+    /// Indexed rows include durable job state; legacy callers retain the
+    /// transcript-existence fallback.
     var statusText: String {
-        (hasRichTranscript || hasTranscript) ? "Done" : ""
+        if let libraryStatus { return libraryStatus.title }
+        return (hasRichTranscript || hasTranscript) ? "Done" : ""
     }
 
     private static let titleDateFormatter: DateFormatter = {

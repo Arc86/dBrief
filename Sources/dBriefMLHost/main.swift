@@ -15,8 +15,9 @@ if let i = args.firstIndex(of: "--support-base"), i + 1 < args.count {
 // never interleave on the output pipe.
 let writer = StdoutWriter(.standardOutput)
 
-// State events are broadcast per channel, not request-correlated; the parent
-// routes them by channel, so the id is a fixed sentinel.
+// RequestRouter supplies request-correlated progress sinks during backend work.
+// The sentinel is only for out-of-request lifecycle state (for example shutdown);
+// processing consumers never attach these broadcasts to a recording.
 let stateEventID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 let orchestrator = MLOrchestrator { channel, state in
     writer.send(EventEnvelope(id: stateEventID, channel: channel, event: .state(state)))

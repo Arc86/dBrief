@@ -16,13 +16,14 @@ import OSLog
 /// contract as transcription/Qwen3). Voice ids are passed verbatim to
 /// `KokoroAneManager`, which downloads the embedding on demand.
 final class KokoroTTSService: @unchecked Sendable {
-    private let stateHandler: @Sendable (LocalAIPluginState) -> Void
+    private let fallbackStateHandler: MLProgress.Sink
+    nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
     private var manager: KokoroAneManager?
     /// Variant of the currently-loaded `manager`, so a language change reloads.
     private var loadedVariant: KokoroAneVariant?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
-        self.stateHandler = stateHandler
+        self.fallbackStateHandler = stateHandler
     }
 
     // MARK: - Public API

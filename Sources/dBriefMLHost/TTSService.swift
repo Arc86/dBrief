@@ -11,13 +11,14 @@ import OSLog
 /// over the pipe — same contract as the transcription services), and unloads on
 /// memory pressure / force-unload via `MLOrchestrator`. No UI surfaces it yet.
 final class TTSService: @unchecked Sendable {
-    private let stateHandler: @Sendable (LocalAIPluginState) -> Void
+    private let fallbackStateHandler: MLProgress.Sink
+    nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
     private var tts: TTSKit?
     /// Variant of the currently-loaded `tts`, so a model-size change reloads.
     private var loadedVariant: TTSModelVariant?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
-        self.stateHandler = stateHandler
+        self.fallbackStateHandler = stateHandler
     }
 
     // MARK: - Public API

@@ -68,6 +68,22 @@ struct RetentionCleanupTests {
 
     // MARK: - Sweeps
 
+    @Test func receiptNeverAgesIndependentlyOfSurvivingAudio() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("retention-privacy-\(UUID())")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let audio = folder.appendingPathComponent("meeting.m4a")
+        let receipt = PrivacyReceiptStore.sidecarURL(for: audio)
+        try Data([1]).write(to: audio)
+        try Data([2]).write(to: receipt)
+        try fm.setAttributes([.creationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: receipt.path)
+        let result = RetentionCleanup.cleanup(category: .recordings, olderThanDays: 7, in: [folder])
+        #expect(result.filesDeleted == 0)
+        #expect(fm.fileExists(atPath: receipt.path))
+        #expect(!RetentionCleanup.matches(receipt, category: .transcripts))
+    }
+
     @Test
     func recordingsSweepDeletesAudioAndMetadataButKeepsTranscripts() throws {
         let fm = FileManager.default

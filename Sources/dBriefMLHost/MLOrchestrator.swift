@@ -6,7 +6,11 @@ import dBriefWire
 /// with an AsyncMutex, and emits progress state on the appropriate channel.
 /// This is the in-helper counterpart of the app's old `LocalAIPluginService`.
 actor MLOrchestrator: MLBackend {
-    private let emit: @Sendable (MLChannel, LocalAIPluginState) -> Void
+    private let fallbackEmit: @Sendable (MLChannel, LocalAIPluginState) -> Void
+    nonisolated private var emit: @Sendable (MLChannel, LocalAIPluginState) -> Void {
+        guard let sink = MLProgress.sink else { return fallbackEmit }
+        return { _, state in sink(state) }
+    }
     private let mutex = AsyncMutex()
 
     private let whisperService: WhisperKitTranscriptionService
@@ -15,19 +19,14 @@ actor MLOrchestrator: MLBackend {
     private let ttsService: TTSService
     private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
-    private var parakeetStateTask: Task<Void, Never>?
 
     init(emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
-        self.emit = emit
+        self.fallbackEmit = emit
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
         self.ttsService = TTSService { state in emit(.plugin, state) }
         self.kokoroService = KokoroTTSService { state in emit(.plugin, state) }
-        let parakeet = ParakeetTranscriptionService()
-        self.parakeetService = parakeet
-        self.parakeetStateTask = Task {
-            for await state in parakeet.stateStream { emit(.parakeet, state) }
-        }
+        self.parakeetService = ParakeetTranscriptionService { state in emit(.parakeet, state) }
     }
 
     // MARK: - Transcription

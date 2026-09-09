@@ -54,17 +54,23 @@ actor SpeakerEmbeddingExtractor {
             var out: [String: [Float]] = [:]
             var skipped: [String] = []
             for (speakerId, rs) in ranges {
+                guard !Task.isCancelled else { return out }
                 var clip: [Float] = []
                 for r in rs { clip.append(contentsOf: audio[r]) }
                 let seconds = Double(clip.count) / 16000.0
+                let evidence = MLPrivacyTrace.begin(.speakerEmbedding)
                 do {
+                    try Task.checkCancellation()
                     let emb = try mgr.extractSpeakerEmbedding(from: clip)
                     if emb.contains(where: { $0 != 0 }) {
                         out[speakerId] = emb
+                        MLPrivacyTrace.finish(evidence, outcome: .succeeded)
                     } else {
+                        MLPrivacyTrace.finish(evidence, outcome: .failed)
                         skipped.append("\(speakerId)(zero-vector, \(String(format: "%.1f", seconds))s)")
                     }
                 } catch {
+                    MLPrivacyTrace.finish(evidence, outcome: MLPrivacyTrace.outcome(for: error))
                     skipped.append("\(speakerId)(error: \(error.localizedDescription), \(String(format: "%.1f", seconds))s)")
                 }
             }

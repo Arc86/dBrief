@@ -46,6 +46,24 @@ struct ProcessingJobStoreTests {
     }
 
     @Test
+    func profileIdentitySurvivesRecoveryAndLegacyJobsRemainReadable() async throws {
+        let fixture = try TemporaryFixture()
+        defer { fixture.remove() }
+        let store = ProcessingJobStore(rootURL: fixture.url)
+        var job = makeJob()
+        job.source.profileID = UUID()
+        try await store.save(job)
+        #expect(try await store.load(id: job.id)?.source.profileID == job.source.profileID)
+
+        var payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as? [String: Any])
+        var source = try #require(payload["source"] as? [String: Any])
+        source.removeValue(forKey: "profileID")
+        payload["source"] = source
+        let legacy = try JSONDecoder().decode(PersistedProcessingJob.self, from: JSONSerialization.data(withJSONObject: payload))
+        #expect(legacy.source.profileID == nil)
+    }
+
+    @Test
     func roundTripsVerifiedJobAndMonotonicCheckpoint() async throws {
         let fixture = try TemporaryFixture()
         defer { fixture.remove() }

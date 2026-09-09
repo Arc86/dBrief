@@ -58,6 +58,7 @@ enum InterruptedSessionStore {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
+        RecordingLibraryChange.notify()
     }
 
     @discardableResult
@@ -84,5 +85,6 @@ enum InterruptedSessionStore {
     ) throws {
         _ = try updateState(at: manifestURL, to: finalState, fileManager: fileManager)
         try fileManager.removeItem(at: manifestURL.deletingLastPathComponent())
+        RecordingLibraryChange.notify()
     }
 }

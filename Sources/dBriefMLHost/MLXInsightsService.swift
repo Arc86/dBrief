@@ -15,13 +15,14 @@ actor MLXInsightsService {
     // the Local CLI engine).
 
     private let fileManager = FileManager.default
-    private let stateHandler: @Sendable (LocalAIPluginState) -> Void
+    private let fallbackStateHandler: MLProgress.Sink
+    nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
     private var modelContainer: ModelContainer?
     private let metalLibraryAvailable: Bool
     private var isInferencing = false
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
-        self.stateHandler = stateHandler
+        self.fallbackStateHandler = stateHandler
         self.metalLibraryAvailable = Self.hasMetalLibrary()
     }
 

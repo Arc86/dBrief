@@ -52,6 +52,17 @@ struct InterruptedSessionManifest: Codable, Equatable, Sendable {
         self.tracks = tracks
     }
 
+    /// Pure capture snapshot: only immediate siblings of this session's manifest
+    /// are described. File existence/validation belongs to the persistence actor.
+    init(captureID: UUID, startedAt: Date, state: State, manifestURL: URL, capturedTracks: CapturedTracks?) {
+        let directory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        let pairs: [(Track.Kind, URL?)] = [(.microphone, capturedTracks?.micURL), (.systemAudio, capturedTracks?.systemURL)]
+        self.init(id: captureID, startedAt: startedAt, state: state, tracks: pairs.compactMap { kind, url in
+            guard let url, url.deletingLastPathComponent().standardizedFileURL == directory else { return nil }
+            return .init(kind: kind, relativePath: url.lastPathComponent)
+        })
+    }
+
     func updatingState(_ newState: State) -> InterruptedSessionManifest {
         InterruptedSessionManifest(
             version: version,

@@ -18,10 +18,12 @@ final class ParakeetTranscriptionService: Sendable {
     }
 
     func transcribe(fileURL: URL, language: String?, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
-        guard case let .transcriptionResult(r) = try await connection.call(
-            .parakeetTranscribe(path: fileURL.path, modelVariant: modelVariant, diarize: diarize)
-        ) else { throw WireError(kind: .generic, message: "no transcription") }
-        return r
+        return try await PrivacyTrace.perform(.init(stage: .transcription, data: [.recordingAudio, .metadata], destination: .local(provider: .parakeet, model: modelVariant))) {
+            guard case let .transcriptionResult(r) = try await connection.call(
+                .parakeetTranscribe(path: fileURL.path, modelVariant: modelVariant, diarize: diarize)
+            ) else { throw WireError(kind: .generic, message: "no transcription") }
+            return r
+        }
     }
 
     func prepareModel(variant: String) async throws { _ = try await connection.call(.downloadParakeet(variant: variant)) }

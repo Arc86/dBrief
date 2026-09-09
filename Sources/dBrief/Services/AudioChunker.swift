@@ -22,6 +22,8 @@ actor AudioChunker {
         overlapSeconds: Double,
         tempDirectory: URL
     ) async throws -> [AudioChunk] {
+        try Task.checkCancellation()
+        guard maxUploadBytes > 0 else { throw AudioChunkerError.exportFailed("The upload byte budget must be positive.") }
         let asset = AVURLAsset(url: fileURL)
         let duration = try await asset.load(.duration)
         let durationSeconds = CMTimeGetSeconds(duration)
@@ -34,8 +36,8 @@ actor AudioChunker {
         }()
 
         let estimatedChunkDuration = Double(maxUploadBytes) / max(estimatedBytesPerSecond, 1)
-        let chunkDuration = max(30, min(600, estimatedChunkDuration))
-        let overlap = max(0, min(overlapSeconds, chunkDuration * 0.2))
+        var chunkDuration = max(30, min(600, estimatedChunkDuration))
+        let requestedOverlap = overlapSeconds.isFinite ? max(0, overlapSeconds) : 0
 
         let effectiveDuration = safeDuration > 0 ? safeDuration : 120
         var currentStart = 0.0
@@ -49,25 +51,46 @@ actor AudioChunker {
         let canStreamCopy = ["m4a", "mp4", "aac"].contains(fileURL.pathExtension.lowercased())
 
         while currentStart < effectiveDuration {
-            let currentEnd = min(effectiveDuration, currentStart + chunkDuration)
+            try Task.checkCancellation()
             let outputURL = tempDirectory.appendingPathComponent("chunk_\(index).m4a")
-            var copied = false
-            if let ffmpegPath, canStreamCopy {
-                copied = Self.streamCopyChunk(
-                    ffmpegPath: ffmpegPath,
-                    fileURL: fileURL,
-                    startSeconds: currentStart,
-                    endSeconds: currentEnd,
-                    outputURL: outputURL
-                )
-            }
-            if !copied {
-                try await exportChunk(
-                    asset: asset,
-                    startSeconds: currentStart,
-                    endSeconds: currentEnd,
-                    outputURL: outputURL
-                )
+            var currentEnd: Double
+            var splitAttempts = 0
+            while true {
+                try Task.checkCancellation()
+                currentEnd = min(effectiveDuration, currentStart + chunkDuration)
+                var copied = false
+                if let ffmpegPath, canStreamCopy {
+                    copied = Self.streamCopyChunk(
+                        ffmpegPath: ffmpegPath,
+                        fileURL: fileURL,
+                        startSeconds: currentStart,
+                        endSeconds: currentEnd,
+                        outputURL: outputURL
+                    )
+                }
+                if !copied {
+                    try await exportChunk(
+                        asset: asset,
+                        startSeconds: currentStart,
+                        endSeconds: currentEnd,
+                        outputURL: outputURL
+                    )
+                }
+                try Task.checkCancellation()
+                let bytes = try RemoteUploadPolicy.fileByteCount(outputURL)
+                guard bytes > 0 else { throw AudioChunkerError.exportFailed("An exported audio chunk was empty.") }
+                if bytes <= Int64(maxUploadBytes) { break }
+
+                try FileManager.default.removeItem(at: outputURL)
+                splitAttempts += 1
+                let attemptedDuration = currentEnd - currentStart
+                guard splitAttempts < 10, attemptedDuration > 1 else {
+                    throw AudioChunkerError.sizeLimitUnreachable(maxUploadBytes)
+                }
+                // Original bitrate and output bitrate can differ dramatically.
+                // Measure the actual export, halve its duration, and retry a
+                // bounded number of times. Keep the shorter duration thereafter.
+                chunkDuration = max(1, attemptedDuration / 2)
             }
             chunks.append(
                 AudioChunk(
@@ -78,6 +101,9 @@ actor AudioChunker {
                 )
             )
             if currentEnd >= effectiveDuration { break }
+            // Recompute overlap after shrinking so even a large configured
+            // overlap cannot prevent forward progress or create a time gap.
+            let overlap = min(requestedOverlap, (currentEnd - currentStart) * 0.2)
             currentStart = max(0, currentEnd - overlap)
             index += 1
         }
@@ -165,10 +191,13 @@ actor AudioChunker {
 
 enum AudioChunkerError: Error, LocalizedError {
     case exportFailed(String)
+    case sizeLimitUnreachable(Int)
 
     var errorDescription: String? {
         switch self {
         case .exportFailed(let message): message
+        case .sizeLimitUnreachable(let bytes):
+            "Could not fit an audio chunk within the \(bytes)-byte upload limit. Compress the recording or choose another endpoint. The original audio has been kept."
         }
     }
 }

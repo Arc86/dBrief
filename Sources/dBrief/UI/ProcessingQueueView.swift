@@ -12,7 +12,7 @@ struct ProcessingQueueView: View {
         case recovery(UUID)
     }
 
-    private var editing: Bool { manager.queueMutationInProgress || manager.recoveryMaintenanceInProgress || manager.processingCancellationInProgress || manager.reviewingIntegrationDeliveries }
+    private var editing: Bool { manager.queueMutationInProgress || manager.queuePauseWriteInProgress || manager.queueEnqueueInProgress || manager.recoveryMaintenanceInProgress || manager.processingCancellationInProgress || manager.reviewingIntegrationDeliveries }
     private var hasPendingWork: Bool { !manager.pendingQueueItems.isEmpty || !manager.recoveryQueueEntries.isEmpty }
 
     var body: some View {
@@ -56,7 +56,7 @@ struct ProcessingQueueView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(manager.pendingQueueItems.enumerated()), id: \.element.audioURL) { index, entry in
-                                queuedRow(index: index, audioURL: entry.audioURL, item: entry.item)
+                                queuedRow(index: index, audioURL: entry.audioURL, item: entry.item, available: entry.fileSize != nil)
                             }
                             if !manager.recoveryQueueEntries.isEmpty {
                                 if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
@@ -68,7 +68,11 @@ struct ProcessingQueueView: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 240)
+                    // MenuBarExtra sizes to minimum content height. A max-only
+                    // frame lets this lazy scroll view collapse to zero, hiding
+                    // recovery rows while the header still counts them. Match
+                    // Recent Recordings' bounded, explicitly sized viewport.
+                    .frame(height: 200)
                 }
 
                 if let error = manager.queueLoadError {
@@ -85,14 +89,16 @@ struct ProcessingQueueView: View {
             if expanded || !manager.pendingQueueItems.isEmpty {
                 HStack {
                     Button(manager.queuePaused ? "Resume Automatic Queue" : "Pause Queue") {
-                        if manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
-                            manager.drainQueueIfNeeded()
+                        Task {
+                            if await manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
+                                await manager.drainQueueIfNeeded()
+                            }
                         }
                     }
                     .help("Pause prevents the next job from starting; the current job can finish. This setting survives a restart.")
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty {
-                        Button("Process Queue", action: manager.startProcessingQueue)
+                        Button("Process Queue") { Task { await manager.startProcessingQueue() } }
                             .buttonStyle(.borderedProminent)
                             .disabled(manager.queueLoadError != nil)
                     }
@@ -107,8 +113,7 @@ struct ProcessingQueueView: View {
         .onChange(of: appState.queuedCount) { _, _ in Task { await manager.refreshWorkQueue() } }
     }
 
-    private func queuedRow(index: Int, audioURL: URL, item: QueueItem) -> some View {
-        let available = FileManager.default.fileExists(atPath: audioURL.path)
+    private func queuedRow(index: Int, audioURL: URL, item: QueueItem, available: Bool) -> some View {
         let title = RecordingListPresentation.title(filenameStem: audioURL.deletingPathExtension().lastPathComponent)
         let key = Item.queued(audioURL)
         return RecordingListRow(title: title, expanded: expandedItem == key, toggle: {
@@ -125,20 +130,20 @@ struct ProcessingQueueView: View {
         } actions: {
             FlowLayout(spacing: 6) {
                 RecordingListAction(title: "Process now", systemImage: "play") {
-                    manager.drainQueueIfNeeded(preferredAudioURL: audioURL)
+                    Task { await manager.drainQueueIfNeeded(preferredAudioURL: audioURL, expectedID: item.id) }
                 }
                 .disabled(!available || appState.processingJob != nil || manager.queueLoadError != nil)
                 .help("Process this recording now, even if the queue is paused")
                 RecordingListAction(title: "Move to first", systemImage: "arrow.up.to.line") {
-                    manager.moveQueuedItem(audioURL, by: -index)
+                    Task { await manager.moveQueuedItem(audioURL, by: -index) }
                 }
                 .disabled(index == 0)
                 RecordingListAction(title: "Move up", systemImage: "arrow.up") {
-                    manager.moveQueuedItem(audioURL, by: -1)
+                    Task { await manager.moveQueuedItem(audioURL, by: -1) }
                 }
                 .disabled(index == 0)
                 RecordingListAction(title: "Move down", systemImage: "arrow.down") {
-                    manager.moveQueuedItem(audioURL, by: 1)
+                    Task { await manager.moveQueuedItem(audioURL, by: 1) }
                 }
                 .disabled(index == manager.pendingQueueItems.count - 1)
                 RecordingListAction(title: "Remove", systemImage: "minus.circle") {

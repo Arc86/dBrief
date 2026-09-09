@@ -83,11 +83,13 @@ actor LocalAIService {
         let options = GenerationOptions(temperature: 0.3, maximumResponseTokens: 1_500)
 
         do {
-            let response = try await session.respond(
-                to: userPrompt,
-                generating: MeetingInsights.self,
-                options: options
-            )
+            let response = try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
+                return try await session.respond(
+                    to: userPrompt,
+                    generating: MeetingInsights.self,
+                    options: options
+                )
+            }
             let insights = response.content
             log.info("Apple Intelligence analysis complete: summaryLength=\(insights.summary.count) actions=\(insights.actionItems.count) tags=\(insights.tags.count)")
             return LocalInsightsResult(

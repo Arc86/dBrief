@@ -8,7 +8,8 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     private static let modelRepo = "argmaxinc/whisperkit-coreml"
 
     private let fileManager = FileManager.default
-    private let stateHandler: @Sendable (LocalAIPluginState) -> Void
+    private let fallbackStateHandler: MLProgress.Sink
+    nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
     private var whisperKit: WhisperKit?
     private var loadedConfig: WhisperRuntimeConfig?
     // Cached across calls (like `whisperKit`) so segmented recordings don't
@@ -16,7 +17,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     private var speakerKit: SpeakerKit?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
-        self.stateHandler = stateHandler
+        self.fallbackStateHandler = stateHandler
     }
 
     // MARK: - Public API
@@ -196,7 +197,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 let diarStart = Date()
                 do {
                     let speakerKit = try await loadSpeakerKit()
-                    let diarResult = try await speakerKit.diarize(audioArray: bufferedAudio)
+                    let diarResult = try await MLPrivacyTrace.perform(.speakerDiarization) {
+                        try await speakerKit.diarize(audioArray: bufferedAudio)
+                    }
                     Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
                     // Convert the diarization turns to our wire type.
@@ -497,7 +500,9 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
         let speakerKit = try await loadSpeakerKit()
         emitState(.diarizing)
-        let diarResult = try await speakerKit.diarize(audioArray: audioArray)
+        let diarResult = try await MLPrivacyTrace.perform(.speakerDiarization) {
+            try await speakerKit.diarize(audioArray: audioArray)
+        }
         Logger.localAI.info("Diarization: \(diarResult.speakerCount) speakers detected")
 
         return diarResult.segments.compactMap { seg in

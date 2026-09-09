@@ -17,31 +17,44 @@ import FoundationModels
 /// The LLM only *proposes* `{from, to}` corrections; `VocabularyCorrection.apply`
 /// validates them against the vocabulary and rewrites the transcript
 /// deterministically, so the model can never drop or reformat content.
-@MainActor
-final class TranscriptSpellingService {
+actor TranscriptSpellingService {
     private static let log = Logger.ai
-    private let appSettings: AppSettings
+    struct Request: Sendable {
+        let terms: [String]
+        let engine: AppSettings.AIEngine
+        let endpoint: Endpoint?
+    }
+    typealias Backend = @Sendable (Request, _ system: String, _ user: String) async throws -> String
+    typealias Apply = @Sendable ([SpellingCorrection], [String], TranscriptionResult) -> TranscriptionResult
+    private let backend: Backend?
+    private let apply: Apply
     private let localPlugin: LocalAIPluginService?
     private let aiService = AIService()
 
-    init(appSettings: AppSettings, localPlugin: LocalAIPluginService?) {
-        self.appSettings = appSettings
+    init(localPlugin: LocalAIPluginService? = nil, backend: Backend? = nil,
+         apply: @escaping Apply = { VocabularyCorrection.apply($0, vocabulary: $1, to: $2) }) {
         self.localPlugin = localPlugin
+        self.backend = backend
+        self.apply = apply
     }
 
     /// Returns a copy of `result` with vocabulary terms re-spelled. Best-effort:
     /// on any failure (no engine, parse error, empty transcript) the input is
     /// returned unchanged.
-    func correct(_ result: TranscriptionResult) async -> TranscriptionResult {
-        let terms = appSettings.effectiveCustomVocabulary
+    func correct(_ result: TranscriptionResult, request: Request) async -> TranscriptionResult {
+        guard !Task.isCancelled else { return result }
+        let terms = request.terms
         let transcript = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !terms.isEmpty, !transcript.isEmpty else { return result }
 
         do {
-            let raw = try await runEngine(transcript: transcript, terms: terms)
+            let raw = try await runEngine(transcript: transcript, request: request)
+            try Task.checkCancellation()
             let corrections = Self.parseCorrections(raw)
             guard !corrections.isEmpty else { return result }
-            let corrected = VocabularyCorrection.apply(corrections, vocabulary: terms, to: result)
+            try Task.checkCancellation()
+            let corrected = apply(corrections, terms, result)
+            try Task.checkCancellation()
             Self.log.info("Vocabulary spell-fix applied \(corrections.count) correction(s)")
             return corrected
         } catch {
@@ -52,48 +65,52 @@ final class TranscriptSpellingService {
 
     // MARK: - Engine routing
 
-    private func runEngine(transcript: String, terms: [String]) async throws -> String {
-        // Local CLI is one-shot/non-streaming here; route to the chat fallback.
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
+    private func runEngine(transcript: String, request: Request) async throws -> String {
+        let engine = request.engine
 
         let system = Self.systemPrompt
         let user = Self.userPrompt(
-            terms: terms,
+            terms: request.terms,
             // Apple Intelligence has a ~4K-token window; truncate for it only.
             transcript: engine == .appleIntelligence
                 ? UnifiedInsightsPrompt.truncateForFoundationModels(transcript)
                 : transcript
         )
 
+        try Task.checkCancellation()
+        if let backend { return try await backend(request, system, user) }
         switch engine {
         case .localCLI:
             throw SpellingError.noEngine
 
         case .qwenLocal:
             guard let plugin = localPlugin else { throw SpellingError.noEngine }
-            return try await collect(plugin.chatStream(systemPrompt: system, userMessage: user))
+            return try await collect(plugin.chatStream(systemPrompt: system, userMessage: user, stage: .spelling))
 
         case .appleIntelligence:
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
                 let session = LanguageModelSession(instructions: system)
-                let response = try await session.respond(to: user, options: GenerationOptions(temperature: 0.0))
+                let response = try await PrivacyTrace.perform(.init(stage: .spelling, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
+                    try await session.respond(to: user, options: GenerationOptions(temperature: 0.0))
+                }
                 return response.content
             }
             #endif
             throw SpellingError.noEngine
 
         case .remoteEndpoint:
-            guard let endpoint = appSettings.effectiveDefaultAIEndpoint else { throw SpellingError.noEngine }
-            return try await collect(aiService.streamChat(systemPrompt: system, userMessage: user, endpoint: endpoint))
+            guard let endpoint = request.endpoint else { throw SpellingError.noEngine }
+            return try await collect(aiService.streamChat(systemPrompt: system, userMessage: user, endpoint: endpoint, stage: .spelling))
         }
     }
 
     private func collect(_ stream: AsyncThrowingStream<String, Error>) async throws -> String {
         var out = ""
-        for try await chunk in stream { out += chunk }
+        for try await chunk in stream {
+            try Task.checkCancellation()
+            out += chunk
+        }
         return out
     }
 

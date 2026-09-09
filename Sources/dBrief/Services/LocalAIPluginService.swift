@@ -28,9 +28,9 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     let connection: MLHostConnection
     private let broadcaster = StateBroadcaster()
 
-    /// A fresh subscriber stream each access. The app iterates this once per op
-    /// (cancelling it when the op ends), so it must survive re-subscription —
-    /// see `StateBroadcaster`.
+    /// Fresh channel broadcast for settings/download observers. Processing callers
+    /// install MLProgress.sink around their request to avoid unrelated events.
+    /// Independent re-subscriptions are supported by StateBroadcaster.
     nonisolated var stateStream: AsyncStream<LocalAIPluginState> { broadcaster.subscribe() }
 
     init(connection: MLHostConnection) {
@@ -67,38 +67,47 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     }
 
     func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
-        guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
-            throw WireError(kind: .generic, message: "no insights")
+        return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) {
+            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
+                throw WireError(kind: .generic, message: "no insights")
+            }
+            return r
         }
-        return r
     }
 
     func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
-        await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
+        PrivacyTrace.stream(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
+            await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
+        }
     }
 
-    func chatStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
-        await connection.stream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage))
+    func chatStream(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
+        PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
+            await connection.stream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage))
+        }
     }
 
     func copyToClipboard(transcript: String, insights: LocalInsightsResult) async -> String {
         // Formatting is pure + needs the AppKit pasteboard — keep it in-process.
         let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-        await MainActor.run {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(markdown, forType: .string)
-        }
+        let context = PrivacyTrace.context
+        _ = await RecordingClipboard.copy(markdown, contextProvider: { context })
         return markdown
     }
 
     /// Synthesize speech to a WAV at `outputPath` via TTSKit in the helper.
-    /// Scaffold only — not yet surfaced in any view. Returns the written file's
+    /// Used by spoken summaries and voice previews. Returns the written file's
     /// path plus duration/sample-rate metadata.
     func synthesizeSpeech(text: String, outputPath: String, voice: String? = nil, language: String? = nil, instruction: String? = nil, model: String? = nil, engine: String? = nil) async throws -> SpeechSynthesisResult {
-        guard case let .speechResult(r) = try await connection.call(
-            .synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
-        ) else { throw WireError(kind: .generic, message: "no speech result") }
-        return r
+        let isKokoro = TTSEngine(rawValue: engine ?? "") == .kokoro
+        let resolvedModel = isKokoro ? nil : (TTSModelSize(rawValue: model ?? "") ?? .large).rawValue
+        return try await PrivacyTrace.perform(.init(stage: .speechSynthesis, data: [.text, .metadata],
+            destination: .local(provider: isKokoro ? .kokoro : .ttsKit, model: resolvedModel))) {
+            guard case let .speechResult(r) = try await connection.call(
+                .synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
+            ) else { throw WireError(kind: .generic, message: "no speech result") }
+            return r
+        }
     }
 
     func prepareModelsIfNeeded() async { _ = try? await connection.call(.prepareModels) }
@@ -144,9 +153,11 @@ extension LocalAIPluginService {
     }
 
     private func runTranscribe(path: String, prompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
-        guard case let .transcriptionResult(r) = try await connection.call(
-            .transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
-        ) else { throw WireError(kind: .generic, message: "no transcription") }
-        return r
+        return try await PrivacyTrace.perform(.init(stage: .transcription, data: prompt?.isEmpty == false ? [.recordingAudio, .text, .metadata] : [.recordingAudio, .metadata], destination: .local(provider: .whisper, model: config.modelName))) {
+            guard case let .transcriptionResult(r) = try await connection.call(
+                .transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
+            ) else { throw WireError(kind: .generic, message: "no transcription") }
+            return r
+        }
     }
 }

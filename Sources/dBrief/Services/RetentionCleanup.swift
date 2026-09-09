@@ -23,9 +23,13 @@ enum RetentionCategory: Sendable, Hashable, CaseIterable {
 struct RetentionCleanupResult: Sendable {
     var filesDeleted: Int = 0
     var bytesFreed: Int64 = 0
+    var privacyCleanupFailures: Int = 0
 
     /// One-line, user-facing summary for the Settings UI.
     var summary: String {
+        if privacyCleanupFailures > 0 {
+            return "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available."
+        }
         guard filesDeleted > 0 else { return "Nothing to delete." }
         let size = ByteCountFormatter.string(fromByteCount: bytesFreed, countStyle: .file)
         let noun = filesDeleted == 1 ? "file" : "files"
@@ -84,7 +88,7 @@ enum RetentionCleanup {
     /// metadata, resume `*.queue.json`) that travels with the audio.
     static func isRecordingFile(_ url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
-        if isTranscriptFile(name) { return false }
+        if isTranscriptFile(name) || name.hasSuffix(".privacy.json") { return false }
         if audioExtensions.contains(url.pathExtension.lowercased()) { return true }
         return name.hasSuffix(".json")
     }
@@ -94,6 +98,74 @@ enum RetentionCleanup {
         case .recordings: isRecordingFile(url)
         case .transcripts: isTranscriptFile(url.lastPathComponent)
         }
+    }
+
+    /// Capture pending ownership before generic retention removes metadata.
+    /// Reconcile evidence afterward, only if no master or segment survives.
+    static func cleanupWithPrivacy(
+        category: RetentionCategory, olderThanDays days: Int, in folders: [URL],
+        store: PrivacyReceiptStore = .shared, now: Date = Date(), protectedBases: Set<String> = [],
+        extraRecordingIDs: [URL: Set<UUID>] = [:]
+    ) async -> RetentionCleanupResult {
+        guard category == .recordings, days >= 0 else {
+            return cleanup(category: category, olderThanDays: days, in: folders, now: now, protectedBases: protectedBases)
+        }
+        let fm = FileManager.default
+        var candidates: [URL: [URL]] = [:]
+        for folder in Set(folders) {
+            let protected = queuedRecordingBases(in: folder, fileManager: fm).union(protectedBases)
+            let files: [URL] = {
+                guard let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+                return enumerator.compactMap { $0 as? URL }
+            }()
+            for url in files {
+                var receipts: [URL]
+                if url.lastPathComponent.hasSuffix(".privacy.json") {
+                    if await store.isPendingReceipt(url) { continue }
+                    receipts = [url]
+                }
+                else if audioExtensions.contains(url.pathExtension.lowercased()), !isTranscriptFile(url.lastPathComponent) {
+                    receipts = [PrivacyReceiptLifecycle.receiptURL(for: url)]
+                    let stem = url.deletingPathExtension().lastPathComponent
+                    if let range = stem.range(of: #"_part[0-9]+$"#, options: .regularExpression) {
+                        // A parent may have only pending evidence after a failed
+                        // bind, and its master may have aged out in an earlier
+                        // sweep. Keep the segment's own receipt separate.
+                        receipts.append(url.deletingLastPathComponent()
+                            .appendingPathComponent(String(stem[..<range.lowerBound]) + ".privacy.json"))
+                    }
+                } else { continue }
+                for receipt in receipts {
+                    guard candidates[receipt] == nil, !isProtectedByQueue(receipt, queuedBases: protected) else { continue }
+                    let audio = receipt.deletingPathExtension().deletingPathExtension().appendingPathExtension("m4a")
+                    let ids = extraRecordingIDs.reduce(into: Set<UUID>()) { ids, entry in
+                        let ownerReceipt = PrivacyReceiptLifecycle.receiptURL(for: entry.key)
+                        if ownerReceipt.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(ownerReceipt.lastPathComponent)
+                            == receipt.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(receipt.lastPathComponent) {
+                            ids.formUnion(entry.value)
+                        }
+                    }
+                    candidates[receipt] = await store.deletionTargets(for: audio, recordingIDs: ids)
+                }
+            }
+        }
+        var result = cleanup(category: category, olderThanDays: days, in: folders, now: now, protectedBases: protectedBases)
+        for (receipt, targets) in candidates {
+            do {
+                guard try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: receipt) else { continue }
+                let values = try? receipt.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                try await store.removeEvidence(at: targets)
+                if values?.isRegularFile == true {
+                    result.filesDeleted += 1
+                    result.bytesFreed += Int64(values?.fileSize ?? 0)
+                }
+            } catch {
+                result.privacyCleanupFailures += 1
+                log.error("Retention could not reconcile privacy evidence")
+            }
+        }
+        result.privacyCleanupFailures += await store.retryDeletedEvidenceCleanup()
+        return result
     }
 
     /// Deletes files in `folders` matching `category` whose creation date is more
@@ -185,7 +257,7 @@ enum RetentionCleanup {
         queuedBases: Set<String>
     ) -> Bool {
         let lowerName = url.lastPathComponent.lowercased()
-        let knownSuffixes = [".queue.json"] + transcriptSuffixes
+        let knownSuffixes = [".queue.json", ".privacy.json"] + transcriptSuffixes
         let base = knownSuffixes.first(where: { lowerName.hasSuffix($0) }).map { suffix in
             let stem = String(url.lastPathComponent.dropLast(suffix.count))
             return url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(stem)

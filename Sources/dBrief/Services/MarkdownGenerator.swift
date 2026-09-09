@@ -1,17 +1,48 @@
 import Foundation
+import dBriefWire
 
 struct MarkdownGenerator {
+    /// Copy observable state once; rendering can then run on the pipeline actor.
+    struct Snapshot: Sendable {
+        let date: Date
+        let fileURL: URL
+        let formattedDuration: String
+        let generatedTitle: String?
+        let summary: String?
+        let actionItems: [String]?
+        let tags: [String]?
+        let sentiment: String?
+        let associatedApp: String?
+        let calendarEvent: CalendarEvent?
+        let transcription: TranscriptionResult?
+        let analysisModelProvenance: AnalysisModelProvenance?
+        let speakerLabels: [SpeakerLabel]
+
+        @MainActor init(recording: Recording) {
+            date = recording.date
+            fileURL = recording.fileURL
+            formattedDuration = recording.formattedDuration
+            generatedTitle = recording.generatedTitle
+            summary = recording.summary
+            actionItems = recording.actionItems
+            tags = recording.tags
+            sentiment = recording.sentiment
+            associatedApp = recording.associatedApp
+            calendarEvent = recording.calendarEvent
+            transcription = recording.transcription
+            analysisModelProvenance = recording.analysisModelProvenance
+            speakerLabels = recording.richTranscript?.speakerLabels ?? []
+        }
+    }
+
     @MainActor
     func generate(
         recording: Recording,
         outputFolder: URL,
-        transcriptionEndpoint: Endpoint?,
-        aiEndpoint: Endpoint?,
         includeTranscript: Bool = false
     ) throws -> URL {
         let plan = prepare(recording: recording, outputFolder: outputFolder,
-                           transcriptionEndpoint: transcriptionEndpoint,
-                           aiEndpoint: aiEndpoint, includeTranscript: includeTranscript)
+                           includeTranscript: includeTranscript)
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         try plan.content.write(to: plan.destination, atomically: true, encoding: .utf8)
         return plan.destination
@@ -21,9 +52,14 @@ struct MarkdownGenerator {
     func prepare(
         recording: Recording,
         outputFolder: URL,
-        transcriptionEndpoint: Endpoint?,
-        aiEndpoint: Endpoint?,
         includeTranscript: Bool = false
+    ) -> MarkdownExportPlan {
+        prepare(snapshot: Snapshot(recording: recording), outputFolder: outputFolder,
+                includeTranscript: includeTranscript)
+    }
+
+    func prepare(
+        snapshot recording: Snapshot, outputFolder: URL, includeTranscript: Bool = false
     ) -> MarkdownExportPlan {
         let title = generatedTitle(for: recording)
         let datePrefix = formatDateOnly(recording.date)
@@ -32,8 +68,6 @@ struct MarkdownGenerator {
         let content = buildMarkdown(
             recording: recording,
             title: title,
-            transcriptionEndpoint: transcriptionEndpoint,
-            aiEndpoint: aiEndpoint,
             includeTranscript: includeTranscript
         )
 
@@ -41,12 +75,9 @@ struct MarkdownGenerator {
                                   generatedTitle: recording.generatedTitle)
     }
 
-    @MainActor
     private func buildMarkdown(
-        recording: Recording,
+        recording: Snapshot,
         title: String,
-        transcriptionEndpoint: Endpoint?,
-        aiEndpoint: Endpoint?,
         includeTranscript: Bool
     ) -> String {
         var lines: [String] = []
@@ -73,11 +104,12 @@ struct MarkdownGenerator {
             lines.append("speakers: \(speakerCount)")
         }
 
-        if let transcriptionEndpoint {
-            lines.append("transcription_model: \"\(transcriptionEndpoint.modelName)\"")
+        if let model = recording.transcription?.modelName, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("transcription_model: \"\(yamlEscape(model))\"")
         }
-        if let aiEndpoint {
-            lines.append("ai_model: \"\(aiEndpoint.modelName)\"")
+        if let model = recording.analysisModelProvenance?.modelName(summary: recording.summary ?? "",
+            actionItems: recording.actionItems ?? [], tags: recording.tags ?? [], sentiment: recording.sentiment ?? "") {
+            lines.append("ai_model: \"\(yamlEscape(model))\"")
         }
         if let sentiment = recording.sentiment {
             lines.append("sentiment: \"\(sentiment)\"")
@@ -142,7 +174,7 @@ struct MarkdownGenerator {
             lines.append("## 💬 Transcript")
             lines.append("")
 
-            let speakerLabels = recording.richTranscript?.speakerLabels ?? []
+            let speakerLabels = recording.speakerLabels
             if transcription.segments.isEmpty {
                 lines.append(transcription.text)
             } else {
@@ -236,6 +268,8 @@ struct MarkdownGenerator {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -250,8 +284,7 @@ struct MarkdownGenerator {
         return formatter.string(from: date)
     }
 
-    @MainActor
-    private func generatedTitle(for recording: Recording) -> String {
+    private func generatedTitle(for recording: Snapshot) -> String {
         // Prefer AI-generated title
         if let aiTitle = recording.generatedTitle, !aiTitle.isEmpty {
             return sanitizeFileNameComponent(aiTitle)

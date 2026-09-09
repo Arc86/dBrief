@@ -129,17 +129,13 @@ struct TranscriptionProgressView: View {
                     .tint(.red)
                 }
 
-                // Show once WhisperKit streams segments, or once transcription proper is
-                // under way for any engine (Parakeet/Apple don't stream but the window
-                // still shows the progress bar + ETA and fills in when done).
-                if appState.processingJob?.progressiveSegments.isEmpty == false
-                    || appState.processingJob?.transcriptionStartedAt != nil {
+                if let title = appState.processingJob?.transcriptButtonTitle {
                     Button {
                         appState.pendingLiveTranscriptSelection = true
                         openWindow(id: "transcript")
                         NSApp.activate(ignoringOtherApps: true)
                     } label: {
-                        Label("Live Transcript", systemImage: "text.viewfinder")
+                        Label(title, systemImage: "text.viewfinder")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -172,18 +168,14 @@ struct TranscriptionProgressView: View {
                                 sentiment: recording.sentiment ?? "Neutral"
                             )
                             let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(markdown, forType: .string)
-                            copied = true
                             Task {
+                                copied = await RecordingClipboard.copy(markdown, for: recording)
                                 try? await Task.sleep(for: .seconds(2))
                                 copied = false
                             }
                         } else if let text = recording.transcription?.text {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(text, forType: .string)
-                            copied = true
                             Task {
+                                copied = await RecordingClipboard.copy(text, for: recording)
                                 try? await Task.sleep(for: .seconds(2))
                                 copied = false
                             }

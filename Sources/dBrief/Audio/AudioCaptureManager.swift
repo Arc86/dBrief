@@ -12,12 +12,15 @@ final class AudioCaptureManager {
     private(set) var duration: TimeInterval = 0
     private(set) var peakLevel: Float = 0
 
-    private var systemCapture: SystemAudioCapture?
+    private let systemLifecycle = SystemCaptureLifecycle()
     private var micEngine: AVAudioEngine?
     private var systemWriter: AudioTrackWriter?
     private var micWriter: AudioTrackWriter?
+    private var micSink: MicCaptureSink?
 
     private var timer: Timer?
+    private var timerLifetime: CaptureCallbackLifetime?
+    private var observerLifetime: CaptureCallbackLifetime?
     private var startTime: Date?
     private var pauseAccumulator: TimeInterval = 0
     private var pauseStartTime: Date?
@@ -42,13 +45,13 @@ final class AudioCaptureManager {
 
     /// Invoked (on the main actor) after an automatic reconfigure with a short,
     /// user-facing note (e.g. "Switched to MacBook Microphone"). Set by `RecordingManager`.
-    var statusNoteHandler: ((String) -> Void)?
+    var statusNoteHandler: (@MainActor (String) -> Void)?
 
     /// Invoked (on the main actor) on each ~10 Hz meter tick with the current
     /// duration and peak level. Set by `RecordingManager` to push these into
     /// `AppState` — replacing a separate polling loop that mirrored the same two
     /// values, so there is one source of truth and one timer.
-    var stateTickHandler: ((_ duration: TimeInterval, _ peakLevel: Float) -> Void)?
+    var stateTickHandler: (@MainActor (_ duration: TimeInterval, _ peakLevel: Float) -> Void)?
 
     private(set) var hasSystemAudioPermission = false
     private(set) var hasMicrophonePermission = false
@@ -133,6 +136,18 @@ final class AudioCaptureManager {
     ) async throws {
         guard !isCapturing else { return }
 
+        // A denied/failed new attempt must not report the previous capture's
+        // tracks or diagnostics. Preserve live sinks installed before this call.
+        trackURLs = nil
+        startTime = nil
+        pauseStartTime = nil
+        pauseAccumulator = 0
+        duration = 0
+        peakLevel = 0
+        lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics()
+        lastSystemCaptureFailure = nil
+        systemLifecycle.resetFailure()
+
         refreshPermissions()
         // A recording action can serve as the explicit microphone request when
         // no other source is available. Do not prompt a user who deliberately
@@ -151,17 +166,10 @@ final class AudioCaptureManager {
 
         aecSettingEnabled = acousticEchoCancellationEnabled
         selectedInputUID = inputDeviceUID ?? ""
-        startTime = nil
-        pauseStartTime = nil
-        pauseAccumulator = 0
-        duration = 0
         trackURLs = CapturedTracks(
             systemURL: hasSystemAudioPermission ? systemURL : nil,
             micURL: hasMicrophonePermission ? micURL : nil
         )
-        lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics()
-        lastSystemCaptureFailure = nil
-
         log.info("Starting recording — system=\(self.hasSystemAudioPermission, privacy: .public) mic=\(self.hasMicrophonePermission, privacy: .public)")
 
         do {
@@ -190,8 +198,9 @@ final class AudioCaptureManager {
     }
 
     func stopRecording() async {
-        guard isCapturing || systemCapture != nil || micEngine != nil
-                || systemWriter != nil || micWriter != nil
+        guard isCapturing || systemLifecycle.isBusy || micEngine != nil
+                || systemWriter != nil || micWriter != nil || micSink != nil
+                || micLiveContinuation != nil || systemLiveContinuation != nil
         else { return }
         stopTimer()
         // Tear down observers before the engine is nilled (the config-change token
@@ -210,16 +219,18 @@ final class AudioCaptureManager {
             duration = max(0, elapsed)
         }
 
-        if let systemCapture {
-            try? await systemCapture.stop()
-            lastSystemCaptureFailure = systemCapture.unexpectedStopFailure
-            self.systemCapture = nil
-        }
+        // Includes any suspended restart and its stale-stream cleanup. Writers
+        // must outlive every operation that can attach or start their stream.
+        await systemLifecycle.stop().value
+        lastSystemCaptureFailure = systemLifecycle.lastFailure
         if let micEngine {
             micEngine.inputNode.removeTap(onBus: 0)
             micEngine.stop()
             self.micEngine = nil
         }
+
+        micSink?.finish()
+        micSink = nil
 
         lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics(
             system: systemWriter?.diagnostics ?? .init(),
@@ -241,34 +252,23 @@ final class AudioCaptureManager {
     }
 
     func pauseRecording() {
-        guard isCapturing else { return }
+        guard isCapturing, pauseStartTime == nil else { return }
         micEngine?.pause()
-        let captureToStop = systemCapture
-        self.systemCapture = nil
-        Task {
-            try? await captureToStop?.stop()
-        }
+        systemLifecycle.stop()
         pauseStartTime = Date()
         stopTimer()
     }
 
     func resumeRecording() throws {
-        guard isCapturing else { return }
-        if let pauseStart = pauseStartTime {
-            pauseAccumulator += Date().timeIntervalSince(pauseStart)
-            pauseStartTime = nil
-        }
-        if let micEngine {
-            try micEngine.start()
-        }
+        guard isCapturing, let pauseStart = pauseStartTime else { return }
+        // A failed microphone restart leaves the capture logically paused.
+        try micEngine?.start()
+        pauseAccumulator += Date().timeIntervalSince(pauseStart)
+        pauseStartTime = nil
         if hasSystemAudioPermission, let systemWriter {
-            Task {
-                do {
-                    try await restartSystemCapture(writer: systemWriter)
-                } catch {
-                    log.error("Failed to resume system capture: \(error.localizedDescription, privacy: .public)")
-                }
-            }
+            restartSystemCapture(writer: systemWriter, onFailure: { error in
+                log.error("Failed to resume system capture: \(error.localizedDescription, privacy: .public)")
+            })
         }
         startTimer()
         // Reconcile any device/route change that happened while paused.
@@ -278,22 +278,37 @@ final class AudioCaptureManager {
     // MARK: - System pipeline
 
     private func startSystemPipeline(writer: AudioTrackWriter) async throws {
-        try await restartSystemCapture(writer: writer)
+        try await restartSystemCapture(writer: writer).value
     }
 
-    private func restartSystemCapture(writer: AudioTrackWriter) async throws {
-        let filter = try await SystemAudioCapture.createContentFilter()
-        let capture = try SystemAudioCapture(filter: filter)
-        capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: systemLiveContinuation)
-        capture.unexpectedStopHandler = { [weak self] failure in
-            Task { @MainActor [weak self] in
-                self?.lastSystemCaptureFailure = failure
-                self?.statusNoteHandler?("System audio capture stopped unexpectedly")
+    @discardableResult
+    private func restartSystemCapture(
+        writer: AudioTrackWriter,
+        onFailure: @escaping @MainActor (Error) -> Void = { _ in }
+    ) -> Task<Void, Error> {
+        // Freeze sinks and callbacks before the content-filter suspension.
+        let liveSink = systemLiveContinuation
+        let status = statusNoteHandler
+        return systemLifecycle.start(make: { [weak self] id in
+            let filter = try await SystemAudioCapture.createContentFilter()
+            let capture = try SystemAudioCapture(filter: filter)
+            capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: liveSink)
+            capture.unexpectedStopHandler = { [weak self] failure in
+                Task { @MainActor [weak self] in
+                    guard let self, self.systemLifecycle.accepts(id) else { return }
+                    self.systemLifecycle.reportFailure(failure, from: id)
+                    self.lastSystemCaptureFailure = failure
+                    status?("System audio capture stopped unexpectedly")
+                }
             }
-        }
-        self.systemCapture = capture
-        try await capture.start()
-        log.info("System capture started")
+            return .init(id: id, start: {
+                try await capture.start()
+                log.info("System capture started")
+            }, stop: {
+                try? await capture.stop()
+                return capture.unexpectedStopFailure
+            })
+        }, onFailure: onFailure)
     }
 
     private nonisolated static func makeSystemHandler(
@@ -356,7 +371,7 @@ final class AudioCaptureManager {
         }
         log.info("Mic format: \(inputFormat.sampleRate, privacy: .public)Hz \(inputFormat.channelCount, privacy: .public)ch")
 
-        let handler = Self.makeMicHandler(writer: writer, liveSink: micLiveContinuation)
+        let handler = try makeMicHandler(writer: writer, newFormat: inputFormat)
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: handler)
 
         try engine.start()
@@ -369,58 +384,23 @@ final class AudioCaptureManager {
         log.info("Mic capture started")
     }
 
-    /// Picks the converting tap handler when the live device format differs from
-    /// the file's established format, otherwise the plain handler. Shared by the
-    /// initial pipeline, the manual hot-swap, and the automatic reconfigure path.
-    private nonisolated static func selectMicHandler(
+    /// Retain each tap's sink so its converter can be drained before replacement
+    /// or writer closure. The previous sink must be retired before installing this one.
+    private func makeMicHandler(
         writer: AudioTrackWriter,
-        newFormat: AVAudioFormat,
-        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
-    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        newFormat: AVAudioFormat
+    ) throws -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        var converter: MicFormatConverter?
         if let established = writer.establishedFormat,
-           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount),
-           let converter = MicFormatConverter(from: newFormat, to: established) {
-            log.info("Reconfigure: converting \(newFormat.sampleRate, privacy: .public)Hz/\(newFormat.channelCount, privacy: .public)ch → \(established.sampleRate, privacy: .public)Hz/\(established.channelCount, privacy: .public)ch")
-            return makeConvertingMicHandler(writer: writer, converter: converter, liveSink: liveSink)
-        }
-        return makeMicHandler(writer: writer, liveSink: liveSink)
-    }
-
-    private nonisolated static func makeMicHandler(
-        writer: AudioTrackWriter,
-        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
-    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        return { buffer, _ in
-            do {
-                try writer.write(buffer)
-            } catch {
-                log.error("Mic write error: \(error.localizedDescription, privacy: .public)")
+           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount) {
+            guard let created = MicFormatConverter(from: newFormat, to: established) else {
+                throw AudioConversionError.unsupportedFormat
             }
-            // AVAudioEngine reuses the tap buffer's storage across callbacks, so
-            // deep-copy before handing it to the live transcriber.
-            if let liveSink, let copy = buffer.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
+            converter = created
         }
-    }
-
-    /// Tap handler that converts each buffer to the writer's established format before
-    /// writing — used after a live device switch when the new device's format differs.
-    private nonisolated static func makeConvertingMicHandler(
-        writer: AudioTrackWriter,
-        converter: MicFormatConverter,
-        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
-    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        return { buffer, _ in
-            guard let converted = converter.convert(buffer) else { return }
-            do {
-                try writer.write(converted)
-            } catch {
-                log.error("Mic write error (converted): \(error.localizedDescription, privacy: .public)")
-            }
-            // Feed the converted (established-format) buffer to the live consumer too,
-            // so live transcription survives a mic hot-swap. Deep-copy because the
-            // converter reuses its output buffer across calls.
-            if let liveSink, let copy = converted.deepCopy() { liveSink.yield(LiveAudioBuffer(copy)) }
-        }
+        let sink = MicCaptureSink(writer: writer, converter: converter, liveSink: micLiveContinuation)
+        micSink = sink
+        return { buffer, _ in sink.receive(buffer) }
     }
 
     /// Switch the microphone input device mid-recording without losing the in-progress
@@ -469,6 +449,8 @@ final class AudioCaptureManager {
 
         let inputNode = engine.inputNode
         inputNode.removeTap(onBus: 0)
+        micSink?.finish()
+        micSink = nil
 
         let targetUIDOrNil = decision.targetDeviceUID.isEmpty ? nil : decision.targetDeviceUID
         var deviceApplied = true
@@ -494,7 +476,7 @@ final class AudioCaptureManager {
             throw AudioCaptureError.noMicrophoneAccess
         }
 
-        let handler = Self.selectMicHandler(writer: writer, newFormat: newFormat, liveSink: micLiveContinuation)
+        let handler = try makeMicHandler(writer: writer, newFormat: newFormat)
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
         if shouldRun { try engine.start() }
 
@@ -521,22 +503,24 @@ final class AudioCaptureManager {
 
     private func installChangeObservers() {
         guard let engine = micEngine else { return }
+        removeChangeObservers()
+        let lifetime = CaptureCallbackLifetime()
+        observerLifetime = lifetime
+        let changed = lifetime.handler { [weak self] in self?.scheduleReconfigure() }
         configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: nil
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.scheduleReconfigure() }
-        }
+        ) { _ in changed() }
 
-        let monitor = DefaultOutputDeviceMonitor { [weak self] in
-            Task { @MainActor [weak self] in self?.scheduleReconfigure() }
-        }
+        let monitor = DefaultOutputDeviceMonitor { changed() }
         monitor.start()
         outputMonitor = monitor
     }
 
     private func removeChangeObservers() {
+        observerLifetime?.invalidate()
+        observerLifetime = nil
         if let token = configChangeObserver {
             NotificationCenter.default.removeObserver(token)
             configChangeObserver = nil
@@ -550,10 +534,11 @@ final class AudioCaptureManager {
     /// Coalesces the burst of events a single device connect/disconnect produces,
     /// then reconfigures once if the desired state differs from what's applied.
     private func scheduleReconfigure() {
+        guard let lifetime = observerLifetime, lifetime.isValid else { return }
         reconfigureDebounceTask?.cancel()
         reconfigureDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.reconfigureDebounceInterval)
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, lifetime.isValid, let self else { return }
             // Don't churn a paused engine — `resumeRecording` reconciles on resume.
             guard self.isCapturing, self.pauseStartTime == nil else { return }
             let decision = self.computeDecision()
@@ -605,19 +590,24 @@ final class AudioCaptureManager {
         // Add the timer in `.common` modes so it keeps firing while the run loop
         // is in a tracking mode (e.g. the menu-bar popover is open) — otherwise
         // the live duration/peak readout freezes during recording.
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, let startTime = self.startTime else { return }
-                self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
-                self.peakLevel = max(self.micWriter?.peakLevel ?? 0, self.systemWriter?.peakLevel ?? 0)
-                self.stateTickHandler?(self.duration, self.peakLevel)
-            }
+        stopTimer()
+        let lifetime = CaptureCallbackLifetime()
+        timerLifetime = lifetime
+        let tick = stateTickHandler
+        let update = lifetime.handler { [weak self] in
+            guard let self, let startTime = self.startTime else { return }
+            self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
+            self.peakLevel = max(self.micWriter?.consumePeakLevel() ?? 0, self.systemWriter?.consumePeakLevel() ?? 0)
+            tick?(self.duration, self.peakLevel)
         }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { _ in update() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
     private func stopTimer() {
+        timerLifetime?.invalidate()
+        timerLifetime = nil
         timer?.invalidate()
         timer = nil
     }

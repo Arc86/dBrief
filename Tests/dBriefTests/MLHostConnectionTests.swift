@@ -107,3 +107,102 @@ private func stubURL() -> URL {
         await conn.shutdown()
     }
 }
+
+
+private final class ScopedProgressAudit: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ state: LocalAIPluginState) {
+        if case .newSegments(let segments) = state {
+            lock.withLock { values.append(contentsOf: segments.map(\.text)) }
+        }
+    }
+    var texts: [String] { lock.withLock { values } }
+}
+
+extension MLHostConnectionTests {
+    @Test func scopedCallsRejectPreviousAndUnattributedProgress() async throws {
+        let conn = MLHostConnection(binaryURL: stubURL(), supportBase: URL(fileURLWithPath: "/tmp"),
+            environment: ["STUB_MODE": "scoped-progress"])
+        let first = ScopedProgressAudit(), second = ScopedProgressAudit()
+        for audit in [first, second] {
+            _ = try await MLProgress.$sink.withValue({ audit.append($0) }) {
+                try await conn.call(.transcribe(path: "/synthetic.wav", initialPrompt: nil,
+                    config: .default, safeMode: false, unloadAfter: true))
+            }
+        }
+        #expect(first.texts == ["current"])
+        #expect(second.texts == ["current"])
+        await conn.shutdown()
+    }
+
+    @Test func scopedStreamKeepsItsSinkAfterCreationScopeEnds() async throws {
+        let conn = MLHostConnection(binaryURL: stubURL(), supportBase: URL(fileURLWithPath: "/tmp"),
+            environment: ["STUB_MODE": "scoped-progress"])
+        let callAudit = ScopedProgressAudit(), streamAudit = ScopedProgressAudit()
+        _ = try await MLProgress.$sink.withValue({ callAudit.append($0) }) {
+            try await conn.call(.transcribe(path: "/synthetic.wav", initialPrompt: nil,
+                config: .default, safeMode: false, unloadAfter: true))
+        }
+        let plugin = LocalAIPluginService(connection: conn)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = PrivacyTrace.Context(receiptURL: root.appendingPathComponent("privacy.json"), recordingID: UUID())
+        let stream = await PrivacyTrace.$context.withValue(context) {
+            await MLProgress.$sink.withValue({ streamAudit.append($0) }) {
+                await plugin.analyzeTranscriptStream("Synthetic", outputLanguage: .matchInput)
+            }
+        }
+        var tokens = ""
+        for try await token in stream { tokens += token }
+        #expect(tokens == "synthetic token")
+        #expect(callAudit.texts == ["current"])
+        #expect(streamAudit.texts == ["current"])
+        await conn.shutdown()
+    }
+}
+
+
+extension MLHostConnectionTests {
+    @Test func concurrentSameChannelRequestsReceiveOnlyTheirOwnProgress() async throws {
+        let conn = MLHostConnection(binaryURL: stubURL(), supportBase: URL(fileURLWithPath: "/tmp"),
+            environment: ["STUB_MODE": "interleaved-progress"])
+        let watchdog = Task {
+            do { try await Task.sleep(for: .seconds(10)); await conn.shutdown() } catch { }
+        }
+        defer { watchdog.cancel() }
+        let first = ScopedProgressAudit(), second = ScopedProgressAudit()
+        async let a = MLProgress.$sink.withValue({ first.append($0) }) {
+            try await conn.call(.transcribe(path: "first", initialPrompt: nil, config: .default, safeMode: false, unloadAfter: true))
+        }
+        async let b = MLProgress.$sink.withValue({ second.append($0) }) {
+            try await conn.call(.transcribe(path: "second", initialPrompt: nil, config: .default, safeMode: false, unloadAfter: true))
+        }
+        _ = try await (a, b)
+        #expect(first.texts == ["first"])
+        #expect(second.texts == ["second"])
+        await conn.shutdown()
+    }
+
+    @Test func proxySafeModeRetryRetainsItsOriginatingProgressSink() async throws {
+        let firstFlag = uniqueFlagPath(), crashFlag = uniqueFlagPath()
+        defer {
+            try? FileManager.default.removeItem(atPath: firstFlag)
+            try? FileManager.default.removeItem(atPath: crashFlag)
+        }
+        let conn = MLHostConnection(binaryURL: stubURL(), supportBase: URL(fileURLWithPath: "/tmp"),
+            environment: ["STUB_MODE": "crash-second", "STUB_FLAG_1": firstFlag, "STUB_FLAG_2": crashFlag])
+        let plugin = LocalAIPluginService(connection: conn)
+        let first = ScopedProgressAudit(), second = ScopedProgressAudit()
+        let initial = try await MLProgress.$sink.withValue({ first.append($0) }) {
+            try await plugin.transcribe(fileURL: URL(fileURLWithPath: "/synthetic.wav"), initialPrompt: nil, whisperConfig: .default)
+        }
+        let recovered = try await MLProgress.$sink.withValue({ second.append($0) }) {
+            try await plugin.transcribe(fileURL: URL(fileURLWithPath: "/synthetic.wav"), initialPrompt: nil, whisperConfig: .default)
+        }
+        #expect(initial.text == "echo" && recovered.text == "recovered")
+        #expect(first.texts == ["live"])
+        #expect(!second.texts.isEmpty && second.texts.allSatisfy { $0 == "live" })
+        await conn.shutdown()
+    }
+}

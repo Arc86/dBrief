@@ -348,10 +348,8 @@ struct ResultsView: View {
             parts.append(transcript)
         }
         let text = parts.joined(separator: "\n\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = true
         Task {
+            copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))
             copied = false
         }

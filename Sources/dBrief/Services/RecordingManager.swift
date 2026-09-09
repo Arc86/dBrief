@@ -7,22 +7,20 @@ import UserNotifications
 import UniformTypeIdentifiers
 import OSLog
 
-struct FinalizedRecordingMatch: Equatable, Sendable {
-    let audioURL: URL
-    let metadataURL: URL
-    let segmentURLs: [URL]
-}
-
 @MainActor
 @Observable
 final class RecordingManager {
     private let appState: AppState
     private let appSettings: AppSettings
-    private let audioCaptureManager = AudioCaptureManager()
+    @ObservationIgnored private lazy var captureCoordinator = CaptureCoordinator(
+        hardware: .live(AudioCaptureManager()), persistence: .live(captureSessionStore),
+        onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
+    @ObservationIgnored private lazy var recordingReviewSlot = RecordingReviewSlot(
+        appState: appState, action: postRecordingAction,
+        captureBusy: { [weak self] in self?.captureCoordinator.isBusy ?? true },
+        maintenance: { [weak self] in self?.recoveryMaintenanceInProgress ?? true })
     private let transcriptionService = TranscriptionService()
     private let localTranscriptionService = LocalTranscriptionService()
-    /// Real-time, in-process Apple Speech transcription during recording (preview only).
-    private var liveTranscriptionService: LiveTranscriptionService?
     /// One supervised helper process backs both local-ML proxies, so they share
     /// the GPU-serializing orchestrator inside dBriefMLHost.
     private let mlHost = MLHostConnection(
@@ -37,25 +35,31 @@ final class RecordingManager {
     /// user-deferred items (not just auto-queued overflow); reset once the queue is drained.
     private var drainAllQueued = false
     private let queueScheduleStore = QueueScheduleStore()
+    var queueEnqueueInProgress = false
+    private var queueDrainInProgress = false
+    private var queueDrainRequested = false
+    private var queuePauseGeneration = 0
+    var queuePauseWriteInProgress = false
     var queuePaused = false
     private var queueSafetyHold = false
     var queueMutationInProgress = false
     var recoveryMaintenanceInProgress = false
     var processingCancellationInProgress = false
+    private var processingCancellationID: UUID?
+    private var speakerReviewOperation: ReviewOperation?
     let postRecordingAction = PostRecordingActionState()
-    var pendingQueueItems: [(audioURL: URL, item: QueueItem)] = []
+    let postRecordingAutomation = PostRecordingAutomation()
+    private var postRecordingAutomationTask: Task<Void, Never>?
+    private var profileSelectionTask: Task<Void, Never>?
+    var pendingQueueItems: [QueueScheduleStore.Entry] = []
     var recoveryQueueEntries: [RecoveryQueueEntry] = []
     var queueLoadError: String?
     private var queueRefreshGeneration = 0
-    /// Auto-clears the transient `appState.recordingStatusNote` a few seconds after a switch.
-    private var statusNoteClearTask: Task<Void, Never>?
-    /// Observable per-model download state, read by the Settings download buttons.
-    var modelDownloads: [LocalModelKind: ModelDownloadPhase] = [:]
-    private var downloadTasks: [LocalModelKind: Task<Void, Never>] = [:]
-    private var downloadObservers: [LocalModelKind: Task<Void, Never>] = [:]
+    /// Forward the coordinator's observable phases to existing Settings callers.
+    var modelDownloads: [LocalModelKind: ModelDownloadPhase] { modelDownloadCoordinator.phases }
+    private let modelDownloadCoordinator: ModelDownloadCoordinator
     private let aiService = AIService()
     private let localCLIService = LocalCLIService()
-    private let markdownGenerator = MarkdownGenerator()
     private let integrationDispatchService = IntegrationDispatchService()
     private let integrationDeliveryStore = IntegrationDeliveryStore()
     @ObservationIgnored private lazy var integrationDeliveryCoordinator = IntegrationDeliveryCoordinator(store: integrationDeliveryStore)
@@ -67,8 +71,11 @@ final class RecordingManager {
     private let voiceLibraryStore: VoiceLibraryStore
     private let modelPerformanceStore: ModelPerformanceStore
     private let processingJobStore: ProcessingJobStore
-    private let richTranscriptBuilder = RichTranscriptBuilder()
-    private let youtubeDownloadService = YouTubeDownloadService()
+    private let processingPipeline: ProcessingPipeline
+    private let importCoordinator: ImportCoordinator
+    private let captureSessionStore: CaptureSessionStore
+    @ObservationIgnored private var pickedImportTask: Task<Void, Never>?
+    @ObservationIgnored private var pickedImportGeneration = 0
     private let calendarService = CalendarService()
     private let microsoftAuthService: MicrosoftAuthService
     private let outlookCalendarService: OutlookCalendarService
@@ -86,8 +93,15 @@ final class RecordingManager {
         voiceLibraryStore: VoiceLibraryStore,
         modelPerformanceStore: ModelPerformanceStore,
         processingJobStore: ProcessingJobStore,
-        microsoftAuthService: MicrosoftAuthService
+        microsoftAuthService: MicrosoftAuthService,
+        importCoordinator: ImportCoordinator = ImportCoordinator(),
+        modelDownloadCoordinator: ModelDownloadCoordinator? = nil,
+        processingPipeline: ProcessingPipeline = ProcessingPipeline(),
+        captureSessionStore: CaptureSessionStore = CaptureSessionStore()
     ) {
+        self.processingPipeline = processingPipeline
+        self.captureSessionStore = captureSessionStore
+        self.importCoordinator = importCoordinator
         self.appState = appState
         self.appSettings = appSettings
         self.transcriptStore = transcriptStore
@@ -99,34 +113,8 @@ final class RecordingManager {
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
         self.localAIPluginService = LocalAIPluginService(connection: mlHost)
         self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
-        // Surface automatic mid-recording device/AEC switches to the user.
-        self.audioCaptureManager.statusNoteHandler = { [weak self] note in
-            self?.showRecordingStatusNote(note)
-        }
-        // Mirror the capture manager's meter into AppState from its own 10 Hz
-        // timer — one source of truth, no second polling loop. Peak drives the
-        // waveform at full rate; duration only shows whole seconds, so push it
-        // just once per second to avoid needless SwiftUI invalidations.
-        self.audioCaptureManager.stateTickHandler = { [weak self] duration, peak in
-            guard let self else { return }
-            self.appState.peakLevel = peak
-            if Int(duration) != Int(self.appState.recordingDuration) {
-                self.appState.recordingDuration = duration
-            }
-        }
-    }
-
-    /// Briefly shows a status note (e.g. "Switched to MacBook Microphone") during
-    /// recording, auto-clearing after a few seconds.
-    private func showRecordingStatusNote(_ note: String) {
-        appState.recordingStatusNote = note
-        Logger.recording.info("Recording status note: \(note, privacy: .public)")
-        statusNoteClearTask?.cancel()
-        statusNoteClearTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled else { return }
-            self?.appState.recordingStatusNote = nil
-        }
+        self.modelDownloadCoordinator = modelDownloadCoordinator ?? ModelDownloadCoordinator(
+            dependencies: .live(plugin: self.localAIPluginService, parakeet: self.parakeetService))
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -156,79 +144,58 @@ final class RecordingManager {
     }
 
     func checkPermissions() async {
-        await audioCaptureManager.checkPermissions()
+        captureCoordinator.refreshPermissions()
     }
 
     func refreshPermissions() {
-        audioCaptureManager.refreshPermissions()
+        captureCoordinator.refreshPermissions()
     }
 
     @discardableResult
     func requestMicrophonePermission() async -> Bool {
-        await audioCaptureManager.requestMicrophonePermission()
+        await captureCoordinator.requestMicrophonePermission()
     }
 
-    var hasSystemAudioPermission: Bool { audioCaptureManager.hasSystemAudioPermission }
-    var hasMicrophonePermission: Bool { audioCaptureManager.hasMicrophonePermission }
+    var hasSystemAudioPermission: Bool { captureCoordinator.hasSystemAudioPermission }
+    var hasMicrophonePermission: Bool { captureCoordinator.hasMicrophonePermission }
     var microphoneAuthorizationState: PermissionAuthorizationState {
-        audioCaptureManager.microphoneAuthorizationState
+        captureCoordinator.microphoneAuthorizationState
     }
     var hasActiveProcessingJob: Bool { appState.processingJob != nil || processingCancellationInProgress }
 
     /// Promotes any interrupted Application Support capture into the normal
     /// recordings library. Recovery never starts transcription or integrations;
     /// it only makes the audio durable and visible in History.
-    func recoverInterruptedSessions() async {
-        let candidates = InterruptedSessionDiscovery.discover(
-            in: InterruptedSessionStore.defaultRootURL
-        )
-        guard !candidates.isEmpty else { return }
-
-        var recoveredCount = 0
-        var failedCount = 0
-        for candidate in candidates {
-            let tracks = candidate.capturedTracks
-            DurabilityJournal.shared.record(.init(
-                sessionID: candidate.manifest.id,
-                name: "interrupted_capture_discovered",
-                outcome: .warning,
-                measurements: captureTrackMeasurements(tracks)
-            ))
-
-            let recording = Recording(
-                id: candidate.manifest.id,
-                date: candidate.manifest.startedAt,
-                fileURL: candidate.manifestURL.deletingLastPathComponent()
-                    .appendingPathComponent("capture"),
-                meetingTitleDraft: "Recovered recording"
-            )
-            recording.capturedTracks = tracks
-            recording.recoveryManifestURL = candidate.manifestURL
-            recording.fileSize = Self.totalTrackFileSize(tracks)
-            if let probeURL = tracks.micURL ?? tracks.systemURL {
-                recording.duration = await durationSeconds(for: probeURL)
+    @discardableResult
+    func recoverInterruptedSessions(only sessionID: UUID? = nil) async -> Bool {
+        guard canPerformLibraryWork else { return false }
+        recoveryMaintenanceInProgress = true
+        defer { recoveryMaintenanceInProgress = false }
+        let report: CaptureSessionStore.RecoveryReport
+        do {
+            report = try await captureSessionStore.recoverInterrupted(only: sessionID) { @MainActor [weak self] input in
+                guard let self else { throw CancellationError() }
+                try Task.checkCancellation()
+                let candidate = input.candidate
+                let recording = Recording(id: candidate.manifest.id, date: candidate.manifest.startedAt,
+                    fileURL: candidate.manifestURL.deletingLastPathComponent().appendingPathComponent("capture"),
+                    meetingTitleDraft: "Recovered recording")
+                recording.capturedTracks = candidate.capturedTracks
+                recording.recoveryManifestURL = candidate.manifestURL
+                recording.fileSize = input.fileSize
+                recording.duration = input.duration
+                try await self.ensureRecordingFinalized(recording: recording)
+                return recording.fileURL
             }
-
-            do {
-                try await ensureRecordingFinalized(recording: recording)
-                recoveredCount += 1
-                DurabilityJournal.shared.record(.init(
-                    sessionID: recording.id,
-                    name: "interrupted_capture_recovered",
-                    outcome: .succeeded,
-                    measurements: ["masterBytes": Self.fileSize(at: recording.fileURL)]
-                ))
-            } catch {
-                failedCount += 1
-                DurabilityJournal.shared.record(.init(
-                    sessionID: recording.id,
-                    name: "interrupted_capture_recovered",
-                    outcome: .failed,
-                    measurements: captureTrackMeasurements(tracks),
-                    failure: .init(error: error)
-                ))
-            }
+            try Task.checkCancellation()
+        } catch {
+            // Ordinary session failures are counted by the actor. Cancellation
+            // must not become a recovery-failure notice or publish stale success.
+            return false
         }
+        guard report.recovered + report.failed > 0 else { return false }
+        let recoveredCount = report.recovered
+        let failedCount = report.failed
 
         if failedCount == 0 {
             appState.durabilityNoticeIsWarning = false
@@ -237,8 +204,9 @@ final class RecordingManager {
                 : "Recovered \(recoveredCount) interrupted recordings. They are available in History."
         } else {
             appState.durabilityNoticeIsWarning = true
-            appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) remain safe in Recording Recovery; reconnect the configured storage and restart dBrief to retry."
+            appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) remain safe in Recording Recovery; reconnect the configured storage and retry recovery."
         }
+        return failedCount == 0
     }
 
     /// Resumes at most one interrupted job through durable Markdown export.
@@ -247,8 +215,9 @@ final class RecordingManager {
         guard appState.processingJob == nil, !recoveryMaintenanceInProgress, !queueMutationInProgress else { return }
         queueMutationInProgress = true
         defer { queueMutationInProgress = false }
+        let pauseGeneration = queuePauseGeneration
         do {
-            queuePaused = try queueScheduleStore.load().paused
+            queuePaused = try await queueScheduleStore.load().paused
             guard !queuePaused else { return }
         } catch {
             queueLoadError = "Saved queue settings could not be read. Automatic recovery is paused."
@@ -271,9 +240,7 @@ final class RecordingManager {
                     try await processingJobStore.save(record)
                     if let path = record.source.finalizedAudioPath {
                         let audioURL = URL(fileURLWithPath: path)
-                        if Self.loadQueueItem(for: audioURL)?.id == record.id {
-                            Self.removeQueueFile(for: audioURL)
-                        }
+                        try? await queueScheduleStore.retireItem(at: audioURL, expectedID: record.id)
                     }
                 } catch {
                     appState.durabilityNoticeIsWarning = true
@@ -284,7 +251,10 @@ final class RecordingManager {
                 break
             }
 
-            guard let recording = await recordingForRecovery(record) else {
+            let recovered: Recording?
+            do { recovered = try await recordingForRecovery(record) }
+            catch { return } // Cancellation must never become a missing-input checkpoint.
+            guard let recording = recovered else {
                 record.markFailed(.missingInput, at: Date())
                 try? await processingJobStore.save(record)
                 appState.durabilityNoticeIsWarning = true
@@ -293,12 +263,15 @@ final class RecordingManager {
             }
 
             updatePersistedSource(&record.source, from: recording)
-            let queueURL = Self.queueURL(for: recording)
-            let queuedAudioURL = queueURL.flatMap {
-                FileManager.default.fileExists(atPath: $0.path)
-                    ? recording.finalizedAudioURL
-                    : nil
+            var queuedAudioURL: URL?
+            if let audio = recording.finalizedAudioURL, await queueScheduleStore.hasMarker(for: audio) {
+                queuedAudioURL = audio
             }
+            guard !Task.isCancelled, appState.processingJob == nil,
+                  !processingCancellationInProgress, !recoveryMaintenanceInProgress,
+                  !reviewingIntegrationDeliveries, !queueSafetyHold, !queuePauseWriteInProgress,
+                  !queueEnqueueInProgress, pauseGeneration == queuePauseGeneration else { return }
+            queueMutationInProgress = false // Synchronous admission handoff to launchJob.
             appState.durabilityNoticeIsWarning = false
             appState.durabilityNotice = "Resuming interrupted audio processing."
             let request = record.request
@@ -327,25 +300,38 @@ final class RecordingManager {
     /// Analyzed jobs need no finalization, transcription, or speaker processing.
     /// A frozen export can finish even when earlier stage sidecars were moved.
     private func resumeExport(job: ProcessingJob) async {
-        guard let record = job.persistedRecord else { return }
+        guard !Task.isCancelled, appState.processingJob === job,
+              let record = job.persistedRecord else { return }
         appState.processingSteps = []
         appState.liveInferenceText = nil
-        if record.markdownExport == nil, record.request.transcribe {
-            do {
-                guard let transcript = loadSavedTranscript(for: job.recording) else {
-                    throw TranscriptStoreError.noSidecarURL
-                }
-                job.recording.transcription = transcript
-                job.recording.richTranscript = try await transcriptStore.load(for: job.recording)
-            } catch {
-                appState.processingSteps.append(ProcessingStep(
-                    name: "Loading saved transcript", status: .failed(error.localizedDescription)))
-                await markPersistedJobFailed(.missingInput, job: job)
-                await ensureRetryQueue(for: job)
-                await finishJob(for: job.recording, completed: false)
-                return
+        let recording = job.recording
+        let input = recoveryInputRequest(for: recording,
+            mode: .export(hasFrozenPlan: record.markdownExport != nil, transcribe: record.request.transcribe))
+        let store = transcriptStore
+        do {
+            let loaded = try await processingPipeline.recoverInputs(input, loadRich: { try await store.load(from: $0) },
+                validateOwnership: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    try self.requireRecoveryInputPaths(input, recording: recording)
+                })
+            try requireProcessingOwnership(job)
+            try requireRecoveryInputPaths(input, recording: recording)
+            if let loaded {
+                recording.transcription = loaded.transcription
+                recording.richTranscript = loaded.richTranscript
+                if let url = loaded.loadedTranscriptURL { recording.transcriptURL = url }
             }
+        } catch {
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            appState.processingSteps.append(ProcessingStep(
+                name: "Loading saved transcript", status: .failed(error.localizedDescription)))
+            await markPersistedJobFailed(.missingInput, job: job)
+            await ensureRetryQueue(for: job)
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            await finishJob(job, completed: false)
+            return
         }
+        guard !Task.isCancelled, appState.processingJob === job else { return }
         await runAnalysisAndExport(
             recording: job.recording, transcribe: record.request.transcribe,
             summary: record.request.summary, actionItems: record.request.actionItems,
@@ -354,86 +340,20 @@ final class RecordingManager {
         )
     }
 
-    private func recordingForRecovery(_ record: PersistedProcessingJob) async -> Recording? {
-        let fileManager = FileManager.default
-        var finalizedAudioURL = record.source.finalizedAudioPath.map(URL.init(fileURLWithPath:))
-        var metadataURL = record.source.metadataPath.map(URL.init(fileURLWithPath:))
-        var segmentURLs = record.source.segmentAudioPaths.map(URL.init(fileURLWithPath:))
-
-        if let audioURL = finalizedAudioURL,
-           !fileManager.fileExists(atPath: audioURL.path) {
-            finalizedAudioURL = nil
-        }
-        let recordingFolder = appSettings.effectiveRecordingFolderURL
-        let discoveredMatch: FinalizedRecordingMatch? = if finalizedAudioURL == nil {
-            await Task.detached(priority: .utility) {
-                Self.findFinalizedRecording(
-                    recordingID: record.recordingID,
-                    in: recordingFolder
-                )
-            }.value
-        } else {
-            nil
-        }
-        if let match = discoveredMatch {
-            finalizedAudioURL = match.audioURL
-            metadataURL = match.metadataURL
-            segmentURLs = match.segmentURLs
-        }
-
-        let recording: Recording
-        if let finalizedAudioURL {
-            let attributes = try? fileManager.attributesOfItem(atPath: finalizedAudioURL.path)
-            let fileSize = (attributes?[.size] as? Int64) ?? record.source.fileSize
-            recording = Recording(
-                id: record.recordingID,
-                date: record.source.recordingDate,
-                fileURL: finalizedAudioURL,
-                duration: record.source.duration,
-                fileSize: fileSize,
-                associatedApp: record.source.associatedApp,
-                meetingTitleDraft: record.source.meetingTitle,
-                finalizedAudioURL: finalizedAudioURL,
-                segmentAudioURLs: segmentURLs.filter { fileManager.fileExists(atPath: $0.path) },
-                metadataURL: metadataURL
-            )
-        } else if let stagedPath = record.source.stagedInputPath {
-            let stagedURL = URL(fileURLWithPath: stagedPath)
-            guard fileManager.fileExists(atPath: stagedURL.path) else { return nil }
-            recording = Recording(
-                id: record.recordingID,
-                date: record.source.recordingDate,
-                fileURL: stagedURL,
-                duration: record.source.duration,
-                fileSize: record.source.fileSize,
-                associatedApp: record.source.associatedApp,
-                meetingTitleDraft: record.source.meetingTitle
-            )
-            recording.importSourceURL = stagedURL
-        } else if let manifestPath = record.source.recoveryManifestPath,
-                  let candidate = InterruptedSessionDiscovery.discover(
-                      in: InterruptedSessionStore.defaultRootURL
-                  ).first(where: { $0.manifestURL.path == manifestPath }) {
-            recording = Recording(
-                id: record.recordingID,
-                date: record.source.recordingDate,
-                fileURL: candidate.manifestURL.deletingLastPathComponent()
-                    .appendingPathComponent("capture"),
-                duration: record.source.duration,
-                fileSize: Self.totalTrackFileSize(candidate.capturedTracks),
-                associatedApp: record.source.associatedApp,
-                meetingTitleDraft: record.source.meetingTitle
-            )
-            recording.capturedTracks = candidate.capturedTracks
-            recording.recoveryManifestURL = candidate.manifestURL
-            if recording.duration <= 0, let probe = candidate.capturedTracks.micURL
-                ?? candidate.capturedTracks.systemURL {
-                recording.duration = await durationSeconds(for: probe)
-            }
-        } else {
-            return nil
-        }
-
+    private func recordingForRecovery(_ record: PersistedProcessingJob) async throws -> Recording? {
+        let recovered = try await processingPipeline.recoverRecordingSource(recordingID: record.recordingID,
+            source: record.source, recordingFolder: appSettings.effectiveRecordingFolderURL,
+            recoveryRoot: InterruptedSessionStore.defaultRootURL)
+        try Task.checkCancellation()
+        guard let source = recovered else { return nil }
+        let recording = Recording(id: record.recordingID, date: record.source.recordingDate,
+            fileURL: source.fileURL, duration: source.duration, fileSize: source.fileSize,
+            associatedApp: record.source.associatedApp, meetingTitleDraft: record.source.meetingTitle,
+            finalizedAudioURL: source.finalizedAudioURL, segmentAudioURLs: source.segmentAudioURLs,
+            metadataURL: source.metadataURL)
+        recording.importSourceURL = source.importSourceURL
+        recording.capturedTracks = source.capturedTracks
+        recording.recoveryManifestURL = source.recoveryManifestURL
         recording.participants = record.source.participants
         recording.calendarEvent = record.source.calendarEvent
         recording.echoSuppressionApplied = record.source.echoSuppressionApplied
@@ -441,330 +361,267 @@ final class RecordingManager {
         return recording
     }
 
-    /// Finds a finalized master by the stable recording UUID embedded in its
-    /// metadata. This closes the crash window after the finalizer moved the audio
-    /// but before the processing-job manifest learned the destination path.
-    nonisolated static func findFinalizedRecording(
-        recordingID: UUID,
-        in folder: URL,
-        fileManager: FileManager = .default
-    ) -> FinalizedRecordingMatch? {
-        guard let enumerator = fileManager.enumerator(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-
-        let decoder = JSONDecoder()
-        for case let metadataURL as URL in enumerator {
-            guard metadataURL.pathExtension.lowercased() == "json",
-                  let data = try? Data(contentsOf: metadataURL),
-                  let payload = try? decoder.decode(RecordingMetadataPayload.self, from: data),
-                  payload.recordingID == recordingID,
-                  payload.masterFileName == URL(fileURLWithPath: payload.masterFileName).lastPathComponent
-            else { continue }
-
-            let directory = metadataURL.deletingLastPathComponent()
-            let audioURL = directory.appendingPathComponent(payload.masterFileName)
-            guard fileManager.fileExists(atPath: audioURL.path) else { continue }
-            let segments = payload.segmentFileNames.compactMap { name -> URL? in
-                guard name == URL(fileURLWithPath: name).lastPathComponent else { return nil }
-                let url = directory.appendingPathComponent(name)
-                return fileManager.fileExists(atPath: url.path) ? url : nil
-            }
-            return FinalizedRecordingMatch(
-                audioURL: audioURL,
-                metadataURL: metadataURL,
-                segmentURLs: segments
-            )
-        }
-        return nil
-    }
-
     /// Closes an active audio file before AppDelegate's hard process exit. The
     /// durable manifest stays recoverable and is finalized on next launch.
     func prepareForTermination() async {
-        // The recovery manifest is installed before capture setup begins, so
-        // this also covers quitting during the brief start-up window before the
-        // UI state has switched from idle to recording.
-        guard let recording = appState.currentRecording,
-              recording.recoveryManifestURL != nil
-        else { return }
-
-        await audioCaptureManager.stopRecording()
-        recording.capturedTracks = audioCaptureManager.trackURLs
-        recording.fileSize = Self.totalTrackFileSize(recording.capturedTracks)
-        recording.duration = audioCaptureManager.duration
-        try? persistRecoveryManifest(for: recording, state: .finalizing)
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "capture_checkpointed_for_termination",
-            outcome: recording.fileSize > 0 ? .succeeded : .failed,
-            measurements: captureTrackMeasurements(recording.capturedTracks)
-        ))
+        cancelPostRecordingAutomation()
+        await captureCoordinator.stop(terminating: true)
     }
 
     func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {
+        guard !captureCoordinator.isBusy else { throw CaptureCoordinator.Failure.busy }
         guard !postRecordingAction.isBusy else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for the current recording to finish saving before recording again."])
         }
         guard !recoveryMaintenanceInProgress else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording cleanup to finish before recording."])
         }
-        // A recording takes priority over any in-flight model download: cancel
-        // active downloads so the recording pipeline is the sole consumer of the
-        // services' state streams (and the GPU mutex is free).
+        cancelPostRecordingAutomation()
+        if appState.processingJob == nil, let owner = appSettings.automaticProfileRecordingID {
+            appSettings.finishAutomaticRouting(for: owner)
+        }
         cancelAllActiveDownloads()
+        let recordingID = UUID()
+        let request = CaptureCoordinator.Request(id: recordingID, startedAt: Date(),
+            inputDeviceUID: appSettings.audioInputDeviceUID,
+            acousticEchoCancellation: appSettings.acousticEchoCancellation,
+            echoSuppression: appSettings.acousticEchoCancellation && AudioOutputRoute.currentOutputHasEchoPath(),
+            liveTranscription: appSettings.liveTranscriptionEnabled, language: appSettings.effectiveTranscriptionLanguage,
+            associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
+            prewarmWhisper: appSettings.effectiveTranscriptionEngine == .localWhisper ? appSettings.whisperRuntimeConfig : nil,
+            privacyScope: RecordingPrivacyScope(recordingID: recordingID))
+        try await captureCoordinator.start(request)
+    }
 
-        let sessionID = UUID()
-        let startedAt = Date()
-        let recoverySession: InterruptedCaptureSession
-        do {
-            recoverySession = try InterruptedSessionStore.createSession(
-                id: sessionID,
-                startedAt: startedAt
-            )
-        } catch {
-            DurabilityJournal.shared.record(.init(
-                sessionID: sessionID,
-                name: "capture_recovery_session_created",
-                outcome: .failed,
-                failure: .init(error: error)
-            ))
-            throw error
-        }
-        let baseURL = recoverySession.captureBaseURL
-
-        let recording = Recording(
-            id: sessionID,
-            date: startedAt,
-            fileURL: baseURL,
-            associatedApp: associatedApp,
-            meetingTitleDraft: defaultMeetingTitle(from: associatedApp)
-        )
-        recording.recoveryManifestURL = recoverySession.manifestURL
-        appState.currentRecording = recording
-        // Tag the recording with the call app that started it (nil for manual starts),
-        // so the stop-on-call-end feature can match this call's own end signal.
-        appState.callRecordingBundleId = callBundleId
-
-        // The calendar lookup happens at stopRecording (not here): only once recording stops
-        // is the true span [start, start+duration] known, which the span-aware CalendarMatcher
-        // needs to rank events that overlap the recording.
-
-        // Create the live audio streams before the capture taps install so the
-        // tap handlers capture the sinks (no-op unless the feature is enabled).
-        let liveStreams = appSettings.liveTranscriptionEnabled
-            ? audioCaptureManager.makeLiveAudioStreams()
-            : nil
-
-        // Echo cancellation only helps when sound from the speakers bleeds into the
-        // mic. With earphones/headphones (or any non-built-in output) there's no
-        // echo path, and Voice Processing would needlessly duck output + apply AGC,
-        // making the audio the user hears much quieter. The offline (mixed-mode)
-        // sidechain duck is an all-or-nothing ffmpeg filter, so freeze its decision
-        // at the start-time route. The live capture path receives the RAW setting and
-        // re-gates on the route dynamically (it can toggle VPIO mid-recording).
-        let echoCancellationActive = appSettings.acousticEchoCancellation
-            && AudioOutputRoute.currentOutputHasEchoPath()
-        recording.echoSuppressionApplied = echoCancellationActive
-        if appSettings.acousticEchoCancellation && !echoCancellationActive {
-            Logger.recording.info("Echo cancellation auto-disabled: output route has no speaker→mic echo path (headphones/external)")
-        }
-
-        do {
-            try await audioCaptureManager.startRecording(
-                to: baseURL,
-                inputDeviceUID: appSettings.audioInputDeviceUID,
-                acousticEchoCancellationEnabled: appSettings.acousticEchoCancellation
-            )
-            try persistRecoveryManifest(for: recording, state: .capturing)
-        } catch {
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "capture_started",
-                outcome: .failed,
-                measurements: captureTrackMeasurements(audioCaptureManager.trackURLs),
-                failure: .init(error: error)
-            ))
-            let trackBytes = Self.totalTrackFileSize(audioCaptureManager.trackURLs)
-            if trackBytes == 0, let manifestURL = recording.recoveryManifestURL {
-                try? InterruptedSessionStore.removeSession(
-                    containing: manifestURL,
-                    finalState: .discarded
-                )
+    /// Invoked synchronously while the coordinator still owns admission. Storage
+    /// and hardware teardown have already settled before a terminal UI handoff.
+    private func applyCaptureEvent(_ event: CaptureCoordinator.Event) {
+        switch event {
+        case .prepared(let request, let session):
+            let recording = Recording(id: request.id, date: request.startedAt, fileURL: session.files.captureBaseURL,
+                associatedApp: request.associatedApp, meetingTitleDraft: defaultMeetingTitle(from: request.associatedApp))
+            recording.recoveryManifestURL = session.files.manifestURL
+            recording.privacyScope = request.privacyScope
+            recording.echoSuppressionApplied = request.echoSuppression
+            appState.currentRecording = recording
+            appState.callRecordingBundleId = request.callBundleID
+            appState.showPostRecordingSheet = false
+        case .started(let request):
+            guard appState.currentRecording?.id == request.id else { return }
+            appState.recordingState = .recording
+            if let config = request.prewarmWhisper {
+                Task { await localAIPluginService.prewarmWhisper(config: config, refresh: false) }
             }
-            appState.currentRecording = nil
-            throw error
-        }
-        appState.recordingState = .recording
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "capture_started",
-            outcome: .succeeded,
-            measurements: [
-                "microphoneEnabled": audioCaptureManager.hasMicrophonePermission ? 1 : 0,
-                "systemAudioEnabled": audioCaptureManager.hasSystemAudioPermission ? 1 : 0,
-            ]
-        ))
-
-        // Warm the local Whisper model while the user records, so the model
-        // load+prewarm cost hides behind the (typically minutes-long) recording
-        // instead of being paid at transcription time. Fire-and-forget; the
-        // helper reuses this warm model when transcription starts. Only local
-        // Whisper benefits — other engines no-op via the engine guard.
-        if appSettings.effectiveTranscriptionEngine == .localWhisper {
-            let cfg = appSettings.whisperRuntimeConfig
-            Task { await localAIPluginService.prewarmWhisper(config: cfg, refresh: false) }
-        }
-
-        if appSettings.showMiniRecordingView {
-            miniPlayer?.show()
-        }
-
-        if let liveStreams {
-            startLiveTranscription(streams: liveStreams)
-        }
-        // Duration/peak now flow from AudioCaptureManager.stateTickHandler
-        // (wired in init) — no separate polling loop.
-    }
-
-    private func startLiveTranscription(streams: (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>)) {
-        appState.liveTranscriptSegments = []
-        appState.liveVolatileMic = ""
-        appState.liveVolatileSystem = ""
-        appState.liveStatusMessage = ""
-        appState.isLiveTranscribing = true
-
-        // Only drive channels that actually have an audio source.
-        let micStream = audioCaptureManager.hasMicrophonePermission ? streams.mic : nil
-        let systemStream = audioCaptureManager.hasSystemAudioPermission ? streams.system : nil
-
-        let service = LiveTranscriptionService()
-        liveTranscriptionService = service
-        let language = appSettings.effectiveTranscriptionLanguage
-        let micLabel = LiveTranscriptionService.Channel.mic.rawValue
-
-        Task {
-            await service.start(
-                mic: micStream,
-                system: systemStream,
-                language: language,
-                onFinalized: { [weak self] segments in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        // First real output clears any "Preparing language…" status.
-                        self.appState.liveStatusMessage = ""
-                        self.appState.liveTranscriptSegments = LiveSegmentMerge.insert(segments, into: self.appState.liveTranscriptSegments)
-                    }
-                },
-                onVolatile: { [weak self] speaker, text in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        if !text.isEmpty { self.appState.liveStatusMessage = "" }
-                        if speaker == micLabel { self.appState.liveVolatileMic = text }
-                        else { self.appState.liveVolatileSystem = text }
-                    }
-                },
-                onStatus: { [weak self] message in
-                    Task { @MainActor [weak self] in
-                        self?.appState.liveStatusMessage = message
-                    }
-                }
-            )
-        }
-    }
-
-    private func stopLiveTranscription() {
-        guard let service = liveTranscriptionService else { return }
-        liveTranscriptionService = nil
-        appState.isLiveTranscribing = false
-        appState.liveVolatileMic = ""
-        appState.liveVolatileSystem = ""
-        appState.liveStatusMessage = ""
-        Task { await service.stop() }
-    }
-
-    func stopRecording() async {
-        await audioCaptureManager.stopRecording()
-        stopLiveTranscription()
-        statusNoteClearTask?.cancel()
-        appState.recordingStatusNote = nil
-
-        if let recording = appState.currentRecording {
-            // Capture track URLs written by the audio pipeline.
-            let tracks = audioCaptureManager.trackURLs
-            recording.capturedTracks = tracks
+            if request.showMiniPlayer { miniPlayer?.show() }
+        case .paused(let id):
+            guard appState.currentRecording?.id == id else { return }
+            appState.recordingState = .paused
+        case .resumed(let id):
+            guard appState.currentRecording?.id == id else { return }
+            appState.recordingState = .recording
+        case .meter(let id, let duration, let peak):
+            guard appState.currentRecording?.id == id else { return }
+            appState.peakLevel = peak
+            if Int(duration) != Int(appState.recordingDuration) { appState.recordingDuration = duration }
+        case .status(let id, let note):
+            guard appState.currentRecording?.id == id else { return }
+            appState.recordingStatusNote = note
+        case .liveBegan(let id):
+            guard appState.currentRecording?.id == id else { return }
+            appState.liveTranscriptSegments = []
+            appState.liveVolatileMic = ""
+            appState.liveVolatileSystem = ""
+            appState.liveStatusMessage = ""
+            appState.isLiveTranscribing = true
+        case .liveEnded(let id):
+            guard appState.currentRecording?.id == id else { return }
+            appState.isLiveTranscribing = false
+            appState.liveVolatileMic = ""
+            appState.liveVolatileSystem = ""
+            appState.liveStatusMessage = ""
+        case .live(let id, let event):
+            guard appState.currentRecording?.id == id else { return }
+            switch event {
+            case .finalized(let segments):
+                appState.liveStatusMessage = ""
+                appState.liveTranscriptSegments = LiveSegmentMerge.insert(segments, into: appState.liveTranscriptSegments)
+            case .volatile(let speaker, let text):
+                if !text.isEmpty { appState.liveStatusMessage = "" }
+                if speaker == LiveTranscriptionService.Channel.mic.rawValue { appState.liveVolatileMic = text }
+                else { appState.liveVolatileSystem = text }
+            case .status(let message): appState.liveStatusMessage = message
+            }
+        case .stopped(let result, let terminating):
+            appState.recordingStatusNote = nil
+            guard let recording = appState.currentRecording, recording.id == result.session.id else { return }
+            recording.capturedTracks = result.state.tracks
             recording.finalizedAudioURL = nil
             recording.segmentAudioURLs = []
             recording.metadataURL = nil
             recording.finalizationWarnings = []
-
-            // File size: the M4A master doesn't exist until finalization, and
-            // `recording.fileURL` is an extension-less scratch base that's never
-            // written to disk — so sum the per-track CAF files that do exist.
-            recording.fileSize = Self.totalTrackFileSize(tracks)
-            try? persistRecoveryManifest(for: recording, state: .finalizing)
-
-            // Duration: probe the captured audio so the value is authoritative
-            // rather than relying on the live-update timer having fired (it can
-            // be starved while the menu-bar popover holds the run loop). Fall
-            // back to the timer's last value if probing fails.
-            var probedDuration: Double = 0
-            if let probeURL = tracks?.micURL ?? tracks?.systemURL {
-                probedDuration = await durationSeconds(for: probeURL)
-            }
-            recording.duration = probedDuration > 0 ? probedDuration : audioCaptureManager.duration
-
-            var measurements = captureTrackMeasurements(tracks)
-            let writeDiagnostics = audioCaptureManager.lastCaptureWriteDiagnostics
-            measurements["durationMilliseconds"] = Int64(recording.duration * 1_000)
-            measurements["microphoneBuffers"] = writeDiagnostics.microphone.buffersWritten
-            measurements["systemBuffers"] = writeDiagnostics.system.buffersWritten
-            measurements["microphoneDroppedBuffers"] = writeDiagnostics.microphone.droppedBuffers
-            measurements["systemDroppedBuffers"] = writeDiagnostics.system.droppedBuffers
-            measurements["microphoneWriteErrors"] = writeDiagnostics.microphone.writeErrors
-            measurements["systemWriteErrors"] = writeDiagnostics.system.writeErrors
-            measurements["systemStreamFailures"] = writeDiagnostics.systemStreamFailures
-            let hadCaptureWarnings = writeDiagnostics.microphone.droppedBuffers > 0
-                || writeDiagnostics.system.droppedBuffers > 0
-                || writeDiagnostics.microphone.writeErrors > 0
-                || writeDiagnostics.system.writeErrors > 0
-                || writeDiagnostics.systemStreamFailures > 0
-            let captureOutcome: DurabilityEvent.Outcome = recording.fileSize == 0
-                ? .failed
-                : (hadCaptureWarnings ? .warning : .succeeded)
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "capture_stopped",
-                outcome: captureOutcome,
-                measurements: measurements,
-                failure: audioCaptureManager.lastSystemCaptureFailure
-            ))
-            if recording.fileSize == 0 {
+            recording.fileSize = result.fileSize
+            recording.duration = result.duration
+            appState.recordingState = .idle
+            appState.callRecordingBundleId = nil
+            miniPlayer?.dismiss()
+            guard !terminating else { return }
+            if result.fileSize == 0 {
                 appState.lastError = "No audio was written. The recovery session was kept so this failure can be investigated."
             }
-
             if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
-
-            // Now that the true recording span is known, find matching calendar events.
-            // Detached so the post-recording sheet appears immediately; the ranked
-            // candidates + best match populate reactively via @Observable. The handle is
-            // stored so the processing pipeline can await it before reading calendarEvent.
             if appSettings.effectiveCalendarSource != .disabled {
                 recording.calendarLookupTask = Task { [weak self, weak recording] in
                     guard let self, let recording else { return }
                     await self.lookupCalendarCandidates(for: recording)
                 }
             }
+            appState.showPostRecordingSheet = true
+            schedulePostRecordingProfileSelection()
+        case .failed(let id):
+            guard appState.currentRecording?.id == id else { return }
+            appState.recordingStatusNote = nil
+            appState.currentRecording = nil
+            appState.callRecordingBundleId = nil
+            appState.recordingState = .idle
+            miniPlayer?.dismiss()
         }
+    }
 
-        appState.recordingState = .idle
-        appState.callRecordingBundleId = nil
-        appState.showPostRecordingSheet = true
-        miniPlayer?.dismiss()
+    func stopRecording() async {
+        await captureCoordinator.stop()
+    }
+
+    func cancelPostRecordingAutomation(manualOverride: Bool = true) {
+        postRecordingAutomationTask?.cancel()
+        postRecordingAutomationTask = nil
+        postRecordingAutomation.cancel()
+        if manualOverride {
+            profileSelectionTask?.cancel()
+            profileSelectionTask = nil
+            appState.currentRecording?.awaitingProfileContext = false
+            if let recording = appState.currentRecording {
+                if recording.profileSelection.isManual {
+                    _ = recording.profileSelection.retainedManualChoice(savedManualID: appSettings.activeProfileId)
+                } else {
+                    recording.profileSelection.chooseManually(recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId),
+                        savedManualID: appSettings.activeProfileId)
+                }
+            }
+        }
+    }
+
+    private func schedulePostRecordingProfileSelection() {
+        cancelPostRecordingAutomation(manualOverride: false)
+        profileSelectionTask?.cancel()
+        guard let recording = appState.currentRecording else { return }
+        // Capture the fallback before any asynchronous context arrives.
+        recording.profileSelection = RecordingProfileSelection(baselineID: appSettings.activeProfileId)
+        guard appSettings.profiles.contains(where: { $0.automaticMatchingEnabled && !$0.matchingRules.isEmpty }) else {
+            refreshPostRecordingProfileSelection(armAutomation: true)
+            return
+        }
+        recording.awaitingProfileContext = true
+        profileSelectionTask = Task { [weak self, weak recording] in
+            await recording?.calendarLookupTask?.value
+            guard !Task.isCancelled, let self, let recording,
+                  self.appState.currentRecording?.id == recording.id else { return }
+            recording.awaitingProfileContext = false
+            self.profileSelectionTask = nil
+            self.refreshPostRecordingProfileSelection(armAutomation: true)
+        }
+    }
+
+    /// Re-evaluate context changes only while the finished capture is still in
+    /// review. The worker owns live settings until all current job work stops.
+    func refreshPostRecordingProfileSelection(armAutomation: Bool = false) {
+        guard appState.showPostRecordingSheet, !postRecordingAction.isBusy,
+              let recording = appState.currentRecording, !recording.awaitingProfileContext,
+              recording.profileSelection.baselineID != nil else { return }
+        if recording.profileSelection.isManual {
+            guard appState.processingJob == nil, !processingCancellationInProgress,
+                  let profileID = recording.profileSelection.retainedManualChoice(savedManualID: appSettings.activeProfileId),
+                  appSettings.profiles.contains(where: { $0.id == profileID }) else { return }
+            appSettings.routeAutomatically(to: profileID, for: recording.id)
+            return
+        }
+        let oldID = appSettings.activeProfile.id
+        let wasDeferred = recording.profileSelection.isDeferred
+        let selected = recording.profileSelection.evaluate(profiles: appSettings.profiles,
+            context: ProfileMatchContext(recording: recording), activeID: oldID,
+            workerBusy: appState.processingJob != nil || processingCancellationInProgress,
+            manualID: appSettings.activeProfileId)
+        guard !recording.profileSelection.isManual else { return }
+        if let selected, selected != oldID {
+            cancelPostRecordingAutomation(manualOverride: false)
+        }
+        if let selected {
+            appSettings.routeAutomatically(to: selected, for: recording.id)
+        }
+        if !recording.profileSelection.isDeferred && (armAutomation || wasDeferred || selected.map { $0 != oldID } == true) {
+            schedulePostRecordingAutomation()
+        }
+    }
+
+    func selectPostRecordingProfile(_ id: UUID) {
+        guard appState.processingJob == nil, !processingCancellationInProgress,
+              !postRecordingAction.isBusy, appSettings.profiles.contains(where: { $0.id == id }) else { return }
+        cancelPostRecordingAutomation()
+        appState.currentRecording?.profileSelection.chooseManually(id, savedManualID: id)
+        appSettings.setActiveProfile(id)
+    }
+
+    private func automaticPostRecordingRequest(for recording: Recording) -> AutomaticPostRecordingRequest {
+        .init(recordingID: recording.id, profile: appSettings.activeProfile,
+              transcribe: appSettings.effectiveAutoTranscribe,
+              summary: appSettings.effectiveAutoSummary,
+              actionItems: appSettings.effectiveAutoActionItems,
+              tags: appSettings.effectiveAutoTags,
+              configuration: AutomaticPostRecordingConfiguration(settings: appSettings))
+    }
+
+    /// Only a newly finished capture arms automatic work. Recovered recordings
+    /// and explicit imports keep their existing review flow.
+    private func schedulePostRecordingAutomation() {
+        cancelPostRecordingAutomation(manualOverride: false)
+        guard let recording = appState.currentRecording else { return }
+        postRecordingAutomation.schedule(automaticPostRecordingRequest(for: recording))
+        guard postRecordingAutomation.isPending else { return }
+        postRecordingAutomationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                guard let self, let pending = self.postRecordingAutomation.request else { return }
+                guard self.appState.recordingState == .idle,
+                      self.appState.showPostRecordingSheet,
+                      !self.postRecordingAction.isBusy,
+                      let recording = self.appState.currentRecording,
+                      self.automaticPostRecordingRequest(for: recording) == pending else {
+                    self.cancelPostRecordingAutomation()
+                    return
+                }
+                guard let request = self.postRecordingAutomation.claim() else { continue }
+                self.postRecordingAutomationTask = nil
+                // Match the manual preflight. An incomplete remote configuration
+                // returns to review instead of starting a predictably failing job.
+                if request.profile.postRecordingPolicy == .process && request.transcribe
+                    && self.appSettings.effectiveTranscriptionEngine == .remoteEndpoint
+                    && self.appSettings.effectiveDefaultTranscriptionEndpoint == nil {
+                    self.appState.lastError = "Choose a transcription endpoint before processing this recording."
+                    return
+                }
+                switch request.profile.postRecordingPolicy {
+                case .review: break
+                case .process:
+                    self.startProcessing(transcribe: request.transcribe, summary: request.summary,
+                                         actionItems: request.actionItems, tags: request.tags)
+                case .queue:
+                    Task { await self.queueForLater(transcribe: request.transcribe, summary: request.summary,
+                                                   actionItems: request.actionItems, tags: request.tags) }
+                }
+                return
+            }
+        }
     }
 
     /// Looks up calendar events matching the finished recording's true span and publishes the
@@ -813,38 +670,21 @@ final class RecordingManager {
     }
 
     func pauseRecording() {
-        audioCaptureManager.pauseRecording()
-        appState.recordingState = .paused
-        if let recording = appState.currentRecording {
-            try? persistRecoveryManifest(for: recording, state: .paused)
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "capture_paused",
-                outcome: .succeeded
-            ))
-        }
+        captureCoordinator.pause()
     }
 
     func resumeRecording() throws {
-        try audioCaptureManager.resumeRecording()
-        appState.recordingState = .recording
-        if let recording = appState.currentRecording {
-            try? persistRecoveryManifest(for: recording, state: .capturing)
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "capture_resumed",
-                outcome: .succeeded
-            ))
-        }
+        try captureCoordinator.resume()
     }
 
     /// Switch the microphone input device while recording (manual hot-swap). Persists
     /// the selection and re-points the live mic engine at the new device, keeping the
     /// in-progress mic track continuous.
     func switchInputDevice(to uid: String?) {
+        guard !captureCoordinator.isStopping, !captureCoordinator.isTerminating else { return }
         appSettings.audioInputDeviceUID = uid ?? ""
         do {
-            try audioCaptureManager.switchMicrophoneDevice(to: uid)
+            try captureCoordinator.switchInputDevice(to: uid)
         } catch {
             appState.lastError = "Couldn't switch microphone: \(error.localizedDescription)"
         }
@@ -852,7 +692,7 @@ final class RecordingManager {
 
     /// Runs the full pipeline for one background `ProcessingJob`. The job is created and
     /// installed on `AppState.processingJob` by `launchJob(...)` before this runs, and torn
-    /// down via `finishJob(for:)` at the pipeline's terminal points — NOT when this task
+    /// down via `finishJob(_:)` at the pipeline's terminal points — NOT when this task
     /// returns (a confirm-first review makes it return early while the job stays alive).
     func processRecording(
         job: ProcessingJob,
@@ -862,18 +702,8 @@ final class RecordingManager {
         tags: Bool,
         stopBeforeIntegrations: Bool = false
     ) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
         let recording = job.recording
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "processing_started",
-            outcome: .started,
-            measurements: [
-                "transcriptionRequested": transcribe ? 1 : 0,
-                "summaryRequested": summary ? 1 : 0,
-                "actionItemsRequested": actionItems ? 1 : 0,
-                "tagsRequested": tags ? 1 : 0,
-            ]
-        ))
         let localAIAvailable: Bool = {
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
@@ -884,7 +714,7 @@ final class RecordingManager {
             return false
             #endif
         }()
-        appState.showPostRecordingSheet = false
+        recordingReviewSlot.dismiss(for: recording)
         appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveInferenceText = nil
@@ -893,250 +723,162 @@ final class RecordingManager {
         // recording may be capturing concurrently and owns them. This job's progressive
         // segments go to `job.progressiveSegments` instead.
 
-        // Make sure the calendar lookup started at stop has finished before the pipeline reads
-        // calendarEvent for title/participants/AI context — a fast user can otherwise click
-        // Process before the (network) Outlook lookup resolves. Completed/absent task → no-op.
-        // The job is already installed on `AppState.processingJob`, and `startProcessing`
-        // guards against a second job, so this suspension can't spawn a duplicate pipeline.
-        await recording.calendarLookupTask?.value
+        // Initialize this job's UI before the diagnostic hop. A concurrent capture
+        // may open a new post-recording sheet while the journal write is awaiting.
+        await processingPipeline.recordProcessingDiagnostic(
+            .started(transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags), recordingID: recording.id)
+        guard !Task.isCancelled, appState.processingJob === job else { return }
 
-        // Measured transcription-side performance for this session. Carried into
-        // runAnalysisAndExport (which adds the AI-side metrics) and recorded at the end.
-        var perfTranscriptionModel: String?
-        var perfTranscriptionTime: TimeInterval?
-        var perfInferenceTime: TimeInterval?
-        var perfDiarizationTime: TimeInterval?
-        var perfSpellCorrectionTime: TimeInterval?
-        var perfFinalizationTime: TimeInterval?
-        var perfAudioDuration: TimeInterval?
-
-        let finalizationStepIndex = appState.processingSteps.count
-        appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
-        var finalizationFailureStage: PersistedProcessingJob.FailureStage = .finalization
+        let progress = PreparationProgress()
+        defer { progress.etaTask?.cancel() }
         do {
-            let finalizeStart = Date()
-            try await ensureRecordingFinalized(recording: recording) { [weak self] fraction in
-                // Streamed from ffmpeg on a background queue → hop to the main actor to
-                // drive the "Finalizing audio" step's determinate bar.
-                Task { @MainActor in
-                    guard let self,
-                          self.appState.processingSteps.indices.contains(finalizationStepIndex),
-                          case .inProgress = self.appState.processingSteps[finalizationStepIndex].status
-                    else { return }
-                    self.appState.processingSteps[finalizationStepIndex].progress = fraction
+            let prepared = try await processingPipeline.prepareWorkflow(transcribe: transcribe, steps: .init(
+                waitForCalendar: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    await recording.calendarLookupTask?.value
+                    try self.requireProcessingOwnership(job)
+                }, finalize: { @MainActor in
+                    try await self.finalizePreparation(job: job, progress: progress)
+                }, finalizationCommitted: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    if let index = progress.finalizationIndex { self.markCompleted(index) }
+                    let problems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
+                    if !problems.isEmpty {
+                        self.appState.processingSteps.append(ProcessingStep(name: "Audio finalization warnings", status: .failed(problems.joined(separator: "\n"))))
+                    }
+                }, meetingContext: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    await self.persistMeetingContext(for: recording, job: job)
+                }, prewarm: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    self.prewarmPreparationModel()
+                }, loadTranscript: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    let saved = await self.loadSavedTranscript(for: recording)
+                    try self.requireProcessingOwnership(job)
+                    return saved
+                }, transcribe: { @MainActor in
+                    try await self.transcribePreparation(job: job, progress: progress)
+                }, publishTranscript: { @MainActor result, loaded in
+                    try self.requireProcessingOwnership(job)
+                    if loaded {
+                        progress.transcriptionIndex = self.appState.processingSteps.count
+                        self.appState.processingSteps.append(ProcessingStep(name: "Loaded saved transcript", status: .inProgress))
+                    }
+                    recording.transcription = result
+                }, saveTranscript: { @MainActor result in
+                    try await self.saveTranscript(result, for: job)
+                }, checkpoint: { @MainActor stage in
+                    try self.requireProcessingOwnership(job)
+                    try await self.persistCheckpoint(stage, for: job)
+                    try self.requireProcessingOwnership(job)
+                }, retireQueue: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    try await self.completeLegacyQueueCheckpoint(for: job)
+                }, transcriptCommitted: { @MainActor result, fresh in
+                    try self.requireProcessingOwnership(job)
+                    progress.etaTask?.cancel()
+                    if fresh { self.appSettings.lifetimeTranscribedSeconds += recording.duration }
+                    if let index = progress.transcriptionIndex { self.markCompleted(index) }
+                    if fresh, let warnings = result.warnings, !warnings.isEmpty {
+                        self.appState.processingSteps.append(ProcessingStep(name: "Transcription warnings", status: .failed(warnings.joined(separator: "\n"))))
+                    }
+                }, speakers: { @MainActor result, perf in
+                    try self.requireProcessingOwnership(job)
+                    do {
+                        return try await self.prepareDiarizationAndSpeakerReview(job: job, result: result,
+                            transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags,
+                            localAIAvailable: localAIAvailable, stopBeforeIntegrations: stopBeforeIntegrations, perf: perf)
+                    } catch {
+                        let stage: PersistedProcessingJob.FailureStage = job.persistedRecord?.checkpoint.hasCompleted(.diarized) == true ? .speakerReview : .diarization
+                        throw ProcessingPipeline.PreparationFailure(stage: stage, phase: .speakers, underlying: error)
+                    }
+                }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
+            try requireProcessingOwnership(job)
+            if prepared.heldForReview || appState.pendingSpeakerReview?.recording === recording { return }
+            await runAnalysisAndExport(recording: recording, transcribe: transcribe, summary: summary,
+                actionItems: actionItems, tags: tags, localAIAvailable: localAIAvailable,
+                perf: prepared.perf, stopBeforeIntegrations: stopBeforeIntegrations)
+        } catch {
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            let failure = error as? ProcessingPipeline.PreparationFailure
+                ?? .init(stage: .persistence, phase: .finalization, underlying: error)
+            switch failure.phase {
+            case .finalization:
+                markFailed(progress.finalizationIndex, failure.underlying.localizedDescription)
+            case .transcription:
+                markFailed(progress.transcriptionIndex, failure.underlying.localizedDescription)
+                if progress.transcriptionIndex != nil {
+                    Logger.transcription.error("Transcription failed; details shown in the processing UI")
+                    await processingPipeline.recordProcessingDiagnostic(.transcriptionFailed(.init(error: failure.underlying)),
+                                                                         recordingID: recording.id)
+                }
+            case .speakers:
+                if transcribe {
+                    appState.processingSteps.append(ProcessingStep(name: "Preparing speakers", status: .failed(failure.underlying.localizedDescription)))
                 }
             }
-            finalizationFailureStage = .persistence
-            try await persistCheckpoint(.audioFinalized, for: job)
-            perfFinalizationTime = Date().timeIntervalSince(finalizeStart)
-            appState.processingSteps[finalizationStepIndex].status = .completed
-            // Only surface genuine problems (ffmpeg missing, merge/segmentation
-            // failures) as a red error step. A benign "track missing or empty" note —
-            // e.g. a listen-only meeting where the mic captured nothing — is expected
-            // and stays quietly in the metadata sidecar, not shown as a failure.
-            let finalizationProblems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
-            if !finalizationProblems.isEmpty {
-                appState.processingSteps.append(
-                    ProcessingStep(
-                        name: "Audio finalization warnings",
-                        status: .failed(finalizationProblems.joined(separator: "\n"))
-                    )
-                )
-            }
-        } catch {
-            appState.processingSteps[finalizationStepIndex].status = .failed(error.localizedDescription)
-            await markPersistedJobFailed(finalizationFailureStage, job: job)
-            await ensureRetryQueue(for: job)
-            // Re-offer the post-recording sheet only if the capture slot still holds THIS
-            // recording and capture is idle — otherwise a newer recording owns the sheet/
-            // controls and we'd show the wrong one over an active capture.
-            if appState.currentRecording === recording, appState.recordingState == .idle {
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            await markPersistedJobFailed(failure.stage, job: job)
+            if failure.phase != .speakers { await ensureRetryQueue(for: job) }
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            if failure.phase == .finalization, appState.currentRecording === recording, appState.recordingState == .idle {
                 appState.showPostRecordingSheet = true
             }
-            await finishJob(for: recording, completed: false)
-            return
+            await finishJob(job, completed: false)
         }
-
-        // The audio (and its sidecar) now exist — record who was in this meeting before any
-        // long-running step, so the names survive even if processing is cancelled later.
-        persistMeetingContext(for: recording)
-
-        // Warm the Apple Intelligence model during transcription so the AI step starts
-        // without first-call load latency. Fire-and-forget; no-op for other engines.
-        if appSettings.effectiveAIProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence {
-            #if canImport(FoundationModels)
-            if #available(macOS 26, *) {
-                Task { await LocalAIService().prewarm() }
-            }
-            #endif
-        }
-
-        // Step 1: Transcription
-        guard !Task.isCancelled else { return }
-        if transcribe {
-            // Check for saved transcript on disk first
-            if let saved = loadSavedTranscript(for: recording) {
-                let stepIndex = appState.processingSteps.count
-                appState.processingSteps.append(ProcessingStep(name: "Loaded saved transcript", status: .inProgress))
-                recording.transcription = saved
-                do {
-                    try await persistCheckpoint(.transcribed, for: job)
-                    try completeLegacyQueueCheckpoint(for: job)
-                    appState.processingSteps[stepIndex].status = .completed
-                } catch {
-                    appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                    await markPersistedJobFailed(.persistence, job: job)
-                    await ensureRetryQueue(for: job)
-                    await finishJob(for: recording, completed: false)
-                    return
-                }
-            } else {
-                let stepIndex = appState.processingSteps.count
-                let stepName: String = {
-                    switch appSettings.effectiveTranscriptionEngine {
-                    case .appleSpeech: "Transcribing (Apple Speech)"
-                    case .localWhisper: "Transcribing (Local Whisper)"
-                    case .parakeetLocal: "Transcribing (Parakeet)"
-                    case .remoteEndpoint: "Transcribing audio"
-                    }
-                }()
-                appState.processingSteps.append(ProcessingStep(name: stepName, status: .inProgress))
-                // Apple Speech and remote endpoints don't emit a "transcribing" state, so
-                // mark the ETA start now (they have no in-app model-download phase). Local
-                // Whisper/Parakeet set it on their first transcribing/segment signal.
-                switch appSettings.effectiveTranscriptionEngine {
-                case .appleSpeech, .remoteEndpoint:
-                    job.transcriptionStartedAt = Date()
-                case .localWhisper, .parakeetLocal:
-                    break
-                }
-                let etaTask = startTranscriptionETATicker(
-                    job: job,
-                    stepIndex: stepIndex,
-                    audioDuration: recording.duration
-                )
-                defer { etaTask.cancel() }
-                var failureStage: PersistedProcessingJob.FailureStage = .transcription
-                do {
-                    let txStart = Date()
-                    let stepResult = try await transcribeRecordingAudio(recording: recording, stepIndex: stepIndex)
-                    let result = stepResult.transcription
-                    perfTranscriptionTime = Date().timeIntervalSince(txStart)
-                    perfInferenceTime = result.inferenceTime
-                    perfDiarizationTime = result.diarizationTime
-                    perfSpellCorrectionTime = stepResult.spellCorrectionTime
-                    perfTranscriptionModel = transcriptionModelDisplayName
-                    perfAudioDuration = recording.duration
-                    recording.transcription = result
-                    // The transcript and job checkpoint form one durability boundary. The
-                    // downstream pipeline cannot start until both writes have been verified.
-                    failureStage = .persistence
-                    try saveTranscript(result, for: recording)
-                    try await persistCheckpoint(.transcribed, for: job)
-                    try completeLegacyQueueCheckpoint(for: job)
-                    // Lifetime odometer of audio transcribed by dBrief (survives "Clear stats").
-                    // Count only after the durable boundary so a persistence retry cannot
-                    // increment it for work that was never safely committed.
-                    appSettings.lifetimeTranscribedSeconds += recording.duration
-                    appState.processingSteps[stepIndex].status = .completed
-                    if let warnings = result.warnings, !warnings.isEmpty {
-                        appState.processingSteps.append(
-                            ProcessingStep(
-                                name: "Transcription warnings",
-                                status: .failed(warnings.joined(separator: "\n"))
-                            )
-                        )
-                    }
-                } catch {
-                    let msg = error.localizedDescription
-                    Logger.transcription.error("Transcription failed; details shown in the processing UI")
-                    appState.processingSteps[stepIndex].status = .failed(msg)
-                    await markPersistedJobFailed(failureStage, job: job)
-                    await ensureRetryQueue(for: job)
-                    DurabilityJournal.shared.record(.init(
-                        sessionID: recording.id,
-                        name: "transcription",
-                        outcome: .failed,
-                        failure: .init(error: error)
-                    ))
-                    await finishJob(for: recording, completed: false)
-                    return
-                }
-            }
-        }
-
-        if transcribe {
-            do {
-                guard let result = recording.transcription else {
-                    throw NSError(domain: "RecordingManager", code: 5, userInfo: [
-                        NSLocalizedDescriptionKey: "The durable transcript could not be loaded."
-                    ])
-                }
-                let heldForReview = try await prepareDiarizationAndSpeakerReview(
-                    job: job,
-                    result: result,
-                    transcribe: transcribe,
-                    summary: summary,
-                    actionItems: actionItems,
-                    tags: tags,
-                    localAIAvailable: localAIAvailable,
-                    stopBeforeIntegrations: stopBeforeIntegrations,
-                    perf: TranscriptionPerf(
-                        model: perfTranscriptionModel,
-                        time: perfTranscriptionTime,
-                        inference: perfInferenceTime,
-                        diarization: perfDiarizationTime,
-                        spellCorrection: perfSpellCorrectionTime,
-                        finalization: perfFinalizationTime,
-                        audioDuration: perfAudioDuration
-                    )
-                )
-                if heldForReview { return }
-            } catch {
-                appState.processingSteps.append(
-                    ProcessingStep(name: "Preparing speakers", status: .failed(error.localizedDescription))
-                )
-                let failureStage: PersistedProcessingJob.FailureStage =
-                    job.persistedRecord?.checkpoint.hasCompleted(.diarized) == true
-                    ? .speakerReview
-                    : .diarization
-                await markPersistedJobFailed(failureStage, job: job)
-                await finishJob(for: recording, completed: false)
-                return
-            }
-        } else {
-            do {
-                try await persistCheckpoint(.speakerReviewCompleted, for: job)
-            } catch {
-                await markPersistedJobFailed(.persistence, job: job)
-                await finishJob(for: recording, completed: false)
-                return
-            }
-        }
-
-        // Confirm-first gate: when a hold was armed during Step 1, stop here. The
-        // review window's Confirm/Cancel resumes via finishReview / cancelReview.
-        if appState.pendingSpeakerReview?.recording === recording { return }
-
-        await runAnalysisAndExport(
-            recording: recording,
-            transcribe: transcribe,
-            summary: summary,
-            actionItems: actionItems,
-            tags: tags,
-            localAIAvailable: localAIAvailable,
-            perf: TranscriptionPerf(
-                model: perfTranscriptionModel, time: perfTranscriptionTime,
-                inference: perfInferenceTime, diarization: perfDiarizationTime,
-                spellCorrection: perfSpellCorrectionTime, finalization: perfFinalizationTime,
-                audioDuration: perfAudioDuration),
-            stopBeforeIntegrations: stopBeforeIntegrations
-        )
     }
 
-    /// Materializes the durable rich-transcript output, then either restores/arms
-    /// confirm-first review or records that the review stage was skipped/completed.
-    /// Returns true while the pipeline is intentionally held for user input.
+    @MainActor private final class PreparationProgress {
+        var finalizationIndex: Int?
+        var transcriptionIndex: Int?
+        var etaTask: Task<Void, Never>?
+    }
+
+    private func finalizePreparation(job: ProcessingJob, progress: PreparationProgress) async throws {
+        try requireProcessingOwnership(job)
+        let index = appState.processingSteps.count
+        progress.finalizationIndex = index
+        appState.processingSteps.append(ProcessingStep(name: "Finalizing audio", status: .inProgress))
+        let callback = ProcessingStepProgress(appState: appState, job: job, stepIndex: index)
+        defer { callback.invalidate() }
+        try await ensureRecordingFinalized(recording: job.recording) { fraction in
+            Task { @MainActor in callback.update { step, _ in step.progress = fraction } }
+        }
+        try requireProcessingOwnership(job)
+    }
+
+    private func prewarmPreparationModel() {
+        guard appSettings.effectiveAIProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence else { return }
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) { Task { await LocalAIService().prewarm() } }
+        #endif
+    }
+
+    private func transcribePreparation(job: ProcessingJob, progress: PreparationProgress) async throws -> ProcessingPipeline.WorkflowTranscription {
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        let settings = ProcessingPipeline.TranscriptionSettings(settings: appSettings)
+        let index = appState.processingSteps.count
+        progress.transcriptionIndex = index
+        let name: String = switch settings.engine {
+        case .appleSpeech: "Transcribing (Apple Speech)"
+        case .localWhisper: "Transcribing (Local Whisper)"
+        case .parakeetLocal: "Transcribing (Parakeet)"
+        case .remoteEndpoint: "Transcribing audio"
+        }
+        appState.processingSteps.append(ProcessingStep(name: name, status: .inProgress))
+        switch settings.engine {
+        case .appleSpeech, .remoteEndpoint: job.transcriptionStartedAt = Date()
+        case .localWhisper, .parakeetLocal: break
+        }
+        progress.etaTask = startTranscriptionETATicker(job: job, stepIndex: index, audioDuration: recording.duration, settings: settings)
+        let output = try await transcribeRecordingAudio(recording: recording, stepIndex: index, settings: settings)
+        try requireProcessingOwnership(job)
+        return .init(transcription: output.transcription, model: settings.modelDisplayName,
+                     audioDuration: recording.duration, spellCorrectionTime: output.spellCorrectionTime)
+    }
+
     private func prepareDiarizationAndSpeakerReview(
         job: ProcessingJob,
         result: TranscriptionResult,
@@ -1148,528 +890,299 @@ final class RecordingManager {
         stopBeforeIntegrations: Bool,
         perf: TranscriptionPerf
     ) async throws -> Bool {
-        let library = await voiceLibraryStore.load()
-        let hasLibrary = !library.people.isEmpty
-        var resolved: [String: ResolvedSpeaker] = [:]
-        var allDecisions: [String: VoiceIdentityResolver.Decision] = [:]
-        if let embeddings = result.speakerEmbeddings, !embeddings.isEmpty, hasLibrary {
-            let roster = job.recording.participants
-                + (job.recording.calendarEvent?.attendeeNames ?? [])
-            let decisions = VoiceIdentityResolver.resolve(
-                clusterEmbeddings: embeddings,
-                library: library,
-                roster: roster
-            )
-            allDecisions = decisions
-            for (speakerID, decision) in decisions where decision.reason == .matched {
-                if let name = decision.name {
-                    resolved[speakerID] = ResolvedSpeaker(
-                        name: name,
-                        personId: decision.personId
-                    )
-                }
-            }
-            Logger.transcription.info(
-                "Voice library matched \(resolved.count) of \(embeddings.count) speaker(s)"
-            )
-        } else if hasLibrary {
-            Logger.transcription.error(
-                "Voice library present but no speaker embeddings on this recording — speakers left unnamed (no ordinal guess)"
-            )
-        }
-
-        let reviewAlreadyCompleted = job.persistedRecord?.checkpoint
-            .hasCompleted(.speakerReviewCompleted) == true
-        let rich: RichTranscript
-        if await transcriptStore.exists(for: job.recording) || reviewAlreadyCompleted {
-            // Existing user edits and future/corrupt sidecars must never be
-            // overwritten by rebuilding speakers during recovery.
-            rich = try await transcriptStore.load(for: job.recording)
-        } else {
-            rich = richTranscriptBuilder.build(
-                from: result,
-                participants: job.recording.participants,
-                resolved: resolved,
-                suppressOrdinalGuess: hasLibrary
-            )
-            try await transcriptStore.save(rich, for: job.recording)
-        }
-        job.recording.richTranscript = rich
-
-        let speakerCount = Set(rich.segments.compactMap { $0.speakerId }).count
-        let computedShouldHold = SpeakerReviewGate.shouldHold(
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        let input = ProcessingPipeline.SpeakerRequest(transcription: result,
+            participants: recording.participants,
+            roster: recording.participants + (recording.calendarEvent?.attendeeNames ?? []),
             mode: appSettings.speakerIdMode,
-            speakerCount: speakerCount,
-            libraryCount: library.people.count
-        )
-        let shouldHold = !reviewAlreadyCompleted
-            && (job.persistedRecord?.speakerReviewRequired ?? computedShouldHold)
-
-        if var record = job.persistedRecord {
-            updatePersistedSource(&record.source, from: job.recording)
-            record.speakerReviewRequired = shouldHold
-            _ = record.markCompleted(.diarized, at: Date())
-            if shouldHold {
-                record.markWaitingForSpeakerReview(at: Date())
-            }
-            try await processingJobStore.save(record)
-            job.persistedRecord = record
-        }
-
-        if shouldHold {
-            let embeddings = result.speakerEmbeddings ?? [:]
-            let items: [SpeakerReviewItem] = rich.speakerLabels.map { label in
-                let decision = allDecisions[label.id]
-                return SpeakerReviewItem(
-                    id: label.id,
-                    proposedName: label.displayName,
-                    reason: decision?.reason ?? .noEmbedding,
-                    confidence: decision?.confidence ?? 0,
-                    personId: label.personId,
-                    clusterEmbedding: embeddings[label.id] ?? [],
-                    snippet: SpeakerSnippet.representative(for: label.id, in: rich)
-                )
-            }.sorted { $0.id < $1.id }
-            appState.pendingSpeakerReview = SpeakerReviewSession(
-                recording: job.recording,
-                masterAudioURL: job.recording.finalizedAudioURL,
-                items: items,
-                transcribe: transcribe,
-                summary: summary,
-                actionItems: actionItems,
-                tags: tags,
-                localAIAvailable: localAIAvailable,
-                perf: perf,
-                stopBeforeIntegrations: stopBeforeIntegrations
-            )
-            appState.recordingStatusNote = "Waiting for speaker confirmation"
-            SpeakerReviewWindowController.shared.show()
-            sendReviewReadyNotification()
-            Logger.transcription.info("Confirm-first: holding \(items.count) speaker(s) for review")
-            return true
-        }
-
-        if !reviewAlreadyCompleted,
-           let embeddings = result.speakerEmbeddings,
-           !embeddings.isEmpty {
-            for entry in VoiceEnrollment.enrollable(
-                speakerLabels: rich.speakerLabels,
-                embeddings: embeddings
-            ) {
-                let enrolledID = await voiceLibraryStore.upsert(
-                    name: entry.name,
-                    voiceprint: Voiceprint(
-                        embedding: entry.embedding,
-                        model: "fluidaudio-wespeaker-256",
-                        capturedAt: Date()
-                    )
-                )
-                await suggestCompany(
-                    forPersonId: enrolledID,
-                    name: entry.name,
-                    recording: job.recording
-                )
-            }
-        }
-        try await persistCheckpoint(.speakerReviewCompleted, for: job)
-        return false
+            reviewAlreadyCompleted: job.persistedRecord?.checkpoint.hasCompleted(.speakerReviewCompleted) == true,
+            reviewRequired: job.persistedRecord?.speakerReviewRequired)
+        let sidecarURL = recording.transcriptSidecarURL
+        let libraryStore = voiceLibraryStore
+        let richStore = transcriptStore
+        return try await processingPipeline.prepareSpeakers(input, steps: .init(
+            loadLibrary: { await libraryStore.load() },
+            loadTranscript: { required in
+                guard let sidecarURL else { throw TranscriptStoreError.noSidecarURL }
+                let exists = await richStore.exists(at: sidecarURL)
+                try Task.checkCancellation()
+                if exists || required { return try await richStore.load(from: sidecarURL) }
+                return nil
+            }, saveTranscript: { rich in
+                guard let sidecarURL else { throw TranscriptStoreError.noSidecarURL }
+                try await richStore.save(rich, to: sidecarURL)
+            }, publishTranscript: { @MainActor rich in
+                try self.requireProcessingOwnership(job)
+                recording.richTranscript = rich
+            }, checkpointDiarized: { @MainActor held in
+                try self.requireProcessingOwnership(job)
+                if var record = job.persistedRecord {
+                    self.updatePersistedSource(&record.source, from: recording)
+                    record.speakerReviewRequired = held
+                    _ = record.markCompleted(.diarized, at: Date())
+                    if held { record.markWaitingForSpeakerReview(at: Date()) }
+                    try await self.processingJobStore.save(record)
+                    try self.requireProcessingOwnership(job)
+                    job.persistedRecord = record
+                }
+            }, holdReview: { @MainActor items in
+                try self.requireProcessingOwnership(job)
+                self.appState.pendingSpeakerReview = SpeakerReviewSession(recording: recording,
+                    masterAudioURL: recording.finalizedAudioURL, items: items,
+                    transcribe: transcribe, summary: summary, actionItems: actionItems, tags: tags,
+                    localAIAvailable: localAIAvailable, perf: perf,
+                    stopBeforeIntegrations: stopBeforeIntegrations)
+                self.appState.recordingStatusNote = "Waiting for speaker confirmation"
+                SpeakerReviewWindowController.shared.show()
+                self.sendReviewReadyNotification()
+                Logger.transcription.info("Confirm-first: holding \(items.count) speaker(s) for review")
+            }, enroll: { @MainActor entry in
+                try self.requireProcessingOwnership(job)
+                let id = await libraryStore.upsert(name: entry.name,
+                    voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+                try self.requireProcessingOwnership(job)
+                await self.suggestCompany(forPersonId: id, name: entry.name, recording: recording)
+                try self.requireProcessingOwnership(job)
+            }, completeReview: { @MainActor in
+                try await self.persistCheckpoint(.speakerReviewCompleted, for: job)
+            }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
     }
 
-    /// Steps 2–4 of processing (AI analysis → title+markdown → integration dispatch)
-    /// plus completion. Extracted so confirm-first can run it after the user confirms
-    /// speaker names, and the optimistic path can call it inline. Behavior unchanged.
+    /// Normal processing and speaker-review resume share the actor's restartable workflow.
     private func runAnalysisAndExport(
-        recording: Recording,
-        transcribe: Bool,
-        summary: Bool,
-        actionItems: Bool,
-        tags: Bool,
-        localAIAvailable: Bool,
-        perf: TranscriptionPerf,
+        recording: Recording, transcribe: Bool, summary: Bool, actionItems: Bool,
+        tags: Bool, localAIAvailable: Bool, perf: TranscriptionPerf,
         stopBeforeIntegrations: Bool = false
     ) async {
-        // AI-side performance, added to the transcription-side metrics in `perf`.
-        var perfAIModel: String?
-        var perfAITime: TimeInterval?
-        var perfTitleGenerationTime: TimeInterval?
+        guard !Task.isCancelled, let job = appState.processingJob, job.recording === recording else { return }
+        await runExportWorkflow(job: job, mode: .processing, transcribe: transcribe,
+            summary: summary, actionItems: actionItems, tags: tags,
+            localAIAvailable: localAIAvailable, perf: perf, stopBeforeIntegrations: stopBeforeIntegrations)
+    }
 
-        let activeJob = appState.processingJob.flatMap {
-            $0.recording === recording ? $0 : nil
-        }
-        let analysisAlreadyCompleted = activeJob?.persistedRecord?.checkpoint
-            .hasCompleted(.analyzed) == true
-        let analysisRequested = appSettings.effectiveAIProcessingEnabled
-            && (summary || actionItems || tags)
+    @MainActor private final class ExportProgress {
+        var aiModel: String?
+        var aiTime: TimeInterval?
+        var titleTime: TimeInterval?
+        var markdownIndex: Int?
+        var markdownTitle: String?
+    }
 
-        if analysisAlreadyCompleted {
-            do {
-                let insights = try await insightsStore.load(for: recording)
-                let outputExpected = activeJob?.persistedRecord?.analysisOutputSaved
-                    ?? (summary || actionItems || tags)
-                if outputExpected, insights == nil {
-                    throw InsightsStoreError.noSidecarURL
-                }
-                if let insights {
-                    applyInsights(insights, to: recording)
-                    // Older beta builds may have written a note before crashing,
-                    // without a Markdown checkpoint. Preserve that note's edits.
-                    if let activeJob, activeJob.persistedRecord?.markdownExport == nil,
-                       let path = insights.markdownPath {
-                        let plan = try await markdownOutputStore.adoptExisting(
-                            at: URL(fileURLWithPath: path), generatedTitle: insights.generatedTitle)
-                        try await saveMarkdownPlan(plan, for: activeJob)
-                    }
-                }
-            } catch {
-                appState.processingSteps.append(
-                    ProcessingStep(name: "Loading saved analysis", status: .failed(error.localizedDescription))
-                )
-                if let activeJob {
-                    await markPersistedJobFailed(.analysis, job: activeJob)
-                    await ensureRetryQueue(for: activeJob)
-                    await finishJob(for: recording, completed: false)
-                }
-                return
-            }
-        }
-
-        // Step 2: AI tasks (run sequentially to avoid TaskGroup @MainActor issues)
-        guard !Task.isCancelled else { return }
-        if !analysisAlreadyCompleted,
-           appSettings.effectiveAIProcessingEnabled,
-           let transcription = recording.transcription {
-            let aiEngine = appSettings.effectiveAIEngine
-            let endpoint = appSettings.effectiveDefaultAIEndpoint
-            let localAvailable = localAIAvailable
-
-            // Pre-flight memory check — informational, non-blocking
-            let remoteAIEndpoint = appSettings.effectiveDefaultAIEndpoint
-            appState.preflightWarning = RecordingManager.preflightCheck(
-                engine: aiEngine,
-                hasRemoteEndpoint: remoteAIEndpoint != nil
-            )
-
-            let summaryStepIndex = summary ? appendAIStep(
-                labelForSummary(engine: aiEngine)
-            ) : nil
-            let actionStepIndex = actionItems ? appendAIStep(
-                labelForActionItems(engine: aiEngine)
-            ) : nil
-            let tagsStepIndex = tags ? appendAIStep(
-                labelForTags(engine: aiEngine)
-            ) : nil
-
-            // The rich transcript carries the user's speaker labels; when a saved
-            // transcript was loaded (skipping the fresh-transcription build above),
-            // load it from the sidecar so relabels reach the AI prompts.
-            if recording.richTranscript == nil {
-                recording.richTranscript = try? await transcriptStore.load(for: recording)
-            }
-
-            let speakerNames = Dictionary(
-                (recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
-            let roster = AnalysisRoster.hint(
-                participants: recording.participants,
-                attendees: recording.calendarEvent?.attendeeNames ?? []
-            )
-
-            let aiStart = Date()
-            switch aiEngine {
-            case .appleIntelligence:
-                await runAppleIntelligenceUnifiedTasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    localAvailable: localAvailable,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .qwenLocal:
-                await runLocalQwenTasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .remoteEndpoint:
-                await runRemoteAITasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    endpoint: endpoint,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .localCLI:
-                await runLocalCLITasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            }
-            // Only log AI timing when at least one task produced output, so a
-            // failed/unreachable engine doesn't pollute the averages.
-            if recording.summary != nil || recording.actionItems != nil || recording.tags != nil {
-                perfAITime = Date().timeIntervalSince(aiStart)
-                perfAIModel = aiModelDisplayName
-            }
-        }
-
-        guard !Task.isCancelled else { return }
-        if !analysisAlreadyCompleted {
-            do {
-                if analysisRequested {
+    /// Snapshots workflow options and bridges actor operations to job-owned UI state.
+    /// Stage sequencing and normal/recovery/retry failure policy live in ProcessingPipeline.
+    private func runExportWorkflow(
+        job: ProcessingJob, mode: ProcessingPipeline.ExportWorkflowMode,
+        transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
+        localAIAvailable: Bool, perf: TranscriptionPerf, stopBeforeIntegrations: Bool = false
+    ) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        let recording = job.recording
+        let progress = ExportProgress()
+        let input = ProcessingPipeline.ExportWorkflowRequest(mode: mode,
+            analysisAlreadyCompleted: job.persistedRecord?.checkpoint.hasCompleted(.analyzed) == true,
+            runAnalysis: appSettings.effectiveAIProcessingEnabled && recording.transcription != nil,
+            analysisRequested: appSettings.effectiveAIProcessingEnabled && (summary || actionItems || tags),
+            writeMarkdown: transcribe || summary || actionItems || tags,
+            stopBeforeIntegrations: stopBeforeIntegrations)
+        do {
+            let result = try await processingPipeline.analysisExportWorkflow(input, steps: .init(
+                restoreAnalysis: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    let expected = job.persistedRecord?.analysisOutputSaved ?? (summary || actionItems || tags)
+                    let restored = try await self.processingPipeline.restoreAnalysis(from: recording.insightsSidecarURL,
+                        required: expected, adoptLegacyMarkdown: job.persistedRecord?.markdownExport == nil,
+                        insightsStore: self.insightsStore, markdownStore: self.markdownOutputStore)
+                    try self.requireProcessingOwnership(job)
+                    if let plan = restored.adoptedPlan { try await self.saveMarkdownPlan(plan, for: job) }
+                    try self.requireProcessingOwnership(job)
+                    if let insights = restored.insights { self.applyInsights(insights, to: recording) }
+                }, analyze: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    let output = try await self.runPipelineAnalysis(job: job, summary: summary,
+                        actionItems: actionItems, tags: tags, localAIAvailable: localAIAvailable)
+                    try self.requireProcessingOwnership(job)
+                    progress.aiTime = output.duration
+                    if output.duration != nil { progress.aiModel = output.modelDisplayName }
+                }, saveAnalysis: { @MainActor in
+                    try self.requireProcessingOwnership(job)
                     guard (!summary || recording.summary != nil),
-                          (!actionItems || recording.actionItems != nil),
-                          (!tags || recording.tags != nil)
-                    else {
+                          (!actionItems || recording.actionItems != nil), (!tags || recording.tags != nil) else {
                         throw NSError(domain: "RecordingManager", code: 6, userInfo: [
                             NSLocalizedDescriptionKey: "One or more requested analysis outputs failed."
                         ])
                     }
-                    try await persistInsightsSidecar(for: recording, markdownURL: nil)
-                }
-                if let activeJob {
-                    activeJob.persistedRecord?.analysisOutputSaved = analysisRequested
-                    try await persistCheckpoint(.analyzed, for: activeJob)
-                }
-            } catch {
-                appState.processingSteps.append(
-                    ProcessingStep(name: "Saving analysis", status: .failed(error.localizedDescription))
-                )
-                if let activeJob {
-                    await markPersistedJobFailed(.analysis, job: activeJob)
-                    await finishJob(for: recording, completed: false)
-                }
-                return
-            }
+                    try await self.persistInsightsSidecar(for: recording, markdownURL: nil)
+                }, checkpointAnalysis: { @MainActor saved in
+                    try self.requireProcessingOwnership(job)
+                    job.persistedRecord?.analysisOutputSaved = saved
+                    try await self.persistCheckpoint(.analyzed, for: job)
+                }, title: { @MainActor in
+                    try await self.exportWorkflowTitle(job: job, mode: mode, progress: progress)
+                }, performance: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    self.logModelPerformance(label: self.performanceLabel(for: recording),
+                        transcriptionModel: perf.model, audioDuration: perf.audioDuration,
+                        transcriptionTime: perf.time, inferenceTime: perf.inference,
+                        diarizationTime: perf.diarization, finalizationTime: perf.finalization,
+                        aiModel: progress.aiModel, aiTime: progress.aiTime,
+                        spellCorrectionTime: perf.spellCorrection, titleGenerationTime: progress.titleTime)
+                }, markdown: { @MainActor selectedMode in
+                    try self.requireProcessingOwnership(job)
+                    progress.markdownIndex = self.appState.processingSteps.count
+                    self.appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
+                    let markdownMode: ProcessingPipeline.MarkdownMode = selectedMode == .retry ? .regenerate
+                        : .restartable(jobID: job.id, savedPlan: job.persistedRecord?.markdownExport,
+                            alreadyCompleted: job.persistedRecord?.checkpoint.hasCompleted(.markdownGenerated) == true)
+                    let output = try await self.publishPipelineMarkdown(for: job, mode: markdownMode)
+                    try self.requireProcessingOwnership(job)
+                    progress.markdownTitle = output.plan.generatedTitle
+                    if selectedMode == .processing { recording.generatedTitle = output.plan.generatedTitle }
+                    return output.url
+                }, persistTitle: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    await self.persistGeneratedTitle(for: recording, job: job)
+                    try self.requireProcessingOwnership(job)
+                }, updateExportLink: { @MainActor url in
+                    try self.requireProcessingOwnership(job)
+                    try await self.processingPipeline.updateAnalysisExportLink(at: recording.insightsSidecarURL,
+                        markdownURL: url, generatedTitle: progress.markdownTitle, store: self.insightsStore)
+                    try self.requireProcessingOwnership(job)
+                }, saveRetryInsights: { @MainActor url in
+                    try self.requireProcessingOwnership(job)
+                    try await self.persistInsightsSidecar(for: recording, markdownURL: url)
+                }, prepareDeliveries: { @MainActor url in
+                    _ = try await self.prepareIntegrationDeliveries(job: job, markdownURL: url)
+                }, checkpointMarkdown: { @MainActor in
+                    try await self.persistCheckpoint(.markdownGenerated, for: job)
+                }, markdownCommitted: { @MainActor in
+                    try self.requireProcessingOwnership(job)
+                    if let index = progress.markdownIndex { self.markCompleted(index) }
+                }, dispatch: { @MainActor url, held in
+                    try self.requireProcessingOwnership(job)
+                    return await self.dispatchTrackedIntegrations(job: job, markdownURL: url, stopBeforeIntegrations: held)
+                }, reportFailure: { @MainActor failure in
+                    try await self.reportExportWorkflowFailure(failure, job: job, progress: progress)
+                }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
+            try requireProcessingOwnership(job)
+            if result == .completed { await notifyExportWorkflowCompletion(job: job) }
+            await finishJob(job, completed: result == .completed)
+        } catch {
+            // Owning-task cancellation and replacement are handled by Stop. An
+            // unexpected adapter failure still retires the active job explicitly.
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            await markPersistedJobFailed(.analysis, job: job)
+            await ensureRetryQueue(for: job)
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            await finishJob(job, completed: false)
         }
+    }
 
-        var generatedMarkdownURL: URL?
-
-        // Step 3: Generate title & write Markdown
-        if transcribe || summary || actionItems || tags {
-            // Gemma local and the Local CLI generate `title_concept` inline in the
-            // JSON analysis (see runLocalQwenTasks / runLocalCLITasks). Skip the
-            // separate title call for them so a remote endpoint — if configured —
-            // doesn't override the inline title.
-            let engine = appSettings.effectiveAIEngine
-            if activeJob?.persistedRecord?.markdownExport == nil,
-               engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
-               let transcriptionText = recording.transcription?.textForLLM,
-               !transcriptionText.isEmpty {
-                let language = recording.transcription?.language
-                // Prefer the generated summary as input — titles from a distilled
-                // summary are more topical than titles from the first 500 chars.
-                let titleInput = recording.summary ?? String(transcriptionText.prefix(500))
-                let titleStepIndex = appState.processingSteps.count
-                appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
-                do {
-                    if shouldGenerateTitle(for: recording),
-                       engine == .remoteEndpoint,
-                       let endpoint = appSettings.effectiveDefaultAIEndpoint {
-                        let titleStart = Date()
-                        recording.generatedTitle = try await aiService.generateTitle(
-                            transcription: titleInput,
-                            language: language,
-                            endpoint: endpoint
-                        )
-                        perfTitleGenerationTime = Date().timeIntervalSince(titleStart)
-                    }
-                    appState.processingSteps[titleStepIndex].status = .completed
-                } catch {
-                    // Title generation is non-critical — fall back to text extraction
-                    appState.processingSteps[titleStepIndex].status = .completed
-                }
-            }
-
-            // Logged here (after title generation) so the title-generation time is
-            // captured; the helper guards on transcription/AI timing being present.
-            logModelPerformance(
-                label: performanceLabel(for: recording),
-                transcriptionModel: perf.model,
-                audioDuration: perf.audioDuration,
-                transcriptionTime: perf.time,
-                inferenceTime: perf.inference,
-                diarizationTime: perf.diarization,
-                finalizationTime: perf.finalization,
-                aiModel: perfAIModel,
-                aiTime: perfAITime,
-                spellCorrectionTime: perf.spellCorrection,
-                titleGenerationTime: perfTitleGenerationTime
-            )
-
-            let stepIndex = appState.processingSteps.count
-            appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
-
-            do {
-                let outputFolder = resolveMarkdownOutputFolder(for: recording)
-                let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
-                case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-                case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
-                case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
-                case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
-                }
-                let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
-                case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-                case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
-                case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
-                case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
-                }
-                let proposed = markdownGenerator.prepare(
-                    recording: recording,
-                    outputFolder: outputFolder,
-                    transcriptionEndpoint: transcriptionEndpoint,
-                    aiEndpoint: aiEndpoint,
-                    includeTranscript: appSettings.obsidianIncludeTranscript
-                )
-                let plan: MarkdownExportPlan
-                if let saved = activeJob?.persistedRecord?.markdownExport {
-                    plan = saved
-                } else {
-                    plan = try await markdownOutputStore.prepare(proposed, jobID: activeJob?.id ?? UUID())
-                    if let activeJob {
-                        try await saveMarkdownPlan(plan, for: activeJob)
-                    }
-                }
-                try Task.checkCancellation()
-                generatedMarkdownURL = try await markdownOutputStore.publish(
-                    plan,
-                    alreadyCompleted: activeJob?.persistedRecord?.checkpoint.hasCompleted(.markdownGenerated) == true
-                )
-                try Task.checkCancellation()
-                recording.generatedTitle = plan.generatedTitle
-                persistGeneratedTitle(for: recording)
-                // Update only the export link, preserving any edited analysis.
-                if var insights = try await insightsStore.load(for: recording) {
-                    insights.markdownPath = generatedMarkdownURL?.path
-                    insights.generatedTitle = plan.generatedTitle
-                    try await insightsStore.save(insights, for: recording)
-                }
-                if let activeJob {
-                    try Task.checkCancellation()
-                    _ = try await prepareIntegrationDeliveries(job: activeJob, markdownURL: generatedMarkdownURL)
-                    try await persistCheckpoint(.markdownGenerated, for: activeJob)
-                }
-                appState.processingSteps[stepIndex].status = .completed
-            } catch {
-                guard !Task.isCancelled else { return }
-                appState.processingSteps[stepIndex].status = .failed(error.localizedDescription)
-                if let activeJob {
-                    await markPersistedJobFailed(.markdown, job: activeJob)
-                    await ensureRetryQueue(for: activeJob)
-                }
-                await finishJob(for: recording, completed: false)
-                return
-            }
-        } else if let activeJob {
-            do {
-                _ = try await prepareIntegrationDeliveries(job: activeJob, markdownURL: nil)
-                try await persistCheckpoint(.markdownGenerated, for: activeJob)
-            } catch {
-                await markPersistedJobFailed(.persistence, job: activeJob)
-                await ensureRetryQueue(for: activeJob)
-                await finishJob(for: recording, completed: false)
-                return
-            }
+    private func exportWorkflowTitle(job: ProcessingJob, mode: ProcessingPipeline.ExportWorkflowMode,
+                                     progress: ExportProgress) async throws {
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        let engine = appSettings.effectiveAIEngine
+        guard mode == .retry || job.persistedRecord?.markdownExport == nil,
+              engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
+              let transcription = recording.transcription else { return }
+        let endpoint = appSettings.effectiveDefaultAIEndpoint
+        let text = try await processingPipeline.prepareTitleTranscript(transcription)
+        try requireProcessingOwnership(job)
+        guard !text.isEmpty else { return }
+        let index = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
+        defer {
+            if !Task.isCancelled, appState.processingJob === job { markCompleted(index) }
         }
-
-        guard !Task.isCancelled else { return }
-        // Freeze delivery intent before parking at the recovery boundary. This
-        // writes local progress only; sending still requires explicit continuation.
-        if let activeJob {
-            do {
-                _ = try await prepareIntegrationDeliveries(job: activeJob, markdownURL: generatedMarkdownURL)
-            } catch {
-                appState.lastError = error.localizedDescription
-                await markPersistedJobFailed(.integrations, job: activeJob)
-                await finishJob(for: recording, completed: false)
-                return
-            }
+        if shouldGenerateTitle(for: recording), engine == .remoteEndpoint,
+           let endpoint {
+            progress.titleTime = try await generatePipelineTitle(for: job, transcription: text, endpoint: endpoint)
         }
-        if stopBeforeIntegrations {
-            do {
-                if let activeJob {
-                    try await markMarkdownBoundaryReached(activeJob)
-                    try completeLegacyQueueCheckpoint(for: activeJob)
-                }
-                appState.durabilityNoticeIsWarning = false
-                appState.durabilityNotice = "Recovered processing through Markdown export. Integrations were not sent automatically."
-            } catch {
-                appState.lastError = "Markdown was saved, but its completion checkpoint could not be updated."
-            }
-            await finishJob(for: recording, completed: false)
-            return
-        }
+        try requireProcessingOwnership(job)
+    }
 
-        // Step 4: Integration dispatch. Guard cancellation here so a job cancelled during
-        // analysis doesn't still push content to external destinations (the local markdown/
-        // sidecars above are harmless to keep). `cancelProcessing` owns teardown + drain.
-        guard !Task.isCancelled else { return }
-        if let activeJob,
-           !(await dispatchTrackedIntegrations(job: activeJob, markdownURL: generatedMarkdownURL)) {
-            await finishJob(for: recording, completed: false)
-            return
+    private func reportExportWorkflowFailure(_ failure: ProcessingPipeline.ExportWorkflowFailure,
+                                            job: ProcessingJob, progress: ExportProgress) async throws {
+        try requireProcessingOwnership(job)
+        let stage: PersistedProcessingJob.FailureStage
+        switch failure.phase {
+        case .loadingAnalysis, .savingAnalysis:
+            let name = failure.phase == .loadingAnalysis ? "Loading saved analysis"
+                : failure.phase == .savingAnalysis ? "Saving analysis" : "Analyzing recording"
+            appState.processingSteps.append(ProcessingStep(name: name, status: .failed(failure.underlying.localizedDescription)))
+            stage = .analysis
+        case .analyzing:
+            // The analysis adapter has already marked the affected field steps.
+            stage = .analysis
+        case .writingMarkdown:
+            markFailed(progress.markdownIndex, failure.underlying.localizedDescription)
+            stage = .markdown
+        case .checkpointingMarkdown:
+            stage = .persistence
         }
+        if failure.disposition != .continueWorkflow {
+            await markPersistedJobFailed(stage, job: job)
+            try requireProcessingOwnership(job)
+        }
+        if failure.disposition == .stopAndQueue {
+            await ensureRetryQueue(for: job)
+            try requireProcessingOwnership(job)
+        }
+    }
 
-        // Send completion notification
-        let failedCount = appState.processingSteps.filter {
+    private func notifyExportWorkflowCompletion(job: ProcessingJob) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        let failed = appState.processingSteps.filter {
             if case .failed = $0.status { return true }
             return false
         }.count
-        sendCompletionNotification(
-            fileName: recording.fileName,
-            failed: failedCount
-        )
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "processing_completed",
-            outcome: failedCount == 0 ? .succeeded : .warning,
-            measurements: [
-                "stepCount": Int64(appState.processingSteps.count),
-                "failedStepCount": Int64(failedCount),
-            ]
-        ))
-
-        await finishJob(for: recording)
+        sendCompletionNotification(fileName: job.recording.fileName, failed: failed)
+        await processingPipeline.recordProcessingDiagnostic(
+            .completed(stepCount: appState.processingSteps.count, failedStepCount: failed), recordingID: job.recording.id)
     }
 
-    /// Tears down a completed/failed job: removes its queue sidecar (if it came from the
-    /// queue), clears `AppState.processingJob`, and drains the next queued item. Idempotent
-    /// and matched by identity so a stale call can't clobber a newer job. NOT called on a
-    /// confirm-first review hold — the job stays alive there until analysis resumes.
-    private func finishJob(for recording: Recording, completed: Bool = true) async {
-        if let job = appState.processingJob, job.recording === recording {
-            if completed {
-                if var record = job.persistedRecord {
-                    record.markFullyCompleted(at: Date())
-                    do {
-                        try await processingJobStore.save(record)
-                        job.persistedRecord = record
-                    } catch {
-                        appState.lastError = "Processing finished, but its completion checkpoint couldn't be saved."
-                    }
-                }
-                if let url = job.queuedAudioURL { Self.removeQueueFile(for: url) }
-            }
-            appState.processingJob = nil
+    /// Releases only the exact job whose pipeline reached this terminal point.
+    /// Actor persistence precedes UI release; stale callbacks never drain/reset queues.
+    private func finishJob(_ job: ProcessingJob, completed: Bool = true) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        let succeeded = !appState.processingSteps.contains {
+            if case .failed = $0.status { return true }
+            return false
         }
+        let input = ProcessingPipeline.TeardownRequest(completed: completed, processingSucceeded: succeeded,
+            record: job.persistedRecord, completion: job.successfulCompletion, queuedAudioURL: job.queuedAudioURL)
+        let store = processingJobStore
+        do {
+            try await processingPipeline.teardown(input, steps: .init(
+                saveRecord: { try await store.save($0) },
+                publishRecord: { @MainActor record in
+                    try self.requireProcessingOwnership(job)
+                    job.persistedRecord = record
+                }, saveCompletion: { @MainActor completion in
+                    try self.requireProcessingOwnership(job)
+                    try await self.persistProcessingCompletion(completion, for: job)
+                }, removeQueue: { audio in
+                    try? await self.queueScheduleStore.retireItem(at: audio, expectedID: job.id)
+                }, warning: { @MainActor warning in
+                    try self.requireProcessingOwnership(job)
+                    switch warning {
+                    case .journal:
+                        self.appState.lastError = "Processing finished, but its completion checkpoint couldn't be saved."
+                    case .metadata:
+                        self.appState.lastError = "Processing finished, but its library completion date couldn't be saved. The recovery journal is retained for retry."
+                    }
+                }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
+            try requireProcessingOwnership(job)
+        } catch { return }
+        appState.processingJob = nil
+        appSettings.finishAutomaticRouting(for: job.recording.id)
         if !completed {
-            // A failed item must not be immediately selected again by a manual
-            // drain chain. It stays as a user-deferred retry instead.
+            // Failed work must stay user-deferred instead of being selected again.
             drainAllQueued = false
         }
-        drainQueueIfNeeded()
+        await drainQueueIfNeeded()
+        refreshPostRecordingProfileSelection()
     }
 
     private func updatePersistedSource(
@@ -1694,6 +1207,7 @@ final class RecordingManager {
         _ stage: ProcessingCheckpointStage,
         for job: ProcessingJob
     ) async throws {
+        try requireProcessingOwnership(job)
         guard var record = job.persistedRecord else { return }
         updatePersistedSource(&record.source, from: job.recording)
         if stage == .speakerReviewCompleted,
@@ -1705,6 +1219,7 @@ final class RecordingManager {
         }
         _ = record.markCompleted(stage, at: Date())
         try await processingJobStore.save(record)
+        try requireProcessingOwnership(job)
         job.persistedRecord = record
     }
 
@@ -1712,67 +1227,62 @@ final class RecordingManager {
         _ stage: PersistedProcessingJob.FailureStage,
         job: ProcessingJob
     ) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
         guard var record = job.persistedRecord else { return }
         updatePersistedSource(&record.source, from: job.recording)
         record.markFailed(stage, at: Date())
         do {
             try await processingJobStore.save(record)
+            guard !Task.isCancelled, appState.processingJob === job else { return }
             job.persistedRecord = record
         } catch {
             Logger.recording.error("Failed to persist processing-job failure state")
         }
     }
 
-    private func markPersistedJobCancelled(_ job: ProcessingJob) async {
-        guard var record = job.persistedRecord else { return }
-        updatePersistedSource(&record.source, from: job.recording)
-        record.markCancelled(at: Date())
-        do {
-            try await processingJobStore.save(record)
-            job.persistedRecord = record
-        } catch {
-            Logger.recording.error("Failed to persist processing-job cancellation state")
-        }
+    private func requireProcessingOwnership(_ job: ProcessingJob) throws {
+        try Task.checkCancellation()
+        guard appState.processingJob === job else { throw CancellationError() }
     }
 
     private func saveMarkdownPlan(_ plan: MarkdownExportPlan, for job: ProcessingJob) async throws {
-        try Task.checkCancellation()
+        try requireProcessingOwnership(job)
         guard var record = job.persistedRecord else { return }
         record.markdownExport = plan
         record.updatedAt = Date()
         try await processingJobStore.save(record)
-        try Task.checkCancellation()
+        try requireProcessingOwnership(job)
         job.persistedRecord = record
     }
 
     private func markMarkdownBoundaryReached(_ job: ProcessingJob) async throws {
+        try requireProcessingOwnership(job)
         guard var record = job.persistedRecord else { return }
         updatePersistedSource(&record.source, from: job.recording)
         record.markMarkdownBoundaryReached(at: Date())
         try await processingJobStore.save(record)
+        try requireProcessingOwnership(job)
         job.persistedRecord = record
     }
 
     /// A legacy queue sidecar is retired once transcription is durably checkpointed;
     /// later recovery is driven by the processing-job manifest and stage sidecars.
-    private func completeLegacyQueueCheckpoint(for job: ProcessingJob) throws {
+    private func completeLegacyQueueCheckpoint(for job: ProcessingJob) async throws {
+        try requireProcessingOwnership(job)
         guard let audioURL = job.queuedAudioURL else { return }
-        let queueURL = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
-        if FileManager.default.fileExists(atPath: queueURL.path) {
-            try FileManager.default.removeItem(at: queueURL)
-        }
-        guard !FileManager.default.fileExists(atPath: queueURL.path) else {
-            throw NSError(domain: "RecordingManager", code: 4, userInfo: [
-                NSLocalizedDescriptionKey: "The completed queue checkpoint could not be retired."
-            ])
-        }
+        queueRefreshGeneration += 1
+        try await queueScheduleStore.retireItem(at: audioURL, expectedID: job.id)
+        try requireProcessingOwnership(job)
+        guard job.queuedAudioURL == audioURL else { throw CancellationError() }
         job.queuedAudioURL = nil
-        appState.queuedCount = discoverQueuedItems().count
+        await refreshWorkQueue()
+        try requireProcessingOwnership(job)
     }
 
     /// Keep existing History/manual-queue recovery available for failed or
     /// cancelled jobs while the durable store becomes the source of truth.
     private func ensureRetryQueue(for job: ProcessingJob) async {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
         guard job.recording.finalizedAudioURL != nil else { return }
 
         let request = job.persistedRecord?.request
@@ -1784,10 +1294,20 @@ final class RecordingManager {
             tags: request?.tags ?? appSettings.autoTags,
             titleWasUserProvided: request?.titleWasUserProvided
                 ?? job.recording.titleWasUserProvided,
-            autoQueued: false
+            autoQueued: false,
+            profileID: job.persistedRecord?.source.profileID
         )
-        try? saveQueueItem(item, for: job.recording)
-        appState.queuedCount = discoverQueuedItems().count
+        try? await saveQueueItem(item, for: job.recording)
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        await refreshWorkQueue()
+    }
+
+    private func canLaunchProcessing(for recording: Recording) -> Bool {
+        !queueMutationInProgress && !queuePauseWriteInProgress && !queueEnqueueInProgress
+            && !recoveryMaintenanceInProgress && !processingCancellationInProgress && appState.processingJob == nil
+            && appState.pendingSpeakerReview?.recording !== recording
+            && speakerReviewOperation?.recording !== recording
+            && captureCoordinator.recordingID != recording.id && !captureCoordinator.isTerminating
     }
 
     /// Creates a `ProcessingJob` for `recording`, installs it as the single active job, and
@@ -1808,11 +1328,24 @@ final class RecordingManager {
             recording: recording,
             queuedAudioURL: queuedAudioURL
         )
-        guard !recoveryMaintenanceInProgress, !processingCancellationInProgress, appState.processingJob == nil else {
-            let message = "Wait for the active processing or cleanup operation to finish."
+        job.observesProcessingFromStart = existingRecord?.checkpoint.lastCompletedStage == nil
+        guard canLaunchProcessing(for: recording) else {
+            let message = "Finish the active processing, speaker review, or cleanup operation first."
             appState.lastError = message
             onPreparationFailure?(message)
             return job
+        }
+        if let profileID = existingRecord?.source.profileID {
+            guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
+                let message = "This recording’s saved profile was deleted. Choose a profile and retry from the recording."
+                appState.lastError = message
+                onPreparationFailure?(message)
+                return job
+            }
+            appSettings.routeAutomatically(to: profileID, for: recording.id)
+        }
+        if let owner = appSettings.automaticProfileRecordingID, owner != recording.id {
+            appSettings.finishAutomaticRouting(for: owner)
         }
         appState.processingJob = job
         appState.processingRecording = recording
@@ -1826,6 +1359,10 @@ final class RecordingManager {
                     job.persistedRecord = existingRecord
                 } else if let persistedRequest {
                     if var stored = try await self.processingJobStore.load(id: job.id) {
+                        job.observesProcessingFromStart = stored.checkpoint.lastCompletedStage == nil
+                        // A fresh retry uses the selected profile; recovery uses
+                        // existingRecord above to restore its saved identity.
+                        stored.source.profileID = self.appSettings.activeProfile.id
                         stored.markRunning(at: Date())
                         try await self.processingJobStore.save(stored)
                         job.persistedRecord = stored
@@ -1850,6 +1387,8 @@ final class RecordingManager {
                 onPreparationFailure?(message)
                 if self.appState.processingJob === job {
                     self.appState.processingJob = nil
+                    self.appSettings.finishAutomaticRouting(for: recording.id)
+                    self.refreshPostRecordingProfileSelection()
                 }
                 return
             }
@@ -1857,7 +1396,10 @@ final class RecordingManager {
                 onPreparationFailure?("Processing was cancelled before it started. You can try again.")
                 return
             }
-            await body(job)
+            let context = await recording.privacyContext()
+            guard !Task.isCancelled, self.appState.processingJob === job else { return }
+            job.privacyContext = context
+            await PrivacyTrace.$context.withValue(context) { await body(job) }
         }
         return job
     }
@@ -1889,7 +1431,8 @@ final class RecordingManager {
                 stagedInputPath: recording.importSourceURL?.path,
                 finalizedAudioPath: recording.finalizedAudioURL?.path,
                 segmentAudioPaths: recording.segmentAudioURLs.map(\.path),
-                metadataPath: recording.metadataURL?.path
+                metadataPath: recording.metadataURL?.path,
+                profileID: appSettings.activeProfile.id
             )
         )
     }
@@ -1916,28 +1459,55 @@ final class RecordingManager {
     /// Auto-queued overflow items always drain; user-deferred items only when
     /// `drainAllQueued` is set (the manual "Process Queue" button). Chains: each finished
     /// job's `finishJob` calls this again until nothing eligible remains.
-    func drainQueueIfNeeded(preferredAudioURL: URL? = nil) {
+    func drainQueueIfNeeded(preferredAudioURL: URL? = nil, expectedID: UUID? = nil,
+                            completingCancellation: Bool = false) async {
+        guard completingCancellation || !Task.isCancelled else { return }
+        if queueDrainInProgress { queueDrainRequested = true; return }
         guard appState.processingJob == nil, !queueMutationInProgress, !queueSafetyHold,
-              !recoveryMaintenanceInProgress, !processingCancellationInProgress, !reviewingIntegrationDeliveries else { return }
+              !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
+              !processingCancellationInProgress, !reviewingIntegrationDeliveries else { return }
+        queueDrainInProgress = true
+        queueMutationInProgress = true
+        await drainReservedQueue(preferredAudioURL: preferredAudioURL, expectedID: expectedID,
+                                 completingCancellation: completingCancellation)
+        queueMutationInProgress = false
+        queueDrainInProgress = false
+        if queueDrainRequested {
+            queueDrainRequested = false
+            await drainQueueIfNeeded(completingCancellation: completingCancellation)
+        }
+    }
+
+    private func drainReservedQueue(preferredAudioURL: URL?, expectedID: UUID?, completingCancellation: Bool) async {
+        let pauseGeneration = queuePauseGeneration
+        let snapshot: QueueScheduleStore.Snapshot
         do {
-            queuePaused = try queueScheduleStore.load().paused
-            guard !queuePaused || preferredAudioURL != nil else { return }
+            snapshot = try await queueScheduleStore.snapshot(configuredFolders: configuredQueueFolders)
         } catch {
             queueLoadError = "Saved queue settings could not be read. No queued work was started."
             return
         }
-        let queued = discoverQueuedItems()
-        appState.queuedCount = queued.count
-        guard let (audioURL, item) = queued.first(where: {
-            guard FileManager.default.fileExists(atPath: $0.audioURL.path) else { return false }
-            if let preferredAudioURL { return $0.audioURL.standardizedFileURL == preferredAudioURL.standardizedFileURL }
+        guard completingCancellation || !Task.isCancelled,
+              appState.processingJob == nil, !queueSafetyHold, !queueEnqueueInProgress, !queuePauseWriteInProgress, pauseGeneration == queuePauseGeneration,
+              !recoveryMaintenanceInProgress, !processingCancellationInProgress,
+              !reviewingIntegrationDeliveries else { return }
+        queuePaused = snapshot.schedule.paused
+        guard !queuePaused || preferredAudioURL != nil else { return }
+        appState.queuedCount = snapshot.items.count
+        guard let entry = snapshot.items.first(where: {
+            guard $0.fileSize != nil else { return false }
+            if let preferredAudioURL {
+                return $0.audioURL.standardizedFileURL == preferredAudioURL.standardizedFileURL
+                    && (expectedID == nil || $0.item.id == expectedID)
+            }
             return drainAllQueued || $0.item.autoQueued
         }) else {
             drainAllQueued = false
             return
         }
-        let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
-        let size = (attrs?[.size] as? Int64) ?? 0
+        let audioURL = entry.audioURL
+        let item = entry.item
+        let size = entry.fileSize ?? 0
         let name = audioURL.deletingPathExtension().lastPathComponent
         let recording = Recording(
             id: item.id,
@@ -1947,6 +1517,14 @@ final class RecordingManager {
             finalizedAudioURL: audioURL
         )
         recording.titleWasUserProvided = item.titleWasUserProvided
+        if let profileID = item.profileID {
+            guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
+                queueLoadError = "This queued recording’s profile was deleted. Choose a profile and retry from the recording."
+                drainAllQueued = false
+                return
+            }
+            appSettings.routeAutomatically(to: profileID, for: recording.id)
+        }
         let request = processingRequest(
             transcribe: item.transcribe,
             summary: item.summary,
@@ -1955,6 +1533,7 @@ final class RecordingManager {
             titleWasUserProvided: item.titleWasUserProvided,
             autoResume: item.autoQueued
         )
+        queueMutationInProgress = false // No suspension between admission release and launch.
         launchJob(
             id: item.id,
             recording: recording,
@@ -1971,89 +1550,192 @@ final class RecordingManager {
         }
     }
 
-    /// Confirm-first: the user accepted/corrected speaker names. Apply them to the
-    /// rich transcript, enroll the named speakers' voiceprints, then resume the
-    /// held pipeline (AI → markdown → integrations).
-    func finishReview(confirmed: [String: ConfirmedSpeaker]) async {
-        guard let session = appState.pendingSpeakerReview else { return }
-        let recording = session.recording
+    @MainActor final class ReviewOperation {
+        let recording: Recording
+        let job: ProcessingJob?
+        let sidecarURL: URL?
+        var transcript: RichTranscript?
+        private var finished = false
+        private var completionWaiters: [CheckedContinuation<Void, Never>] = []
+        init(recording: Recording, job: ProcessingJob?) {
+            self.recording = recording
+            self.job = job
+            sidecarURL = recording.transcriptSidecarURL
+            transcript = recording.richTranscript
+        }
+
+        func finish() {
+            guard !finished else { return }
+            finished = true
+            let waiters = completionWaiters
+            completionWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
+
+        func waitForCompletion() async {
+            guard !finished else { return }
+            await withCheckedContinuation { completionWaiters.append($0) }
+        }
+
+        /// Changed input still belongs to this operation's failure/teardown path;
+        /// a replacement operation/job does not. Keep those decisions separate.
+        func ownsLifecycle(current: ReviewOperation?, activeJob: ProcessingJob?, pendingReview: SpeakerReviewSession?) -> Bool {
+            guard current === self, pendingReview == nil else { return false }
+            if let job { return activeJob === job }
+            return activeJob?.recording !== recording
+        }
+
+        func validateSnapshot() throws {
+            guard recording.transcriptSidecarURL == sidecarURL, recording.richTranscript == transcript else {
+                throw TranscriptStoreError.changedDuringReview
+            }
+        }
+    }
+
+    private func requireReviewOwnership(_ operation: ReviewOperation, recording: Recording) throws {
+        try Task.checkCancellation()
+        guard ownsReviewOperation(operation, recording: recording) else { throw CancellationError() }
+        try operation.validateSnapshot()
+    }
+
+    private func ownsReviewOperation(_ operation: ReviewOperation, recording: Recording) -> Bool {
+        !Task.isCancelled && operation.recording === recording
+            && operation.ownsLifecycle(current: speakerReviewOperation, activeJob: appState.processingJob,
+                                       pendingReview: appState.pendingSpeakerReview)
+    }
+
+    private func beginReviewOperation(_ session: SpeakerReviewSession) -> ReviewOperation? {
+        guard !Task.isCancelled else { return nil }
+        let job: ProcessingJob?
+        if session.origin == .pipeline {
+            guard let active = appState.processingJob, active.recording === session.recording else { return nil }
+            job = active
+        } else {
+            guard appState.processingJob?.recording !== session.recording else { return nil }
+            job = nil
+        }
+        let operation = ReviewOperation(recording: session.recording, job: job)
+        speakerReviewOperation = operation
         appState.pendingSpeakerReview = nil
         appState.recordingStatusNote = nil
+        return operation
+    }
 
-        var loaded = recording.richTranscript
-        if loaded == nil { loaded = try? await transcriptStore.load(for: recording) }
+    /// Confirmed edits are saved before publication, enrollment and resume.
+    func finishReview(sessionID: UUID, confirmed: [String: ConfirmedSpeaker]) async {
+        guard let session = appState.pendingSpeakerReview, session.id == sessionID,
+              let operation = beginReviewOperation(session) else { return }
+        defer {
+            operation.finish()
+            if speakerReviewOperation === operation { speakerReviewOperation = nil }
+        }
+        let recording = session.recording
+        let store = transcriptStore
+        let sidecarURL = operation.sidecarURL
+        // These embeddings belong to the exact clustering the user reviewed.
+        // Re-diarization must not enroll older raw-transcript cluster embeddings.
+        let embeddings = Dictionary(session.items.map { ($0.id, $0.clusterEmbedding) }, uniquingKeysWith: { first, _ in first })
         do {
-            guard var transcript = loaded else {
-                throw TranscriptStoreError.noSidecarURL
-            }
-            for (speakerId, c) in confirmed {
-                let name = c.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { continue }
-                transcript = SpeakerReassignment.rename(transcript, speakerId: speakerId, to: name, personId: c.personId)
-            }
-            recording.richTranscript = transcript
-            try await transcriptStore.save(transcript, for: recording)
-            // Enroll confirmed, named speakers (best-effort, deduped by upsert).
-            for (speakerId, c) in confirmed {
-                let name = c.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty, name != speakerId else { continue }
-                _ = await enrollVoiceprintOnRename(recording: recording, speakerId: speakerId, name: name)
-            }
+            try await processingPipeline.confirmSpeakers(confirmed, transcript: operation.transcript, steps: .init(
+                loadTranscript: {
+                    guard let url = sidecarURL else { throw TranscriptStoreError.noSidecarURL }
+                    return try await store.load(from: url)
+                }, save: { @MainActor rich, original in
+                    try self.requireReviewOwnership(operation, recording: recording)
+                    guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
+                    try await store.save(rich, to: url, replacing: original)
+                    try self.requireReviewOwnership(operation, recording: recording)
+                }, publish: { @MainActor rich in
+                    try self.requireReviewOwnership(operation, recording: recording)
+                    recording.richTranscript = rich
+                    operation.transcript = rich
+                }, loadEmbeddings: { embeddings }, enroll: { @MainActor entry in
+                    try self.requireReviewOwnership(operation, recording: recording)
+                    let id = await self.voiceLibraryStore.upsert(name: entry.name,
+                        voiceprint: .init(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+                    try self.requireReviewOwnership(operation, recording: recording)
+                    await self.suggestCompany(forPersonId: id, name: entry.name, recording: recording)
+                    try self.requireReviewOwnership(operation, recording: recording)
+                }, validateOwnership: { @MainActor in try self.requireReviewOwnership(operation, recording: recording) }))
         } catch {
+            guard ownsReviewOperation(operation, recording: recording) else { return }
             appState.lastError = "Speaker changes could not be saved. Processing remains retryable."
-            if let job = appState.processingJob, job.recording === recording {
+            if let job = operation.job {
                 await markPersistedJobFailed(.speakerReview, job: job)
-                await finishJob(for: recording, completed: false)
+                guard ownsReviewOperation(operation, recording: recording) else { return }
+                await finishJob(job, completed: false)
             }
             return
         }
-
-        await resumeAfterReview(session: session, recording: recording)
+        await resumeAfterReview(session: session, recording: recording, operation: operation)
     }
 
-    /// Confirm-first: the user cancelled/closed the review. Keep the resolver's own
-    /// names (the rich transcript is already built) and resume so nothing is stranded.
-    func cancelReview() async {
-        guard let session = appState.pendingSpeakerReview else { return }
-        appState.pendingSpeakerReview = nil
-        appState.recordingStatusNote = nil
-        await resumeAfterReview(session: session, recording: session.recording)
+    /// Closing review keeps the resolver's saved names and resumes the owning job.
+    func cancelReview(sessionID: UUID) async {
+        guard let session = appState.pendingSpeakerReview, session.id == sessionID,
+              let operation = beginReviewOperation(session) else { return }
+        defer {
+            operation.finish()
+            if speakerReviewOperation === operation { speakerReviewOperation = nil }
+        }
+        await resumeAfterReview(session: session, recording: session.recording, operation: operation)
     }
 
     /// Shared tail of finish/cancel: the fresh-transcription hold resumes the AI →
     /// markdown → export pipeline; a transcript-viewer re-diarize only commits the
     /// names (already applied + persisted) and signals the open viewer to reload —
     /// re-analysis stays an explicit choice via the viewer's reanalysis banner.
-    private func resumeAfterReview(session: SpeakerReviewSession, recording: Recording) async {
+    private func resumeAfterReview(session: SpeakerReviewSession, recording: Recording, operation: ReviewOperation) async {
+        guard ownsReviewOperation(operation, recording: recording) else { return }
+        do { try operation.validateSnapshot() }
+        catch {
+            appState.lastError = error.localizedDescription
+            if let job = operation.job {
+                await markPersistedJobFailed(.speakerReview, job: job)
+                guard ownsReviewOperation(operation, recording: recording) else { return }
+                await finishJob(job, completed: false)
+            }
+            return
+        }
         switch session.origin {
         case .pipeline:
             // Resume the held job's remaining pipeline INSIDE its own task so
             // `cancelProcessing()` can cancel it and the auto-drain can't launch a second
             // job while this resumed analysis is still running. `runAnalysisAndExport`
-            // ends by calling `finishJob(for:)`, which tears the job down and drains.
-            guard let job = appState.processingJob, job.recording === recording else {
+            // ends by calling `finishJob(_:)`, which tears the job down and drains.
+            guard let job = operation.job, appState.processingJob === job else {
                 appState.lastError = "The saved processing job is no longer active."
                 return
             }
             do {
                 try await persistCheckpoint(.speakerReviewCompleted, for: job)
+                try requireReviewOwnership(operation, recording: recording)
             } catch {
+                guard ownsReviewOperation(operation, recording: recording) else { return }
                 appState.lastError = "Speaker review was saved, but its processing checkpoint failed."
                 await markPersistedJobFailed(.persistence, job: job)
-                await finishJob(for: recording, completed: false)
+                guard ownsReviewOperation(operation, recording: recording) else { return }
+                await finishJob(job, completed: false)
                 return
             }
+            guard ownsReviewOperation(operation, recording: recording) else { return }
             job.task = Task {
-                await self.runAnalysisAndExport(
-                    recording: recording,
-                    transcribe: session.transcribe,
-                    summary: session.summary,
-                    actionItems: session.actionItems,
-                    tags: session.tags,
-                    localAIAvailable: session.localAIAvailable,
-                    perf: session.perf,
-                    stopBeforeIntegrations: session.stopBeforeIntegrations
-                )
+                let context: PrivacyTrace.Context
+                if let saved = job.privacyContext { context = saved }
+                else { context = await recording.privacyContext() }
+                guard !Task.isCancelled, self.appState.processingJob === job else { return }
+                await PrivacyTrace.$context.withValue(context) {
+                    await self.runAnalysisAndExport(
+                        recording: recording,
+                        transcribe: session.transcribe,
+                        summary: session.summary,
+                        actionItems: session.actionItems,
+                        tags: session.tags,
+                        localAIAvailable: session.localAIAvailable,
+                        perf: session.perf,
+                        stopBeforeIntegrations: session.stopBeforeIntegrations
+                    )
+                }
             }
         case .rediarize:
             // A re-diarize from the transcript viewer isn't a pipeline job — no teardown.
@@ -2062,61 +1744,51 @@ final class RecordingManager {
         }
     }
 
-    /// Confirm-first re-diarize from the transcript viewer: resolve the freshly
-    /// re-diarized turns against the voice library, persist the rebuilt transcript,
-    /// and present the review window — mirroring the fresh-transcription hold.
-    /// Returns `true` when a hold was armed; `false` when there's nothing to review
-    /// (the caller then commits the diarization silently, as in optimistic mode).
+    /// A false return means the review gate declined. Preparation failures throw
+    /// so the viewer cannot silently commit a failed or superseded review.
     func presentReDiarizeReview(recording: Recording, turns: [DiarizedTurn],
-                                embeddings: [String: [Float]], baseTranscript: RichTranscript) async -> Bool {
-        var transcript = SpeakerAssigner.assign(turns, to: baseTranscript)
-        let speakerIds = Set(transcript.segments.compactMap { $0.speakerId }).sorted()
-        let library = await voiceLibraryStore.load()
-        guard SpeakerReviewGate.shouldHold(
-            mode: appSettings.speakerIdMode,
-            speakerCount: speakerIds.count,
-            libraryCount: library.people.count) else { return false }
-
-        // Resolve clusters against the library (matched identities pre-fill the cards).
-        var decisions: [String: VoiceIdentityResolver.Decision] = [:]
-        if !embeddings.isEmpty, !library.people.isEmpty {
-            let roster = recording.participants
-                + (recording.calendarEvent?.attendeeNames ?? [])
-            decisions = VoiceIdentityResolver.resolve(
-                clusterEmbeddings: embeddings, library: library, roster: roster)
+                                embeddings: [String: [Float]], baseTranscript: RichTranscript,
+                                validateSource: @escaping @MainActor @Sendable () throws -> Void) async throws -> Bool {
+        try Task.checkCancellation()
+        guard speakerReviewOperation == nil, appState.pendingSpeakerReview == nil,
+              appState.processingJob?.recording !== recording else {
+            throw NSError(domain: "SpeakerReview", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Finish the active speaker review or processing for this recording before trying again."])
         }
-        // Matched names win; unmatched speakers stay "Speaker N".
-        transcript.speakerLabels = speakerIds.map { sid in
-            if let d = decisions[sid], d.reason == .matched, let name = d.name {
-                return SpeakerLabel(id: sid, displayName: name, personId: d.personId)
-            }
-            return SpeakerLabel(id: sid, displayName: sid)
+        let operation = ReviewOperation(recording: recording, job: nil)
+        speakerReviewOperation = operation
+        defer {
+            operation.finish()
+            if speakerReviewOperation === operation { speakerReviewOperation = nil }
         }
-        recording.richTranscript = transcript
-        try? await transcriptStore.save(transcript, for: recording)
-
-        let items: [SpeakerReviewItem] = transcript.speakerLabels.map { label in
-            let d = decisions[label.id]
-            return SpeakerReviewItem(
-                id: label.id,
-                proposedName: label.displayName,
-                reason: d?.reason ?? .noEmbedding,
-                confidence: d?.confidence ?? 0,
-                personId: label.personId,
-                clusterEmbedding: embeddings[label.id] ?? [],
-                snippet: SpeakerSnippet.representative(for: label.id, in: transcript))
-        }.sorted { $0.id < $1.id }
-
-        appState.pendingSpeakerReview = SpeakerReviewSession(
-            recording: recording,
-            masterAudioURL: recording.finalizedAudioURL,
-            items: items,
+        let input = ProcessingPipeline.RediarizationReviewRequest(turns: turns, embeddings: embeddings,
+            transcript: baseTranscript, mode: appSettings.speakerIdMode,
+            roster: recording.participants + (recording.calendarEvent?.attendeeNames ?? []))
+        let library = voiceLibraryStore
+        let store = transcriptStore
+        let prepared = try await processingPipeline.prepareRediarizationReview(input, loadLibrary: { await library.load() },
+            save: { @MainActor rich in
+                try self.requireReviewOwnership(operation, recording: recording)
+                try validateSource()
+                guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
+                try await store.save(rich, to: url, replacing: baseTranscript)
+                try self.requireReviewOwnership(operation, recording: recording)
+                try validateSource()
+            }, validateOwnership: { @MainActor in
+                try self.requireReviewOwnership(operation, recording: recording)
+                try validateSource()
+            })
+        try requireReviewOwnership(operation, recording: recording)
+        try validateSource()
+        guard let prepared else { return false }
+        recording.richTranscript = prepared.transcript
+        appState.pendingSpeakerReview = SpeakerReviewSession(recording: recording,
+            masterAudioURL: recording.finalizedAudioURL, items: prepared.items,
             transcribe: false, summary: false, actionItems: false, tags: false,
-            localAIAvailable: false, perf: TranscriptionPerf(),
-            origin: .rediarize)
+            localAIAvailable: false, perf: TranscriptionPerf(), origin: .rediarize)
         SpeakerReviewWindowController.shared.show()
         sendReviewReadyNotification()
-        Logger.transcription.info("Confirm-first re-diarize: holding \(items.count) speaker(s) for review")
+        Logger.transcription.info("Confirm-first re-diarize: holding \(prepared.items.count) speaker(s) for review")
         return true
     }
 
@@ -2144,14 +1816,36 @@ final class RecordingManager {
     /// **never re-encoded through ffmpeg** (repeated encodes degrade quality). Passing the
     /// audio URL as `queuedAudioURL` lets `finishJob` sweep any leftover `.queue.json`
     /// sidecar a prior Stop wrote.
+    static func retranscriptionProfileID(for recordingID: UUID, settings: AppSettings) -> UUID {
+        // History retries use the saved manual baseline unless this recording
+        // owns the current route. Another recording may still be awaiting review.
+        if let owner = settings.automaticProfileRecordingID, owner != recordingID {
+            settings.finishAutomaticRouting(for: owner)
+        }
+        return settings.activeProfile.id
+    }
+
     func retranscribe(for recording: Recording) async {
-        guard appState.processingJob == nil else { return }
+        guard !Task.isCancelled, canLaunchProcessing(for: recording) else { return }
         guard let audioURL = recording.finalizedAudioURL else { return }
-        appState.showPostRecordingSheet = false
+        let profileID = Self.retranscriptionProfileID(for: recording.id, settings: appSettings)
+        let fallbackRequest = processingRequest(transcribe: true, summary: appSettings.autoSummary,
+            actionItems: appSettings.autoActionItems, tags: appSettings.autoTags,
+            titleWasUserProvided: recording.titleWasUserProvided, autoResume: true)
+        queueMutationInProgress = true
+        let queuedItem = try? await queueScheduleStore.loadItem(for: audioURL)
+        queueMutationInProgress = false
+        guard !Task.isCancelled, recording.finalizedAudioURL == audioURL,
+              canLaunchProcessing(for: recording) else { return }
+        guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
+            appState.lastError = "This recording’s selected profile was deleted. Choose a profile and try again."
+            return
+        }
+        appSettings.routeAutomatically(to: profileID, for: recording.id)
+        if recordingReviewSlot.dismiss(for: recording) { cancelPostRecordingAutomation() }
         appState.preflightWarning = nil
         appState.processingSteps = []
         appState.liveInferenceText = nil
-        let queuedItem = Self.loadQueueItem(for: audioURL)
         let request = queuedItem.map {
             processingRequest(
                 transcribe: $0.transcribe,
@@ -2161,14 +1855,7 @@ final class RecordingManager {
                 titleWasUserProvided: $0.titleWasUserProvided,
                 autoResume: true
             )
-        } ?? processingRequest(
-            transcribe: true,
-            summary: appSettings.autoSummary,
-            actionItems: appSettings.autoActionItems,
-            tags: appSettings.autoTags,
-            titleWasUserProvided: recording.titleWasUserProvided,
-            autoResume: true
-        )
+        } ?? fallbackRequest
         let job = launchJob(
             id: queuedItem?.id ?? UUID(),
             recording: recording,
@@ -2190,18 +1877,28 @@ final class RecordingManager {
         // Retry works on an already-transcribed recording; refuse while a job runs (the
         // GPU is busy and the progress UI is owned by that job). The button is disabled
         // in that state anyway.
-        guard appState.processingJob == nil else { return }
+        guard !Task.isCancelled, canLaunchProcessing(for: recording) else { return }
 
-        // Load transcript from disk if not already in memory
-        if recording.transcription == nil {
-            guard let saved = loadSavedTranscript(for: recording) else { return }
-            recording.transcription = saved
-        }
-
-        // The rich transcript carries the user's speaker labels; load it from the
-        // sidecar when it isn't already in memory so relabels reach the AI prompts.
-        if recording.richTranscript == nil {
-            recording.richTranscript = try? await transcriptStore.load(for: recording)
+        let input = recoveryInputRequest(for: recording, mode: .aiRetry)
+        let store = transcriptStore
+        do {
+            let loaded = try await processingPipeline.recoverInputs(input, loadRich: { try await store.load(from: $0) },
+                validateOwnership: { @MainActor in
+                    try Task.checkCancellation()
+                    guard self.canLaunchProcessing(for: recording) else { throw CancellationError() }
+                    try self.requireRecoveryInputPaths(input, recording: recording)
+                })
+            guard !Task.isCancelled, canLaunchProcessing(for: recording) else { return }
+            try requireRecoveryInputPaths(input, recording: recording)
+            guard let loaded else { return }
+            // A viewer may have supplied newer edits during the read. Keep them.
+            if recording.transcription == nil { recording.transcription = loaded.transcription }
+            if recording.richTranscript == nil { recording.richTranscript = loaded.richTranscript }
+            if let url = loaded.loadedTranscriptURL { recording.transcriptURL = url }
+        } catch {
+            // Preserve the existing retry preflight behavior: missing raw inputs
+            // leave the previous analysis and processing UI intact.
+            return
         }
 
         // Clear previous AI results and any stale memory warning
@@ -2210,6 +1907,7 @@ final class RecordingManager {
         recording.actionItems = nil
         recording.tags = nil
         recording.sentiment = nil
+        recording.analysisModelProvenance = nil
         recording.generatedTitle = nil
 
         let localAIAvailable: Bool = {
@@ -2233,195 +1931,16 @@ final class RecordingManager {
     }
 
     /// Body of `retryAIAnalysis`, run inside the job's task so it's cancellable and torn
-    /// down via `finishJob(for:)`.
+    /// down via `finishJob(_:)`.
     private func performRetryAnalysis(job: ProcessingJob, localAIAvailable: Bool) async {
-        let recording = job.recording
-
-        // Measured AI performance for this retry session (logged below).
-        var perfAIModel: String?
-        var perfAITime: TimeInterval?
-
-        // Step 2: AI tasks (same as processRecording)
-        if appSettings.effectiveAIProcessingEnabled, let transcription = recording.transcription {
-            let aiEngine = appSettings.effectiveAIEngine
-            let endpoint = appSettings.effectiveDefaultAIEndpoint
-            let localAvailable = localAIAvailable
-
-            // Pre-flight memory check — informational, non-blocking
-            let remoteAIEndpoint = appSettings.effectiveDefaultAIEndpoint
-            appState.preflightWarning = RecordingManager.preflightCheck(
-                engine: aiEngine,
-                hasRemoteEndpoint: remoteAIEndpoint != nil
-            )
-
-            let summaryStepIndex = appendAIStep(labelForSummary(engine: aiEngine))
-            let actionStepIndex = appendAIStep(labelForActionItems(engine: aiEngine))
-            let tagsStepIndex = appendAIStep(labelForTags(engine: aiEngine))
-
-            let speakerNames = Dictionary(
-                (recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let analysisTranscript = transcription.textForLLM(speakerNames: speakerNames)
-            let roster = AnalysisRoster.hint(
-                participants: recording.participants,
-                attendees: recording.calendarEvent?.attendeeNames ?? []
-            )
-
-            let aiStart = Date()
-            switch aiEngine {
-            case .appleIntelligence:
-                await runAppleIntelligenceUnifiedTasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    localAvailable: localAvailable,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .qwenLocal:
-                await runLocalQwenTasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .remoteEndpoint:
-                await runRemoteAITasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    endpoint: endpoint,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            case .localCLI:
-                await runLocalCLITasks(
-                    transcription: analysisTranscript,
-                    roster: roster,
-                    summaryStepIndex: summaryStepIndex,
-                    actionStepIndex: actionStepIndex,
-                    tagsStepIndex: tagsStepIndex,
-                    recording: recording
-                )
-            }
-            if recording.summary != nil || recording.actionItems != nil || recording.tags != nil {
-                perfAITime = Date().timeIntervalSince(aiStart)
-                perfAIModel = aiModelDisplayName
-            }
-        }
-
-        logModelPerformance(
-            label: performanceLabel(for: recording),
-            transcriptionModel: nil,
-            audioDuration: nil,
-            transcriptionTime: nil,
-            inferenceTime: nil,
-            aiModel: perfAIModel,
-            aiTime: perfAITime
-        )
-
-        var generatedMarkdownURL: URL?
-
-        // Step 3: Generate title & write Markdown
-        let engine = appSettings.effectiveAIEngine
-        // Skip the separate title call for the unified-JSON engines (Gemma, Local CLI,
-        // Apple Intelligence) — they produce `title_concept` inline.
-        if engine != .qwenLocal, engine != .localCLI, engine != .appleIntelligence,
-           let transcriptionText = recording.transcription?.textForLLM,
-           !transcriptionText.isEmpty {
-            let language = recording.transcription?.language
-            let titleInput = recording.summary ?? String(transcriptionText.prefix(500))
-            let titleStepIndex = appState.processingSteps.count
-            appState.processingSteps.append(ProcessingStep(name: "Generating Title", status: .inProgress))
-            do {
-                if shouldGenerateTitle(for: recording),
-                   engine == .remoteEndpoint,
-                   let endpoint = appSettings.effectiveDefaultAIEndpoint {
-                    recording.generatedTitle = try await aiService.generateTitle(
-                        transcription: titleInput,
-                        language: language,
-                        endpoint: endpoint
-                    )
-                }
-                appState.processingSteps[titleStepIndex].status = .completed
-            } catch {
-                // Title generation is non-critical — fall back to text extraction
-                appState.processingSteps[titleStepIndex].status = .completed
-            }
-        }
-
-        // Write Markdown for every engine (the unified engines set the title inline above).
-        let markdownStepIndex = appState.processingSteps.count
-        appState.processingSteps.append(ProcessingStep(name: "Writing Markdown", status: .inProgress))
-        do {
-            let outputFolder = resolveMarkdownOutputFolder(for: recording)
-            let transcriptionEndpoint: Endpoint? = switch appSettings.effectiveTranscriptionEngine {
-            case .appleSpeech: Endpoint(name: "Apple Speech", baseURL: "", modelName: "Apple Speech")
-            case .localWhisper: Endpoint(name: "WhisperKit", baseURL: "", modelName: "\(appSettings.whisperModelName) (CoreML)")
-            case .parakeetLocal: Endpoint(name: "Parakeet", baseURL: "", modelName: "\(appSettings.parakeetModelVariant) (CoreML)")
-            case .remoteEndpoint: appSettings.effectiveDefaultTranscriptionEndpoint
-            }
-            let aiEndpoint: Endpoint? = switch appSettings.effectiveAIEngine {
-            case .appleIntelligence: Endpoint(name: "Apple Intelligence", baseURL: "", modelName: "Apple Intelligence")
-            case .qwenLocal: Endpoint(name: "Gemma 4 E4B Local", baseURL: "", modelName: "gemma-4-e4b-4bit (MLX)")
-            case .remoteEndpoint: appSettings.effectiveDefaultAIEndpoint
-            case .localCLI: Endpoint(name: "Local CLI", baseURL: "", modelName: "Local CLI")
-            }
-            generatedMarkdownURL = try markdownGenerator.generate(
-                recording: recording,
-                outputFolder: outputFolder,
-                transcriptionEndpoint: transcriptionEndpoint,
-                aiEndpoint: aiEndpoint,
-                includeTranscript: appSettings.obsidianIncludeTranscript
-            )
-            appState.processingSteps[markdownStepIndex].status = .completed
-            persistGeneratedTitle(for: recording)
-            try? await persistInsightsSidecar(
-                for: recording,
-                markdownURL: generatedMarkdownURL
-            )
-        } catch {
-            appState.processingSteps[markdownStepIndex].status = .failed(error.localizedDescription)
-        }
-
-        // Step 4: Integration dispatch. Guard cancellation here so a job cancelled during
-        // analysis doesn't still push content to external destinations (the local markdown/
-        // sidecars above are harmless to keep). `cancelProcessing` owns teardown + drain.
-        guard !Task.isCancelled else { return }
-        if !(await dispatchTrackedIntegrations(job: job, markdownURL: generatedMarkdownURL)) {
-            await finishJob(for: recording, completed: false)
-            return
-        }
-
-        // Send completion notification
-        let failedCount = appState.processingSteps.filter {
-            if case .failed = $0.status { return true }
-            return false
-        }.count
-        sendCompletionNotification(
-            fileName: recording.fileName,
-            failed: failedCount
-        )
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "processing_completed",
-            outcome: failedCount == 0 ? .succeeded : .warning,
-            measurements: [
-                "stepCount": Int64(appState.processingSteps.count),
-                "failedStepCount": Int64(failedCount),
-            ]
-        ))
-
-        await finishJob(for: recording)
+        await runExportWorkflow(job: job, mode: .retry, transcribe: false,
+            summary: true, actionItems: true, tags: true, localAIAvailable: localAIAvailable,
+            perf: TranscriptionPerf())
     }
 
     func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
-        guard appState.showPostRecordingSheet, let recording = appState.currentRecording,
+        cancelPostRecordingAutomation()
+        guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id,
                   action: appState.processingJob == nil ? .process : .queue) else { return }
         // Only one job processes at a time. If one is already running, defer this recording
@@ -2433,6 +1952,16 @@ final class RecordingManager {
                                             actionItems: actionItems, tags: tags, autoQueued: true) }
             return
         }
+        guard canLaunchProcessing(for: recording) else {
+            postRecordingAction.finish(token: token, error: "Finish the active processing or queue operation first.")
+            return
+        }
+        let profileID = recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
+        guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
+            postRecordingAction.finish(token: token, error: "Choose an available profile before processing.")
+            return
+        }
+        appSettings.routeAutomatically(to: profileID, for: recording.id)
         let request = processingRequest(
             transcribe: transcribe,
             summary: summary,
@@ -2445,7 +1974,7 @@ final class RecordingManager {
             self.postRecordingAction.finish(token: token, error: message)
         }) { job in
             // The processing screen now owns progress; capture may proceed independently.
-            self.appState.showPostRecordingSheet = false
+            self.recordingReviewSlot.dismiss(for: recording, actionToken: token)
             self.postRecordingAction.finish(token: token)
             await self.processRecording(job: job, transcribe: transcribe, summary: summary,
                                         actionItems: actionItems, tags: tags)
@@ -2453,18 +1982,28 @@ final class RecordingManager {
     }
 
     /// Manual "Process Queue" button: drain everything, including user-deferred items.
-    func startProcessingQueue() {
+    func startProcessingQueue() async {
         guard !queueMutationInProgress, !recoveryMaintenanceInProgress else { return }
-        guard setQueuePaused(false) else { return }
+        guard await setQueuePaused(false) else { return }
         drainAllQueued = true
-        drainQueueIfNeeded()
+        await drainQueueIfNeeded()
     }
 
     func cancelProcessing() async {
-        guard !processingCancellationInProgress else { return }
+        guard !processingCancellationInProgress, let job = appState.processingJob else { return }
+        let token = UUID()
+        let review = speakerReviewOperation.flatMap { $0.job === job ? $0 : nil }
+        processingCancellationID = token
         processingCancellationInProgress = true
-        let job = appState.processingJob
-        job?.task?.cancel()
+        // Freeze fallback intent before any await permits settings/profile changes.
+        let request = job.persistedRecord?.request
+        let fallback = QueueItem(id: job.id, transcribe: request?.transcribe ?? true,
+            summary: request?.summary ?? appSettings.autoSummary,
+            actionItems: request?.actionItems ?? appSettings.autoActionItems,
+            tags: request?.tags ?? appSettings.autoTags,
+            titleWasUserProvided: request?.titleWasUserProvided ?? job.recording.titleWasUserProvided,
+            autoQueued: false, profileID: job.persistedRecord?.source.profileID ?? appSettings.activeProfile.id)
+        job.task?.cancel()
         appState.processingJob = nil
         appState.liveInferenceText = nil
         for i in appState.processingSteps.indices {
@@ -2472,54 +2011,82 @@ final class RecordingManager {
                 appState.processingSteps[i].status = .failed("Cancelled by user")
             }
         }
-        // Non-destructive Stop: if a FRESH job (not one already drained from the queue) is
-        // stopped before a transcript was saved — finalized audio exists but no
-        // `.transcript.json` — persist a user-deferred queue entry so the recording isn't
-        // stranded. It won't auto-drain (autoQueued: false); the History "Transcribe" chip
-        // or the manual "Process Queue" button resumes it, reusing the finalized master (no
-        // ffmpeg re-encode). Skipped when a transcript already exists (Re-run AI covers that).
-        if let job, job.queuedAudioURL == nil,
-           job.recording.finalizedAudioURL != nil,
-           loadSavedTranscript(for: job.recording) == nil {
-            let item = QueueItem(
-                id: job.id,
-                transcribe: true,
-                summary: appSettings.autoSummary,
-                actionItems: appSettings.autoActionItems,
-                tags: appSettings.autoTags,
-                titleWasUserProvided: job.recording.titleWasUserProvided,
-                autoQueued: false
-            )
-            try? saveQueueItem(item, for: job.recording)
-            appState.queuedCount = discoverQueuedItems().count
-        }
-        // Tear down any confirm-first review the cancelled job had armed, so it can't be
-        // resumed later against a job that no longer exists.
-        if appState.pendingSpeakerReview?.recording === job?.recording {
+        if appState.pendingSpeakerReview?.recording === job.recording {
             appState.pendingSpeakerReview = nil
             appState.recordingStatusNote = nil
             SpeakerReviewWindowController.shared.dismissForCancelledJob()
         }
-        // NOTE: do NOT reset `recordingState` — a new recording may be capturing
-        // concurrently, and forcing `.idle` would tear its Stop control away.
-        await forceReleaseGPU()   // evicts helper models (incl. a concurrent capture's Whisper prewarm — acceptable)
-        // Let the cancelled task fully unwind BEFORE draining the queue, so we never run two
-        // pipelines at once (the UI already reflects the cancel — this only gates the drain).
-        await job?.task?.value
-        if let job {
-            await markPersistedJobCancelled(job)
-            if let audioURL = job.queuedAudioURL, var item = Self.loadQueueItem(for: audioURL) {
-                item.autoQueued = false
-                do { try saveQueueItem(item, for: job.recording) }
-                catch { _ = setQueuePaused(true) }
+        // Capture state belongs to a potentially concurrent recording. Only the
+        // cancelled processing job participates in the actor's recovery handoff.
+        let store = processingJobStore
+        do {
+            try await processingPipeline.cancelWorkflow(steps: .init(
+                releaseResources: { @MainActor in await self.forceReleaseGPU() },
+                waitForJob: { @MainActor in
+                    await job.task?.value
+                    await review?.waitForCompletion()
+                },
+                snapshot: { @MainActor in
+                    try self.requireCancellationOwnership(token)
+                    var source = self.makePersistedJob(id: job.id, recording: job.recording,
+                        request: .init(transcribe: fallback.transcribe, summary: fallback.summary,
+                            actionItems: fallback.actionItems, tags: fallback.tags,
+                            titleWasUserProvided: fallback.titleWasUserProvided, autoResume: false)).source
+                    source.profileID = fallback.profileID
+                    return .init(jobID: job.id, source: source, fallbackRecord: job.persistedRecord,
+                        queuedAudioURL: job.queuedAudioURL,
+                        transcriptURL: job.recording.transcriptURL ?? Self.transcriptURL(for: job.recording),
+                        fallbackQueueItem: fallback)
+                }, loadRecord: { try await store.load(id: $0) },
+                saveRecord: { try await store.save($0) },
+                publishRecord: { @MainActor record in
+                    try self.requireCancellationOwnership(token)
+                    job.persistedRecord = record
+                }, registerQueueFolder: { @MainActor folder in
+                    try self.requireCancellationOwnership(token)
+                    self.queueRefreshGeneration += 1
+                    try await self.queueScheduleStore.rememberFolder(folder)
+                    try self.requireCancellationOwnership(token)
+                }, warning: { @MainActor warning in
+                    try self.requireCancellationOwnership(token)
+                    await self.holdQueueAfterCancellationFailure(warning)
+                }, validateOwnership: { @MainActor in try self.requireCancellationOwnership(token) }))
+        } catch {
+            if processingCancellationID == token, appState.processingJob == nil {
+                await holdQueueAfterCancellationFailure(.queue)
             }
         }
+        guard processingCancellationID == token else { return }
+        await refreshWorkQueue()
+        guard processingCancellationID == token else { return }
         drainAllQueued = false
+        processingCancellationID = nil
         processingCancellationInProgress = false
-        drainQueueIfNeeded()
+        appSettings.finishAutomaticRouting(for: job.recording.id)
+        await drainQueueIfNeeded(completingCancellation: true)
+        refreshPostRecordingProfileSelection()
+    }
+
+    private func requireCancellationOwnership(_ token: UUID) throws {
+        // Cancelling the Stop caller cannot abandon recovery cleanup halfway through.
+        guard processingCancellationID == token, processingCancellationInProgress,
+              appState.processingJob == nil else { throw CancellationError() }
+    }
+
+    private func holdQueueAfterCancellationFailure(_ warning: ProcessingPipeline.CancellationWarning) async {
+        // Establish the hold before the durable setting suspends or fails.
+        queueSafetyHold = true
+        queuePaused = true
+        _ = await setQueuePaused(true, clearSafetyHold: false)
+        queueSafetyHold = true
+        queuePaused = true
+        appState.lastError = warning == .journal
+            ? "Processing stopped, but its recovery checkpoint couldn't be saved. Processing is paused for this session; check storage and retry."
+            : "Processing stopped, but its retry queue couldn't be saved. Processing is paused for this session; check storage and retry."
     }
 
     func pickFileForTranscription() {
+        guard recordingReviewSlot.canImport else { return }
         // Become a regular app so the open panel can take focus properly
         if !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.regular)
@@ -2548,43 +2115,43 @@ final class RecordingManager {
             NSApp.setActivationPolicy(.accessory)
         }
 
-        guard response == .OK, let url = panel.url else { return }
+        guard response == .OK, let url = panel.url,
+              let snapshot = recordingReviewSlot.snapshotForImport() else { return }
 
-        // A manually-picked file is already a finished audio file, so it must take the
-        // import path (move + stream-copy segmentation, no DSP) — NOT the raw-capture
-        // finalize path, which would pointlessly loudnorm + AAC re-encode the whole file.
-        // Mirror `processWatchedFile`: copy to a temp file and set `importSourceURL` so
-        // `ensureRecordingFinalized` relocates the *copy* (the user's original is left
-        // untouched, since `importExistingAudio` moves its source into the Recordings folder).
-        let ext = url.pathExtension.isEmpty ? "m4a" : url.pathExtension
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("import-\(UUID().uuidString)")
-            .appendingPathExtension(ext)
-        do {
-            try FileManager.default.copyItem(at: url, to: tempURL)
-        } catch {
-            appState.lastError = "Couldn't read \(url.lastPathComponent). \(error.localizedDescription)"
-            return
+        // Copy off MainActor; reject the handoff if a newer import, capture or
+        // review took over while the filesystem was busy.
+        pickedImportTask?.cancel()
+        pickedImportGeneration += 1
+        let generation = pickedImportGeneration
+        pickedImportTask = Task { @MainActor in
+            defer { if generation == pickedImportGeneration { pickedImportTask = nil } }
+            do {
+                let prepared = try await importCoordinator.preparePickedFile(url, title: defaultMeetingTitle(from: nil))
+                let recording = recordingForImport(prepared)
+                guard !Task.isCancelled, generation == pickedImportGeneration,
+                      recordingReviewSlot.acceptImport(recording, replacing: snapshot) else {
+                    await importCoordinator.discard(prepared)
+                    return
+                }
+                // Preserve immediate review, with duration filled in asynchronously.
+                let duration = await importCoordinator.durationSeconds(for: url)
+                if duration > 0 { recording.duration = duration }
+            } catch is CancellationError {
+                // The coordinator cleans up a cancelled copy before returning.
+            } catch {
+                if !Task.isCancelled, generation == pickedImportGeneration, recordingReviewSlot.canAcceptImport(snapshot) {
+                    appState.lastError = "Couldn't read \(url.lastPathComponent). \(error.localizedDescription)"
+                }
+            }
         }
+    }
 
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let size = (attrs?[.size] as? Int64) ?? 0
-        let recording = Recording(
-            fileURL: url,
-            fileSize: size,
-            meetingTitleDraft: defaultMeetingTitle(from: nil),
-            finalizedAudioURL: nil
-        )
-        recording.importSourceURL = tempURL
-        appState.currentRecording = recording
-        appState.showPostRecordingSheet = true
-
-        // Probe the picked file's duration asynchronously and update the
-        // observable recording so the sheet shows a real time instead of 0:00.
-        Task { @MainActor in
-            let probed = await durationSeconds(for: url)
-            if probed > 0 { recording.duration = probed }
-        }
+    private func recordingForImport(_ prepared: ImportCoordinator.PreparedImport) -> Recording {
+        let recording = Recording(date: prepared.date, fileURL: prepared.sourceURL,
+            duration: prepared.duration, fileSize: prepared.fileSize,
+            meetingTitleDraft: prepared.title, finalizedAudioURL: nil)
+        recording.importSourceURL = prepared.stagedURL
+        return recording
     }
 
     // MARK: - YouTube
@@ -2592,27 +2159,13 @@ final class RecordingManager {
     /// Download audio from a YouTube (or any yt-dlp-supported) URL, then show
     /// the post-recording sheet so the user can set options before processing.
     func loadYouTubeAudio(from urlString: String) async throws {
-        let (audioURL, videoTitle) = try await youtubeDownloadService.downloadAudio(from: urlString)  // actor hop
-
-        let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
-        let size = (attrs?[.size] as? Int64) ?? 0
-
-        let sanitizedTitle = videoTitle
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty ? "youtube-video" : videoTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let recording = Recording(
-            fileURL: audioURL,
-            fileSize: size,
-            meetingTitleDraft: sanitizedTitle
-        )
-        // Relocate the downloaded file into the recordings folder during finalization
-        // (no DSP re-encode — it's already a finished m4a) so it lands in history and
-        // the transcript viewer like a normal recording.
-        recording.importSourceURL = audioURL
-        recording.duration = await durationSeconds(for: audioURL)
-        appState.currentRecording = recording
-        appState.showPostRecordingSheet = true
+        guard let snapshot = recordingReviewSlot.snapshotForImport() else { throw RecordingReviewSlot.Failure.busy }
+        let prepared = try await importCoordinator.prepareDownload(from: urlString)
+        guard !Task.isCancelled,
+              recordingReviewSlot.acceptImport(recordingForImport(prepared), replacing: snapshot) else {
+            await importCoordinator.discard(prepared)
+            throw CancellationError()
+        }
     }
 
     // MARK: - Watched Folders
@@ -2623,35 +2176,26 @@ final class RecordingManager {
     /// the same path as YouTube imports, so it lands in History with outputs in dBrief's
     /// folders rather than scattering sidecars next to the source.
     func processWatchedFile(_ sourceURL: URL) async {
-        guard appState.recordingState == .idle, appState.processingJob == nil else { return }
+        guard isIdle else { return }
 
-        let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("watched-\(UUID().uuidString)")
-            .appendingPathExtension(ext)
+        let prepared: ImportCoordinator.PreparedImport
         do {
-            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+            prepared = try await importCoordinator.prepareWatchedFile(sourceURL)
+        } catch is CancellationError {
+            return
         } catch {
             appState.lastError = "Watched folder: couldn't read \(sourceURL.lastPathComponent). \(error.localizedDescription)"
             return
         }
 
-        let attrs = try? FileManager.default.attributesOfItem(atPath: sourceURL.path)
-        let size = (attrs?[.size] as? Int64) ?? 0
-        let title = sourceURL.deletingPathExtension().lastPathComponent
-
-        let recording = Recording(
-            fileURL: sourceURL,
-            fileSize: size,
-            meetingTitleDraft: title
-        )
-        recording.importSourceURL = tempURL
-        recording.duration = await durationSeconds(for: tempURL)
-
-        // Re-check idleness: the user may have started a recording or a job may have begun
-        // while we awaited AVFoundation's duration probe. Don't contend with either.
-        guard appState.recordingState == .idle, appState.processingJob == nil else {
-            try? FileManager.default.removeItem(at: tempURL)
+        // Preserve the post-probe idle check before launching any headless work.
+        guard isIdle, !Task.isCancelled else {
+            await importCoordinator.discard(prepared)
+            return
+        }
+        let recording = recordingForImport(prepared)
+        guard canLaunchProcessing(for: recording) else {
+            await importCoordinator.discard(prepared)
             return
         }
 
@@ -2679,17 +2223,22 @@ final class RecordingManager {
     }
 
     func skipProcessing() async {
-        guard appState.showPostRecordingSheet, let recording = appState.currentRecording,
+        cancelPostRecordingAutomation()
+        guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id, action: .skip) else { return }
-        defer { postRecordingAction.finish(token: token) }
+        defer {
+            postRecordingAction.finish(token: token)
+            if !appState.showPostRecordingSheet { appSettings.finishAutomaticRouting(for: recording.id) }
+        }
         do {
             try await finalizePostRecording(recording, token: token)
         } catch {
+            guard recordingReviewSlot.ownsAction(for: recording, token: token) else { return }
             postRecordingAction.finish(token: token, error: error.localizedDescription)
             appState.lastError = error.localizedDescription
             return
         }
-        appState.showPostRecordingSheet = false
+        guard recordingReviewSlot.dismiss(for: recording, actionToken: token) else { return }
         appState.recordingState = .idle
     }
 
@@ -2698,49 +2247,31 @@ final class RecordingManager {
     /// master + sidecars) and returns to idle without processing. Backs the
     /// post-recording sheet's Delete action.
     func discardRecording() async {
-        guard appState.showPostRecordingSheet, let recording = appState.currentRecording,
+        cancelPostRecordingAutomation()
+        guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id, action: .delete) else { return }
-        defer {
-            postRecordingAction.finish(token: token)
-            appState.currentRecording = nil
-            appState.showPostRecordingSheet = false
-            appState.recordingState = .idle
-        }
-        if let manifestURL = recording.recoveryManifestURL {
-            do {
-                try InterruptedSessionStore.removeSession(
-                    containing: manifestURL,
-                    finalState: .discarded
-                )
-            } catch {
-                DurabilityJournal.shared.record(.init(
-                    sessionID: recording.id,
-                    name: "recovery_session_discarded",
-                    outcome: .warning,
-                    failure: .init(error: error)
-                ))
-            }
-            recording.recoveryManifestURL = nil
-        }
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "recording_discarded_by_user",
-            outcome: .succeeded
-        ))
-
-        var urls: [URL] = [recording.fileURL]
+        defer { postRecordingAction.finish(token: token) }
+        var urls = [recording.fileURL]
         if let tracks = recording.capturedTracks {
             urls.append(contentsOf: [tracks.systemURL, tracks.micURL].compactMap { $0 })
         }
         if let finalized = recording.finalizedAudioURL { urls.append(finalized) }
         if let metadata = recording.metadataURL { urls.append(metadata) }
         urls.append(contentsOf: recording.segmentAudioURLs)
-
-        let fm = FileManager.default
-        for url in Set(urls) {
-            try? fm.removeItem(at: url)
-        }
+        let input = ProcessingPipeline.DiscardRequest(recordingID: recording.id,
+            recoveryManifestURL: recording.recoveryManifestURL,
+            audioURL: recording.finalizedAudioURL ?? recording.fileURL,
+            finalized: recording.finalizedAudioURL != nil, knownFiles: urls,
+            pendingReceiptURL: recording.privacyScope?.pendingReceiptURL)
+        await processingPipeline.discardRecordingFiles(input, store: recording.privacyScope?.store ?? .shared)
+        guard postRecordingAction.token == token, postRecordingAction.recordingID == recording.id,
+              appState.currentRecording === recording else { return }
+        if recording.recoveryManifestURL == input.recoveryManifestURL { recording.recoveryManifestURL = nil }
         recording.capturedTracks = nil
+        appSettings.finishAutomaticRouting(for: recording.id)
+        appState.currentRecording = nil
+        appState.showPostRecordingSheet = false
+        appState.recordingState = .idle
     }
 
     /// Finalizes the current recording and writes a `.queue.json` sidecar for later
@@ -2754,7 +2285,8 @@ final class RecordingManager {
         tags: Bool,
         autoQueued: Bool = false
     ) async {
-        guard appState.showPostRecordingSheet, let recording = appState.currentRecording,
+        cancelPostRecordingAutomation()
+        guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id, action: .queue) else { return }
         await queueForLater(recording: recording, token: token, transcribe: transcribe,
             summary: summary, actionItems: actionItems, tags: tags, autoQueued: autoQueued)
@@ -2772,9 +2304,14 @@ final class RecordingManager {
         actionItems: Bool, tags: Bool, autoQueued: Bool
     ) async {
         defer { postRecordingAction.finish(token: token) }
+        // Finalization suspends; another worker can finish and release its route
+        // before the marker is written. Retain the choice made at invocation.
+        let profileID = recording.profileSelection.retainedManualChoice(savedManualID: appSettings.activeProfileId)
+            ?? recording.profileSelection.appliedID ?? appSettings.activeProfile.id
         do {
             try await finalizePostRecording(recording, token: token)
         } catch {
+            guard postRecordingAction.token == token, appState.currentRecording === recording else { return }
             postRecordingAction.finish(token: token, error: error.localizedDescription)
             appState.lastError = error.localizedDescription
             return
@@ -2786,12 +2323,21 @@ final class RecordingManager {
             actionItems: actionItems && transcribe,
             tags: tags && transcribe,
             titleWasUserProvided: recording.titleWasUserProvided,
-            autoQueued: autoQueued
+            autoQueued: autoQueued,
+            profileID: profileID
         )
 
         do {
-            try saveQueueItem(item, for: recording)
+            guard postRecordingAction.token == token, postRecordingAction.recordingID == recording.id,
+                  appState.currentRecording === recording, appState.showPostRecordingSheet,
+                  !recoveryMaintenanceInProgress else { return }
+            queueEnqueueInProgress = true
+            defer { queueEnqueueInProgress = false }
+            try await saveQueueItem(item, for: recording)
+            guard postRecordingAction.token == token, appState.currentRecording === recording,
+                  appState.showPostRecordingSheet else { return }
         } catch {
+            guard postRecordingAction.token == token, appState.currentRecording === recording else { return }
             postRecordingAction.finish(token: token, error: error.localizedDescription)
             appState.lastError = error.localizedDescription
             return
@@ -2800,136 +2346,75 @@ final class RecordingManager {
         appState.showPostRecordingSheet = false
         appState.recordingState = .idle
         appState.currentRecording = nil
-        appState.queuedCount = discoverQueuedItems().count
+        await refreshWorkQueue()
+        appSettings.finishAutomaticRouting(for: recording.id)
         // Auto-queued overflow starts immediately if no job is currently running.
-        drainQueueIfNeeded()
+        await drainQueueIfNeeded()
     }
 
     func purgeLocalWhisperModel() async throws {
-        try await localAIPluginService.purgeWhisperModel()
+        try await modelDownloadCoordinator.purge(.whisper)
     }
 
     func purgeLocalQwenModel() async throws {
-        try await localAIPluginService.purgeQwenModel()
+        try await modelDownloadCoordinator.purge(.gemma)
     }
 
     func purgeLocalParakeetModel() async throws {
-        try await parakeetService.purgeModels()
+        try await modelDownloadCoordinator.purge(.parakeet)
     }
 
     /// True when models may be downloaded (no active recording/processing that
     /// would contend for the GPU mutex and the shared state stream).
     var canDownloadModels: Bool {
-        appState.recordingState == .idle && appState.processingJob == nil
+        !captureCoordinator.isBusy && appState.recordingState == .idle && appState.processingJob == nil
     }
 
     /// True when no recording AND no processing is in flight — safe for the watched-folder
     /// poller to start a headless transcription. (Distinct from `AppState.isIdle`, which is
     /// capture-only and drives the Record button.)
     var isIdle: Bool {
-        appState.recordingState == .idle && appState.processingJob == nil
+        !captureCoordinator.isBusy && appState.recordingState == .idle && appState.processingJob == nil
+            && !appState.showPostRecordingSheet && !postRecordingAction.isBusy
     }
 
     /// Fetch the list of available WhisperKit model variants from HuggingFace,
     /// routed through the helper process. Returns [] on failure (caller falls back).
     func fetchAvailableWhisperModels() async -> [String] {
-        await localAIPluginService.fetchAvailableWhisperModels(repo: "argmaxinc/whisperkit-coreml")
+        await modelDownloadCoordinator.availableWhisperModels()
     }
 
     /// Best-effort check for whether the model selected for `kind` is cached.
     func isModelCached(_ kind: LocalModelKind) async -> Bool {
-        switch kind {
-        case .whisper:
-            return await localAIPluginService.isWhisperModelCached(name: appSettings.whisperModelName)
-        case .parakeet:
-            return await parakeetService.isModelDownloaded()
-        case .gemma:
-            return await localAIPluginService.isLLMModelCached()
-        }
+        await modelDownloadCoordinator.isCached(modelDownloadRequest(kind))
     }
 
-    /// Start downloading the selected model for `kind`. When `forceRedownload`
-    /// is true the engine's cache is purged first so the model is re-fetched.
+    /// Start downloading the selected model. The coordinator owns its lifecycle;
+    /// the manager keeps the existing recording/processing admission policy.
     func downloadModel(_ kind: LocalModelKind, forceRedownload: Bool = false) {
         guard canDownloadModels else { return }
-
-        downloadObservers[kind]?.cancel()
-        downloadTasks[kind]?.cancel()
-        modelDownloads[kind] = .downloading(progress: nil, label: "Starting…")
-
-        let stream = (kind == .parakeet)
-            ? parakeetService.stateStream
-            : localAIPluginService.stateStream
-
-        downloadObservers[kind] = Task { @MainActor [weak self] in
-            for await state in stream {
-                guard let self else { return }
-                if Task.isCancelled { return }
-                if let phase = ModelDownloadPhase.from(pluginState: state) {
-                    self.modelDownloads[kind] = phase
-                }
-            }
-        }
-
-        downloadTasks[kind] = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                if forceRedownload {
-                    try? await self.purgeModel(kind)
-                }
-                switch kind {
-                case .whisper:
-                    let config = WhisperRuntimeConfig(
-                        modelName: self.appSettings.whisperModelName,
-                        language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
-                        diarizationEnabled: false
-                    )
-                    try await self.localAIPluginService.downloadWhisperModel(config: config)
-                case .parakeet:
-                    try await self.parakeetService.prepareModel(variant: self.appSettings.parakeetModelVariant)
-                case .gemma:
-                    try await self.localAIPluginService.downloadLLMModel()
-                }
-                // Tear down the observer before writing the terminal state so a
-                // late stream element can't overwrite it.
-                self.downloadObservers[kind]?.cancel()
-                self.downloadObservers[kind] = nil
-                self.modelDownloads[kind] = .idle
-            } catch is CancellationError {
-                self.downloadObservers[kind]?.cancel()
-                self.downloadObservers[kind] = nil
-                self.modelDownloads[kind] = .idle
-            } catch {
-                self.downloadObservers[kind]?.cancel()
-                self.downloadObservers[kind] = nil
-                self.modelDownloads[kind] = .failed(error.localizedDescription)
-            }
-        }
+        modelDownloadCoordinator.start(modelDownloadRequest(kind), forceRedownload: forceRedownload)
     }
 
-    /// Cancel an in-flight download and reset its row to idle.
     func cancelDownload(_ kind: LocalModelKind) {
-        downloadObservers[kind]?.cancel()
-        downloadObservers[kind] = nil
-        downloadTasks[kind]?.cancel()
-        downloadTasks[kind] = nil
-        modelDownloads[kind] = .idle
+        modelDownloadCoordinator.cancel(kind)
     }
 
-    /// Cancel every in-flight model download (e.g. when a recording starts).
+    /// Recording start still cancels every owned download before capture setup.
     func cancelAllActiveDownloads() {
-        for kind in LocalModelKind.allCases {
-            if case .downloading = modelDownloads[kind] ?? .idle {
-                cancelDownload(kind)
-            }
-        }
+        modelDownloadCoordinator.cancelAll()
     }
 
-    private func purgeModel(_ kind: LocalModelKind) async throws {
+    private func modelDownloadRequest(_ kind: LocalModelKind) -> ModelDownloadCoordinator.Request {
         switch kind {
-        case .whisper: try await purgeLocalWhisperModel()
-        case .parakeet: try await purgeLocalParakeetModel()
-        case .gemma: try await purgeLocalQwenModel()
+        case .whisper:
+            .whisper(WhisperRuntimeConfig(modelName: appSettings.whisperModelName,
+                language: appSettings.transcriptionLanguage.isEmpty ? nil : appSettings.transcriptionLanguage,
+                diarizationEnabled: false))
+        case .parakeet:
+            .parakeet(variant: appSettings.parakeetModelVariant)
+        case .gemma:
+            .gemma
         }
     }
 
@@ -2986,277 +2471,92 @@ final class RecordingManager {
         }
     }
 
-    /// One guided-generation call producing summary, action items, tags, sentiment, and
-    /// an inline title. Mirrors `runLocalQwenTasks`: the three step indices are all
-    /// completed by the single call, so the progress UI stays consistent across engines.
-    private func runAppleIntelligenceUnifiedTasks(
-        transcription: String,
-        roster: String?,
-        localAvailable: Bool,
-        summaryStepIndex: Int?,
-        actionStepIndex: Int?,
-        tagsStepIndex: Int?,
-        recording: Recording
-    ) async {
-        #if canImport(FoundationModels)
-        guard #available(macOS 26, *) else {
-            let message = "Apple Intelligence requires macOS 26+."
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-            return
+    /// Observable façade for the actor's shared analysis stage. Snapshot settings
+    /// after loading reviewed speaker names, and publish only to the owning job.
+    private func runPipelineAnalysis(
+        job: ProcessingJob, summary: Bool, actionItems: Bool, tags: Bool,
+        localAIAvailable: Bool
+    ) async throws -> ProcessingPipeline.AnalysisOutput {
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        if recording.richTranscript == nil {
+            let rich = try? await transcriptStore.load(for: recording)
+            try requireProcessingOwnership(job)
+            if recording.richTranscript == nil { recording.richTranscript = rich }
         }
-        guard localAvailable else {
-            let message = "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match."
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-            return
-        }
-        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
-
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
+        guard let transcription = recording.transcription else { throw TranscriptStoreError.noSidecarURL }
+        let engine = appSettings.effectiveAIEngine
+        appState.preflightWarning = Self.preflightCheck(engine: engine,
+            hasRemoteEndpoint: appSettings.effectiveDefaultAIEndpoint != nil)
+        let summaryIndex = summary ? appendAIStep(labelForSummary(engine: engine)) : nil
+        let actionsIndex = actionItems ? appendAIStep(labelForActionItems(engine: engine)) : nil
+        let tagsIndex = tags ? appendAIStep(labelForTags(engine: engine)) : nil
+        let fields = Set<ProcessingPipeline.AnalysisField>(
+            (summary ? [.summary] : []) + (actionItems ? [.actionItems] : []) + (tags ? [.tags] : []))
+        let appleUnavailable: String? = {
+            #if canImport(FoundationModels)
+            guard #available(macOS 26, *) else { return "Apple Intelligence requires macOS 26+." }
+            return localAIAvailable ? nil : "Apple Intelligence is unavailable. Ensure it is enabled and your System + Siri languages match."
+            #else
+            return "Apple Intelligence is unavailable in this build."
+            #endif
+        }()
+        let input = ProcessingPipeline.AnalysisRequest(transcription: transcription,
+            speakerNames: Dictionary((recording.richTranscript?.speakerLabels ?? []).map { ($0.id, $0.displayName) },
+                                     uniquingKeysWith: { first, _ in first }),
+            participants: recording.participants, calendarEvent: recording.calendarEvent,
+            engine: engine, endpoint: appSettings.effectiveDefaultAIEndpoint, fields: fields,
+            outputLanguage: appSettings.outputLanguage,
+            vocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
+            guidance: .init(summary: appSettings.effectiveSummaryPrompt, actionItems: appSettings.effectiveActionItemsPrompt,
+                            tags: appSettings.effectiveTagsPrompt),
+            localCLIConfig: appSettings.localCLIConfig, appleUnavailableReason: appleUnavailable)
+        let progress = ProcessingStepProgress(appState: appState, job: job,
+            stepIndex: firstNonNil(summaryIndex, actionsIndex, tagsIndex))
+        defer { progress.invalidate() }
         do {
-            let insights = try await LocalAIService().analyzeTranscript(
-                contextualTranscription,
-                outputLanguage: appSettings.outputLanguage,
-                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
-                summaryGuidance: appSettings.effectiveSummaryPrompt,
-                actionItemsGuidance: appSettings.effectiveActionItemsPrompt,
-                tagsGuidance: appSettings.effectiveTagsPrompt
-            )
-
-            if let summaryStepIndex {
-                recording.summary = insights.summary
-                markCompleted(summaryStepIndex)
+            let output = try await MLProgress.$sink.withValue(progress.handler()) {
+                try await processingPipeline.analyze(input,
+                    using: .live(ai: aiService, plugin: localAIPluginService, cli: localCLIService),
+                    onEvent: { [weak self] event in
+                        await self?.applyAnalysisEvent(event, job: job, summaryIndex: summaryIndex,
+                                                      actionsIndex: actionsIndex, tagsIndex: tagsIndex, modelName: input.modelName)
+                    })
             }
-            applyGeneratedTitle(insights.titleConcept, to: recording)
-            if let actionStepIndex {
-                recording.actionItems = insights.actionItems
-                markCompleted(actionStepIndex)
-            }
-            if let tagsStepIndex {
-                recording.tags = insights.tags
-                recording.sentiment = insights.sentiment
-                markCompleted(tagsStepIndex)
-            }
-        } catch is CancellationError {
-            let message = "Cancelled by user"
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
+            try requireProcessingOwnership(job)
+            return output
         } catch {
-            let message = error.localizedDescription
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-        }
-        #else
-        let message = "Apple Intelligence is unavailable in this build."
-        markFailed(summaryStepIndex, message)
-        markFailed(actionStepIndex, message)
-        markFailed(tagsStepIndex, message)
-        #endif
-    }
-
-    /// The user's configured Summary / Action Items / Tags prompts bundled for the
-    /// unified (single-call) engines — Gemma and Local CLI — so they honor the same
-    /// prompts the Remote Endpoint already uses. The unified prompt keeps ownership of
-    /// the JSON envelope; these only drive per-field content/style.
-    private var effectiveInsightsGuidance: InsightsGuidance {
-        InsightsGuidance(
-            summary: appSettings.effectiveSummaryPrompt,
-            actionItems: appSettings.effectiveActionItemsPrompt,
-            tags: appSettings.effectiveTagsPrompt
-        )
-    }
-
-    private func runLocalQwenTasks(
-        transcription: String,
-        roster: String?,
-        summaryStepIndex: Int?,
-        actionStepIndex: Int?,
-        tagsStepIndex: Int?,
-        recording: Recording
-    ) async {
-        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
-        do {
-            let insights = try await withPluginStepAdapter(stepIndex: firstNonNil(summaryStepIndex, actionStepIndex, tagsStepIndex)) {
-                let stream = await self.localAIPluginService.analyzeTranscriptStream(
-                    contextualTranscription,
-                    outputLanguage: self.appSettings.outputLanguage,
-                    customVocabulary: self.appSettings.effectiveCustomVocabulary.joined(separator: ", "),
-                    guidance: self.effectiveInsightsGuidance
-                )
-                
-                var chunks: [String] = []
-                var lastUIUpdate = ContinuousClock.now
-                let uiThrottle: ContinuousClock.Duration = .milliseconds(200)
-
-                for try await chunk in stream {
-                    chunks.append(chunk)
-
-                    // Throttle UI updates to avoid starving the Metal GPU
-                    // with SwiftUI re-renders while MLX inference is running.
-                    let now = ContinuousClock.now
-                    if now - lastUIUpdate >= uiThrottle {
-                        let snapshot = chunks.joined()
-                        await MainActor.run { self.appState.liveInferenceText = snapshot }
-                        lastUIUpdate = now
-                    }
-                }
-
-                let fullJSON = chunks.joined()
-                // Push the final snapshot — throttled updates may have skipped
-                // the last chunks on fast generations, and the previous clear
-                // here could blank the view after a single flash.
-                await MainActor.run { self.appState.liveInferenceText = fullJSON }
-
-                return try LocalInsightsDecoder.decodeAndNormalize(fullJSON)
-            }
-
-            if let summaryStepIndex {
-                recording.summary = insights.summary
-                markCompleted(summaryStepIndex)
-            }
-            applyGeneratedTitle(insights.titleConcept, to: recording)
-            if let actionStepIndex {
-                recording.actionItems = insights.actionItems
-                markCompleted(actionStepIndex)
-            }
-            if let tagsStepIndex {
-                recording.tags = insights.tags
-                recording.sentiment = insights.sentiment
-                markCompleted(tagsStepIndex)
-            }
-        } catch is CancellationError {
-            let message = "Cancelled by user"
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-        } catch {
-            let message = error.localizedDescription
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
+            // Publish field errors only. The actor workflow owns failure recovery
+            // and the terminal decision, including independent backend cancellation.
+            try requireProcessingOwnership(job)
+            markFailed(summaryIndex, error.localizedDescription)
+            markFailed(actionsIndex, error.localizedDescription)
+            markFailed(tagsIndex, error.localizedDescription)
+            throw error
         }
     }
 
-    /// Runs the unified-JSON analysis through the user-configured Local CLI command.
-    /// Mirrors `runLocalQwenTasks` (one call producing summary, action items, tags,
-    /// sentiment, and an inline title) but invokes a subprocess instead of MLX and
-    /// does not stream.
-    private func runLocalCLITasks(
-        transcription: String,
-        roster: String?,
-        summaryStepIndex: Int?,
-        actionStepIndex: Int?,
-        tagsStepIndex: Int?,
-        recording: Recording
-    ) async {
-        guard summaryStepIndex != nil || actionStepIndex != nil || tagsStepIndex != nil else { return }
-        let contextualTranscription = CalendarEvent.augment(prompt: transcription, with: recording.calendarEvent, roster: roster)
-        do {
-            let insights = try await localCLIService.analyze(
-                transcript: contextualTranscription,
-                outputLanguage: appSettings.outputLanguage,
-                config: appSettings.localCLIConfig,
-                customVocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
-                summaryGuidance: appSettings.effectiveSummaryPrompt,
-                actionItemsGuidance: appSettings.effectiveActionItemsPrompt,
-                tagsGuidance: appSettings.effectiveTagsPrompt
-            )
-
-            if let summaryStepIndex {
-                recording.summary = insights.summary
-                markCompleted(summaryStepIndex)
+    private func applyAnalysisEvent(_ event: ProcessingPipeline.AnalysisEvent, job: ProcessingJob,
+                                    summaryIndex: Int?, actionsIndex: Int?, tagsIndex: Int?, modelName: String?) {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        let recording = job.recording
+        recording.applyAnalysisField(event, modelName: modelName)
+        switch event {
+        case .summary:
+            if let summaryIndex { markCompleted(summaryIndex) }
+        case .actionItems:
+            if let actionsIndex { markCompleted(actionsIndex) }
+        case .tags:
+            if let tagsIndex { markCompleted(tagsIndex) }
+        case .titleConcept(let value): applyGeneratedTitle(value, to: recording)
+        case .liveText(let value): appState.liveInferenceText = value
+        case .failed(let field, let message):
+            let index: Int? = switch field {
+            case .summary: summaryIndex
+            case .actionItems: actionsIndex
+            case .tags: tagsIndex
             }
-            applyGeneratedTitle(insights.titleConcept, to: recording)
-            if let actionStepIndex {
-                recording.actionItems = insights.actionItems
-                markCompleted(actionStepIndex)
-            }
-            if let tagsStepIndex {
-                recording.tags = insights.tags
-                recording.sentiment = insights.sentiment
-                markCompleted(tagsStepIndex)
-            }
-        } catch is CancellationError {
-            let message = "Cancelled by user"
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-        } catch {
-            let message = error.localizedDescription
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-        }
-    }
-
-    /// Appends the user's custom-vocabulary "spell these exactly" block to a remote
-    /// per-task system prompt (no-op when no vocabulary is configured).
-    private func withVocabulary(_ prompt: String) -> String {
-        prompt + UnifiedInsightsPrompt.vocabularyBlock(appSettings.effectiveCustomVocabulary.joined(separator: ", "))
-    }
-
-    private func runRemoteAITasks(
-        transcription: String,
-        roster: String?,
-        endpoint: Endpoint?,
-        summaryStepIndex: Int?,
-        actionStepIndex: Int?,
-        tagsStepIndex: Int?,
-        recording: Recording
-    ) async {
-        guard let endpoint else {
-            let message = AIServiceError.invalidEndpoint.localizedDescription
-            markFailed(summaryStepIndex, message)
-            markFailed(actionStepIndex, message)
-            markFailed(tagsStepIndex, message)
-            return
-        }
-
-        if let summaryStepIndex {
-            do {
-                recording.summary = try await aiService.generateSummary(
-                    transcription: transcription,
-                    endpoint: endpoint,
-                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveSummaryPrompt, with: recording.calendarEvent, roster: roster))
-                )
-                markCompleted(summaryStepIndex)
-            } catch {
-                markFailed(summaryStepIndex, error.localizedDescription)
-            }
-        }
-
-        if let actionStepIndex {
-            do {
-                recording.actionItems = try await aiService.extractActionItems(
-                    transcription: transcription,
-                    endpoint: endpoint,
-                    systemPrompt: withVocabulary(CalendarEvent.augment(prompt: appSettings.effectiveActionItemsPrompt, with: recording.calendarEvent, roster: roster))
-                )
-                markCompleted(actionStepIndex)
-            } catch {
-                markFailed(actionStepIndex, error.localizedDescription)
-            }
-        }
-
-        if let tagsStepIndex {
-            do {
-                let result = try await aiService.analyzeTags(
-                    transcription: transcription,
-                    endpoint: endpoint,
-                    systemPrompt: withVocabulary(appSettings.effectiveTagsPrompt)
-                )
-                recording.tags = result.tags
-                recording.sentiment = result.sentiment
-                markCompleted(tagsStepIndex)
-            } catch {
-                markFailed(tagsStepIndex, error.localizedDescription)
-            }
+            markFailed(index, message)
         }
     }
 
@@ -3268,9 +2568,12 @@ final class RecordingManager {
     private func startTranscriptionETATicker(
         job: ProcessingJob,
         stepIndex: Int,
-        audioDuration: TimeInterval
+        audioDuration: TimeInterval,
+        settings: ProcessingPipeline.TranscriptionSettings
     ) -> Task<Void, Never> {
-        Task { @MainActor [weak self] in
+        let progress = ProcessingStepProgress(appState: appState, job: job, stepIndex: stepIndex)
+        return Task { @MainActor [weak self] in
+            defer { progress.invalidate() }
             guard let self else { return }
             // Prefer the model's measured realtime ratio; on a first-ever run there's no
             // history yet (and any pre-fix 0-duration records are excluded), so fall back
@@ -3280,14 +2583,12 @@ final class RecordingManager {
             // whole run. The default deliberately under-estimates speed so the bar trails
             // real progress (finishing a touch early) rather than racing to 99% and stalling.
             let ratio = await self.modelPerformanceStore
-                .averageTranscriptionRealtime(forModel: self.transcriptionModelDisplayName)
-                ?? self.fallbackRealtimeRatio(for: self.appSettings.effectiveTranscriptionEngine)
+                .averageTranscriptionRealtime(forModel: settings.modelDisplayName)
+                ?? self.fallbackRealtimeRatio(for: settings.engine)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
-                guard self.appState.processingSteps.indices.contains(stepIndex),
-                      case .inProgress = self.appState.processingSteps[stepIndex].status
-                else { return }
+                guard progress.isCurrent else { return }
                 // Before transcription proper (model download/load) the bar is owned by
                 // applyPluginState's download progress — don't fight it.
                 guard let startedAt = job.transcriptionStartedAt else { continue }
@@ -3300,10 +2601,10 @@ final class RecordingManager {
                     // true coverage and would inflate the remaining-time estimate.
                     latestSegmentEnd: job.progressiveSegments.map(\.end).max()
                 )
-                if let progress = estimate.progress {
-                    self.appState.processingSteps[stepIndex].progress = progress
+                progress.update { step, _ in
+                    if let fraction = estimate.progress { step.progress = fraction }
+                    step.detail = estimate.remaining
                 }
-                self.appState.processingSteps[stepIndex].detail = estimate.remaining
             }
         }
     }
@@ -3323,120 +2624,20 @@ final class RecordingManager {
     }
 
     private func withPluginStepAdapter<T>(
-        stepIndex: Int,
+        progress: ProcessingStepProgress,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        let stateTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await state in localAIPluginService.stateStream {
-                if Task.isCancelled { return }
-                applyPluginState(state, toStepIndex: stepIndex)
-            }
+        try await MLProgress.$sink.withValue(progress.handler(parakeet: false)) {
+            try await operation()
         }
-
-        defer { stateTask.cancel() }
-        return try await operation()
     }
 
     private func withParakeetStepAdapter<T>(
-        stepIndex: Int,
+        progress: ProcessingStepProgress,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        let stateTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            for await state in parakeetService.stateStream {
-                if Task.isCancelled { return }
-                applyParakeetState(state, toStepIndex: stepIndex)
-            }
-        }
-        defer { stateTask.cancel() }
-        return try await operation()
-    }
-
-    private func applyParakeetState(_ state: LocalAIPluginState, toStepIndex stepIndex: Int) {
-        guard appState.processingSteps.indices.contains(stepIndex) else { return }
-        switch state {
-        case .idle:
-            break
-        case .transcribing:
-            appState.processingSteps[stepIndex].name = "Transcribing (Parakeet)"
-            if appState.processingJob?.transcriptionStartedAt == nil {
-                appState.processingJob?.transcriptionStartedAt = Date()
-            }
-        case .newSegments:
-            break // Parakeet doesn't produce live segments
-        case .diarizing:
-            appState.processingSteps[stepIndex].name = "Identifying speakers"
-        case .analyzing:
-            break
-        case .downloading(let progress, let stage):
-            appState.processingSteps[stepIndex].progress = progress
-            switch stage {
-            case .parakeetModel:
-                appState.processingSteps[stepIndex].name = "Downloading Parakeet model…"
-            case .parakeetModelLoading:
-                appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
-                appState.processingSteps[stepIndex].progress = nil
-            case .speakerKitModel:
-                appState.processingSteps[stepIndex].name = "Downloading speaker model…"
-            default:
-                break
-            }
-        }
-    }
-
-    private func applyPluginState(_ state: LocalAIPluginState, toStepIndex stepIndex: Int) {
-        guard appState.processingSteps.indices.contains(stepIndex) else { return }
-        switch state {
-        case .idle:
-            break
-        case .transcribing:
-            appState.processingSteps[stepIndex].name = "Transcribing (Local WhisperKit)"
-            if appState.processingJob?.transcriptionStartedAt == nil {
-                appState.processingJob?.transcriptionStartedAt = Date()
-            }
-        case .newSegments(let segments):
-            // Progressive segments belong to THIS job's "In Progress" view, not the shared
-            // capture live-set (a new recording may be capturing concurrently).
-            appState.processingJob?.progressiveSegments.append(contentsOf: segments)
-            // First streamed segment implies transcription proper is under way — used by
-            // the ETA ticker to switch to true segment-coverage progress.
-            if appState.processingJob?.transcriptionStartedAt == nil {
-                appState.processingJob?.transcriptionStartedAt = Date()
-            }
-            return // don't update step name
-        case .diarizing:
-            appState.processingSteps[stepIndex].name = "Identifying speakers"
-        case .analyzing:
-            appState.processingSteps[stepIndex].name = "Analyzing transcript (Gemma 4 E4B local)"
-        case .downloading(let progress, let stage):
-            appState.processingSteps[stepIndex].progress = progress
-            switch stage {
-            case .whisperModel:
-                appState.processingSteps[stepIndex].name = "Downloading WhisperKit model…"
-            case .whisperModelLoading:
-                appState.processingSteps[stepIndex].name = "Loading WhisperKit model…"
-                appState.processingSteps[stepIndex].progress = nil // loading is indeterminate
-            case .llmModel:
-                appState.processingSteps[stepIndex].name = "Downloading Gemma model"
-            case .speakerKitModel:
-                appState.processingSteps[stepIndex].name = "Downloading SpeakerKit model"
-            case .parakeetModel:
-                appState.processingSteps[stepIndex].name = "Downloading Parakeet model…"
-            case .parakeetModelLoading:
-                appState.processingSteps[stepIndex].name = "Loading Parakeet model…"
-                appState.processingSteps[stepIndex].progress = nil
-            case .ttsModel:
-                appState.processingSteps[stepIndex].name = "Downloading TTS model…"
-            case .ttsModelLoading:
-                appState.processingSteps[stepIndex].name = "Loading TTS model…"
-                appState.processingSteps[stepIndex].progress = nil
-            case .kokoroTTSModel:
-                appState.processingSteps[stepIndex].name = "Downloading Kokoro voice model…"
-            case .kokoroTTSModelLoading:
-                appState.processingSteps[stepIndex].name = "Loading Kokoro voice model…"
-                appState.processingSteps[stepIndex].progress = nil
-            }
+        try await MLProgress.$sink.withValue(progress.handler(parakeet: true)) {
+            try await operation()
         }
     }
 
@@ -3460,39 +2661,6 @@ final class RecordingManager {
     }
 
     // MARK: - Model performance logging
-
-    /// Friendly name of the transcription model for the active engine, matching
-    /// the names shown in the Model Performance panel.
-    private var transcriptionModelDisplayName: String {
-        switch appSettings.effectiveTranscriptionEngine {
-        case .appleSpeech:
-            return "Apple Speech"
-        case .localWhisper:
-            return WhisperModelInfo.parse(appSettings.whisperModelName).displayName
-        case .parakeetLocal:
-            return ParakeetModelInfo.find(appSettings.parakeetModelVariant).displayName
-        case .remoteEndpoint:
-            let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint
-            let name = endpoint?.modelName.trimmingCharacters(in: .whitespaces) ?? ""
-            return name.isEmpty ? "Remote Endpoint" : name
-        }
-    }
-
-    /// Friendly name of the AI-analysis model for the active engine.
-    private var aiModelDisplayName: String {
-        switch appSettings.effectiveAIEngine {
-        case .appleIntelligence:
-            return "Apple Intelligence"
-        case .qwenLocal:
-            return "Gemma 4 E4B Local"
-        case .remoteEndpoint:
-            let endpoint = appSettings.effectiveDefaultAIEndpoint
-            let name = endpoint?.modelName.trimmingCharacters(in: .whitespaces) ?? ""
-            return name.isEmpty ? "Remote Endpoint" : name
-        case .localCLI:
-            return "Local CLI"
-        }
-    }
 
     /// Best-available display title for the per-recording Benchmark list: the
     /// AI-generated title (sans its leading "YYYY-MM-DD - " date prefix) when set,
@@ -3549,153 +2717,74 @@ final class RecordingManager {
     /// transcript plus the wall-clock spent in the vocabulary spell-correction pass
     /// (nil when no vocabulary was set, so the Benchmark breakdown can show it apart
     /// from the transcription model/overhead).
-    private struct TranscriptionStepResult {
-        let transcription: TranscriptionResult
-        let spellCorrectionTime: TimeInterval?
-    }
-
     private func transcribeRecordingAudio(
         recording: Recording,
-        stepIndex: Int
-    ) async throws -> TranscriptionStepResult {
-        let raw: TranscriptionResult
-        if !recording.segmentAudioURLs.isEmpty {
-            raw = try await transcribeSegmentedAudio(recording: recording, stepIndex: stepIndex)
+        stepIndex: Int,
+        settings: ProcessingPipeline.TranscriptionSettings
+    ) async throws -> ProcessingPipeline.TranscriptionOutput {
+        guard let owner = appState.processingJob, owner.recording === recording else { throw CancellationError() }
+        let correct: (@Sendable (TranscriptionResult) async -> TranscriptionResult)?
+        if settings.spelling.terms.isEmpty {
+            correct = nil
         } else {
-            raw = try await transcribeSingleAudioFile(
-                recording.fileURL,
-                stepIndex: stepIndex,
-                segmentIndex: nil,
-                segmentCount: nil
-            )
+            let speller = TranscriptSpellingService(localPlugin: localAIPluginService)
+            correct = { await speller.correct($0, request: settings.spelling) }
         }
-        // Engine-agnostic cleanup: always strip hallucination/markup noise; strip filler
-        // words only when the user opted in; drop ignored-phrase segments (Whisper
-        // silence-hallucinations) when enabled. Applies uniformly across all engines.
-        let cleaned = TranscriptCleanup.clean(
-            raw,
-            removeFillerWords: appSettings.effectiveRemoveFillerWords,
-            ignoredSegments: appSettings.effectiveIgnoredSegments
-        )
-
-        // Vocabulary spelling: re-spell the user's custom-vocabulary terms via the
-        // AI engine (the reliable replacement for Whisper decoder-prompt biasing).
-        // No-op when no vocabulary is set or no AI engine is available.
-        guard !appSettings.effectiveCustomVocabulary.isEmpty else {
-            return TranscriptionStepResult(transcription: cleaned, spellCorrectionTime: nil)
-        }
-        if appState.processingSteps.indices.contains(stepIndex) {
-            appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
-            // Transcription proper is done; the ETA ticker must stop driving the bar
-            // (vocabulary correction has no meaningful progress fraction).
-            appState.processingJob?.transcriptionStartedAt = nil
-            appState.processingSteps[stepIndex].progress = nil
-            appState.processingSteps[stepIndex].detail = nil
-        }
-        let speller = TranscriptSpellingService(appSettings: appSettings, localPlugin: localAIPluginService)
-        let spellStart = Date()
-        let corrected = await speller.correct(cleaned)
-        return TranscriptionStepResult(
-            transcription: corrected,
-            spellCorrectionTime: Date().timeIntervalSince(spellStart)
-        )
-    }
-
-    private func transcribeSegmentedAudio(
-        recording: Recording,
-        stepIndex: Int
-    ) async throws -> TranscriptionResult {
-        let segments = recording.segmentAudioURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        guard !segments.isEmpty else {
-            return try await transcribeSingleAudioFile(
-                recording.fileURL,
-                stepIndex: stepIndex,
-                segmentIndex: nil,
-                segmentCount: nil
-            )
-        }
-
-        var pieces: [SegmentTranscriptionPiece] = []
-        pieces.reserveCapacity(segments.count)
-        var cumulativeOffset = 0.0
-        var warnings: [String] = []
-        var language: String?
-        // Sum the per-segment model/diarization times so the Benchmark breakdown
-        // works for long (segmented) recordings, not just single-file ones.
-        var inferenceSum: TimeInterval?
-        var diarizationSum: TimeInterval?
-
-        for (index, segmentURL) in segments.enumerated() {
-            let segmentNumber = index + 1
-            if appState.processingSteps.indices.contains(stepIndex) {
-                appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(segmentNumber)/\(segments.count))"
-            }
-
-            let result = try await transcribeSingleAudioFile(
-                segmentURL,
-                stepIndex: stepIndex,
-                segmentIndex: segmentNumber,
-                segmentCount: segments.count
-            )
-            if let inf = result.inferenceTime { inferenceSum = (inferenceSum ?? 0) + inf }
-            if let diar = result.diarizationTime { diarizationSum = (diarizationSum ?? 0) + diar }
-            if language == nil, let detected = result.language, !detected.isEmpty {
-                language = detected
-            }
-            if let segmentWarnings = result.warnings, !segmentWarnings.isEmpty {
-                warnings.append(contentsOf: segmentWarnings.map { "Segment \(segmentNumber): \($0)" })
-            }
-
-            pieces.append(
-                SegmentTranscriptionPiece(
-                    offsetSeconds: cumulativeOffset,
-                    text: result.text,
-                    segments: result.segments,
-                    speakerEmbeddings: result.speakerEmbeddings
-                )
-            )
-            let segmentDuration = await durationSeconds(for: segmentURL)
-            let fallbackDuration = result.segments.last?.end ?? 1
-            cumulativeOffset += max(segmentDuration, fallbackDuration, 1)
-        }
-
-        let merged = Self.mergeSegmentTranscriptions(pieces)
-        return TranscriptionResult(
-            text: merged.text,
-            segments: merged.segments,
-            language: language,
-            warnings: warnings.isEmpty ? nil : warnings,
-            speakerCount: merged.speakerCount,
-            inferenceTime: inferenceSum,
-            diarizationTime: diarizationSum,
-            speakerEmbeddings: merged.speakerEmbeddings
-        )
+        let result = try await processingPipeline.transcribe(
+            .init(audioURL: recording.fileURL, segmentURLs: recording.segmentAudioURLs),
+            options: settings.cleanup,
+            using: { @MainActor request in
+                guard !Task.isCancelled, self.appState.processingJob === owner else {
+                    throw CancellationError()
+                }
+                return try await self.transcribeSingleAudioFile(request.url, job: owner, stepIndex: stepIndex,
+                    segmentIndex: request.segmentIndex, segmentCount: request.segmentCount, settings: settings)
+            }, correct: correct,
+            onEvent: { @MainActor event in
+                guard !Task.isCancelled, self.appState.processingJob === owner,
+                      self.appState.processingSteps.indices.contains(stepIndex) else { return }
+                switch event {
+                case .transcribingSegment(let index, let count):
+                    self.appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(index)/\(count))"
+                case .correctingVocabulary:
+                    self.appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
+                    self.appState.processingJob?.transcriptionStartedAt = nil
+                    self.appState.processingSteps[stepIndex].progress = nil
+                    self.appState.processingSteps[stepIndex].detail = nil
+                }
+            })
+        try Task.checkCancellation()
+        guard appState.processingJob === owner else { throw CancellationError() }
+        return result
     }
 
     private func transcribeSingleAudioFile(
         _ url: URL,
+        job: ProcessingJob,
         stepIndex: Int,
         segmentIndex: Int?,
-        segmentCount: Int?
+        segmentCount: Int?,
+        settings: ProcessingPipeline.TranscriptionSettings
     ) async throws -> TranscriptionResult {
-        switch appSettings.effectiveTranscriptionEngine {
+        try requireProcessingOwnership(job)
+        let progress = ProcessingStepProgress(appState: appState, job: job, stepIndex: stepIndex)
+        defer { progress.invalidate() }
+        switch settings.engine {
         case .appleSpeech:
-            let language = appSettings.effectiveTranscriptionLanguage
+            let language = settings.language
             // macOS 26+ uses the modern SpeechAnalyzer (better accuracy, word-level
             // timestamps); older systems and unsupported locales fall back to the
             // legacy SFSpeechRecognizer-based service.
             if #available(macOS 26, *) {
                 let locale = language.isEmpty ? Locale.current : Locale(identifier: language)
-                if await AppleSpeechAnalyzerService.supports(locale: locale) {
+                let supported = await AppleSpeechAnalyzerService.supports(locale: locale)
+                try requireProcessingOwnership(job)
+                if supported {
                     return try await AppleSpeechAnalyzerService().transcribe(
                         fileURL: url,
                         language: language,
-                        status: { [weak self] statusText in
-                            guard let self else { return }
-                            Task { @MainActor in
-                                guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
-                                self.appState.processingSteps[stepIndex].name = statusText
-                            }
+                        status: { statusText in
+                            Task { @MainActor in progress.update { step, _ in step.name = statusText } }
                         }
                     )
                 }
@@ -3705,8 +2794,8 @@ final class RecordingManager {
                 language: language
             )
         case .localWhisper:
-            let whisperConfig = appSettings.whisperRuntimeConfig
-            return try await withPluginStepAdapter(stepIndex: stepIndex) {
+            let whisperConfig = settings.whisper
+            return try await withPluginStepAdapter(progress: progress) {
                 // Custom vocabulary is intentionally NOT passed to Whisper as a
                 // decoder prompt: an off-topic (or even on-topic) prompt can make
                 // Whisper emit blank output for most windows, silently dropping the
@@ -3725,16 +2814,16 @@ final class RecordingManager {
                 )
             }
         case .parakeetLocal:
-            return try await withParakeetStepAdapter(stepIndex: stepIndex) {
+            return try await withParakeetStepAdapter(progress: progress) {
                 try await self.parakeetService.transcribe(
                     fileURL: url,
-                    language: self.appSettings.transcriptionLanguage.isEmpty ? nil : self.appSettings.transcriptionLanguage,
-                    modelVariant: self.appSettings.parakeetModelVariant,
-                    diarize: self.appSettings.diarizationEnabled
+                    language: settings.parakeetLanguage,
+                    modelVariant: settings.parakeetModelVariant,
+                    diarize: settings.diarize
                 )
             }
         case .remoteEndpoint:
-            guard let endpoint = appSettings.effectiveDefaultTranscriptionEndpoint else {
+            guard let endpoint = settings.endpoint else {
                 throw TranscriptionError.invalidEndpoint
             }
 
@@ -3747,7 +2836,7 @@ final class RecordingManager {
             return try await transcriptionService.transcribe(
                 fileURL: url,
                 endpoint: endpoint,
-                language: appSettings.effectiveTranscriptionLanguage,
+                language: settings.language,
                 // Custom vocabulary is intentionally NOT sent as the ASR prompt:
                 // the only remote consumers of initialPrompt are Whisper-family
                 // servers (OpenAI-compatible `prompt` / whisper-asr `initial_prompt`),
@@ -3756,19 +2845,13 @@ final class RecordingManager {
                 // Vocabulary spelling is applied uniformly post-transcription via
                 // TranscriptSpellingService in transcribeRecordingAudio.
                 initialPrompt: "",
-                diarize: appSettings.diarizationEnabled,
-                chunking: .init(
-                    enabled: appSettings.remoteChunkingEnabled,
-                    maxUploadMB: appSettings.remoteChunkMaxUploadMB,
-                    overlapSeconds: appSettings.remoteChunkOverlapSeconds,
-                    retryCount: appSettings.remoteChunkRetryCount
-                ),
-                progress: { [weak self] progress in
-                    guard let self else { return }
+                diarize: settings.diarize,
+                chunking: settings.chunking,
+                progress: { chunk in
                     Task { @MainActor in
-                        guard self.appState.processingSteps.indices.contains(stepIndex) else { return }
-                        self.appState.processingSteps[stepIndex].name =
-                            "Transcribing \(segmentLabel) (chunk \(progress.current)/\(progress.total))"
+                        progress.update { step, _ in
+                            step.name = "Transcribing \(segmentLabel) (chunk \(chunk.current)/\(chunk.total))"
+                        }
                     }
                 }
             )
@@ -3779,224 +2862,94 @@ final class RecordingManager {
         recording: Recording,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws {
+        let context: PrivacyTrace.Context
+        if let current = PrivacyTrace.context, current.recordingID == recording.id { context = current }
+        else { context = await recording.privacyContext() }
+        try await PrivacyTrace.$context.withValue(context) {
+            try Task.checkCancellation()
+            if recording.finalizedAudioURL == nil {
+                try await PrivacyTrace.perform(.init(stage: .finalization, data: [.recordingAudio],
+                                                     destination: .local(provider: .fileSystem))) {
+                    try await finalizeRecordingAudio(recording: recording, onProgress: onProgress)
+                }
+            } else {
+                try await finalizeRecordingAudio(recording: recording, onProgress: onProgress)
+            }
+            await recording.bindPrivacyReceipt()
+        }
+    }
+
+    private func finalizeRecordingAudio(
+        recording: Recording,
+        onProgress: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
+        let recovery = ProcessingPipeline.FinalizationRecovery.capture(id: recording.id, startedAt: recording.date,
+            manifestURL: recording.recoveryManifestURL, tracks: recording.capturedTracks)
+        let source: ProcessingPipeline.FinalizationSource
+        let finalize: @Sendable () async throws -> RecordingFinalizationResult
         if let finalized = recording.finalizedAudioURL {
-            // Paths that arrive pre-finalized (History "Transcribe"/retranscribe, watched
-            // files, imports resumed from a queue) skip the capture-finalize branch below,
-            // which is the only place that establishes `duration`. Without it, the
-            // Benchmark realtime ratio, "Avg. audio", and the lifetime odometer all read 0
-            // and the transcription ETA bar has no length to work with. Probe the master
-            // here so a re-transcribe reports the true audio length.
-            if recording.duration <= 0 {
-                let probed = await durationSeconds(for: finalized)
-                if probed > 0 { recording.duration = probed }
+            source = .existing(finalized)
+            finalize = { throw CancellationError() } // Existing audio never invokes the finalizer.
+        } else {
+            if recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
-            completeRecoverySession(for: recording)
-            return
-        }
-
-        let meetingTitle = recording.meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if meetingTitle.isEmpty {
-            recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
-        }
-
-        // Skip segmentation for local transcription engines (they handle long files natively)
-        let segmentationEnabled = appSettings.effectiveTranscriptionEngine != .localWhisper
-            && appSettings.effectiveTranscriptionEngine != .parakeetLocal
-
-        // Pre-encoded imports (e.g. YouTube downloads) are already finished audio;
-        // relocate them into the recordings folder instead of running capture DSP,
-        // so they appear in history and the transcript viewer like any recording.
-        if let importSource = recording.importSourceURL {
-            let result = try await recordingFinalizer.importExistingAudio(
-                sourceURL: importSource,
-                recording: recording,
-                baseFolder: appSettings.effectiveRecordingFolderURL,
-                segmentationEnabled: segmentationEnabled
-            )
-            recording.importSourceURL = nil
-            recording.fileURL = result.masterAudioURL
-            recording.finalizedAudioURL = result.masterAudioURL
-            recording.segmentAudioURLs = result.segmentAudioURLs
-            recording.metadataURL = result.metadataURL
-            recording.finalizationWarnings = result.warnings
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: result.masterAudioURL.path),
-               let size = attrs[FileAttributeKey.size] as? Int64
-            {
-                recording.fileSize = size
+            // Review actions can finalize alongside another worker. Freeze this
+            // recording's destination without changing that worker's live settings.
+            let profile: MeetingProfile
+            if appState.showPostRecordingSheet, appState.currentRecording === recording {
+                let id = recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
+                guard let selected = appSettings.profiles.first(where: { $0.id == id }) else {
+                    throw NSError(domain: "RecordingManager", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Choose an available profile before saving this recording."])
+                }
+                profile = selected
+            } else {
+                profile = appSettings.activeProfile
             }
-            return
-        }
-
-        let tracks = recording.capturedTracks ?? CapturedTracks(systemURL: nil, micURL: recording.fileURL)
-        try? persistRecoveryManifest(for: recording, state: .finalizing)
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "audio_finalization",
-            outcome: .started,
-            measurements: captureTrackMeasurements(tracks)
-        ))
-        let result: RecordingFinalizationResult
-        do {
-            result = try await recordingFinalizer.finalize(
-                tracks: tracks,
-                recording: recording,
-                baseFolder: appSettings.effectiveRecordingFolderURL,
-                segmentationEnabled: segmentationEnabled,
-                echoSuppressionEnabled: recording.echoSuppressionApplied,
-                onProgress: onProgress
-            )
-        } catch {
-            var measurements = captureTrackMeasurements(tracks)
-            if let finalizationError = error as? RecordingFinalizerError {
-                measurements.merge(
-                    finalizationError.diagnosticMeasurements,
-                    uniquingKeysWith: { _, new in new }
-                )
-            }
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "audio_finalization",
-                outcome: .failed,
-                measurements: measurements,
-                failure: .init(error: error)
-            ))
-            throw error
-        }
-        recording.capturedTracks = nil  // scratch files have been consumed
-
-        recording.fileURL = result.masterAudioURL
-        recording.finalizedAudioURL = result.masterAudioURL
-        recording.segmentAudioURLs = result.segmentAudioURLs
-        recording.metadataURL = result.metadataURL
-        recording.finalizationWarnings = result.warnings
-
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: result.masterAudioURL.path),
-           let size = attrs[FileAttributeKey.size] as? Int64
-        {
-            recording.fileSize = size
-        }
-
-        // Re-probe the encoded master for the authoritative duration so exported
-        // markdown, integrations, and the results view reflect the real length
-        // even if the stop-time estimate was off (or never captured).
-        let masterDuration = await durationSeconds(for: result.masterAudioURL)
-        if masterDuration > 0 {
-            recording.duration = masterDuration
-        }
-        let masterBytes = Self.fileSize(at: result.masterAudioURL)
-        var finalizationMeasurements: [String: Int64] = [
-            "masterBytes": masterBytes,
-            "durationMilliseconds": Int64(recording.duration * 1_000),
-            "segmentCount": Int64(result.segmentAudioURLs.count),
-            "warningCount": Int64(result.warnings.count),
-        ]
-        if let ffmpegDiagnostics = result.ffmpegDiagnostics {
-            finalizationMeasurements.merge(
-                ffmpegDiagnostics.measurements,
-                uniquingKeysWith: { _, new in new }
-            )
-        }
-        DurabilityJournal.shared.record(.init(
-            sessionID: recording.id,
-            name: "audio_finalization",
-            outcome: .succeeded,
-            measurements: finalizationMeasurements
-        ))
-        completeRecoverySession(for: recording)
-    }
-
-    /// Sum of the on-disk sizes of the captured per-track CAF files. Missing
-    /// files contribute 0 so a single absent track never zeroes the total.
-    static func totalTrackFileSize(_ tracks: CapturedTracks?) -> Int64 {
-        guard let tracks else { return 0 }
-        let urls = [tracks.systemURL, tracks.micURL].compactMap { $0 }
-        var total: Int64 = 0
-        for url in urls {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-               let size = attrs[.size] as? Int64
-            {
-                total += size
+            let baseFolder = appSettings.resolvedFolderURL(overridePath: profile.overrides.recordingFolderPath,
+                                                           fallback: appSettings.recordingFolderURL)
+            let engine = profile.overrides.transcriptionEngine ?? appSettings.transcriptionEngine
+            let segmentationEnabled = engine != .localWhisper && engine != .parakeetLocal
+            let snapshot = RecordingFinalizationSnapshot(recording: recording)
+            let finalizer = recordingFinalizer
+            if let importSource = recording.importSourceURL {
+                source = .imported
+                finalize = {
+                    try await finalizer.importExistingAudio(sourceURL: importSource, snapshot: snapshot,
+                        baseFolder: baseFolder, segmentationEnabled: segmentationEnabled)
+                }
+            } else {
+                let tracks = recording.capturedTracks ?? CapturedTracks(systemURL: nil, micURL: recording.fileURL)
+                let echoSuppression = recording.echoSuppressionApplied
+                source = .capture(tracks)
+                finalize = {
+                    try await finalizer.finalize(tracks: tracks, snapshot: snapshot, baseFolder: baseFolder,
+                        segmentationEnabled: segmentationEnabled, echoSuppressionEnabled: echoSuppression,
+                        onProgress: onProgress)
+                }
             }
         }
-        return total
-    }
-
-    static func fileSize(at url: URL, fileManager: FileManager = .default) -> Int64 {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-              let size = attributes[.size] as? NSNumber
-        else { return 0 }
-        return size.int64Value
-    }
-
-    private func captureTrackMeasurements(_ tracks: CapturedTracks?) -> [String: Int64] {
-        guard let tracks else {
-            return ["trackCount": 0, "trackBytes": 0]
-        }
-        let systemBytes = tracks.systemURL.map { Self.fileSize(at: $0) } ?? 0
-        let microphoneBytes = tracks.micURL.map { Self.fileSize(at: $0) } ?? 0
-        return [
-            "trackCount": Int64([tracks.systemURL, tracks.micURL].compactMap { $0 }.count),
-            "trackBytes": systemBytes + microphoneBytes,
-            "systemTrackBytes": systemBytes,
-            "microphoneTrackBytes": microphoneBytes,
-        ]
-    }
-
-    private func persistRecoveryManifest(
-        for recording: Recording,
-        state: InterruptedSessionManifest.State
-    ) throws {
-        guard let manifestURL = recording.recoveryManifestURL else { return }
-        let sessionDirectory = manifestURL.deletingLastPathComponent().standardizedFileURL
-        let trackPairs: [(InterruptedSessionManifest.Track.Kind, URL?)] = [
-            (.microphone, recording.capturedTracks?.micURL ?? audioCaptureManager.trackURLs?.micURL),
-            (.systemAudio, recording.capturedTracks?.systemURL ?? audioCaptureManager.trackURLs?.systemURL),
-        ]
-        let tracks = trackPairs.compactMap { kind, url -> InterruptedSessionManifest.Track? in
-            guard let url,
-                  url.deletingLastPathComponent().standardizedFileURL == sessionDirectory
-            else { return nil }
-            return .init(kind: kind, relativePath: url.lastPathComponent)
-        }
-        let manifest = InterruptedSessionManifest(
-            id: recording.id,
-            startedAt: recording.date,
-            state: state,
-            tracks: tracks
-        )
-        try InterruptedSessionStore.write(manifest, to: manifestURL)
-    }
-
-    private func completeRecoverySession(for recording: Recording) {
-        guard let manifestURL = recording.recoveryManifestURL else { return }
-        do {
-            try InterruptedSessionStore.removeSession(
-                containing: manifestURL,
-                finalState: .completed
-            )
-        } catch {
-            DurabilityJournal.shared.record(.init(
-                sessionID: recording.id,
-                name: "recovery_session_cleanup",
-                outcome: .warning,
-                failure: .init(error: error)
-            ))
-        }
-        recording.recoveryManifestURL = nil
-    }
-
-    private func durationSeconds(for fileURL: URL) async -> Double {
-        let asset = AVURLAsset(url: fileURL)
-        do {
-            let duration = try await asset.load(.duration)
-            let seconds = CMTimeGetSeconds(duration)
-            if seconds.isFinite, seconds > 0 {
-                return seconds
-            }
-        } catch {
-            return 0
-        }
-        return 0
+        let input = ProcessingPipeline.FinalizationRequest(recordingID: recording.id, duration: recording.duration,
+            source: source, recovery: recovery)
+        try await processingPipeline.finalizeAudio(input, steps: .init(finalize: finalize,
+            adopt: { @MainActor result in
+                // The durable result must be adopted even if Stop arrived after
+                // the finalizer consumed scratch files. Stop awaits this handoff.
+                if case .imported = source { recording.importSourceURL = nil }
+                if case .capture = source { recording.capturedTracks = nil }
+                recording.fileURL = result.masterAudioURL
+                recording.finalizedAudioURL = result.masterAudioURL
+                recording.segmentAudioURLs = result.segmentAudioURLs
+                recording.metadataURL = result.metadataURL
+                recording.finalizationWarnings = result.warnings
+            }, measured: { @MainActor facts in
+                guard recording.finalizedAudioURL == facts.url else { return }
+                if let size = facts.fileSize { recording.fileSize = size }
+                if let duration = facts.duration { recording.duration = duration }
+            }, recoveryCompleted: { @MainActor url in
+                if recording.recoveryManifestURL == url { recording.recoveryManifestURL = nil }
+            }))
     }
 
     private func defaultMeetingTitle(from associatedApp: String?) -> String {
@@ -4052,69 +3005,110 @@ final class RecordingManager {
         recording.generatedTitle = "\(Self.dateOnlyString(recording.date)) - \(concept)"
     }
 
-    private func persistGeneratedTitle(for recording: Recording) {
+    private func persistGeneratedTitle(for recording: Recording, job: ProcessingJob?) async {
         let title = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty else { return }
-        updateMetadataSidecar(for: recording, describing: "generated title") { payload in
-            guard payload.generatedTitle != title else { return false }
-            payload.generatedTitle = title
-            return true
-        }
+        await updateMetadataSidecar(.generatedTitle(title), for: recording, job: job, describing: "generated title")
     }
 
-    /// Persist who was in this meeting (confirmed participants + matched calendar attendees)
-    /// into the metadata sidecar. Both live only on the in-memory `Recording`, but the
-    /// transcript browser rebuilds a `Recording` from disk when you reopen a past recording —
-    /// without this, assigning a speaker there could only offer voice-library names.
-    private func persistMeetingContext(for recording: Recording) {
+    private func persistProcessingCompletion(_ completion: ProcessingCompletionStamp, for job: ProcessingJob) async throws {
+        try Task.checkCancellation()
+        guard appState.processingJob === job else { throw CancellationError() }
+        let recording = job.recording
+        guard let audio = recording.finalizedAudioURL else { throw RecordingCompletionStore.Failure.recordingUnavailable }
+        let fallback = RecordingMetadataPayload(recordingID: recording.id,
+            dateISO8601: ISO8601DateFormatter().string(from: recording.date), durationSeconds: recording.duration,
+            meetingTitle: recording.meetingTitleDraft, masterFileName: audio.lastPathComponent,
+            segmentFileNames: recording.segmentAudioURLs.map(\.lastPathComponent), warnings: recording.finalizationWarnings,
+            generatedTitle: recording.generatedTitle, participants: recording.participants,
+            calendarAttendees: recording.calendarEvent?.attendeeNames ?? [], associatedApp: recording.associatedApp)
+        try await processingPipeline.recordCompletion(completion, audioURL: audio, fallback: fallback)
+        try Task.checkCancellation()
+        guard appState.processingJob === job, recording.finalizedAudioURL == audio else { throw CancellationError() }
+    }
+
+    /// Save participant context after finalization so reopening a recording can
+    /// offer meeting names even if later processing was cancelled.
+    private func persistMeetingContext(for recording: Recording, job: ProcessingJob) async {
         let participants = PersonName.displayList(recording.participants)
         let attendees = recording.calendarEvent?.attendeeNames ?? []
         guard !participants.isEmpty || !attendees.isEmpty else { return }
-        updateMetadataSidecar(for: recording, describing: "meeting participants") { payload in
-            guard payload.participants != participants || payload.calendarAttendees != attendees
-            else { return false }
-            payload.participants = participants
-            payload.calendarAttendees = attendees
-            return true
+        await updateMetadataSidecar(.meetingContext(participants: participants, calendarAttendees: attendees),
+                                    for: recording, job: job, describing: "meeting participants")
+    }
+
+    /// Snapshot UI-owned values before the actor hop. Missing/corrupt metadata is
+    /// a best-effort no-op; a cancelled/superseded job must not publish an error.
+    private func updateMetadataSidecar(
+        _ update: RecordingMetadataStore.Update, for recording: Recording,
+        job: ProcessingJob?, describing what: String
+    ) async {
+        guard !Task.isCancelled, let job, appState.processingJob === job,
+              job.recording === recording, let audioURL = recording.finalizedAudioURL else { return }
+        do {
+            try await processingPipeline.updateMetadata(update, audioURL: audioURL)
+        } catch {
+            guard !Task.isCancelled, appState.processingJob === job else { return }
+            Logger.recording.error("Failed to persist \(what, privacy: .public) to the recording metadata sidecar")
         }
     }
 
-    /// Read-modify-write the recording's metadata sidecar. Best-effort: a missing or
-    /// unreadable sidecar, or a `mutate` that reports no change, is a silent no-op.
-    private func updateMetadataSidecar(
-        for recording: Recording,
-        describing what: String,
-        _ mutate: (inout RecordingMetadataPayload) -> Bool
-    ) {
-        guard let audioURL = recording.finalizedAudioURL else { return }
-        let metaURL = audioURL.deletingPathExtension().appendingPathExtension("json")
-        guard let data = try? Data(contentsOf: metaURL),
-              var payload = try? JSONDecoder().decode(RecordingMetadataPayload.self, from: data)
-        else { return }
-        guard mutate(&payload) else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let out = try? encoder.encode(payload) else { return }
-        do {
-            try out.write(to: metaURL, options: .atomic)
-        } catch {
-            Logger.recording.error("Failed to persist \(what, privacy: .public) to the recording metadata sidecar")
+    private func generatePipelineTitle(for job: ProcessingJob, transcription: String, endpoint: Endpoint) async throws -> TimeInterval? {
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        let previousTitle = recording.generatedTitle
+        let input = ProcessingPipeline.TitleRequest(transcription: transcription, summary: recording.summary,
+                                                     language: recording.transcription?.language, endpoint: endpoint)
+        let service = aiService
+        let output = try await processingPipeline.generateTitle(input, using: { request in
+            try await service.generateTitle(transcription: request.transcription, language: request.language, endpoint: request.endpoint)
+        }, validateOwnership: { [weak self] in
+            guard let self else { throw CancellationError() }
+            try await self.requireProcessingOwnership(job)
+        })
+        try requireProcessingOwnership(job)
+        if let title = output.title, recording.generatedTitle == previousTitle, shouldGenerateTitle(for: recording) {
+            recording.generatedTitle = title
         }
+        return output.duration
+    }
+
+    private func publishPipelineMarkdown(for job: ProcessingJob, mode: ProcessingPipeline.MarkdownMode) async throws -> ProcessingPipeline.MarkdownOutput {
+        try requireProcessingOwnership(job)
+        let recording = job.recording
+        let input = ProcessingPipeline.MarkdownRequest(snapshot: .init(recording: recording),
+            outputFolder: resolveMarkdownOutputFolder(for: recording), includeTranscript: appSettings.obsidianIncludeTranscript, mode: mode)
+        let output = try await processingPipeline.publishMarkdown(input, store: markdownOutputStore,
+            savePlan: { [weak self] plan in
+                guard let self else { throw CancellationError() }
+                try await self.saveMarkdownPlan(plan, for: job)
+            }, validateOwnership: { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.requireProcessingOwnership(job)
+            })
+        try requireProcessingOwnership(job)
+        return output
     }
 
     private func persistInsightsSidecar(
         for recording: Recording,
         markdownURL: URL?
     ) async throws {
+        guard let job = appState.processingJob, job.recording === recording else { throw CancellationError() }
+        try requireProcessingOwnership(job)
+        let url = recording.insightsSidecarURL
         let insights = RecordingInsights(
             summary: recording.summary ?? "",
             actionItems: recording.actionItems ?? [],
             tags: recording.tags ?? [],
             sentiment: recording.sentiment ?? "",
             generatedTitle: recording.generatedTitle,
-            markdownPath: markdownURL?.path
+            markdownPath: markdownURL?.path,
+            modelProvenance: recording.analysisModelProvenance
         )
-        try await insightsStore.save(insights, for: recording)
+        try await processingPipeline.saveAnalysis(insights, to: url, store: insightsStore)
+        try requireProcessingOwnership(job)
+        guard recording.insightsSidecarURL == url else { throw CancellationError() }
     }
 
     private func applyInsights(_ insights: RecordingInsights, to recording: Recording) {
@@ -4123,6 +3117,7 @@ final class RecordingManager {
         recording.tags = insights.tags
         recording.sentiment = insights.sentiment
         recording.generatedTitle = insights.generatedTitle
+        recording.analysisModelProvenance = insights.modelProvenance
     }
 
     private func resolveMarkdownOutputFolder(for recording: Recording) -> URL {
@@ -4140,41 +3135,35 @@ final class RecordingManager {
     /// Serializes retention with capture, processing, delivery review, and queue
     /// mutations. Never delete inputs while an async processor is reading them.
     func runRetentionCleanup(category: RetentionCategory, days: Int, folders: [URL]) async throws -> RetentionCleanupResult {
-        guard appState.isIdle, !appState.showPostRecordingSheet, appState.processingJob == nil,
+        guard !captureCoordinator.isBusy, appState.isIdle, !appState.showPostRecordingSheet, !postRecordingAction.isBusy,
+              !queueEnqueueInProgress, appState.processingJob == nil,
               !recoveryMaintenanceInProgress, !processingCancellationInProgress, !queueMutationInProgress, !reviewingIntegrationDeliveries else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording and processing to finish, then retry cleanup."])
         }
         recoveryMaintenanceInProgress = true
         defer { recoveryMaintenanceInProgress = false }
         let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)
-        let protected = try await lifecycle.prepareRetention(category: category, days: days, folders: folders)
-        let result = await Task.detached(priority: .utility) {
-            RetentionCleanup.cleanup(category: category, olderThanDays: days, in: folders, protectedBases: protected)
-        }.value
+        let result = try await processingPipeline.cleanupRetention(category: category, days: days,
+            folders: folders, lifecycle: lifecycle)
         await refreshWorkQueue()
         return result
     }
 
     func deleteRecording(_ audioURL: URL) async throws {
-        guard appState.isIdle, !appState.showPostRecordingSheet, appState.processingJob == nil,
+        defer { RecordingLibraryChange.notify() }
+        guard !captureCoordinator.isBusy, appState.isIdle, !appState.showPostRecordingSheet, !postRecordingAction.isBusy,
+              !queueEnqueueInProgress, appState.processingJob == nil,
               !recoveryMaintenanceInProgress, !processingCancellationInProgress, !queueMutationInProgress, !reviewingIntegrationDeliveries else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording and processing to finish before deleting a recording."])
         }
         recoveryMaintenanceInProgress = true
         defer { recoveryMaintenanceInProgress = false }
-        try await RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore).removeSnapshots(for: audioURL)
-        let base = audioURL.deletingPathExtension()
-        var candidates = [audioURL] + ["md", "transcript.json", "richtranscript.json", "insights.json", "chat.json",
-            "spokensummary.json", "spokensummary.m4a", "json", "queue.json"].map { base.appendingPathExtension($0) }
-        let prefix = base.lastPathComponent + "_part"
-        let siblings = try FileManager.default.contentsOfDirectory(at: base.deletingLastPathComponent(), includingPropertiesForKeys: nil)
-        candidates += siblings.filter {
-            let stem = $0.deletingPathExtension().lastPathComponent
-            return RecordingDiscovery.supportedExtensions.contains($0.pathExtension.lowercased()) && stem.hasPrefix(prefix)
-                && !stem.dropFirst(prefix.count).isEmpty && stem.dropFirst(prefix.count).allSatisfy(\.isNumber)
-        }
-        for url in candidates where FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+        let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)
+        do {
+            try await processingPipeline.deleteRecordingFiles(audioURL, lifecycle: lifecycle)
+        } catch {
+            await refreshWorkQueue()
+            throw error
         }
         await refreshWorkQueue()
     }
@@ -4184,93 +3173,46 @@ final class RecordingManager {
         return audioURL.deletingPathExtension().appendingPathExtension("queue.json")
     }
 
-    private func saveQueueItem(_ item: QueueItem, for recording: Recording) throws {
-        guard let url = Self.queueURL(for: recording) else {
+    private func saveQueueItem(_ item: QueueItem, for recording: Recording) async throws {
+        guard let audio = recording.finalizedAudioURL else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Cannot determine queue file path — recording not finalized."
             ])
         }
-        let data = try JSONEncoder().encode(item)
-        try data.write(to: url, options: .atomic)
+        var resolved = item
+        resolved.profileID = resolved.profileID ?? appSettings.activeProfile.id
+        queueRefreshGeneration += 1
+        try await queueScheduleStore.saveItem(resolved, for: audio)
+        queueRefreshGeneration += 1
     }
 
-    private static func removeQueueFile(for audioURL: URL) {
-        let queueURL = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
-        try? FileManager.default.removeItem(at: queueURL)
-    }
-
-    private nonisolated static func loadQueueItem(for audioURL: URL) -> QueueItem? {
-        let url = audioURL.deletingPathExtension().appendingPathExtension("queue.json")
-        return try? QueueItem.load(from: url)
-    }
-
-    func discoverQueuedItems() -> [(audioURL: URL, item: QueueItem)] {
-        let items = Self.discoverQueuedItems(in: appSettings.effectiveRecordingFolderURL)
-            .filter { $0.audioURL.standardizedFileURL != appState.processingJob?.recording.finalizedAudioURL?.standardizedFileURL }
-        return (try? queueScheduleStore.load())?.ordered(items, path: { $0.audioURL.standardizedFileURL.path }) ?? items
-    }
-
-    /// Enumerates queued items in `folder`. `nonisolated static` so it can run
-    /// off the main actor (see `refreshQueuedCount`) — it touches only the
-    /// filesystem and the passed URL, no actor state.
-    nonisolated static func discoverQueuedItems(in folder: URL) -> [(audioURL: URL, item: QueueItem)] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        var results: [(url: URL, date: Date, item: QueueItem)] = []
-        for case let fileURL as URL in enumerator {
-            guard fileURL.pathExtension.lowercased() == "json",
-                  fileURL.lastPathComponent.hasSuffix(".queue.json") else { continue }
-            guard let item = try? QueueItem.load(from: fileURL) else { continue }
-
-            let stem = fileURL.deletingPathExtension().deletingPathExtension()
-            let audioURL: URL
-            if FileManager.default.fileExists(atPath: stem.appendingPathExtension("m4a").path) {
-                audioURL = stem.appendingPathExtension("m4a")
-            } else if FileManager.default.fileExists(atPath: stem.appendingPathExtension("flac").path) {
-                audioURL = stem.appendingPathExtension("flac")
-            } else if let other = RecordingDiscovery.supportedExtensions.sorted().map({ stem.appendingPathExtension($0) })
-                .first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-                audioURL = other
-            } else { audioURL = stem.appendingPathExtension("m4a") }
-
-            let values = try? fileURL.resourceValues(forKeys: [.creationDateKey])
-            let date = values?.creationDate ?? .distantPast
-            results.append((url: audioURL, date: date, item: item))
+    private var configuredQueueFolders: [URL] {
+        [appSettings.recordingFolderURL] + appSettings.profiles.compactMap { profile -> URL? in
+            guard let path = profile.overrides.recordingFolderPath,
+                  !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return URL(fileURLWithPath: path, isDirectory: true)
         }
-
-        return results
-            .sorted { $0.date == $1.date ? $0.url.path < $1.url.path : $0.date < $1.date }
-            .map { ($0.url, $0.item) }
     }
 
-    /// Refreshes `appState.queuedCount` without blocking the main actor: the
-    /// folder scan + JSON decode run detached, only the count hops back. Called
-    /// on popover open in place of the synchronous `discoverQueuedItems().count`.
-    func refreshQueuedCount() async {
-        await refreshWorkQueue()
-    }
+    /// Queue files and scheduling are read on their shared actor; generation
+    /// checks prevent older refreshes from overwriting newer UI intent.
+    func refreshQueuedCount() async { await refreshWorkQueue() }
 
     func refreshWorkQueue() async {
         queueRefreshGeneration += 1
         let generation = queueRefreshGeneration
-        let folder = appSettings.effectiveRecordingFolderURL
-        let items = await Task.detached(priority: .utility) { Self.discoverQueuedItems(in: folder) }.value
-        let discovery = await processingJobStore.discover()
         do {
-            let schedule = try queueScheduleStore.load()
+            let snapshot = try await queueScheduleStore.snapshot(configuredFolders: configuredQueueFolders)
+            let discovery = await processingJobStore.discover()
             let batches = try await integrationDeliveryStore.discover()
             guard generation == queueRefreshGeneration else { return }
-            pendingQueueItems = schedule.ordered(items.filter {
+            pendingQueueItems = snapshot.items.filter {
                 $0.audioURL.standardizedFileURL != appState.processingJob?.recording.finalizedAudioURL?.standardizedFileURL
-            }, path: { $0.audioURL.standardizedFileURL.path })
+            }
             appState.queuedCount = pendingQueueItems.count
-            queuePaused = schedule.paused || queueSafetyHold
+            queuePaused = snapshot.schedule.paused || queueSafetyHold
             recoveryQueueEntries = RecoveryQueueEntry.entries(jobs: discovery.jobs, deliveries: batches,
-                queuedIDs: Set(items.map { $0.item.id }), activeID: appState.processingJob?.id)
+                queuedIDs: Set(snapshot.items.map { $0.item.id }), activeID: appState.processingJob?.id)
             queueLoadError = discovery.issues.isEmpty ? nil : "Some recovery records could not be read and were left untouched."
         } catch {
             guard generation == queueRefreshGeneration else { return }
@@ -4279,31 +3221,43 @@ final class RecordingManager {
     }
 
     @discardableResult
-    func setQueuePaused(_ paused: Bool) -> Bool {
+    func setQueuePaused(_ paused: Bool, clearSafetyHold: Bool = true) async -> Bool {
+        queuePauseGeneration += 1
+        let generation = queuePauseGeneration
+        queuePauseWriteInProgress = true
+        queueRefreshGeneration += 1
+        defer {
+            if generation == queuePauseGeneration { queuePauseWriteInProgress = false }
+            queueRefreshGeneration += 1
+        }
         do {
-            var schedule = try queueScheduleStore.load()
-            schedule.paused = paused
-            try queueScheduleStore.save(schedule)
-            queuePaused = paused
-            queueSafetyHold = false
+            _ = try await queueScheduleStore.setPaused(paused, revision: generation)
+            guard generation == queuePauseGeneration else { return false }
+            queuePaused = paused || (queueSafetyHold && !clearSafetyHold)
+            if clearSafetyHold { queueSafetyHold = false }
             if paused { drainAllQueued = false }
             return true
         } catch {
+            guard generation == queuePauseGeneration else { return false }
             appState.lastError = "Couldn't save the queue setting. Check available storage and try again."
             return false
         }
     }
 
-    func moveQueuedItem(_ audioURL: URL, by offset: Int) {
-        guard !queueMutationInProgress, !recoveryMaintenanceInProgress else { return }
+    func moveQueuedItem(_ audioURL: URL, by offset: Int) async {
+        guard !queueMutationInProgress, !recoveryMaintenanceInProgress, !processingCancellationInProgress else { return }
+        queueMutationInProgress = true
+        queueRefreshGeneration += 1
         do {
-            var schedule = try queueScheduleStore.load()
-            let items = discoverQueuedItems()
-            schedule.move(path: audioURL.standardizedFileURL.path, by: offset,
-                          currentPaths: items.map { $0.audioURL.standardizedFileURL.path })
-            try queueScheduleStore.save(schedule)
-            pendingQueueItems = schedule.ordered(items, path: { $0.audioURL.standardizedFileURL.path })
+            let snapshot = try await queueScheduleStore.move(audioURL, by: offset, configuredFolders: configuredQueueFolders,
+                excludingAudioURL: appState.processingJob?.recording.finalizedAudioURL)
+            pendingQueueItems = snapshot.items.filter {
+                $0.audioURL.standardizedFileURL != appState.processingJob?.recording.finalizedAudioURL?.standardizedFileURL
+            }
         } catch { appState.lastError = "Couldn't save the queue order. The previous order is unchanged." }
+        queueMutationInProgress = false
+        queueRefreshGeneration += 1
+        await drainQueueIfNeeded()
     }
 
     func removeQueuedItem(_ audioURL: URL) async {
@@ -4311,17 +3265,22 @@ final class RecordingManager {
               !processingCancellationInProgress,
               audioURL.standardizedFileURL != appState.processingJob?.recording.finalizedAudioURL?.standardizedFileURL else { return }
         queueMutationInProgress = true
-        defer { queueMutationInProgress = false; drainQueueIfNeeded() }
+        queueRefreshGeneration += 1
         do {
             try await queueScheduleStore.removeQueuedItem(at: audioURL,
                 lifecycle: RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore))
             await refreshWorkQueue()
         } catch {
-            _ = setQueuePaused(true)
+            queueSafetyHold = true
+            queuePaused = true
+            _ = await setQueuePaused(true, clearSafetyHold: false)
             queueSafetyHold = true
             queuePaused = true
             appState.lastError = "Couldn't remove the queued item. Processing is paused for this session; check storage and try again."
         }
+        queueMutationInProgress = false
+        queueRefreshGeneration += 1
+        await drainQueueIfNeeded()
     }
 
     private func dismissRecoveryRecord(id: UUID) async throws {
@@ -4345,16 +3304,18 @@ final class RecordingManager {
         queueMutationInProgress = true
         defer { queueMutationInProgress = false }
         do {
-            guard var record = try await processingJobStore.load(id: id),
+            guard let record = try await processingJobStore.load(id: id),
+                  record.dismissedFromQueue != true, record.status != .completed,
                   !record.checkpoint.hasCompleted(.markdownGenerated) else { return }
-            guard let recording = await recordingForRecovery(record) else {
+            guard let recording = try await recordingForRecovery(record) else {
                 appState.lastError = "The recording is unavailable. Reconnect its storage, then try Resume again."
                 return
             }
             guard appState.processingJob == nil else { return }
-            record.dismissedFromQueue = false
+            try Task.checkCancellation()
             let saved = record
             let request = record.request
+            queueMutationInProgress = false
             launchJob(recording: recording, existingRecord: saved) { job in
                 if saved.checkpoint.hasCompleted(.analyzed) {
                     await self.resumeExport(job: job)
@@ -4367,43 +3328,91 @@ final class RecordingManager {
         } catch { appState.lastError = "Couldn't load this recovery item. Its saved files were left untouched." }
     }
 
+    var canPerformLibraryWork: Bool {
+        !captureCoordinator.isBusy && appState.recordingState == .idle && !appState.showPostRecordingSheet && appState.processingJob == nil
+            && !queueMutationInProgress && !recoveryMaintenanceInProgress && !processingCancellationInProgress
+            && !reviewingIntegrationDeliveries
+    }
+
+    /// A library row is a snapshot. Revalidate its durable identity and current
+    /// stage before forwarding an explicit button click to existing safe actions.
+    func performLibraryWork(_ item: LibraryWorkItem) async throws {
+        guard canPerformLibraryWork else { throw LibraryWorkNavigation.Failure.busy }
+        // Reserve queue mutations while resolving, so a concurrent dismissal
+        // cannot be superseded by this older click. Existing actions acquire their
+        // own guard synchronously after the reservation is handed off below.
+        queueMutationInProgress = true
+        let destination: LibraryWorkNavigation.Destination
+        do {
+            destination = try await LibraryWorkNavigation.resolve(item, jobs: processingJobStore, deliveries: integrationDeliveryStore)
+            try Task.checkCancellation()
+        } catch {
+            queueMutationInProgress = false
+            throw error
+        }
+        queueMutationInProgress = false
+        guard canPerformLibraryWork else { throw LibraryWorkNavigation.Failure.busy }
+        switch destination {
+        case .queue(let id, let audio):
+            await drainQueueIfNeeded(preferredAudioURL: audio, expectedID: id)
+            guard appState.processingJob?.id == id else {
+                throw NSError(domain: "LibraryWork", code: 1, userInfo: [NSLocalizedDescriptionKey: queueLoadError ?? "This queued recording could not be started. Refresh the queue and try again."])
+            }
+        case .processing(let id):
+            await resumeRecoveryItem(id)
+            guard appState.processingJob?.id == id else {
+                throw NSError(domain: "LibraryWork", code: 2, userInfo: [NSLocalizedDescriptionKey: appState.lastError ?? "This recovery item could not be resumed. Refresh the library and try again."])
+            }
+        case .delivery(let id, let audio):
+            await reviewIntegrationDeliveries(for: audio, batchID: id)
+        case .capture(let id):
+            guard await recoverInterruptedSessions(only: id) else {
+                throw NSError(domain: "LibraryWork", code: 3, userInfo: [NSLocalizedDescriptionKey: "This interrupted recording could not be recovered. Reconnect its storage and try again."])
+            }
+        }
+        await refreshWorkQueue()
+        RecordingLibraryChange.notify()
+    }
+
+    private func recoveryInputRequest(for recording: Recording, mode: ProcessingPipeline.RecoveryInputMode) -> ProcessingPipeline.RecoveryInputRequest {
+        .init(mode: mode, transcriptURL: recording.transcriptURL ?? Self.transcriptURL(for: recording),
+              richTranscriptURL: recording.transcriptSidecarURL, transcription: recording.transcription,
+              richTranscript: recording.richTranscript)
+    }
+
+    private func requireRecoveryInputPaths(_ input: ProcessingPipeline.RecoveryInputRequest, recording: Recording) throws {
+        try input.validatePaths(transcriptURL: recording.transcriptURL ?? Self.transcriptURL(for: recording),
+                                richTranscriptURL: recording.transcriptSidecarURL)
+    }
+
     /// Derives the transcript JSON path from the finalized audio URL.
     private static func transcriptURL(for recording: Recording) -> URL? {
         guard let audioURL = recording.finalizedAudioURL else { return nil }
         return audioURL.deletingPathExtension().appendingPathExtension("transcript.json")
     }
 
-    /// Saves the transcription result as JSON alongside the audio file.
-    private func saveTranscript(_ result: TranscriptionResult, for recording: Recording) throws {
-        guard let url = Self.transcriptURL(for: recording) else {
-            throw NSError(domain: "RecordingManager", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Cannot determine the transcript checkpoint path."
-            ])
-        }
-        let data = try JSONEncoder().encode(result)
-        try data.write(to: url, options: .atomic)
-        let verified = try JSONDecoder().decode(
-            TranscriptionResult.self,
-            from: Data(contentsOf: url)
-        )
-        guard verified.text == result.text,
-              verified.segments.count == result.segments.count
-        else {
-            throw NSError(domain: "RecordingManager", code: 3, userInfo: [
-                NSLocalizedDescriptionKey: "Transcript checkpoint verification failed."
-            ])
+    /// Saves only for the active owner; the actor verifies bytes before the
+    /// caller may advance the job checkpoint and remove its legacy queue marker.
+    private func saveTranscript(_ result: TranscriptionResult, for job: ProcessingJob) async throws {
+        try Task.checkCancellation()
+        guard appState.processingJob === job else { throw CancellationError() }
+        let recording = job.recording
+        let url = Self.transcriptURL(for: recording)
+        try await processingPipeline.saveTranscript(result, to: url)
+        try Task.checkCancellation()
+        guard appState.processingJob === job, Self.transcriptURL(for: recording) == url else {
+            throw CancellationError()
         }
         recording.transcriptURL = url
     }
 
-    /// Loads a previously saved transcription from disk.
-    private func loadSavedTranscript(for recording: Recording) -> TranscriptionResult? {
+    /// UI objects stay on MainActor. Only a result for the unchanged URL may
+    /// update the recording's sidecar reference after the actor read completes.
+    private func loadSavedTranscript(for recording: Recording) async -> TranscriptionResult? {
         let url = recording.transcriptURL ?? Self.transcriptURL(for: recording)
-        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
-        guard let data = try? Data(contentsOf: url),
-              let result = try? JSONDecoder().decode(TranscriptionResult.self, from: data) else {
-            return nil
-        }
+        guard let result = try? await processingPipeline.loadTranscript(from: url),
+              !Task.isCancelled,
+              (recording.transcriptURL ?? Self.transcriptURL(for: recording)) == url else { return nil }
         recording.transcriptURL = url
         return result
     }
@@ -4416,8 +3425,8 @@ final class RecordingManager {
     func enrollVoiceprintOnRename(recording: Recording, speakerId: String, name: String) async -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let embeddings = recording.transcription?.speakerEmbeddings
-            ?? loadSavedTranscript(for: recording)?.speakerEmbeddings
+        let embeddings = await speakerEmbeddings(for: recording)
+        guard !Task.isCancelled else { return nil }
         guard let embedding = embeddings?[speakerId], !embedding.isEmpty else { return nil }
         let id = await voiceLibraryStore.upsert(
             name: trimmed,
@@ -4442,42 +3451,86 @@ final class RecordingManager {
     /// Speaker ids with a non-empty voice embedding available right now (from the
     /// in-memory transcription or the persisted `.transcript.json` sidecar) — i.e.
     /// the speakers that `enrollVoiceprintOnRename` could enroll.
-    func embeddedSpeakerIds(for recording: Recording) -> Set<String> {
-        let embeddings = recording.transcription?.speakerEmbeddings
-            ?? loadSavedTranscript(for: recording)?.speakerEmbeddings
-        guard let embeddings else { return [] }
+    func embeddedSpeakerIds(for recording: Recording) async -> Set<String> {
+        guard let embeddings = await speakerEmbeddings(for: recording), !Task.isCancelled else { return [] }
         return Set(embeddings.filter { !$0.value.isEmpty }.keys)
     }
 
-    private func prepareIntegrationDeliveries(job: ProcessingJob, markdownURL: URL?) async throws -> IntegrationDeliveryBatch {
-        if let existing = try await integrationDeliveryStore.load(id: job.id) { return existing }
-        let batch = try await integrationDispatchService.prepareBatch(
-            jobID: job.id, recording: job.recording, settings: appSettings,
-            generatedMarkdownURL: markdownURL,
-            requireTranscript: job.persistedRecord?.request.transcribe == true)
-        return try await integrationDeliveryStore.createIfAbsent(batch)
+    private func speakerEmbeddings(for recording: Recording) async -> [String: [Float]]? {
+        if let embeddings = recording.transcription?.speakerEmbeddings { return embeddings }
+        let saved = await loadSavedTranscript(for: recording)
+        guard !Task.isCancelled else { return nil }
+        return recording.transcription?.speakerEmbeddings ?? saved?.speakerEmbeddings
     }
 
-    private func dispatchTrackedIntegrations(job: ProcessingJob, markdownURL: URL?) async -> Bool {
+    private func prepareIntegrationDeliveries(job: ProcessingJob, markdownURL: URL?) async throws -> IntegrationDeliveryBatch {
+        try requireProcessingOwnership(job)
+        let succeeded = job.observesProcessingFromStart && !appState.processingSteps.contains {
+            if case .failed = $0.status { return true }
+            return false
+        }
+        let input = ProcessingPipeline.DeliveryPreparation(jobID: job.id,
+            recording: RecordingSnapshot(recording: job.recording), configuration: appSettings.integrations,
+            markdownURL: markdownURL, requireTranscript: job.persistedRecord?.request.transcribe == true,
+            processingSucceededBeforeDeliveryAt: succeeded ? Date() : nil)
+        let batch = try await processingPipeline.prepareDeliveries(input, store: integrationDeliveryStore,
+            service: integrationDispatchService, validateOwnership: { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.requireProcessingOwnership(job)
+            })
+        try requireProcessingOwnership(job)
+        return batch
+    }
+
+    private func dispatchTrackedIntegrations(job: ProcessingJob, markdownURL: URL?, stopBeforeIntegrations: Bool = false) async -> Bool {
+        let batch: IntegrationDeliveryBatch
         do {
-            let batch = try await prepareIntegrationDeliveries(job: job, markdownURL: markdownURL)
-            let result = try await runIntegrationDeliveries(batch: batch)
-            for entry in result.deliveries {
-                guard !appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) else { continue }
-                appState.processingSteps.append(ProcessingStep(
-                    name: "Send: \(entry.destination.displayName)",
-                    status: entry.isComplete ? .completed : .failed(entry.statusDescription)
-                ))
+            batch = try await prepareIntegrationDeliveries(job: job, markdownURL: markdownURL)
+        } catch {
+            guard !Task.isCancelled, appState.processingJob === job else { return false }
+            appState.lastError = error.localizedDescription
+            await markPersistedJobFailed(.integrations, job: job)
+            return false
+        }
+        do {
+            let result = try await processingPipeline.finishDeliveryHandoff(batch, stopBeforeIntegrations: stopBeforeIntegrations,
+                run: { [weak self] saved in
+                    guard let self else { throw CancellationError() }
+                    return try await self.runIntegrationDeliveries(batch: saved, job: job)
+                }, park: { [weak self] in
+                    guard let self else { throw CancellationError() }
+                    try await self.parkDeliveryHandoff(job)
+                }, checkpoint: { [weak self] in
+                    guard let self else { throw CancellationError() }
+                    try await self.checkpointDeliveryHandoff(job)
+                }, validateOwnership: { [weak self] in
+                    guard let self else { throw CancellationError() }
+                    try await self.requireProcessingOwnership(job)
+                })
+            try requireProcessingOwnership(job)
+            if result.held {
+                appState.durabilityNoticeIsWarning = false
+                appState.durabilityNotice = "Recovered processing through Markdown export. Integrations were not sent automatically."
+                return true
             }
-            guard result.isComplete else {
+            for entry in result.batch.deliveries {
+                guard !appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) else { continue }
+                appState.processingSteps.append(ProcessingStep(name: "Send: \(entry.destination.displayName)",
+                    status: entry.isComplete ? .completed : .failed(entry.statusDescription)))
+            }
+            guard result.batch.isComplete else {
                 await markPersistedJobFailed(.integrations, job: job)
+                try requireProcessingOwnership(job)
                 appState.lastError = "Some integrations need attention. Open Integrations in History to review or retry individual sends."
                 return false
             }
-            try await persistCheckpoint(.integrationsDispatched, for: job)
+            job.successfulCompletion = result.completion
             return true
         } catch {
-            if !Task.isCancelled {
+            guard !Task.isCancelled, appState.processingJob === job else { return false }
+            if stopBeforeIntegrations {
+                appState.lastError = "Markdown was saved, but its completion checkpoint could not be updated."
+            } else {
                 appState.lastError = error.localizedDescription
                 await markPersistedJobFailed(.integrations, job: job)
             }
@@ -4485,37 +3538,56 @@ final class RecordingManager {
         }
     }
 
+    private func parkDeliveryHandoff(_ job: ProcessingJob) async throws {
+        try requireProcessingOwnership(job)
+        try await markMarkdownBoundaryReached(job)
+        try requireProcessingOwnership(job)
+        try await completeLegacyQueueCheckpoint(for: job)
+    }
+
+    private func checkpointDeliveryHandoff(_ job: ProcessingJob) async throws {
+        try requireProcessingOwnership(job)
+        try await persistCheckpoint(.integrationsDispatched, for: job)
+        try requireProcessingOwnership(job)
+    }
+
     private func runIntegrationDeliveries(
-        batch: IntegrationDeliveryBatch,
+        batch: IntegrationDeliveryBatch, job: ProcessingJob,
         destinations: Set<IntegrationDestination>? = nil,
-        allowUncertainRetry: Bool = false,
-        acceptConfigurationChange: Bool = false
+        allowUncertainRetry: Bool = false, acceptConfigurationChange: Bool = false
     ) async throws -> IntegrationDeliveryBatch {
-        let digests = try IntegrationDeliveryBatch.configurationDigests(appSettings.integrations)
+        try requireProcessingOwnership(job)
+        let input = ProcessingPipeline.DeliveryRun(id: batch.id,
+            configurationDigests: try IntegrationDeliveryBatch.configurationDigests(appSettings.integrations),
+            destinations: destinations, allowUncertainRetry: allowUncertainRetry,
+            acceptConfigurationChange: acceptConfigurationChange)
         let service = integrationDispatchService
         let settings = appSettings
-        let state = appState
-        return try await integrationDeliveryCoordinator.run(
-            id: batch.id, configurationDigests: digests, destinations: destinations,
-            allowUncertainRetry: allowUncertainRetry,
-            acceptConfigurationChange: acceptConfigurationChange
-        ) { saved, delivery in
-            let index = await MainActor.run { () -> Int? in
-                guard state.processingJob?.id == saved.id else { return nil }
-                let index = state.processingSteps.count
-                state.processingSteps.append(ProcessingStep(name: "Send: \(delivery.destination.displayName)", status: .inProgress))
-                return index
+        return try await processingPipeline.runDeliveries(input, coordinator: integrationDeliveryCoordinator,
+            send: { saved, delivery in
+                // Credentials/configuration are read per attempt. The dispatcher
+                // still compares the actual destination with its frozen digest.
+                let config = await MainActor.run { settings.integrations }
+                return await service.send(batch: saved, delivery: delivery, config: config)
+            }, onEvent: { [weak self] event in
+                await self?.applyDeliveryEvent(event, job: job)
+            }, validateOwnership: { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.requireProcessingOwnership(job)
+            })
+    }
+
+    private func applyDeliveryEvent(_ event: ProcessingPipeline.DeliveryEvent, job: ProcessingJob) {
+        guard !Task.isCancelled, appState.processingJob === job else { return }
+        switch event {
+        case .started(let entry):
+            appState.processingSteps.append(ProcessingStep(name: "Send: \(entry.destination.displayName)", status: .inProgress))
+        case .finished(let result):
+            guard let index = appState.processingSteps.lastIndex(where: { $0.name == "Send: \(result.destination.displayName)" }) else { return }
+            switch result.status {
+            case .success, .skipped: appState.processingSteps[index].status = .completed
+            case .failed: appState.processingSteps[index].status = .failed("Delivery unconfirmed. Review Integrations in History before retrying.")
             }
-            let result = await service.send(batch: saved, delivery: delivery, settings: settings)
-            await MainActor.run {
-                if let index, state.processingJob?.id == saved.id, state.processingSteps.indices.contains(index) {
-                    switch result.status {
-                    case .success, .skipped: state.processingSteps[index].status = .completed
-                    case .failed: state.processingSteps[index].status = .failed("Delivery unconfirmed. Review Integrations in History before retrying.")
-                    }
-                }
-            }
-            return result
         }
     }
 
@@ -4527,7 +3599,9 @@ final class RecordingManager {
         reviewingIntegrationDeliveries = true
         defer { reviewingIntegrationDeliveries = false }
         do {
-            guard let batch = try await integrationBatchForReview(audioURL: audioURL, batchID: batchID) else {
+            let loadedBatch = try await integrationBatchForReview(audioURL: audioURL, batchID: batchID)
+            try Task.checkCancellation()
+            guard let batch = loadedBatch else {
                 let alert = NSAlert()
                 alert.messageText = "No saved integration deliveries"
                 alert.informativeText = "This recording has no tracked sends. Older app versions did not record delivery outcomes, so dBrief cannot safely retry them here."
@@ -4586,30 +3660,42 @@ final class RecordingManager {
             recording.tags = batch.bundle.tags
             recording.sentiment = batch.bundle.sentiment
             appState.processingSteps = []
-            let job = launchJob(id: batch.id, recording: recording) { _ in
+            let job = launchJob(id: batch.id, recording: recording) { retryJob in
                 do {
                     let result = try await self.runIntegrationDeliveries(
-                        batch: batch, destinations: [selected.destination],
+                        batch: batch, job: retryJob, destinations: [selected.destination],
                         allowUncertainRetry: selected.needsDuplicateConfirmation,
                         acceptConfigurationChange: configurationChanged)
+                    guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
                     if let entry = result.deliveries.first(where: { $0.id == selected.id }),
                        !self.appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) {
                         self.appState.processingSteps.append(ProcessingStep(
                             name: "Send: \(entry.destination.displayName)",
                             status: entry.isComplete ? .completed : .failed(entry.statusDescription)))
                     }
-                    if result.isComplete, var record = try await self.processingJobStore.load(id: batch.id) {
-                        _ = record.markCompleted(.integrationsDispatched, at: Date())
-                        record.markFullyCompleted(at: Date())
-                        try await self.processingJobStore.save(record)
+                    if result.isComplete {
+                        let savedRecord = try await self.processingJobStore.load(id: batch.id)
+                        guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
+                        if var record = savedRecord {
+                            _ = record.markCompleted(.integrationsDispatched, at: Date())
+                            record.markFullyCompleted(at: result.successfulWorkflowCompletion?.completedAt ?? Date(),
+                                                      successful: result.successfulWorkflowCompletion != nil)
+                            try await self.processingJobStore.save(record)
+                        }
+                        guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
+                        if let completion = result.successfulWorkflowCompletion {
+                            try await self.persistProcessingCompletion(completion, for: retryJob)
+                            guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
+                        }
                     }
                     if !result.isComplete {
                         self.appState.lastError = "Some deliveries still need attention. Open Integrations in History to review them."
                     }
                 } catch {
+                    guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
                     self.appState.lastError = error.localizedDescription
                 }
-                await self.finishJob(for: recording, completed: false)
+                await self.finishJob(retryJob, completed: false)
             }
             await job.task?.value
         } catch {
@@ -4626,8 +3712,9 @@ final class RecordingManager {
             $0.source.finalizedAudioPath == audioURL.path && $0.checkpoint.hasCompleted(.markdownGenerated)
                 && (batchID == nil || $0.id == batchID)
         }).max(by: { $0.createdAt < $1.createdAt }),
-              let recording = await recordingForRecovery(record) else { return nil }
-        recording.transcription = loadSavedTranscript(for: recording)
+              let recording = try await recordingForRecovery(record) else { return nil }
+        recording.transcription = await loadSavedTranscript(for: recording)
+        try Task.checkCancellation()
         if record.request.transcribe, recording.transcription == nil { throw TranscriptStoreError.noSidecarURL }
         let insights = try await insightsStore.load(for: recording)
         if let insights { applyInsights(insights, to: recording) }
@@ -4636,73 +3723,14 @@ final class RecordingManager {
             ?? insights?.markdownPath.map { URL(fileURLWithPath: $0) }
         recording.generatedTitle = record.markdownExport?.generatedTitle ?? recording.generatedTitle
         var proposed = try await integrationDispatchService.prepareBatch(
-            jobID: record.id, recording: recording, settings: appSettings, generatedMarkdownURL: markdownURL,
+            jobID: record.id, recording: RecordingSnapshot(recording: recording), config: appSettings.integrations, generatedMarkdownURL: markdownURL,
             requireTranscript: record.request.transcribe)
         // Pre-5D jobs cannot prove whether a remote send occurred. Never assume
         // they are unsent, even when their processing checkpoint says otherwise.
         for index in proposed.deliveries.indices { proposed.deliveries[index].status = .uncertain }
+        try Task.checkCancellation()
         return try await integrationDeliveryStore.createIfAbsent(proposed)
     }
 
-    struct SegmentTranscriptionPiece: Sendable {
-        let offsetSeconds: Double
-        let text: String
-        let segments: [TranscriptionResult.Segment]
-        let speakerEmbeddings: [String: [Float]]?
 
-        init(
-            offsetSeconds: Double,
-            text: String,
-            segments: [TranscriptionResult.Segment],
-            speakerEmbeddings: [String: [Float]]? = nil
-        ) {
-            self.offsetSeconds = offsetSeconds
-            self.text = text
-            self.segments = segments
-            self.speakerEmbeddings = speakerEmbeddings
-        }
-    }
-
-    nonisolated static func mergeSegmentTranscriptions(_ pieces: [SegmentTranscriptionPiece]) -> TranscriptionResult {
-        // Unify each part's independently-diarized speakers into one global space.
-        let reconciled = SegmentSpeakerReconciler.reconcile(
-            pieces.map { .init(segments: $0.segments, speakerEmbeddings: $0.speakerEmbeddings) }
-        )
-
-        var fullTextParts: [String] = []
-        var mergedSegments: [TranscriptionResult.Segment] = []
-
-        for (index, piece) in pieces.enumerated() {
-            let remap = reconciled.remaps[index]
-            let trimmed = piece.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                fullTextParts.append(trimmed)
-            }
-
-            for segment in piece.segments {
-                let globalSpeaker = segment.speaker.flatMap { remap[$0] }
-                let remappedWords = segment.words?.map { word -> TranscriptionResult.Word in
-                    var w = word
-                    if let s = word.speaker { w.speaker = remap[s] }
-                    return w
-                }
-                mergedSegments.append(
-                    .init(
-                        start: segment.start + piece.offsetSeconds,
-                        end: segment.end + piece.offsetSeconds,
-                        text: segment.text,
-                        words: remappedWords,
-                        speaker: globalSpeaker
-                    )
-                )
-            }
-        }
-
-        return TranscriptionResult(
-            text: fullTextParts.joined(separator: " "),
-            segments: mergedSegments,
-            speakerCount: reconciled.speakerCount == 0 ? nil : reconciled.speakerCount,
-            speakerEmbeddings: reconciled.speakerEmbeddings.isEmpty ? nil : reconciled.speakerEmbeddings
-        )
-    }
 }

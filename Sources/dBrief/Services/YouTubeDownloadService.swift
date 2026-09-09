@@ -63,6 +63,33 @@ actor YouTubeDownloadService {
         return nil
     }
 
+    /// Finder-launched apps do not inherit the user's shell PATH. yt-dlp only
+    /// enables Deno by default, so Node also needs an explicit runtime argument.
+    /// Supply absolute paths for both metadata lookup and the audio download.
+    nonisolated static func javaScriptRuntimeArguments(
+        searchPath: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
+        homeDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> [String] {
+        let directories = ["/opt/homebrew/bin", "/usr/local/bin"]
+            + searchPath.split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
+        var arguments: [String] = []
+        for runtime in ["deno", "node"] {
+            var candidates = directories.map {
+                URL(fileURLWithPath: $0).appendingPathComponent(runtime).path
+            }
+            if runtime == "deno" {
+                candidates.insert(URL(fileURLWithPath: homeDirectory)
+                    .appendingPathComponent(".deno/bin/deno").path, at: 0)
+            }
+            if let path = candidates.first(where: isExecutable) {
+                arguments.append(contentsOf: ["--js-runtimes", "\(runtime):\(path)"])
+            }
+        }
+        // Leave yt-dlp defaults/configuration available when neither is installed.
+        return arguments
+    }
+
     // MARK: - yt-dlp binary auto-download
 
     /// Downloads the yt-dlp universal macOS binary from GitHub releases into the
@@ -167,8 +194,10 @@ actor YouTubeDownloadService {
             .appendingPathComponent("dBrief_YT_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        // Fetch title first (quick)
-        let title = Self.runBlocking(ytdlp, args: ["--get-title", "--no-playlist", trimmed])
+        let runtimeArguments = Self.javaScriptRuntimeArguments()
+
+        // Fetch title first (quick), using the same challenge runtime as download.
+        let title = Self.runBlocking(ytdlp, args: runtimeArguments + ["--get-title", "--no-playlist", trimmed])
             .flatMap { $0.isEmpty ? nil : $0 } ?? "youtube-video"
 
         // Download best audio as m4a. (The 16 kHz / mono downsample happens in a
@@ -177,7 +206,7 @@ actor YouTubeDownloadService {
         // `--postprocessor-args` sample-rate/channel flags, so it can't be relied
         // on to resample.)
         let outputTemplate = tempDir.appendingPathComponent("audio.%(ext)s").path
-        var args: [String] = [
+        var args: [String] = runtimeArguments + [
             "--no-playlist",
             "-f", "bestaudio[ext=m4a]/bestaudio/best",
             "--extract-audio",

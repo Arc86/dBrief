@@ -15,7 +15,7 @@ struct WhisperPipelineTests {
 
     @Test
     @MainActor
-    func totalTrackFileSizeSumsExistingTrackFiles() throws {
+    func totalTrackFileSizeSumsExistingTrackFiles() async throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("dbrief-test-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -26,15 +26,17 @@ struct WhisperPipelineTests {
         try Data(count: 1000).write(to: systemURL)
         try Data(count: 2500).write(to: micURL)
 
+        let store = CaptureSessionStore()
+
         // Both tracks present → sizes summed.
-        #expect(RecordingManager.totalTrackFileSize(CapturedTracks(systemURL: systemURL, micURL: micURL)) == 3500)
+        #expect(await store.trackMeasurements(CapturedTracks(systemURL: systemURL, micURL: micURL))["trackBytes"] == 3500)
 
         // A missing track contributes 0 rather than failing the whole read.
         let missing = root.appendingPathComponent("gone.caf")
-        #expect(RecordingManager.totalTrackFileSize(CapturedTracks(systemURL: missing, micURL: micURL)) == 2500)
+        #expect(await store.trackMeasurements(CapturedTracks(systemURL: missing, micURL: micURL))["trackBytes"] == 2500)
 
         // No tracks → 0.
-        #expect(RecordingManager.totalTrackFileSize(nil) == 0)
+        #expect(await store.trackMeasurements(nil)["trackBytes"] == 0)
     }
 
     @Test
@@ -87,14 +89,14 @@ struct WhisperPipelineTests {
     @Test
     func mergeSegmentTranscriptionsAppliesOffsets() {
         let pieces = [
-            RecordingManager.SegmentTranscriptionPiece(
+            ProcessingPipeline.SegmentTranscriptionPiece(
                 offsetSeconds: 0,
                 text: "first segment",
                 segments: [
                     .init(start: 0, end: 3, text: "hello")
                 ]
             ),
-            RecordingManager.SegmentTranscriptionPiece(
+            ProcessingPipeline.SegmentTranscriptionPiece(
                 offsetSeconds: 1800,
                 text: "second segment",
                 segments: [
@@ -103,7 +105,7 @@ struct WhisperPipelineTests {
             ),
         ]
 
-        let merged = RecordingManager.mergeSegmentTranscriptions(pieces)
+        let merged = ProcessingPipeline.mergeSegmentTranscriptions(pieces)
         #expect(merged.text == "first segment second segment")
         #expect(merged.segments.count == 2)
         #expect(merged.segments[0].start == 0)
@@ -180,10 +182,12 @@ struct WhisperPipelineTests {
         let date = ISO8601DateFormatter().date(from: "2026-02-13T14:45:00Z")!
         let recording = Recording(date: date, fileURL: source, meetingTitleDraft: "My Video")
 
+        let snapshot = RecordingFinalizationSnapshot(recording: recording)
+        recording.meetingTitleDraft = "Changed after request"
         let finalizer = RecordingFinalizer()
         let result = try await finalizer.importExistingAudio(
             sourceURL: source,
-            recording: recording,
+            snapshot: snapshot,
             baseFolder: recordsFolder,
             segmentationEnabled: false
         )
@@ -238,12 +242,12 @@ struct WhisperPipelineTests {
             start: 0, end: 1, text: "again",
             words: [.init(word: "again", start: 0, end: 1, probability: 1, speaker: "Speaker 1")],
             speaker: "Speaker 1")
-        let p1 = RecordingManager.SegmentTranscriptionPiece(
+        let p1 = ProcessingPipeline.SegmentTranscriptionPiece(
             offsetSeconds: 0, text: "hello", segments: [seg1], speakerEmbeddings: ["Speaker 1": [1, 0]])
-        let p2 = RecordingManager.SegmentTranscriptionPiece(
+        let p2 = ProcessingPipeline.SegmentTranscriptionPiece(
             offsetSeconds: 100, text: "again", segments: [seg2], speakerEmbeddings: ["Speaker 1": [0.98, 0.2]])
 
-        let merged = RecordingManager.mergeSegmentTranscriptions([p1, p2])
+        let merged = ProcessingPipeline.mergeSegmentTranscriptions([p1, p2])
 
         // Speakers survive the merge and are unified to one global.
         #expect(merged.segments.count == 2)

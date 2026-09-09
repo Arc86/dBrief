@@ -21,6 +21,7 @@ final class TranscriptChatService {
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService = AIService()
+    private let privacyRecording: Recording?
 
     /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
     /// that have no stable sidecar location yet (e.g. a still-recording live
@@ -40,12 +41,14 @@ final class TranscriptChatService {
         transcriptProvider: @escaping @MainActor () -> String,
         speakerLabels: [SpeakerLabel],
         appSettings: AppSettings,
-        localPlugin: LocalAIPluginService?
+        localPlugin: LocalAIPluginService?,
+        recording: Recording? = nil
     ) {
         self.transcriptProvider = transcriptProvider
         self.speakerLabels = speakerLabels
         self.appSettings = appSettings
         self.localPlugin = localPlugin
+        self.privacyRecording = recording
     }
 
     /// Convenience init for a fixed (completed-recording) transcript.
@@ -53,17 +56,25 @@ final class TranscriptChatService {
         transcriptText: String,
         speakerLabels: [SpeakerLabel],
         appSettings: AppSettings,
-        localPlugin: LocalAIPluginService?
+        localPlugin: LocalAIPluginService?,
+        recording: Recording? = nil
     ) {
         self.init(
             transcriptProvider: { transcriptText },
             speakerLabels: speakerLabels,
             appSettings: appSettings,
-            localPlugin: localPlugin
+            localPlugin: localPlugin,
+            recording: recording
         )
     }
 
     func send(_ userText: String) async {
+        guard !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
+        let context = await privacyRecording?.privacyContext()
+        await PrivacyTrace.$context.withValue(context) { await sendInRecordingContext(userText) }
+    }
+
+    private func sendInRecordingContext(_ userText: String) async {
         let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
 
@@ -226,17 +237,20 @@ final class TranscriptChatService {
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
                 return AsyncThrowingStream { continuation in
-                    Task {
+                    let task = Task {
                         do {
                             let session = LanguageModelSession(instructions: systemPrompt)
                             let options = GenerationOptions(temperature: 0.5)
-                            let response = try await session.respond(to: userMessage, options: options)
+                            let response = try await PrivacyTrace.perform(.init(stage: .chat, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
+                                try await session.respond(to: userMessage, options: options)
+                            }
                             continuation.yield(response.content)
                             continuation.finish()
                         } catch {
                             continuation.finish(throwing: error)
                         }
                     }
+                    continuation.onTermination = { @Sendable _ in task.cancel() }
                 }
             }
             #endif

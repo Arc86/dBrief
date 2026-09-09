@@ -209,9 +209,7 @@ struct CalendarEventTests {
 
         let url = try MarkdownGenerator().generate(
             recording: recording,
-            outputFolder: dir,
-            transcriptionEndpoint: nil,
-            aiEndpoint: nil
+            outputFolder: dir
         )
         let md = try String(contentsOf: url, encoding: .utf8)
 
@@ -240,9 +238,7 @@ struct CalendarEventTests {
 
         let url = try MarkdownGenerator().generate(
             recording: recording,
-            outputFolder: dir,
-            transcriptionEndpoint: nil,
-            aiEndpoint: nil
+            outputFolder: dir
         )
         let md = try String(contentsOf: url, encoding: .utf8)
 

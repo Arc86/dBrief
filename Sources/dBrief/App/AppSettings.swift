@@ -763,6 +763,10 @@ final class AppSettings {
     var activeProfileId: UUID {
         didSet { UserDefaults.standard.set(activeProfileId.uuidString, forKey: Keys.activeProfileId) }
     }
+    /// Session-only routing. Automatic matches must not replace the user's
+    /// saved fallback profile for subsequent, unrelated recordings.
+    var automaticProfileId: UUID? = nil
+    var automaticProfileRecordingID: UUID? = nil
 
     // MARK: - Call Detection
 

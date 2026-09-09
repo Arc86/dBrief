@@ -4,7 +4,7 @@ import Foundation
 /// those that have a real, user/participant-assigned display name (not the raw
 /// "Speaker N" id) AND an extracted embedding.
 enum VoiceEnrollment {
-    struct Entry: Equatable {
+    struct Entry: Equatable, Sendable {
         let name: String
         let embedding: [Float]
     }

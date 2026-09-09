@@ -119,6 +119,10 @@ struct MeetingProfile: Identifiable, Codable, Hashable, Sendable {
     var iconBackgroundColorKey: String
     var preset: ProfilePresetKind
     var overrides: MeetingProfileOverrides
+    var postRecordingPolicy: PostRecordingPolicy = .review
+    var automaticMatchingEnabled = false
+    var matchPriority = 0
+    var matchingRules: [ProfileMatchRule] = []
 
     init(
         id: UUID = UUID(),
@@ -171,6 +175,8 @@ struct MeetingProfile: Identifiable, Codable, Hashable, Sendable {
         case iconBackgroundColorKey
         case preset
         case overrides
+        case postRecordingPolicy
+        case automaticMatchingEnabled, matchPriority, matchingRules
     }
 
     init(from decoder: Decoder) throws {
@@ -179,6 +185,10 @@ struct MeetingProfile: Identifiable, Codable, Hashable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         preset = try container.decode(ProfilePresetKind.self, forKey: .preset)
         overrides = try container.decodeIfPresent(MeetingProfileOverrides.self, forKey: .overrides) ?? .empty
+        postRecordingPolicy = (try? container.decode(PostRecordingPolicy.self, forKey: .postRecordingPolicy)) ?? .review
+        automaticMatchingEnabled = (try? container.decode(Bool.self, forKey: .automaticMatchingEnabled)) ?? false
+        matchPriority = (try? container.decode(Int.self, forKey: .matchPriority)) ?? 0
+        matchingRules = (try? container.decode([ProfileMatchRule].self, forKey: .matchingRules)) ?? []
         iconSystemName = try container.decodeIfPresent(String.self, forKey: .iconSystemName)
             ?? Self.defaultIcon(for: preset)
         iconBackgroundColorKey = try container.decodeIfPresent(String.self, forKey: .iconBackgroundColorKey)
@@ -193,6 +203,10 @@ struct MeetingProfile: Identifiable, Codable, Hashable, Sendable {
         try container.encode(iconBackgroundColorKey, forKey: .iconBackgroundColorKey)
         try container.encode(preset, forKey: .preset)
         try container.encode(overrides, forKey: .overrides)
+        try container.encode(postRecordingPolicy, forKey: .postRecordingPolicy)
+        try container.encode(automaticMatchingEnabled, forKey: .automaticMatchingEnabled)
+        try container.encode(matchPriority, forKey: .matchPriority)
+        try container.encode(matchingRules, forKey: .matchingRules)
     }
 }
 

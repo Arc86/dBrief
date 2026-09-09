@@ -217,7 +217,7 @@ struct IntegrationDeliveryTests {
     }
 
     @Test @MainActor
-    func deliverySnapshotRecoversTranscriptAfterMarkdownOnlyRestart() throws {
+    func deliverySnapshotRecoversTranscriptAfterMarkdownOnlyRestart() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("delivery-snapshot-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -227,11 +227,19 @@ struct IntegrationDeliveryTests {
         try JSONEncoder().encode(transcript).write(to: sidecar)
         let recording = Recording(fileURL: audio, finalizedAudioURL: audio)
         #expect(recording.transcription == nil)
-        let snapshot = try RecordingSnapshot(recording: recording, recoverTranscript: true)
-        #expect(snapshot.transcript == "Saved transcript")
+        let snapshot = RecordingSnapshot(recording: recording)
+        #expect(snapshot.transcript == nil, "Snapshot construction performs no file I/O")
+        var config = IntegrationSettings()
+        config.webhook.enabled = true
+        config.webhook.url = "https://synthetic.invalid"
+        let service = IntegrationDispatchService()
+        let saved = try await service.prepareBatch(jobID: UUID(), recording: snapshot, config: config,
+                                                  generatedMarkdownURL: nil, requireTranscript: true)
+        #expect(saved.bundle.transcript == "Saved transcript")
         try Data("corrupt".utf8).write(to: sidecar)
-        #expect(throws: (any Error).self) {
-            _ = try RecordingSnapshot(recording: recording, recoverTranscript: true)
+        await #expect(throws: (any Error).self) {
+            _ = try await service.prepareBatch(jobID: UUID(), recording: snapshot, config: config,
+                                               generatedMarkdownURL: nil, requireTranscript: true)
         }
     }
 

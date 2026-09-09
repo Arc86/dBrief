@@ -60,28 +60,30 @@ actor AppleSpeechAnalyzerService {
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
-        // Start consuming results before feeding input so nothing is dropped.
-        let collector = Task { () throws -> [AppleSpeechChunk] in
-            var chunks: [AppleSpeechChunk] = []
-            for try await result in transcriber.results {
-                chunks.append(Self.chunk(from: result))
+        return try await PrivacyTrace.perform(.init(stage: .transcription, data: [.recordingAudio, .metadata], destination: .local(provider: .speechAnalyzer))) {
+            // Start consuming results before feeding input so nothing is dropped.
+            let collector = Task { () throws -> [AppleSpeechChunk] in
+                var chunks: [AppleSpeechChunk] = []
+                for try await result in transcriber.results {
+                    chunks.append(Self.chunk(from: result))
+                }
+                return chunks
             }
-            return chunks
-        }
 
-        status("Transcribing…")
-        do {
-            _ = try await analyzer.analyzeSequence(from: audioFile)
-            try await analyzer.finalizeAndFinishThroughEndOfInput()
-        } catch {
-            collector.cancel()
-            throw error
-        }
+            status("Transcribing…")
+            do {
+                _ = try await analyzer.analyzeSequence(from: audioFile)
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } catch {
+                collector.cancel()
+                throw error
+            }
 
-        let chunks = try await collector.value
-        let result = AppleSpeechResultMapper.map(chunks, language: language)
-        log.info("SpeechAnalyzer transcription complete: textLength=\(result.text.count) segments=\(result.segments.count)")
-        return result
+            let chunks = try await collector.value
+            let result = AppleSpeechResultMapper.map(chunks, language: language)
+            log.info("SpeechAnalyzer transcription complete: textLength=\(result.text.count) segments=\(result.segments.count)")
+            return result
+        }
     }
 
     /// Converts one finalized `SpeechTranscriber.Result` into a plain, testable chunk by

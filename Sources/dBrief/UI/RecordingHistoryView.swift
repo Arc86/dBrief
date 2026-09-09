@@ -201,8 +201,7 @@ struct RecordingHistoryView: View {
                         systemImage: "doc.on.doc"
                     ) {
                         let text = loadedSummaries[item.id] ?? ""
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
+                        Task { _ = await RecordingClipboard.copy(text, from: item.url) }
                     }
                 }
 

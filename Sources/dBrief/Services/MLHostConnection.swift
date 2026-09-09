@@ -35,6 +35,7 @@ actor MLHostConnection {
     private struct Pending {
         var onEvent: (MLEvent) -> Void
         var onCrash: () -> Void
+        var privacyTrace: PrivacyMLTrace? = nil
     }
     private var pending: [UUID: Pending] = [:]
 
@@ -61,31 +62,50 @@ actor MLHostConnection {
     /// a process death throws `MLHostError.helperCrashed`).
     func call(_ request: MLRequest) async throws -> MLEvent {
         try ensureRunning()
-        let id = UUID()
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MLEvent, Error>) in
-            let resolved = ResolveOnce()
-            pending[id] = Pending(
-                onEvent: { event in
-                    switch event {
-                    case .state, .token: return        // non-terminal for call()
-                    // Normally a no-op (the value resolved the call already). If it
-                    // resolves here, `.finished` overtook the result frame — fail loud,
-                    // because `ingest` drops the pending entry on `.finished` and the
-                    // late result could never resume this continuation (permanent hang).
-                    case .finished: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
-                    case .error(let w): if resolved.tryResolve() { cont.resume(throwing: w) }
-                    default: if resolved.tryResolve() { cont.resume(returning: event) }
-                    }
-                },
-                onCrash: { if resolved.tryResolve() { cont.resume(throwing: MLHostError.helperCrashed) } }
-            )
-            write(RequestEnvelope(id: id, request: request))
+        let expectsEvidence: Bool = switch request {
+        case .transcribe: true
+        case .diarize, .diarizeWithEmbeddings: true
+        case .parakeetTranscribe(_, _, let diarize): diarize
+        default: false
+        }
+        let trace = expectsEvidence ? PrivacyTrace.context.map { PrivacyMLTrace(context: $0) } : nil
+        let progress = MLProgress.sink
+        do {
+            let id = UUID()
+            let result = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MLEvent, Error>) in
+                let resolved = ResolveOnce()
+                pending[id] = Pending(
+                    onEvent: { event in
+                        switch event {
+                        case .privacy(let event): trace?.receive(event); return
+                        case .state(let state): progress?(state); return
+                        case .token: return        // non-terminal for call()
+                        // Normally a no-op (the value resolved the call already). If it
+                        // resolves here, `.finished` overtook the result frame — fail loud,
+                        // because `ingest` drops the pending entry on `.finished` and the
+                        // late result could never resume this continuation (permanent hang).
+                        case .finished: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
+                        case .error(let w): if resolved.tryResolve() { cont.resume(throwing: w) }
+                        default: if resolved.tryResolve() { cont.resume(returning: event) }
+                        }
+                    },
+                    onCrash: { if resolved.tryResolve() { cont.resume(throwing: MLHostError.helperCrashed) } },
+                    privacyTrace: trace
+                )
+                write(RequestEnvelope(id: id, request: request))
+            }
+            await trace?.end(crashed: false)
+            return result
+        } catch {
+            await trace?.end(crashed: (error as? MLHostError) == .helperCrashed)
+            throw error
         }
     }
 
     /// Stream tokens for `analyzeStream`/`chatStream`.
     func stream(_ request: MLRequest) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let progress = MLProgress.sink
+        return AsyncThrowingStream { continuation in
             let id = UUID()
             do { try ensureRunning() } catch {
                 continuation.finish(throwing: error); return
@@ -93,6 +113,7 @@ actor MLHostConnection {
             pending[id] = Pending(
                 onEvent: { event in
                     switch event {
+                    case .state(let state): progress?(state)
                     case .token(let s): continuation.yield(s)
                     case .finished: continuation.finish()
                     case .error(let w): continuation.finish(throwing: w)
@@ -164,7 +185,18 @@ actor MLHostConnection {
     private func ingest(_ data: Data) {
         reader.append(data)
         for frame in reader.drainFrames() {
-            guard let env = try? frameDecoder.decode(EventEnvelope.self, from: frame) else { continue }
+            guard let env = try? frameDecoder.decode(EventEnvelope.self, from: frame) else {
+                // Even an unsupported event may contain a valid request ID. If
+                // that too is unreadable, no active receipt can claim completeness.
+                struct Header: Decodable { let id: UUID }
+                if let header = try? frameDecoder.decode(Header.self, from: frame),
+                   let owner = pending[header.id] {
+                    owner.privacyTrace?.noteMissingFrame()
+                } else {
+                    for owner in pending.values { owner.privacyTrace?.noteMissingFrame() }
+                }
+                continue
+            }
             if case let .state(state) = env.event {
                 stateContinuations[env.channel]?.yield(state)
             }

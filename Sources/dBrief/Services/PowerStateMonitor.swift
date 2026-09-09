@@ -10,6 +10,7 @@ private let log = Logger.app
 final class PowerStateMonitor {
     private var source: CFRunLoopSource?
     private var lastNotifiedCount: Int = 0
+    private var refreshGeneration = 0
     private weak var appState: AppState?
     private weak var recordingManager: RecordingManager?
 
@@ -24,7 +25,7 @@ final class PowerStateMonitor {
             guard let context else { return }
             let monitor = Unmanaged<PowerStateMonitor>.fromOpaque(context).takeUnretainedValue()
             Task { @MainActor in
-                monitor.handlePowerChange()
+                await monitor.handlePowerChange()
             }
         }, context).takeRetainedValue()
 
@@ -35,6 +36,7 @@ final class PowerStateMonitor {
     }
 
     func stopMonitoring() {
+        refreshGeneration += 1
         if let source {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }
@@ -42,15 +44,18 @@ final class PowerStateMonitor {
         log.info("Power state monitoring stopped")
     }
 
-    private func handlePowerChange() {
+    private func handlePowerChange() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         guard isOnACPower() else {
             lastNotifiedCount = 0
             return
         }
         guard let appState, let recordingManager else { return }
 
-        let count = recordingManager.discoverQueuedItems().count
-        appState.queuedCount = count
+        await recordingManager.refreshQueuedCount()
+        guard generation == refreshGeneration, isOnACPower(), recordingManager.queueLoadError == nil else { return }
+        let count = appState.queuedCount
 
         guard count > 0, count != lastNotifiedCount else { return }
         lastNotifiedCount = count
@@ -67,7 +72,7 @@ final class PowerStateMonitor {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request)
+        try? await UNUserNotificationCenter.current().add(request)
     }
 
     nonisolated private func isOnACPower() -> Bool {

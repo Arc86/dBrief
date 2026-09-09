@@ -13,6 +13,16 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
     let bundle: IntegrationContentBundle
     var deliveries: [Delivery]
     var dismissedFromQueue: Bool? = nil
+    /// Set only after an observed, warning-free processing prefix. Nil on legacy
+    /// or delivery-only batches; sending saved content cannot backfill that proof.
+    var processingSucceededBeforeDeliveryAt: Date? = nil
+
+    var successfulWorkflowCompletion: ProcessingCompletionStamp? {
+        guard let processingSucceededBeforeDeliveryAt, isComplete,
+              deliveries.allSatisfy({ $0.updatedAt != nil }) else { return nil }
+        return ProcessingCompletionStamp(jobID: id,
+            completedAt: max(processingSucceededBeforeDeliveryAt, deliveries.compactMap(\.updatedAt).max() ?? processingSucceededBeforeDeliveryAt))
+    }
 
     struct Delivery: Codable, Equatable, Sendable, Identifiable {
         enum Status: String, Codable, Sendable {

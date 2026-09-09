@@ -38,7 +38,7 @@ struct RecoveryQueueTests {
         #expect(schedule.order == ["a", "c", "b"])
     }
 
-    @Test func queueOrderAndPauseSurviveRestartWithoutChangingIntent() throws {
+    @Test func queueOrderAndPauseSurviveRestartWithoutChangingIntent() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let store = QueueScheduleStore(url: root.appendingPathComponent("schedule.json"))
@@ -46,23 +46,48 @@ struct RecoveryQueueTests {
         let bytes = try JSONEncoder().encode(original)
         let marker = root.appendingPathComponent("meeting.queue.json")
         try bytes.write(to: marker)
-        var schedule = try store.load()
+        var schedule = try await store.load()
         schedule.paused = true
         schedule.order = ["b", "a"]
-        try store.save(schedule)
-        #expect(try QueueScheduleStore(url: store.url).load() == schedule)
+        try await store.save(schedule)
+        #expect(try await QueueScheduleStore(url: store.url).load() == schedule)
         #expect(try Data(contentsOf: marker) == bytes)
     }
 
-    @Test func invalidAndFutureSchedulesAreNeverOverwritten() throws {
+    @Test func invalidAndFutureSchedulesAreNeverOverwritten() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let store = QueueScheduleStore(url: root.appendingPathComponent("schedule.json"))
         for bytes in [Data("broken".utf8), Data(#"{"version":99,"paused":false,"order":[]}"#.utf8)] {
             try bytes.write(to: store.url)
-            #expect(throws: (any Error).self) { try store.save(QueueSchedule()) }
+            await #expect(throws: (any Error).self) { try await store.save(QueueSchedule()) }
             #expect(try Data(contentsOf: store.url) == bytes)
         }
+    }
+
+    @Test func queueRemainsDiscoverableAfterProfileFolderChangesAndRestart() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let previousFolder = root.appendingPathComponent("previous-profile")
+        let currentFolder = root.appendingPathComponent("current-profile")
+        try FileManager.default.createDirectory(at: previousFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: currentFolder, withIntermediateDirectories: true)
+        let item = QueueItem(transcribe: true, summary: false, actionItems: false, tags: false, profileID: UUID())
+        try JSONEncoder().encode(item).write(to: previousFolder.appendingPathComponent("queued.queue.json"))
+        try Data("audio".utf8).write(to: previousFolder.appendingPathComponent("queued.m4a"))
+        let store = QueueScheduleStore(url: root.appendingPathComponent("schedule.json"))
+        var schedule = try await store.load()
+        schedule.rememberFolder(previousFolder)
+        try await store.save(schedule)
+        let reloaded = try await QueueScheduleStore(url: store.url).load()
+        let folders = reloaded.discoveryFolders(configured: [currentFolder])
+        let discovered = QueueScheduleStore.discoverQueuedItems(in: folders)
+        #expect(discovered.map(\.item.id) == [item.id])
+        // Overlapping configured roots cannot process one marker twice.
+        #expect(QueueScheduleStore.discoverQueuedItems(in: folders + [root]).count == 1)
+        let legacy = try JSONDecoder().decode(QueueSchedule.self, from: Data(#"{"version":1,"paused":false,"order":[]}"#.utf8))
+        #expect(legacy.knownFolders == nil)
+        #expect(legacy.discoveryFolders(configured: [currentFolder]).count == 1)
     }
 
     @Test func duplicateSavedPathsDoNotCrashSorting() {
@@ -166,7 +191,7 @@ struct RecoveryQueueTests {
         let item = QueueItem(transcribe: true, summary: false, actionItems: false, tags: false)
         try JSONEncoder().encode(item).write(to: root.appendingPathComponent("import.queue.json"))
         try Data("audio".utf8).write(to: root.appendingPathComponent("import.wav"))
-        let discovered = RecordingManager.discoverQueuedItems(in: root)
+        let discovered = QueueScheduleStore.discoverQueuedItems(in: root)
         #expect(discovered.count == 1)
         #expect(discovered.first?.audioURL.pathExtension == "wav")
         #expect(discovered.first?.item.id == item.id)
@@ -181,7 +206,7 @@ struct RecoveryQueueTests {
         #expect(try QueueItem.load(from: marker).id == QueueItem.load(from: marker).id)
         #expect(try Data(contentsOf: marker) == bytes)
         // A missing master remains visible and removable instead of vanishing.
-        #expect(RecordingManager.discoverQueuedItems(in: root).count == 1)
+        #expect(QueueScheduleStore.discoverQueuedItems(in: root).count == 1)
     }
 
     @Test func queueRemovalRetiresIntentAndSuppressesRecoveryButKeepsAudio() async throws {
@@ -198,14 +223,14 @@ struct RecoveryQueueTests {
         try await jobs.save(record)
         try await deliveries.save(batch(job: record))
         let schedule = QueueScheduleStore(url: root.appendingPathComponent("schedule.json"))
-        try schedule.save(QueueSchedule(order: [audio.path]))
+        try await schedule.save(QueueSchedule(order: [audio.path]))
         try await schedule.removeQueuedItem(at: audio, lifecycle: RecoveryLifecycle(jobs: jobs, deliveries: deliveries))
         #expect(!FileManager.default.fileExists(atPath: marker.path))
         #expect(try Data(contentsOf: audio) == Data("audio".utf8))
         #expect(try await jobs.load(id: record.id)?.launchRecoveryAction == PersistedProcessingJob.LaunchRecoveryAction.none)
         #expect(try await jobs.load(id: record.id)?.dismissedFromQueue == true)
         #expect(try await deliveries.load(id: record.id)?.dismissedFromQueue == true)
-        #expect(try schedule.load().order.isEmpty)
+        #expect(try await schedule.load().order.isEmpty)
     }
 
     @Test func failedRemovalLeavesMarkerDeferredAndAudioUntouched() async throws {

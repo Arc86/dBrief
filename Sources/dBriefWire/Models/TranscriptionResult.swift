@@ -4,6 +4,9 @@ public struct TranscriptionResult: Codable, Sendable {
     public let text: String
     public let segments: [Segment]
     public let language: String?
+    /// ASR model selected for this output, never an endpoint URL or credential.
+    /// Optional for older sidecars and servers that choose an undisclosed model.
+    public var modelName: String?
     public let warnings: [String]?
     public let speakerCount: Int?
     /// Pure model-inference wall-clock (seconds) for the engine's core transcribe
@@ -66,11 +69,13 @@ public struct TranscriptionResult: Codable, Sendable {
         speakerCount: Int? = nil,
         inferenceTime: TimeInterval? = nil,
         diarizationTime: TimeInterval? = nil,
-        speakerEmbeddings: [String: [Float]]? = nil
+        speakerEmbeddings: [String: [Float]]? = nil,
+        modelName: String? = nil
     ) {
         self.text = text
         self.segments = segments
         self.language = language
+        self.modelName = modelName
         self.warnings = warnings
         self.speakerCount = speakerCount
         self.inferenceTime = inferenceTime

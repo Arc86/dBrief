@@ -1,3 +1,77 @@
+## Unreleased — changes since 1.3.9 (through Beta build 5)
+
+Processing can now resume from saved stages, queued recordings can be managed directly, and integration retries no longer require repeating transcription or analysis.
+
+### Restartable processing
+
+- **Resume interrupted work from its last saved stage.** The main recording and file-import pipeline saves progress through audio finalization, transcription, speaker detection and review, AI analysis, and Markdown export. Eligible interrupted jobs resume after relaunch, reusing completed outputs.
+- **Keep speaker-review decisions across restarts.** Confirm-first review remains a required step when applicable, instead of being silently skipped during recovery.
+- **Safer Markdown export.** The chosen destination and generated content are saved before publishing. Recovery preserves completed notes and their edits; filename collisions use a distinct destination or stop with a retryable error rather than overwriting different content.
+- **Stop without discarding completed work.** Stopped and failed jobs remain available for explicit recovery instead of immediately restarting themselves.
+
+### Queue & Recovery
+
+- **Manage pending recordings in one place.** Move items up, down, or to the front; process an individual item; or remove it from the queue without deleting its audio.
+- **Pause the queue across restarts.** Saved ordering and pause state survive relaunch. Pausing lets the current job finish. Deferred items still wait for Process Queue; automatic items may run first.
+- **See work that needs attention.** Failed or interrupted processing and unfinished integration deliveries appear together, with Resume, Integrations, and Dismiss actions. Dismissing a recovery entry keeps the recording and saved progress.
+- **More coordinated cleanup.** Deleting a recording also removes its associated local queue and recovery records. Retention protects unfinished work; separately exported notes and content already sent to integrations are left alone.
+
+### Safer integration retries
+
+- **Track each destination independently.** Review delivery status from a recording’s Integrations action or Queue & Recovery, and retry one destination using its saved content without retranscribing or rerunning AI. Confirmed successful deliveries are not resent by that retry.
+- **Make uncertain sends explicit.** Interrupted or unconfirmed deliveries require a duplicate-risk confirmation. Destination or field changes require approval before retrying with current settings; disabled integrations remain blocked.
+- **No automatic external sends during launch recovery.** Recovery stops after Markdown export. Continue pending integration deliveries explicitly.
+- **Stable webhook retry keys.** Each logical delivery carries an `Idempotency-Key`; duplicate prevention depends on receiver support. Webhooks, Apple Notes, and Reminders do not have an unconditional exactly-once guarantee.
+
+### Clearer recording controls and navigation
+
+- **Saving no longer looks like an unresponsive button.** Queue, Skip, and Process overflow show saving progress for long recordings. Errors appear on the same screen, with controls available for retry.
+- **Repeated clicks cannot start overlapping saves.** Conflicting Process, Queue, Skip, and Delete actions are blocked while a post-recording action is underway.
+- **Consistent Recent Recordings and Queue & Recovery lists.** Matching headers, expandable rows, status labels, and action controls make both sections easier to scan. Both headers stay visible; opening one list folds the other to keep the popover compact.
+- **A prominent Transcript viewer entry.** A full-width, labeled button above Recent Recordings remains available when the list is collapsed and while processing results are shown. Playback and row expansion are separate controls.
+
+### Long recordings and dependencies
+
+- **Incremental Whisper audio loading.** Recordings of ten minutes or more use the incremental file-loading path when speaker diarization is off, avoiding the full decoded-audio buffer used by the previous path. Diarization retains its shared-buffer workflow.
+- **Updated components:** Argmax OSS Swift 1.1.0, Swift Transformers 1.3.4, FluidAudio 0.15.6, and Sparkle 2.9.6. CI checkout and artifact-upload actions were also updated.
+
+### Faster uploads and library search
+
+- **Lower upload memory use.** Remote transcription streams audio and multipart request bodies from disk, including retry attempts, instead of holding whole recordings in memory. Temporary upload files are cleaned up after normal completion, failure, or cancellation.
+- **Check hosted upload limits before sending.** Supported large uploads split into chunks measured against the actual encoded file size. Oversized native-diarization requests stop with guidance while keeping the source recording and speaker consistency.
+- **Search across your recording library.** A local full-text index covers transcripts, titles, participants, speakers, tags, action items and owners, dates, and source applications. Incremental updates avoid rereading every unchanged sidecar; the index can be rebuilt without changing recordings or notes.
+- **Saved library views.** Quickly find Unfinished Actions, Failed Jobs, Queued / Interrupted, Recently Processed, or People I Met This Month. Action-item completion persists and updates the relevant views.
+
+### Profiles and processing transparency
+
+- **Match profiles to meetings.** Optional rules match recording titles, call applications, calendar details, or attendee email domains. The post-recording screen explains the match and supports a manual override.
+- **Choose what happens after recording.** Profiles can keep the review screen, process automatically, or queue automatically. Automatic actions have a cancellable ten-second countdown; review remains the default.
+- **Per-recording privacy receipts.** Inspect recorded processing and delivery attempts, their providers, data categories, and outcomes. Receipts omit audio, transcript content, prompts, and credentials, and explicitly identify missing evidence rather than claiming unrecorded activity stayed local.
+
+### Recording and transcript-viewer fixes
+
+- **A waveform that responds to normal microphone speech.** Main and mini-player meters use a decibel display scale, read both stereo channels, and retain brief peaks between display updates. Recorded audio levels are unchanged.
+- **Preserve buffered audio when capture ends or changes device.** Audio conversion drains pending frames before the writer closes. Late callbacks cannot reopen a finished recording, and partial drain failures retain already-written audio and appear in diagnostics.
+- **Stopped recordings remain visible in Queue & Recovery.** Fixed a collapsed list that could show an attention count while hiding the recording and its Resume action.
+- **Compact transcript-library filters.** View and status controls fit the sidebar, and routine background refreshes retain results without briefly inserting a loading row or shifting the list.
+- **Processing previews show available transcripts.** Completed transcription stays visible during AI analysis. The processing button distinguishes Transcription Progress, Live Transcript, and View Transcript, and empty previews update when text arrives.
+- **YouTube runtime discovery.** dBrief explicitly locates installed Deno or Node for both video-title lookup and audio download, including when macOS launches the app with a limited PATH. A supported runtime and a current yt-dlp installation are still required; the app does not bundle these dependencies or guarantee that every HTTP 403 can be resolved.
+
+### Maintenance and beta builds
+
+- Capture, processing, job storage, imports, and model downloads now have separate coordinators, with regression coverage for cancellation, restart recovery, progress attribution, and cleanup.
+- **Independent beta build numbers.** About → Build shows the beta build number separately from the app version. Each beta assembly advances a persistent counter, with CI checks for bundle identity and numbering.
+
+### Compatibility and validation
+
+- Existing recordings and older queue entries remain supported. Unreadable or newer-format recovery records are preserved rather than silently discarded.
+- Durable processing recovery currently covers the main recording/import pipeline. Manual AI-only retries and re-diarization retain their existing processing workflows; integration sends after a manual AI retry are journaled.
+- Beta build 5 uses app version 1.3.9. Automated validation covers 1,058 Swift tests in 167 suites and four beta-build tests. The user confirmed the earlier recovery/queue checks and the YouTube fix in beta testing. Broader device, capture, and accessibility validation remains separate from this automated coverage.
+- The beta downloader on the test Mac was updated to yt-dlp 2026.08.19. That is a machine-local dependency update, not a bundled downloader upgrade for other installations.
+- This is an unreleased development checkpoint; no new public release version or tag is assigned.
+
+---
+
 ## dBrief 1.3.9
 
 **Nothing is lost anymore, even if dBrief or your Mac doesn't shut down cleanly.** This release is about durability: an interrupted recording — a crash, a forced quit, a power loss — is now recovered into History automatically the next time dBrief launches, instead of leaving orphaned audio files behind.

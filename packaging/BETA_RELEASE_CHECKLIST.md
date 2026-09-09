@@ -7,9 +7,11 @@ completion artifact is `dBrief-Beta.app`; do not create or distribute
 ## Automated preflight
 
 - [ ] `git diff --check` passes.
-- [ ] `swift test` passes.
+- [ ] `python3 scripts/test_beta_build.py` and `swift test` pass.
 - [ ] `make beta` produces `dBrief-Beta.app`.
 - [ ] The bundle identifier is `com.dbrief.app.beta`.
+- [ ] `CFBundleVersion` matches `packaging/beta-build-number`; About → Build shows
+  this as **Beta build**, separately from the public app version.
 - [ ] `SUFeedURL` is absent from the beta `Info.plist`.
 - [ ] `codesign --verify --deep --strict dBrief-Beta.app` passes.
 - [ ] No production `dBrief.app` artifact remains in the repository root.
@@ -37,3 +39,13 @@ the local beta identity is intentionally machine-specific.
 - [ ] Record the commit SHA, macOS version, and tested transcription/AI engines.
 - [ ] Note any skipped smoke-test item and why.
 - [ ] Deliver `dBrief-Beta.app` (or the CI-produced `dBrief-Beta.zip`) only.
+
+## Beta build numbering
+
+Every `make beta` reserves the next integer in the tracked
+`packaging/beta-build-number` and stamps the assembled beta's `CFBundleVersion`
+before signing. Keep the counter with code changes when committing a tested build.
+It survives `make clean` and public app-version changes; do not reset it. An
+assembly/signing failure can consume a number, so gaps are expected.
+`CFBundleShortVersionString` remains the public release version; production source
+metadata and public release notes are unchanged by beta builds.

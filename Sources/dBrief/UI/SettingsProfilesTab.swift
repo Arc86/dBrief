@@ -203,6 +203,16 @@ struct SettingsProfilesTab: View {
         if let selectedProfile {
             Form {
                 identitySection(selectedProfile)
+                matchingSection(selectedProfile)
+                Section("After Recording") {
+                    Picker("Action", selection: profileBinding(\.postRecordingPolicy, fallback: .review)) {
+                        ForEach(PostRecordingPolicy.allCases, id: \.self) { policy in
+                            Text(policy.title).tag(policy)
+                        }
+                    }
+                    Text("Automatic actions wait 10 seconds so you can choose Review instead. Processing uses this profile’s task defaults and configured destinations. Queue automatically saves the work for manual processing later.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 transcriptionOverridesSection
                 aiOverridesSection
                 taskOverridesSection
@@ -217,6 +227,50 @@ struct SettingsProfilesTab: View {
     }
 
     @ViewBuilder
+    private func matchingSection(_ profile: MeetingProfile) -> some View {
+        Section("Automatic Profile Selection") {
+            Toggle("Select this profile when all conditions match", isOn: profileBinding(\.automaticMatchingEnabled, fallback: false))
+            if profile.automaticMatchingEnabled {
+                Stepper("Priority: \(profile.matchPriority)", value: profileBinding(\.matchPriority, fallback: 0), in: -100...100)
+                ForEach(profile.matchingRules) { rule in
+                    HStack {
+                        Picker("Field", selection: ruleBinding(rule.id, \.field, fallback: rule.field)) {
+                            ForEach(ProfileMatchRule.Field.allCases, id: \.self) { field in Text(field.title).tag(field) }
+                        }
+                        .labelsHidden()
+                        .accessibilityLabel("Match field")
+                        TextField(rule.field == .attendeeDomain ? "Exact domain, e.g. acme.com" : "Contains text",
+                                  text: ruleBinding(rule.id, \.value, fallback: rule.value))
+                        Button {
+                            var rules = profile.matchingRules
+                            rules.removeAll { $0.id == rule.id }
+                            profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
+                        } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove condition")
+                    }
+                }
+                Button("Add condition", systemImage: "plus") {
+                    var rules = profile.matchingRules
+                    rules.append(.init(field: .title, value: ""))
+                    profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
+                }
+                Text("Every condition must match. Higher priority wins, then more conditions. Email domains match exactly. Empty conditions never match.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func ruleBinding<T>(_ id: UUID, _ keyPath: WritableKeyPath<ProfileMatchRule, T>, fallback: T) -> Binding<T> {
+        Binding(get: {
+            selectedProfile?.matchingRules.first(where: { $0.id == id })?[keyPath: keyPath] ?? fallback
+        }, set: { value in
+            guard let profileIndex = selectedProfileIndex,
+                  let ruleIndex = appSettings.profiles[profileIndex].matchingRules.firstIndex(where: { $0.id == id }) else { return }
+            appSettings.profiles[profileIndex].matchingRules[ruleIndex][keyPath: keyPath] = value
+        })
+    }
+
     private func identitySection(_ profile: MeetingProfile) -> some View {
         Section("Profile") {
             HStack(spacing: 14) {

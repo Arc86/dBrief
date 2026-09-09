@@ -37,6 +37,7 @@ actor IntegrationDeliveryStore: IntegrationDeliveryPersistence {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(batch).write(to: url(batch.id), options: .atomic)
         guard try load(id: batch.id) == batch else { throw StoreError.verificationFailed }
+        RecordingLibraryChange.notify()
     }
     func createIfAbsent(_ batch: IntegrationDeliveryBatch) throws -> IntegrationDeliveryBatch {
         if let existing = try load(id: batch.id) { return existing }
@@ -67,5 +68,6 @@ actor IntegrationDeliveryStore: IntegrationDeliveryPersistence {
     func remove(id: UUID) throws {
         guard try load(id: id) != nil else { return }
         try FileManager.default.removeItem(at: url(id))
+        RecordingLibraryChange.notify()
     }
 }

@@ -13,6 +13,8 @@ struct SummaryView: View {
     let canGenerate: Bool
     var onGenerate: () -> Void = {}
     var onSave: (RecordingInsights) async -> Void = { _ in }
+    var onCopy: (String) async -> Bool = { _ in false }
+    var onSetActionCompleted: (String, Bool) async throws -> RecordingInsights = { _, _ in throw InsightsStoreError.noSidecarURL }
     var hasSpokenSummary: Bool = false
     var onGenerateSpoken: () -> Void = {}
     var onPlaySpoken: () -> Void = {}
@@ -38,8 +40,10 @@ struct SummaryView: View {
     @State private var draftActionItems: [DraftActionItem] = []
     @State private var draftTags: [String] = []
 
-    // Ephemeral per-session "done" state for action-item checkboxes, keyed by raw text.
+    // Canonical completion is persisted in the insights sidecar, keyed by raw text.
     @State private var completed: Set<String> = []
+    @State private var isUpdatingActions = false
+    @State private var actionSaveFailed = false
 
     var body: some View {
         Group {
@@ -54,6 +58,11 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { sync() }
         .onChange(of: insights) { _, _ in if !isEditing { sync() } }
+        .alert("Action status could not be saved", isPresented: $actionSaveFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The action may have changed or its recording may be unavailable. Reload the recording and try again.")
+        }
     }
 
     private func hasContent(_ i: RecordingInsights) -> Bool {
@@ -66,6 +75,7 @@ struct SummaryView: View {
         draftSummary = insights.summary
         draftActionItems = insights.actionItems.map { DraftActionItem(text: $0) }
         draftTags = insights.tags
+        completed = insights.completedActions
     }
 
     // MARK: - Loaded content
@@ -242,7 +252,7 @@ struct SummaryView: View {
     private func actionRow(_ item: ParsedActionItem) -> some View {
         let done = completed.contains(item.raw)
         return Button {
-            if done { completed.remove(item.raw) } else { completed.insert(item.raw) }
+            setActionCompleted(item.raw, completed: !done)
         } label: {
             HStack(alignment: .top, spacing: 9) {
                 ZStack {
@@ -264,7 +274,10 @@ struct SummaryView: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(isUpdatingActions || isSaving)
         .accessibilityLabel(Text(item.text))
+        .accessibilityValue(done ? "Completed" : "Unfinished")
+        .accessibilityHint(done ? "Mark this action unfinished" : "Mark this action complete")
         .accessibilityAddTraits(done ? [.isSelected] : [])
     }
 
@@ -296,10 +309,12 @@ struct SummaryView: View {
         HStack(spacing: 8) {
             Spacer()
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(insights.plainTextForCopy(), forType: .string)
-                copied = true
-                Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+                let text = insights.plainTextForCopy()
+                Task {
+                    copied = await onCopy(text)
+                    try? await Task.sleep(for: .seconds(2))
+                    copied = false
+                }
             } label: {
                 Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
             }
@@ -326,6 +341,7 @@ struct SummaryView: View {
                     Label("Edit", systemImage: "pencil")
                 }
                 .buttonStyle(SummaryPillButtonStyle(scheme: colorScheme))
+                .disabled(isUpdatingActions)
                 if hasSpokenSummary {
                     Button { onPlaySpoken() } label: {
                         Label("Play Spoken", systemImage: "play.circle")
@@ -412,7 +428,7 @@ struct SummaryView: View {
                     Toggle(isOn: Binding(
                         get: { completed.contains(item.raw) },
                         set: { isOn in
-                            if isOn { completed.insert(item.raw) } else { completed.remove(item.raw) }
+                            setActionCompleted(item.raw, completed: isOn)
                         }
                     )) {
                         Text(item.text)
@@ -422,6 +438,7 @@ struct SummaryView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .toggleStyle(.checkbox)
+                    .disabled(isUpdatingActions || isSaving)
                 }
             }
             .padding(.leading, 2)
@@ -529,6 +546,18 @@ struct SummaryView: View {
     }
 
     // MARK: - Save
+
+    private func setActionCompleted(_ action: String, completed: Bool) {
+        guard !isUpdatingActions else { return }
+        isUpdatingActions = true
+        Task {
+            defer { isUpdatingActions = false }
+            do {
+                let saved = try await onSetActionCompleted(action, completed)
+                self.completed = saved.completedActions
+            } catch { actionSaveFailed = true }
+        }
+    }
 
     private func save(base: RecordingInsights) async {
         isSaving = true

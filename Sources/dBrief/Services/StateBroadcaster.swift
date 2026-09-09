@@ -5,14 +5,16 @@ import dBriefWire
 ///
 /// `AsyncStream` is single-consumer: cancelling one `for await` finishes the
 /// stream for *everyone*, including future iterations. The proxies vend a fresh
-/// subscriber stream per operation (one `for await` per `withPluginStepAdapter`
-/// call, cancelled when the op ends), so a single shared stream goes dead after
+/// subscriber stream per observer (cancelled when that observer ends), so a
+/// single shared stream goes dead after
 /// the first op — silently killing live status, live-transcript segments, and
 /// download progress on every subsequent transcription in a session.
 ///
 /// A `StateBroadcaster` subscribes to the upstream stream *once* (a long-lived
 /// forwarder that is never cancelled) and re-broadcasts each value to any number
 /// of independently-cancellable subscriber streams.
+/// Processing progress uses request-scoped MLProgress sinks instead; these
+/// channel broadcasts serve settings/download observers without request filtering.
 final class StateBroadcaster: Sendable {
     private let lock = NSLock()
     nonisolated(unsafe) private var subscribers: [UUID: AsyncStream<LocalAIPluginState>.Continuation] = [:]

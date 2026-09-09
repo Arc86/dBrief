@@ -35,7 +35,7 @@ struct AboutTab: View {
     private var buildInfo: [InfoRow] {
         [
             InfoRow(key: "Version", value: shortVersion),
-            InfoRow(key: "Build", value: buildNumber),
+            InfoRow(key: AppSupportPaths.bundleIdentifier.hasSuffix(".beta") ? "Beta build" : "Build", value: buildNumber),
             InfoRow(
                 key: "Channel",
                 value: AppSupportPaths.bundleIdentifier.hasSuffix(".beta") ? "Beta" : "Stable"

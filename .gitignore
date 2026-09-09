@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Python build/test caches
+__pycache__/
+
 # Swift Package Manager / Xcode build output
 /.build
 /Packages
@@ -15,6 +18,9 @@ DerivedData/
 
 # Built beta channel bundle (reproduce with `make beta`; never distributed)
 /dBrief-Beta.app/
+
+# Local lock for the tracked beta build counter.
+/packaging/.beta-build-number.lock
 
 # Built DMG (reproduce with `make dmg`; upload to GitHub Releases)
 /dBrief-*.dmg

@@ -114,6 +114,7 @@ actor ProcessingJobStore {
         ), verified == job else {
             throw StoreError.verificationFailed
         }
+        RecordingLibraryChange.notify()
     }
 
     func load(id: UUID) throws -> PersistedProcessingJob? {
@@ -198,6 +199,7 @@ actor ProcessingJobStore {
         guard fileManager.fileExists(atPath: directory.path) else { return }
         guard try load(id: id) != nil else { throw StoreError.verificationFailed }
         try fileManager.removeItem(at: directory)
+        RecordingLibraryChange.notify()
     }
 
     private func validate(_ job: PersistedProcessingJob, directoryID: UUID) throws {

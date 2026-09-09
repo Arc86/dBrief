@@ -33,7 +33,7 @@ struct WebhookPayloadBuilderTests {
             contentType: WebhookPayloadBuilder.contentType(for: audioURL),
             data: audioBytes
         )
-        let reference = multipart.encode()
+        let reference = try multipart.encode()
 
         #expect(streamed == reference)
     }

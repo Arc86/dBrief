@@ -76,4 +76,47 @@ struct TranscriptStoreTests {
         }
         #expect(try Data(contentsOf: url) == bytes)
     }
+
+    @Test("cancelled rich-transcript operations preserve existing user edits", arguments: [false, true])
+    func cancelledOperationPreservesSidecar(saving: Bool) async throws {
+        let store = TranscriptStore()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("richtranscript.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let edited = RichTranscript(segments: [.init(start: 0, end: 1, text: "User edit", originalText: "Original")])
+        try await store.save(edited, to: url)
+        let bytes = try Data(contentsOf: url)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            if saving { try await store.save(RichTranscript(segments: []), to: url) }
+            else { _ = try await store.load(from: url) }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(try Data(contentsOf: url) == bytes)
+    }
+
+    @Test("review compare-and-save preserves later viewer edits", arguments: [false, true])
+    func reviewCompareAndSaveDetectsConcurrentEdits(changed: Bool) async throws {
+        let store = TranscriptStore()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("richtranscript.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let original = RichTranscript(segments: [.init(start: 0, end: 1, text: "Original", originalText: "Original")])
+        var proposed = original
+        proposed.speakerLabels = [.init(id: "Speaker 1", displayName: "Alice")]
+        try await store.save(original, to: url)
+        if changed {
+            var edited = original
+            edited.segments[0].text = "New viewer edit"
+            try await store.save(edited, to: url)
+            let bytes = try Data(contentsOf: url)
+            await #expect(throws: TranscriptStoreError.self) {
+                try await store.save(proposed, to: url, replacing: original)
+            }
+            #expect(try Data(contentsOf: url) == bytes)
+        } else {
+            try await store.save(proposed, to: url, replacing: original)
+            #expect(try await store.load(from: url) == proposed)
+        }
+    }
 }

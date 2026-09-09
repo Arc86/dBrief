@@ -247,7 +247,7 @@ private struct MiniWaveform: View {
         .animation(.easeOut(duration: 0.1), value: history)
         .onChange(of: level) { _, newLevel in
             history.removeFirst()
-            history.append(newLevel)
+            history.append(AudioLevelMeter.displayLevel(newLevel))
         }
     }
 

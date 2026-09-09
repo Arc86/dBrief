@@ -16,6 +16,9 @@ struct QueueItem: Codable, Sendable, Identifiable {
     /// finishes; user-deferred items wait for the manual "Process Queue" button. Defaults
     /// false for old queue files and for explicit "Queue for later".
     var autoQueued: Bool = false
+    /// Legacy items use the current profile. New items retain their selected
+    /// profile identity even after their temporary automatic route ends.
+    var profileID: UUID? = nil
 
     init(
         id: UUID = UUID(),
@@ -24,7 +27,8 @@ struct QueueItem: Codable, Sendable, Identifiable {
         actionItems: Bool,
         tags: Bool,
         titleWasUserProvided: Bool = false,
-        autoQueued: Bool = false
+        autoQueued: Bool = false,
+        profileID: UUID? = nil
     ) {
         self.id = id
         self.transcribe = transcribe
@@ -33,9 +37,16 @@ struct QueueItem: Codable, Sendable, Identifiable {
         self.tags = tags
         self.titleWasUserProvided = titleWasUserProvided
         self.autoQueued = autoQueued
+        self.profileID = profileID
     }
 
+    private enum CompatibilityKeys: String, CodingKey { case version }
+
     init(from decoder: Decoder) throws {
+        let header = try decoder.container(keyedBy: CompatibilityKeys.self)
+        guard try header.decodeIfPresent(Int.self, forKey: .version) ?? 1 == 1 else {
+            throw CocoaError(.coderReadCorrupt)
+        }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         transcribe = try c.decode(Bool.self, forKey: .transcribe)
@@ -44,12 +55,17 @@ struct QueueItem: Codable, Sendable, Identifiable {
         tags = try c.decode(Bool.self, forKey: .tags)
         titleWasUserProvided = try c.decodeIfPresent(Bool.self, forKey: .titleWasUserProvided) ?? false
         autoQueued = try c.decodeIfPresent(Bool.self, forKey: .autoQueued) ?? false
+        profileID = try c.decodeIfPresent(UUID.self, forKey: .profileID)
     }
 
     /// Legacy queue files have no ID. A deterministic path identity prevents a
     /// new recovery job being created each time that same marker is scanned.
     static func load(from url: URL) throws -> Self {
         let data = try Data(contentsOf: url)
+        return try decode(data, from: url)
+    }
+
+    static func decode(_ data: Data, from url: URL) throws -> Self {
         var item = try JSONDecoder().decode(Self.self, from: data)
         let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if payload?["id"] == nil {

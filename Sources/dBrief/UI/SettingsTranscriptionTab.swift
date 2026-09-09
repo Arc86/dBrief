@@ -603,6 +603,10 @@ struct SettingsTranscriptionTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Text("Hosted providers may enforce a smaller upload limit. Files above the effective limit are split automatically when the endpoint supports it. Native cloud diarization uses a single file.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

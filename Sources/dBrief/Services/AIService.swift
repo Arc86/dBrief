@@ -2,6 +2,9 @@ import Foundation
 import dBriefWire
 
 actor AIService {
+    private nonisolated let session: URLSession
+    init(session: URLSession = .shared) { self.session = session }
+
     /// Upper bound on generated tokens per call. Two opposing pressures:
     /// some servers default to a tiny `max_tokens` (e.g. 16) which truncates the
     /// answer, while strict servers (vLLM) reject when `prompt + max_tokens` exceeds
@@ -13,7 +16,8 @@ actor AIService {
         let response = try await chatCompletion(
             systemPrompt: systemPrompt,
             userMessage: "Summarize this transcription:\n\n\(transcription)",
-            endpoint: endpoint
+            endpoint: endpoint,
+            stage: .summary
         )
         return response
     }
@@ -22,7 +26,8 @@ actor AIService {
         let response = try await chatCompletion(
             systemPrompt: systemPrompt,
             userMessage: "Extract action items from this transcription:\n\n\(transcription)",
-            endpoint: endpoint
+            endpoint: endpoint,
+            stage: .actionItems
         )
         return Self.parseActionItems(from: response)
     }
@@ -55,7 +60,8 @@ actor AIService {
         let response = try await chatCompletion(
             systemPrompt: systemPrompt,
             userMessage: "Analyze this transcription:\n\n\(transcription)",
-            endpoint: endpoint
+            endpoint: endpoint,
+            stage: .tags
         )
 
         return Self.parseTags(from: response)
@@ -109,7 +115,8 @@ actor AIService {
         let response = try await chatCompletion(
             systemPrompt: "Generate a short, descriptive title (3-8 words) for the following transcription. Respond with ONLY the title, no quotes, no punctuation at the end, no explanation. The title should be in the same language as the content.\(langHint)",
             userMessage: transcription,
-            endpoint: endpoint
+            endpoint: endpoint,
+            stage: .title
         )
         return response
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,11 +127,13 @@ actor AIService {
     nonisolated func streamChat(
         systemPrompt: String,
         userMessage: String,
-        endpoint: Endpoint
+        endpoint: Endpoint,
+        stage: PrivacyOperation.Stage = .chat
     ) -> AsyncThrowingStream<String, Error> {
         let isAnthropic = endpoint.provider == .anthropic
         return AsyncThrowingStream { continuation in
             let task = Task {
+                var trace: PrivacyHTTPTrace?
                 do {
                     let request: URLRequest = try {
                         isAnthropic
@@ -132,10 +141,15 @@ actor AIService {
                             : try Self.openAIStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
                     }()
 
-                    let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+                    let (asyncBytes, response, requestTrace) = try await PrivacyHTTPTrace.bytes(for: request,
+                        operation: .init(stage: stage, data: [.text, .metadata],
+                            destination: .remote(url: request.url!, provider: isAnthropic ? .anthropic : .openAICompatible,
+                                model: endpoint.modelName)), session: self.session)
+                    trace = requestTrace
                     guard let httpResponse = response as? HTTPURLResponse,
                           (200...299).contains(httpResponse.statusCode)
                     else {
+                        await trace?.finish(response: response)
                         throw AIServiceError.invalidResponse
                     }
 
@@ -162,8 +176,11 @@ actor AIService {
                             continuation.yield(content)
                         }
                     }
+                    try Task.checkCancellation()
+                    await trace?.finish(response: response)
                     continuation.finish()
                 } catch {
+                    await trace?.finish(error: error)
                     continuation.finish(throwing: error)
                 }
             }
@@ -300,7 +317,7 @@ actor AIService {
         }
         request.timeoutInterval = 10
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIServiceError.invalidResponse
         }
@@ -314,18 +331,20 @@ actor AIService {
     private func chatCompletion(
         systemPrompt: String,
         userMessage: String,
-        endpoint: Endpoint
+        endpoint: Endpoint,
+        stage: PrivacyOperation.Stage
     ) async throws -> String {
         if endpoint.provider == .anthropic {
-            return try await anthropicCompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+            return try await anthropicCompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: stage)
         }
-        return try await openAICompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+        return try await openAICompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: stage)
     }
 
     private func openAICompletion(
         systemPrompt: String,
         userMessage: String,
-        endpoint: Endpoint
+        endpoint: Endpoint,
+        stage: PrivacyOperation.Stage
     ) async throws -> String {
         guard let url = endpoint.chatCompletionsURL else {
             throw AIServiceError.invalidEndpoint
@@ -351,7 +370,9 @@ actor AIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 120
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.data(for: request,
+            operation: .init(stage: stage, data: [.text, .metadata],
+                destination: .remote(url: url, provider: .openAICompatible, model: endpoint.modelName)), session: session)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIServiceError.invalidResponse
@@ -394,7 +415,8 @@ actor AIService {
     private func anthropicCompletion(
         systemPrompt: String,
         userMessage: String,
-        endpoint: Endpoint
+        endpoint: Endpoint,
+        stage: PrivacyOperation.Stage
     ) async throws -> String {
         guard let url = endpoint.messagesURL else {
             throw AIServiceError.invalidEndpoint
@@ -418,7 +440,9 @@ actor AIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 120
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await PrivacyHTTPTrace.data(for: request,
+            operation: .init(stage: stage, data: [.text, .metadata],
+                destination: .remote(url: url, provider: .anthropic, model: endpoint.modelName)), session: session)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIServiceError.invalidResponse
         }

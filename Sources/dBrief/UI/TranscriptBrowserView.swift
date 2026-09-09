@@ -14,6 +14,8 @@ struct TranscriptBrowserView: View {
     @Environment(\.calmAppearance) private var calm
 
     @State private var searchText = ""
+    @State private var statusFilter: LibraryRecordingStatus?
+    @State private var library = RecordingLibraryModel()
 
     /// Whether the meeting-list sidebar is shown. Persisted so the choice
     /// survives relaunch.
@@ -22,11 +24,18 @@ struct TranscriptBrowserView: View {
     /// Whether the "Earlier" group is collapsed. Persisted across relaunches.
     @AppStorage("transcriptSidebarEarlierCollapsed") private var earlierCollapsed = false
 
-    @State private var items: [RecordingBrowserItem] = []
-    /// Tracks the in-flight reload so overlapping reloads (appear + a recording
-    /// finishing close together) can't resolve out of order and leave a stale list.
-    @State private var reloadTask: Task<Void, Never>?
+    private var items: [RecordingBrowserItem] { library.items }
+    private var queueDiscoveryFolders: [URL] {
+        let profileFolders = appSettings.profiles.compactMap { profile -> URL? in
+            guard let path = profile.overrides.recordingFolderPath,
+                  !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return Array(Set(([appSettings.recordingFolderURL] + profileFolders).map(\.standardizedFileURL)))
+            .sorted { $0.path < $1.path }
+    }
     @State private var selection: URL?
+    @State private var selectedWork: LibraryWorkItem?
     /// Stable `Recording` for the current selection. Built once per selection
     /// (not per render) so the detail view's identity and state — including its
     /// chat session — survive while chatting or playing back.
@@ -53,7 +62,20 @@ struct TranscriptBrowserView: View {
         return job.recording
     }
 
-    var body: some View {
+    private var activeWorkIDs: Set<UUID> {
+        Set([appState.processingJob?.id, processingRecording?.id, liveRecording?.id].compactMap { $0 })
+    }
+
+    private var activeAudioURLs: Set<URL> {
+        Set([liveRecording?.fileURL, liveRecording?.finalizedAudioURL,
+             processingRecording?.fileURL, processingRecording?.finalizedAudioURL].compactMap { $0 })
+    }
+
+    private var viewSelection: Binding<LibrarySmartView> {
+        Binding(get: { library.selectedView }, set: { library.selectView($0) })
+    }
+
+    private var navigationShell: some View {
         // Native collapsible + resizable sidebar (system component) hosting the
         // redesigned meeting list. The neon ambient lives on the detail side; the
         // sidebar uses the standard vibrant sidebar material (the navigation glass
@@ -83,6 +105,19 @@ struct TranscriptBrowserView: View {
                 .help("Refresh")
                 .accessibilityLabel("Refresh recordings")
 
+                Menu {
+                    Picker("View", selection: viewSelection) {
+                        ForEach(LibrarySmartView.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    Divider()
+                    Button("Rebuild Search Index") { library.refresh(rebuild: true) }
+                        .disabled(library.isRefreshing)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .help("Library options")
+                .accessibilityLabel("Library options")
+
                 Button { openWindow(id: "settings") } label: {
                     Image(systemName: "gearshape")
                 }
@@ -90,14 +125,71 @@ struct TranscriptBrowserView: View {
                 .accessibilityLabel("Open Settings")
             }
         }
+    }
+
+    private var selectionLifecycle: some View {
+        navigationShell
         .onAppear {
+            library.updateActiveWork(ids: activeWorkIDs, audioURLs: activeAudioURLs)
             reload()
             applyPendingSelection()
             applyPendingLiveSelection()
             rebuildDetailRecording()
         }
-        .onChange(of: selection) { _, _ in
+        .onChange(of: selection) { _, value in
+            if value != nil { selectedWork = nil }
             rebuildDetailRecording()
+        }
+        .onChange(of: searchText) { _, value in
+            selectedWork = nil
+            library.search(text: value, status: statusFilter)
+        }
+        .onChange(of: statusFilter) { _, value in
+            selectedWork = nil
+            library.search(text: searchText, status: value)
+        }
+        .onChange(of: library.selectedView) { _, _ in selectedWork = nil }
+        .onChange(of: activeWorkIDs) { _, _ in updateActiveWork() }
+        .onChange(of: activeAudioURLs) { _, _ in updateActiveWork() }
+        .onChange(of: library.queryRevision) { _, _ in
+            if let selectedWork, library.error == nil {
+                self.selectedWork = library.workMatches.first { $0.id == selectedWork.id }
+            }
+        }
+        .onChange(of: queueDiscoveryFolders) { _, _ in reload() }
+        .onChange(of: library.items) { _, _ in rebuildDetailRecording() }
+        .onChange(of: library.refreshedRevision) { _, _ in
+            if let selection, !items.contains(where: { $0.url == selection }),
+               liveRecording?.fileURL != selection, processingRecording?.fileURL != selection {
+                self.selection = nil
+            }
+            rebuildDetailRecording()
+        }
+    }
+
+    var body: some View {
+        selectionLifecycle
+        .onReceive(NotificationCenter.default.publisher(for: .recordingLibraryChanged).receive(on: RunLoop.main)) { _ in
+            library.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).receive(on: RunLoop.main)) { _ in
+            library.refreshTimeContext()
+            library.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            library.refreshTimeContext()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange).receive(on: RunLoop.main)) { _ in
+            library.refreshTimeContext()
+        }
+        .task(id: appSettings.effectiveRecordingFolderURL) {
+            library.open(appSettings.effectiveRecordingFolderURL, configuredQueueFolders: queueDiscoveryFolders)
+            // Discover external sidecar edits and file moves while this window is
+            // open. Unchanged files are only stat'ed; their contents stay cached.
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                library.refresh()
+            }
         }
         .onChange(of: appState.pendingTranscriptSelectionURL) { _, _ in
             applyPendingSelection()
@@ -122,7 +214,14 @@ struct TranscriptBrowserView: View {
 
     @ViewBuilder
     private var mainPane: some View {
-        if let recording = detailRecording {
+        if let work = selectedWork {
+            LibraryWorkDetailView(item: work,
+                disabled: !recordingManager.canPerformLibraryWork || library.isQuerying || library.error != nil) {
+                try await recordingManager.performLibraryWork(work)
+                library.refresh()
+            }
+            .id(work.id)
+        } else if let recording = detailRecording {
             TranscriptDetailView(
                 recording: recording,
                 onDeleted: { handleDeleted(recording.fileURL) }
@@ -138,10 +237,9 @@ struct TranscriptBrowserView: View {
 
     // MARK: - Sidebar
 
-    /// Items matching the search box (by title), unfiltered when empty.
+    /// SQL full-text results, queried without decoding canonical sidecars.
     private var filteredItems: [RecordingBrowserItem] {
-        guard !searchText.isEmpty else { return items }
-        return items.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        library.matches
     }
 
     private var thisWeekItems: [RecordingBrowserItem] {
@@ -161,51 +259,47 @@ struct TranscriptBrowserView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
 
-            if items.isEmpty && liveRecording == nil && processingRecording == nil {
-                Spacer()
-                ContentUnavailableView(
-                    "No Recordings",
-                    systemImage: "waveform.slash",
-                    description: Text("Recordings you capture will appear here."))
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        if liveRecording != nil || processingRecording != nil {
-                            sectionLabel("In Progress")
-                            if let live = liveRecording {
-                                LiveSidebarRow(
-                                    recording: live,
-                                    isProcessing: false,
-                                    isSelected: selection == live.fileURL,
-                                    onTap: { selection = live.fileURL })
-                            }
-                            if let proc = processingRecording {
-                                LiveSidebarRow(
-                                    recording: proc,
-                                    isProcessing: true,
-                                    isSelected: selection == proc.fileURL,
-                                    onTap: { selection = proc.fileURL })
-                            }
+            TranscriptLibraryFilters(view: viewSelection, status: $statusFilter,
+                                     isLoading: library.showsInitialLoading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            if let scope = scopeDescription {
+                Text(scope).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.bottom, 8)
+            }
+            if let error = library.error {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(error).font(.caption)
+                    Button("Retry") { library.refresh() }
+                }
+                .padding(12)
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if liveRecording != nil || processingRecording != nil {
+                        sectionLabel("In Progress")
+                        if let live = liveRecording {
+                            LiveSidebarRow(recording: live, isProcessing: false,
+                                isSelected: selection == live.fileURL,
+                                onTap: { selectRecording(live.fileURL) })
                         }
-                        if !thisWeekItems.isEmpty {
-                            sectionLabel("This week", count: thisWeekItems.count)
-                            ForEach(thisWeekItems) { row(for: $0) }
-                        }
-                        if !earlierItems.isEmpty {
-                            sectionLabel("Earlier", count: earlierItems.count,
-                                         collapsed: earlierCollapsed) {
-                                withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
-                            }
-                            if !earlierCollapsed {
-                                ForEach(earlierItems) { row(for: $0) }
-                            }
+                        if let proc = processingRecording {
+                            LiveSidebarRow(recording: proc, isProcessing: true,
+                                isSelected: selection == proc.fileURL,
+                                onTap: { selectRecording(proc.fileURL) })
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
-                    .overlayScrollers()
+                    smartResults
+                    if !library.hasMatches && !library.showsInitialLoading && library.error == nil {
+                        Text(searchText.isEmpty ? emptyDescription : "No matches for this search.")
+                            .font(.callout).foregroundStyle(.secondary).padding()
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+                .overlayScrollers()
             }
 
             recordButton
@@ -213,11 +307,96 @@ struct TranscriptBrowserView: View {
         }
     }
 
+    private var scopeDescription: String? {
+        switch library.selectedView {
+        case .failedJobs, .queuedInterrupted: "Queued and recovery work from all folders."
+        case .recentlyProcessed: "Successfully processed in the last seven days."
+        case .peopleThisMonth: "People in this month's recordings in the selected folder."
+        case .unfinishedActions: "Open action items in the selected folder."
+        case .all: nil
+        }
+    }
+
+    private var emptyDescription: String {
+        switch library.selectedView {
+        case .all: "No recordings in this folder."
+        case .unfinishedActions: "No unfinished actions."
+        case .failedJobs: "No failed jobs."
+        case .queuedInterrupted: "No queued or interrupted work."
+        case .recentlyProcessed: "No recordings processed in the last seven days."
+        case .peopleThisMonth: "No named people in this month's recordings."
+        }
+    }
+
+    @ViewBuilder private var smartResults: some View {
+        if library.selectedView.includesRecoveryWork {
+            ForEach(library.workMatches) { item in
+                Button {
+                    selection = nil
+                    detailRecording = nil
+                    selectedWork = item
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title).font(.headline).lineLimit(2)
+                        Text(item.status).font(.caption).foregroundStyle(.secondary)
+                        Text(item.date, style: .date).font(.caption).foregroundStyle(.secondary)
+                        if let audio = item.audioURL {
+                            Text(audio.deletingLastPathComponent().path)
+                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(selectedWork?.id == item.id ? Color.accentColor.opacity(0.15) : .clear,
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+                .accessibilityValue("\(item.status), \(item.date.formatted(date: .abbreviated, time: .shortened))")
+                .accessibilityAddTraits(selectedWork?.id == item.id ? .isSelected : [])
+            }
+        } else if library.selectedView == .peopleThisMonth {
+            ForEach(library.peopleGroups) { group in
+                DisclosureGroup {
+                    ForEach(group.recordings) { row(for: $0) }
+                } label: {
+                    Text("\(group.person.name) (\(group.recordings.count))")
+                        .font(.headline)
+                }
+                .padding(.vertical, 6)
+            }
+        } else if library.selectedView == .all {
+            if !thisWeekItems.isEmpty {
+                sectionLabel("This week", count: thisWeekItems.count)
+                ForEach(thisWeekItems) { row(for: $0) }
+            }
+            if !earlierItems.isEmpty {
+                sectionLabel("Earlier", count: earlierItems.count, collapsed: earlierCollapsed) {
+                    withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
+                }
+                if !earlierCollapsed { ForEach(earlierItems) { row(for: $0) } }
+            }
+        } else {
+            // Preserve SQL processing-time ordering for Recently Processed.
+            ForEach(filteredItems) { row(for: $0) }
+        }
+    }
+
+    private func selectRecording(_ url: URL) {
+        selectedWork = nil
+        selection = url
+    }
+
+    private func updateActiveWork() {
+        library.updateActiveWork(ids: activeWorkIDs, audioURLs: activeAudioURLs)
+    }
+
     private func row(for item: RecordingBrowserItem) -> some View {
         SidebarRecordingRow(
             item: item,
             isSelected: selection == item.url,
-            onTap: { selection = item.url })
+            onTap: { selectRecording(item.url) })
     }
 
     /// Section header for the meeting list. Passing `collapsed`/`onToggle` makes it
@@ -268,7 +447,7 @@ struct TranscriptBrowserView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12))
                 .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-            TextField("Search meetings", text: $searchText)
+            TextField("Search recordings and transcripts", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
         }
@@ -308,32 +487,17 @@ struct TranscriptBrowserView: View {
     // MARK: - Helpers
 
     private func reload() {
-        // Scan the recordings folder + decode metadata sidecars off the main
-        // actor; the previously-loaded `items` stay visible until the new list
-        // arrives (no flash to empty). Runs on appear and when a recording
-        // finishes, so it must never block the UI.
-        let folder = appSettings.effectiveRecordingFolderURL
-        reloadTask?.cancel()
-        reloadTask = Task {
-            let loaded = await Task.detached(priority: .userInitiated) {
-                RecordingBrowserStore.load(in: folder)
-            }.value
-            if Task.isCancelled { return }
-            items = loaded
-            if let selection, !items.contains(where: { $0.url == selection }) {
-                self.selection = nil
-            }
-        }
+        library.open(appSettings.effectiveRecordingFolderURL, configuredQueueFolders: queueDiscoveryFolders)
     }
 
     private func rebuildDetailRecording() {
         // Selecting a pinned in-progress entry shows that recording object directly.
         if let live = liveRecording, selection == live.fileURL {
-            if detailRecording?.fileURL != live.fileURL { detailRecording = live }
+            if detailRecording !== live { detailRecording = live }
             return
         }
         if let proc = processingRecording, selection == proc.fileURL {
-            if detailRecording?.fileURL != proc.fileURL { detailRecording = proc }
+            if detailRecording !== proc { detailRecording = proc }
             return
         }
         if let item = selectedItem {
@@ -362,7 +526,7 @@ struct TranscriptBrowserView: View {
     }
 
     private func handleDeleted(_ url: URL) {
-        items.removeAll { $0.url == url }
+        library.refresh()
         if selection == url { selection = nil }
         if detailRecording?.fileURL == url { detailRecording = nil }
     }
@@ -437,6 +601,9 @@ private struct SidebarRecordingRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .accessibilityLabel(item.title)
+        .accessibilityValue("\(item.statusText), \(item.date.formatted(date: .abbreviated, time: .shortened)), \(item.formattedDuration)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var caption: some View {
@@ -449,6 +616,8 @@ private struct SidebarRecordingRow: View {
                 } else {
                     Circle().fill(sidebarStatusGreen).frame(width: 5, height: 5)
                 }
+            } else if !item.statusText.isEmpty {
+                Text(item.statusText).foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 11).monospaced())

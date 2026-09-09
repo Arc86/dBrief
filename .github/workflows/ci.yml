@@ -30,7 +30,9 @@ jobs:
           test "$(uname -m)" = "arm64"
 
       - name: Run test suite
-        run: swift test
+        run: |
+          python3 scripts/test_beta_build.py
+          swift test
 
       - name: Assemble beta app
         run: make beta CODESIGN_IDENTITY=-
@@ -40,6 +42,7 @@ jobs:
           test -d dBrief-Beta.app
           test ! -e dBrief.app
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dBrief-Beta.app/Contents/Info.plist)" = "com.dbrief.app.beta"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' dBrief-Beta.app/Contents/Info.plist)" = "$(cat packaging/beta-build-number)"
           if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' dBrief-Beta.app/Contents/Info.plist >/dev/null 2>&1; then
             echo "Beta bundle must not contain the production Sparkle feed URL." >&2
             exit 1

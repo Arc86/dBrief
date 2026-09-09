@@ -249,7 +249,7 @@ struct LiveWaveStrip: View {
         // at a steady level; scaled by the live peak with a small floor.
         let phase = Double(i) / Double(barCount) * .pi * 4
         let profile = (sin(phase) * 0.5 + 0.5) * 0.6 + (sin(phase * 0.5) * 0.5 + 0.5) * 0.4
-        let lvl = CGFloat(max(0.06, min(1, level)))
+        let lvl = CGFloat(AudioLevelMeter.displayLevel(level))
         let h = (0.18 + 0.82 * CGFloat(profile) * lvl) * maxH
         return max(3, h)
     }

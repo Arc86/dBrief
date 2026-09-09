@@ -13,6 +13,7 @@ actor IntegrationDeliveryCoordinator {
         destinations: Set<IntegrationDestination>? = nil,
         allowUncertainRetry: Bool = false,
         acceptConfigurationChange: Bool = false,
+        validateOwnership: @Sendable () async throws -> Void = {},
         send: @Sendable (IntegrationDeliveryBatch, IntegrationDeliveryBatch.Delivery) async -> IntegrationDispatchResult
     ) async throws -> IntegrationDeliveryBatch {
         guard active.insert(id).inserted else { throw IntegrationDeliveryStore.StoreError.busy }
@@ -22,6 +23,8 @@ actor IntegrationDeliveryCoordinator {
         }
         try batch.validate()
         for index in batch.deliveries.indices {
+            try Task.checkCancellation()
+            try await validateOwnership()
             try Task.checkCancellation()
             let entry = batch.deliveries[index]
             guard !entry.isComplete,
@@ -40,6 +43,8 @@ actor IntegrationDeliveryCoordinator {
             batch.deliveries[index].attempts += 1
             batch.deliveries[index].updatedAt = Date()
             try await store.save(batch)
+            try Task.checkCancellation()
+            try await validateOwnership()
             try Task.checkCancellation()
             let result = await send(batch, batch.deliveries[index])
             guard result.destination == entry.destination else {

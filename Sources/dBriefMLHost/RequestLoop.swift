@@ -56,60 +56,69 @@ final class RequestRouter: Sendable {
             emit(EventEnvelope(id: id, channel: channel, event: .token(token)))
         }
 
-        do {
-            switch envelope.request {
-            case let .transcribe(path, prompt, config, safeMode, unloadAfter):
-                let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
-                send(.transcriptionResult(r)); send(.finished)
-            case let .diarize(path):
-                send(.diarizeResult(try await backend.diarize(path: path))); send(.finished)
-            case let .diarizeWithEmbeddings(path):
-                let r = try await backend.diarizeWithEmbeddings(path: path)
-                send(.diarizeWithEmbeddingsResult(turns: r.turns, embeddings: r.embeddings)); send(.finished)
-            case let .analyze(text, lang, vocab, guidance):
-                send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance))); send(.finished)
-            case let .analyzeStream(text, lang, vocab, guidance):
-                try await backend.analyzeStream(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance, emitToken: emitToken)
-                send(.finished)
-            case let .chatStream(system, user):
-                try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)
-                send(.finished)
-            case let .parakeetTranscribe(path, variant, diarize):
-                send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
-            case let .synthesizeSpeech(text, outputPath, voice, language, instruction, model, engine):
-                let r = try await backend.synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
-                send(.speechResult(r)); send(.finished)
-            case .prepareModels:
-                await backend.prepareModels(); send(.voidResult); send(.finished)
-            case let .downloadWhisper(config):
-                try await backend.downloadWhisper(config: config); send(.voidResult); send(.finished)
-            case let .prewarmWhisper(config, refresh):
-                try await backend.prewarmWhisper(config: config, refresh: refresh); send(.voidResult); send(.finished)
-            case .downloadLLM:
-                try await backend.downloadLLM(); send(.voidResult); send(.finished)
-            case let .downloadParakeet(variant):
-                try await backend.downloadParakeet(variant: variant); send(.voidResult); send(.finished)
-            case let .isWhisperCached(name):
-                send(.boolResult(await backend.isWhisperCached(name: name))); send(.finished)
-            case .isLLMCached:
-                send(.boolResult(await backend.isLLMCached())); send(.finished)
-            case .isParakeetCached:
-                send(.boolResult(await backend.isParakeetCached())); send(.finished)
-            case let .fetchWhisperModels(repo):
-                send(.stringsResult(try await backend.fetchWhisperModels(repo: repo))); send(.finished)
-            case .purgeModels: try await backend.purgeModels(); send(.voidResult); send(.finished)
-            case .purgeWhisper: try await backend.purgeWhisper(); send(.voidResult); send(.finished)
-            case .purgeSpeakerKit: try await backend.purgeSpeakerKit(); send(.voidResult); send(.finished)
-            case .purgeQwen: try await backend.purgeQwen(); send(.voidResult); send(.finished)
-            case .purgeParakeet: try await backend.purgeParakeet(); send(.voidResult); send(.finished)
-            case .memoryPressurePurge: await backend.memoryPressurePurge(); send(.voidResult); send(.finished)
-            case .forceUnload: await backend.forceUnload(); send(.voidResult); send(.finished)
-            case .cancel: break // handled by RequestLoop task cancellation, not the router
+        await MLProgress.$sink.withValue({ state in
+            emit(EventEnvelope(id: id, channel: channel, event: .state(state)))
+        }) {
+            await MLPrivacyTrace.$sink.withValue({ event in
+                emit(EventEnvelope(id: id, channel: channel, event: .privacy(event)))
+            }) {
+                send(.privacy(.supported(version: 1)))
+                do {
+                    switch envelope.request {
+                    case let .transcribe(path, prompt, config, safeMode, unloadAfter):
+                        let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
+                        send(.transcriptionResult(r)); send(.finished)
+                    case let .diarize(path):
+                        send(.diarizeResult(try await backend.diarize(path: path))); send(.finished)
+                    case let .diarizeWithEmbeddings(path):
+                        let r = try await backend.diarizeWithEmbeddings(path: path)
+                        send(.diarizeWithEmbeddingsResult(turns: r.turns, embeddings: r.embeddings)); send(.finished)
+                    case let .analyze(text, lang, vocab, guidance):
+                        send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance))); send(.finished)
+                    case let .analyzeStream(text, lang, vocab, guidance):
+                        try await backend.analyzeStream(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance, emitToken: emitToken)
+                        send(.finished)
+                    case let .chatStream(system, user):
+                        try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)
+                        send(.finished)
+                    case let .parakeetTranscribe(path, variant, diarize):
+                        send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
+                    case let .synthesizeSpeech(text, outputPath, voice, language, instruction, model, engine):
+                        let r = try await backend.synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
+                        send(.speechResult(r)); send(.finished)
+                    case .prepareModels:
+                        await backend.prepareModels(); send(.voidResult); send(.finished)
+                    case let .downloadWhisper(config):
+                        try await backend.downloadWhisper(config: config); send(.voidResult); send(.finished)
+                    case let .prewarmWhisper(config, refresh):
+                        try await backend.prewarmWhisper(config: config, refresh: refresh); send(.voidResult); send(.finished)
+                    case .downloadLLM:
+                        try await backend.downloadLLM(); send(.voidResult); send(.finished)
+                    case let .downloadParakeet(variant):
+                        try await backend.downloadParakeet(variant: variant); send(.voidResult); send(.finished)
+                    case let .isWhisperCached(name):
+                        send(.boolResult(await backend.isWhisperCached(name: name))); send(.finished)
+                    case .isLLMCached:
+                        send(.boolResult(await backend.isLLMCached())); send(.finished)
+                    case .isParakeetCached:
+                        send(.boolResult(await backend.isParakeetCached())); send(.finished)
+                    case let .fetchWhisperModels(repo):
+                        send(.stringsResult(try await backend.fetchWhisperModels(repo: repo))); send(.finished)
+                    case .purgeModels: try await backend.purgeModels(); send(.voidResult); send(.finished)
+                    case .purgeWhisper: try await backend.purgeWhisper(); send(.voidResult); send(.finished)
+                    case .purgeSpeakerKit: try await backend.purgeSpeakerKit(); send(.voidResult); send(.finished)
+                    case .purgeQwen: try await backend.purgeQwen(); send(.voidResult); send(.finished)
+                    case .purgeParakeet: try await backend.purgeParakeet(); send(.voidResult); send(.finished)
+                    case .memoryPressurePurge: await backend.memoryPressurePurge(); send(.voidResult); send(.finished)
+                    case .forceUnload: await backend.forceUnload(); send(.voidResult); send(.finished)
+                    case .cancel: break // handled by RequestLoop task cancellation, not the router
+                    }
+                } catch let w as WireError {
+                    send(.error(w))
+                } catch {
+                    send(.error(WireError(kind: .generic, message: error.localizedDescription)))
+                }
             }
-        } catch let w as WireError {
-            send(.error(w))
-        } catch {
-            send(.error(WireError(kind: .generic, message: error.localizedDescription)))
         }
     }
 }

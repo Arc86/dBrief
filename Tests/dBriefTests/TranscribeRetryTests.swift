@@ -47,8 +47,8 @@ private func withTimeout<T: Sendable>(seconds: Double, _ op: @escaping @Sendable
 
     /// Reproduces the field hang: a successful first transcription followed by a
     /// second that crashes once and recovers in safe mode — while a per-op task
-    /// consumes the shared `stateStream` each time (as `withPluginStepAdapter`
-    /// does). The retry result must still come back; if it hangs, the UI step
+    /// consumes the shared `stateStream` each time (as channel-level settings
+    /// observers can do). The retry result must still come back; if it hangs, the UI step
     /// never completes (the processing job stays stuck).
     @Test func secondOpCrashesAndStillReturnsWhileConsumingStateStream() async throws {
         let conn = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
@@ -59,7 +59,7 @@ private func withTimeout<T: Sendable>(seconds: Double, _ op: @escaping @Sendable
         let svc = LocalAIPluginService(connection: conn)
 
         // One transcribe op with a concurrent state-stream consumer, cancelled
-        // after the op — mirrors RecordingManager.withPluginStepAdapter.
+        // after the op — verifies legacy channel observers survive re-subscription.
         let counter = StateCounter()
         let runOp: @Sendable () async throws -> String = {
             let stateTask = Task { for await _ in svc.stateStream { await counter.bump() } }
