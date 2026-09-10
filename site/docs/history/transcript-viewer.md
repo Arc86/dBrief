@@ -94,3 +94,9 @@ Search covers the transcript text of a finished recording. It isn't available fo
 ## Where it's saved
 
 Speaker names and the rich transcript are stored in a `.richtranscript.json` file next to the recording's Markdown export, so your edits persist between sessions. The AI analysis (summary, action items, tags, sentiment) is stored alongside it in an `.insights.json` file.
+
+## Search and reprocess the library
+
+The sidebar's [library search and saved views](recording-history.md) help you find recordings across your whole collection. This is separate from **⌘F**, which searches within the open transcript.
+
+Use **Reprocess** for [retranscription, AI analysis, or speaker detection](reprocessing.md), and **Privacy receipt** in the recording menu to review [processing and delivery evidence](../reference/privacy-receipts.md).

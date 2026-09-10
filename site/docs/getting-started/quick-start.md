@@ -1,6 +1,6 @@
 # Quick Start
 
-Make your first recording and get a transcript in under 5 minutes.
+Make your first recording and get a transcript. Allow extra time for first-use model downloads.
 
 ## What you need
 
@@ -25,7 +25,7 @@ Click **Stop** (or press **⌃⌥⌘R** again). A sheet appears asking what you'
 
 ## Step 4: Transcribe
 
-Make sure **Transcribe** is checked, then click **Done**. dBrief processes the audio and shows you the results.
+Make sure **Transcribe** is checked. Enable AI analysis and the outputs you want if you also need a summary, action items, or tags, then click **Done**. dBrief processes the audio and shows you the results.
 
 ## What you get
 

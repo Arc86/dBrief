@@ -47,7 +47,7 @@
       <div class="hero-copy">
         <div class="eyebrow">
           <span class="dot"></span>
-          <span>Local-first · macOS 14+ · Open source</span>
+          <span>Local-first · macOS 14+ · Apple Silicon · Open source</span>
         </div>
         <h1 class="title">
           Your meetings,<br />
@@ -60,7 +60,7 @@
         </p>
 
         <div class="cta-row">
-          <a id="download" class="btn primary" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">
+          <a id="download" class="btn primary" href="https://github.com/Arc86/dBrief/releases/latest" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
             <span>Get dBrief free</span>
           </a>
@@ -96,7 +96,7 @@
         </div>
         <div class="floating-card card-2">
           <div class="card-line"><span class="tag tag-summary">Summary</span> Q4 plan focuses on local AI and second-brain workflows.</div>
-          <div class="card-line"><span class="tag tag-action">Action</span> Jesper ships dBrief v1.0 by end of sprint.</div>
+          <div class="card-line"><span class="tag tag-action">Action</span> Jesper shares the updated plan by Friday.</div>
           <div class="card-line"><span class="tag tag-tag">Tag</span> product · launch</div>
         </div>
       </div>
@@ -107,7 +107,7 @@
       <div class="section-head">
         <span class="kicker">How it works</span>
         <h2 class="section-title">Hit record.<br/>Walk out with the brief.</h2>
-        <p class="section-sub">No setup, no bots in your calls, no "I'll review the recording later." You talk. dBrief handles the rest.</p>
+        <p class="section-sub">Choose your engines, grant recording permissions, and keep bots out of your calls. Then record your meeting and let dBrief turn it into notes.</p>
       </div>
 
       <div class="steps">
@@ -121,8 +121,8 @@
           <ul class="step-bullets">
             <li><strong>Ctrl + Option + Cmd + R</strong> from anywhere on your Mac</li>
             <li>Captures mic <em>and</em> system audio &mdash; both sides of the call</li>
-            <li>Auto-starts when Zoom, Meet, Teams, Slack or Discord rings in</li>
-            <li>Chosen specifically to avoid Chrome's hard-refresh and Slack's mark-as-read</li>
+            <li>Optional call detection for Zoom, Meet, Teams, Slack and Discord</li>
+            <li>Record the next meeting while the last one processes</li>
           </ul>
         </article>
 
@@ -135,7 +135,7 @@
           <p class="step-lead">Minutes, not hours. On your Mac, not in a stranger's data center.</p>
           <ul class="step-bullets">
             <li>Apple Speech, on-device Whisper, or Parakeet TDT</li>
-            <li>Speakers labeled, word-level timestamps, 15+ languages</li>
+            <li>Speaker labels and timestamps, with language support depending on your engine</li>
             <li>Paste a YouTube link &mdash; skip the meeting entirely</li>
           </ul>
         </article>
@@ -152,6 +152,7 @@
             <li>Chat with the transcript &mdash; ask "what did I agree to?" and get the answer</li>
             <li>Title and attendees pulled straight from your calendar</li>
             <li>Clean Markdown lands in Obsidian, Apple Notes, or wherever</li>
+            <li>Search the full library, resume interrupted work, and reprocess saved recordings</li>
           </ul>
         </article>
       </div>
@@ -161,13 +162,13 @@
     <section id="privacy" class="section section-split">
       <div class="split-copy">
         <span class="kicker">Private by default</span>
-        <h2 class="section-title">Your meetings<br/>never leave your Mac.</h2>
+        <h2 class="section-title">Your meetings.<br/>Your choice of where they go.</h2>
         <p class="section-sub">No dBrief cloud. No account. No "trust us." The transcript is yours, the audio is yours, and the AI can be too &mdash; running on Apple Silicon, or pointed at a model you control.</p>
         <ul class="check-list">
           <li><span class="check"></span> Transcribe with Apple Speech, Whisper or Parakeet &mdash; all on-device</li>
           <li><span class="check"></span> Summarize with Apple Intelligence or local Gemma 4</li>
-          <li><span class="check"></span> Want a remote model? Bring your own key &mdash; we never see it</li>
-          <li><span class="check"></span> Zero telemetry. Zero analytics. Zero dark patterns.</li>
+          <li><span class="check"></span> Remote endpoints, cloud CLI tools, and integrations send content to the destinations you choose</li>
+          <li><span class="check"></span> Review processing and delivery evidence in each recording’s privacy receipt</li>
         </ul>
       </div>
       <div class="split-visual">
@@ -196,7 +197,7 @@
           </div>
           <div class="device-foot">
             <span class="lock">&#128274;</span>
-            <span>Nothing uploaded. Ever.</span>
+            <span>Meeting content stays local with this setup.</span>
           </div>
         </div>
       </div>
@@ -217,10 +218,10 @@
         <div class="featured-body">
           <div class="featured-tag">
             <span class="dot d-live"></span>
-            <span>New for launch</span>
+            <span>Calendar matching</span>
           </div>
           <h3>Apple Calendar (iCal) integration</h3>
-          <p>dBrief reads your calendar event the moment you start recording &mdash; so the meeting title, attendees, and time are already filled in. No typing, no guessing, no "Untitled meeting 47."</p>
+          <p>When you stop recording, dBrief matches the recording to your selected calendars &mdash; so the meeting title, attendees, and time are already filled in. No typing, no guessing, no "Untitled meeting 47."</p>
         </div>
       </div>
 
@@ -246,8 +247,8 @@
     <!-- CTA -->
     <section class="cta">
       <h2 class="cta-title">Stop taking notes.<br/><span class="gradient-text">Start taking meetings.</span></h2>
-      <p class="cta-sub">Free, open source, and ready in under a minute. macOS 14+, Apple Silicon recommended.</p>
-      <a class="btn primary big" href="https://github.com/Arc86/dBrief" target="_blank" rel="noopener">
+      <p class="cta-sub">Free and open source. The signed, notarized download requires macOS 14+ and Apple Silicon. Local models download on first use.</p>
+      <a class="btn primary big" href="https://github.com/Arc86/dBrief/releases/latest" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         <span>Get dBrief on GitHub</span>
       </a>

@@ -903,3 +903,13 @@ a { color: inherit; text-decoration: none; }
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Respect the system motion preference for decorative animations and navigation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}

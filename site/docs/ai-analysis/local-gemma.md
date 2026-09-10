@@ -13,7 +13,7 @@ Gemma 4 E4B Local runs a Gemma language model directly on your Mac using Apple's
 The first time you use Gemma 4 E4B Local, dBrief downloads the model. This happens once and the model is stored at:
 
 ```
-~/Library/Application Support/dBrief/LocalAIPlugin/MLX/
+~/Library/Application Support/com.dbrief.app/LocalAIPlugin/MLX/
 ```
 
 You need a working internet connection for the initial download. After that, analysis works fully offline.

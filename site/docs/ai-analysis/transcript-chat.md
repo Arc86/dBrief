@@ -8,11 +8,11 @@ Transcript Chat lets you have a back-and-forth conversation about a recording �
 
 ## Opening the chat
 
-Open a recording in the [transcript viewer](../history/transcript-viewer.md), then click the **chat** button (speech-bubble icon) in the toolbar. This swaps the detail pane from the transcript to the chat; click it again to switch back. The transcript stays loaded behind it, and each recording keeps its own conversation.
+Open a recording in the [transcript viewer](../history/transcript-viewer.md), then click the **chat** button (speech-bubble icon) in the toolbar. This opens a resizable side panel beside the summary or transcript; click it again to close it. The panel remembers its width, and each recording keeps its own conversation.
 
 Your conversation is **saved to disk** alongside the recording, so it's still there the next time you open dBrief — not just while the app is running. Clearing the chat removes the saved copy, and deleting a recording (or letting [auto-delete](../reference/file-locations.md) clean it up) removes its chat too.
 
-While a recording is still in progress with [Live Transcription](../transcription/live-transcription.md) on, the chat opens as a **side panel** next to the live transcript instead of replacing it — and the conversation carries over to the finished recording when you stop.
+While a recording is still in progress with [Live Transcription](../transcription/live-transcription.md) on, the chat also opens as a **side panel** next to the live transcript — and the conversation carries over to the finished recording when you stop.
 
 ## Example prompts
 
@@ -36,8 +36,13 @@ Transcript Chat uses your currently selected AI engine:
 - **Gemma 4 E4B Local** — on-device, streams the response
 - **Apple Intelligence** — on-device (macOS 26+, Apple Silicon)
 - **Remote Endpoint** — your OpenAI-compatible server
+- **Local CLI** — chat uses the separate **Chat fallback engine** in **Settings → AI Analysis**. Choose Apple Intelligence, local Gemma, or a Remote Endpoint; endpoint settings appear when the fallback needs them.
 
 Responses stream in as they're generated, and the conversation keeps its full context across turns.
+
+## Stop a response
+
+Click **Stop** or press **Esc** while a reply is streaming to cancel generation without clearing the conversation. Repetitive or excessively long responses also stop automatically with a note explaining why.
 
 ## Privacy
 

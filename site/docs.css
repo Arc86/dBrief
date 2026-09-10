@@ -406,3 +406,6 @@ body.docs-body {
   .docs-content { padding: 24px 0 80px; }
   .docs-pager { grid-template-columns: 1fr; }
 }
+
+/* Keep linked sections clear of the fixed header. */
+.prose :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 100px; }

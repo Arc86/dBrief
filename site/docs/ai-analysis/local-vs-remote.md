@@ -16,7 +16,9 @@ This choice applies in two places, and you can mix them — for example, transcr
 | **Speed** | Depends on your Mac | Fast, even on older Macs |
 | **Cost** | Free after download | Often pay-per-use (cloud APIs) |
 | **Internet** | Only for first-time model download | Required for every recording |
-| **Disk space** | Models stored locally | None used |
+| **Disk space** | Models plus recordings and results | Recordings and results; no local AI model |
+
+These descriptions cover the selected engine. Integrations and CLI tools have their own data flows; see [Privacy Receipts](../reference/privacy-receipts.md) to review evidence for a recording.
 
 ## Local AI
 
@@ -44,7 +46,7 @@ Remote engines send your transcript (and, for transcription, your audio) to a se
 
 - **Highest quality** — cloud providers offer large, state-of-the-art models that typically produce the most accurate transcripts and the most polished summaries.
 - **Fast on any Mac** — the heavy work happens on the server, so even an older or low-memory Mac gets quick results.
-- **No local download or disk use** — nothing is stored on your machine, and your Mac stays free for other work.
+- **No local AI model download** — the server runs the model. Recordings, transcripts, and results still use storage on your Mac.
 
 **Limitations**
 

@@ -10,7 +10,7 @@ When you stop a recording, the post-recording sheet shows a profile selector. Ch
 
 ## Setting a default profile
 
-In **Settings → Profiles**, you can set any profile as your default. The default is pre-selected in the post-recording sheet.
+In **Settings → Profiles**, you can set any profile as your default. The default is used when no automatic matching rule selects another profile.
 
 ## Editing a profile
 
@@ -33,3 +33,13 @@ When a recording uses a profile, settings resolve in this order:
 2. Global app setting
 
 So if a profile doesn't override the AI engine, the globally selected AI engine is used.
+
+## Automatic matching
+
+Configure matching rules in **Settings → Profiles** to select profiles based on the recording title, call app, calendar details, or attendee email domain. The post-recording sheet shows why a profile matched. You can override the selection manually before continuing.
+
+## Choose what happens after recording
+
+Each profile can keep the review screen open (the default), process automatically, or queue automatically. Automatic actions have a cancellable ten-second countdown, giving you time to review the title, participants, and selected profile.
+
+Queued work is managed in [Queue & Recovery](../history/queue-recovery.md).

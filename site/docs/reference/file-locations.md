@@ -17,19 +17,20 @@ Recordings are saved as **M4A / AAC**. You can change the output folder in **Set
 
 ## Markdown exports
 
-Markdown files are saved in the same dated subfolder as the audio file, unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
+Markdown files are saved in your configured transcription folder, unless you've configured an Obsidian vault folder — in which case they go there instead. Small JSON sidecars are written next to the Markdown file: `.richtranscript.json` (speaker names and word timing for the [transcript viewer](../history/transcript-viewer.md)), `.insights.json` (the AI summary, action items, and tags), and `.chat.json` (your [Transcript Chat](../ai-analysis/transcript-chat.md) conversation). They travel with the recording and are removed when it's deleted.
 
 ## AI and transcription models
 
 On-device models are stored in Application Support:
 
 ```
-~/Library/Application Support/dBrief/LocalAIPlugin/
+~/Library/Application Support/com.dbrief.app/LocalAIPlugin/
 ├── WhisperKit/    ← Local Whisper model (size depends on chosen model)
 ├── SpeakerKit/    ← Speaker diarization model
-├── FluidAudio/    ← Parakeet model (~1.5–1.8 GB)
 └── MLX/           ← Gemma 4 E4B model
 ```
+
+Parakeet and other FluidAudio models use the shared `~/Library/Application Support/FluidAudio/Models/` cache. Beta builds use `com.dbrief.app.beta` for their own app data and preferences, while the FluidAudio cache is shared.
 
 To remove models, use the **Purge** options in **Settings → Transcription** and **Settings → AI Analysis** (Power User Mode for the Gemma model).
 
@@ -40,6 +41,8 @@ dBrief can automatically remove old files so your recordings folder doesn't grow
 - **Auto-delete recordings** — removes audio files older than the chosen age; transcripts and notes are kept.
 - **Auto-delete transcripts** — removes transcript, insights, and Markdown note files older than the chosen age; audio recordings are kept.
 
+Cleanup only removes files recognized as dBrief outputs; unrelated files in shared folders are left alone.
+
 Both are **off by default**. When enabled, you pick an age (1, 7, 14, 30, 60, 90, 180, or 365 days — 30 by default), and each file is judged by its own creation date. Cleanup runs automatically when dBrief launches, and you can trigger it immediately with **Run Cleanup Now**. Deletion is permanent and can't be undone.
 
 ## Settings
@@ -48,14 +51,15 @@ App preferences are stored in `UserDefaults` under the `com.dbrief.app` domain. 
 
 ## API keys and tokens
 
-Integration tokens (Notion, Evernote, etc.) are stored securely in the macOS Keychain under `com.dbrief.app`.
+Remote endpoint API keys, integration tokens, and webhook credentials are stored securely in the macOS Keychain under `com.dbrief.app`.
 
 ## Uninstalling completely
 
 To remove everything dBrief has written to your Mac:
 
 1. Delete `dBrief.app` from `/Applications`
-2. Delete `~/Library/Application Support/dBrief/`
+2. Delete `~/Library/Application Support/com.dbrief.app/`
 3. Run `defaults delete com.dbrief.app` in Terminal
 4. Open Keychain Access and delete any entries for `com.dbrief.app`
-5. Optionally delete your recordings folder
+5. Optionally delete your recording and transcription folders, and notes in any configured export destination
+6. Remove the shared FluidAudio model cache only if no other app or dBrief build needs it

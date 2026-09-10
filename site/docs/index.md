@@ -2,6 +2,8 @@
 
 dBrief is a macOS menu bar app that records your meetings and calls, then automatically transcribes and analyses them with AI. You get a summary, action items, tags, and sentiment — saved to Markdown and sent wherever you want.
 
+This manual covers **dBrief 1.4.1**. For release details, see the [release notes](https://github.com/Arc86/dBrief/releases).
+
 ## Where to start
 
 | | |
@@ -25,3 +27,9 @@ dBrief is a macOS menu bar app that records your meetings and calls, then automa
 
 - **[Recording history](history/recording-history.md)** — find and re-process past recordings
 - **[Transcript viewer](history/transcript-viewer.md)** — browse recordings, read and sync, detect and rename speakers, and chat
+
+- **[Queue & Recovery](history/queue-recovery.md)** — manage deferred jobs, resume interrupted work, and retry deliveries
+- **[Reprocessing](history/reprocessing.md)** — change engines, rerun analysis, or redetect speakers safely
+- **[Profiles](profiles/using-profiles.md)** — automatically match meetings and choose review, process, or queue
+- **[Privacy receipts](reference/privacy-receipts.md)** — see which processing and delivery steps ran
+- **[Transcript chat](ai-analysis/transcript-chat.md)** — ask follow-up questions, choose a fallback engine, and stop replies

@@ -75,6 +75,8 @@
       items: [
         { slug: "history/recording-history", title: "Recording History" },
         { slug: "history/transcript-viewer", title: "Transcript Viewer" },
+        { slug: "history/queue-recovery", title: "Queue & Recovery" },
+        { slug: "history/reprocessing", title: "Reprocessing" },
         { slug: "history/voice-library",     title: "Voice Library" },
       ],
     },
@@ -84,6 +86,7 @@
         { slug: "reference/keyboard-shortcuts", title: "Keyboard Shortcuts" },
         { slug: "reference/permissions",        title: "Permissions" },
         { slug: "reference/file-locations",     title: "File Locations" },
+        { slug: "reference/privacy-receipts", title: "Privacy Receipts" },
         { slug: "reference/benchmark",          title: "Benchmark & Performance" },
       ],
     },
@@ -152,12 +155,17 @@
   // ---- Active link highlighting ----
   function highlight(slug) {
     navEl.querySelectorAll("a").forEach((a) => {
-      a.classList.toggle("is-active", a.dataset.slug === slug);
+      const active = a.dataset.slug === slug;
+      a.classList.toggle("is-active", active);
+      if (active) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
     });
   }
 
   // ---- Render a doc ----
-  async function load(slug) {
+  let loadVersion = 0;
+  async function load(slug, anchor = "") {
+    const version = ++loadVersion;
     if (!slug) {
       // Default: load the index
       slug = "index";
@@ -175,8 +183,11 @@
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(res.status);
       const md = await res.text();
-      render(slug, md);
+      if (version !== loadVersion) return;
+      render(slug, md, anchor);
     } catch (err) {
+      if (version !== loadVersion) return;
+      document.title = "Page not found — dBrief Docs";
       proseEl.innerHTML = `
         <div class="docs-empty">
           <h1>Page not found</h1>
@@ -186,37 +197,22 @@
     }
   }
 
-  function render(slug, md) {
+  function render(slug, md, anchor) {
     // Strip the leading H1 — we re-add it as the page title for nicer styling.
     let body = md.replace(/^\s*#\s+.+\n+/, "");
 
-    // Convert .md links to in-app hash links. E.g. [Foo](apple-notes.md) → [Foo](#integrations/apple-notes)
-    // We need to resolve them via the FLAT map (basename → full slug).
-    const byBasename = {};
-    FLAT.forEach((it) => {
-      const base = it.slug.split("/").pop();
-      byBasename[base] = it.slug;
-    });
-    byBasename["index"] = "index";
-    byBasename["README"] = "index";
-
+    // Resolve Markdown paths relative to this document, preserving section links.
     body = body.replace(/\]\(([^)]+)\)/g, (full, target) => {
-      // External link or absolute path: leave alone
-      if (/^[a-z]+:\/\//i.test(target) || target.startsWith("/") || target.startsWith("#")) {
-        return full;
+      if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("/")) return full;
+      if (target.startsWith("#")) return `](#${slug}${target})`;
+      const [path, section] = target.split("#");
+      if (!path.endsWith(".md")) return full;
+      const stack = slug.split("/").slice(0, -1);
+      for (const part of path.replace(/\.md$/, "").split("/")) {
+        if (part === "..") stack.pop();
+        else if (part && part !== ".") stack.push(part);
       }
-      // Strip .md, normalize ../ segments
-      const cleaned = target.replace(/\.md$/, "");
-      const parts = cleaned.split("/");
-      const stack = (slug.includes("/") ? slug.split("/").slice(0, -1) : []);
-      for (const p of parts) {
-        if (p === "..") stack.pop();
-        else if (p && p !== ".") stack.push(p);
-      }
-      const resolved = stack.join("/");
-      // If we know this slug, use it; otherwise best-effort
-      const hashSlug = byBasename[resolved.split("/").pop()] || resolved;
-      return `](#${hashSlug})`;
+      return `](#${stack.join("/")}${section ? "#" + section : ""})`;
     });
 
     const html = window.marked.parse(body);
@@ -251,6 +247,17 @@
       proseEl.querySelector(".prose").prepend(titleEl);
     }
 
+    document.title = `${h1Match ? h1Match[1].trim() : "Docs"} — dBrief Docs`;
+    const headingIds = new Set();
+    proseEl.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((heading) => {
+      const base = heading.textContent.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");
+      let id = base;
+      let suffix = 1;
+      while (headingIds.has(id)) id = `${base}-${suffix++}`;
+      headingIds.add(id);
+      heading.id = id;
+    });
+
     // Prev / next pager
     const idx = FLAT.findIndex((it) => it.slug === slug);
     if (idx >= 0) {
@@ -270,6 +277,7 @@
     // Scroll to top
     document.querySelector(".docs-content")?.scrollTo({ top: 0, behavior: "instant" });
     window.scrollTo({ top: 0, behavior: "instant" });
+    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: "start" });
   }
 
   // ---- Routing ----
@@ -279,7 +287,8 @@
   }
   function onHashChange() {
     const slug = getSlugFromHash();
-    load(slug);
+    const [page, anchor] = slug.split("#");
+    load(page, anchor);
     // Close mobile sidebar after nav
     sidebar.classList.remove("is-open");
     menuBtn?.setAttribute("aria-expanded", "false");
@@ -287,7 +296,10 @@
   window.addEventListener("hashchange", onHashChange);
 
   // ---- Search ----
-  searchEl.addEventListener("input", (e) => buildSidebar(e.target.value));
+  searchEl.addEventListener("input", (e) => {
+    buildSidebar(e.target.value);
+    highlight(getSlugFromHash().split("#")[0]);
+  });
 
   // ---- Mobile menu ----
   menuBtn.addEventListener("click", () => {

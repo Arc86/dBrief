@@ -15,12 +15,12 @@ This is automatic; there's a single **Apple Speech** option in Settings.
 
 ## Setup
 
-No download or configuration needed. Grant **Speech Recognition** permission when prompted (or in **Settings → Permissions**).
+Select **Apple Speech** in **Settings → Transcription**. On macOS 26+, allow the first-use language download to finish. Grant **Speech Recognition** permission when prompted (or in **Settings → Permissions**).
 
 ## When to use it
 
 - You want zero setup and are comfortable with moderate accuracy
-- You don't have Apple Silicon and can't use Local Whisper
+- You prefer the built-in speech engine to a separately managed Whisper model
 - You don't have a transcription server
 
 ## Accuracy

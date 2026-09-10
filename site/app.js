@@ -1,5 +1,8 @@
 /* dBrief landing — subtle motion only */
 (() => {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (reducedMotion.matches) return;
+
   // Scroll reveal
   const targets = document.querySelectorAll(
     '.section-head, .step, .split-copy, .split-visual, .logo-row, .cta-title, .cta-sub, .btn'

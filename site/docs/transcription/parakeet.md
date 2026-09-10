@@ -24,7 +24,7 @@ In **Settings → Transcription**, choose a variant:
 The first time you use Parakeet, dBrief downloads the selected model (~1.5–1.8 GB). Models are stored at:
 
 ```
-~/Library/Application Support/dBrief/LocalAIPlugin/FluidAudio/
+~/Library/Application Support/FluidAudio/Models/
 ```
 
 Use the **Download model** button to fetch it ahead of time, with progress and a cancel option. After download, transcription works fully offline.

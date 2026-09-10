@@ -42,7 +42,7 @@
       <div class="docs-sidebar-inner">
         <div class="docs-search">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="docs-search" type="search" placeholder="Search docs…" autocomplete="off" />
+          <input id="docs-search" type="search" placeholder="Filter topics…" aria-label="Filter documentation topics" autocomplete="off" />
         </div>
         <nav class="docs-nav" id="docs-nav"><!-- populated by JS --></nav>
       </div>
@@ -62,12 +62,12 @@
   </main>
 
   <!-- Mobile sidebar toggle -->
-  <button class="docs-menu-toggle" id="docs-menu-toggle" aria-label="Open docs menu" aria-expanded="false">
+  <button class="docs-menu-toggle" id="docs-menu-toggle" aria-label="Toggle docs menu" aria-controls="docs-sidebar" aria-expanded="false">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     <span>Menu</span>
   </button>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@13.0.3/marked.min.js" defer></script>
-  <script src="docs.js?v=2" defer></script>
+  <script src="docs.js?v=3" defer></script>
 </body>
 </html>
