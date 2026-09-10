@@ -15,7 +15,7 @@ struct SettingsPermissionsTab: View {
 
     var body: some View {
         Form {
-            Section("Permissions Check") {
+            Section("Permissions Check", settingsSearch: .permissions) {
                 PermissionRow(
                     title: "Microphone",
                     statusText: micStatusText,

@@ -8,7 +8,7 @@ struct SettingsWatchedFoldersTab: View {
     var body: some View {
         @Bindable var settings = appSettings
         Form {
-            Section("Watched Folders") {
+            Section("Automatic Import", settingsSearch: .automaticImport) {
                 Toggle("Monitor folders for new audio files", isOn: $settings.watchedFoldersEnabled)
                     .onChange(of: appSettings.watchedFoldersEnabled) { _, enabled in
                         // Re-arm the poller when the feature is switched on; it
@@ -44,7 +44,7 @@ struct SettingsWatchedFoldersTab: View {
 
                 Section("Options") {
                     Toggle("Notify when a new file is detected", isOn: $settings.watchedFolderNotifyOnDetect)
-                    Text("New files use your global processing preferences (Settings → AI & Models). Only files added **after** a folder is watched are processed — existing files are left alone. Files are picked up once they finish copying.")
+                    Text("New files use your global processing preferences (Settings → AI Analysis). Only files added **after** a folder is watched are processed — existing files are left alone. Files are picked up once they finish copying.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -58,7 +58,7 @@ struct SettingsWatchedFoldersTab: View {
     private func folderRow(_ folder: WatchedFolder) -> some View {
         @Bindable var settings = appSettings
         HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
+            Toggle("Monitor \(URL(fileURLWithPath: folder.displayPath).lastPathComponent)", isOn: Binding(
                 get: { folder.isEnabled },
                 set: { newValue in
                     if let idx = settings.watchedFolders.firstIndex(where: { $0.id == folder.id }) {

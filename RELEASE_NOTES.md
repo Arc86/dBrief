@@ -1,3 +1,15 @@
+## Unreleased — Settings usability
+
+- Settings are grouped into App, Recording, Processing and Workflow. Find the shortcut and call detection under Recording, folders and retention under Storage, calendars under Integrations, and shared task choices under After Recording.
+- Search settings with ⌘F using names, help terms or older labels. Search stays on your Mac and does not index saved values or credentials. Advanced results can reveal their controls without changing the saved advanced-settings preference.
+- Profiles remain available outside advanced mode. Inherited values and relevant overrides are easier to see, and opening an editor does not change the profile selected for recording.
+- Shared-default reset now requires confirmation. Inactive or unsupported options explain their behavior while retaining saved values.
+- Vocabulary has visible Edit/Delete actions, explicit Save/Cancel and duplicate feedback. Native fields and switches have clearer accessible names, and failures provide expandable safe diagnostic details.
+
+Release acceptance is still in progress; these changes have not been published.
+
+---
+
 ## dBrief 1.4.1
 
 ### Transcript chat

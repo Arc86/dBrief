@@ -77,7 +77,7 @@ Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed
 **Spoken Summary** — turn any recording's summary into a short, natural audio briefing with an on-device text-to-speech voice (Kokoro for fast English, or multilingual Qwen3), so you can catch up on a meeting hands-free.
 
 ### Recognize speakers
-- **Voice Library** — a private, on-device library of voiceprints recognizes people by name **across** recordings, not just within one. Confident matches only, never uploaded, fully manageable in Settings → Voice Library.
+- **Speaker Library** — a private, on-device library of voiceprints recognizes people by name **across** recordings, not just within one. Confident matches only, never uploaded, fully manageable in Settings → Speaker Library.
 - **Confirm-first review** — optionally pause after diarization to check who's who (with audio snippets and name suggestions) before the AI runs.
 - **Rename & reassign** — rename, swap, move, or merge speakers from the transcript window; mark "this is me."
 - **Long recordings stay consistent** — speakers are unified by voice across auto-split parts, so one person keeps one name throughout.
@@ -194,6 +194,28 @@ Key dependencies (all via SPM):
 - [swift-transformers](https://github.com/huggingface/swift-transformers) — tokenizer support for MLX
 
 Tests use [`swift-testing`](https://github.com/apple/swift-testing). Run with `swift test`.
+
+---
+
+## Finding settings
+
+The sidebar groups settings by task:
+
+| Group | Pages |
+|---|---|
+| App | General, Storage, Permissions, About |
+| Recording | Recording, Automatic Import |
+| Processing | Transcription, AI Analysis, Spoken Summary, Vocabulary, Speaker Library, Benchmark (advanced) |
+| Workflow | After Recording, Profiles, Integrations |
+
+- **Recording** contains the shortcut, call detection and meeting platforms alongside audio controls.
+- **Storage** contains recording/transcript folders and automatic deletion controls.
+- **Integrations → Calendar** contains calendar connections and matching options.
+- **After Recording** contains shared task defaults and a link to the selected profile’s automation policy. Each profile’s policy is edited in **Profiles → After Recording**.
+- Profile notices appear only when that page has overrides to explain. Opening a profile editor does not select it for recording.
+- **Search settings** (⌘F) matches setting names, help terms and older labels such as “Watched Folders” or “Voice Library”. Use ↓ to select results and Return to open a section. Search indexes built-in labels only, never your saved values or credentials.
+- Advanced search results reveal controls temporarily. Clearing the query restores normal visibility without changing your advanced-settings preference.
+- Vocabulary terms have visible Edit/Delete actions and explicit Save/Cancel. Invalid or duplicate entries keep your input so you can correct it.
 
 ---
 

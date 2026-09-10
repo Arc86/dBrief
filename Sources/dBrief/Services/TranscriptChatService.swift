@@ -345,7 +345,7 @@ final class TranscriptChatService {
         switch engine {
 
         case .localCLI:
-            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI & Models.")
+            return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI Analysis.")
 
         case .qwenLocal:
             guard let plugin = localPlugin else {

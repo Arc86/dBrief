@@ -3,6 +3,8 @@ import dBriefWire
 
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
@@ -26,12 +28,21 @@ struct SettingsAITab: View {
             Form {
                 Section {
                     Toggle("Enable AI processing", isOn: $settings.aiProcessingEnabled)
+                } header: {
+                    SettingsSearchHeading("AI Analysis", section: .aiEnabled)
                 } footer: {
-                    Text("When off, recordings are transcribed only — no summary, action items, or tag analysis. This gates every AI feature below.")
+                    Text("Controls summary, action-item, and tag analysis by default. Transcription remains available. Profiles can override this setting.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Section("Engine") {
+                if !settings.aiProcessingEnabled {
+                    Section {
+                        Text("AI analysis is off by default. You can configure the options below for later use or for profiles that enable AI analysis.")
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(Color.clear)
+                }
+                Section("Engine", settingsSearch: .aiEngine) {
                     Picker("AI engine", selection: $settings.aiEngine) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
                             Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
@@ -41,7 +52,11 @@ struct SettingsAITab: View {
                     Text(engineDescription(for: settings.aiEngine))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
+                    if (appSettings.powerUserMode || searchAdvanced), (settings.aiEngine == .qwenLocal || (searchAdvanced && searchRequest?.section == .aiEngine)) {
+                        if settings.aiEngine != .qwenLocal {
+                            Text("These model options apply to the local Gemma engine.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Picker("Output language", selection: outputLanguageSelectionBinding) {
                             Text("Match transcript").tag("matchInput")
                             Text("English").tag("english")
@@ -66,10 +81,10 @@ struct SettingsAITab: View {
                             }
                         }
                     }
-                    if appSettings.powerUserMode, settings.aiEngine == .qwenLocal {
+                    if (appSettings.powerUserMode || searchAdvanced), (settings.aiEngine == .qwenLocal || (searchAdvanced && searchRequest?.section == .aiEngine)) {
                         ModelDownloadButton(kind: .gemma)
 
-                        Button("Purge local Gemma model") {
+                        Button("Remove downloaded Gemma model") {
                             Task {
                                 do {
                                     try await recordingManager.purgeLocalQwenModel()
@@ -89,20 +104,13 @@ struct SettingsAITab: View {
                     }
                 }
                     .listRowBackground(Color.clear)
-                Section("Post-Recording Defaults") {
-                    Toggle("Preselect transcription after recording", isOn: $settings.autoTranscribe)
-                    Toggle("Generate summary", isOn: $settings.autoSummary)
-                    Toggle("Extract action items", isOn: $settings.autoActionItems)
-                    Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
-                }
-                    .listRowBackground(Color.clear)
-                if appSettings.powerUserMode {
+                if appSettings.powerUserMode || searchAdvanced {
                     Section {
                         promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
                         promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
                         promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
                     } header: {
-                        Text("Prompts")
+                        SettingsSearchHeading("Prompts", section: .aiPrompts)
                     } footer: {
                         if appSettings.aiEngine != .remoteEndpoint {
                             Text("On-device and Local CLI engines merge these three prompts into a single structured call, so the model returns one JSON result. The output is always JSON regardless of any “output only…” wording — format the summary (e.g. bullets) inside its text.")
@@ -110,19 +118,23 @@ struct SettingsAITab: View {
                     }
                         .listRowBackground(Color.clear)
                 }
-                if appSettings.aiEngine == .localCLI {
-                    Section("Local CLI") {
+                if appSettings.aiEngine == .localCLI || searchRequest?.section == .aiCLI || searchRequest?.section == .aiChatFallback {
+                    Section("Local CLI", settingsSearch: .aiCLI) {
+                        if appSettings.aiEngine != .localCLI {
+                            Text("These options apply when Local CLI is selected as the AI engine.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         localCLISection
                     }
                         .listRowBackground(Color.clear)
-                    Section("Chat Fallback") {
+                    Section("Chat Fallback", settingsSearch: .aiChatFallback) {
                         chatFallbackSection
                     }
                         .listRowBackground(Color.clear)
                 }
-                if appSettings.aiEngine == .remoteEndpoint
+                if searchRequest?.section == .aiProviders || appSettings.aiEngine == .remoteEndpoint
                     || (appSettings.aiEngine == .localCLI && appSettings.chatFallbackEngine == .remoteEndpoint) {
-                    Section("Endpoints") {
+                    Section("AI providers", settingsSearch: .aiProviders) {
                         endpointsSection
                     }
                         .listRowBackground(Color.clear)
@@ -210,7 +222,7 @@ struct SettingsAITab: View {
             }
 
             if expandedPrompt == key {
-                NativeTextView(text: text)
+                NativeTextView(text: text, accessibilityName: "\(label) prompt")
                     .frame(height: 80)
             }
         }
@@ -242,7 +254,7 @@ struct SettingsAITab: View {
                     .fixedSize()
                 }
 
-                NativeTextView(text: localCLICommandBinding, monospaced: true)
+                NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: "Local CLI command")
                     .frame(height: 70)
 
                 HStack {
@@ -283,11 +295,7 @@ struct SettingsAITab: View {
                         .textSelection(.enabled)
                 }
                 if let cliTestError {
-                    Text(cliTestError)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .lineLimit(4)
-                        .textSelection(.enabled)
+                    SettingsErrorDetails(summary: "Command test failed", error: cliTestError)
                 }
             }
             .padding(.top, 6)
@@ -296,7 +304,7 @@ struct SettingsAITab: View {
         }
         .onAppear {
             // Open by default the first time, when nothing is configured yet.
-            if appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if searchRequest?.section == .aiCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 cliConfigExpanded = true
             }
         }
@@ -344,7 +352,7 @@ struct SettingsAITab: View {
     private var endpointsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if appSettings.aiEndpoints.isEmpty {
-                Text("No endpoints configured. Click + to add one.")
+                Text("No AI providers configured. Click + to add one.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -442,7 +450,7 @@ struct SettingsAITab: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Text(isNew ? "Add Endpoint" : "Edit Endpoint")
+            Text(isNew ? "Add AI Provider" : "Edit AI Provider")
                 .font(.title3)
                 .fontWeight(.medium)
 
@@ -455,21 +463,21 @@ struct SettingsAITab: View {
             Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
                 GridRow {
                     Text("Name:")
-                    NativeTextField(placeholder: "My LLM Server", text: $editingEndpoint.name)
+                    NativeTextField(placeholder: "My LLM Server", text: $editingEndpoint.name, accessibilityName: "AI provider name")
                         .frame(height: 22)
                 }
                 GridRow {
                     Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:11434", text: $editingEndpoint.baseURL)
+                    NativeTextField(placeholder: "http://localhost:11434", text: $editingEndpoint.baseURL, accessibilityName: "AI provider base URL")
                         .frame(height: 22)
                 }
                 GridRow {
                     Text("Model:")
                     if availableModels.isEmpty {
-                        NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName)
+                        NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName, accessibilityName: "AI provider model")
                             .frame(height: 22)
                     } else {
-                        Picker("", selection: $editingEndpoint.modelName) {
+                        Picker("AI provider model", selection: $editingEndpoint.modelName) {
                             ForEach(availableModels, id: \.self) { model in
                                 Text(model).tag(model)
                             }
@@ -481,7 +489,7 @@ struct SettingsAITab: View {
                 }
                 GridRow {
                     Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true)
+                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "AI provider API key (optional)")
                         .frame(height: 22)
                 }
             }
@@ -508,10 +516,7 @@ struct SettingsAITab: View {
                             .foregroundStyle(.green)
                         Text("Connection successful")
                     case .failure(let error):
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.red)
-                        Text(error)
-                            .lineLimit(2)
+                        SettingsErrorDetails(summary: "Connection failed", error: error)
                     }
                 }
                 .font(.callout)

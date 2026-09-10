@@ -47,7 +47,7 @@ struct ModelPerformanceView: View {
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Model Performance")
+                SettingsSearchHeading("Model Performance", section: .benchmark)
                     .font(.headline)
                 Text("\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief")
                     .font(.caption)

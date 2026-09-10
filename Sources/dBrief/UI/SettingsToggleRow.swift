@@ -5,12 +5,7 @@ struct SettingsToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-        }
+        Toggle(title, isOn: $isOn)
     }
 }
 
@@ -19,7 +14,9 @@ struct SettingsToggleRow: View {
 struct SmallSwitchToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         LabeledContent {
-            Toggle(isOn: configuration.$isOn) {}
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()

@@ -190,9 +190,7 @@ struct AboutTab: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("dBrief")
-                        .font(.system(size: 34, weight: .heavy))
-                        .tracking(-1)
+                    SettingsSearchHeading(Text("dBrief").font(.system(size: 34, weight: .heavy)).tracking(-1), section: .about)
                         .foregroundStyle(.primary)
                     Text("v\(shortVersion)")
                         .font(.brandMono(12))

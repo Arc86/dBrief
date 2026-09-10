@@ -3,11 +3,18 @@ import SwiftUI
 /// Rounded glass section for settings, matching modern macOS style.
 struct SettingsSection<Content: View>: View {
     let title: String
+    var searchSection: SettingsSectionID? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
+            Group {
+                if let searchSection {
+                    SettingsSearchHeading(LocalizedStringKey(title), section: searchSection)
+                } else {
+                    Text(title)
+                }
+            }
                 .font(.headline)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)

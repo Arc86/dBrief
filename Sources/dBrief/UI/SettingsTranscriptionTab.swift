@@ -3,6 +3,8 @@ import dBriefWire
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
@@ -48,19 +50,25 @@ struct SettingsTranscriptionTab: View {
             endpointEditor
         } else {
             Form {
-                Section("Engine") { engineSection }
+                Section("Engine", settingsSearch: .transcriptionEngine) { engineSection }
                     .listRowBackground(Color.clear)
-                Section("Language") { languageSection }
+                Section("Language", settingsSearch: .transcriptionLanguage) { languageSection }
                     .listRowBackground(Color.clear)
-                Section("Cleanup") { cleanupSection }
+                Section("Cleanup", settingsSearch: .transcriptionCleanup) { cleanupSection }
                     .listRowBackground(Color.clear)
-                Section("Live Transcription") { liveTranscriptionSection }
+                Section("Live Transcription", settingsSearch: .transcriptionLive) { liveTranscriptionSection }
                     .listRowBackground(Color.clear)
-                if appSettings.transcriptionEngine == .remoteEndpoint {
-                    Section("Endpoints") { endpointsSection }
+                if appSettings.transcriptionEngine == .remoteEndpoint || searchRequest?.section == .transcriptionServices || searchRequest?.section == .transcriptionChunking {
+                    Section("Transcription services", settingsSearch: .transcriptionServices) { endpointsSection }
                         .listRowBackground(Color.clear)
-                    if appSettings.powerUserMode {
-                        Section("Large File Handling") { chunkingSection }
+                    if appSettings.powerUserMode || searchAdvanced {
+                        Section("Large File Handling", settingsSearch: .transcriptionChunking) {
+                            if appSettings.transcriptionEngine != .remoteEndpoint {
+                                Text("These options apply to remote transcription services.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            chunkingSection
+                        }
                             .listRowBackground(Color.clear)
                     }
                 }
@@ -142,14 +150,14 @@ struct SettingsTranscriptionTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Toggle("Speaker diarization", isOn: $settings.diarizationEnabled)
+            Toggle("Identify speakers", isOn: $settings.diarizationEnabled)
             Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             ModelDownloadButton(kind: .parakeet)
 
-            Button("Purge local Parakeet model") {
+            Button("Remove downloaded Parakeet model") {
                 Task {
                     do {
                         try await recordingManager.purgeLocalParakeetModel()
@@ -359,7 +367,7 @@ struct SettingsTranscriptionTab: View {
                         Spacer()
                     }
 
-                    Button("Purge local WhisperKit model") {
+                    Button("Remove downloaded WhisperKit model") {
                         Task {
                             do {
                                 try await recordingManager.purgeLocalWhisperModel()
@@ -412,7 +420,12 @@ struct SettingsTranscriptionTab: View {
             Text("Norwegian").tag("no")
         }
         .pickerStyle(.menu)
-        if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
+        .disabled(settings.transcriptionEngine == .parakeetLocal)
+        if settings.transcriptionEngine == .parakeetLocal {
+            Text("Parakeet determines the language from its model and the audio. This selection has no effect; it is kept for other engines.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
             Text("Apple Speech uses the system language when set to Auto.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -513,7 +526,7 @@ struct SettingsTranscriptionTab: View {
     private var endpointsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if appSettings.transcriptionEndpoints.isEmpty {
-                Text("No endpoints configured. Click + to add one.")
+                Text("No transcription services configured. Click + to add one.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -663,7 +676,7 @@ struct SettingsTranscriptionTab: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Text(isNew ? "Add Endpoint" : "Edit Endpoint")
+            Text(isNew ? "Add Transcription Service" : "Edit Transcription Service")
                 .font(.title3)
                 .fontWeight(.medium)
 
@@ -676,21 +689,21 @@ struct SettingsTranscriptionTab: View {
             Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
                 GridRow {
                     Text("Name:")
-                    NativeTextField(placeholder: "My Whisper Server", text: $editingEndpoint.name)
+                    NativeTextField(placeholder: "My Whisper Server", text: $editingEndpoint.name, accessibilityName: "Transcription service name")
                         .frame(height: 22)
                 }
                 GridRow {
                     Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:8080", text: $editingEndpoint.baseURL)
+                    NativeTextField(placeholder: "http://localhost:8080", text: $editingEndpoint.baseURL, accessibilityName: "Transcription service base URL")
                         .frame(height: 22)
                 }
                 GridRow {
                     Text("Model:")
                     if availableModels.isEmpty {
-                        NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName)
+                        NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName, accessibilityName: "Transcription service model")
                             .frame(height: 22)
                     } else {
-                        Picker("", selection: $editingEndpoint.modelName) {
+                        Picker("Transcription service model", selection: $editingEndpoint.modelName) {
                             ForEach(availableModels, id: \.self) { model in
                                 Text(model).tag(model)
                             }
@@ -702,7 +715,7 @@ struct SettingsTranscriptionTab: View {
                 }
                 GridRow {
                     Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true)
+                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "Transcription service API key (optional)")
                         .frame(height: 22)
                 }
             }
@@ -729,10 +742,7 @@ struct SettingsTranscriptionTab: View {
                             .foregroundStyle(.green)
                         Text("Connection successful")
                     case .failure(let error):
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.red)
-                        Text(error)
-                            .lineLimit(2)
+                        SettingsErrorDetails(summary: "Connection failed", error: error)
                     }
                 }
                 .font(.callout)

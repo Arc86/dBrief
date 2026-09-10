@@ -6,6 +6,8 @@ struct NativeTextView: NSViewRepresentable {
     @Binding var text: String
     /// Renders the text in a monospaced system font (e.g. for CLI commands).
     var monospaced: Bool = false
+    var accessibilityName: String = "Text editor"
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -19,6 +21,9 @@ struct NativeTextView: NSViewRepresentable {
         textView.string = text
         textView.delegate = context.coordinator
         textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.setAccessibilityLabel(accessibilityName)
+        textView.isEditable = isEnabled
+        textView.setAccessibilityEnabled(isEnabled)
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .bezelBorder
         return scrollView
@@ -26,6 +31,9 @@ struct NativeTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let textView = nsView.documentView as! NSTextView
+        textView.setAccessibilityLabel(accessibilityName)
+        textView.isEditable = isEnabled
+        textView.setAccessibilityEnabled(isEnabled)
         // Don't clobber in-progress typing while a debounced commit is pending:
         // only apply a genuine external change (binding differs from the value
         // we last pushed). Our own debounced writes match `lastPushed`, so they
@@ -100,6 +108,9 @@ struct NativeTextField: NSViewRepresentable {
     let placeholder: String
     @Binding var text: String
     var isSecure: Bool = false
+    /// A descriptive name for VoiceOver; examples/placeholders are often ambiguous.
+    var accessibilityName: String? = nil
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeNSView(context: Context) -> NSTextField {
         let field: NSTextField
@@ -115,10 +126,15 @@ struct NativeTextField: NSViewRepresentable {
         field.isBordered = true
         field.isBezeled = true
         field.focusRingType = .exterior
+        field.setAccessibilityLabel(accessibilityName ?? placeholder)
+        field.isEnabled = isEnabled
         return field
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
+        nsView.placeholderString = placeholder
+        nsView.setAccessibilityLabel(accessibilityName ?? placeholder)
+        nsView.isEnabled = isEnabled
         if nsView.stringValue != text {
             nsView.stringValue = text
         }

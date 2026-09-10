@@ -107,7 +107,7 @@ struct SettingsVoiceLibraryTab: View {
     }
 
     private var privacySection: some View {
-        SettingsSection(title: "Voice Library") {
+        SettingsSection(title: "Speaker Library", searchSection: .speakerLibrary) {
             Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -151,6 +151,8 @@ struct SettingsVoiceLibraryTab: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 8) {
+            SettingsSearchHeading("Speaker Library", section: .speakerLibrary)
+                .font(.headline)
             TextField("Search name or company", text: $query)
                 .textFieldStyle(.roundedBorder)
 

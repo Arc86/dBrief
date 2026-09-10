@@ -54,6 +54,8 @@ struct PostRecordingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Profile for this recording: \(reviewProfile.name)")
+                .font(.caption.weight(.semibold))
             if let recording = appState.currentRecording {
                 if recording.awaitingProfileContext {
                     Text("Checking calendar context for profile selection…")

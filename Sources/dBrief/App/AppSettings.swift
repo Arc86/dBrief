@@ -409,7 +409,7 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
     }
 
-    /// Global keyboard shortcut for toggling recording (user-configurable in Settings → General)
+    /// Global keyboard shortcut for toggling recording (user-configurable in Settings → Recording → Shortcut)
     var recordHotkey: RecordHotkey {
         didSet {
             if let data = try? JSONEncoder().encode(recordHotkey) {
