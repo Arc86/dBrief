@@ -1,3 +1,20 @@
+## dBrief 1.4.1
+
+### Transcript chat
+
+- **Stop generating**, mid-response — a Stop control (also triggered by Esc) cancels a streaming reply immediately, without losing the rest of the conversation.
+- **Runaway responses now cut themselves off.** A reply that starts repeating itself, or one that just keeps growing, stops on its own with a small note explaining why, instead of streaming forever.
+- **The Local CLI chat fallback can now use a configured remote endpoint**, not just an on-device engine — the Endpoints section in Settings → AI Analysis appears whenever the fallback needs it.
+- Removed a backend-specific reasoning-suppression flag for `gpt-oss` models that llama.cpp servers rejected; Groq/vLLM/Ollama backends are unaffected.
+- Simplified Markdown and chat message rendering, with added test coverage for cancellation, repetition detection, and restoring a saved conversation exactly.
+
+### Fixes
+
+- **Retranscription now shows real progress** — a step name, progress bar, and detail line — instead of sitting on a generic "Processing…" banner.
+- **The live transcript preview updates correctly during reprocessing and after it finishes**, rather than sometimes showing a stale staged copy of the recording.
+
+---
+
 ## dBrief 1.4.0
 
 **Nothing gets stuck, and nothing is final.** If processing is interrupted — a quit, a crash, a restart — dBrief now picks up where it left off instead of starting over. You can manage the processing queue directly, retry a single integration delivery without redoing the work, and reprocess a saved recording (retranscribe, redo the AI analysis, or redetect speakers) whenever the first pass wasn't quite right. Plus full-text search across your whole recording library, meeting profiles that can match themselves, and four security hardening fixes.
