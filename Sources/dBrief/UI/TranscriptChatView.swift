@@ -18,10 +18,18 @@ struct TranscriptChatView: View {
                 promptTemplates
             } else {
                 messageList
+                if let notice = chatService.streamingNotice {
+                    Text(notice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                }
                 promptChipsRow
                 inputBar
             }
         }
+        .onExitCommand { chatService.stopGenerating() }
     }
 
     // MARK: - Prompt chips (shown above the input once a chat is underway)
@@ -129,7 +137,10 @@ struct TranscriptChatView: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                // Chat replies can be taller than the viewport. Use measured
+                // row heights when restoring or scrolling to a reply, rather
+                // than letting a lazy stack revise its off-screen estimates.
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(chatService.messages) { message in
                         // While a reply streams, only its bubble re-renders per
                         // token; render it as plain text then (skipping the block
@@ -190,22 +201,28 @@ struct TranscriptChatView: View {
                 .onSubmit { submitMessage() }
 
             Button {
-                submitMessage()
+                if chatService.isStreaming {
+                    chatService.stopGenerating()
+                } else {
+                    submitMessage()
+                }
             } label: {
-                Image(systemName: "arrow.up")
+                Image(systemName: chatService.isStreaming ? "stop.fill" : "arrow.up")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 28, height: 28)
                     .background {
                         RoundedRectangle(cornerRadius: 8).fill(
-                            sendEnabled
+                            (sendEnabled || chatService.isStreaming)
                                 ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "8b4dff"), Color(hex: "25abff")],
                                                                startPoint: .topLeading, endPoint: .bottomTrailing))
                                 : AnyShapeStyle(Color.secondary.opacity(0.35)))
                     }
             }
             .buttonStyle(.plain)
-            .disabled(!sendEnabled)
+            .disabled(!sendEnabled && !chatService.isStreaming)
+            .accessibilityLabel(chatService.isStreaming ? "Stop generating" : "Send message")
+            .help(chatService.isStreaming ? "Stop generating (Esc)" : "Send message")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -232,6 +249,7 @@ struct TranscriptChatView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Clear chat")
+                .disabled(chatService.isStreaming)
             }
 
             inputField

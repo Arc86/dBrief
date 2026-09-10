@@ -6,47 +6,44 @@ import SwiftUI
 /// SwiftUI's `Text` only auto-renders *inline* Markdown (bold, italic, links),
 /// so headings, bullet lists, and numbered lists would otherwise show as raw
 /// `#`/`-`/`1.` syntax. This view parses the common block elements the model
-/// emits and renders each line, delegating inline spans to `AttributedString`.
+/// emits into one attributed text value, delegating inline spans to `AttributedString`.
 struct MarkdownText: View {
-    private let blocks: [Block]
+    private let rendered: AttributedString
 
     init(_ text: String) {
-        self.blocks = MarkdownText.parse(text)
+        rendered = Self.render(text)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .heading(let level, let text):
-                    inline(text)
-                        .font(headingFont(level))
-                        .padding(.top, 2)
-                case .bullet(let text):
-                    listRow(marker: "•", text: text)
-                        .padding(.leading, 14)
-                case .numbered(let number, let text):
-                    listRow(marker: "\(number).", text: text)
-                case .paragraph(let text):
-                    inline(text)
-                case .spacer:
-                    Color.clear.frame(height: 2)
-                }
+        // A single selectable text view avoids a nested SwiftUI layout graph for
+        // every line when a streamed response becomes formatted after Stop.
+        Text(rendered)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static func render(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        for (index, block) in parse(text).enumerated() {
+            if index > 0 { result += AttributedString("\n") }
+            switch block {
+            case .heading(let level, let text):
+                var heading = inline(text)
+                heading.font = headingFont(level)
+                result += heading
+            case .bullet(let text):
+                result += AttributedString("• ") + inline(text)
+            case .numbered(let number, let text):
+                result += AttributedString("\(number). ") + inline(text)
+            case .paragraph(let text):
+                result += inline(text)
+            case .spacer:
+                break
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        return result
     }
 
-    private func listRow(marker: String, text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(marker)
-                .foregroundStyle(.secondary)
-            inline(text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func headingFont(_ level: Int) -> Font {
+    private static func headingFont(_ level: Int) -> Font {
         switch level {
         case 1: return .title3.bold()
         case 2: return .headline
@@ -54,13 +51,10 @@ struct MarkdownText: View {
         }
     }
 
-    /// Renders inline Markdown spans (`**bold**`, `*italic*`, `` `code` ``, links).
-    private func inline(_ text: String) -> Text {
+    private static func inline(_ text: String) -> AttributedString {
         var options = AttributedString.MarkdownParsingOptions()
         options.interpretedSyntax = .inlineOnlyPreservingWhitespace
-        let attributed = (try? AttributedString(markdown: text, options: options))
-            ?? AttributedString(text)
-        return Text(attributed)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 
     // MARK: Parsing

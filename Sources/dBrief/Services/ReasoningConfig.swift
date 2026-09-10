@@ -5,8 +5,8 @@ import Foundation
 /// into the JSON-shaped insights output, so we ask the model to skip or hide them.
 ///
 /// Keyed by model-name substring so a plain model (e.g. `gpt-4o`, `llama-3.3`) gets `[:]`
-/// and its request is untouched — only recognized reasoning models, whose providers
-/// accept these fields, are modified.
+/// and its request is untouched. Model names do not identify the serving backend,
+/// so backend-specific reasoning formats must not be inferred from them.
 enum ReasoningConfig {
 
     /// Extra request-body keys to merge into an OpenAI-compatible chat-completions body
@@ -24,9 +24,10 @@ enum ReasoningConfig {
             || m.contains("-o1") || m.contains("-o3") || m.contains("-o4") {
             return ["reasoning_effort": "low"]
         }
-        // OpenAI gpt-oss (served by Groq, etc.): low effort + hide the reasoning channel.
+        // gpt-oss can be served by different OpenAI-compatible backends. Leave the
+        // reasoning format to the server: Groq's "hidden" is rejected by llama.cpp.
         if m.contains("gpt-oss") {
-            return ["reasoning_effort": "low", "reasoning_format": "hidden"]
+            return ["reasoning_effort": "low"]
         }
         // Qwen3 thinking models: vLLM/Ollama OpenAI-compatible convention.
         if m.contains("qwen3") || m.contains("qwen-3") {

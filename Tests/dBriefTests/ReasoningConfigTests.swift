@@ -10,6 +10,7 @@ struct ReasoningConfigTests {
         #expect(ReasoningConfig.disableParams(forModel: "gpt-4o").isEmpty)
         #expect(ReasoningConfig.disableParams(forModel: "llama-3.3-70b").isEmpty)
         #expect(ReasoningConfig.disableParams(forModel: "claude-sonnet-4-6").isEmpty)
+        #expect(ReasoningConfig.disableParams(forModel: "gemma4").isEmpty)
     }
 
     @Test("GPT-5 uses minimal reasoning effort")
@@ -24,11 +25,11 @@ struct ReasoningConfigTests {
         #expect(ReasoningConfig.disableParams(forModel: "o1")["reasoning_effort"] as? String == "low")
     }
 
-    @Test("gpt-oss hides reasoning")
-    func gptOss() {
-        let p = ReasoningConfig.disableParams(forModel: "openai/gpt-oss-120b")
+    @Test("gpt-oss leaves reasoning format to the server", arguments: ["gpt-oss:20b", "openai/gpt-oss-120b", "GPT-OSS:20B"])
+    func gptOss(model: String) {
+        let p = ReasoningConfig.disableParams(forModel: model)
         #expect(p["reasoning_effort"] as? String == "low")
-        #expect(p["reasoning_format"] as? String == "hidden")
+        #expect(p["reasoning_format"] == nil)
     }
 
     @Test("Qwen3 disables thinking via chat_template_kwargs")

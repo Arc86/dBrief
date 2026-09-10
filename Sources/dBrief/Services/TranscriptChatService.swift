@@ -49,6 +49,7 @@ final class TranscriptChatService {
     private(set) var messages: [ChatMessage] = []
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
+    private(set) var streamingNotice: String? = nil
 
     /// Provides the transcript text at send-time. A closure (rather than a stored
     /// string) so the chat can read a *live, growing* transcript during recording —
@@ -59,7 +60,7 @@ final class TranscriptChatService {
     private var speakerLabels: [SpeakerLabel]
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
-    private let aiService = AIService()
+    private let aiService: AIService
     private let privacyRecording: Recording?
 
     /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
@@ -78,6 +79,7 @@ final class TranscriptChatService {
     private var invalidated = false
     private let validity = RecordingDerivativeValidity()
     private var sendTask: Task<Void, Never>?
+    private var activeSendID: UUID?
 
     /// Retire this session without deleting the currently published conversation.
     /// A retired session can never republish derivatives after an attempt unlocks.
@@ -88,6 +90,7 @@ final class TranscriptChatService {
         saveTask?.cancel()
         loadTask?.cancel()
         sendTask = nil
+        activeSendID = nil
         saveTask = nil
         loadTask = nil
         chatStore = nil
@@ -101,13 +104,15 @@ final class TranscriptChatService {
         speakerLabels: [SpeakerLabel],
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?,
-        recording: Recording? = nil
+        recording: Recording? = nil,
+        aiService: AIService = AIService()
     ) {
         self.transcriptProvider = transcriptProvider
         self.speakerLabels = speakerLabels
         self.appSettings = appSettings
         self.localPlugin = localPlugin
         self.privacyRecording = recording
+        self.aiService = aiService
         Self.activeServices.removeAll { $0.value == nil }
         Self.activeServices.append(WeakService(self))
     }
@@ -118,41 +123,53 @@ final class TranscriptChatService {
         speakerLabels: [SpeakerLabel],
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?,
-        recording: Recording? = nil
+        recording: Recording? = nil,
+        aiService: AIService = AIService()
     ) {
         self.init(
             transcriptProvider: { transcriptText },
             speakerLabels: speakerLabels,
             appSettings: appSettings,
             localPlugin: localPlugin,
-            recording: recording
+            recording: recording,
+            aiService: aiService
         )
     }
 
     func send(_ userText: String) async {
         guard !invalidated, !Task.isCancelled, sendTask == nil,
               !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
+        let sendID = UUID()
+        activeSendID = sendID
+        isStreaming = true
+        streamingError = nil
+        streamingNotice = nil
         let task = Task { [weak self] in
-            guard let self, !self.invalidated else { return }
+            guard let self, !self.invalidated, self.activeSendID == sendID else { return }
             let context = await self.privacyRecording?.privacyContext()
-            guard !self.invalidated, !Task.isCancelled else { return }
-            await PrivacyTrace.$context.withValue(context) { await self.sendInRecordingContext(userText) }
+            guard !self.invalidated, !Task.isCancelled, self.activeSendID == sendID else { return }
+            await PrivacyTrace.$context.withValue(context) { await self.sendInRecordingContext(userText, sendID: sendID) }
         }
         sendTask = task
         await withTaskCancellationHandler {
             await task.value
         } onCancel: { task.cancel() }
+        // A stopped request may unwind after the user has already sent another.
+        guard activeSendID == sendID else { return }
         sendTask = nil
+        activeSendID = nil
+        isStreaming = false
+        scheduleSave()
     }
 
-    private func sendInRecordingContext(_ userText: String) async {
+    private func sendInRecordingContext(_ userText: String, sendID: UUID) async {
         let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
+        guard !trimmed.isEmpty, activeSendID == sendID else { return }
 
         // Make sure any persisted history has been adopted before we append, so
         // sending before the disk load finishes can't drop the saved conversation.
         await loadTask?.value
-        guard !invalidated, !Task.isCancelled else { return }
+        guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
 
         messages.append(ChatMessage(role: .user, content: trimmed))
 
@@ -160,28 +177,48 @@ final class TranscriptChatService {
         messages.append(assistantMessage)
         let assistantIdx = messages.count - 1
 
-        isStreaming = true
-        defer { isStreaming = false }
-        streamingError = nil
-
         let systemPrompt = buildSystemPrompt()
         let fullUserMessage = buildContextualUserMessage(currentMessage: trimmed)
+        var limiter = ChatResponseLimiter()
 
         do {
             let stream = await buildStream(systemPrompt: systemPrompt, userMessage: fullUserMessage)
             for try await chunk in stream {
-                guard !invalidated, !Task.isCancelled, messages.indices.contains(assistantIdx) else { return }
-                assistantMessage.content += chunk
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID,
+                      messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
+                assistantMessage.content += limiter.append(chunk)
                 messages[assistantIdx] = assistantMessage
+                if let reason = limiter.stopReason {
+                    streamingNotice = reason.message
+                    sendTask?.cancel()
+                    return
+                }
+                // Buffered tokens must not monopolize the main actor and starve Stop.
+                await Task.yield()
             }
         } catch {
-            guard !invalidated, !Task.isCancelled, messages.indices.contains(assistantIdx) else { return }
+            guard !invalidated, !Task.isCancelled, activeSendID == sendID,
+                  messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
             streamingError = error.localizedDescription
-            messages[assistantIdx].content = "Error: \(error.localizedDescription)"
+            if assistantMessage.content.isEmpty {
+                messages[assistantIdx].content = "Error: \(error.localizedDescription)"
+            } else {
+                streamingNotice = "Response interrupted: \(error.localizedDescription)"
+            }
         }
+    }
 
+    func stopGenerating() {
+        guard let task = sendTask else { return }
+        activeSendID = nil
+        sendTask = nil
         isStreaming = false
-        guard !invalidated, !Task.isCancelled else { return }
+        task.cancel()
+        streamingNotice = "Stopped generating."
+        if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
+            messages.removeLast()
+        }
+        // Save from the user's action, before the cancelled task unwinds.
         scheduleSave()
     }
 
@@ -189,6 +226,7 @@ final class TranscriptChatService {
         guard !invalidated, !isStreaming else { return }
         messages = []
         streamingError = nil
+        streamingNotice = nil
         // Clearing the conversation removes the on-disk sidecar too.
         saveTask?.cancel()
         hasUnsavedChanges = false

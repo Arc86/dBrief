@@ -110,12 +110,6 @@ struct SettingsAITab: View {
                     }
                         .listRowBackground(Color.clear)
                 }
-                if appSettings.aiEngine == .remoteEndpoint {
-                    Section("Endpoints") {
-                        endpointsSection
-                    }
-                        .listRowBackground(Color.clear)
-                }
                 if appSettings.aiEngine == .localCLI {
                     Section("Local CLI") {
                         localCLISection
@@ -123,6 +117,13 @@ struct SettingsAITab: View {
                         .listRowBackground(Color.clear)
                     Section("Chat Fallback") {
                         chatFallbackSection
+                    }
+                        .listRowBackground(Color.clear)
+                }
+                if appSettings.aiEngine == .remoteEndpoint
+                    || (appSettings.aiEngine == .localCLI && appSettings.chatFallbackEngine == .remoteEndpoint) {
+                    Section("Endpoints") {
+                        endpointsSection
                     }
                         .listRowBackground(Color.clear)
                 }
@@ -315,6 +316,11 @@ struct SettingsAITab: View {
             Text("The Local CLI runs once per recording and can't stream, so the transcript chat window uses this engine instead.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if appSettings.chatFallbackEngine == .remoteEndpoint {
+                Text("Chat uses the default endpoint selected below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
