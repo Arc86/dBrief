@@ -159,6 +159,42 @@ struct ReprocessingManagerTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.sidecar("queue.json").path))
     }
 
+    @Test func linkedCalendarSurvivesReopeningAndIsFrozenForReprocessing() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = RecordingMetadataPayload(dateISO8601: ISO8601DateFormatter().string(from: date),
+            durationSeconds: 60, meetingTitle: "Custom title", masterFileName: fixture.audio.lastPathComponent,
+            segmentFileNames: [], warnings: [], participants: ["Alex"])
+        try JSONEncoder().encode(payload).write(to: fixture.sidecar("json"))
+        let event = CalendarEvent(title: "Planning", attendees: [.init(name: "Sam", email: nil)],
+            body: "Next quarter", startDate: date, endDate: date.addingTimeInterval(60))
+        let recording = fixture.recording()
+        let revision = fixture.manager.calendarContextRevision
+        try await fixture.manager.linkCalendar(event, to: recording, updateTitle: false, updateParticipants: false)
+        #expect(fixture.manager.calendarContextRevision == revision + 1)
+        // An unrelated active job keeps the new attempt queued without running an engine.
+        fixture.state.processingJob = ProcessingJob(recording: Recording(fileURL: fixture.root.appendingPathComponent("other.wav")))
+        let reopened = fixture.recording()
+        #expect(reopened.calendarEvent == nil)
+        var options = ReprocessingOptions(settings: fixture.settings, operation: .transcribe)
+        options.engine = .appleSpeech
+        options.spokenLanguage = ""
+        options.vocabulary = []
+        options.regenerateAI = false
+        options.diarizationEnabled = false
+        try await fixture.manager.startReprocessing(for: reopened, options: options)
+        let attempt = try #require(fixture.manager.reprocessingAttempts.first)
+        let request = try JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration)
+        #expect(request.calendarEvent == event)
+        #expect(request.date == date && request.duration == 60)
+        #expect(request.title == "Custom title" && request.participants == ["Alex"])
+        await #expect(throws: ReprocessingError.self) {
+            try await fixture.manager.linkCalendar(event, to: reopened, updateTitle: true, updateParticipants: true)
+        }
+        fixture.state.processingJob = nil
+    }
+
     @MainActor private final class Fixture {
         let root: URL
         let audio: URL

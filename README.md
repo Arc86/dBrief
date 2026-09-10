@@ -36,6 +36,7 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 - **Auto-delete** — optionally purge old recordings and/or transcripts after a chosen age (off by default)
 - **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
 - **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
+- **Link meetings later** — choose **Reprocess → Link calendar meeting…** on a saved recording to attach a meeting from its original day. Keep or replace its title and participants, then optionally rerun AI analysis with the saved agenda and attendees. Existing exports and integration deliveries are unchanged.
 - **Four destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook
 
 ---

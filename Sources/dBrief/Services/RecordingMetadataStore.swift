@@ -48,6 +48,33 @@ actor RecordingMetadataStore {
         try writeVerified(JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]), to: url)
     }
 
+    func load(audioURL: URL) throws -> RecordingMetadataPayload? {
+        let url = audioURL.deletingPathExtension().appendingPathExtension("json")
+        do { return try JSONDecoder().decode(RecordingMetadataPayload.self, from: files.read(url)) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+    }
+
+    /// Explicit links must fail visibly if metadata cannot be read or verified.
+    /// Mutate only owned fields to retain processing stamps and future keys.
+    func linkCalendar(_ event: CalendarEvent, audioURL: URL,
+                      updateTitle: Bool, updateParticipants: Bool) throws {
+        try Task.checkCancellation()
+        let url = audioURL.deletingPathExtension().appendingPathExtension("json")
+        let bytes = try files.read(url)
+        _ = try JSONDecoder().decode(RecordingMetadataPayload.self, from: bytes)
+        guard var object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
+            throw Failure.invalidMetadata
+        }
+        object["calendarEvent"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(event))
+        object["calendarAttendees"] = event.attendeeNames
+        if updateParticipants { object["participants"] = event.attendeeNames }
+        if updateTitle, !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            object["meetingTitle"] = event.title
+            object["generatedTitle"] = event.title
+        }
+        try writeVerified(JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), to: url)
+    }
+
     private func writeVerified(_ bytes: Data, to url: URL) throws {
         try Task.checkCancellation()
         defer { files.changed() }

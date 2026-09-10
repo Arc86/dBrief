@@ -31,7 +31,7 @@ final class Recording: Identifiable {
     var participants: [String] = []
     /// Calendar event matched to this recording (best of `calendarCandidates`, or the user's
     /// pick from the override picker), used to pre-fill fields and AI context.
-    /// Not persisted to disk — only valid for the current session's processing run.
+    /// Persisted in the metadata sidecar for calendar linking and later reprocessing.
     var calendarEvent: CalendarEvent?
     /// All calendar events that plausibly match this recording's span, ranked best-first by
     /// `CalendarMatcher`. Drives the override picker in the post-recording sheet.

@@ -57,6 +57,7 @@ final class RecordingManager {
     weak var transcriptChatStore: TranscriptChatStore?
     var reprocessingAttempts: [ReprocessingStore.Attempt] = []
     var reprocessingResultsRevision = 0
+    var calendarContextRevision = 0
     var reprocessingAdmissionBusy = false
     var reprocessingRecoveryReady = true
     var queueLoadError: String?
@@ -82,9 +83,9 @@ final class RecordingManager {
     private let captureSessionStore: CaptureSessionStore
     @ObservationIgnored private var pickedImportTask: Task<Void, Never>?
     @ObservationIgnored private var pickedImportGeneration = 0
-    private let calendarService = CalendarService()
+    let calendarService = CalendarService()
     private let microsoftAuthService: MicrosoftAuthService
-    private let outlookCalendarService: OutlookCalendarService
+    let outlookCalendarService: OutlookCalendarService
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
@@ -2972,7 +2973,11 @@ final class RecordingManager {
     private func persistMeetingContext(for recording: Recording, job: ProcessingJob) async {
         let participants = PersonName.displayList(recording.participants)
         let attendees = recording.calendarEvent?.attendeeNames ?? []
-        guard !participants.isEmpty || !attendees.isEmpty else { return }
+        guard !participants.isEmpty || !attendees.isEmpty || recording.calendarEvent != nil else { return }
+        if let event = recording.calendarEvent, let audio = recording.finalizedAudioURL {
+            do { try await RecordingMetadataStore.shared.linkCalendar(event, audioURL: audio, updateTitle: false, updateParticipants: false) }
+            catch { Logger.recording.error("Could not persist calendar context: \(error.localizedDescription)") }
+        }
         await updateMetadataSidecar(.meetingContext(participants: participants, calendarAttendees: attendees),
                                     for: recording, job: job, describing: "meeting participants")
     }

@@ -73,9 +73,13 @@ extension RecordingManager {
             $0.status != .completed && $0.dismissedFromQueue != true && $0.source.finalizedAudioPath == audio.path
         }) else { throw ReprocessingError.busy }
         try Task.checkCancellation()
-        let request = ReprocessingRequest(options: options, recordingID: recording.id,
-            date: recording.date, title: recording.meetingTitleDraft, duration: recording.duration,
-            participants: recording.participants, calendarEvent: recording.calendarEvent)
+        let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
+        let request = ReprocessingRequest(options: options, recordingID: metadata?.recordingID ?? recording.id,
+            date: metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date,
+            title: metadata?.meetingTitle ?? recording.meetingTitleDraft,
+            duration: metadata?.durationSeconds ?? recording.duration,
+            participants: metadata?.participants ?? recording.participants,
+            calendarEvent: metadata?.calendarEvent ?? recording.calendarEvent)
         let attempt = try await reprocessingStore.prepare(audioURL: audio, configuration: JSONEncoder().encode(request))
         invalidateReprocessingChat(audio)
         reprocessingAttempts.append(attempt)

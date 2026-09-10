@@ -632,6 +632,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     /// (empty for sidecars written before these fields existed).
     var participants: [String] = []
     var calendarAttendees: [String] = []
+    var calendarEvent: CalendarEvent? = nil
     /// Retained even when a recording is never queued or processed.
     var associatedApp: String? = nil
     var lastProcessingCompletion: ProcessingCompletionStamp? = nil
@@ -639,7 +640,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case recordingID, dateISO8601, durationSeconds, meetingTitle, masterFileName
         case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees, associatedApp
-        case lastProcessingCompletion
+        case lastProcessingCompletion, calendarEvent
     }
 
     init(
@@ -680,6 +681,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         generatedTitle = try c.decodeIfPresent(String.self, forKey: .generatedTitle)
         participants = try c.decodeIfPresent([String].self, forKey: .participants) ?? []
         calendarAttendees = try c.decodeIfPresent([String].self, forKey: .calendarAttendees) ?? []
+        calendarEvent = try c.decodeIfPresent(CalendarEvent.self, forKey: .calendarEvent)
         associatedApp = try c.decodeIfPresent(String.self, forKey: .associatedApp)
         lastProcessingCompletion = try c.decodeIfPresent(ProcessingCompletionStamp.self, forKey: .lastProcessingCompletion)
     }
