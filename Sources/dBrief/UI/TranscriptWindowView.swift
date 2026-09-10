@@ -129,8 +129,7 @@ struct TranscriptDetailView: View {
     }
 
     private var isProcessingLive: Bool {
-        guard context.appState.processingJob?.reprocessingAttemptID == nil, !isReprocessing else { return false }
-        return context.appState.processingJob?.recording.id == recording.id
+        context.appState.processingJob?.showsTranscriptPreview(for: recording) == true
     }
 
     /// True while this view shows the in-progress (recording or processing) recording —
@@ -411,6 +410,7 @@ struct TranscriptDetailView: View {
                         .foregroundStyle(showLiveChat ? Color.accentColor : Color.secondary)
                 }
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
+                .disabled(isReprocessing)
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
             } else {
                 Picker("View", selection: $mode) {
@@ -1036,17 +1036,32 @@ struct TranscriptDetailView: View {
     }
 
     private var liveStatusBanner: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(isProcessingLive ? Color.orange : Color.red)
-                .frame(width: 9, height: 9)
-            Text(isProcessingLive ? "Processing…" : "Recording — live transcript")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("\(liveSegments.count) segments")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        let step = isProcessingLive ? context.appState.processingSteps.first {
+            if case .inProgress = $0.status { return true }
+            return false
+        } : nil
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isProcessingLive ? Color.orange : Color.red)
+                    .frame(width: 9, height: 9)
+                Text(isProcessingLive ? (step?.name ?? "Processing…") : "Recording — live transcript")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(liveSegments.count) segments")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let progress = step?.progress {
+                ProgressView(value: progress, total: 1)
+                    .progressViewStyle(.linear)
+            }
+            if let detail = step?.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

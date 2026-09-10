@@ -742,7 +742,6 @@ final class RecordingManager {
         guard !Task.isCancelled, appState.processingJob === job else { return }
 
         let progress = PreparationProgress()
-        defer { progress.etaTask?.cancel() }
         do {
             let prepared = try await processingPipeline.prepareWorkflow(transcribe: transcribe, steps: .init(
                 waitForCalendar: { @MainActor in
@@ -789,7 +788,6 @@ final class RecordingManager {
                     try await self.completeLegacyQueueCheckpoint(for: job)
                 }, transcriptCommitted: { @MainActor result, fresh in
                     try self.requireProcessingOwnership(job)
-                    progress.etaTask?.cancel()
                     if fresh { self.appSettings.lifetimeTranscribedSeconds += recording.duration }
                     if let index = progress.transcriptionIndex { self.markCompleted(index) }
                     if fresh, let warnings = result.warnings, !warnings.isEmpty {
@@ -844,7 +842,6 @@ final class RecordingManager {
     @MainActor private final class PreparationProgress {
         var finalizationIndex: Int?
         var transcriptionIndex: Int?
-        var etaTask: Task<Void, Never>?
     }
 
     private func finalizePreparation(job: ProcessingJob, progress: PreparationProgress) async throws {
@@ -880,11 +877,6 @@ final class RecordingManager {
         case .remoteEndpoint: "Transcribing audio"
         }
         appState.processingSteps.append(ProcessingStep(name: name, status: .inProgress))
-        switch settings.engine {
-        case .appleSpeech, .remoteEndpoint: job.transcriptionStartedAt = Date()
-        case .localWhisper, .parakeetLocal: break
-        }
-        progress.etaTask = startTranscriptionETATicker(job: job, stepIndex: index, audioDuration: recording.duration, settings: settings)
         let output = try await transcribeRecordingAudio(recording: recording, stepIndex: index, settings: settings)
         try requireProcessingOwnership(job)
         return .init(transcription: output.transcription, model: settings.modelDisplayName,
@@ -2492,6 +2484,25 @@ final class RecordingManager {
     /// otherwise estimates from the model's historical realtime ratio. Stays silent
     /// (leaving the download/load bar untouched) until `job.transcriptionStartedAt`
     /// is set, i.e. actual transcription has begun. Cancel it when the step ends.
+    func withTranscriptionProgress<T>(
+        job: ProcessingJob, stepIndex: Int,
+        settings: ProcessingPipeline.TranscriptionSettings,
+        operation: () async throws -> T
+    ) async throws -> T {
+        try requireProcessingOwnership(job)
+        switch settings.engine {
+        case .appleSpeech, .remoteEndpoint: job.transcriptionStartedAt = Date()
+        case .localWhisper, .parakeetLocal: job.transcriptionStartedAt = nil
+        }
+        let ticker = startTranscriptionETATicker(job: job, stepIndex: stepIndex,
+            audioDuration: job.recording.duration, settings: settings)
+        defer {
+            ticker.cancel()
+            job.transcriptionStartedAt = nil
+        }
+        return try await operation()
+    }
+
     private func startTranscriptionETATicker(
         job: ProcessingJob,
         stepIndex: Int,
@@ -2657,29 +2668,31 @@ final class RecordingManager {
             let speller = TranscriptSpellingService(localPlugin: localAIPluginService)
             correct = { await speller.correct($0, request: settings.spelling) }
         }
-        let result = try await processingPipeline.transcribe(
-            .init(audioURL: recording.fileURL, segmentURLs: recording.segmentAudioURLs),
-            options: settings.cleanup,
-            using: { @MainActor request in
-                guard !Task.isCancelled, self.appState.processingJob === owner else {
-                    throw CancellationError()
-                }
-                return try await self.transcribeSingleAudioFile(request.url, job: owner, stepIndex: stepIndex,
-                    segmentIndex: request.segmentIndex, segmentCount: request.segmentCount, settings: settings)
-            }, correct: correct,
-            onEvent: { @MainActor event in
-                guard !Task.isCancelled, self.appState.processingJob === owner,
-                      self.appState.processingSteps.indices.contains(stepIndex) else { return }
-                switch event {
-                case .transcribingSegment(let index, let count):
-                    self.appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(index)/\(count))"
-                case .correctingVocabulary:
-                    self.appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
-                    self.appState.processingJob?.transcriptionStartedAt = nil
-                    self.appState.processingSteps[stepIndex].progress = nil
-                    self.appState.processingSteps[stepIndex].detail = nil
-                }
-            })
+        let result = try await withTranscriptionProgress(job: owner, stepIndex: stepIndex, settings: settings) {
+            try await processingPipeline.transcribe(
+                .init(audioURL: recording.fileURL, segmentURLs: recording.segmentAudioURLs),
+                options: settings.cleanup,
+                using: { @MainActor request in
+                    guard !Task.isCancelled, self.appState.processingJob === owner else {
+                        throw CancellationError()
+                    }
+                    return try await self.transcribeSingleAudioFile(request.url, job: owner, stepIndex: stepIndex,
+                        segmentIndex: request.segmentIndex, segmentCount: request.segmentCount, settings: settings)
+                }, correct: correct,
+                onEvent: { @MainActor event in
+                    guard !Task.isCancelled, self.appState.processingJob === owner,
+                          self.appState.processingSteps.indices.contains(stepIndex) else { return }
+                    switch event {
+                    case .transcribingSegment(let index, let count):
+                        self.appState.processingSteps[stepIndex].name = "Transcribing audio (segment \(index)/\(count))"
+                    case .correctingVocabulary:
+                        self.appState.processingSteps[stepIndex].name = "Correcting vocabulary…"
+                        self.appState.processingJob?.transcriptionStartedAt = nil
+                        self.appState.processingSteps[stepIndex].progress = nil
+                        self.appState.processingSteps[stepIndex].detail = nil
+                    }
+                })
+        }
         try Task.checkCancellation()
         guard appState.processingJob === owner else { throw CancellationError() }
         return result

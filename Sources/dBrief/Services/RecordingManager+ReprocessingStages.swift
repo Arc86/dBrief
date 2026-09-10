@@ -38,7 +38,6 @@ extension RecordingManager {
         switch stage {
         case .transcription:
             let config = try options.transcriptionSettings(settings: appSettings)
-            job.transcriptionStartedAt = Date()
             let output = try await transcribeRecordingAudio(recording: job.recording, stepIndex: index, settings: config)
             try requireProcessingOwnership(job)
             let raw = output.transcription

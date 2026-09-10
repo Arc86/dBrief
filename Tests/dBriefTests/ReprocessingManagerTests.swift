@@ -5,6 +5,40 @@ import dBriefWire
 
 @Suite("Reprocessing manager integration", .serialized) @MainActor
 struct ReprocessingManagerTests {
+    @Test func retranscriptionProgressWaitsForModelThenShowsAnEstimateAndStopsOnFailure() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        let recording = fixture.recording()
+        recording.duration = 120
+        let job = ProcessingJob(recording: recording)
+        job.reprocessingAttemptID = job.id
+        fixture.state.processingJob = job
+        fixture.state.processingSteps = [.init(name: "Loading WhisperKit model…", status: .inProgress)]
+        var options = ReprocessingOptions(settings: fixture.settings, operation: .transcribe)
+        options.engine = .localWhisper
+        let config = try options.transcriptionSettings(settings: fixture.settings)
+        let bridge = ProcessingStepProgress(appState: fixture.state, job: job, stepIndex: 0)
+        defer { bridge.invalidate() }
+        struct Finished: Error {}
+        do {
+            try await fixture.manager.withTranscriptionProgress(job: job, stepIndex: 0, settings: config) {
+                #expect(job.transcriptionStartedAt == nil)
+                try await Task.sleep(for: .milliseconds(1100))
+                #expect(fixture.state.processingSteps[0].progress == nil)
+                bridge.applyPluginState(.transcribing)
+                // A slow backend emits no words yet, but still needs progress feedback.
+                try await Task.sleep(for: .milliseconds(1200))
+                #expect((fixture.state.processingSteps[0].progress ?? 0) > 0)
+                #expect(fixture.state.processingSteps[0].detail?.contains("left") == true)
+                throw Finished()
+            }
+        } catch { #expect(error is Finished) }
+        #expect(job.transcriptionStartedAt == nil)
+        fixture.state.processingSteps[0].detail = "Next phase"
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(fixture.state.processingSteps[0].detail == "Next phase")
+    }
+
     @Test("Completed stages publish without their former endpoints", arguments: [false, true])
     func resumesCompletedStagesWithoutResolvingEndpoints(changed: Bool) async throws {
         let fixture = try Fixture()

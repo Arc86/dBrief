@@ -62,6 +62,13 @@ final class ProcessingJob {
     /// the ETA ticker stops writing.
     var transcriptionStartedAt: Date?
 
+    func showsTranscriptPreview(for candidate: Recording) -> Bool {
+        // Reprocessing owns a staged object with the same ID as the published
+        // recording. Only that staged object may display the replacement preview.
+        if reprocessingAttemptID != nil { return recording === candidate }
+        return recording.id == candidate.id
+    }
+
     /// Latest verified durable state. Nil for operations that intentionally
     /// remain outside Phase 5A (for example, manual AI-only retries).
     var reprocessingAttemptID: UUID?

@@ -68,6 +68,9 @@ extension ProcessingStepProgress {
                 break // Parakeet doesn't produce live segments
             case .diarizing:
                 step.name = "Identifying speakers"
+                job.transcriptionStartedAt = nil
+                step.progress = nil
+                step.detail = nil
             case .analyzing:
                 break
             case .downloading(let progress, let stage):
@@ -110,6 +113,9 @@ extension ProcessingStepProgress {
                 return // don't update step name
             case .diarizing:
                 step.name = "Identifying speakers"
+                job.transcriptionStartedAt = nil
+                step.progress = nil
+                step.detail = nil
             case .analyzing:
                 step.name = "Analyzing transcript (Gemma 4 E4B local)"
             case .downloading(let progress, let stage):

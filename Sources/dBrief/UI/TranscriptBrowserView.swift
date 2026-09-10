@@ -36,6 +36,7 @@ struct TranscriptBrowserView: View {
     }
     @State private var selection: URL?
     @State private var selectedWork: LibraryWorkItem?
+    @State private var detailIsProcessingPreview = false
     /// Stable `Recording` for the current selection. Built once per selection
     /// (not per render) so the detail view's identity and state — including its
     /// chat session — survive while chatting or playing back.
@@ -57,7 +58,7 @@ struct TranscriptBrowserView: View {
     /// coexist with a concurrent capture. `nil` when no job is running. Guarded against
     /// duplicating the capture pin (they're always different recordings, but be safe).
     private var processingRecording: Recording? {
-        guard let job = appState.processingJob, job.reprocessingAttemptID == nil else { return nil }
+        guard let job = appState.processingJob else { return nil }
         if let live = liveRecording, live.id == job.recording.id { return nil }
         return job.recording
     }
@@ -507,20 +508,25 @@ struct TranscriptBrowserView: View {
     private func rebuildDetailRecording() {
         // Selecting a pinned in-progress entry shows that recording object directly.
         if let live = liveRecording, selection == live.fileURL {
+            detailIsProcessingPreview = false
             if detailRecording !== live { detailRecording = live }
             return
         }
         if let proc = processingRecording, selection == proc.fileURL {
+            detailIsProcessingPreview = true
             if detailRecording !== proc { detailRecording = proc }
             return
         }
         if let item = selectedItem {
-            if detailRecording?.fileURL != item.url {
+            // On completion, failure or Stop, leave the staged object behind and
+            // reload the published recording, even though its URL is unchanged.
+            if detailIsProcessingPreview || detailRecording?.fileURL != item.url {
                 detailRecording = makeRecording(from: item)
             }
         } else {
             detailRecording = nil
         }
+        detailIsProcessingPreview = false
     }
 
     private func applyPendingSelection() {
@@ -536,6 +542,10 @@ struct TranscriptBrowserView: View {
         // processing progress view is the common source); fall back to the capture row.
         if let proc = processingRecording { selection = proc.fileURL }
         else if let live = liveRecording { selection = live.fileURL }
+        // The URL may already be selected, so onChange(selection) need not fire.
+        // Switch from the published recording to this job's staged object anyway.
+        selectedWork = nil
+        rebuildDetailRecording()
         appState.pendingLiveTranscriptSelection = false
     }
 
