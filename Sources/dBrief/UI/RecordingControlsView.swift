@@ -10,7 +10,6 @@ struct RecordingControlsView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.openWindow) private var openWindow
 
-    @State private var inputDevices: [AudioInputDevice] = []
 
     var body: some View {
         @Bindable var settings = appSettings
@@ -113,28 +112,12 @@ struct RecordingControlsView: View {
             // Audio source chips
             if appState.isRecording || appState.isPaused {
                 HStack(spacing: 8) {
-                    Menu {
-                        Button("System Default") { recordingManager.switchInputDevice(to: nil) }
-                        Divider()
-                        ForEach(inputDevices) { device in
-                            Button {
-                                recordingManager.switchInputDevice(to: device.uid)
-                            } label: {
-                                if device.uid == appSettings.audioInputDeviceUID {
-                                    Label(device.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(device.displayName)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Mic", systemImage: "mic.fill")
-                            .font(.caption2)
-                            .foregroundStyle(recordingManager.hasMicrophonePermission ? .green : .secondary)
-                    }
-                    .menuStyle(.borderlessButton)
+                    MicrophoneInputMenu(
+                        selectedUID: appSettings.audioInputDeviceUID,
+                        enabled: recordingManager.hasMicrophonePermission,
+                        select: { recordingManager.switchInputDevice(to: $0) }
+                    )
                     .fixedSize()
-                    .onAppear { inputDevices = AudioInputDeviceManager.availableInputDevices() }
 
                     if recordingManager.hasSystemAudioPermission {
                         Label("System Audio", systemImage: "speaker.wave.2.fill")
@@ -210,10 +193,27 @@ struct RecordingControlsView: View {
                         ? "externaldrive.badge.exclamationmark"
                         : "externaldrive.badge.checkmark")
                         .foregroundStyle(noticeColor)
-                    Text(notice)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(notice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if appState.durabilityNoticeIsWarning {
+                            HStack {
+                                Button("Retry Recovery") {
+                                    Task {
+                                        await recordingManager.recoverInterruptedSessions()
+                                        await recordingManager.refreshWorkQueue()
+                                    }
+                                }
+                                .disabled(!recordingManager.canPerformLibraryWork)
+                                Button("Show Files") {
+                                    NSWorkspace.shared.open(InterruptedSessionStore.defaultRootURL)
+                                }
+                            }
+                            .font(.caption)
+                        }
+                    }
                     Spacer(minLength: 4)
                     Button {
                         appState.durabilityNotice = nil

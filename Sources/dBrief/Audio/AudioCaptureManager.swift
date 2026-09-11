@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
+import CoreAudio
 @preconcurrency import ScreenCaptureKit
 import os
 
@@ -36,10 +37,12 @@ final class AudioCaptureManager {
     private var selectedInputUID: String = ""
     /// What the engine currently has applied — the idempotency snapshot fed to the planner.
     private var appliedInputUID: String = ""
+    private var appliedDefaultInputID: AudioDeviceID?
     private var appliedVoiceProcessing = false
 
     private var configChangeObserver: NSObjectProtocol?
     private var outputMonitor: DefaultOutputDeviceMonitor?
+    private var inputMonitors: [DefaultOutputDeviceMonitor] = []
     private var reconfigureDebounceTask: Task<Void, Never>?
     private static let reconfigureDebounceInterval: Duration = .milliseconds(400)
 
@@ -366,7 +369,7 @@ final class AudioCaptureManager {
         }
 
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0 else {
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw AudioCaptureError.noMicrophoneAccess
         }
         log.info("Mic format: \(inputFormat.sampleRate, privacy: .public)Hz \(inputFormat.channelCount, privacy: .public)ch")
@@ -379,6 +382,7 @@ final class AudioCaptureManager {
         // Record the state actually achieved (the device may differ if a pinned UID
         // was missing) so the auto-reconfigure path is idempotent.
         appliedInputUID = (AudioInputDeviceManager.deviceID(forUID: selectedInputUID) != nil) ? selectedInputUID : ""
+        appliedDefaultInputID = AudioInputDeviceManager.defaultInputDeviceID()
         appliedVoiceProcessing = achievedVoiceProcessing
         installChangeObservers()
         log.info("Mic capture started")
@@ -410,15 +414,12 @@ final class AudioCaptureManager {
     func switchMicrophoneDevice(to newUID: String?) throws {
         guard isCapturing, micEngine != nil, micWriter != nil else { return }
         selectedInputUID = newUID ?? ""
-        // The user explicitly chose this device — treat it as present so a CoreAudio
-        // enumeration race can't trigger the "device gone → default" fallback.
-        try applyReconfigure(computeDecision(treatSelectedAsPresent: true))
+        try applyReconfigure(computeDecision())
     }
 
     /// Bridges the impure CoreAudio state into the pure `MicReconfigurePlanner`.
-    private func computeDecision(treatSelectedAsPresent: Bool = false) -> MicReconfigureDecision {
-        var available = Set(AudioInputDeviceManager.availableInputDevices().map(\.uid))
-        if treatSelectedAsPresent, !selectedInputUID.isEmpty { available.insert(selectedInputUID) }
+    private func computeDecision() -> MicReconfigureDecision {
+        let available = Set(AudioInputDeviceManager.availableInputDevices().map(\.uid))
         return MicReconfigurePlanner.decide(
             selectedUID: selectedInputUID,
             availableInputUIDs: available,
@@ -426,13 +427,15 @@ final class AudioCaptureManager {
             aecSettingEnabled: aecSettingEnabled,
             outputHasEchoPath: AudioOutputRoute.currentOutputHasEchoPath(),
             currentlyAppliedUID: appliedInputUID,
-            currentlyVoiceProcessing: appliedVoiceProcessing
+            currentlyVoiceProcessing: appliedVoiceProcessing,
+            engineStopped: micEngine?.isRunning == false && pauseStartTime == nil,
+            defaultInputChanged: appliedDefaultInputID != AudioInputDeviceManager.defaultInputDeviceID()
         )
     }
 
     /// Re-point the mic engine and/or toggle VPIO to reach `decision`, keeping the
     /// in-progress mic track continuous. Idempotent no-op unless a change is needed.
-    /// Throws (after attempting to restore) only on a hard invalid-format failure.
+    /// Failed switches propagate without claiming the requested device was applied.
     private func applyReconfigure(_ decision: MicReconfigureDecision) throws {
         guard isCapturing, let engine = micEngine, let writer = micWriter else { return }
         guard decision.needsReconfigure else { return }
@@ -453,13 +456,7 @@ final class AudioCaptureManager {
         micSink = nil
 
         let targetUIDOrNil = decision.targetDeviceUID.isEmpty ? nil : decision.targetDeviceUID
-        var deviceApplied = true
-        do {
-            try AudioInputDeviceManager.applyInputDevice(uid: targetUIDOrNil, to: engine)
-        } catch {
-            deviceApplied = false
-            log.warning("Reconfigure: applyInputDevice failed: \(error.localizedDescription, privacy: .public)")
-        }
+        try AudioInputDeviceManager.applyInputDevice(uid: targetUIDOrNil, to: engine)
 
         if vpioChanged {
             do {
@@ -470,7 +467,7 @@ final class AudioCaptureManager {
         }
 
         let newFormat = inputNode.outputFormat(forBus: 0)
-        guard newFormat.sampleRate > 0 else {
+        guard newFormat.sampleRate > 0, newFormat.channelCount > 0 else {
             log.error("Reconfigure: new device reports invalid format; attempting to restore")
             if shouldRun { try? engine.start() }
             throw AudioCaptureError.noMicrophoneAccess
@@ -486,7 +483,9 @@ final class AudioCaptureManager {
         //
         // Device: only adopt the target if the switch actually took; on failure the
         // engine kept its previous device, so leave the snapshot unchanged.
-        if deviceApplied { appliedInputUID = decision.targetDeviceUID }
+        appliedDefaultInputID = AudioInputDeviceManager.defaultInputDeviceID()
+        appliedInputUID = AudioInputDeviceManager.deviceID(forUID: decision.targetDeviceUID) == nil
+            ? "" : decision.targetDeviceUID
         // VPIO: if the toggle refused (the route can't do Voice Processing), record
         // the DESIRED value rather than the stuck readback, so benign config events
         // don't keep retrying an impossible toggle. A genuine route change recomputes
@@ -516,6 +515,11 @@ final class AudioCaptureManager {
         let monitor = DefaultOutputDeviceMonitor { changed() }
         monitor.start()
         outputMonitor = monitor
+        inputMonitors = [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices].map { selector in
+            let monitor = DefaultOutputDeviceMonitor(selector: selector) { changed() }
+            monitor.start()
+            return monitor
+        }
     }
 
     private func removeChangeObservers() {
@@ -527,6 +531,8 @@ final class AudioCaptureManager {
         }
         outputMonitor?.stop()
         outputMonitor = nil
+        inputMonitors.forEach { $0.stop() }
+        inputMonitors.removeAll()
         reconfigureDebounceTask?.cancel()
         reconfigureDebounceTask = nil
     }

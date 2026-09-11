@@ -4,8 +4,7 @@ import Foundation
 /// reconfigured in response to an input-device or output-route change.
 struct MicReconfigureDecision: Equatable {
     /// The device UID the engine should be pointed at. Empty string == "System
-    /// Default" (pass `nil` to `applyInputDevice` → the engine stays on its bound
-    /// default).
+    /// Default" (resolved to the current concrete CoreAudio input device).
     let targetDeviceUID: String
     /// Whether Voice-Processing IO (real-time AEC) should be enabled.
     let voiceProcessingEnabled: Bool
@@ -37,7 +36,9 @@ enum MicReconfigurePlanner {
         aecSettingEnabled: Bool,
         outputHasEchoPath: Bool,
         currentlyAppliedUID: String,
-        currentlyVoiceProcessing: Bool
+        currentlyVoiceProcessing: Bool,
+        engineStopped: Bool = false,
+        defaultInputChanged: Bool = false
     ) -> MicReconfigureDecision {
         // Target device: follow the system default when nothing is pinned, keep a
         // pinned device while it's present, and fall back to the default when a
@@ -58,6 +59,8 @@ enum MicReconfigurePlanner {
 
         let needsReconfigure = targetUID != currentlyAppliedUID
             || voiceProcessing != currentlyVoiceProcessing
+            || engineStopped
+            || (targetUID.isEmpty && defaultInputChanged)
 
         return MicReconfigureDecision(
             targetDeviceUID: targetUID,

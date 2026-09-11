@@ -38,6 +38,27 @@ struct AudioTrackWriterTests {
         #expect(file.fileFormat.channelCount == 1)
     }
 
+    @Test("capture uses fixed-size PCM packets that do not need a final packet table")
+    func captureIsCrashReadable() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = AudioTrackWriter(url: url, role: .mic)
+        try writer.write(makeBuffer(sampleRate: 16000, channels: 1, frames: 65536))
+        // Snapshot the bytes before close, exactly as a terminated process leaves
+        // them. Closing the original must not repair this independent copy.
+        let snapshot = tempURL()
+        defer { try? FileManager.default.removeItem(at: snapshot) }
+        try FileManager.default.copyItem(at: url, to: snapshot)
+        writer.close()
+        let file = try AVAudioFile(forReading: snapshot)
+        #expect(file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatLinearPCM)
+        #expect(file.fileFormat.streamDescription.pointee.mBytesPerPacket > 0)
+        #expect(file.length > 0)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4096)!
+        try file.read(into: buffer)
+        #expect(buffer.frameLength == 4096)
+    }
+
     @Test("format mismatch on later buffer is dropped, file stays intact")
     func formatMismatchDropped() throws {
         let url = tempURL()

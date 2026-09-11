@@ -25,8 +25,10 @@ final class DefaultOutputDeviceMonitor: @unchecked Sendable {
         mElement: kAudioObjectPropertyElementMain
     )
 
-    init(onChange: @escaping @Sendable () -> Void) {
+    init(selector: AudioObjectPropertySelector = kAudioHardwarePropertyDefaultOutputDevice,
+         onChange: @escaping @Sendable () -> Void) {
         self.onChange = onChange
+        self.address.mSelector = selector
     }
 
     func start() {

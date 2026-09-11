@@ -46,12 +46,8 @@ enum AudioInputDeviceManager {
     }
 
     static func applyInputDevice(uid: String?, to engine: AVAudioEngine) throws {
-        let trimmed = (uid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        guard let deviceID = deviceID(forUID: trimmed) else {
-            throw AudioInputDeviceError.deviceNotFound(trimmed)
-        }
+        let deviceID = try resolveInputDeviceID(uid: uid,
+            defaultDevice: defaultInputDeviceID, deviceForUID: deviceID(forUID:))
 
         guard let audioUnit = engine.inputNode.audioUnit else {
             return
@@ -70,6 +66,34 @@ enum AudioInputDeviceManager {
         guard status == noErr else {
             throw AudioInputDeviceError.failedToSetDevice(status)
         }
+    }
+
+    /// Resolve System Default to an actual device ID. Returning early for nil
+    /// would leave an existing engine pinned to its previous (possibly gone) input.
+    static func resolveInputDeviceID(
+        uid: String?,
+        defaultDevice: () -> AudioDeviceID?,
+        deviceForUID: (String) -> AudioDeviceID?
+    ) throws -> AudioDeviceID {
+        let trimmed = (uid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, let id = deviceForUID(trimmed), id != 0 { return id }
+        guard let id = defaultDevice(), id != 0 else {
+            throw AudioInputDeviceError.deviceNotFound("System Default")
+        }
+        return id
+    }
+
+    static func defaultInputDeviceID() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+            &address, 0, nil, &size, &id) == noErr, id != 0 else { return nil }
+        return id
     }
 
     /// Name of the current system default input device (e.g. "MacBook Pro Microphone"),

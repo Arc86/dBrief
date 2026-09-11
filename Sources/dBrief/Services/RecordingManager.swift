@@ -217,7 +217,7 @@ final class RecordingManager {
                 : "Recovered \(recoveredCount) interrupted recordings. They are available in History."
         } else {
             appState.durabilityNoticeIsWarning = true
-            appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) remain safe in Recording Recovery; reconnect the configured storage and retry recovery."
+            appState.durabilityNotice = "Recovered \(recoveredCount) recording(s). \(failedCount) session(s) could not be finalized. Original capture files are retained in Recording Recovery."
         }
         return failedCount == 0
     }
