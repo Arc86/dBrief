@@ -1,4 +1,6 @@
-## Unreleased — Settings usability
+## dBrief 1.4.2
+
+### Settings usability
 
 - Settings are grouped into App, Recording, Processing and Workflow. Find the shortcut and call detection under Recording, folders and retention under Storage, calendars under Integrations, and shared task choices under After Recording.
 - Search settings with ⌘F using names, help terms or older labels. Search stays on your Mac and does not index saved values or credentials. Advanced results can reveal their controls without changing the saved advanced-settings preference.
@@ -6,7 +8,22 @@
 - Shared-default reset now requires confirmation. Inactive or unsupported options explain their behavior while retaining saved values.
 - Vocabulary has visible Edit/Delete actions, explicit Save/Cancel and duplicate feedback. Native fields and switches have clearer accessible names, and failures provide expandable safe diagnostic details.
 
-Release acceptance is still in progress; these changes have not been published.
+### Calendar linking
+
+- **Link a saved recording to a calendar meeting after the fact** — pick from that day's meetings, ranked by likely match, even if no calendar event was found (or the wrong one was picked) when it was first recorded.
+- Optionally update the recording's title and participants from the linked meeting, then re-run AI analysis so the summary, action items, and tags reflect the meeting's agenda and attendees.
+- Previously exported notes and anything already sent to an integration are left untouched — linking a meeting never re-triggers those on its own.
+
+### Spoken Summary
+
+- **28 English Kokoro voices** (American and British, female and male) are now available and download-verified, instead of just the default voice.
+
+### Fixes
+
+- **Switching microphones is more reliable.** "System Default" now always resolves to an actual device instead of silently keeping a stale or disconnected one.
+- **A recording that crashes mid-capture is no longer unreadable.** Audio is written in a format that stays decodable even if dBrief exits before the file is closed properly, instead of losing hundreds of MB to an incomplete file.
+- **Recording action dialogs (calendar linking, reprocessing) now open in their own window** instead of being tied to the transient menu-bar popover, so they no longer disappear if the popover closes.
+- **Local CLI AI analysis recovers from malformed JSON** — a one-time repair pass fixes broken quoting/escaping in the model's response instead of failing outright, and failures now explain exactly what was wrong (missing field, bad value, malformed syntax) instead of a raw JSON error.
 
 ---
 
