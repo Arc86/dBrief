@@ -57,6 +57,11 @@ final class AppContext {
             recordingManager: recordingManager,
             audioPlayer: audioPlayer
         )
+        RecordingActionWindowController.shared.configure(
+            appState: appState,
+            appSettings: appSettings,
+            recordingManager: recordingManager
+        )
 
         self.whisperPrewarmCoordinator = WhisperPrewarmCoordinator(
             appSettings: appSettings, plugin: recordingManager.localPlugin)

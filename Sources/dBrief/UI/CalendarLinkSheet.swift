@@ -3,6 +3,7 @@ import SwiftUI
 struct CalendarLinkSheet: View {
     let recording: Recording
     let hasTranscript: Bool
+    var dismissAction: (() -> Void)? = nil
     @Environment(RecordingManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
     @State private var events: [CalendarEvent] = []
@@ -29,7 +30,7 @@ struct CalendarLinkSheet: View {
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
                     Spacer()
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Done") { close() }.keyboardShortcut(.cancelAction)
                     if hasTranscript {
                         Button("Re-run AI analysis…") { showAnalysis = true }
                             .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
@@ -67,7 +68,7 @@ struct CalendarLinkSheet: View {
                 if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
                 HStack {
                     Spacer()
-                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving)
+                    Button("Cancel") { close() }.keyboardShortcut(.cancelAction).disabled(saving)
                     Button("Link Meeting") { save() }
                         .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
                         .disabled(selected == nil || loading || saving)
@@ -79,9 +80,14 @@ struct CalendarLinkSheet: View {
         .disabled(saving)
         .interactiveDismissDisabled(saving)
         .task { await load() }
-        .sheet(isPresented: $showAnalysis, onDismiss: { dismiss() }) {
+        .sheet(isPresented: $showAnalysis, onDismiss: { close() }) {
             ReprocessingSheet(recording: recording, operation: .analysis)
         }
+    }
+
+    private func close() {
+        if let dismissAction { dismissAction() }
+        else { dismiss() }
     }
 
     private func label(_ event: CalendarEvent) -> String {

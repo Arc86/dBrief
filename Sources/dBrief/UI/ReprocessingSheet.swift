@@ -5,6 +5,7 @@ import dBriefWire
 struct ReprocessingSheet: View {
     let recording: Recording
     let operation: ReprocessingOperation
+    var dismissAction: (() -> Void)? = nil
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
@@ -14,11 +15,12 @@ struct ReprocessingSheet: View {
     var body: some View {
         Group {
             if let options {
-                ReprocessingEditor(recording: recording, initialOptions: options, usingPrevious: usingPrevious)
+                ReprocessingEditor(recording: recording, initialOptions: options,
+                    usingPrevious: usingPrevious, dismissAction: dismissAction)
             } else {
                 VStack(spacing: 16) {
                     ProgressView("Loading settings…")
-                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
                 }
                 .padding(32)
             }
@@ -32,11 +34,17 @@ struct ReprocessingSheet: View {
             options = value
         }
     }
+
+    private func close() {
+        if let dismissAction { dismissAction() }
+        else { dismiss() }
+    }
 }
 
 private struct ReprocessingEditor: View {
     let recording: Recording
     let usingPrevious: Bool
+    let dismissAction: (() -> Void)?
     @State private var options: ReprocessingOptions
     @State private var isStarting = false
     @State private var error: String?
@@ -44,9 +52,11 @@ private struct ReprocessingEditor: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
-    init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool) {
+    init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool,
+         dismissAction: (() -> Void)?) {
         self.recording = recording
         self.usingPrevious = usingPrevious
+        self.dismissAction = dismissAction
         _options = State(initialValue: initialOptions)
     }
 
@@ -89,7 +99,7 @@ private struct ReprocessingEditor: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
                     .disabled(isStarting)
                 Button(appState.processingJob == nil ? "Start" : "Add to Queue") { start() }
                     .keyboardShortcut(.defaultAction)
@@ -101,6 +111,11 @@ private struct ReprocessingEditor: View {
         .padding(24)
         .frame(width: 530)
         .interactiveDismissDisabled(isStarting)
+    }
+
+    private func close() {
+        if let dismissAction { dismissAction() }
+        else { dismiss() }
     }
 
     @ViewBuilder private var transcriptionControls: some View {
@@ -209,7 +224,7 @@ private struct ReprocessingEditor: View {
             do {
                 try options.validate()
                 try await manager.startReprocessing(for: recording, options: options)
-                dismiss()
+                close()
             } catch {
                 self.error = error.localizedDescription
             }

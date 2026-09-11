@@ -1,9 +1,15 @@
 import SwiftUI
 
+enum ReprocessingMenuPresentationStyle: Equatable {
+    case sheet
+    case window
+}
+
 /// Shared entry point for history rows and the transcript viewer toolbar.
 struct ReprocessingMenu: View {
     let recording: Recording
     var hasTranscript = true
+    var presentationStyle: ReprocessingMenuPresentationStyle = .sheet
     @Environment(RecordingManager.self) private var manager
     @State private var showCalendarLink = false
     @Environment(AppSettings.self) private var settings
@@ -24,12 +30,12 @@ struct ReprocessingMenu: View {
     var body: some View {
         Menu {
             if settings.effectiveCalendarSource != .disabled {
-                Button("Link calendar meeting…") { showCalendarLink = true }
+                Button("Link calendar meeting…") { presentCalendarLink() }
                 Divider()
             }
-            Button(hasTranscript ? "Retranscribe…" : "Transcribe…") { selectedOperation = .transcribe }
-            Button("Re-run AI analysis…") { selectedOperation = .analysis }.disabled(!hasTranscript)
-            Button("Detect speakers again…") { selectedOperation = .speakers }.disabled(!hasTranscript)
+            Button(hasTranscript ? "Retranscribe…" : "Transcribe…") { present(.transcribe) }
+            Button("Re-run AI analysis…") { present(.analysis) }.disabled(!hasTranscript)
+            Button("Detect speakers again…") { present(.speakers) }.disabled(!hasTranscript)
             Divider()
             Button("Restore previous results") { restore() }.disabled(!canRestore)
         } label: {
@@ -59,6 +65,28 @@ struct ReprocessingMenu: View {
         .alert("Could not restore results", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) { error = nil }
         } message: { Text(error ?? "") }
+    }
+
+    private func present(_ operation: ReprocessingOperation) {
+        if presentationStyle == .window {
+            RecordingActionWindowController.shared.showReprocessing(
+                recording: recording,
+                operation: operation
+            )
+        } else {
+            selectedOperation = operation
+        }
+    }
+
+    private func presentCalendarLink() {
+        if presentationStyle == .window {
+            RecordingActionWindowController.shared.showCalendarLink(
+                recording: recording,
+                hasTranscript: hasTranscript
+            )
+        } else {
+            showCalendarLink = true
+        }
     }
 
     private func restore() {

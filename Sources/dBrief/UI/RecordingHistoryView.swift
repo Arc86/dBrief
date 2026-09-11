@@ -40,6 +40,7 @@ enum RecordingStatus {
 
 struct RecordingHistoryView: View {
     @Binding var expanded: Bool
+    let recordingActionPresentationStyle: ReprocessingMenuPresentationStyle = .window
     @Environment(\.openWindow) private var openWindow
     @Environment(AppSettings.self) private var appSettings
     @Environment(AppState.self) private var appState
@@ -226,7 +227,8 @@ struct RecordingHistoryView: View {
                 ReprocessingMenu(recording: Recording(
                     fileURL: item.url, fileSize: item.size,
                     meetingTitleDraft: item.name, finalizedAudioURL: item.url
-                ), hasTranscript: item.hasTranscript)
+                ), hasTranscript: item.hasTranscript,
+                    presentationStyle: recordingActionPresentationStyle)
                 .menuStyle(.button)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
