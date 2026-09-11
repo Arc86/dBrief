@@ -14,7 +14,7 @@ import OSLog
 ///
 /// Audio is written to a WAV file at `outputPath` (never sent over the pipe — same
 /// contract as transcription/Qwen3). Voice ids are passed verbatim to
-/// `KokoroAneManager`, which downloads the embedding on demand.
+/// `KokoroAneManager`, after caching any additional English voice pack.
 final class KokoroTTSService: @unchecked Sendable {
     private let fallbackStateHandler: MLProgress.Sink
     nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
@@ -47,6 +47,19 @@ final class KokoroTTSService: @unchecked Sendable {
             // (synthesizeDetailed/phonemes(for:) throw); it needs pre-computed
             // IPA. We don't offer Japanese voices, but guard defensively.
             throw WireError(kind: .generic, message: "Kokoro: Japanese voices are not supported.")
+        }
+
+        if variant == .english {
+            guard let selectedVoice = KokoroVoice(rawValue: resolvedVoice) else {
+                throw WireError(kind: .generic, message: "Kokoro: unsupported English voice.")
+            }
+            if selectedVoice != .afHeart {
+                stateHandler(.downloading(progress: nil, stage: .kokoroTTSModel))
+                let repoDirectory = try TtsCacheDirectory.ensure()
+                    .appendingPathComponent(KokoroAneResourceDownloader.modelsSubdirectory)
+                    .appendingPathComponent(Repo.kokoroAne.folderName)
+                try await KokoroVoiceDownload.ensure(selectedVoice, repoDirectory: repoDirectory)
+            }
         }
 
         let engine = try await loadManager(variant: variant)

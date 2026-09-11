@@ -45,29 +45,51 @@ public enum TTSEngine: String, Codable, Sendable, Hashable, CaseIterable {
 }
 
 /// Selectable Kokoro (FluidAudio KokoroAne) voice. Raw values are Kokoro voice
-/// ids passed verbatim to `KokoroAneManager` (which downloads the embedding on
-/// demand), so `dBrief` never imports FluidAudio.
+/// ids passed verbatim to `KokoroAneManager`; the helper downloads packs on
+/// demand, so `dBrief` never imports FluidAudio.
 ///
-/// Only English voices are offered: the English ANE repo currently ships a single
-/// voice (`af_heart`). FluidAudio also ships Mandarin and Japanese variants, but
-/// dBrief deliberately exposes English only. Kokoro infers language from the voice
-/// id, so there is no separate language control.
+/// English voice packs are cached by the helper before FluidAudio loads them.
+/// Heart remains the default for existing installations.
 public enum KokoroVoice: String, Codable, Sendable, CaseIterable {
-    // English (the only voice FluidAudio currently ships for the English variant)
     case afHeart = "af_heart"
+    case afAlloy = "af_alloy"
+    case afAoede = "af_aoede"
+    case afBella = "af_bella"
+    case afJessica = "af_jessica"
+    case afKore = "af_kore"
+    case afNicole = "af_nicole"
+    case afNova = "af_nova"
+    case afRiver = "af_river"
+    case afSarah = "af_sarah"
+    case afSky = "af_sky"
+    case amAdam = "am_adam"
+    case amEcho = "am_echo"
+    case amEric = "am_eric"
+    case amFenrir = "am_fenrir"
+    case amLiam = "am_liam"
+    case amMichael = "am_michael"
+    case amOnyx = "am_onyx"
+    case amPuck = "am_puck"
+    case amSanta = "am_santa"
+    case bfAlice = "bf_alice"
+    case bfEmma = "bf_emma"
+    case bfIsabella = "bf_isabella"
+    case bfLily = "bf_lily"
+    case bmDaniel = "bm_daniel"
+    case bmFable = "bm_fable"
+    case bmGeorge = "bm_george"
+    case bmLewis = "bm_lewis"
 
-    /// Human-readable label for the voice picker.
     public var displayName: String {
-        switch self {
-        case .afHeart: "Heart"
-        }
+        rawValue.split(separator: "_").last!.capitalized
     }
 
-    /// Language grouping for the picker (Kokoro derives language from the voice).
-    public var language: String {
-        switch self {
-        case .afHeart: "English"
-        }
+    public var language: String { "English" }
+
+    public var detail: String {
+        let region = rawValue.hasPrefix("a") ? "American" : "British"
+        let gender = rawValue.dropFirst().hasPrefix("f") ? "Female" : "Male"
+        return "\(region) · \(gender)"
     }
 }
 

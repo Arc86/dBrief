@@ -54,6 +54,9 @@ import Foundation
         // Raw values must match FluidAudio Kokoro voice ids verbatim (the helper
         // passes them straight to KokoroAneManager).
         #expect(KokoroVoice.afHeart.rawValue == "af_heart")
+        #expect(KokoroVoice.allCases.count == 28)
+        #expect(KokoroVoice(rawValue: "am_michael") != nil)
+        #expect(KokoroVoice(rawValue: "bf_emma") != nil)
         for voice in KokoroVoice.allCases {
             #expect(KokoroVoice(rawValue: voice.rawValue) == voice)
             #expect(!voice.displayName.isEmpty)

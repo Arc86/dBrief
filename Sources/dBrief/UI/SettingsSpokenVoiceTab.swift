@@ -66,11 +66,11 @@ struct SettingsSpokenVoiceTab: View {
                 case .kokoro:
                     Picker("Voice", selection: $settings.ttsKokoroVoice) {
                         ForEach(KokoroVoice.allCases, id: \.self) { voice in
-                            Text("\(voice.displayName) · \(voice.language)").tag(voice)
+                            Text("\(voice.displayName) · \(voice.detail)").tag(voice)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text("Kokoro is in beta and speaks English. The chosen voice sets the language — there's no separate language or style control.")
+                    Text("English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     voicePreviewRow
