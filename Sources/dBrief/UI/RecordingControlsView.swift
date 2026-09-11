@@ -172,10 +172,35 @@ struct RecordingControlsView: View {
             }
 
             if let error = appState.lastError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .lineLimit(3)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Label("Error", systemImage: "exclamationmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(error, forType: .string)
+                        }
+                        .help("Copy the full error message")
+                        Button {
+                            appState.lastError = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Dismiss error")
+                    }
+                    ScrollView {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 110)
+                }
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if let notice = appState.durabilityNotice {

@@ -233,7 +233,7 @@ extension RecordingManager {
         }
         try requireProcessingOwnership(job)
         guard output.failures.isEmpty, let summary = output.summary,
-              let actions = output.actionItems, let tags = output.tags else { throw ReprocessingError.failedAnalysis }
+              let actions = output.actionItems, let tags = output.tags else { throw ReprocessingError.analysisFailure(output) }
         var insights = RecordingInsights(summary: summary, actionItems: actions, tags: tags,
             sentiment: output.sentiment ?? "", generatedTitle: nil, markdownPath: nil,
             modelProvenance: job.recording.analysisModelProvenance)

@@ -12,16 +12,38 @@ struct ReprocessingRequest: Codable, Sendable {
 }
 
 enum ReprocessingError: LocalizedError {
-    case pendingAttempt, missingAudio, missingTranscript, failedAnalysis, busy, noSpeakers
+    case pendingAttempt, missingAudio, missingTranscript, busy, noSpeakers
+    case failedAnalysis(String)
     var errorDescription: String? {
         switch self {
         case .pendingAttempt: "This recording has unfinished reprocessing. Resume or discard that attempt first."
         case .missingAudio: "The saved audio is unavailable. Reconnect its storage or restore the audio file, then retry."
         case .missingTranscript: "The saved transcript could not be read. Choose Retranscribe to create a replacement from the audio."
-        case .failedAnalysis: "Some requested AI results could not be generated. Current results were kept; resume this attempt to retry."
+        case .failedAnalysis(let detail): "AI results could not be generated.\n\n\(detail)\n\nCurrent results were kept. Resolve the error, then choose Resume in Queue & Recovery to retry."
         case .busy: "Finish the active save, review, or cleanup before reprocessing."
         case .noSpeakers: "No speakers were detected. Current results have been kept."
         }
+    }
+
+    static func analysisFailure(_ output: ProcessingPipeline.AnalysisOutput) -> Self {
+        var reasons: [(reason: String, fields: [String])] = []
+        for field in ProcessingPipeline.AnalysisField.allCases {
+            let label: String
+            let missing: Bool
+            switch field {
+            case .summary: label = "Summary"; missing = output.summary == nil
+            case .actionItems: label = "Action items"; missing = output.actionItems == nil
+            case .tags: label = "Tags"; missing = output.tags == nil
+            }
+            guard let reason = output.failures[field] ?? (missing ? "no result was returned" : nil) else { continue }
+            if let index = reasons.firstIndex(where: { $0.reason == reason }) {
+                reasons[index].fields.append(label)
+            } else {
+                reasons.append((reason, [label]))
+            }
+        }
+        let details = reasons.map { "\($0.fields.joined(separator: ", ")): \($0.reason)" }.joined(separator: "\n\n")
+        return .failedAnalysis("\(output.modelDisplayName ?? "AI engine")\n\(details)")
     }
 }
 
@@ -145,6 +167,7 @@ extension RecordingManager {
             try Task.checkCancellation()
             reprocessingAdmissionBusy = false
             guard canLaunchProcessing(for: working, reprocessingAttemptID: id) else { throw ReprocessingError.busy }
+            appState.lastError = nil
             appState.processingSteps = []
             appState.preflightWarning = nil
             appState.liveInferenceText = nil

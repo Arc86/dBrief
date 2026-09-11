@@ -97,3 +97,38 @@ struct LocalCLIServiceTests {
         #expect(result.tags == ["t1"])
     }
 }
+
+struct LocalCLIFormattingRetryTests {
+    @Test func repairsUnescapedQuotesWithoutRegeneratingTheMeeting() async throws {
+        let command = #"if [[ "$DBRIEF_SYSTEM_PROMPT" == *"JSON formatting repair"* ]]; then printf '%s' '{"summary":"The speaker said \"keep the original wording\".","action_items":[],"tags":[],"sentiment":"Neutral"}'; else printf '%s' '{"summary":"The speaker said "keep the original wording".","action_items":[],"tags":[]}'; fi"#
+        let result = try await LocalCLIService().analyze(transcript: "A short meeting.", outputLanguage: .matchInput,
+            config: .init(command: command, timeoutSeconds: 10))
+        #expect(result.summary == "The speaker said \"keep the original wording\".")
+    }
+
+    @Test func reportsFailureAfterOneUnsuccessfulRepair() async throws {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let command = "echo run >> '\(marker.path)'; printf '%s' '{\"summary\":\"unfinished'"
+        do {
+            _ = try await LocalCLIService().analyze(transcript: "A short meeting.", outputLanguage: .matchInput,
+                config: .init(command: command, timeoutSeconds: 10))
+            Issue.record("Expected invalid JSON to fail")
+        } catch {
+            #expect(error.localizedDescription.contains("formatting retry"))
+        }
+        let calls = try String(contentsOf: marker, encoding: .utf8).split(separator: "\n")
+        #expect(calls.count == 2)
+    }
+
+    @Test func acceptsMarkdownFencesWithoutARepair() async throws {
+        let command = #"""
+printf '%s' '```json
+{"summary":"Valid fenced response","action_items":[],"tags":[]}
+```'
+"""#
+        let result = try await LocalCLIService().analyze(transcript: "A short meeting.", outputLanguage: .matchInput,
+            config: .init(command: command, timeoutSeconds: 10))
+        #expect(result.summary == "Valid fenced response")
+    }
+}
