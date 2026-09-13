@@ -52,16 +52,16 @@ struct EngineGuideEntry: Identifiable {
 /// Static guidance shown in the transcription settings disclosure.
 enum TranscriptionEngineGuide {
     static let entries: [EngineGuideEntry] = [
-        EngineGuideEntry(title: "Whisper Large v3 Turbo",
-                         detail: "Recommended. Multilingual and fast on Apple Silicon."),
+        EngineGuideEntry(title: "Whisper",
+                         detail: "Use Change model to compare local models by estimated accuracy, speed and memory demand."),
         EngineGuideEntry(title: "Whisper Tiny",
                          detail: "Low memory, runs anywhere, but less accurate."),
         EngineGuideEntry(title: "Whisper Distil",
                          detail: "English-only, fast, smaller download."),
         EngineGuideEntry(title: "Parakeet",
-                         detail: "Strong on clear, low-jargon speech. No diarization or language selection."),
+                         detail: "Fast local transcription. v2 supports English; v3 supports 25 European languages. Speaker identification is available separately."),
         EngineGuideEntry(title: "Apple Speech",
-                         detail: "Built in, no download. Lower quality than Whisper."),
+                         detail: "macOS manages language downloads. SpeechAnalyzer runs on supported macOS 26 locales; other cases use the older recognizer."),
         EngineGuideEntry(title: "Remote",
                          detail: "Bring your own Whisper server or API endpoint."),
     ]

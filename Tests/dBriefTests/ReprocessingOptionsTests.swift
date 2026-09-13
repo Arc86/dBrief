@@ -160,6 +160,8 @@ struct ReprocessingOptionsTests {
         options.engine = .localWhisper
         options.whisperModelName = "openai_whisper-small.en"
         #expect(throws: ReprocessingOptions.ConfigurationError.self) { try options.validate() }
+        options.whisperModelName = "distil-whisper_distil-large-v3"
+        #expect(throws: ReprocessingOptions.ConfigurationError.self) { try options.validate() }
     }
 
     @Test func remoteAnalysisPromptsApplySelectedOutputLanguageAndPreserveGuidance() throws {

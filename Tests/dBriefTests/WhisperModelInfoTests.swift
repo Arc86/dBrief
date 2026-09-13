@@ -37,9 +37,9 @@ struct WhisperModelInfoTests {
     @Test("Parse distil model: distil-whisper_distil-large-v3_turbo_600MB")
     func testParseDistilModel() {
         let info = WhisperModelInfo.parse("distil-whisper_distil-large-v3_turbo_600MB")
-        #expect(info.displayName == "Distil Large V3 Turbo (600 MB)")
+        #expect(info.displayName == "Distil Large V3 Turbo (English) (600 MB)")
         #expect(info.family == "distil-large-v3")
-        #expect(info.isEnglishOnly == false)
+        #expect(info.isEnglishOnly == true)
         #expect(info.isTurbo == true)
         #expect(info.quantizedSizeMB == 600)
     }
@@ -113,7 +113,7 @@ struct WhisperModelInfoTests {
 
     @Test("Fallback models list has expected count")
     func testFallbackList() {
-        #expect(WhisperModelInfo.fallbackModels.count == 17)
+        #expect(WhisperModelInfo.fallbackModels.count == 27)
         #expect(WhisperModelInfo.fallbackModels.first?.family == "tiny")
     }
 

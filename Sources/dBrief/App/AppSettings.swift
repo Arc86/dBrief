@@ -245,9 +245,9 @@ final class AppSettings {
         /// and Settings to help users choose.
         var shortDescription: String {
             switch self {
-            case .appleSpeech: "Built in, no download. Uses Apple's latest on-device model on macOS 26; older systems use the classic recognizer."
-            case .localWhisper: "On-device Whisper. Best accuracy, multilingual. Downloads a model once."
-            case .parakeetLocal: "On-device, great for clear English speech. No speaker labels."
+            case .appleSpeech: "On-device speech with macOS-managed language downloads. Supported macOS 26 locales use SpeechAnalyzer; other cases use the classic recognizer."
+            case .localWhisper: "On-device Whisper with multilingual models. Downloads a model once."
+            case .parakeetLocal: "Fast on-device transcription. English v2 or multilingual v3, with optional speaker identification."
             case .remoteEndpoint: "Send audio to your own Whisper server or API."
             }
         }

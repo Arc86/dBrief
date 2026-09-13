@@ -17,8 +17,10 @@ struct SettingsTranscriptionTab: View {
     @State private var whisperModels: [WhisperModelInfo] = []
     @State private var isFetchingWhisperModels = false
     @State private var whisperModelFetchError: String?
-    @State private var showAllWhisperModels = false
+    @State private var showWhisperComparison = false
     @State private var showModelHelp = false
+    @State private var modernApple = false
+    @State private var lastLocalEngine: AppSettings.TranscriptionEngine = .localWhisper
     @State private var newIgnoredPhrase = ""
     @State private var showIgnoredSegments = false
 
@@ -78,6 +80,33 @@ struct SettingsTranscriptionTab: View {
             .scrollBounceBehavior(.basedOnSize)
             .toggleStyle(.smallSwitch)
             .padding(.top, -20)
+            .sheet(isPresented: $showWhisperComparison) {
+                WhisperModelPicker(modelIDs: whisperModels.isEmpty ? WhisperModelInfo.fallbackModelNames : whisperModels.map(\.id),
+                    selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
+                        whisper: appSettings.whisperModelName, parakeet: appSettings.parakeetModelVariant),
+                    language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in
+                        let engine = LocalTranscriptionChoice.engine(id)
+                        if engine == .localWhisper { appSettings.whisperModelName = id }
+                        if engine == .parakeetLocal {
+                            appSettings.parakeetModelVariant = id == LocalTranscriptionChoice.parakeetV2 ? "v2" : "v3"
+                        }
+                        appSettings.transcriptionEngine = engine
+                        lastLocalEngine = engine
+                    }
+            }
+            .onAppear {
+                fetchWhisperModels()
+                if appSettings.transcriptionEngine != .remoteEndpoint { lastLocalEngine = appSettings.transcriptionEngine }
+            }
+            .task(id: appSettings.transcriptionLanguage) {
+                if #available(macOS 26, *) {
+                    let supported = await AppleSpeechAnalyzerService.supports(locale: appSettings.transcriptionLanguage.isEmpty
+                        ? .current : Locale(identifier: appSettings.transcriptionLanguage))
+                    guard !Task.isCancelled else { return }
+                    modernApple = supported
+                }
+            }
+
         }
     }
 
@@ -100,18 +129,27 @@ struct SettingsTranscriptionTab: View {
     @ViewBuilder
     private var engineSection: some View {
         @Bindable var settings = appSettings
-        Picker("Transcription engine", selection: $settings.transcriptionEngine) {
-            ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
-            }
-        }
-        .pickerStyle(.menu)
+        Picker("Transcription", selection: Binding(
+            get: { settings.transcriptionEngine == .remoteEndpoint },
+            set: { remote in
+                if remote {
+                    lastLocalEngine = settings.transcriptionEngine
+                    settings.transcriptionEngine = .remoteEndpoint
+                } else { settings.transcriptionEngine = lastLocalEngine }
+            })) {
+                Text("On this Mac").tag(false)
+                Text("Remote service").tag(true)
+            }.pickerStyle(.segmented)
 
         switch settings.transcriptionEngine {
         case .appleSpeech:
-            Text("On-device, no server needed. Quality may be lower than Whisper.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            TranscriptionModelCard(presentation: .local(LocalTranscriptionChoice.apple, modernApple: modernApple),
+                                   onChangeModel: { showWhisperComparison = true }) {
+                Label("macOS managed", systemImage: "apple.logo").font(.caption).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Memory and sources") {
+                LocalModelEvidenceView(modelID: LocalTranscriptionChoice.apple)
+            }
         case .parakeetLocal:
             parakeetSection
         case .localWhisper:
@@ -129,33 +167,20 @@ struct SettingsTranscriptionTab: View {
     private var parakeetSection: some View {
         @Bindable var settings = appSettings
         VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Model") {
-                Picker("", selection: $settings.parakeetModelVariant) {
-                    ForEach(ParakeetModelInfo.variants) { model in
-                        Text(model.displayName).tag(model.id)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
+            let id = LocalTranscriptionChoice.id(engine: .parakeetLocal, whisper: "",
+                                                 parakeet: settings.parakeetModelVariant)
+            TranscriptionModelCard(presentation: .local(id),
+                                   onChangeModel: { showWhisperComparison = true }) {
+                ModelDownloadButton(kind: .parakeet, compact: true)
             }
-
-            if let selected = ParakeetModelInfo.variants.first(where: { $0.id == settings.parakeetModelVariant }) {
-                Text("~\(formatMemory(selected.estimatedMemoryMB)) required")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("On-device transcription via FluidAudio and CoreML. Audio never leaves your Mac. Model is downloaded once from HuggingFace (~1.5–1.8 GB). v2 is English-only; v3 supports 25 European languages. Language selection has no effect.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            DisclosureGroup("Memory and sources") {
+                LocalModelEvidenceView(modelID: id)
+            }.font(.caption)
 
             Toggle("Identify speakers", isOn: $settings.diarizationEnabled)
             Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            ModelDownloadButton(kind: .parakeet)
 
             Button("Remove downloaded Parakeet model") {
                 Task {
@@ -180,7 +205,6 @@ struct SettingsTranscriptionTab: View {
     @ViewBuilder
     private var whisperSection: some View {
         @Bindable var settings = appSettings
-        let selectedModel = whisperModels.first(where: { $0.id == settings.whisperModelName })
 
         VStack(alignment: .leading, spacing: 10) {
             // — Model group header with help popover —
@@ -214,78 +238,21 @@ struct SettingsTranscriptionTab: View {
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color(nsColor: .secondarySystemFill)))
             } else {
-                let modelsToShow = showAllWhisperModels ? whisperModels : whisperModels.filter { model in
-                    model.isRecommended ||
-                    model.family == "tiny" || model.family == "small" || model.family == "medium" ||
-                    (model.family == "large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                    (model.family == "large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                    (model.family == "distil-large-v3" && !model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil) ||
-                    (model.family == "distil-large-v3" && model.isTurbo && !model.isEnglishOnly && model.quantizedSizeMB == nil)
+                TranscriptionModelCard(modelID: settings.whisperModelName,
+                                       onChangeModel: { showWhisperComparison = true }) {
+                    ModelDownloadButton(kind: .whisper, compact: true)
                 }
-
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
-                            Text(selectedModel?.displayName ?? settings.whisperModelName)
-                                .font(.body).fontWeight(.semibold)
-                                .lineLimit(1)
-                            if selectedModel?.isRecommended == true {
-                                Text("Recommended")
-                                    .font(.caption2).fontWeight(.semibold)
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.18))
-                                    .foregroundStyle(Color.accentColor)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                                    .fixedSize()
-                            }
-                        }
-                        if let selectedModel {
-                            Text("~\(formatMemory(selectedModel.estimatedMemoryMB)) memory")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    Menu {
-                        ForEach(modelsToShow, id: \.id) { model in
-                            Button {
-                                settings.whisperModelName = model.id
-                            } label: {
-                                let title = model.isRecommended ? "\(model.displayName)  —  Recommended" : model.displayName
-                                if model.id == settings.whisperModelName {
-                                    Label(title, systemImage: "checkmark")
-                                } else {
-                                    Text(title)
-                                }
-                            }
-                        }
-                    } label: {
-                        Text("Change")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .disabled(modelsToShow.isEmpty)
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .secondarySystemFill)))
-
-                // — Per-model descriptor —
-                if let selectedModel {
-                    Text(selectedModel.plainDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                // — Large-model safety warning —
-                if let selectedModel, selectedModel.estimatedMemoryMB >= 4_096 {
-                    Label("Large models run best with other apps closed", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-
-                // — Download status / action (wired) —
-                ModelDownloadButton(kind: .whisper)
             }
+
+            HStack {
+                Text("Estimated ratings").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+            }
+            DisclosureGroup("Memory and sources") {
+                WhisperModelImpactView(modelID: settings.whisperModelName,
+                                       identifySpeakers: settings.diarizationEnabled)
+                    .padding(.top, 8)
+            }.font(.caption)
 
             // — Offline fetch error (shown at top level so it's visible without expanding Advanced) —
             if let error = whisperModelFetchError {
@@ -295,6 +262,8 @@ struct SettingsTranscriptionTab: View {
             }
 
             // — Diarization (plain label, jargon in caption) —
+            Divider().padding(.vertical, 6)
+            Text("Speakers").font(.subheadline).foregroundStyle(.secondary)
             Toggle(isOn: $settings.diarizationEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Identify different speakers")
@@ -339,18 +308,10 @@ struct SettingsTranscriptionTab: View {
                         .frame(width: 200)
                     }
 
-                    Toggle(isOn: $showAllWhisperModels) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Show all models")
-                            Text("Adds experimental, English-only, and quantized variants to the list.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-
                     Toggle(isOn: $settings.prewarmWhisperOnLaunch) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Keep model warm")
-                            Text("Loads the Whisper model shortly after launch and after the Mac wakes, so the first transcription starts instantly. Uses extra memory while idle.")
+                            Text("Loads the Whisper model shortly after launch and after the Mac wakes, to reduce startup time. Can retain model memory while idle.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -390,7 +351,6 @@ struct SettingsTranscriptionTab: View {
                 Text("Advanced").font(.subheadline)
             }
         }
-        .onAppear { fetchWhisperModels() }
     }
 
     @ViewBuilder

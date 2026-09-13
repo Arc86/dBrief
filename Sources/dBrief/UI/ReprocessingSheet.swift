@@ -47,6 +47,8 @@ private struct ReprocessingEditor: View {
     let dismissAction: (() -> Void)?
     @State private var options: ReprocessingOptions
     @State private var isStarting = false
+    @State private var showWhisperComparison = false
+    @State private var discoveredWhisperModels: [String] = []
     @State private var error: String?
     @Environment(RecordingManager.self) private var manager
     @Environment(AppState.self) private var appState
@@ -66,7 +68,7 @@ private struct ReprocessingEditor: View {
             ? languages : languages + [options.spokenLanguage]
     }
     private var whisperModels: [String] {
-        Array(Set(WhisperModelInfo.fallbackModelNames + [options.whisperModelName])).sorted()
+        discoveredWhisperModels.isEmpty ? WhisperModelInfo.fallbackModelNames : discoveredWhisperModels
     }
     private var validationError: String? {
         if options.requiresAnalysis, case .custom(let code) = options.outputLanguage,
@@ -111,6 +113,21 @@ private struct ReprocessingEditor: View {
         .padding(24)
         .frame(width: 530)
         .interactiveDismissDisabled(isStarting)
+        .sheet(isPresented: $showWhisperComparison) {
+            WhisperModelPicker(modelIDs: whisperModels, selectedID: LocalTranscriptionChoice.id(
+                engine: options.engine, whisper: options.whisperModelName, parakeet: options.parakeetModelVariant),
+                language: options.spokenLanguage, identifySpeakers: options.diarizationEnabled) {
+                    let engine = LocalTranscriptionChoice.engine($0)
+                    if engine == .localWhisper { options.whisperModelName = $0 }
+                    if engine == .parakeetLocal {
+                        options.parakeetModelVariant = $0 == LocalTranscriptionChoice.parakeetV2 ? "v2" : "v3"
+                    }
+                    options.engine = engine
+                }
+        }
+        .task {
+            discoveredWhisperModels = await manager.fetchAvailableWhisperModels()
+        }
     }
 
     private func close() {
@@ -126,29 +143,27 @@ private struct ReprocessingEditor: View {
                     Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
                 }
             }
-            Picker("Transcription engine", selection: $options.engine) {
-                ForEach(AppSettings.TranscriptionEngine.allCases, id: \.self) { engine in
-                    Text(engine.displayName).tag(engine)
-                }
+            Picker("Transcription", selection: Binding(
+                get: { options.engine == .remoteEndpoint },
+                set: { options.engine = $0 ? .remoteEndpoint : .localWhisper })) {
+                Text("On this Mac").tag(false)
+                Text("Remote service").tag(true)
             }
             switch options.engine {
             case .localWhisper:
-                Picker("Whisper model", selection: $options.whisperModelName) {
-                    ForEach(whisperModels, id: \.self) { name in
-                        Text(WhisperModelInfo.parse(name).displayName).tag(name)
-                    }
-                }
+                LabeledContent("Whisper model", value: WhisperModelInfo.parse(options.whisperModelName).displayName)
                 Text("Models download on first use.").font(.caption).foregroundStyle(.secondary)
             case .parakeetLocal:
-                Picker("Parakeet model", selection: $options.parakeetModelVariant) {
-                    ForEach(ParakeetModelInfo.variants) { model in Text(model.displayName).tag(model.id) }
-                }
+                LabeledContent("Parakeet model", value: ParakeetModelInfo.find(options.parakeetModelVariant).displayName)
                 Text("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
                     .font(.caption).foregroundStyle(.secondary)
             case .remoteEndpoint:
                 LabeledContent("Model", value: options.transcriptionEndpoint?.modelName ?? "No endpoint configured")
             case .appleSpeech:
                 Text("Uses Apple's speech model for the selected language.").font(.caption).foregroundStyle(.secondary)
+            }
+            if options.engine != .remoteEndpoint {
+                Button("Change model") { showWhisperComparison = true }
             }
             Toggle("Detect speakers", isOn: $options.diarizationEnabled)
             Toggle("Regenerate AI analysis", isOn: $options.regenerateAI)

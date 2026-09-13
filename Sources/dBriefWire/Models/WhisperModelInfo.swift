@@ -21,7 +21,7 @@ public struct WhisperModelInfo: Sendable {
         let originalName = modelName
 
         // Extract components
-        let isEnglishOnly = modelName.contains(".en")
+        let isEnglishOnly = WhisperModelCatalog.entries[modelName]?.englishOnly ?? modelName.contains(".en")
         let isTurbo = modelName.contains("_turbo")
 
         // Extract quantized size if present (e.g., "954MB" at end)
@@ -191,25 +191,7 @@ public struct WhisperModelInfo: Sendable {
     }
 
     /// Fallback list of core Whisper models for offline use.
-    public static let fallbackModels: [WhisperModelInfo] = [
-        parse("openai_whisper-tiny"),
-        parse("openai_whisper-tiny.en"),
-        parse("openai_whisper-base"),
-        parse("openai_whisper-base.en"),
-        parse("openai_whisper-small"),
-        parse("openai_whisper-small.en"),
-        parse("openai_whisper-medium"),
-        parse("openai_whisper-medium.en"),
-        parse("openai_whisper-large-v3_turbo_934MB"),
-        parse("openai_whisper-large-v3_turbo_934MB.en"),
-        parse("openai_whisper-large-v3_1550MB"),
-        parse("openai_whisper-large-v3_1550MB.en"),
-        parse("distil-whisper_distil-medium.en_600MB"),
-        parse("distil-whisper_distil-large-v3_turbo_600MB"),
-        parse("distil-whisper_distil-large-v3_turbo_600MB.en"),
-        parse("openai_whisper-large-v3-v20240930_626MB"),
-        parse("openai_whisper-large-v3-v20240930_turbo_632MB"),
-    ]
+    public static let fallbackModels: [WhisperModelInfo] = WhisperModelCatalog.entries.keys.map { parse($0) }.sorted()
 
     /// Fallback list of model names (without parsed metadata).
     public static let fallbackModelNames: [String] = fallbackModels.map { $0.originalName }
@@ -289,28 +271,15 @@ extension WhisperModelInfo {
     /// One-line, jargon-free description shown under the model card so a
     /// non-technical user can choose a model without knowing model internals.
     public var plainDescription: String {
+        guard let entry = WhisperModelCatalog.entries[originalName] else {
+            return "Guidance unavailable for this model. Audio never leaves your device."
+        }
         if isRecommended {
-            return "Best balance of speed and accuracy for most Macs. Audio never leaves your device."
+            return "Recommended preset. Review the estimated memory demand for your Mac. Audio never leaves your device."
         }
-        switch family {
-        case "tiny", "base":
-            return "Fastest and lightest. Good for quick notes; less accurate on tricky audio."
-        case "small":
-            return "Light and quick, with solid everyday accuracy and a small memory footprint."
-        case "medium":
-            return "More accurate than Small, a little slower and heavier."
-        case "large-v3-v20240930":
-            return isTurbo
-                ? "High accuracy with good speed. Uses more memory than the smaller models."
-                : "High-accuracy Sep-2024 snapshot. Slower and more memory-hungry than turbo variants."
-        case "large-v2", "large-v3", "large":
-            return isTurbo
-                ? "High accuracy with good speed. Uses more memory than the smaller models."
-                : "Highest accuracy. Slowest and most memory-hungry — best with other apps closed."
-        case "distil-large-v3":
-            return "Distilled large model: near-large accuracy, lighter and faster."
-        default:
-            return "On-device Whisper model. Audio never leaves your Mac."
+        if entry.englishOnly {
+            return "For English speech only. Accuracy depends on audio quality, accents and terminology."
         }
+        return "On-device multilingual transcription. Compare estimated quality, speed and memory before choosing."
     }
 }

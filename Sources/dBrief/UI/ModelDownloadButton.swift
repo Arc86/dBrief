@@ -6,6 +6,7 @@ struct ModelDownloadButton: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
     let kind: LocalModelKind
+    var compact = false
 
     @State private var cached = false
 
@@ -53,13 +54,31 @@ struct ModelDownloadButton: View {
             if cached {
                 Label("Downloaded", systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(compact ? Color.secondary : Color.green)
+                    .padding(.horizontal, compact ? 8 : 0)
+                    .padding(.vertical, compact ? 4 : 0)
+                    .background(Color.secondary.opacity(compact ? 0.1 : 0), in: Capsule())
+                if compact {
+                    Menu {
+                        Button("Re-download") {
+                            recordingManager.downloadModel(kind, forceRedownload: true)
+                        }
+                        .disabled(!recordingManager.canDownloadModels)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Model download actions")
+                } else {
                 Button("Re-download") {
                     recordingManager.downloadModel(kind, forceRedownload: true)
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .disabled(!recordingManager.canDownloadModels)
+                }
             } else {
                 Button("Download model") {
                     recordingManager.downloadModel(kind)
