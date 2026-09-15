@@ -138,6 +138,7 @@ private extension PrivacyOperation.Stage {
         case .tags: "Tags"
         case .title: "Title"
         case .chat: "Chat"
+        case .promptImprovement: "Prompt improvement"
         case .markdownExport: "Markdown export"
         case .integration: "Integration"
         case .clipboardExport: "Copy to clipboard"

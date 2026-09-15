@@ -5,6 +5,15 @@ actor AIService {
     private nonisolated let session: URLSession
     init(session: URLSession = .shared) { self.session = session }
 
+    /// Plain completion for editor tasks, without recording analysis or chat history.
+    func completeText(systemPrompt: String, userMessage: String, endpoint: Endpoint, stage: PrivacyOperation.Stage) async throws -> String {
+        try Task.checkCancellation()
+        try PromptConfigurationResolver.validate(endpoint)
+        let result = try await chatCompletion(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: stage)
+        try Task.checkCancellation()
+        return result
+    }
+
     /// Upper bound on generated tokens per call. Two opposing pressures:
     /// some servers default to a tiny `max_tokens` (e.g. 16) which truncates the
     /// answer, while strict servers (vLLM) reject when `prompt + max_tokens` exceeds
@@ -393,6 +402,10 @@ actor AIService {
             throw AIServiceError.invalidResponse
         }
 
+        if (firstChoice["finish_reason"] as? String) == "length" {
+            throw AIServiceError.truncatedResponse
+        }
+
         // Reasoning models may put their answer in `content` and the chain-of-thought
         // in `reasoning_content`. A null/empty `content` usually means the generation
         // was truncated mid-thinking (finish_reason == "length") — surface that
@@ -448,10 +461,17 @@ actor AIService {
         }
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            if Self.isContextOverflow(responseBody) { throw AIServiceError.contextWindowExceeded }
             throw AIServiceError.serverError(httpResponse.statusCode, responseBody)
         }
 
-        return Self.parseAnthropicText(data).trimmingCharacters(in: .whitespacesAndNewlines)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (json["stop_reason"] as? String) == "max_tokens" {
+            throw AIServiceError.truncatedResponse
+        }
+        let result = Self.parseAnthropicText(data).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { throw AIServiceError.invalidResponse }
+        return result
     }
 
     /// Extract the concatenated text from an Anthropic Messages response body.

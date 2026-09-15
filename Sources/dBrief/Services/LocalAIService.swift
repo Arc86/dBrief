@@ -104,6 +104,27 @@ actor LocalAIService {
         }
     }
 
+    /// A fresh session for a standalone prompt task; never uses recording history.
+    func completeText(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage) async throws -> String {
+        try Task.checkCancellation()
+        try Self.ensureAvailable()
+        let session = LanguageModelSession(instructions: systemPrompt)
+        do {
+            let response = try await PrivacyTrace.perform(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
+                try await session.respond(to: userMessage, options: GenerationOptions(temperature: 0.3, maximumResponseTokens: 2_000))
+            }
+            try Task.checkCancellation()
+            return response.content
+        } catch let error as LanguageModelSession.GenerationError {
+            switch error {
+            case .exceededContextWindowSize: throw PromptAIError.contextLimit
+            case .guardrailViolation: throw LocalAIError.generation("Apple Intelligence could not process this request because of its safety guardrails.")
+            case .unsupportedLanguageOrLocale: throw LocalAIError.generation("Apple Intelligence does not support this language. Choose a different engine.")
+            default: throw LocalAIError.generation("Apple Intelligence could not complete the request. Try again or choose a different engine.")
+            }
+        }
+    }
+
     /// Best-effort warm-up so the first real call has lower latency.
     func prewarm() {
         guard Self.isAvailable else { return }

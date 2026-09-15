@@ -556,21 +556,10 @@ struct SettingsProfilesTab: View {
                     }
                 }
 
-                overrideRow("Summary prompt", \.summaryPrompt,
-                            defaultValue: appSettings.summaryPrompt) {
-                    NativeTextView(text: overrideBinding(\.summaryPrompt, fallback: appSettings.summaryPrompt), accessibilityName: "Profile summary prompt")
-                        .frame(height: 70)
-                }
-
-                overrideRow("Action items prompt", \.actionItemsPrompt,
-                            defaultValue: appSettings.actionItemsPrompt) {
-                    NativeTextView(text: overrideBinding(\.actionItemsPrompt, fallback: appSettings.actionItemsPrompt), accessibilityName: "Profile action items prompt")
-                        .frame(height: 70)
-                }
-
-                overrideRow("Tags prompt", \.tagsPrompt, defaultValue: appSettings.tagsPrompt) {
-                    NativeTextView(text: overrideBinding(\.tagsPrompt, fallback: appSettings.tagsPrompt), accessibilityName: "Profile tags prompt")
-                        .frame(height: 70)
+                if let profile = selectedProfile {
+                    PromptSettingsRow(kind: .summary, scope: .profile(profile.id))
+                    PromptSettingsRow(kind: .actionItems, scope: .profile(profile.id))
+                    PromptSettingsRow(kind: .tags, scope: .profile(profile.id))
                 }
             } label: {
                 overrideGroupLabel("AI Analysis", section: .profileAI, keyPaths: [

@@ -13,7 +13,6 @@ struct SettingsAITab: View {
     @State private var testResult: SettingsTranscriptionTab.TestResult?
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false
-    @State private var expandedPrompt: String?
     @State private var purgeMessage: String?
     @State private var isTestingCLI = false
     @State private var cliTestSuccess: String?
@@ -106,9 +105,9 @@ struct SettingsAITab: View {
                     .listRowBackground(Color.clear)
                 if appSettings.powerUserMode || searchAdvanced {
                     Section {
-                        promptRow(label: "Summary", key: "summary", text: $settings.summaryPrompt, defaultText: AppSettings.defaultSummaryPrompt)
-                        promptRow(label: "Action Items", key: "actionItems", text: $settings.actionItemsPrompt, defaultText: AppSettings.defaultActionItemsPrompt)
-                        promptRow(label: "Tags & Sentiment", key: "tags", text: $settings.tagsPrompt, defaultText: AppSettings.defaultTagsPrompt)
+                        PromptSettingsRow(kind: .summary)
+                        PromptSettingsRow(kind: .actionItems)
+                        PromptSettingsRow(kind: .tags)
                     } header: {
                         SettingsSearchHeading("Prompts", section: .aiPrompts)
                     } footer: {
@@ -190,42 +189,6 @@ struct SettingsAITab: View {
                 }
             }
         )
-    }
-
-    private func promptRow(label: String, key: String, text: Binding<String>, defaultText: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedPrompt = expandedPrompt == key ? nil : key
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: expandedPrompt == key ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
-                            .frame(width: 10)
-                        Text(label)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                if text.wrappedValue != defaultText {
-                    Button("Reset") {
-                        text.wrappedValue = defaultText
-                    }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                }
-            }
-
-            if expandedPrompt == key {
-                NativeTextView(text: text, accessibilityName: "\(label) prompt")
-                    .frame(height: 80)
-            }
-        }
     }
 
     private var localCLICommandBinding: Binding<String> {

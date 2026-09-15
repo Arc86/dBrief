@@ -132,3 +132,60 @@ printf '%s' '```json
         #expect(result.summary == "Valid fenced response")
     }
 }
+
+struct LocalCLICompletionTests {
+    @Test func plainCompletionUsesUnmodifiedCommandAndData() async throws {
+        let output = try await LocalCLIService().completeText(systemPrompt: "s", userMessage: "$(echo DO-NOT-EXECUTE)", config: .init(command: "cat", timeoutSeconds: 10), stage: .promptImprovement)
+        #expect(output == "s\n\n$(echo DO-NOT-EXECUTE)")
+    }
+    @Test func cancellationTerminatesChildRetainingStdout() async throws {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let task = Task {
+            try await LocalCLIService.runShellCommand("/bin/sleep 30 & child=$!; echo $child > '\(marker.path)'; wait", systemPrompt: "s", userPrompt: "u", fullPrompt: String(repeating: "x", count: 100_000), timeoutSeconds: 20)
+        }
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: marker.path) { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        let pid = try #require(Int32(try String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        let start = ContinuousClock.now
+        task.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        #expect(ContinuousClock.now - start < .seconds(3))
+        for _ in 0..<50 {
+            if kill(pid, 0) != 0 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(kill(pid, 0) != 0)
+    }
+    @Test func errorsDoNotExposeProcessOutput() {
+        let error = LocalCLIServiceError.nonZeroExit(code: 3, stderr: "private prompt and secret")
+        #expect(!error.localizedDescription.contains("private"))
+        #expect(!error.localizedDescription.contains("secret"))
+    }
+}
+
+extension LocalCLICompletionTests {
+    @Test func drainsLargeStderrWhileWritingStdin() async throws {
+        let input = String(repeating: "x", count: 100_000)
+        let output = try await LocalCLIService.runShellCommand("head -c 131072 /dev/zero >&2; cat", systemPrompt: "s", userPrompt: "u", fullPrompt: input, timeoutSeconds: 10)
+        #expect(output == input)
+    }
+    @Test func rejectsUnboundedOutput() async {
+        await #expect(throws: LocalCLIServiceError.self) {
+            _ = try await LocalCLIService.runShellCommand("head -c 1200000 /dev/zero", systemPrompt: "s", userPrompt: "u", fullPrompt: "f", timeoutSeconds: 10)
+        }
+    }
+    @Test func cancellationBeforeLaunchDoesNotRunCommand() async throws {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await LocalCLIService.runShellCommand("touch '\(marker.path)'", systemPrompt: "s", userPrompt: "u", fullPrompt: "f", timeoutSeconds: 10)
+        }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+    }
+}
