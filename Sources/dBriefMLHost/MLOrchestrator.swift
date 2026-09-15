@@ -11,7 +11,9 @@ actor MLOrchestrator: MLBackend {
         guard let sink = MLProgress.sink else { return fallbackEmit }
         return { _, state in sink(state) }
     }
-    private let mutex = AsyncMutex()
+    private let mutex: AsyncMutex
+    private let diagnostics: MLLifecycleDiagnostics?
+    private var activeOperation: String?
 
     private let whisperService: WhisperKitTranscriptionService
     private let insightsService: MLXInsightsService
@@ -20,13 +22,44 @@ actor MLOrchestrator: MLBackend {
     private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
 
-    init(emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
+    init(mutex: AsyncMutex = AsyncMutex(), diagnostics: MLLifecycleDiagnostics? = nil, emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
+        self.mutex = mutex
+        self.diagnostics = diagnostics
         self.fallbackEmit = emit
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
         self.ttsService = TTSService { state in emit(.plugin, state) }
         self.kokoroService = KokoroTTSService { state in emit(.plugin, state) }
         self.parakeetService = ParakeetTranscriptionService { state in emit(.parakeet, state) }
+    }
+
+    private func withModelAccess<T: Sendable>(
+        _ name: String = #function,
+        operation: @Sendable () async throws -> T
+    ) async throws -> T {
+        try await mutex.withLock { [self] in
+            await operationStarted(name)
+            do {
+                let result = try await operation()
+                await insightsService.finishGeneration(cancel: Task.isCancelled)
+                await operationEnded(failed: false)
+                return result
+            } catch {
+                await insightsService.finishGeneration(cancel: true)
+                await operationEnded(failed: true)
+                throw error
+            }
+        }
+    }
+
+    private func operationStarted(_ name: String) {
+        activeOperation = name
+        diagnostics?.record(.operationStarted, operation: name)
+    }
+
+    private func operationEnded(failed: Bool) {
+        diagnostics?.record(failed ? .operationFailed : .operationFinished, operation: activeOperation)
+        activeOperation = nil
     }
 
     // MARK: - Transcription
@@ -36,7 +69,7 @@ actor MLOrchestrator: MLBackend {
     /// passes `true`. An error always unloads — the segmented job aborts as a
     /// whole, and every other op here already evicts Whisper before running.
     func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             let fileURL = URL(fileURLWithPath: path)
@@ -54,6 +87,8 @@ actor MLOrchestrator: MLBackend {
                 let audio: [Float]? = loadIncrementally
                     ? nil
                     : try whisperService.loadAudio(fileURL: fileURL)
+                diagnostics?.record(.transcriptionStarted, operation: "whisper", computeUnits: config.computeUnits.rawValue,
+                                    workers: safeMode ? 4 : 12)
                 let result = try await whisperService.transcribe(
                     bufferedAudio: audio,
                     fileURL: fileURL,
@@ -78,7 +113,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func diarize(path: String) async throws -> [DiarizedTurn] {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             do {
@@ -98,7 +133,7 @@ actor MLOrchestrator: MLBackend {
     /// are fed to the embedding extractor as one pseudo-segment each, so it
     /// clusters by `speakerId` exactly as the transcribe path clusters by segment.
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             let url = URL(fileURLWithPath: path)
@@ -143,7 +178,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             await whisperService.unload()
             await insightsService.unload()
             let fileURL = URL(fileURLWithPath: path)
@@ -190,7 +225,7 @@ actor MLOrchestrator: MLBackend {
     // MARK: - Text-to-speech (scaffold)
 
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             await insightsService.unload()
@@ -208,7 +243,7 @@ actor MLOrchestrator: MLBackend {
     // MARK: - Analysis
 
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             let result = try await insightsService.analyzeTranscript(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
@@ -218,7 +253,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             let upstream = await insightsService.analyzeTranscriptStream(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
@@ -228,7 +263,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             let upstream = await insightsService.chatStream(systemPrompt: systemPrompt, userMessage: userMessage)
@@ -241,7 +276,7 @@ actor MLOrchestrator: MLBackend {
 
     func prepareModels() async {
         do {
-            try await mutex.withLock { [self] in
+            try await withModelAccess { [self] in
                 defer { emit(.plugin, .idle) }
                 try await whisperService.prepareModelIfNeeded()
                 try await insightsService.prepareModelIfNeeded()
@@ -252,7 +287,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func downloadWhisper(config: WhisperRuntimeConfig) async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await insightsService.unload()
             try await whisperService.prepareModel(config: config)
@@ -260,7 +295,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool) async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             // Refresh re-loads to recompile GPU/ANE state after sleep eviction.
             if refresh { await whisperService.unload() }
@@ -271,7 +306,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func downloadLLM() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
             try await insightsService.prepareModelIfNeeded()
@@ -279,7 +314,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func downloadParakeet(variant: String) async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             await whisperService.unload()
             await insightsService.unload()
             try await parakeetService.prepareModel(variant: variant)
@@ -294,7 +329,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     func purgeModels() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             try await whisperService.purgeModels()
             try await insightsService.purgeModels()
@@ -302,47 +337,63 @@ actor MLOrchestrator: MLBackend {
     }
 
     func purgeWhisper() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             try await whisperService.purgeModels()
         }
     }
 
     func purgeSpeakerKit() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             try await whisperService.purgeSpeakerKitModels()
         }
     }
 
     func purgeQwen() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             try await insightsService.purgeModels()
         }
     }
 
     func purgeParakeet() async throws {
-        try await mutex.withLock { [self] in
+        try await withModelAccess { [self] in
             try await parakeetService.purgeModels()
         }
     }
 
     func memoryPressurePurge() async {
+        diagnostics?.record(.cleanupRequested, operation: activeOperation)
+        if activeOperation != nil { diagnostics?.record(.cleanupDeferred, operation: activeOperation) }
+        let cleanup = await mutex.enqueueCleanup { [self] in
+            await unloadForMemoryPressure()
+        }
+        await cleanup.value
+    }
+
+    /// Called only while holding the model-access lock.
+    private func unloadForMemoryPressure() async {
+        diagnostics?.record(.cleanupStarted)
         await whisperService.unload()
         await insightsService.unload()
         await parakeetService.unload()
         await ttsService.unload()
         await kokoroService.unload()
+        diagnostics?.record(.cleanupCompleted)
         emit(.plugin, .idle)
     }
 
     func forceUnload() async {
-        await insightsService.forceUnload()
-        await whisperService.unload()
-        await parakeetService.unload()
-        await ttsService.unload()
-        await kokoroService.unload()
-        emit(.plugin, .idle)
+        // RequestLoop cancels and drains requests before shutdown. The lock also
+        // protects direct callers from unloading a model used by active work.
+        try? await mutex.withLock { [self] in
+            await insightsService.forceUnload()
+            await whisperService.unload()
+            await parakeetService.unload()
+            await ttsService.unload()
+            await kokoroService.unload()
+            emit(.plugin, .idle)
+        }
     }
 }

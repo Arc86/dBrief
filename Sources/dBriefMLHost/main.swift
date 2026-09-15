@@ -19,19 +19,21 @@ let writer = StdoutWriter(.standardOutput)
 // The sentinel is only for out-of-request lifecycle state (for example shutdown);
 // processing consumers never attach these broadcasts to a recording.
 let stateEventID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-let orchestrator = MLOrchestrator { channel, state in
+let diagnostics = MLLifecycleDiagnostics(url: SupportPaths.localAIPluginBase
+    .deletingLastPathComponent().appendingPathComponent("Diagnostics/ml-helper-events.jsonl"))
+let orchestrator = MLOrchestrator(diagnostics: diagnostics) { channel, state in
     writer.send(EventEnvelope(id: stateEventID, channel: channel, event: .state(state)))
 }
 
-// Free Metal/GPU buffers before exit on SIGTERM (parent quitting).
+let loop = RequestLoop(backend: orchestrator, writer: writer, diagnostics: diagnostics)
+
+// Cancel and drain work before releasing models on SIGTERM.
 let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler {
-    Task { await orchestrator.forceUnload(); exit(0) }
+    Task { await loop.stop().value; exit(0) }
 }
 sigterm.resume()
 signal(SIGTERM, SIG_IGN)
 
-let loop = RequestLoop(backend: orchestrator, writer: writer)
 await loop.run(input: .standardInput)
-// stdin EOF => parent gone; release resources and exit.
-await orchestrator.forceUnload()
+// run() drains and releases models on stdin EOF.

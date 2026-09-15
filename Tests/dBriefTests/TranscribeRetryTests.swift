@@ -38,10 +38,20 @@ private func withTimeout<T: Sendable>(seconds: Double, _ op: @escaping @Sendable
         let conn = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
                                     supportBase: URL(fileURLWithPath: "/tmp"),
                                     environment: ["STUB_MODE": "crash-once", "STUB_FLAG_1": uniqueFlagPath()])
-        let svc = LocalAIPluginService(connection: conn)
+        let logDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let logURL = logDirectory.appendingPathComponent("recovery.jsonl")
+        let svc = LocalAIPluginService(connection: conn, diagnostics: MLLifecycleDiagnostics(url: logURL))
         let result = try await svc.transcribe(fileURL: URL(fileURLWithPath: "/a.m4a"),
                                                initialPrompt: nil, whisperConfig: .default)
         #expect(result.text == "recovered")   // first call crashed, retry returned this
+        let entries = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map {
+            try #require(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }
+        #expect(entries.compactMap { $0["event"] as? String } ==
+                ["transcriptionStarted", "helperCrashed", "recoveryStarted", "recoveryCompleted"])
+        #expect(entries[2]["computeUnits"] as? String == "cpuAndGPU")
+        #expect(!String(describing: entries).contains("/a.m4a"))
         await conn.shutdown()
     }
 

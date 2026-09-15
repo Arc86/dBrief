@@ -27,13 +27,15 @@ enum MLHostLocator {
 final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     let connection: MLHostConnection
     private let broadcaster = StateBroadcaster()
+    private let diagnostics: MLLifecycleDiagnostics?
 
     /// Fresh channel broadcast for settings/download observers. Processing callers
     /// install MLProgress.sink around their request to avoid unrelated events.
     /// Independent re-subscriptions are supported by StateBroadcaster.
     nonisolated var stateStream: AsyncStream<LocalAIPluginState> { broadcaster.subscribe() }
 
-    init(connection: MLHostConnection) {
+    init(connection: MLHostConnection, diagnostics: MLLifecycleDiagnostics? = nil) {
+        self.diagnostics = diagnostics
         self.connection = connection
         broadcaster.pump { await connection.stateStream(for: .plugin) }
     }
@@ -41,7 +43,11 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     convenience init() {
         self.init(connection: MLHostConnection(
             binaryURL: MLHostLocator.binaryURL(),
-            supportBase: MLHostLocator.supportBase()))
+            supportBase: MLHostLocator.supportBase()), diagnostics: Self.defaultDiagnostics())
+    }
+
+    static func defaultDiagnostics() -> MLLifecycleDiagnostics {
+        MLLifecycleDiagnostics(url: AppSupportPaths.base.appendingPathComponent("Diagnostics/ml-client-events.jsonl"))
     }
 
     func transcribe(fileURL: URL, initialPrompt: String?, whisperConfig: WhisperRuntimeConfig) async throws -> TranscriptionResult {
@@ -143,12 +149,23 @@ extension LocalAIPluginService {
     /// next call. A thrown `WireError` (insufficient memory, audio load) does
     /// not retry.
     func transcribeWithRetry(path: String, prompt: String?, config: WhisperRuntimeConfig, unloadAfter: Bool = true) async throws -> TranscriptionResult {
+        diagnostics?.record(.transcriptionStarted, operation: "whisper", computeUnits: config.computeUnits.rawValue)
         do {
             return try await runTranscribe(path: path, prompt: prompt, config: config, safeMode: false, unloadAfter: unloadAfter)
         } catch MLHostError.helperCrashed {
+            diagnostics?.record(.helperCrashed, operation: "whisper", computeUnits: config.computeUnits.rawValue)
+            try Task.checkCancellation()
             var safe = config
-            safe.computeUnits = .cpuAndGPU   // keep decoder off the ANE
-            return try await runTranscribe(path: path, prompt: prompt, config: safe, safeMode: true, unloadAfter: unloadAfter)
+            safe.computeUnits = .cpuAndGPU
+            diagnostics?.record(.recoveryStarted, operation: "whisper", computeUnits: safe.computeUnits.rawValue)
+            do {
+                let result = try await runTranscribe(path: path, prompt: prompt, config: safe, safeMode: true, unloadAfter: unloadAfter)
+                diagnostics?.record(.recoveryCompleted, operation: "whisper")
+                return result
+            } catch {
+                diagnostics?.record(.recoveryFailed, operation: "whisper")
+                throw error
+            }
         }
     }
 

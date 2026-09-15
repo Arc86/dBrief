@@ -5,9 +5,11 @@ import dBriefWire
 
 actor MockBackend: MLBackend {
     let exercisePrivacy: Bool
+    let lifetimeProbe: ShutdownProbe?
     let exerciseProgress: Bool
     var savedProgressSinks: [MLProgress.Sink] = []
-    init(exercisePrivacy: Bool = false, exerciseProgress: Bool = false) {
+    init(exercisePrivacy: Bool = false, exerciseProgress: Bool = false, lifetimeProbe: ShutdownProbe? = nil) {
+        self.lifetimeProbe = lifetimeProbe
         self.exercisePrivacy = exercisePrivacy
         self.exerciseProgress = exerciseProgress
     }
@@ -19,6 +21,7 @@ actor MockBackend: MLBackend {
     }
     func savedProgress() -> [MLProgress.Sink] { savedProgressSinks }
     func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult {
+        if let lifetimeProbe { try await lifetimeProbe.infer() }
         captureProgress()
         if exercisePrivacy {
             // Match the production best-effort speaker stage: retain its failure
@@ -56,7 +59,7 @@ actor MockBackend: MLBackend {
     func purgeQwen() async throws {}
     func purgeParakeet() async throws {}
     func memoryPressurePurge() async {}
-    func forceUnload() async {}
+    func forceUnload() async { await lifetimeProbe?.unload() }
     func prewarmWhisper(config: WhisperRuntimeConfig, refresh: Bool) async throws {}
 }
 

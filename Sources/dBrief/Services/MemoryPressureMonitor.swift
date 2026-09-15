@@ -1,5 +1,6 @@
 import Foundation
 import os
+import dBriefWire
 
 private let log = Logger(subsystem: "com.dbrief.app", category: "MemoryPressure")
 
@@ -8,6 +9,8 @@ private let log = Logger(subsystem: "com.dbrief.app", category: "MemoryPressure"
 final class MemoryPressureMonitor {
     typealias PressureHandler = (MemoryPressureLevel) async -> Void
 
+    private let diagnostics = MLLifecycleDiagnostics(url: AppSupportPaths.base
+        .appendingPathComponent("Diagnostics/ml-memory-events.jsonl"))
     private var dispatchSource: DispatchSourceMemoryPressure?
     private var cleanupHandlers: [() async -> Void] = []
     private var pressureHandlers: [PressureHandler] = []
@@ -142,6 +145,7 @@ final class MemoryPressureMonitor {
     // MARK: - Private
 
     private func triggerCleanup() async {
+        diagnostics.record(.memoryWarning)
         currentLevel = .warning
         for handler in pressureHandlers {
             await handler(.warning)
@@ -153,6 +157,7 @@ final class MemoryPressureMonitor {
     }
 
     private func triggerAggressiveCleanup() async {
+        diagnostics.record(.memoryCritical)
         currentLevel = .critical
         for handler in pressureHandlers {
             await handler(.critical)

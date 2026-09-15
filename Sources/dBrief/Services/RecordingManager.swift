@@ -124,7 +124,7 @@ final class RecordingManager {
         self.processingJobStore = processingJobStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
-        self.localAIPluginService = LocalAIPluginService(connection: mlHost)
+        self.localAIPluginService = LocalAIPluginService(connection: mlHost, diagnostics: LocalAIPluginService.defaultDiagnostics())
         self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
         self.modelDownloadCoordinator = modelDownloadCoordinator ?? ModelDownloadCoordinator(
             dependencies: .live(plugin: self.localAIPluginService, parakeet: self.parakeetService))
@@ -2347,8 +2347,9 @@ final class RecordingManager {
 
     /// Force-release all Metal/GPU resources before app termination.
     func forceReleaseGPU() async {
+        // The shared helper drains requests and unloads every engine, including
+        // Parakeet. It no longer accepts follow-up requests after this call.
         await localAIPluginService.forceUnload()
-        try? await parakeetService.purgeModels()
     }
 
     func requestNotificationPermission() {

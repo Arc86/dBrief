@@ -64,6 +64,7 @@ final class RequestRouter: Sendable {
             }) {
                 send(.privacy(.supported(version: 1)))
                 do {
+                    try Task.checkCancellation()
                     switch envelope.request {
                     case let .transcribe(path, prompt, config, safeMode, unloadAfter):
                         let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
@@ -153,36 +154,93 @@ final class StdoutWriter: @unchecked Sendable {
 /// by id so `.cancel` can stop it), and writes event frames to stdout.
 final class RequestLoop: @unchecked Sendable {
     private let router: RequestRouter
+    private let backend: MLBackend
+    private let writer: StdoutWriter
+    private let diagnostics: MLLifecycleDiagnostics?
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var shutdownTask: Task<Void, Never>?
+    private var acceptingRequests = true
     private let lock = NSLock()
 
-    init(backend: MLBackend, writer: StdoutWriter) {
-        self.router = RequestRouter(backend: backend) { env in
-            writer.send(env)
-        }
+    init(backend: MLBackend, writer: StdoutWriter, diagnostics: MLLifecycleDiagnostics? = nil) {
+        self.backend = backend
+        self.writer = writer
+        self.diagnostics = diagnostics
+        self.router = RequestRouter(backend: backend) { env in writer.send(env) }
     }
 
     /// Blocks reading stdin until EOF (parent closed the pipe / is quitting).
     func run(input: FileHandle) async {
         var reader = FrameReader()
-        let decoder = JSONDecoder()   // reused across frames; single read loop
+        let decoder = JSONDecoder()
         while true {
             let chunk = input.availableData
-            if chunk.isEmpty { break }   // EOF
+            if chunk.isEmpty { break }
             reader.append(chunk)
             for frame in reader.drainFrames() {
                 guard let env = try? decoder.decode(RequestEnvelope.self, from: frame) else { continue }
-                if case .cancel = env.request { cancel(env.id); continue }
-                let task = Task { await self.router.handle(env) }
-                store(task, for: env.id)
+                submit(env)
             }
+        }
+        await stop().value
+    }
+
+    /// Registration and shutdown share a synchronous lock: no request can slip
+    /// between the shutdown snapshot and admission being closed.
+    @discardableResult
+    func submit(_ env: RequestEnvelope) -> Bool {
+        if case .forceUnload = env.request {
+            let shutdown = stop()
+            Task { [writer] in
+                await shutdown.value
+                writer.send(EventEnvelope(id: env.id, channel: .plugin, event: .voidResult))
+                writer.send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
+            }
+            return true
+        }
+        return lock.withLock {
+            guard acceptingRequests else {
+                // A late caller still needs a terminal reply; silently dropping
+                // the request would leave its IPC continuation suspended forever.
+                if case .cancel = env.request { return false }
+                writer.send(EventEnvelope(id: env.id, channel: .plugin,
+                    event: .error(WireError(kind: .generic, message: "ML helper is shutting down"))))
+                return false
+            }
+            if case .cancel = env.request {
+                // Retain the task until it unwinds, so shutdown can await it.
+                tasks[env.id]?.cancel()
+                return true
+            }
+            guard tasks[env.id] == nil else { return false }
+            tasks[env.id] = Task {
+                await self.router.handle(env)
+                self.finished(env.id)
+            }
+            return true
         }
     }
 
-    private func store(_ task: Task<Void, Never>, for id: UUID) {
-        lock.lock(); tasks[id] = task; lock.unlock()
+    private func finished(_ id: UUID) {
+        _ = lock.withLock { tasks.removeValue(forKey: id) }
     }
-    private func cancel(_ id: UUID) {
-        lock.lock(); let t = tasks.removeValue(forKey: id); lock.unlock(); t?.cancel()
+
+    /// Shared by explicit shutdown, SIGTERM and stdin EOF. Cleanup starts only
+    /// after every admitted task has finished, including cancelled requests.
+    func stop() -> Task<Void, Never> {
+        lock.withLock {
+            if let shutdownTask { return shutdownTask }
+            acceptingRequests = false
+            let running = Array(tasks.values)
+            for task in running { task.cancel() }
+            let task = Task { [backend, diagnostics] in
+                diagnostics?.record(.shutdownRequested)
+                for task in running { await task.value }
+                await backend.forceUnload()
+                diagnostics?.record(.shutdownCompleted)
+            }
+            shutdownTask = task
+            return task
+        }
     }
 }

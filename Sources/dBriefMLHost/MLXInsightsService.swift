@@ -20,6 +20,7 @@ actor MLXInsightsService {
     private var modelContainer: ModelContainer?
     private let metalLibraryAvailable: Bool
     private var isInferencing = false
+    private var generationTask: Task<Void, Never>?
 
     init(stateHandler: @escaping @Sendable (LocalAIPluginState) -> Void) {
         self.fallbackStateHandler = stateHandler
@@ -63,6 +64,7 @@ actor MLXInsightsService {
 
         return AsyncThrowingStream { continuation in
             let task = Task {
+                defer { self.generationTask = nil }
                 do {
                     self.stateHandler(.analyzing)
                     self.isInferencing = true
@@ -74,10 +76,16 @@ actor MLXInsightsService {
                     )
 
                     var output = ""
-                    for try await chunk in session.streamResponse(to: userPrompt) {
-                        output += chunk
-                        continuation.yield(chunk)
+                    do {
+                        for try await chunk in session.streamResponse(to: userPrompt) {
+                            output += chunk
+                            continuation.yield(chunk)
+                        }
+                    } catch {
+                        await session.synchronize()
+                        throw error
                     }
+                    await session.synchronize()
                     self.isInferencing = false
 
                     _ = try LocalInsightsDecoder.decodeAndNormalize(output)
@@ -94,7 +102,8 @@ actor MLXInsightsService {
                 }
             }
 
-            continuation.onTermination = { @Sendable [weak self] _ in
+            self.generationTask = task
+            continuation.onTermination = { @Sendable _ in
                 task.cancel()
             }
         }
@@ -130,9 +139,15 @@ actor MLXInsightsService {
             let truncatedText = Self.truncateTranscript(text)
             let userPrompt = buildUserPrompt(transcript: truncatedText)
             var raw = ""
-            for try await chunk in session.streamResponse(to: userPrompt) {
-                raw += chunk
+            do {
+                for try await chunk in session.streamResponse(to: userPrompt) {
+                    raw += chunk
+                }
+            } catch {
+                await session.synchronize()
+                throw error
             }
+            await session.synchronize()
             isInferencing = false
             let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
             #if canImport(MLX)
@@ -153,6 +168,7 @@ actor MLXInsightsService {
     func chatStream(systemPrompt: String, userMessage: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                defer { self.generationTask = nil }
                 do {
                     self.stateHandler(.analyzing)
                     self.isInferencing = true
@@ -162,9 +178,15 @@ actor MLXInsightsService {
                         instructions: systemPrompt,
                         generateParameters: self.generationParameters()
                     )
-                    for try await chunk in session.streamResponse(to: userMessage) {
-                        continuation.yield(chunk)
+                    do {
+                        for try await chunk in session.streamResponse(to: userMessage) {
+                            continuation.yield(chunk)
+                        }
+                    } catch {
+                        await session.synchronize()
+                        throw error
                     }
+                    await session.synchronize()
                     self.isInferencing = false
                     await self.unload()
                     continuation.finish()
@@ -174,9 +196,20 @@ actor MLXInsightsService {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable [weak self] _ in
+            self.generationTask = task
+            continuation.onTermination = { @Sendable _ in
                 task.cancel()
             }
+        }
+    }
+
+    /// AsyncThrowingStream cancellation finishes the consumer before its
+    /// producer has necessarily unwound. Hold the orchestrator lock until both
+    /// our producer and ChatSession's internal work are done.
+    func finishGeneration(cancel: Bool) async {
+        if let generationTask {
+            if cancel { generationTask.cancel() }
+            await generationTask.value
         }
     }
 
@@ -198,7 +231,8 @@ actor MLXInsightsService {
     /// Force-release all Metal/GPU resources regardless of inference state.
     /// Called on app termination to prevent orphaned GPU allocations that
     /// keep WindowServer at high GPU utilization until reboot.
-    func forceUnload() {
+    func forceUnload() async {
+        await finishGeneration(cancel: true)
         isInferencing = false
         modelContainer = nil
         #if canImport(MLX)
