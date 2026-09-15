@@ -569,9 +569,12 @@ struct TranscriptDetailView: View {
             .overlayScrollers()
             .scrollContentBackground(.hidden)
             .scrollIndicators(.automatic)
-            .onChange(of: audioPlayer.currentTime) { _, newTime in
+            .onChange(of: audioPlayer.currentTime) { oldTime, newTime in
                 currentTime = newTime
-                guard let active = activeTurn(at: newTime) else { return }
+                // Playback ticks at 10 Hz. Reissuing an animated scroll for the
+                // same row continually retargets the native List and makes it bounce.
+                guard let active = activeTurn(at: newTime),
+                      active.id != activeTurn(at: oldTime)?.id else { return }
                 if reduceMotion {
                     proxy.scrollTo(active.id, anchor: .center)
                 } else {
@@ -613,7 +616,7 @@ struct TranscriptDetailView: View {
                     .frame(width: 34)
             }
             turnContent(turn: turn, color: color, active: active, isMe: isMe, hasSpeaker: hasSpeaker)
-                .frame(maxWidth: active ? 660 : 640, alignment: .leading)
+                .frame(maxWidth: 660, alignment: .leading)
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
@@ -646,20 +649,25 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private func turnContent(turn: SpeakerTurn, color: Color, active: Bool, isMe: Bool, hasSpeaker: Bool) -> some View {
-        VStack(alignment: .leading, spacing: active ? 10 : 6) {
+        // Highlighting must not change wrapping or row height while List scrolls.
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 if showSpeakerNames, hasSpeaker {
                     speakerLabel(turn: turn, isMe: isMe)
                 }
                 timecodeChip(turn.startTime, color: active ? color : nil)
-                if active {
-                    Spacer(minLength: 8)
-                    HStack(spacing: 5) {
+                Spacer(minLength: 8)
+                HStack(spacing: 5) {
+                    if active {
                         PulsingDot(color: Color(hex: "30d158"), size: 5)
-                        Text("PLAYING").font(.system(size: 10).monospaced())
+                    } else {
+                        Color.clear.frame(width: 5, height: 5)
                     }
-                    .foregroundStyle(color)
+                    Text("PLAYING").font(.system(size: 10).monospaced())
                 }
+                .foregroundStyle(color)
+                .opacity(active ? 1 : 0)
+                .accessibilityHidden(!active)
             }
             ForEach(Array(paragraphs(for: turn).enumerated()), id: \.offset) { _, para in
                 Text(para)
@@ -670,7 +678,7 @@ struct TranscriptDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(active ? EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16) : EdgeInsets())
+        .padding(EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16))
         .background {
             if active {
                 RoundedRectangle(cornerRadius: 12)
