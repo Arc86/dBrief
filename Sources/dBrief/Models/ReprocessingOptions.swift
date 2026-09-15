@@ -124,7 +124,8 @@ struct ReprocessingOptions: Codable, Sendable {
             if parakeetModelVariant == "v2" && !isEnglish {
                 throw ConfigurationError.unsupportedLanguage("Parakeet v2 supports English only. Choose v3 for multilingual speech.")
             }
-        case .appleSpeech, .remoteEndpoint: break
+        case .appleSpeech: _ = try AppleSpeechLanguages.requireLocale(for: spokenLanguage)
+        case .remoteEndpoint: break
         }
     }
 

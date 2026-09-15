@@ -137,10 +137,14 @@ private struct ReprocessingEditor: View {
 
     @ViewBuilder private var transcriptionControls: some View {
         Section("Transcription") {
-            Picker("Spoken language", selection: $options.spokenLanguage) {
-                Text(options.engine == .appleSpeech ? "Automatic (system language)" : "Automatic detection").tag("")
-                ForEach(languageCodes, id: \.self) { code in
-                    Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+            if options.engine == .appleSpeech {
+                AppleSpeechLanguagePicker(selection: $options.spokenLanguage, title: "Spoken language")
+            } else {
+                Picker("Spoken language", selection: $options.spokenLanguage) {
+                    Text(options.engine == .appleSpeech ? "Automatic (system language)" : "Automatic detection").tag("")
+                    ForEach(languageCodes, id: \.self) { code in
+                        Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    }
                 }
             }
             Picker("Transcription", selection: Binding(

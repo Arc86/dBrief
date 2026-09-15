@@ -27,7 +27,7 @@ actor AppleSpeechAnalyzerService {
         language: String,
         status: @escaping @Sendable (String) -> Void
     ) async throws -> TranscriptionResult {
-        let requestedLocale: Locale = language.isEmpty ? .current : Locale(identifier: language)
+        let requestedLocale = try AppleSpeechLanguages.requireLocale(for: language)
         guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
             throw AppleSpeechAnalyzerError.localeNotSupported
         }
@@ -39,16 +39,7 @@ actor AppleSpeechAnalyzerService {
             attributeOptions: [.audioTimeRange]
         )
 
-        // Download the language asset on first use for this locale.
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-            status("Preparing language…")
-            log.info("Downloading SpeechAnalyzer asset for \(locale.identifier(.bcp47), privacy: .public)")
-            do {
-                try await request.downloadAndInstall()
-            } catch {
-                throw AppleSpeechAnalyzerError.assetInstallFailed(error.localizedDescription)
-            }
-        }
+        try await AppleSpeechAssetPreparation.prepare(transcriber, locale: locale, report: status)
 
         let preparedURL = try OggOpusConverter.preparedURL(for: fileURL)
         let audioFile: AVAudioFile
@@ -114,15 +105,12 @@ actor AppleSpeechAnalyzerService {
 @available(macOS 26, *)
 enum AppleSpeechAnalyzerError: Error, LocalizedError {
     case localeNotSupported
-    case assetInstallFailed(String)
     case audioLoadFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .localeNotSupported:
             "Apple Speech (macOS 26) does not support this language."
-        case .assetInstallFailed(let message):
-            "Failed to download the speech language model. \(message)"
         case .audioLoadFailed(let message):
             "Could not read the audio for transcription. \(message)"
         }

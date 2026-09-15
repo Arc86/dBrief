@@ -95,8 +95,10 @@ actor LiveTranscriptionService {
                                            onFinalized: onFinalized, onVolatile: onVolatile, onStatus: onStatus)
                 return
             } catch {
+                guard !Task.isCancelled, !(error is CancellationError) else { return }
                 log.error("Live \(channel.rawValue, privacy: .public) modern channel failed: \(error.localizedDescription, privacy: .public)")
                 onVolatile(channel.rawValue, "")
+                onStatus(error.localizedDescription)
                 return
             }
         }
@@ -116,7 +118,7 @@ actor LiveTranscriptionService {
         onStatus: @escaping @Sendable (String) -> Void
     ) async throws {
         try Task.checkCancellation()
-        let requestedLocale: Locale = language.isEmpty ? .current : Locale(identifier: language)
+        let requestedLocale = try AppleSpeechLanguages.requireLocale(for: language)
         guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
             throw AppleSpeechAnalyzerError.localeNotSupported
         }
@@ -129,11 +131,7 @@ actor LiveTranscriptionService {
             attributeOptions: [.audioTimeRange]
         )
 
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-            try Task.checkCancellation()
-            onStatus("Preparing language…")
-            try await request.downloadAndInstall()
-        }
+        try await AppleSpeechAssetPreparation.prepare(transcriber, locale: locale, report: onStatus)
 
         try Task.checkCancellation()
         let analyzer = SpeechAnalyzer(modules: [transcriber])

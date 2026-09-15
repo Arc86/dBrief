@@ -455,6 +455,9 @@ struct SettingsProfilesTab: View {
                         Text("Language override is inactive with Parakeet.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    } else if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .appleSpeech {
+                        AppleSpeechLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
+                            fallback: appSettings.transcriptionLanguage))
                     } else {
                         NativeTextField(
                             placeholder: "Language code (e.g. en, nl)",

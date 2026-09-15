@@ -2714,11 +2714,12 @@ final class RecordingManager {
         switch settings.engine {
         case .appleSpeech:
             let language = settings.language
+            let appleLocale = try AppleSpeechLanguages.requireLocale(for: language)
             // macOS 26+ uses the modern SpeechAnalyzer (better accuracy, word-level
             // timestamps); older systems and unsupported locales fall back to the
             // legacy SFSpeechRecognizer-based service.
             if #available(macOS 26, *) {
-                let locale = language.isEmpty ? Locale.current : Locale(identifier: language)
+                let locale = appleLocale
                 let supported = await AppleSpeechAnalyzerService.supports(locale: locale)
                 try requireProcessingOwnership(job)
                 if supported {
