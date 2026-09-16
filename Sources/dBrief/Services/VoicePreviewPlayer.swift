@@ -23,6 +23,7 @@ final class VoicePreviewPlayer {
     private var stateTask: Task<Void, Never>?
     private var finishTask: Task<Void, Never>?
     private var tempURL: URL?
+    private var requestID: UUID?
 
     /// True while preparing/synthesizing/playing — drives the button's busy UI.
     var isBusy: Bool {
@@ -52,32 +53,45 @@ final class VoicePreviewPlayer {
             state = .failed(message: "Local AI plugin not available.")
             return
         }
+        start { outURL in
+            _ = try await plugin.synthesizeSpeech(
+                text: text, outputPath: outURL.path, voice: voice,
+                language: language, instruction: instruction, model: model, engine: engine
+            )
+        }
         observeModelState(plugin: plugin)
+    }
+
+    /// Shared playback pipeline, also used by chat. Each request owns its file
+    /// so late cancellation cannot delete a newer request's audio or state.
+    func start(synthesize: @escaping @MainActor (URL) async throws -> Void) {
+        stop()
+        let id = UUID()
+        requestID = id
         state = .preparingVoice(progress: nil)
         task = Task { [weak self] in
-            guard let self else { return }
+            guard let self, self.requestID == id, !Task.isCancelled else { return }
             let outURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("dbrief-voicepreview-\(UUID().uuidString).wav")
             self.tempURL = outURL
             do {
                 self.state = .synthesizing
-                _ = try await plugin.synthesizeSpeech(
-                    text: text,
-                    outputPath: outURL.path,
-                    voice: voice,
-                    language: language,
-                    instruction: instruction,
-                    model: model,
-                    engine: engine
-                )
+                try await synthesize(outURL)
                 try Task.checkCancellation()
+                guard self.requestID == id else {
+                    try? FileManager.default.removeItem(at: outURL)
+                    return
+                }
                 self.stopObservingModelState()
                 self.player.play(url: outURL)
+                guard self.player.isPlaying else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
                 self.state = .playing
                 self.watchForPlaybackEnd()
-            } catch is CancellationError {
-                self.discardTemp()
             } catch {
+                try? FileManager.default.removeItem(at: outURL)
+                guard self.requestID == id, !Task.isCancelled else { return }
                 self.stopObservingModelState()
                 self.discardTemp()
                 self.state = .failed(message: error.localizedDescription)
@@ -86,6 +100,7 @@ final class VoicePreviewPlayer {
     }
 
     func stop() {
+        requestID = nil
         task?.cancel()
         task = nil
         finishTask?.cancel()
@@ -114,9 +129,10 @@ final class VoicePreviewPlayer {
 
     private func observeModelState(plugin: LocalAIPluginService) {
         stateTask?.cancel()
+        let id = requestID
         stateTask = Task { [weak self] in
             for await event in plugin.stateStream {
-                guard let self else { return }
+                guard let self, !Task.isCancelled, self.requestID == id else { return }
                 if case let .downloading(progress, _) = event {
                     self.state = .preparingVoice(progress: progress)
                 }

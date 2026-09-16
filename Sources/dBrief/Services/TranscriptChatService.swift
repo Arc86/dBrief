@@ -50,6 +50,49 @@ final class TranscriptChatService {
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
     private(set) var streamingNotice: String? = nil
+    let speechPlayer = VoicePreviewPlayer()
+    private(set) var spokenMessageID: UUID?
+    private var speechTask: Task<Void, Never>?
+
+    func copyAnswer(_ message: ChatMessage) async -> Bool {
+        await RecordingClipboard.copy(message.displayParts.answer, contextProvider: {
+            await self.privacyRecording?.privacyContext()
+        })
+    }
+
+    func toggleReadAloud(_ message: ChatMessage) {
+        if spokenMessageID == message.id, speechTask != nil || speechPlayer.isBusy {
+            stopReading()
+            return
+        }
+        stopReading()
+        guard !invalidated, message.role == .assistant,
+              messages.contains(where: { $0.id == message.id }),
+              !(isStreaming && messages.last?.id == message.id),
+              !message.speechText.isEmpty else { return }
+        spokenMessageID = message.id
+        speechTask = Task { [weak self] in
+            guard let self else { return }
+            let context = await self.privacyRecording?.privacyContext()
+            guard !Task.isCancelled, !self.invalidated else { return }
+            PrivacyTrace.$context.withValue(context) {
+                let tts = self.appSettings.ttsSynthesisParams
+                self.speechPlayer.preview(
+                    text: message.speechText, engine: tts.engine, voice: tts.voice,
+                    language: tts.language, instruction: tts.instruction,
+                    model: tts.model, plugin: self.localPlugin
+                )
+            }
+            self.speechTask = nil
+        }
+    }
+
+    func stopReading() {
+        speechTask?.cancel()
+        speechTask = nil
+        speechPlayer.stop()
+        spokenMessageID = nil
+    }
 
     /// Provides the transcript text at send-time. A closure (rather than a stored
     /// string) so the chat can read a *live, growing* transcript during recording —
@@ -84,6 +127,7 @@ final class TranscriptChatService {
     /// Retire this session without deleting the currently published conversation.
     /// A retired session can never republish derivatives after an attempt unlocks.
     func invalidateForReprocessing() {
+        stopReading()
         invalidated = true
         validity.invalidate()
         sendTask?.cancel()
@@ -224,6 +268,7 @@ final class TranscriptChatService {
 
     func clearMessages() {
         guard !invalidated, !isStreaming else { return }
+        stopReading()
         messages = []
         streamingError = nil
         streamingNotice = nil

@@ -29,7 +29,11 @@ struct TranscriptChatView: View {
                 inputBar
             }
         }
-        .onExitCommand { chatService.stopGenerating() }
+        .onExitCommand {
+            chatService.stopGenerating()
+            chatService.stopReading()
+        }
+        .onDisappear { chatService.stopReading() }
     }
 
     // MARK: - Prompt chips (shown above the input once a chat is underway)
@@ -148,6 +152,7 @@ struct TranscriptChatView: View {
                         // reply each token — O(n^2)) and parse once when done.
                         MessageBubble(
                             message: message,
+                            chatService: chatService,
                             isStreaming: chatService.isStreaming && message.id == chatService.messages.last?.id
                         )
                         .id(message.id)
@@ -271,40 +276,15 @@ struct TranscriptChatView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    let chatService: TranscriptChatService
     /// True only for the assistant reply currently streaming — render plain
     /// text while true, then Markdown once the reply completes.
     var isStreaming: Bool = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var showReasoning = false
 
-    /// Splits an assistant message into its `<think>…</think>` reasoning and the
-    /// visible answer. Handles the still-streaming case where `</think>` hasn't
-    /// arrived yet.
-    private var parts: (reasoning: String?, answer: String) {
-        let content = message.content
-        guard message.role == .assistant,
-              let open = content.range(of: "<think>") else {
-            return (nil, content)
-        }
-        let before = String(content[content.startIndex..<open.lowerBound])
-        let afterOpen = content[open.upperBound...]
-        if let close = afterOpen.range(of: "</think>") {
-            let reasoning = String(afterOpen[afterOpen.startIndex..<close.lowerBound])
-            let answer = before + String(afterOpen[close.upperBound...])
-            return (trimmed(reasoning), answer.trimmingCharacters(in: .whitespacesAndNewlines))
-        } else {
-            // Reasoning is still streaming; no answer text yet.
-            return (trimmed(String(afterOpen)), before.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-    }
-
-    private func trimmed(_ s: String) -> String? {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : t
-    }
-
     var body: some View {
-        let parts = parts
+        let parts = message.displayParts
         return HStack(alignment: .top, spacing: 0) {
             if message.role == .user { Spacer(minLength: 40) }
 
@@ -320,6 +300,11 @@ private struct MessageBubble: View {
 
                 if !parts.answer.isEmpty || parts.reasoning == nil {
                     bubble(parts.answer.isEmpty ? " " : parts.answer)
+                }
+
+                if message.role == .assistant, !isStreaming,
+                   !parts.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    MessageActions(message: message, chatService: chatService)
                 }
             }
 
@@ -397,5 +382,81 @@ private struct MessageBubble: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+
+/// Kept below the answer so actions remain reachable without hovering.
+private struct MessageActions: View {
+    let message: ChatMessage
+    let chatService: TranscriptChatService
+    @State private var copyToken: UUID?
+
+    private var speechState: VoicePreviewPlayer.State {
+        chatService.spokenMessageID == message.id ? chatService.speechPlayer.state : .idle
+    }
+
+    private var isReading: Bool {
+        switch speechState {
+        case .preparingVoice, .synthesizing, .playing: true
+        case .idle, .failed: false
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 14) {
+                Button {
+                    Task {
+                        if await chatService.copyAnswer(message) {
+                            copyToken = UUID()
+                        }
+                    }
+                } label: {
+                    Label(copyToken == nil ? "Copy" : "Copied", systemImage: copyToken == nil ? "doc.on.doc" : "checkmark")
+                }
+                .help("Copy this answer to the clipboard")
+                .accessibilityLabel(copyToken == nil ? "Copy answer" : "Answer copied")
+
+                Button {
+                    chatService.toggleReadAloud(message)
+                } label: {
+                    Label(isReading ? "Stop" : "Read aloud", systemImage: isReading ? "stop.fill" : "speaker.wave.2")
+                }
+                .disabled(message.speechText.isEmpty)
+                .help(isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken Summary")
+                .accessibilityLabel(isReading ? "Stop reading answer" : "Read answer aloud")
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+
+            switch speechState {
+            case .preparingVoice(let progress):
+                speechProgress(progress.map { "Preparing voice… \(Int($0 * 100))%" } ?? "Preparing voice…")
+            case .synthesizing:
+                speechProgress("Preparing audio…")
+            case .failed(let message):
+                Text("Could not read aloud: \(message)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            case .idle, .playing:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .task(id: copyToken) {
+            guard copyToken != nil else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            copyToken = nil
+        }
+    }
+
+    private func speechProgress(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini)
+            Text(title).font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

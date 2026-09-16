@@ -16,6 +16,23 @@ struct ChatMessage: Identifiable, Sendable, Codable, Equatable {
         self.content = content
         self.timestamp = timestamp
     }
+
+    /// Share the same visible answer between rendering, copying and speech.
+    var displayParts: (reasoning: String?, answer: String) {
+        guard role == .assistant, let open = content.range(of: "<think>") else {
+            return (nil, content)
+        }
+        let before = String(content[..<open.lowerBound])
+        let after = content[open.upperBound...]
+        let close = after.range(of: "</think>")
+        let reasoning = String(after[..<(close?.lowerBound ?? after.endIndex)])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer = before + (close.map { String(after[$0.upperBound...]) } ?? "")
+        return (reasoning.isEmpty ? nil : reasoning,
+                answer.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var speechText: String { SpokenSummaryScript.clean(displayParts.answer) }
 }
 
 struct ChatPromptTemplate: Identifiable, Sendable {
