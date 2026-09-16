@@ -112,6 +112,10 @@ struct ModelDownloadCoordinatorTests {
         streams.emit(.downloading(progress: 0.5, stage: .llmModel))
         try await waitUntil { owner.phases[.gemma] == .downloading(progress: 0.5, label: "Downloading…") }
         #expect(owner.phases[.whisper] == .downloading(progress: nil, label: "Loading…"))
+        streams.emit(.downloading(progress: nil, stage: .llmModelLoading))
+        try await waitUntil { owner.phases[.gemma] == .downloading(progress: nil, label: "Loading…") }
+        streams.emit(.downloading(progress: nil, stage: .llmModelPreparing))
+        try await waitUntil { owner.phases[.gemma] == .downloading(progress: nil, label: "Preparing…") }
         owner.cancelAll()
         await backend.finish(0)
         await backend.finish(1)

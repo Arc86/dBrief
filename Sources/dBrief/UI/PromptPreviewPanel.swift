@@ -83,9 +83,8 @@ struct PromptPreviewPanel: View {
         if let note = request?.shorteningNotice { Text(note).font(.caption).foregroundStyle(.secondary) }
         HStack {
             if preview.isRunning {
-                ProgressView().controlSize(.small)
-                Text("Generating preview…")
-                Button("Cancel") { preview.cancel() }
+                PromptGenerationStatus(progress: preview.progress ?? .generating,
+                    generationTitle: "Generating preview…", cancel: preview.cancel)
             } else {
                 Button("Run test") {
                     if let request, request.sample.id == selectedID {

@@ -118,6 +118,8 @@ extension ProcessingStepProgress {
                 step.detail = nil
             case .analyzing:
                 step.name = "Analyzing transcript (Gemma 4 E4B local)"
+                step.progress = nil
+                step.detail = nil
             case .downloading(let progress, let stage):
                 step.progress = progress
                 switch stage {
@@ -126,6 +128,12 @@ extension ProcessingStepProgress {
                 case .whisperModelLoading:
                     step.name = "Loading WhisperKit model…"
                     step.progress = nil // loading is indeterminate
+                case .llmModelPreparing:
+                    step.name = "Preparing Gemma model…"
+                    step.progress = nil
+                case .llmModelLoading:
+                    step.name = "Loading Gemma model…"
+                    step.progress = nil
                 case .llmModel:
                     step.name = "Downloading Gemma model"
                 case .speakerKitModel:

@@ -31,9 +31,8 @@ struct PromptImprovementPanel: View {
                 }
                 HStack {
                     if session.isImproving {
-                        ProgressView().controlSize(.small)
-                        Text("Generating…")
-                        Button("Cancel") { session.cancelImprovement() }
+                        PromptGenerationStatus(progress: session.improvementProgress ?? .generating,
+                            generationTitle: "Generating…", cancel: session.cancelImprovement)
                     } else {
                         Button { Task { await session.improve() } } label: { Label("Suggest improvements", systemImage: "sparkles") }
                             .modifier(PromptPrimaryAction())

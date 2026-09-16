@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import dBriefWire
 
 /// All editable content lives here, not in Settings bindings.
 @MainActor @Observable
@@ -14,6 +15,7 @@ final class PromptEditorSession {
         didSet { if oldValue != improvementRequest { cancelImprovement() } }
     }
     private(set) var suggestion: PromptSuggestion?
+    private(set) var improvementProgress: PromptGenerationProgress?
     private(set) var isImproving = false
     private(set) var improvementError: String?
     var panel: Panel = .improve
@@ -125,9 +127,19 @@ final class PromptEditorSession {
         isImproving = true
         improvementError = nil
         suggestion = nil
-        let task = Task { try await improver.improve(input) }
+        improvementProgress = .initial(for: config)
+        let sink: MLProgress.Sink = { [weak self] state in
+            Task { @MainActor [weak self] in
+                guard let self, self.improvementID == id, self.isImproving,
+                      let progress = PromptGenerationProgress.from(state) else { return }
+                self.improvementProgress = progress
+            }
+        }
+        let task = Task {
+            try await MLProgress.$sink.withValue(sink) { try await improver.improve(input) }
+        }
         improvementTask = task
-        defer { if improvementID == id { isImproving = false; improvementTask = nil } }
+        defer { if improvementID == id { isImproving = false; improvementTask = nil; improvementProgress = nil } }
         do {
             let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard improvementID == id, !Task.isCancelled, !task.isCancelled,
@@ -147,6 +159,7 @@ final class PromptEditorSession {
         improvementTask?.cancel()
         improvementTask = nil
         isImproving = false
+        improvementProgress = nil
     }
     func configurationChanged() { cancelImprovement(); preview.cancel(); suggestion = nil; improvementError = nil }
     func applySuggestion() {

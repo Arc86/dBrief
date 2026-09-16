@@ -150,7 +150,7 @@ final class ModelDownloadCoordinator {
         switch kind {
         case .whisper: return [.whisperModel, .whisperModelLoading, .speakerKitModel].contains(stage)
         case .parakeet: return [.parakeetModel, .parakeetModelLoading].contains(stage)
-        case .gemma: return stage == .llmModel
+        case .gemma: return stage == .llmModel || stage == .llmModelPreparing || stage == .llmModelLoading
         }
     }
 }
