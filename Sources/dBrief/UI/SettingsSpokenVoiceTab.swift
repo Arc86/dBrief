@@ -10,7 +10,6 @@ struct SettingsSpokenVoiceTab: View {
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var voicePreview = VoicePreviewPlayer()
-    @State private var expandedPrompt: String?
 
     var body: some View {
         @Bindable var settings = appSettings
@@ -57,7 +56,7 @@ struct SettingsSpokenVoiceTab: View {
                         .foregroundStyle(.secondary)
                     voicePreviewRow
                     if settings.ttsModelSize.supportsVoiceInstruction {
-                        promptRow(label: "Voice Style", key: "ttsVoiceStyle", text: $settings.ttsDeliveryInstruction, defaultText: AppSettings.defaultTTSDeliveryInstruction)
+                        PromptSettingsRow(kind: .voiceStyle)
                     } else {
                         Text("Voice style requires the 1.7B model. Your instruction is kept for when you switch back.")
                             .font(.caption)
@@ -79,13 +78,10 @@ struct SettingsSpokenVoiceTab: View {
                 .listRowBackground(Color.clear)
             if appSettings.powerUserMode || searchAdvanced {
                 Section("Prompt", settingsSearch: .spokenPrompt) {
-                    promptRow(label: "Spoken Summary", key: "spokenSummary", text: $settings.spokenSummaryPrompt, defaultText: AppSettings.defaultSpokenSummaryPrompt)
+                    PromptSettingsRow(kind: .spokenSummary)
                 }
                     .listRowBackground(Color.clear)
             }
-        }
-        .onChange(of: searchRequest, initial: true) { _, request in
-            if request?.section == .spokenPrompt { expandedPrompt = "spokenSummary" }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -152,39 +148,4 @@ struct SettingsSpokenVoiceTab: View {
         .onDisappear { voicePreview.stop() }
     }
 
-    private func promptRow(label: String, key: String, text: Binding<String>, defaultText: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedPrompt = expandedPrompt == key ? nil : key
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: expandedPrompt == key ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
-                            .frame(width: 10)
-                        Text(label)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                if text.wrappedValue != defaultText {
-                    Button("Reset") {
-                        text.wrappedValue = defaultText
-                    }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                }
-            }
-
-            if expandedPrompt == key {
-                NativeTextView(text: text, accessibilityName: "\(label) prompt")
-                    .frame(height: 80)
-            }
-        }
-    }
 }

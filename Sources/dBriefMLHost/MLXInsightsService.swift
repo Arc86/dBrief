@@ -66,9 +66,9 @@ actor MLXInsightsService {
             let task = Task {
                 defer { self.generationTask = nil }
                 do {
-                    self.stateHandler(.analyzing)
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
+                    self.stateHandler(.analyzing)
                     let session = ChatSession(
                         container,
                         instructions: systemPrompt,
@@ -126,9 +126,9 @@ actor MLXInsightsService {
         }
 
         do {
-            stateHandler(.analyzing)
             isInferencing = true
             let container = try await loadModelContainerIfNeeded()
+            stateHandler(.analyzing)
             let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
             let session = ChatSession(
                 container,
@@ -170,9 +170,9 @@ actor MLXInsightsService {
             let task = Task {
                 defer { self.generationTask = nil }
                 do {
-                    self.stateHandler(.analyzing)
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
+                    self.stateHandler(.analyzing)
                     let session = ChatSession(
                         container,
                         instructions: systemPrompt,
@@ -294,9 +294,8 @@ actor MLXInsightsService {
         Logger.ai.info("MLX memory before load: \(MLX.Memory.snapshot().description)")
         #endif
 
-        stateHandler(.downloading(progress: nil, stage: .llmModel))
         let hub = HubApi(downloadBase: try llmDownloadBaseURL())
-        let downloader = HubApiDownloader(hub: hub)
+        let downloader = GemmaModelDownloader(base: HubApiDownloader(hub: hub), stateHandler: stateHandler)
         let tokenizerLoader = TransformersTokenizerLoader(
             fallbackChatTemplate: Self.gemma4ChatTemplate
         )
@@ -306,7 +305,6 @@ actor MLXInsightsService {
             id: Self.modelID
         )
         self.modelContainer = container
-        stateHandler(.analyzing)
         return container
     }
 

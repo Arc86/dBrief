@@ -75,9 +75,16 @@ actor LocalCLIService {
     inside JSON strings. If content is incomplete, do not invent the missing text.
     """
 
-    private func runPrompt(config: LocalCLIConfig, system: String, user: String) async throws -> String {
+    func completeText(systemPrompt: String, userMessage: String, config: LocalCLIConfig, stage: PrivacyOperation.Stage) async throws -> String {
+        let output = try await runPrompt(config: config, system: systemPrompt, user: userMessage, stage: stage)
         try Task.checkCancellation()
-        return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
+        guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LocalCLIServiceError.emptyOutput }
+        return output
+    }
+
+    private func runPrompt(config: LocalCLIConfig, system: String, user: String, stage: PrivacyOperation.Stage = .analysis) async throws -> String {
+        try Task.checkCancellation()
+        return try await PrivacyTrace.perform(.init(stage: stage, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
             try await Self.runShellCommand(config.command, systemPrompt: system, userPrompt: user,
                 fullPrompt: system + "\n\n" + user, timeoutSeconds: config.timeoutSeconds)
         }
@@ -97,7 +104,7 @@ actor LocalCLIService {
     }
 
     /// Run the command with a tiny sample prompt for the settings "Test command"
-    /// button. Returns trimmed stdout (or throws with stderr/exit details).
+    /// button. Returns trimmed stdout (or throws a safe status diagnostic).
     func runTest(config: LocalCLIConfig) async throws -> String {
         let sample = "Reply with a short confirmation that you received this prompt."
         let output = try await Self.runShellCommand(
@@ -125,102 +132,14 @@ actor LocalCLIService {
         let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCommand.isEmpty else { throw LocalCLIServiceError.emptyCommand }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                process.arguments = ["-l", "-c", trimmedCommand]
-
-                var environment = ProcessInfo.processInfo.environment
-                // When launched from Finder/LaunchServices (e.g. the DMG build),
-                // a GUI app inherits only the minimal system PATH, so PATH-installed
-                // tools like `claude` (typically exported in `.zshrc`) aren't found.
-                // Resolve the interactive login shell's PATH once and inject it so
-                // resolution matches a real terminal. (`zsh -l -c` alone wouldn't
-                // help: it sources `.zprofile`/`.zshenv` but not `.zshrc`.)
-                if let loginPath = Self.loginShellPath(), !loginPath.isEmpty {
-                    environment["PATH"] = loginPath
-                }
-                environment["DBRIEF_SYSTEM_PROMPT"] = systemPrompt
-                environment["DBRIEF_USER_PROMPT"] = userPrompt
-                environment["DBRIEF_FULL_PROMPT"] = fullPrompt
-                process.environment = environment
-
-                let stdoutPipe = Pipe()
-                let stderrPipe = Pipe()
-                let stdinPipe = Pipe()
-                process.standardOutput = stdoutPipe
-                process.standardError = stderrPipe
-                process.standardInput = stdinPipe
-
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(throwing: LocalCLIServiceError.launchFailed(error.localizedDescription))
-                    return
-                }
-
-                // Feed the full prompt on stdin, then close it.
-                let stdinHandle = stdinPipe.fileHandleForWriting
-                if let data = fullPrompt.data(using: .utf8) {
-                    try? stdinHandle.write(contentsOf: data)
-                }
-                try? stdinHandle.close()
-
-                // Drain both pipes concurrently so a large response can't deadlock
-                // on a full pipe buffer while the process is still running.
-                let lock = NSLock()
-                var stdoutData = Data()
-                var stderrData = Data()
-                let group = DispatchGroup()
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                    lock.lock(); stdoutData = data; lock.unlock()
-                    group.leave()
-                }
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                    lock.lock(); stderrData = data; lock.unlock()
-                    group.leave()
-                }
-
-                // Timeout watchdog terminates the process; `waitUntilExit` then
-                // returns and the drains hit EOF.
-                var timedOut = false
-                let watchdog = DispatchWorkItem {
-                    if process.isRunning {
-                        lock.lock(); timedOut = true; lock.unlock()
-                        process.terminate()
-                    }
-                }
-                let deadline = DispatchTime.now() + .seconds(max(1, timeoutSeconds))
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: deadline, execute: watchdog)
-
-                process.waitUntilExit()
-                watchdog.cancel()
-                group.wait()
-
-                lock.lock()
-                let didTimeout = timedOut
-                let out = String(data: stdoutData, encoding: .utf8) ?? ""
-                let err = String(data: stderrData, encoding: .utf8) ?? ""
-                lock.unlock()
-
-                if didTimeout {
-                    continuation.resume(throwing: LocalCLIServiceError.timeout(seconds: timeoutSeconds))
-                } else if process.terminationStatus == 0 {
-                    continuation.resume(returning: out)
-                } else {
-                    let detail = err.trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(throwing: LocalCLIServiceError.nonZeroExit(
-                        code: Int(process.terminationStatus),
-                        stderr: detail.isEmpty ? out : detail
-                    ))
-                }
-            }
-        }
+        try Task.checkCancellation()
+        var environment = ProcessInfo.processInfo.environment
+        if let loginPath = try await Self.loginShellPath(), !loginPath.isEmpty { environment["PATH"] = loginPath }
+        environment["DBRIEF_SYSTEM_PROMPT"] = systemPrompt
+        environment["DBRIEF_USER_PROMPT"] = userPrompt
+        environment["DBRIEF_FULL_PROMPT"] = fullPrompt
+        return try await LocalCLIProcessRunner.run(command: trimmedCommand, environment: environment,
+            input: fullPrompt, timeoutSeconds: timeoutSeconds)
     }
 
     // MARK: - Login PATH resolution
@@ -232,53 +151,23 @@ actor LocalCLIService {
     /// `.zshenv` → `.zprofile` → `.zshrc`), so PATH edits users make in `.zshrc`
     /// are honored even when the app is launched from Finder with a minimal PATH.
     /// Cached after the first lookup. Returns `nil` if the probe fails or times out.
-    nonisolated static func loginShellPath() -> String? {
-        loginPathLock.lock()
-        defer { loginPathLock.unlock() }
-        if let cached = cachedLoginPath { return cached.isEmpty ? nil : cached }
-
-        let resolved = probeLoginShellPath() ?? ""
-        cachedLoginPath = resolved
+    nonisolated static func loginShellPath() async throws -> String? {
+        if let cached = loginPathLock.withLock({ cachedLoginPath }) { return cached.isEmpty ? nil : cached }
+        let resolved: String
+        do {
+            let output = try await LocalCLIProcessRunner.run(command: "print -r -- $PATH",
+                environment: ProcessInfo.processInfo.environment, input: "", timeoutSeconds: 5, interactive: true)
+            resolved = output.split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .last(where: { $0.contains("/") }) ?? ""
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            resolved = ""
+        }
+        loginPathLock.withLock { cachedLoginPath = resolved }
         return resolved.isEmpty ? nil : resolved
     }
 
-    /// Run an interactive login shell purely to print `$PATH`. Uses the last
-    /// non-empty stdout line so any `.zshrc` banner noise is discarded.
-    private static func probeLoginShellPath() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        // -i forces interactive so `.zshrc` is sourced; -l for login files too.
-        process.arguments = ["-ilc", "print -r -- $PATH"]
-
-        let stdoutPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = Pipe()
-        process.standardInput = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        let watchdog = DispatchWorkItem {
-            if process.isRunning { process.terminate() }
-        }
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5, execute: watchdog)
-
-        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-
-        guard process.terminationStatus == 0,
-              let output = String(data: data, encoding: .utf8) else { return nil }
-
-        let lastPath = output
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .last(where: { $0.contains("/") })
-        return lastPath
-    }
 }
 
 enum LocalCLIServiceError: Error, LocalizedError {
@@ -288,21 +177,24 @@ enum LocalCLIServiceError: Error, LocalizedError {
     case timeout(seconds: Int)
     case emptyOutput
     case invalidJSON(String)
+    case outputTooLong
 
     var errorDescription: String? {
         switch self {
         case .emptyCommand:
             "No Local CLI command configured. Set one in Settings → AI."
-        case .launchFailed(let msg):
-            "Failed to launch Local CLI command: \(msg)"
-        case .nonZeroExit(let code, let stderr):
-            "Local CLI command exited with code \(code): \(stderr)"
+        case .launchFailed:
+            "Failed to launch Local CLI command: check the command and executable permissions."
+        case .nonZeroExit(let code, _):
+            "Local CLI command exited with code \(code): check the command and its authentication."
         case .timeout(let seconds):
             "Local CLI command timed out after \(seconds)s."
+        case .outputTooLong:
+            "Local CLI output exceeded the length limit. Request a shorter result."
         case .emptyOutput:
             "Local CLI command produced no output."
-        case .invalidJSON(let detail):
-            "Local CLI output was not valid JSON after one formatting retry. \(detail)"
+        case .invalidJSON:
+            "Local CLI output was not valid JSON after one formatting retry. Check the command’s response format."
         }
     }
 }

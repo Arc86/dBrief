@@ -33,7 +33,7 @@ struct PrivacyOperation: Codable, Equatable, Sendable {
     }
     enum Stage: String, Codable, Sendable {
         case finalization, transcription, liveTranscription, formatProbe, speakerAnalysis, spelling
-        case analysis, summary, actionItems, tags, title, chat, markdownExport, integration
+        case analysis, summary, actionItems, tags, title, chat, markdownExport, integration, promptImprovement
         case clipboardExport, spokenSummaryScript, speechSynthesis, audioExport
     }
     enum DataCategory: String, Codable, Sendable {

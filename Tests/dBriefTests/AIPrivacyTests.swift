@@ -4,7 +4,7 @@ import Testing
 
 @Suite("AI request privacy evidence")
 struct AIPrivacyTests {
-    @Test(arguments: ["summary", "actionItems", "tags", "title", "chat", "anthropic", "failure", "streamFailure", "spelling", "spokenSummaryScript"])
+    @Test(arguments: ["summary", "actionItems", "tags", "title", "chat", "anthropic", "failure", "streamFailure", "spelling", "spokenSummaryScript", "promptImprovement"])
     func actualRequestStagesAndStreamingOutcomes(kind: String) async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ai-privacy-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -23,6 +23,8 @@ struct AIPrivacyTests {
                 switch kind {
                 case "summary", "anthropic", "failure":
                     _ = try await service.generateSummary(transcription: "Private transcript", endpoint: endpoint, systemPrompt: "Private prompt")
+                case "promptImprovement":
+                    _ = try await service.completeText(systemPrompt: "Private prompt", userMessage: "Private transcript", endpoint: endpoint, stage: .promptImprovement)
                 case "actionItems":
                     _ = try await service.extractActionItems(transcription: "Private transcript", endpoint: endpoint, systemPrompt: "Private prompt")
                 case "tags":

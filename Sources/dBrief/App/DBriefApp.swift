@@ -8,6 +8,7 @@ private let log = Logger.app
 @MainActor
 @Observable
 final class AppContext {
+    @ObservationIgnored lazy var promptEditorWindows = PromptEditorWindowController(context: self)
     let appState = AppState()
     let appSettings = AppSettings()
     let transcriptStore = TranscriptStore()
@@ -200,12 +201,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recordingManager: RecordingManager?
     /// Set by DBriefApp so the delegate can flush pending chat saves on quit.
     weak var transcriptChatStore: TranscriptChatStore?
+    weak var promptEditorWindows: PromptEditorWindowController?
+    private var isTerminating = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isTerminating else { return .terminateCancel }
+        isTerminating = true
         // Release Metal/GPU resources before hard-exiting so WindowServer
         // doesn't inherit orphaned GPU allocations that keep it at high
         // utilization until reboot.
         Task { @MainActor in
+            guard await self.promptEditorWindows?.prepareToQuit() != false else {
+                self.isTerminating = false
+                return
+            }
             // Close active audio writers first. This makes the recovery tracks
             // readable even if a later shutdown task stalls or is interrupted.
             await self.recordingManager?.prepareForTermination()
@@ -231,6 +240,7 @@ struct DBriefApp: App {
     init() {
         appDelegate.recordingManager = context.recordingManager
         appDelegate.transcriptChatStore = context.transcriptChatStore
+        appDelegate.promptEditorWindows = context.promptEditorWindows
     }
 
     var body: some Scene {

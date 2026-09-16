@@ -3,7 +3,9 @@ import Foundation
 public enum DownloadStage: String, Sendable, Codable {
     case whisperModel         // Downloading model weights from HuggingFace
     case whisperModelLoading  // Model cached locally, now loading into memory
+    case llmModelPreparing    // Resolving the local cache / remote model files
     case llmModel
+    case llmModelLoading      // Download complete; loading weights into memory
     case speakerKitModel
     case parakeetModel        // Downloading Parakeet CoreML model from HuggingFace
     case parakeetModelLoading // Cached Parakeet model loading into memory

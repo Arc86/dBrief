@@ -34,7 +34,9 @@ extension DownloadStage {
         switch self {
         case .whisperModel, .llmModel, .parakeetModel, .ttsModel, .kokoroTTSModel:
             return "Downloading…"
-        case .whisperModelLoading, .parakeetModelLoading, .ttsModelLoading, .kokoroTTSModelLoading:
+        case .llmModelPreparing:
+            return "Preparing…"
+        case .llmModelLoading, .whisperModelLoading, .parakeetModelLoading, .ttsModelLoading, .kokoroTTSModelLoading:
             return "Loading…"
         case .speakerKitModel:
             return "Downloading speakers…"

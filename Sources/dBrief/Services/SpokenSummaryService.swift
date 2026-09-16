@@ -265,13 +265,8 @@ final class SpokenSummaryService: Identifiable {
     }
 
     private func insightsInput(_ insights: RecordingInsights, truncateForAppleIntelligence: Bool) -> String {
-        var text = "MEETING SUMMARY:\n\(insights.summary)\n"
-        if !insights.actionItems.isEmpty {
-            text += "\nACTION ITEMS:\n" + insights.actionItems.map { "- \($0)" }.joined(separator: "\n") + "\n"
-        }
-        return truncateForAppleIntelligence
-            ? UnifiedInsightsPrompt.truncateForFoundationModels(text)
-            : text
+        SpokenSummaryInput.make(summary: insights.summary, actionItems: insights.actionItems,
+                                truncateForAppleIntelligence: truncateForAppleIntelligence)
     }
 
     private func collect(_ stream: AsyncThrowingStream<String, Error>) async throws -> String {

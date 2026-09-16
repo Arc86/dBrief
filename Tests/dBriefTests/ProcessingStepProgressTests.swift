@@ -102,6 +102,20 @@ struct ProcessingStepProgressTests {
         #expect(job.progressiveSegments.count == 1)
     }
 
+    @Test func gemmaReportsPreparationDownloadLoadingAndAnalysis() {
+        let (state, _, progress) = fixture()
+        #expect(progress.applyPluginState(.downloading(progress: nil, stage: .llmModelPreparing)))
+        #expect(state.processingSteps[0].name == "Preparing Gemma model…")
+        #expect(progress.applyPluginState(.downloading(progress: 0.7, stage: .llmModel)))
+        #expect(state.processingSteps[0].progress == 0.7)
+        #expect(progress.applyPluginState(.downloading(progress: 1, stage: .llmModelLoading)))
+        #expect(state.processingSteps[0].name == "Loading Gemma model…")
+        #expect(state.processingSteps[0].progress == nil)
+        #expect(progress.applyPluginState(.analyzing))
+        #expect(state.processingSteps[0].name == "Analyzing transcript (Gemma 4 E4B local)")
+        #expect(state.processingSteps[0].progress == nil)
+    }
+
     @Test func parakeetStreamPreservesLoadingAndSpeakerStates() {
         let (state, job, progress) = fixture()
         #expect(progress.applyParakeetState(.downloading(progress: 0.6, stage: .parakeetModel)))
