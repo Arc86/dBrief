@@ -16,7 +16,10 @@ final class PromptEditorSession {
     private(set) var suggestion: PromptSuggestion?
     private(set) var isImproving = false
     private(set) var improvementError: String?
-    var panel: Panel = .none
+    var panel: Panel = .improve
+    var engineSelection: PromptEngineSelection = .configured {
+        didSet { if oldValue != engineSelection { configurationChanged() } }
+    }
     enum Panel: String, CaseIterable { case none = "Editor", improve = "Improve with AI", preview = "Try prompt" }
     @ObservationIgnored var undoManager: UndoManager? = UndoManager()
     @ObservationIgnored private let improver: (any PromptImproving)?
@@ -31,9 +34,39 @@ final class PromptEditorSession {
         self.improver = improver
         self.draft = PromptDraft(snapshot: try store.load(identity))
     }
-    var configuration: PromptExecutionConfiguration? { try? PromptConfigurationResolver.resolve(identity: identity, settings: store.settings) }
+    func resolveConfiguration() throws -> PromptExecutionConfiguration {
+        switch engineSelection {
+        case .configured: return try PromptConfigurationResolver.resolve(identity: identity, settings: store.settings)
+        case .appleIntelligence: return .appleIntelligence
+        case .localModel: return .localModel
+        case .localCLI:
+            let config = store.settings.localCLIConfig
+            guard !config.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PromptAIError.emptyCommand }
+            return .localCLI(config)
+        case .remote(let id):
+            guard let endpoint = store.settings.aiEndpoints.first(where: { $0.id == id }) else { throw PromptAIError.missingEndpoint }
+            try PromptConfigurationResolver.validate(endpoint)
+            return .remote(endpoint)
+        }
+    }
+    var usesSpokenPreviewFallback: Bool {
+        engineSelection == .configured && identity.kind == .spokenSummary && store.settings.aiEngine == .localCLI
+    }
+    func resolvePreviewConfiguration() throws -> PromptExecutionConfiguration {
+        guard usesSpokenPreviewFallback else { return try resolveConfiguration() }
+        switch store.settings.chatFallbackEngine {
+        case .appleIntelligence: return .appleIntelligence
+        case .qwenLocal: return .localModel
+        case .remoteEndpoint:
+            guard let endpoint = store.settings.defaultAIEndpoint else { throw PromptAIError.missingEndpoint }
+            try PromptConfigurationResolver.validate(endpoint)
+            return .remote(endpoint)
+        case .localCLI: throw PromptPreviewError.failed("Choose a different engine here, or a chat fallback in AI settings, for spoken-summary previews.")
+        }
+    }
+    var configuration: PromptExecutionConfiguration? { try? resolveConfiguration() }
     var configurationError: String? {
-        do { _ = try PromptConfigurationResolver.resolve(identity: identity, settings: store.settings); return nil }
+        do { _ = try resolveConfiguration(); return nil }
         catch { return error.localizedDescription }
     }
     var canApplySuggestion: Bool {
@@ -84,7 +117,7 @@ final class PromptEditorSession {
         cancelImprovement()
         guard let improver else { return }
         let config: PromptExecutionConfiguration
-        do { config = try PromptConfigurationResolver.resolve(identity: identity, settings: store.settings) }
+        do { config = try resolveConfiguration() }
         catch { improvementError = error.localizedDescription; return }
         let input = PromptImprovementInput(identity: identity, originalPrompt: draft.text, request: improvementRequest, configuration: config)
         let id = UUID()
@@ -115,7 +148,7 @@ final class PromptEditorSession {
         improvementTask = nil
         isImproving = false
     }
-    func configurationChanged() { cancelImprovement(); suggestion = nil; improvementError = nil }
+    func configurationChanged() { cancelImprovement(); preview.cancel(); suggestion = nil; improvementError = nil }
     func applySuggestion() {
         guard canApplySuggestion, let suggestion else { return }
         beforeAI = draft

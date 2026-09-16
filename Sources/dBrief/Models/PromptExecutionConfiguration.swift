@@ -33,6 +33,11 @@ enum PromptExecutionConfiguration: Equatable, Sendable, CustomStringConvertible,
     var debugDescription: String { description }
 }
 
+/// A window-local choice. Endpoint IDs resolve current saved credentials on demand.
+enum PromptEngineSelection: Hashable {
+    case configured, appleIntelligence, localModel, localCLI, remote(UUID)
+}
+
 @MainActor
 enum PromptConfigurationResolver {
     static func resolve(identity: PromptIdentity, settings: AppSettings) throws -> PromptExecutionConfiguration {

@@ -22,9 +22,11 @@ struct PromptNativeEditorTests {
         #expect(window.toolbarStyle == .unified)
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
+        window.setContentSize(NSSize(width: 980, height: 700))
         defer { window.close() }
         window.makeKeyAndOrderFront(nil)
         try await settle(window)
+        #expect(controller.view.bounds.width >= 840)
         let first = try #require(editor(in: controller.view))
         #expect(first.undoManager === session.undoManager)
         first.setSelectedRange(NSRange(location: (original as NSString).length, length: 0))

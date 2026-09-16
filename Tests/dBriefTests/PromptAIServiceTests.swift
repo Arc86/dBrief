@@ -51,6 +51,48 @@ struct PromptAIConfigurationTests {
         }
         try body(AppSettings())
     }
+    @Test func editorEngineChoiceIsTemporaryAndDoesNotChangeSettings() throws {
+        try withSettings { settings in
+            settings.aiEngine = .appleIntelligence
+            let endpoint = Endpoint(name: "Alternative", baseURL: "https://alternative.invalid", modelName: "test")
+            settings.aiEndpoints = [endpoint]
+            let identity = PromptIdentity(kind: .summary, scope: .appDefaults)
+            let session = try PromptEditorSession(identity: identity, store: PromptPreferencesStore(settings: settings))
+            let preferences = UserDefaults.standard.dictionaryRepresentation() as NSDictionary
+            #expect(session.panel == .improve)
+            session.engineSelection = .remote(endpoint.id)
+            #expect(session.configuration == .remote(endpoint))
+            #expect(try session.resolvePreviewConfiguration() == .remote(endpoint))
+            session.engineSelection = .localModel
+            #expect(session.configuration == .localModel)
+            #expect(UserDefaults.standard.dictionaryRepresentation() as NSDictionary == preferences)
+            let otherWindow = try PromptEditorSession(identity: identity, store: PromptPreferencesStore(settings: settings))
+            #expect(otherWindow.engineSelection == .configured)
+            #expect(otherWindow.configuration == .appleIntelligence)
+            session.engineSelection = .configured
+            #expect(session.configuration == .appleIntelligence)
+        }
+    }
+    @Test func explicitMissingEndpointDoesNotSilentlyFallBack() throws {
+        try withSettings { settings in
+            let session = try PromptEditorSession(identity: .init(kind: .summary, scope: .appDefaults), store: PromptPreferencesStore(settings: settings))
+            session.engineSelection = .remote(UUID())
+            #expect(throws: PromptAIError.self) { try session.resolveConfiguration() }
+        }
+    }
+    @Test func spokenPreviewOverrideReplacesOnlyTheWindowFallback() throws {
+        try withSettings { settings in
+            settings.aiEngine = .localCLI
+            settings.chatFallbackEngine = .appleIntelligence
+            let session = try PromptEditorSession(identity: .init(kind: .spokenSummary, scope: .appDefaults), store: PromptPreferencesStore(settings: settings))
+            #expect(try session.resolvePreviewConfiguration() == .appleIntelligence)
+            session.engineSelection = .localModel
+            #expect(!session.usesSpokenPreviewFallback)
+            #expect(try session.resolvePreviewConfiguration() == .localModel)
+            #expect(settings.aiEngine == .localCLI)
+            #expect(settings.chatFallbackEngine == .appleIntelligence)
+        }
+    }
     @Test func inactiveProfileAndGlobalPromptsResolveExplicitly() throws {
         try withSettings { settings in
             let shared = Endpoint(name: "Shared", baseURL: "https://shared.invalid", modelName: "shared")

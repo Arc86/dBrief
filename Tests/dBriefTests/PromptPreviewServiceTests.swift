@@ -110,3 +110,13 @@ private actor SpokenInputProbe: PromptTextCompleting {
         return "Spoken preview"
     }
 }
+
+struct PromptPreviewExamplesTests {
+    @Test func examplesAreDistinctAndUsableForTextAndSpokenPreviews() {
+        let examples = PromptPreviewSample.examples
+        #expect(examples.count == 4)
+        #expect(Set(examples.map(\.id)).count == examples.count)
+        #expect(examples.allSatisfy { !$0.transcript.isEmpty && $0.summary?.isEmpty == false && $0.actionItems != nil })
+        #expect(examples.first == .example)
+    }
+}

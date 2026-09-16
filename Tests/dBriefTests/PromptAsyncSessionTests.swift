@@ -17,6 +17,7 @@ struct PromptAsyncSessionTests {
         let backend = DelayedPromptImprover()
         let session = try PromptEditorSession(identity: .init(kind: .summary, scope: .appDefaults),
             store: PromptPreferencesStore(settings: settings), improver: backend)
+        session.engineSelection = .localModel
         let first = Task { await session.improve() }
         while await backend.count < 1 { await Task.yield() }
         session.edit("New draft")
@@ -28,6 +29,8 @@ struct PromptAsyncSessionTests {
         await backend.finish(0, text: "Stale first suggestion")
         await first.value
         #expect(session.suggestion?.response.prompt == "Second suggestion")
+        #expect(session.suggestion?.input.configuration == .localModel)
+        #expect(settings.aiEngine == .appleIntelligence)
         #expect(session.draft.text == "New draft")
         session.applySuggestion()
         #expect(session.draft.text == "Second suggestion")
@@ -47,7 +50,8 @@ struct PromptAsyncSessionTests {
         await backend.finish(0, text: "Suggestion")
         await task.value
         #expect(session.canApplySuggestion)
-        session.configurationChanged()
+        session.engineSelection = .localModel
+        session.engineSelection = .configured
         #expect(session.suggestion == nil)
         #expect(!session.canApplySuggestion)
     }

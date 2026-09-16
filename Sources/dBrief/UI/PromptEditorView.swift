@@ -4,7 +4,7 @@ struct PromptEditorView: View {
     @Bindable var session: PromptEditorSession
     let close: () -> Void
     @AppStorage("promptEditorFontSize") private var storedFontSize = 16.0
-    @State private var narrowSection = PromptEditorSession.Panel.none
+    @State private var narrowSection = PromptEditorSession.Panel.improve
     private var fontSize: Double { storedFontSize.isFinite ? min(22, max(14, storedFontSize)) : 16 }
 
     var body: some View {
@@ -94,6 +94,7 @@ struct PromptEditorView: View {
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help("Close inspector").accessibilityLabel("Close inspector")
             }.padding(16)
+            PromptEnginePicker(session: session).padding(.horizontal, 20).padding(.bottom, 16)
             if session.panel == .improve { PromptImprovementPanel(session: session) }
             else { PromptPreviewPanel(session: session) }
         }

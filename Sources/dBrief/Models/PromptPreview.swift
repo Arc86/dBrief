@@ -82,3 +82,43 @@ enum PromptPreviewError: Error, LocalizedError, Equatable {
 protocol PromptPreviewing: Sendable {
     func run(_ request: PromptPreviewRequest) async throws -> PromptPreviewOutput
 }
+
+extension PromptPreviewSample {
+    static let examples: [PromptPreviewSample] = [
+        example,
+        .init(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, title: "Team stand-up · Example",
+              transcript: """
+              Maya: The new sign-in flow is ready for review. I will send the pull request to Leo this morning.
+              Leo: I can review it before lunch. My dashboard work is blocked because the reporting API is returning incomplete data.
+              Nina: I will check the API logs with the platform team today. If we cannot resolve it, we should keep the old dashboard for this release.
+              Maya: Agreed. Sign-in can ship independently, so we will not hold it for the dashboard.
+              Leo: We still need a decision about the mobile layout. Can we discuss that at tomorrow’s design review?
+              Nina: Yes. There is no deadline for the dashboard until we understand the API issue.
+              """,
+              summary: "The sign-in flow is ready for review and can ship independently. Dashboard work is blocked by incomplete API data; the old dashboard remains the fallback. The mobile layout and dashboard deadline are undecided.",
+              actionItems: ["Maya will send Leo the sign-in pull request this morning.", "Leo will review the pull request before lunch.", "Nina will investigate the reporting API with the platform team today.", "Discuss the mobile layout at tomorrow’s design review."]),
+        .init(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, title: "Customer feedback · Example",
+              transcript: """
+              Jordan: Our team likes the search feature, but setting up a workspace took nearly an hour. We could not tell which fields were required.
+              Priya: Was the problem the instructions or the number of steps?
+              Jordan: Mostly the instructions. We also invited a colleague twice because there was no confirmation after the first invitation.
+              Priya: That is helpful. I will send a proposed onboarding checklist by Wednesday and log the missing confirmation as a bug.
+              Jordan: We can have two new users try the checklist next week. Please keep the export format unchanged; our reporting scripts depend on it.
+              Priya: Understood. We have not committed to a release date for the onboarding changes. I will follow up after the test.
+              """,
+              summary: "The customer values search but finds onboarding unclear and invitation feedback missing. The team will test a new checklist with two users. Export compatibility must be preserved; no release date was promised.",
+              actionItems: ["Priya will send an onboarding checklist by Wednesday.", "Priya will log the missing invitation confirmation as a bug.", "Jordan will arrange a checklist test with two new users next week.", "Priya will follow up after the test."]),
+        .init(id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!, title: "Project retrospective · Example",
+              transcript: """
+              Alex: We shipped on time, but the final week involved too much rework. The acceptance criteria changed after testing started.
+              Morgan: Pairing helped us catch issues quickly. I would like to keep that for the next project.
+              Sam: I disagree with freezing every requirement. We need room to react to customer feedback.
+              Alex: Could we require a short impact review for changes after testing starts, rather than block them?
+              Sam: Yes, that would work. Let us try it for one project and review the results.
+              Morgan: I will draft the impact-review checklist before Monday. We should also reserve a day for end-to-end testing.
+              Alex: We agree on the checklist experiment. The extra testing day still needs approval from the project lead. No owner was assigned to seek that approval today.
+              """,
+              summary: "The team shipped on time but late requirement changes caused rework. Pairing was effective. They agreed to trial an impact review for changes after testing begins. An additional testing day remains a proposal awaiting approval, with no owner assigned.",
+              actionItems: ["Morgan will draft the impact-review checklist before Monday.", "Trial the change impact review on the next project and review the results."])
+    ]
+}

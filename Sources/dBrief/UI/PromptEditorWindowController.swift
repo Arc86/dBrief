@@ -32,6 +32,9 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
             window.title = "\(identity.kind.title) Prompt"
             let toolbar = PromptEditorToolbar(session: session)
             toolbar.install(on: window)
+            // Hosting-controller installation can reset the initial content size.
+            // Set it after installation, then let autosave restore a user's size.
+            window.setContentSize(NSSize(width: 980, height: 700))
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()

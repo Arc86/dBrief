@@ -10,7 +10,7 @@ struct PromptImprovementPanel: View {
                 if let config = session.configuration {
                     VStack(alignment: .leading, spacing: 4) {
                         PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
-                        if let note = PromptConfigurationResolver.fallbackExplanation(identity: session.identity, settings: session.store.settings) {
+                        if session.engineSelection == .configured, let note = PromptConfigurationResolver.fallbackExplanation(identity: session.identity, settings: session.store.settings) {
                             Text(note).foregroundStyle(.secondary)
                         }
                     }.font(.callout)

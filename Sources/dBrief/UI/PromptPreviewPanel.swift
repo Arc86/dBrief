@@ -22,23 +22,8 @@ struct PromptPreviewPanel: View {
             $0.transcription != nil || $0.richTranscript != nil || $0.transcriptSidecarURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
         }
     }
-    private var usesSpokenFallback: Bool {
-        session.identity.kind == .spokenSummary && settings.aiEngine == .localCLI
-    }
-    private func route() throws -> PromptExecutionConfiguration {
-        if usesSpokenFallback {
-            switch settings.chatFallbackEngine {
-            case .appleIntelligence: return .appleIntelligence
-            case .qwenLocal: return .localModel
-            case .remoteEndpoint:
-                guard let endpoint = settings.defaultAIEndpoint else { throw PromptAIError.missingEndpoint }
-                try PromptConfigurationResolver.validate(endpoint)
-                return .remote(endpoint)
-            case .localCLI: throw PromptPreviewError.failed("Choose a chat fallback engine in AI settings for spoken-summary previews.")
-            }
-        }
-        return try PromptConfigurationResolver.resolve(identity: session.identity, settings: settings)
-    }
+    private var usesSpokenFallback: Bool { session.usesSpokenPreviewFallback }
+    private func route() throws -> PromptExecutionConfiguration { try session.resolvePreviewConfiguration() }
     private var request: PromptPreviewRequest? {
         guard !isVoice, let sample, let config = try? route() else { return nil }
         let scope = session.identity.scope
@@ -70,8 +55,14 @@ struct PromptPreviewPanel: View {
     }
     @ViewBuilder private var textControls: some View {
         Picker("Recording", selection: $selectedID) {
-            Text(PromptPreviewSample.example.title).tag(PromptPreviewSample.example.id)
-            ForEach(choices) { recording in Text(recording.generatedTitle ?? recording.fileURL.deletingPathExtension().lastPathComponent).tag(recording.id) }
+            Section("Examples") {
+                ForEach(PromptPreviewSample.examples) { example in Text(example.title).tag(example.id) }
+            }
+            if !choices.isEmpty {
+                Section("Your recordings") {
+                    ForEach(choices) { recording in Text(recording.generatedTitle ?? recording.fileURL.deletingPathExtension().lastPathComponent).tag(recording.id) }
+                }
+            }
         }.pickerStyle(.menu)
         if let config = try? route() {
             PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
@@ -145,7 +136,7 @@ struct PromptPreviewPanel: View {
 
     @MainActor private func loadSample() async {
         let id = selectedID
-        if id == PromptPreviewSample.example.id { sample = .example; sampleError = nil; return }
+        if let example = PromptPreviewSample.examples.first(where: { $0.id == id }) { sample = example; sampleError = nil; loading = false; return }
         guard let recording = context.appState.recentRecordings.first(where: { $0.id == id }) else {
             sample = nil; sampleError = "This recording is no longer available. Choose the example."; return
         }
