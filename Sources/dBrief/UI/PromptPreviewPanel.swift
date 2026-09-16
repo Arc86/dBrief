@@ -55,11 +55,11 @@ struct PromptPreviewPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(isVoice ? "Try the voice style" : "Try your prompt").font(.headline)
+                PromptInspectorHeading(title: isVoice ? "Hear the difference" : "Try your prompt",
+                    subtitle: isVoice ? "Listen before you save." : "See how your instructions shape the result.", symbol: isVoice ? "waveform" : "play.rectangle")
                 if isVoice { voiceControls } else { textControls }
-            }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
         .task(id: "\(selectedID)-\(refresh)") { await loadSample() }
         .onReceive(NotificationCenter.default.publisher(for: .recordingLibraryChanged).receive(on: RunLoop.main)) { _ in
             preview.cancel(); refresh = UUID()
@@ -74,8 +74,7 @@ struct PromptPreviewPanel: View {
             ForEach(choices) { recording in Text(recording.generatedTitle ?? recording.fileURL.deletingPathExtension().lastPathComponent).tag(recording.id) }
         }.pickerStyle(.menu)
         if let config = try? route() {
-            Text(config.displayName).fontWeight(.medium)
-            Text(config.destinationDescription).font(.callout).foregroundStyle(.secondary)
+            PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
             if usesSpokenFallback {
                 Text("Uses your configured chat fallback, matching spoken-summary generation.").font(.callout).foregroundStyle(.secondary)
             }
@@ -105,7 +104,7 @@ struct PromptPreviewPanel: View {
                             plugin: context.recordingManager.localPlugin, cli: context.recordingManager.localCLIService), completion: completion)
                         preview.start(request, using: service)
                     }
-                }.disabled(loading || request == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.identity.kind == .spokenSummary && sample?.summary == nil))
+                }.modifier(PromptPrimaryAction()).disabled(loading || request == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.identity.kind == .spokenSummary && sample?.summary == nil))
             }
         }
         Text("The original recording stays unchanged.").font(.caption).foregroundStyle(.secondary)
@@ -117,8 +116,11 @@ struct PromptPreviewPanel: View {
             } else { Text("Preview result").font(.headline) }
             Text(result.text).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
         } else {
-            Text("Your preview appears here").font(.headline).foregroundStyle(.secondary)
-            Text("Choose a recording and run a test.").foregroundStyle(.secondary)
+            VStack(spacing: 10) {
+                Image(systemName: "text.document").font(.system(size: 30, weight: .light))
+                Text("Ready when you are").font(.headline)
+                Text("Choose a recording and run a test.").font(.callout)
+            }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 24)
         }
     }
     private var routeError: String { do { _ = try route(); return "" } catch { return error.localizedDescription } }
@@ -135,7 +137,7 @@ struct PromptPreviewPanel: View {
                 let tts = settings.ttsSynthesisParams
                 preview.voice.preview(text: settings.ttsLanguage.sampleText, engine: tts.engine, voice: tts.voice,
                     language: tts.language, instruction: session.draft.text, model: tts.model, plugin: context.recordingManager.localPlugin)
-            }.disabled(!voiceSupported || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.modifier(PromptPrimaryAction()).disabled(!voiceSupported || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         if case .failed(let message) = preview.voice.state { SettingsErrorDetails(summary: "Voice preview failed", error: message) }
         Text("Sample audio is temporary. Your saved voice style stays unchanged.").font(.caption).foregroundStyle(.secondary)

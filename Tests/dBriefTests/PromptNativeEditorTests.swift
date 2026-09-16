@@ -16,6 +16,10 @@ struct PromptNativeEditorTests {
         controller.sizingOptions = []
         let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 980, height: 700),
                               styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        let toolbar = PromptEditorToolbar(session: session)
+        toolbar.install(on: window)
+        #expect(window.toolbar != nil)
+        #expect(window.toolbarStyle == .unified)
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
         defer { window.close() }
@@ -48,6 +52,7 @@ struct PromptNativeEditorTests {
         #expect(!session.draft.hasChanges)
         #expect(settings.summaryPrompt == saved)
         #expect(window.contentView!.bounds.height <= 531)
+        _ = toolbar // Keep the weak NSToolbar delegate alive through the test.
     }
 
     private func settle(_ window: NSWindow) async throws {

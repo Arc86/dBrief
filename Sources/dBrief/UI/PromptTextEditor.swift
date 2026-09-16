@@ -24,7 +24,10 @@ struct PromptTextEditor: NSViewRepresentable {
         text.autoresizingMask = [.width]
         text.textContainer?.widthTracksTextView = true
         text.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
-        text.textContainerInset = NSSize(width: 20, height: 16)
+        text.textContainerInset = NSSize(width: 22, height: 18)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        text.defaultParagraphStyle = paragraph
         text.font = .systemFont(ofSize: fontSize)
         text.string = session.draft.text
         text.delegate = context.coordinator

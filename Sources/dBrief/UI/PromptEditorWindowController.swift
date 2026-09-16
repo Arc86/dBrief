@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 final class PromptEditorWindowController: NSObject, NSWindowDelegate {
-    private struct Entry { let window: NSWindow; let session: PromptEditorSession }
+    private struct Entry { let window: NSWindow; let session: PromptEditorSession; let toolbar: PromptEditorToolbar }
     private var entries: [PromptIdentity: Entry] = [:]
     private var asking = Set<PromptIdentity>()
     private weak var context: AppContext?
@@ -29,12 +29,14 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
             hosting.sizingOptions = []
             window.contentViewController = hosting
             window.contentMinSize = NSSize(width: 680, height: 500)
-            window.title = "\(identity.kind.title) Prompt — \(session.draft.baseline.scopeName)"
+            window.title = "\(identity.kind.title) Prompt"
+            let toolbar = PromptEditorToolbar(session: session)
+            toolbar.install(on: window)
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
             window.setFrameAutosaveName("dBrief.PromptEditor")
-            entries[identity] = Entry(window: window, session: session)
+            entries[identity] = Entry(window: window, session: session, toolbar: toolbar)
             window.makeKeyAndOrderFront(nil)
         } catch {
             let alert = NSAlert()

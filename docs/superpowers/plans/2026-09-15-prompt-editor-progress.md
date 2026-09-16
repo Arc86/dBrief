@@ -56,3 +56,19 @@ Open `.worktrees/prompt-editor/dBrief-Prompt-Dev.app`, then its menu bar wavefor
 - Added `PromptNativeEditorTests.typingUndoSurvivesPanelAndSizeChanges`: creates a real SwiftUI/AppKit editor window, enters text through NSTextView, switches the AI pane, resizes to 700×530, returns to the editor, and verifies Undo history, unchanged saved preferences, restored native text, and bounded window height. **Passed** (`/tmp/prompt-native-tests.log`).
 
 - Final complete suite including the native regression: **1240 tests / 209 suites passed** (`/tmp/prompt-full-final.log`). `git diff --check` passed. Production sources are unchanged since the successful release build; the final addition was test-only.
+
+## 2026-09-16 — Modern macOS appearance
+
+User feedback: the editor works, but its header, dividers, and button rows look too classic.
+
+- Adopt a real AppKit unified window toolbar for Improve, Preview, and secondary prompt actions. Standard toolbar items use the current OS material and accessibility behavior; the window retains its native title, subtitle, and traffic lights.
+- Reduce the scope banner and save bar, create an inset opaque writing surface and rounded inspector, and group inspector mode navigation at the top. Restoring defaults and undoing AI edits remain available in the toolbar options menu.
+- Use the native macOS 26 glass-prominent style for primary actions, with a bordered fallback on older systems. Keep document and result content opaque. System appearances handle light/dark mode and accessibility material preferences.
+- Use SF Symbols, standard ControlGroup text-size buttons, readable paragraph spacing, compact engine labels, and a clearer preview empty state.
+- Existing draft, persistence, generation, cancellation, and profile routing code is unchanged.
+- Apple reference: https://developer.apple.com/videos/play/wwdc2025/310/
+- First focused regression: 69 tests / 17 suites passed, including the real native typing/Undo/resize test with the new toolbar installed. Appearance rendering and beta packaging results follow.
+
+- Complete regression: **1240 tests / 209 suites passed** (`/tmp/prompt-modern-full.log`). Native typing, toolbar installation, resizing, and Undo passed. Removed the optional screenshot-export diagnostic afterward; no application source changed after verification.
+- The native screenshot exporter produced unusable images; those files were removed. CUA attachment to the beta also timed out. Manual visual confirmation remains open; macOS 27 was not exercised.
+- `make beta` (using the documented shared-cache Makefile adjustment): **passed**. Produced **dBrief Beta 1.4.2, build 36**, signed with `dBrief Beta Self-Signed`; strict signature verification passed. Update feed is absent. Build log: `/tmp/prompt-modern-beta.log`.

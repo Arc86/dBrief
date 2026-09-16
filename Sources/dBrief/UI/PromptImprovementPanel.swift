@@ -6,11 +6,10 @@ struct PromptImprovementPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Improve with AI").font(.headline)
+                PromptInspectorHeading(title: "A better prompt", subtitle: "Describe what you’d like to change.", symbol: "sparkles")
                 if let config = session.configuration {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(config.displayName).fontWeight(.medium)
-                        Text(config.destinationDescription).foregroundStyle(.secondary)
+                        PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
                         if let note = PromptConfigurationResolver.fallbackExplanation(identity: session.identity, settings: session.store.settings) {
                             Text(note).foregroundStyle(.secondary)
                         }
@@ -19,12 +18,13 @@ struct PromptImprovementPanel: View {
                 DisclosureGroup("Improvement request", isExpanded: $showRequest) {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField("Improve clarity while preserving intent", text: $session.improvementRequest, axis: .vertical)
-                            .lineLimit(3...6).textFieldStyle(.roundedBorder)
+                            .lineLimit(3...6).textFieldStyle(.plain)
+                            .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                             .accessibilityLabel("What would you like to improve?")
                         ViewThatFits(in: .horizontal) {
                             HStack { shortcuts }
                             VStack(alignment: .leading) { shortcuts }
-                        }
+                        }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
                         Text("Uses this prompt and your request. No recording is sent.")
                             .font(.callout).foregroundStyle(.secondary)
                     }.padding(.top, 8)
@@ -35,7 +35,8 @@ struct PromptImprovementPanel: View {
                         Text("Generating…")
                         Button("Cancel") { session.cancelImprovement() }
                     } else {
-                        Button("Suggest improvements") { Task { await session.improve() } }
+                        Button { Task { await session.improve() } } label: { Label("Suggest improvements", systemImage: "sparkles") }
+                            .modifier(PromptPrimaryAction())
                             .disabled(session.configuration == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
@@ -55,14 +56,13 @@ struct PromptImprovementPanel: View {
                     }
                     HStack {
                         Button("Use suggestion") { session.applySuggestion() }
-                            .buttonStyle(.borderedProminent).disabled(!session.canApplySuggestion)
+                            .modifier(PromptPrimaryAction()).disabled(!session.canApplySuggestion)
                         Button("Discard") { session.discardSuggestion() }
                     }
                     Text("Replaces the draft. Save when you’re ready.").font(.caption).foregroundStyle(.secondary)
                 }
-            }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
         .onChange(of: session.suggestion) { _, suggestion in if suggestion != nil { showRequest = false } }
     }
     @ViewBuilder private var shortcuts: some View {
