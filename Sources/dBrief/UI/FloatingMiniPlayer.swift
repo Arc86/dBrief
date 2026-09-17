@@ -115,31 +115,35 @@ private struct MiniPlayerView: View {
         VStack(spacing: 8) {
             // Top row: status + timer
             HStack {
-                HStack(spacing: 5) {
-                    Self.cachedIcon
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: 14, height: 14)
-                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                        .opacity(0.8)
+                HStack {
+                    HStack(spacing: 5) {
+                        Self.cachedIcon
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 14, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            .opacity(0.8)
 
-                    BrandStatusDot(
-                        color: appState.isRecording ? Brand.recording : Brand.paused,
-                        size: 7,
-                        pulse: appState.isRecording
-                    )
+                        BrandStatusDot(
+                            color: appState.isRecording ? Brand.recording : Brand.paused,
+                            size: 7,
+                            pulse: appState.isRecording
+                        )
 
-                    Text(appState.isRecording ? "Recording" : "Paused")
-                        .font(.brandMono(11, weight: .medium))
-                        .foregroundStyle(appState.isRecording ? Brand.recording : Brand.paused)
+                        Text(appState.isRecording ? "Recording" : "Paused")
+                            .font(.brandMono(11, weight: .medium))
+                            .foregroundStyle(appState.isRecording ? Brand.recording : Brand.paused)
+                    }
+
+                    Spacer()
+
+                    Text(formattedDuration)
+                        .font(.brandMono(12, weight: .semibold))
+                        .foregroundStyle(.primary)
                 }
-
-                Spacer()
-
-                Text(formattedDuration)
-                    .font(.brandMono(12, weight: .semibold))
-                    .foregroundStyle(.primary)
+                .overlay { MiniPlayerDragArea() }
+                .help("Drag to move recording controls")
 
                 Button {
                     controller.toggleCollapse()
@@ -157,6 +161,7 @@ private struct MiniPlayerView: View {
             MiniWaveform(level: appState.peakLevel)
                 .frame(height: 20)
                 .frame(maxWidth: .infinity)
+                .overlay { MiniPlayerDragArea() }
 
             // Transient note when the input device / echo cancellation auto-switches.
             if let note = appState.recordingStatusNote {
@@ -226,6 +231,25 @@ private struct MiniPlayerView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// Start dragging explicitly: SwiftUI's hit testing can prevent the panel's
+/// `isMovableByWindowBackground` fallback from receiving mouse events.
+/// Only cover noninteractive content so recording buttons retain their clicks.
+private struct MiniPlayerDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragView {
+        DragView()
+    }
+
+    func updateNSView(_ nsView: DragView, context: Context) {}
+
+    final class DragView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
     }
 }
 
