@@ -5,6 +5,7 @@ struct TranscriptChatView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var inputText = ""
+    @State private var scrollFollow = ChatScrollFollowController()
 
     private var sendEnabled: Bool {
         !inputText.trimmingCharacters(in: .whitespaces).isEmpty && !chatService.isStreaming
@@ -172,17 +173,16 @@ struct TranscriptChatView: View {
                 }
                 .padding(.vertical, 12)
                 .overlayScrollers()
+                .background(ChatScrollFollowObserver(controller: scrollFollow))
             }
             .scrollIndicators(.automatic)
             .onChange(of: chatService.messages.count) { _, _ in
-                if let lastId = chatService.messages.last?.id {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(lastId, anchor: .bottom)
-                    }
+                if scrollFollow.shouldFollow, let lastId = chatService.messages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
             .onChange(of: chatService.messages.last?.content) { _, _ in
-                if let lastId = chatService.messages.last?.id {
+                if scrollFollow.shouldFollow, let lastId = chatService.messages.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
@@ -267,6 +267,7 @@ struct TranscriptChatView: View {
     private func submitMessage() {
         let text = inputText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty, !chatService.isStreaming else { return }
+        scrollFollow.resumeFollowing()
         inputText = ""
         Task { await chatService.send(text) }
     }
