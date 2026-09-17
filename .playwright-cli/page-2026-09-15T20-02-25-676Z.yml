@@ -1,0 +1,49 @@
+- iframe [ref=f2e2]:
+  - generic "dBrief prompt editor design" [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - generic [ref=f3e4]:
+        - generic [ref=f3e9]: dBrief — Prompt Editor
+        - button "Settings" [ref=f3e10] [cursor=pointer]
+        - button "Hide test panel" [pressed] [ref=f3e11] [cursor=pointer]
+      - generic [ref=f3e12]:
+        - generic [ref=f3e13]:
+          - generic [ref=f3e14]:
+            - heading "Summary prompt" [level=1] [ref=f3e15]
+            - paragraph [ref=f3e16]: Shape the summary of your recording.
+          - generic [ref=f3e17]:
+            - text: Editing
+            - strong [ref=f3e18]: Work profile only
+        - generic [ref=f3e19]:
+          - generic [ref=f3e20]:
+            - generic [ref=f3e21]:
+              - strong [ref=f3e23]: Instructions
+              - combobox "Use a starting point" [ref=f3e24] [cursor=pointer]:
+                - option "Start from…" [selected]
+                - option "Concise"
+                - option "Detailed"
+              - generic [ref=f3e25]:
+                - button "Decrease text size" [ref=f3e26] [cursor=pointer]: A−
+                - generic [ref=f3e27]: "16"
+                - button "Increase text size" [ref=f3e28] [cursor=pointer]: A+
+            - textbox "Instructions" [ref=f3e29]: Write a clear, useful summary of this meeting. Start with a short overview of what was discussed. Then use bullet points for key decisions, open questions, and next steps. Be specific. Keep names, dates, and commitments exactly as stated. If something was not agreed, say so. Use plain language. Leave out small talk and repeated points.
+            - paragraph [ref=f3e30]: Describe what to include and how to write it. dBrief handles the response structure.
+          - complementary [ref=f3e31]:
+            - heading "Try your prompt" [level=2] [ref=f3e32]
+            - paragraph [ref=f3e33]: Preview a result before saving your changes.
+            - text: Recording
+            - combobox "Recording" [ref=f3e34] [cursor=pointer]:
+              - option "Product planning · Example transcript" [selected]
+              - option "Customer check-in · Example transcript"
+            - generic [ref=f3e35]:
+              - generic [ref=f3e36]: On-device processing
+              - button "Run test" [ref=f3e37] [cursor=pointer]
+            - paragraph [ref=f3e38]: The original recording stays unchanged.
+            - generic [ref=f3e40]:
+              - heading "Your preview appears here" [level=3] [ref=f3e41]
+              - paragraph [ref=f3e42]: Choose a recording and run a test.
+        - generic [ref=f3e43]:
+          - button "Use app default" [ref=f3e44] [cursor=pointer]
+          - generic [ref=f3e45]: No unsaved changes
+          - button "Cancel" [ref=f3e46] [cursor=pointer]
+          - button "Save changes" [disabled] [ref=f3e47]
+    - generic [ref=f3e48]: Interactive design · Saves stay in this preview. Test results are illustrative.

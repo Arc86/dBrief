@@ -9,6 +9,7 @@ struct SettingsAITab: View {
     @State private var selectedEndpointId: UUID?
     @State private var isEditing = false
     @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
+    @State private var outputTokenLimitText = ""
     @State private var isNew = false
     @State private var testResult: SettingsTranscriptionTab.TestResult?
     @State private var availableModels: [String] = []
@@ -394,6 +395,7 @@ struct SettingsAITab: View {
         }
         .onTapGesture(count: 2) {
             editingEndpoint = endpoint
+            outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
             isNew = false
             testResult = nil
             availableModels = []
@@ -403,10 +405,16 @@ struct SettingsAITab: View {
 
     private func beginAddEndpoint(_ endpoint: Endpoint) {
         editingEndpoint = endpoint
+        outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
         isNew = true
         testResult = nil
         availableModels = []
         isEditing = true
+    }
+
+    private var isOutputTokenLimitValid: Bool {
+        let value = outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty || (Int(value).map { $0 > 0 } ?? false)
     }
 
     private var endpointEditor: some View {
@@ -455,8 +463,26 @@ struct SettingsAITab: View {
                     NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "AI provider API key (optional)")
                         .frame(height: 22)
                 }
+                GridRow {
+                    Text("Output token limit:")
+                    NativeTextField(placeholder: "Automatic (\(editingEndpoint.recommendedMaxOutputTokens.formatted()))",
+                                    text: $outputTokenLimitText, accessibilityName: "AI provider output token limit")
+                        .frame(height: 22)
+                }
             }
             .frame(maxWidth: 350)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Leave blank for automatic: \(editingEndpoint.recommendedMaxOutputTokens.formatted()) tokens. Applies to analysis and chat, including reasoning. Higher limits allow longer answers and can increase cost.")
+                    .foregroundStyle(.secondary)
+                if !isOutputTokenLimitValid {
+                    Text("Enter a positive whole number, or leave blank for automatic.")
+                        .foregroundStyle(.red)
+                }
+            }
+            .font(.caption)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 350, alignment: .leading)
 
             if isLoadingModels {
                 ProgressView("Loading models...")
@@ -499,6 +525,8 @@ struct SettingsAITab: View {
                 .buttonStyle(.bordered)
 
                 Button("Save") {
+                    guard isOutputTokenLimitValid else { return }
+                    editingEndpoint.maxOutputTokens = Int(outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines))
                     if isNew {
                         appSettings.aiEndpoints.append(editingEndpoint)
                     } else {
@@ -509,7 +537,7 @@ struct SettingsAITab: View {
                     isEditing = false
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty)
+                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty || !isOutputTokenLimitValid)
             }
             .frame(maxWidth: 350)
 

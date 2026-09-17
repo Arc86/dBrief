@@ -19,6 +19,19 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
     var modelName: String
     var apiKey: String
     var provider: Provider
+    /// Nil selects the model-aware default. Applies to remote AI analysis and chat.
+    var maxOutputTokens: Int?
+
+    var recommendedMaxOutputTokens: Int { ProviderPresets.recommendedOutputTokens(for: self) }
+
+    var resolvedMaxOutputTokens: Int {
+        if let maxOutputTokens, maxOutputTokens > 0 { return maxOutputTokens }
+        return recommendedMaxOutputTokens
+    }
+
+    var completionTimeout: TimeInterval {
+        min(1800, max(120, Double(resolvedMaxOutputTokens) * 600 / 16_384))
+    }
 
     init(
         id: UUID = UUID(),
@@ -26,7 +39,8 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
         baseURL: String,
         modelName: String,
         apiKey: String = "",
-        provider: Provider = .openAICompatible
+        provider: Provider = .openAICompatible,
+        maxOutputTokens: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -34,12 +48,13 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
         self.modelName = modelName
         self.apiKey = apiKey
         self.provider = provider
+        self.maxOutputTokens = maxOutputTokens.flatMap { $0 > 0 ? $0 : nil }
     }
 
     // Custom decoding so endpoints persisted before `provider` existed still load
     // (Swift's synthesized decoder would otherwise fail on the missing key).
     enum CodingKeys: String, CodingKey {
-        case id, name, baseURL, modelName, apiKey, provider
+        case id, name, baseURL, modelName, apiKey, provider, maxOutputTokens
     }
 
     init(from decoder: Decoder) throws {
@@ -50,6 +65,8 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
         self.modelName = try c.decode(String.self, forKey: .modelName)
         self.apiKey = try c.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .openAICompatible
+        self.maxOutputTokens = try c.decodeIfPresent(Int.self, forKey: .maxOutputTokens)
+            .flatMap { $0 > 0 ? $0 : nil }
     }
 
     /// Endpoint metadata is stored in preferences, while credentials are stored
@@ -62,6 +79,7 @@ struct Endpoint: Identifiable, Codable, Hashable, Sendable {
         try c.encode(baseURL, forKey: .baseURL)
         try c.encode(modelName, forKey: .modelName)
         try c.encode(provider, forKey: .provider)
+        try c.encodeIfPresent(maxOutputTokens, forKey: .maxOutputTokens)
     }
 
     /// Whether this endpoint uses the whisper-asr-webservice API format (/asr)

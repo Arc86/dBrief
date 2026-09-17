@@ -1,0 +1,53 @@
+- iframe [ref=e2]:
+  - generic "dBrief prompt editor design" [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]:
+        - generic [ref=f1e9]: dBrief — Prompt Editor
+        - button "Settings" [ref=f1e10] [cursor=pointer]
+      - generic [ref=f1e11]:
+        - generic [ref=f1e12]:
+          - generic [ref=f1e13]:
+            - heading "Summary prompt" [level=1] [ref=f1e14]
+            - paragraph [ref=f1e15]: Shape the summary of your recording.
+          - generic [ref=f1e16]:
+            - text: Editing
+            - strong [ref=f1e17]: Work profile only
+        - generic [ref=f1e18]:
+          - generic [ref=f1e19]:
+            - generic [ref=f1e20]:
+              - strong [ref=f1e22]: Instructions
+              - button "Improve with AI…" [pressed] [ref=f1e23] [cursor=pointer]
+              - combobox "Use a starting point" [ref=f1e24] [cursor=pointer]:
+                - option "Start from…" [selected]
+                - option "Concise"
+                - option "Detailed"
+              - generic [ref=f1e25]:
+                - button "Decrease text size" [ref=f1e26] [cursor=pointer]: A−
+                - generic [ref=f1e27]: "16"
+                - button "Increase text size" [ref=f1e28] [cursor=pointer]: A+
+            - textbox "Instructions" [ref=f1e29]: Write a clear, useful summary of this meeting. Start with a short overview of what was discussed. Then use bullet points for key decisions, open questions, and next steps. Be specific. Keep names, dates, and commitments exactly as stated. If something was not agreed, say so. Use plain language. Leave out small talk and repeated points.
+            - paragraph [ref=f1e30]: Describe what to include and how to write it. dBrief handles the response structure.
+          - complementary [ref=f1e31]:
+            - generic [ref=f1e32]:
+              - heading "Improve with AI" [level=2] [ref=f1e33]
+              - button "Close AI improvement" [ref=f1e34] [cursor=pointer]: Close
+            - paragraph [ref=f1e35]: Uses the AI configured for this profile.
+            - generic [ref=f1e40]:
+              - strong [ref=f1e41]: Apple Intelligence
+              - generic [ref=f1e42]: On-device · Example configuration
+            - generic [ref=f1e43]: What would you like to improve?
+            - textbox "What would you like to improve?" [ref=f1e44]:
+              - /placeholder: "For example: focus on decisions and keep it concise."
+              - text: Make it clearer and more actionable.
+            - generic [ref=f1e45]:
+              - button "Shorter" [ref=f1e46] [cursor=pointer]
+              - button "Clearer" [ref=f1e47] [cursor=pointer]
+              - button "More specific" [ref=f1e48] [cursor=pointer]
+            - paragraph [ref=f1e49]: Uses your prompt and this request. No recording is needed.
+            - button "Suggest improvements" [ref=f1e50] [cursor=pointer]
+        - generic [ref=f1e51]:
+          - button "Use app default" [ref=f1e52] [cursor=pointer]
+          - generic [ref=f1e53]: No unsaved changes
+          - button "Cancel" [ref=f1e54] [cursor=pointer]
+          - button "Save changes" [disabled] [ref=f1e55]
+    - generic [ref=f1e56]: Interactive design · Saves stay in this preview. AI suggestions and test results are illustrative.

@@ -14,13 +14,6 @@ actor AIService {
         return result
     }
 
-    /// Upper bound on generated tokens per call. Two opposing pressures:
-    /// some servers default to a tiny `max_tokens` (e.g. 16) which truncates the
-    /// answer, while strict servers (vLLM) reject when `prompt + max_tokens` exceeds
-    /// the model's context window. A moderate cap covers dBrief's short outputs
-    /// (summary/action-items/tags) plus a reasoning model's `<think>` block without
-    /// reserving so much context that it triggers overflow on small-context servers.
-    static let maxResponseTokens = 4096
     func generateSummary(transcription: String, endpoint: Endpoint, systemPrompt: String) async throws -> String {
         let response = try await chatCompletion(
             systemPrompt: systemPrompt,
@@ -210,7 +203,7 @@ actor AIService {
                 ["role": "user", "content": userMessage],
             ],
             "temperature": 0.3,
-            "max_tokens": Self.maxResponseTokens,
+            "max_tokens": endpoint.resolvedMaxOutputTokens,
             "stream": true,
         ]
         ReasoningConfig.apply(to: &body, model: endpoint.modelName)
@@ -221,7 +214,7 @@ actor AIService {
             request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 120
+        request.timeoutInterval = endpoint.completionTimeout
         return request
     }
 
@@ -233,7 +226,7 @@ actor AIService {
         guard let url = endpoint.messagesURL else { throw AIServiceError.invalidEndpoint }
         let body: [String: Any] = [
             "model": endpoint.modelName,
-            "max_tokens": 4096,
+            "max_tokens": endpoint.resolvedMaxOutputTokens,
             "temperature": 0.3,
             "system": systemPrompt,
             "messages": [["role": "user", "content": userMessage]],
@@ -247,7 +240,7 @@ actor AIService {
             request.setValue(endpoint.apiKey, forHTTPHeaderField: "x-api-key")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 120
+        request.timeoutInterval = endpoint.completionTimeout
         return request
     }
 
@@ -366,7 +359,7 @@ actor AIService {
                 ["role": "user", "content": userMessage],
             ],
             "temperature": 0.3,
-            "max_tokens": Self.maxResponseTokens,
+            "max_tokens": endpoint.resolvedMaxOutputTokens,
         ]
         ReasoningConfig.apply(to: &body, model: endpoint.modelName)
 
@@ -377,7 +370,7 @@ actor AIService {
             request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 120
+        request.timeoutInterval = endpoint.completionTimeout
 
         let (data, response) = try await PrivacyHTTPTrace.data(for: request,
             operation: .init(stage: stage, data: [.text, .metadata],
@@ -437,7 +430,7 @@ actor AIService {
 
         let body: [String: Any] = [
             "model": endpoint.modelName,
-            "max_tokens": 4096,
+            "max_tokens": endpoint.resolvedMaxOutputTokens,
             "temperature": 0.3,
             "system": systemPrompt,
             "messages": [["role": "user", "content": userMessage]],
@@ -451,7 +444,7 @@ actor AIService {
             request.setValue(endpoint.apiKey, forHTTPHeaderField: "x-api-key")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 120
+        request.timeoutInterval = endpoint.completionTimeout
 
         let (data, response) = try await PrivacyHTTPTrace.data(for: request,
             operation: .init(stage: stage, data: [.text, .metadata],
@@ -506,7 +499,7 @@ enum AIServiceError: Error, LocalizedError {
         switch self {
         case .invalidEndpoint: "Invalid AI endpoint URL."
         case .invalidResponse: "Invalid response from AI server."
-        case .truncatedResponse: "The model returned no answer — it likely ran out of output tokens while \"thinking\". Try a non-reasoning model or one with a larger output limit."
+        case .truncatedResponse: "The model did not finish its answer within the output token limit. Reasoning can use this allowance too. Increase the provider's Output token limit in AI settings if the model supports it, or request a shorter answer."
         case .contextWindowExceeded: "The transcript is larger than the model's context window. Increase your server's context size (e.g. llama.cpp --ctx-size / vLLM --max-model-len) or use an endpoint with a larger context."
         case .noModelsFound: "Connected, but no models were returned by the provider."
         case .serverError(let code, let body): "Server error (\(code)): \(body)"

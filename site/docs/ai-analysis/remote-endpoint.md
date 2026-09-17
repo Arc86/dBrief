@@ -25,6 +25,34 @@ dBrief can send transcripts to any OpenAI-compatible `/v1/chat/completions` endp
 | Groq | OpenAI-compatible (fast inference) |
 | Ollama (local) | OpenAI-compatible, no API key |
 
+## Output token limit
+
+Every AI provider entry has an optional **Output token limit**. Leave it blank for
+an automatic default, or enter a positive whole number to override it. The setting
+applies to analysis and streaming chat. It limits generated output, including
+reasoning tokens where counted by the provider; it does not change the model's
+context window.
+
+The automatic defaults below use the preset's exact model and provider host.
+Existing saved entries use the same defaults. Changing to an unknown model returns
+the automatic limit to 4,096; an explicit override stays in place until cleared.
+
+| Provider and model | dBrief default | Published output limit |
+|---|---:|---:|
+| Anthropic / Claude Sonnet 4.6 | 16,384 | [128K](https://platform.claude.com/docs/en/models/sonnet-4-6/overview) |
+| Google / Gemini 2.5 Flash | 16,384 | [65,536](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash) |
+| OpenAI / GPT-4o | 16,384 | [16,384](https://developers.openai.com/api/docs/models/gpt-4o) |
+| Groq / Llama 3.3 70B Versatile | 16,384 | [32,768](https://console.groq.com/docs/model/llama-3.3-70b-versatile) |
+| Ollama / llama3 | 4,096 | [8K total context](https://ollama.com/blog/llama3); server configuration also matters |
+| OpenRouter / z-ai/glm-5.3-flash | 16,384 | [131,072](https://openrouter.ai/z-ai/glm-5.3-flash) |
+| Unknown provider/model | 4,096 | Not assumed |
+
+Provider documentation checked on September 17, 2026. The dBrief default is an
+application allowance, not necessarily the model's maximum. A larger allowance can
+prevent truncation, but longer generated answers can take more time and cost more.
+The request timeout scales with the allowance: at least 2 minutes, 10 minutes at
+16,384 tokens, and at most 30 minutes. Providers still enforce their own limits.
+
 ## Reasoning models
 
 For models that emit "thinking"/chain-of-thought (GPT-5, o-series, gpt-oss, Qwen3, Gemini Flash, minimax, gemma, DeepSeek-R1-style), dBrief:
@@ -33,7 +61,10 @@ For models that emit "thinking"/chain-of-thought (GPT-5, o-series, gpt-oss, Qwen
 - Strips any `<think>…</think>` block that still comes back before parsing the summary, action items, and tags (so the JSON-based tags step doesn't choke on the reasoning).
 - Requests an output-token limit so a server with a tiny default doesn't truncate the answer.
 
-If a step fails with **"The model returned no answer — it likely ran out of output tokens while thinking"**, the model spent its whole output budget reasoning. Pick a non-reasoning model, or one with a larger output limit.
+If a step fails with **"The model did not finish its answer within the output token limit"**,
+the response exhausted its allowance. This can be due to reasoning, answer length,
+or both. Increase the entry's **Output token limit** if the model supports it, or
+request a shorter answer. Incomplete analysis responses are reported as failures.
 
 ## Context window (large transcripts)
 

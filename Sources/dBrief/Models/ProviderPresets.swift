@@ -11,6 +11,8 @@ struct ProviderPreset: Identifiable, Hashable, Sendable {
     let defaultModel: String
     /// Short hint shown in the editor (e.g. where to get an API key).
     let help: String
+    /// Application allowance, not the model's maximum. Sources: site/docs/ai-analysis/remote-endpoint.md.
+    var defaultOutputTokenLimit: Int = 4096
 
     func makeEndpoint() -> Endpoint {
         Endpoint(name: name, baseURL: baseURL, modelName: defaultModel, provider: provider)
@@ -22,20 +24,37 @@ enum ProviderPresets {
     static let ai: [ProviderPreset] = [
         ProviderPreset(id: "anthropic", name: "Anthropic (Claude)", provider: .anthropic,
                        baseURL: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6",
-                       help: "API key from console.anthropic.com"),
+                       help: "API key from console.anthropic.com", defaultOutputTokenLimit: 16_384),
         ProviderPreset(id: "gemini", name: "Google Gemini", provider: .openAICompatible,
                        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.5-flash",
-                       help: "OpenAI-compatible endpoint. API key from aistudio.google.com"),
+                       help: "OpenAI-compatible endpoint. API key from aistudio.google.com", defaultOutputTokenLimit: 16_384),
         ProviderPreset(id: "openai", name: "OpenAI", provider: .openAICompatible,
                        baseURL: "https://api.openai.com", defaultModel: "gpt-4o",
-                       help: "API key from platform.openai.com"),
+                       help: "API key from platform.openai.com", defaultOutputTokenLimit: 16_384),
         ProviderPreset(id: "groq-chat", name: "Groq", provider: .openAICompatible,
                        baseURL: "https://api.groq.com/openai", defaultModel: "llama-3.3-70b-versatile",
-                       help: "Fast inference. API key from console.groq.com"),
+                       help: "Fast inference. API key from console.groq.com", defaultOutputTokenLimit: 16_384),
         ProviderPreset(id: "ollama", name: "Ollama (local)", provider: .openAICompatible,
                        baseURL: "http://localhost:11434", defaultModel: "llama3",
                        help: "Local models, no API key needed"),
     ]
+
+    /// Match a serving host and exact model; a provider name alone cannot tell us
+    /// the model's capacity. Old saved entries get these defaults without rewriting
+    /// preferences, while explicit per-entry overrides always take precedence.
+    static func recommendedOutputTokens(for endpoint: Endpoint) -> Int {
+        let host = URL(string: endpoint.baseURL)?.host?.lowercased()
+        let model = endpoint.modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if endpoint.provider == .openAICompatible,
+           host == "openrouter.ai", model == "z-ai/glm-5.3-flash" {
+            return 16_384
+        }
+        return ai.first {
+            $0.provider == endpoint.provider
+                && URL(string: $0.baseURL)?.host?.lowercased() == host
+                && $0.defaultModel.lowercased() == model
+        }?.defaultOutputTokenLimit ?? 4096
+    }
 
     /// Transcription providers.
     static let transcription: [ProviderPreset] = [
