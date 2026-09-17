@@ -25,7 +25,7 @@ public enum UnifiedInsightsPrompt {
     // ~4 chars/token); agentic CLIs are typically large-context too. Keep a small
     // intro slice for context, then the full tail — meetings load substance in the
     // middle and end, so dropping the head preserves detail.
-    public static let transcriptCharLimit = 100_000
+    public static let transcriptCharLimit = 150_000
     public static let transcriptHeadChars = 5_000
     public static let transcriptTailChars = 95_000
     public static let truncationSeparator = "\n\n[...MIDDLE TEXT OMITTED FOR BREVITY...]\n\n"
