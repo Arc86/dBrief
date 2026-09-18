@@ -29,7 +29,7 @@ MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/
 # paste the printed SHA256 into FFMPEG_SHA256 to make builds reproducible and verified.
 FFMPEG_VERSION ?= latest
 FFMPEG_URL ?= https://ffmpeg.martin-riedl.de/redirect/$(FFMPEG_VERSION)/macos/arm64/release/ffmpeg.zip
-FFMPEG_SHA256 ?= ef4fe121377039053b0d7bed4a9aa46e7912918f5ba6424a1dd155f4eed625b0
+FFMPEG_SHA256 ?= 393e4c395020a1cb7cbd77fbe00599ce69d1c6466fee0dbd59d13f86a81a1611
 FFMPEG_CACHE = .build/ffmpeg
 
 # Version is the single source of truth in Info.plist; never hardcode it here.
@@ -236,8 +236,8 @@ notarize:
 	@echo "Notarized & stapled $(DMG_NAME)"
 
 run: app
-	pkill -f "$(PWD)/$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE_NAME)" || true
-	open "$(PWD)/$(APP_BUNDLE)"
+	pkill -f "$(CURDIR)/$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE_NAME)" || true
+	open "$(CURDIR)/$(APP_BUNDLE)"
 	@echo "Launched $(APP_BUNDLE)"
 
 # Beta channel: a fully separate `dBrief-Beta.app` that coexists with the
@@ -258,8 +258,8 @@ beta:
 	@echo "Built dBrief-Beta.app — drag to /Applications or run 'make run-beta'."
 
 run-beta: beta
-	pkill -f "$(PWD)/dBrief-Beta.app/Contents/MacOS/$(EXECUTABLE_NAME)" || true
-	open "$(PWD)/dBrief-Beta.app"
+	pkill -f "$(CURDIR)/dBrief-Beta.app/Contents/MacOS/$(EXECUTABLE_NAME)" || true
+	open "$(CURDIR)/dBrief-Beta.app"
 	@echo "Launched dBrief-Beta.app"
 
 clean:

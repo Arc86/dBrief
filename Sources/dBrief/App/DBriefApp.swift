@@ -21,7 +21,7 @@ final class AppContext {
     let recordingManager: RecordingManager
     let callDetectionService = CallDetectionService()
     let hotkeyService = GlobalHotkeyService()
-    let updaterController = UpdaterController()
+    let updaterController = UpdaterController.shared
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
     let miniPlayer = FloatingMiniPlayerController()

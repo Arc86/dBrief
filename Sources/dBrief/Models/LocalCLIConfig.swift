@@ -14,7 +14,7 @@ struct LocalCLIConfig: Codable, Sendable, Equatable {
     var timeoutSeconds: Int
 
     static let `default` = LocalCLIConfig(
-        command: "claude -p \"$DBRIEF_FULL_PROMPT\"",
+        command: "claude -p",
         timeoutSeconds: 180
     )
 
@@ -26,9 +26,9 @@ struct LocalCLIConfig: Codable, Sendable, Equatable {
     }
 
     static let templates: [Template] = [
-        Template(name: "Claude Code", command: "claude -p \"$DBRIEF_FULL_PROMPT\""),
+        Template(name: "Claude Code", command: "claude -p"),
         Template(name: "Gemini CLI", command: "gemini -p \"$DBRIEF_FULL_PROMPT\""),
-        Template(name: "Codex CLI", command: "codex exec \"$DBRIEF_FULL_PROMPT\""),
+        Template(name: "Codex CLI", command: "codex exec --skip-git-repo-check --sandbox read-only -"),
         Template(name: "GitHub Copilot CLI", command: "copilot -p \"$DBRIEF_FULL_PROMPT\""),
         Template(name: "Ollama (llama3)", command: "ollama run llama3"),
         Template(name: "llm CLI", command: "llm \"$DBRIEF_FULL_PROMPT\""),
