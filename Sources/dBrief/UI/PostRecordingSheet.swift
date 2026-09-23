@@ -12,6 +12,14 @@ struct PostRecordingSheet: View {
     @State private var tags = true
     @State private var meetingTitle = ""
     @State private var participantNames: [String] = []
+    /// The roster the sheet last auto-filled, so a later attendee load can
+    /// refresh the field while still respecting genuine manual edits.
+    @State private var lastAutoFilledParticipants: [String] = []
+    @State private var attendeeLoadState: AttendeeLoadState = .idle
+    @State private var calendarPickerOutcome: CalendarCLIPickerOutcome?
+    @State private var calendarPickerRefreshing = false
+    @State private var calendarPickerLastRefresh: Date?
+    @State private var calendarPickerTask: Task<Void, Never>?
     @State private var participantInput = ""
     /// The pill currently being edited in place (nil = none). Single-valued, so exactly one
     /// pill is ever swapped for a text field.
@@ -149,7 +157,22 @@ struct PostRecordingSheet: View {
             TextField("meeting", text: $meetingTitle)
                 .textFieldStyle(.roundedBorder)
 
-            if let recording = appState.currentRecording, !recording.calendarCandidates.isEmpty {
+            if let recording = appState.currentRecording,
+               (appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty) {
+                if appSettings.effectiveCalendarSource == .claudeCLI {
+                    HStack {
+                        Text("Today's meetings").font(.caption.weight(.semibold))
+                        Spacer()
+                        if calendarPickerRefreshing {
+                            ProgressView().controlSize(.small).accessibilityLabel("Refreshing meeting list")
+                        }
+                        Button("Refresh") { refreshCalendarPicker(for: recording, force: true) }
+                            .controlSize(.small)
+                            .disabled(calendarPickerRefreshing)
+                            .accessibilityLabel("Refresh meeting list")
+                    }
+                    calendarPickerStatus
+                }
                 Picker("Meeting", selection: calendarSelection(recording)) {
                     Text("None").tag(String?.none)
                     ForEach(recording.calendarCandidates) { event in
@@ -157,6 +180,11 @@ struct PostRecordingSheet: View {
                     }
                 }
                 .labelsHidden()
+                if appSettings.effectiveCalendarSource == .claudeCLI,
+                   recording.calendarEvent != nil,
+                   appSettings.calendarCLIConfig.attendeePolicy == .onDemand {
+                    attendeeLoadButton(for: recording)
+                }
             }
 
             Text("Used for file naming · YYYY-MM-DD_HHMM_[meeting-title].md")
@@ -336,6 +364,14 @@ struct PostRecordingSheet: View {
                let recording = appState.currentRecording, let event = recording.calendarEvent {
                 applyCalendarEvent(event, to: recording)
             }
+            if appSettings.effectiveCalendarSource == .claudeCLI,
+               let recording = appState.currentRecording {
+                refreshCalendarPicker(for: recording, force: false)
+            }
+        }
+        .onDisappear {
+            calendarPickerTask?.cancel()
+            calendarPickerRefreshing = false
         }
         .onChange(of: appState.currentRecording?.calendarEvent?.id) { _, _ in
             defer { recordingManager.refreshPostRecordingProfileSelection() }
@@ -593,6 +629,136 @@ struct PostRecordingSheet: View {
         }
         if participantNames.isEmpty, !event.attendeeNames.isEmpty {
             participantNames = event.attendeeNames
+            lastAutoFilledParticipants = event.attendeeNames
+        }
+    }
+
+    // MARK: - Explicit attendee load (Claude CLI source)
+
+    @ViewBuilder
+    private var calendarPickerStatus: some View {
+        if let refreshed = calendarPickerLastRefresh {
+            Text("Updated \(refreshed.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        switch calendarPickerOutcome {
+        case .manualOnly:
+            Text("Manual mode: press Refresh for the latest meetings.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .partial, .failed:
+            Label(calendarPickerLastRefresh == nil
+                  ? "Meeting list unavailable. Press Refresh to retry."
+                  : "Showing saved meetings; refresh failed. Press Refresh to retry.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange)
+        case .blocked:
+            Label("Calendar access blocked. Check Claude connector approval, then press Refresh.", systemImage: "lock")
+                .font(.caption).foregroundStyle(.orange)
+        case .selectionMissing:
+            Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange)
+        case .unconfigured:
+            Text("Add a mailbox in Calendar settings to load meetings.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .complete, .none:
+            if !calendarPickerRefreshing, calendarPickerLastRefresh != nil,
+               appState.currentRecording?.calendarCandidates.isEmpty == true {
+                Text("No meetings for this day.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func refreshCalendarPicker(for recording: Recording, force: Bool) {
+        guard !calendarPickerRefreshing else { return }
+        calendarPickerRefreshing = true
+        calendarPickerTask = Task { @MainActor in
+            let outcome = await recordingManager.refreshCalendarCLIPicker(for: recording, force: force)
+            guard !Task.isCancelled else { return }
+            calendarPickerOutcome = outcome
+            calendarPickerLastRefresh = await recordingManager.calendarCLIStatus(for: recording)?.lastSuccessfulRefresh
+            calendarPickerRefreshing = false
+        }
+    }
+
+    private enum AttendeeLoadState: Equatable {
+        case idle, loading
+        case done(String)
+        case omittedLarge(Int)
+        case unavailable
+        case failed
+    }
+
+    @ViewBuilder
+    private func attendeeLoadButton(for recording: Recording) -> some View {
+        HStack(spacing: 8) {
+            switch attendeeLoadState {
+            case .idle:
+                EmptyView()
+            case .loading:
+                ProgressView().controlSize(.small)
+            case .done(let message):
+                Text(message)
+                    .font(.brandMono(10.5))
+                    .foregroundStyle(.secondary)
+            case .omittedLarge(let count):
+                Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
+                    .font(.brandMono(10.5))
+                    .foregroundStyle(.secondary)
+            case .unavailable:
+                Text("Attendee roster unavailable")
+                    .font(.brandMono(10.5))
+                    .foregroundStyle(.secondary)
+            case .failed:
+                Text("Attendee load failed — try again")
+                    .font(.brandMono(10.5))
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                loadAttendees(for: recording)
+            } label: {
+                Label(
+                    attendeeLoadState == .loading ? "Loading…" : "Load attendees",
+                    systemImage: "person.2"
+                )
+            }
+            .controlSize(.small)
+            .disabled(attendeeLoadState == .loading)
+        }
+    }
+
+    private func loadAttendees(for recording: Recording) {
+        guard attendeeLoadState != .loading else { return }
+        attendeeLoadState = .loading
+        Task { @MainActor in
+            let outcome = await recordingManager.loadCalendarCLIAttendees(for: recording)
+            switch outcome {
+            case .loaded:
+                attendeeLoadState = .done("Attendees loaded")
+                applyLoadedRoster(to: recording)
+            case .noInvitees:
+                attendeeLoadState = .done("No invitees")
+                applyLoadedRoster(to: recording)
+            case .omittedLargeMeeting(let count):
+                attendeeLoadState = .omittedLarge(count)
+            case .unavailable:
+                attendeeLoadState = .unavailable
+            case .failed:
+                attendeeLoadState = .failed
+            case .cancelled, .discarded:
+                attendeeLoadState = .idle
+            case .policyForbids, .sourceInactive, .noOccurrence:
+                attendeeLoadState = .unavailable
+            }
+        }
+    }
+
+    /// Reflects the just-loaded roster into the participants field unless the
+    /// user typed their own list.
+    private func applyLoadedRoster(to recording: Recording) {
+        guard let event = recording.calendarEvent else { return }
+        if participantNames.isEmpty || participantNames == lastAutoFilledParticipants {
+            participantNames = event.attendeeNames
+            lastAutoFilledParticipants = event.attendeeNames
         }
     }
 
@@ -609,14 +775,20 @@ struct PostRecordingSheet: View {
 
     /// Explicit user pick: overwrite title and participants from the chosen event (distinct
     /// from the auto-fill guard in `applyCalendarEvent`). `nil` clears the context without
-    /// wiping fields the user may have typed.
+    /// wiping fields the user may have typed. Routing goes through the manager, which records
+    /// the selection revision; the sheet then updates its own fields.
     private func selectCalendarEvent(_ event: CalendarEvent?, to recording: Recording) {
-        recording.calendarEvent = event
+        let previousID = recording.calendarEvent?.id
+        recordingManager.selectCalendarCandidate(event, for: recording)
         guard let event else { return }
         if !event.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             meetingTitle = event.title
         }
         participantNames = event.attendeeNames
+        lastAutoFilledParticipants = event.attendeeNames
+        if event.id != previousID {
+            attendeeLoadState = .idle
+        }
     }
 
     private func pickerLabel(_ event: CalendarEvent) -> String {

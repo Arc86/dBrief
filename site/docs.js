@@ -59,6 +59,7 @@
         { slug: "integrations/apple-notes",           title: "Apple Notes" },
         { slug: "integrations/apple-reminders",       title: "Apple Reminders" },
         { slug: "integrations/webhook",               title: "Webhook" },
+        { slug: "integrations/claude-cli-calendar",   title: "Claude CLI Calendar" },
         { slug: "integrations/other-integrations",    title: "Other Integrations" },
       ],
     },

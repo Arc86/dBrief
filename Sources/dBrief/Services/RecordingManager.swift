@@ -86,6 +86,16 @@ final class RecordingManager {
     let calendarService = CalendarService()
     private let microsoftAuthService: MicrosoftAuthService
     let outlookCalendarService: OutlookCalendarService
+    /// Claude CLI calendar source: cache-first snapshots, single-flight
+    /// refreshes and explicit attendee enrichment.
+    @ObservationIgnored let calendarCLIService: CalendarCLIService
+    /// Cached CLI entries by their presentation id so the explicit attendee
+    /// action can recover the occurrence key for a selected event.
+    @ObservationIgnored var calendarCLIEntryByEventID: [String: CalendarCLIEntry] = [:]
+    @ObservationIgnored var calendarCLIPrefetchTask: Task<Void, Never>?
+    /// Advanced when the calendar CLI configuration changes, so late roster
+    /// completions from the old configuration are discarded.
+    @ObservationIgnored var calendarCLIConfigGeneration = 0
 
     // Memory requirements for local models (bytes)
     private enum MemoryThreshold {
@@ -107,7 +117,8 @@ final class RecordingManager {
         captureSessionStore: CaptureSessionStore = CaptureSessionStore(),
         reprocessingStore: ReprocessingStore = ReprocessingStore(),
         queueScheduleStore: QueueScheduleStore = QueueScheduleStore(),
-        integrationDeliveryStore: IntegrationDeliveryStore = IntegrationDeliveryStore()
+        integrationDeliveryStore: IntegrationDeliveryStore = IntegrationDeliveryStore(),
+        calendarCLIService: CalendarCLIService? = nil
     ) {
         self.queueScheduleStore = queueScheduleStore
         self.integrationDeliveryStore = integrationDeliveryStore
@@ -124,6 +135,10 @@ final class RecordingManager {
         self.processingJobStore = processingJobStore
         self.microsoftAuthService = microsoftAuthService
         self.outlookCalendarService = OutlookCalendarService(authService: microsoftAuthService)
+        self.calendarCLIService = calendarCLIService ?? CalendarCLIService(
+            transport: CalendarCLITransport(),
+            store: CalendarCLICacheStore()
+        )
         self.localAIPluginService = LocalAIPluginService(connection: mlHost, diagnostics: LocalAIPluginService.defaultDiagnostics())
         self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
         self.modelDownloadCoordinator = modelDownloadCoordinator ?? ModelDownloadCoordinator(
@@ -426,6 +441,9 @@ final class RecordingManager {
                 Task { await localAIPluginService.prewarmWhisper(config: config, refresh: false) }
             }
             if request.showMiniPlayer { miniPlayer?.show() }
+            // Prefetch the capture day's calendar list in the background —
+            // never awaited by capture, which is already running.
+            scheduleCalendarCLIPrefetch()
         case .paused(let id):
             guard appState.currentRecording?.id == id else { return }
             appState.recordingState = .paused
@@ -661,6 +679,8 @@ final class RecordingManager {
                 recordingEnd: end,
                 includeFullRecordingDay: includeFullRecordingDay
             )
+        case .claudeCLI:
+            events = await calendarCLIEvents(recordingStart: start, recordingEnd: end)
         case .disabled:
             events = []
         }
@@ -679,6 +699,9 @@ final class RecordingManager {
         )
         if recording.calendarEvent == nil {
             recording.calendarEvent = automaticMatches.first
+        }
+        if automaticMatches.first != nil {
+            recording.calendarSelectionRevision += 1
         }
     }
 

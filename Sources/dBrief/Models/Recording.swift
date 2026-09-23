@@ -42,6 +42,10 @@ final class Recording: Identifiable {
     /// (especially the Outlook network round-trip) and lose calendar title/participants/AI context.
     /// Session-only; never persisted.
     @ObservationIgnored var calendarLookupTask: Task<Void, Never>?
+    /// Bumped on every automatic or manual calendar selection so a late roster
+    /// fetch can detect that the selection changed while it was running.
+    /// Session-only; never persisted.
+    @ObservationIgnored var calendarSelectionRevision: Int = 0
     var capturedTracks: CapturedTracks?
     /// Atomic recovery manifest for an in-progress local capture. Removed only
     /// after a verified master audio file and metadata sidecar exist, or after

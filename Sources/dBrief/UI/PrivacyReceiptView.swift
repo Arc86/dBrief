@@ -145,6 +145,7 @@ private extension PrivacyOperation.Stage {
         case .spokenSummaryScript: "Spoken summary script"
         case .speechSynthesis: "Speech synthesis"
         case .audioExport: "Audio export"
+        case .calendarFetch: "Calendar fetch"
         }
     }
 }
@@ -185,6 +186,7 @@ private extension PrivacyDestination.Provider {
         case .clipboard: "System clipboard"
         case .ttsKit: "TTSKit"
         case .kokoro: "Kokoro"
+        case .claudeCLI: "Claude CLI connector"
         }
     }
 }

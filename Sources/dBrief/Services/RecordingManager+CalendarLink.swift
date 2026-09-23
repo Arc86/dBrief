@@ -18,6 +18,10 @@ extension RecordingManager {
         case .outlook:
             events = await outlookCalendarService.findEvents(recordingStart: start, recordingEnd: end,
                 includeFullRecordingDay: true)
+        case .claudeCLI:
+            // Historical linking fetches the original day's metadata only;
+            // rosters load later through the explicit attendee action.
+            events = await calendarCLIEvents(recordingStart: start, recordingEnd: end)
         case .disabled:
             throw CalendarLinkError.calendarAccess
         }

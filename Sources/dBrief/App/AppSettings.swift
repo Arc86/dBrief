@@ -43,6 +43,7 @@ final class AppSettings {
         static let aiEngine = "aiEngine"
         static let chatFallbackEngine = "chatFallbackEngine"
         static let localCLIConfig = "localCLIConfig"
+        static let calendarCLIConfig = "calendarCLIConfig"
         static let didMigrateLocalCLITimeout = "didMigrateLocalCLITimeout"
         static let outputLanguageMode = "outputLanguageMode"
         static let outputLanguageCustomCode = "outputLanguageCustomCode"
@@ -377,6 +378,12 @@ final class AppSettings {
     /// Configuration for the Local CLI AI engine (command template + timeout).
     var localCLIConfig: LocalCLIConfig {
         didSet { saveLocalCLIConfig(localCLIConfig) }
+    }
+
+    /// Configuration for the Claude CLI calendar source. Fully independent of
+    /// `localCLIConfig`, the AI engine and the transcription engine.
+    var calendarCLIConfig: CalendarCLIConfig {
+        didSet { saveCalendarCLIConfig(calendarCLIConfig) }
     }
 
     /// Preferred language for local Qwen insights output.
@@ -954,6 +961,7 @@ final class AppSettings {
         }
 
         self.localCLIConfig = AppSettings.loadLocalCLIConfig(forKey: Keys.localCLIConfig)
+        self.calendarCLIConfig = AppSettings.loadCalendarCLIConfig(forKey: Keys.calendarCLIConfig)
 
         let outputLanguageMode = defaults.string(forKey: Keys.outputLanguageMode) ?? "matchInput"
         switch outputLanguageMode {

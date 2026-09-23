@@ -58,6 +58,17 @@ struct CalendarEvent: Sendable, Equatable, Codable, Identifiable {
         self.endDate = endDate
     }
 
+    /// A copy with different attendees (identity fields preserved). Used by
+    /// roster enrichment, which replaces the attendee list after an explicit
+    /// fetch without touching anything else.
+    func replacing(attendees: [Person]) -> CalendarEvent {
+        CalendarEvent(
+            uid: uid, title: title, attendees: attendees, organizer: organizer,
+            body: body, location: location, isOnline: isOnline, isAllDay: isAllDay,
+            startDate: startDate, endDate: endDate
+        )
+    }
+
     /// Stable identity for SwiftUI selection (the override picker tags candidates by this).
     /// Prefers the source `uid` to disambiguate distinct same-title events, but always folds
     /// in start/end so recurring occurrences (which share a uid) stay distinct.

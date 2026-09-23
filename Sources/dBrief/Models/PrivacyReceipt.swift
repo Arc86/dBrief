@@ -35,6 +35,7 @@ struct PrivacyOperation: Codable, Equatable, Sendable {
         case finalization, transcription, liveTranscription, formatProbe, speakerAnalysis, spelling
         case analysis, summary, actionItems, tags, title, chat, markdownExport, integration, promptImprovement
         case clipboardExport, spokenSummaryScript, speechSynthesis, audioExport
+        case calendarFetch
     }
     enum DataCategory: String, Codable, Sendable {
         case recordingAudio, syntheticAudio, generatedAudio, text, metadata
@@ -54,6 +55,7 @@ struct PrivacyDestination: Codable, Equatable, Sendable {
         case whisper, speakerKit, parakeet, fluidAudio, appleSpeech, speechAnalyzer, appleIntelligence, localModel
         case localCLI, appleNotes, appleReminders, webhook, fileSystem
         case clipboard, ttsKit, kokoro
+        case claudeCLI
     }
     let location: Location
     let provider: Provider

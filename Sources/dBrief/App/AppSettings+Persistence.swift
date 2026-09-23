@@ -213,6 +213,19 @@ extension AppSettings {
 
     // MARK: Local CLI Config Persistence
 
+    func saveCalendarCLIConfig(_ config: CalendarCLIConfig) {
+        if let data = try? JSONEncoder().encode(config) {
+            UserDefaults.standard.set(data, forKey: Keys.calendarCLIConfig)
+        }
+    }
+
+    static func loadCalendarCLIConfig(forKey key: String) -> CalendarCLIConfig {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let config = try? JSONDecoder().decode(CalendarCLIConfig.self, from: data)
+        else { return .default }
+        return config
+    }
+
     func saveLocalCLIConfig(_ config: LocalCLIConfig) {
         if let data = try? JSONEncoder().encode(config) {
             UserDefaults.standard.set(data, forKey: Keys.localCLIConfig)

@@ -26,6 +26,7 @@ struct SettingsCalendarSection: View {
                 if MicrosoftAuthService.isConfigured {
                     Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
                 }
+                Text("Claude CLI").tag(CalendarSource.claudeCLI)
             }
 
             switch settings.effectiveCalendarSource {
@@ -138,6 +139,9 @@ struct SettingsCalendarSection: View {
                         }
                     }
                 }
+
+            case .claudeCLI:
+                SettingsCalendarCLISection()
 
             case .disabled:
                 EmptyView()
