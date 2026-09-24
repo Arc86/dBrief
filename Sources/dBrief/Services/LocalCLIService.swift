@@ -86,7 +86,8 @@ actor LocalCLIService {
         try Task.checkCancellation()
         return try await PrivacyTrace.perform(.init(stage: stage, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
             try await Self.runShellCommand(config.command, systemPrompt: system, userPrompt: user,
-                fullPrompt: system + "\n\n" + user, timeoutSeconds: config.timeoutSeconds)
+                fullPrompt: system + "\n\n" + user, timeoutSeconds: config.timeoutSeconds,
+                effort: config.effort, effortProvider: config.effortProvider)
         }
     }
 
@@ -112,7 +113,9 @@ actor LocalCLIService {
             systemPrompt: sample,
             userPrompt: sample,
             fullPrompt: sample,
-            timeoutSeconds: config.timeoutSeconds
+            timeoutSeconds: config.timeoutSeconds,
+            effort: config.effort,
+            effortProvider: config.effortProvider
         )
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -127,7 +130,9 @@ actor LocalCLIService {
         systemPrompt: String,
         userPrompt: String,
         fullPrompt: String,
-        timeoutSeconds: Int
+        timeoutSeconds: Int,
+        effort: CLIReasoningEffort = .cliDefault,
+        effortProvider: CLIEffortProvider = .commandDefault
     ) async throws -> String {
         let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCommand.isEmpty else { throw LocalCLIServiceError.emptyCommand }
@@ -138,7 +143,8 @@ actor LocalCLIService {
         environment["DBRIEF_SYSTEM_PROMPT"] = systemPrompt
         environment["DBRIEF_USER_PROMPT"] = userPrompt
         environment["DBRIEF_FULL_PROMPT"] = fullPrompt
-        return try await LocalCLIProcessRunner.run(command: trimmedCommand, environment: environment,
+        return try await LocalCLIProcessRunner.run(command: trimmedCommand,
+            environment: CLIReasoningEnvironment.applying(effort, provider: effortProvider, to: environment),
             input: fullPrompt, timeoutSeconds: timeoutSeconds)
     }
 
@@ -174,6 +180,7 @@ enum LocalCLIServiceError: Error, LocalizedError {
     case emptyCommand
     case launchFailed(String)
     case nonZeroExit(code: Int, stderr: String)
+    case unsupportedEffort
     case timeout(seconds: Int)
     case emptyOutput
     case invalidJSON(String)
@@ -187,6 +194,8 @@ enum LocalCLIServiceError: Error, LocalizedError {
             "Failed to launch Local CLI command: check the command and executable permissions."
         case .nonZeroExit(let code, _):
             "Local CLI command exited with code \(code): check the command and its authentication."
+        case .unsupportedEffort:
+            "This CLI does not support the selected effort. Update Claude CLI or choose CLI default."
         case .timeout(let seconds):
             "Local CLI command timed out after \(seconds)s."
         case .outputTooLong:

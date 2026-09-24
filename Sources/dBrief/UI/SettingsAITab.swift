@@ -209,6 +209,8 @@ struct SettingsAITab: View {
                         ForEach(LocalCLIConfig.templates) { template in
                             Button(template.name) {
                                 appSettings.localCLIConfig.command = template.command
+                                appSettings.localCLIConfig.effortProvider = template.effortProvider
+                                appSettings.localCLIConfig.effort = template.effort
                                 cliTestSuccess = nil
                                 cliTestError = nil
                             }
@@ -235,6 +237,35 @@ struct SettingsAITab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .fixedSize()
+                }
+
+                Picker("Effort provider", selection: Binding(
+                    get: { appSettings.localCLIConfig.effortProvider },
+                    set: { provider in
+                        appSettings.localCLIConfig.effortProvider = provider
+                        cliTestSuccess = nil
+                        cliTestError = nil
+                    }
+                )) {
+                    Text("Command default").tag(CLIEffortProvider.commandDefault)
+                    Text("Claude Code").tag(CLIEffortProvider.claude)
+                }
+                .pickerStyle(.menu)
+
+                if appSettings.localCLIConfig.effortProvider == .claude {
+                    CLIReasoningEffortPicker(title: "AI analysis CLI effort", selection: Binding(
+                        get: { appSettings.localCLIConfig.effort },
+                        set: { effort in
+                            appSettings.localCLIConfig.effort = effort
+                            cliTestSuccess = nil
+                            cliTestError = nil
+                        }
+                    ), recommendation: .medium)
+                    Text("The effort setting applies to this child process. An inline environment assignment in a custom command can override it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Select Claude Code as the effort provider for a Claude wrapper command. Other commands keep their own settings.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout. The command runs with your login shell's PATH; if a tool still isn't found, use its absolute path (find it with `which <tool>` in Terminal).")

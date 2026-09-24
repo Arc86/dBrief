@@ -45,3 +45,29 @@ extension CLIReasoningEffortTests {
         #expect(config.mailboxEmail == "ada@example.com")
     }
 }
+
+extension CLIReasoningEffortTests {
+    @Test("Explicit Claude effort overrides only the child environment")
+    func explicitClaudeEffortOverridesInheritedValue() {
+        let original = ["CLAUDE_CODE_EFFORT_LEVEL": "high", "PATH": "/bin"]
+        let result = CLIReasoningEnvironment.applying(.low, provider: .claude, to: original)
+        #expect(result["CLAUDE_CODE_EFFORT_LEVEL"] == "low")
+        #expect(result["PATH"] == "/bin")
+        #expect(original["CLAUDE_CODE_EFFORT_LEVEL"] == "high")
+    }
+
+    @Test("CLI default and non-Claude providers leave inherited effort alone")
+    func inheritedEffortIsPreserved() {
+        let original = ["CLAUDE_CODE_EFFORT_LEVEL": "high"]
+        #expect(CLIReasoningEnvironment.applying(.cliDefault, provider: .claude, to: original) == original)
+        #expect(CLIReasoningEnvironment.applying(.low, provider: .commandDefault, to: original) == original)
+    }
+
+    @Test("Known Haiku calendar models omit the app effort override")
+    func haikuOmitsEffort() {
+        let config = CalendarCLIConfig.default.updating(modelID: "claude-haiku-4-5", effort: .max)
+        #expect(config.effort == .max)
+        #expect(config.effectiveEffort == .cliDefault)
+        #expect(config.updating(modelID: "sonnet").effectiveEffort == .max)
+    }
+}

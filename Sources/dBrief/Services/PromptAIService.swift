@@ -124,6 +124,7 @@ actor PromptAIService: PromptTextCompleting {
                 case .emptyCommand: throw PromptAIError.emptyCommand
                 case .emptyOutput: throw PromptAIError.emptyOutput
                 case .outputTooLong: throw PromptAIError.incompleteOutput
+                case .unsupportedEffort: throw PromptAIError.unavailable("This CLI does not support the selected effort. Update Claude CLI or choose CLI default in Settings → AI.")
                 case .timeout(let seconds): throw PromptAIError.unavailable("The Local CLI command timed out after \(seconds) seconds. Allow more time or try a shorter request.")
                 case .nonZeroExit(let code, _): throw PromptAIError.unavailable("The Local CLI command exited with code \(code). Check its command and authentication in Settings → AI.")
                 case .launchFailed: throw PromptAIError.unavailable("The Local CLI command could not be launched. Check its executable path and permissions in Settings → AI.")

@@ -219,3 +219,43 @@ final class ReportCollector: @unchecked Sendable {
         lock.withLock { stored }
     }
 }
+
+extension CalendarCLITransportTests {
+    @Test("Calendar subprocess receives Low effort independently")
+    func calendarSubprocessReceivesLowEffort() async throws {
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: script) }
+        let content = "#!/bin/zsh\n" + #"if [[ "${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}" != "low" ]]; then exit 7; fi; "#
+            + Self.echoListCommand + "\n"
+        try content.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let config = Self.configured(command: "'\(script.path)'").updating(effort: .low)
+        let result = try await CalendarCLITransport().list(window: Self.window(), config: config)
+        #expect(result.completeness == .complete)
+    }
+
+    @Test("Managed calendar command rejects effort and settings conflicts")
+    func managedEffortConflictsRejected() {
+        for fragment in ["--effort high", "CLAUDE_CODE_EFFORT_LEVEL=high claude -p", "--settings custom.json"] {
+            let config = Self.configured(command: "claude -p \(fragment)")
+            #expect(!config.validateCommand(), "expected rejection for \(fragment)")
+        }
+    }
+}
+
+extension CalendarCLITransportTests {
+    @Test("Unsupported effort gets a bounded upgrade diagnostic")
+    func unsupportedEffortDiagnostic() async {
+        let command = "echo 'unsupported effort level' >&2; exit 2"
+        do {
+            _ = try await CalendarCLITransport().list(
+                window: Self.window(), config: Self.configured(command: command))
+            Issue.record("Expected failure")
+        } catch let error as CalendarCLITransportError {
+            #expect(error.localizedDescription.contains("Update Claude CLI"))
+            #expect(!error.localizedDescription.contains("unsupported effort level"))
+        } catch {
+            Issue.record("Unexpected error type")
+        }
+    }
+}

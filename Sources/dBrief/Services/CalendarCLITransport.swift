@@ -147,7 +147,8 @@ struct CalendarCLITransport: CalendarCLITransporting {
             }
             return try await LocalCLIProcessRunner.run(
                 command: command,
-                environment: environment,
+                environment: CLIReasoningEnvironment.applying(
+                    config.effectiveEffort, provider: .claude, to: environment),
                 input: system + "\n\n" + user,
                 timeoutSeconds: config.timeoutSeconds
             )
@@ -190,6 +191,8 @@ struct CalendarCLITransport: CalendarCLITransporting {
             mapped = CancellationError()
         case LocalCLIServiceError.timeout:
             mapped = CalendarCLITransportError.timeout(seconds: timeoutSeconds)
+        case LocalCLIServiceError.unsupportedEffort:
+            mapped = CalendarCLITransportError.unsupportedEffort
         case LocalCLIServiceError.nonZeroExit(let code, _):
             mapped = CalendarCLITransportError.processFailed(status: code)
         case LocalCLIServiceError.outputTooLong:
@@ -241,6 +244,7 @@ enum CalendarCLITransportError: Error, LocalizedError {
     case invalidCommand
     case timeout(seconds: Int)
     case processFailed(status: Int)
+    case unsupportedEffort
     case invalidOutput(Reason)
     case cancelled
 
@@ -254,6 +258,8 @@ enum CalendarCLITransportError: Error, LocalizedError {
             "The calendar CLI call timed out after \(seconds)s."
         case .processFailed(let status):
             "The calendar CLI command exited with code \(status). Check its authentication and connection."
+        case .unsupportedEffort:
+            "This Claude CLI does not support the selected effort. Update Claude CLI or choose CLI default."
         case .invalidOutput(let reason):
             "The calendar CLI response was rejected: \(reason.diagnosticText)"
         case .cancelled:

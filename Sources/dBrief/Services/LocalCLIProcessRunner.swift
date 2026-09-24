@@ -70,6 +70,9 @@ final class LocalCLIProcessRunner: @unchecked Sendable {
         _ = fcntl(stdinFD, F_SETNOSIGPIPE, 1)
         var inputOffset = 0
         var output = Data()
+        // Keep only a small prefix in memory to classify safe diagnostics.
+        // Raw stderr is never returned, persisted, or logged.
+        var stderrPrefix = Data()
         var exited = false
         var status: Int32 = 0
         let deadline = ContinuousClock.now + .seconds(max(1, timeoutSeconds))
@@ -129,6 +132,8 @@ final class LocalCLIProcessRunner: @unchecked Sendable {
                                 closeOwned(stdinFD)
                                 shutdownDeadline = .now + .seconds(1)
                             } else { output.append(contentsOf: buffer.prefix(count)) }
+                        } else if fd == stderrFD && stderrPrefix.count < 4_096 {
+                            stderrPrefix.append(contentsOf: buffer.prefix(min(count, 4_096 - stderrPrefix.count)))
                         }
                     } else {
                         if count == 0 || (errno != EAGAIN && errno != EINTR) { closeOwned(fd) }
@@ -140,6 +145,11 @@ final class LocalCLIProcessRunner: @unchecked Sendable {
         if isCancelled { throw CancellationError() }
         if let failure { throw failure }
         guard status & 0x7f == 0, (status >> 8) & 0xff == 0 else {
+            let diagnostic = String(decoding: stderrPrefix, as: UTF8.self).lowercased()
+            if diagnostic.contains("effort") &&
+                (diagnostic.contains("unsupported") || diagnostic.contains("unknown") || diagnostic.contains("invalid")) {
+                throw LocalCLIServiceError.unsupportedEffort
+            }
             throw LocalCLIServiceError.nonZeroExit(code: Int(status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)), stderr: "")
         }
         return String(decoding: output, as: UTF8.self)

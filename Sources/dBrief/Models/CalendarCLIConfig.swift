@@ -162,6 +162,12 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         !mailboxEmail.isEmpty
     }
 
+    /// Known Haiku models do not accept the higher-effort control. Unknown
+    /// model IDs retain the requested value; Claude decides compatibility.
+    var effectiveEffort: CLIReasoningEffort {
+        modelID?.lowercased().contains("haiku") == true ? .cliDefault : effort
+    }
+
     /// A model ID is passed as one argv value via an environment variable, so it
     /// must be a plain token (no whitespace, quotes or shell metacharacters).
     static func sanitizedModelID(_ raw: String?) -> String? {
@@ -242,7 +248,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     func validateCommand() -> Bool {
         guard let command, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
         let forbidden = [
-            "--model", "--output-format", "--json-schema",
+            "--model", "--output-format", "--json-schema", "--effort", "--settings",
+            "CLAUDE_CODE_EFFORT_LEVEL",
             "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools",
             "--permission-prompts", "--permission-mode",
         ]

@@ -131,6 +131,22 @@ struct SettingsCalendarCLISection: View {
                         .onSubmit { applyCustomModel() }
                 }
 
+                if config.modelID?.lowercased().contains("haiku") == true {
+                    LabeledContent("Reasoning effort") { Text("Not applicable") }
+                } else {
+                    CLIReasoningEffortPicker(title: "Reasoning effort", selection: Binding(
+                        get: { settings.calendarCLIConfig.effort },
+                        set: { effort in
+                            settings.calendarCLIConfig = settings.calendarCLIConfig.updating(effort: effort)
+                            testState = .idle
+                        }
+                    ), recommendation: .low)
+                    if config.modelID == nil || (config.modelID != "sonnet" && config.modelID != "opus") {
+                        Text("Support depends on your Claude model.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
                 Picker("Refresh interval", selection: Binding(
                 get: {
                     usesCustomFreshness || (config.listFreshnessSeconds != 0 && !Self.freshnessOptions.contains(config.listFreshnessSeconds))

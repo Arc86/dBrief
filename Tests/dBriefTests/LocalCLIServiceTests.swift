@@ -189,3 +189,58 @@ extension LocalCLICompletionTests {
         #expect(!FileManager.default.fileExists(atPath: marker.path))
     }
 }
+
+extension LocalCLIServiceTests {
+    @Test("Test command receives its configured Claude effort")
+    func testCommandReceivesEffort() async throws {
+        let config = LocalCLIConfig(
+            command: "printf '%s' \"${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}\"",
+            timeoutSeconds: 10, effort: .medium, effortProvider: .claude)
+        let output = try await LocalCLIService().runTest(config: config)
+        #expect(output == "medium")
+    }
+
+    @Test("Analysis receives its configured effort")
+    func analysisReceivesEffort() async throws {
+        let command = #"printf '{"summary":"%s","action_items":[],"tags":[]}' "${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}""#
+        let result = try await LocalCLIService().analyze(
+            transcript: "Meeting content", outputLanguage: .matchInput,
+            config: .init(command: command, timeoutSeconds: 10, effort: .high, effortProvider: .claude))
+        #expect(result.summary == "high")
+    }
+
+    @Test("Prompt completion receives effort without evaluating prompt text")
+    func completionReceivesEffortAndKeepsData() async throws {
+        let command = #"printf '%s|' "${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}"; cat"#
+        let result = try await LocalCLIService().completeText(
+            systemPrompt: "system", userMessage: "$(echo DO-NOT-RUN)",
+            config: .init(command: command, timeoutSeconds: 10, effort: .max, effortProvider: .claude),
+            stage: .promptImprovement)
+        #expect(result == "max|system\n\n$(echo DO-NOT-RUN)")
+    }
+}
+
+extension LocalCLIFormattingRetryTests {
+    @Test("Formatting repair keeps the analysis effort")
+    func repairKeepsEffort() async throws {
+        let command = #"if [[ "$DBRIEF_SYSTEM_PROMPT" == *"JSON formatting repair"* ]]; then printf '{"summary":"%s","action_items":[],"tags":[]}' "${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}"; else printf '%s' 'broken json'; fi"#
+        let result = try await LocalCLIService().analyze(
+            transcript: "Meeting content", outputLanguage: .matchInput,
+            config: .init(command: command, timeoutSeconds: 10, effort: .xhigh, effortProvider: .claude))
+        #expect(result.summary == "xhigh")
+    }
+}
+
+extension LocalCLIServiceTests {
+    @Test("Two simultaneous CLI requests keep their effort choices separate")
+    func concurrentEffortIsIsolated() async throws {
+        let command = "printf '%s' \"${CLAUDE_CODE_EFFORT_LEVEL:-UNSET}\""
+        async let low = LocalCLIService().runTest(config: .init(
+            command: command, timeoutSeconds: 10, effort: .low, effortProvider: .claude))
+        async let high = LocalCLIService().runTest(config: .init(
+            command: command, timeoutSeconds: 10, effort: .high, effortProvider: .claude))
+        let (lowValue, highValue) = try await (low, high)
+        #expect(lowValue == "low")
+        #expect(highValue == "high")
+    }
+}
