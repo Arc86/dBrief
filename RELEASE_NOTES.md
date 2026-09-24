@@ -1,3 +1,37 @@
+## dBrief 1.4.3
+
+### Claude CLI calendar source
+
+- **A new calendar source for Local CLI users**: match recordings against your Microsoft calendar through your configured Claude/Codex CLI instead of signing in to iCal or Outlook directly. Read-only, bounded calls with a durable day snapshot cache, manual and timed refresh, and picker status so you can see when a lookup is stale or blocked.
+- Cleaner settings layout for the new calendar source.
+
+### Prompt assistant
+
+- **A native prompt editor** for your Summary, Action Items, and Tags prompts, with AI-generated suggestions and a live preview against a sample transcript — no more guessing how a prompt change will read before you save it.
+- Pick which AI engine writes the preview independently of your main AI engine setting.
+- Model download progress now shows inline in the prompt assistant instead of a generic spinner when a local model needs to load first.
+
+### Transcript chat
+
+- **Copy and read-aloud controls** on assistant replies — copy a reply to the clipboard or have it spoken back, without leaving the chat.
+- Manual scrolling is respected while a reply streams in — scrolling up to reread earlier text no longer gets yanked back to the bottom.
+
+### Local transcription
+
+- **Local Whisper model picker redesigned** with clearer per-model guidance (size, speed, accuracy trade-offs) to make choosing a model less of a guess.
+- Local CLI's response timeout can now go up to 1 hour (previously capped at 10 minutes) — agentic CLIs can take longer than that on large transcripts.
+- Fixed Local CLI sending its prompt twice to `claude -p`/`codex exec`, and raised the transcript limit sent to Local CLI.
+
+### Fixes
+
+- **Active ML models are no longer evicted out from under an in-flight request** during cleanup or shutdown.
+- Fixed the transcript view bouncing during audio playback.
+- Fixed Apple Speech language availability checks and first-run language-asset preparation.
+- Restored native window dragging on the floating mini recording player.
+- Added a configurable output token limit for remote AI endpoints, so long summaries aren't silently truncated by a provider's default.
+
+---
+
 ## dBrief 1.4.2
 
 ### Settings usability
