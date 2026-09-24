@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 struct RecordingFinalizationResult: Sendable {
@@ -278,6 +279,8 @@ actor RecordingFinalizer {
         let isoDate = ISO8601DateFormatter().string(from: snapshot.date)
         let title = Self.normalizeMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp)
         let durationMeta = "duration_seconds=\(Int(snapshot.duration))"
+        let micFilterPrefix = tracks.micURL.flatMap(Self.discreteMicDownmixFilter)
+            .map { "\($0)," } ?? ""
 
         let args: [String]
         switch (tracks.systemURL, tracks.micURL) {
@@ -302,13 +305,13 @@ actor RecordingFinalizer {
                 filterGraph = "[0:a]asplit=2[sys0][scref];"
                     + "[sys0]highpass=f=40,lowpass=f=12000[sys];"
                     + "[scref]aformat=channel_layouts=mono[scmono];"
-                    + "[1:a]highpass=f=80[michp];"
+                    + "[1:a]\(micFilterPrefix)highpass=f=80[michp];"
                     + "[michp][scmono]sidechaincompress=threshold=0.03:ratio=20:attack=5:release=250:level_sc=2:makeup=1:mode=downward[micducked];"
                     + "[micducked]loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
                     + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]"
             } else {
                 filterGraph = "[0:a]highpass=f=40,lowpass=f=12000[sys];"
-                    + "[1:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
+                    + "[1:a]\(micFilterPrefix)highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[mic];"
                     + "[sys][mic]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[out]"
             }
             args = [
@@ -330,7 +333,7 @@ actor RecordingFinalizer {
             args = [
                 "-y",
                 "-i", mic.path,
-                "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-af", "\(micFilterPrefix)highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
                 "-c:a", "aac", "-b:a", "64k",
                 "-ar", "48000", "-ac", "1",
                 "-movflags", "+faststart",
@@ -387,6 +390,20 @@ actor RecordingFinalizer {
             stderrByteCount: result.stderrByteCount,
             elapsedMilliseconds: result.elapsedMilliseconds
         )
+    }
+
+    /// Some capture devices expose a discrete multichannel mic format. CAF keeps
+    /// its channel count but no speaker mapping, so FFmpeg cannot automatically
+    /// rematrix it to the mono AAC output (EINVAL/status 234). Mix every input
+    /// channel explicitly and normalize the gain before the existing mic filters.
+    private static func discreteMicDownmixFilter(_ url: URL) -> String? {
+        guard let format = try? AVAudioFile(forReading: url).fileFormat,
+              format.channelCount > 2,
+              let layoutTag = format.channelLayout?.layoutTag,
+              layoutTag & 0xffff0000 == kAudioChannelLayoutTag_DiscreteInOrder
+        else { return nil }
+        let channels = (0..<Int(format.channelCount)).map { "c\($0)" }.joined(separator: "+")
+        return "pan=mono|c0<\(channels)"
     }
 
     private func createSegments(ffmpegPath: String, masterURL: URL) async throws -> [URL] {
