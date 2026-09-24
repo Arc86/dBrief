@@ -35,8 +35,8 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 - **Your meetings, your machine** — no dBrief cloud, no account, no telemetry
 - **Auto-delete** — optionally purge old recordings and/or transcripts after a chosen age (off by default)
 - **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
-- **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
-- **Link meetings later** — choose **Reprocess → Link calendar meeting…** on a saved recording to attach a meeting from its original day. Keep or replace its title and participants, then optionally rerun AI analysis with the saved agenda and attendees. Existing exports and integration deliveries are unchanged.
+- **Calendar-aware** — matches local calendar events or a configured Claude CLI calendar to the recording date
+- **Link meetings later** — choose **Reprocess → Link calendar meeting…** on a saved recording to attach a meeting from its original day. Keep or replace its title and participants, then optionally rerun AI analysis with the saved meeting details. Existing exports and integration deliveries are unchanged.
 - **Four destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook
 
 ---
@@ -212,11 +212,16 @@ The sidebar groups settings by task:
 - **Recording** contains the shortcut, call detection and meeting platforms alongside audio controls.
 - **Storage** contains recording/transcript folders and automatic deletion controls.
 - **Integrations → Calendar** contains calendar connections and matching options.
+- **Claude CLI calendar** uses Low reasoning effort by default. **Refresh today** updates today's list; a saved recording's **Link calendar meeting** sheet loads and refreshes that recording's original date. **Manual only** waits for **Load meetings**. A failed refresh keeps a usable prior snapshot visible with a warning.
+- **Claude CLI calendar attendees** load only when you choose **Load now** or opt in to **Load during processing** for the selected meeting. Processing can continue if an optional roster read fails. A fresh detail is reused across a restart; manual participant names and confirmed speaker labels remain yours. Reanalysis offers a separate refresh choice when the original Claude calendar occurrence is available.
+- **AI Analysis → Local CLI** has an independent Claude reasoning-effort control. New Claude Code templates select Medium; existing commands retain **CLI default**, which passes through the CLI's inherited setting. Custom non-Claude commands keep their own behavior. Meeting profiles can inherit either global effort value or override each one separately.
 - **After Recording** contains shared task defaults and a link to the selected profile’s automation policy. Each profile’s policy is edited in **Profiles → After Recording**.
 - Profile notices appear only when that page has overrides to explain. Opening a profile editor does not select it for recording.
 - **Search settings** (⌘F) matches setting names, help terms and older labels such as “Watched Folders” or “Voice Library”. Use ↓ to select results and Return to open a section. Search indexes built-in labels only, never your saved values or credentials.
 - Advanced search results reveal controls temporarily. Clearing the query restores normal visibility without changing your advanced-settings preference.
 - Vocabulary terms have visible Edit/Delete actions and explicit Save/Cancel. Invalid or duplicate entries keep your input so you can correct it.
+
+Calendar list snapshots are retained for up to 90 days after the last successful fetch (at most 128 per mailbox/calendar/time-zone scope). Attendee details are kept separately for up to seven days (at most 500 per scope). Reads do not extend retention; expired entries are misses, and cleanup runs when the app opens or writes cache data. **Clear cache** removes these copies. Calendar details deliberately linked to a saved recording follow that recording's storage lifecycle. Cache directories and files use owner-only permissions; they are not application-encrypted, and other processes running as your macOS account can access them.
 
 ---
 
