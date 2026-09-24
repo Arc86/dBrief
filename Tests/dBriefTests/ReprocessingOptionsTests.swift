@@ -110,6 +110,21 @@ struct ReprocessingOptionsTests {
         }
     }
 
+    @Test func changedCLIEffortIsBlockedForFrozenReprocessing() throws {
+        let settings = AppSettings()
+        let original = settings.localCLIConfig
+        defer { settings.localCLIConfig = original }
+        settings.localCLIConfig = .init(command: "claude -p", timeoutSeconds: 180,
+                                         effort: .medium, effortProvider: .claude)
+        var options = ReprocessingOptions(settings: settings, operation: .analysis)
+        options.aiEngine = .localCLI
+        #expect(try options.analysisConfiguration(settings: settings).localCLIConfig.effort == .medium)
+        settings.localCLIConfig.effort = .high
+        #expect(throws: ReprocessingOptions.ConfigurationError.self) {
+            try options.analysisConfiguration(settings: settings)
+        }
+    }
+
     @Test func savedAIEndpointIsResolvedByIdentityEvenAfterDefaultChanges() throws {
         let settings = AppSettings()
         let originals = settings.aiEndpoints

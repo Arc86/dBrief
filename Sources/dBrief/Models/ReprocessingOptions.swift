@@ -207,7 +207,7 @@ struct ReprocessingOptions: Codable, Sendable {
 
     private static func digest(_ config: LocalCLIConfig) -> String {
         // Length-prefixing makes the command/timeout boundary unambiguous.
-        let data = Data("\(config.command.utf8.count):\(config.command):\(config.timeoutSeconds)".utf8)
+        let data = Data("\(config.command.utf8.count):\(config.command):\(config.timeoutSeconds):\(config.effort.rawValue):\(config.effortProvider.rawValue)".utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }

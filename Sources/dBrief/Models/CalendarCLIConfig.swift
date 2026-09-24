@@ -19,6 +19,9 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// default (the `--model` flag is omitted entirely). Never a shell string.
     var modelID: String?
 
+    /// Effort for this calendar subprocess only.
+    var effort: CLIReasoningEffort
+
     /// Per CLI invocation, covering connector pagination and structured
     /// generation. Clamped to 30–300 seconds.
     var timeoutSeconds: Int
@@ -53,6 +56,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
 
     static let `default` = CalendarCLIConfig(
         modelID: nil,
+        effort: .low,
         timeoutSeconds: defaultTimeoutSeconds,
         mailboxEmail: "",
         calendarName: nil,
@@ -66,6 +70,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// Assigns values verbatim; `init` normalizes before delegating here.
     init(
         raw modelID: String?,
+        effort: CLIReasoningEffort = .low,
         timeoutSeconds: Int,
         mailboxEmail: String,
         calendarName: String?,
@@ -76,6 +81,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         command: String?
     ) {
         self.modelID = modelID
+        self.effort = effort
         self.timeoutSeconds = timeoutSeconds
         self.mailboxEmail = mailboxEmail
         self.calendarName = calendarName
@@ -89,6 +95,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// Test-only construction without normalization (fast transport timeouts).
     static func unnormalized(
         modelID: String? = nil,
+        effort: CLIReasoningEffort = .low,
         timeoutSeconds: Int,
         mailboxEmail: String = "",
         calendarName: String? = nil,
@@ -99,7 +106,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         command: String? = nil
     ) -> CalendarCLIConfig {
         CalendarCLIConfig(
-            raw: modelID, timeoutSeconds: timeoutSeconds, mailboxEmail: mailboxEmail,
+            raw: modelID, effort: effort, timeoutSeconds: timeoutSeconds, mailboxEmail: mailboxEmail,
             calendarName: calendarName, listFreshnessSeconds: listFreshnessSeconds,
             detailFreshnessSeconds: detailFreshnessSeconds, attendeePolicy: attendeePolicy,
             maxAttendees: maxAttendees, command: command
@@ -109,6 +116,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// Normalizing init used by UI, persistence and `updating`.
     init(
         modelID: String?,
+        effort: CLIReasoningEffort = .low,
         timeoutSeconds: Int,
         mailboxEmail: String,
         calendarName: String?,
@@ -120,6 +128,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     ) {
         self.init(
             raw: Self.sanitizedModelID(modelID),
+            effort: effort,
             timeoutSeconds: Self.normalizedTimeout(timeoutSeconds),
             mailboxEmail: Self.normalizedMailbox(mailboxEmail),
             calendarName: Self.normalizedCalendarName(calendarName),
@@ -134,8 +143,10 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// Backwards-compatible decoding: unknown/older files fall back to defaults.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawEffort = try container.decodeIfPresent(String.self, forKey: .effort)
         self.init(
             modelID: try container.decodeIfPresent(String.self, forKey: .modelID),
+            effort: rawEffort.flatMap(CLIReasoningEffort.init(rawValue:)) ?? (rawEffort == nil ? .low : .cliDefault),
             timeoutSeconds: try container.decodeIfPresent(Int.self, forKey: .timeoutSeconds) ?? Self.defaultTimeoutSeconds,
             mailboxEmail: try container.decodeIfPresent(String.self, forKey: .mailboxEmail) ?? "",
             calendarName: try container.decodeIfPresent(String.self, forKey: .calendarName),
@@ -186,6 +197,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// Result replacement for an edited configuration.
     func updating(
         modelID: String?? = nil,
+        effort: CLIReasoningEffort? = nil,
         timeoutSeconds: Int? = nil,
         mailboxEmail: String? = nil,
         calendarName: String?? = nil,
@@ -197,6 +209,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     ) -> CalendarCLIConfig {
         CalendarCLIConfig(
             modelID: modelID ?? self.modelID,
+            effort: effort ?? self.effort,
             timeoutSeconds: timeoutSeconds ?? self.timeoutSeconds,
             mailboxEmail: mailboxEmail ?? self.mailboxEmail,
             calendarName: calendarName ?? self.calendarName,
@@ -237,7 +250,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case modelID, timeoutSeconds, mailboxEmail, calendarName
+        case modelID, effort, timeoutSeconds, mailboxEmail, calendarName
         case listFreshnessSeconds, detailFreshnessSeconds, attendeePolicy, maxAttendees, command
     }
 }

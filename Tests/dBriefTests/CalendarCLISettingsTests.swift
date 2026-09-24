@@ -104,11 +104,11 @@ struct CalendarCLISettingsTests {
         let calendarKey = "calendarCLIConfig-test-cal-\(UUID().uuidString)"
 
         // Save an AI config, then save a calendar config; the AI blob is untouched.
-        let aiConfig = LocalCLIConfig(command: "ollama run llama3", timeoutSeconds: 45)
+        let aiConfig = LocalCLIConfig(command: "ollama run llama3", timeoutSeconds: 45, effort: .high)
         if let data = try? JSONEncoder().encode(aiConfig) {
             defaults.set(data, forKey: aiKey)
         }
-        let calendarConfig = CalendarCLIConfig.default.updating(timeoutSeconds: 240, mailboxEmail: "ada@example.com")
+        let calendarConfig = CalendarCLIConfig.default.updating(effort: .low, timeoutSeconds: 240, mailboxEmail: "ada@example.com")
         if let data = try? JSONEncoder().encode(calendarConfig) {
             defaults.set(data, forKey: calendarKey)
         }
@@ -120,9 +120,11 @@ struct CalendarCLISettingsTests {
         let loadedAI = AppSettings.loadLocalCLIConfig(forKey: aiKey)
         #expect(loadedAI.command == "ollama run llama3")
         #expect(loadedAI.timeoutSeconds == 45)
+        #expect(loadedAI.effort == .high)
         let loadedCalendar = AppSettings.loadCalendarCLIConfig(forKey: calendarKey)
         #expect(loadedCalendar.mailboxEmail == "ada@example.com")
         #expect(loadedCalendar.timeoutSeconds == 240)
+        #expect(loadedCalendar.effort == .low)
     }
 
     @Test("Persistence roundtrips freshness settings")
