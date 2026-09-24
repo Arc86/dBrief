@@ -16,6 +16,7 @@ struct SettingsCalendarCLISection: View {
     @State private var usesCustomModel = false
     @State private var customFreshnessMinutes = 60
     @State private var usesCustomFreshness = false
+    @State private var showsAdvanced = false
 
     private enum ConnectionTestState: Equatable {
         case idle, running
@@ -62,58 +63,75 @@ struct SettingsCalendarCLISection: View {
         let config = settings.calendarCLIConfig
 
         Group {
-            LabeledContent("Mailbox") {
-                TextField("name@company.com", text: Binding(
+            Section {
+                TextField("Mailbox", text: Binding(
                     get: { config.mailboxEmail },
                     set: { settings.calendarCLIConfig = config.updating(mailboxEmail: $0) }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 240)
+                ), prompt: Text("name@company.com"))
                 .onSubmit { configurationChanged() }
-            }
-            LabeledContent("Calendar") {
-                TextField("Default calendar", text: Binding(
+
+                TextField("Calendar name", text: Binding(
                     get: { config.calendarName ?? "" },
                     set: { settings.calendarCLIConfig = config.updating(calendarName: $0.isEmpty ? nil : $0) }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 240)
+                ), prompt: Text("Default calendar"))
                 .onSubmit { configurationChanged() }
+
+                statusFooter(config: config)
+
+                HStack(spacing: 8) {
+                    Button {
+                        runRefresh()
+                    } label: {
+                        if refreshState == .running {
+                            Label("Refreshing…", systemImage: "arrow.clockwise")
+                        } else {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(refreshState == .running || !config.isConfigured)
+
+                    Button {
+                        runConnectionTest()
+                    } label: {
+                        if testState == .running {
+                            Text("Testing…")
+                        } else {
+                            Text("Test connection")
+                        }
+                    }
+                    .disabled(testState == .running || !config.isConfigured)
+
+                    Menu {
+                        Button("Clear cached meetings", role: .destructive) {
+                            recordingManager.clearCalendarCLICache()
+                            refreshStatus()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("More calendar actions")
+                    .disabled(!config.isConfigured)
+                }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("Uses your Claude login and Microsoft 365 connector. Calendar name is optional; first use may request approval in Terminal.")
             }
 
-            Picker("Model", selection: modelSelection) {
-                Text("Claude default").tag("__default")
-                Text("Haiku").tag("haiku")
-                Text("Sonnet").tag("sonnet")
-                Text("Custom model ID").tag("__custom")
-            }
-            if modelSelection.wrappedValue == "__custom" {
-                LabeledContent("Custom model ID") {
-                    TextField("e.g. claude-haiku-4-5", text: $customModelID)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 240)
+            Section {
+                Picker("Model", selection: modelSelection) {
+                    Text("Claude default").tag("__default")
+                    Text("Haiku").tag("haiku")
+                    Text("Sonnet").tag("sonnet")
+                    Text("Custom model ID").tag("__custom")
+                }
+                if modelSelection.wrappedValue == "__custom" {
+                    TextField("Custom model ID", text: $customModelID, prompt: Text("e.g. claude-haiku-4-5"))
                         .onSubmit { applyCustomModel() }
                 }
-                Text("Passed as one --model value; anything unsafe is ignored and the Claude default is kept.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            LabeledContent("Timeout") {
-                Text("\(config.timeoutSeconds) s")
-                    .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
-                Slider(value: Binding(
-                    get: { Double(config.timeoutSeconds) },
-                    set: { settings.calendarCLIConfig = config.updating(timeoutSeconds: Int($0)) }
-                ), in: 30...300, step: 5)
-                .frame(maxWidth: 220)
-            }
-            Text("Applies to each calendar call; the call covers connector pages and output generation.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("List refresh", selection: Binding(
+                Picker("Refresh interval", selection: Binding(
                 get: {
                     usesCustomFreshness || (config.listFreshnessSeconds != 0 && !Self.freshnessOptions.contains(config.listFreshnessSeconds))
                         ? -1 : config.listFreshnessSeconds
@@ -127,122 +145,94 @@ struct SettingsCalendarCLISection: View {
                         settings.calendarCLIConfig = config.updating(listFreshnessSeconds: seconds)
                     }
                 }
-            )) {
-                ForEach(Self.freshnessOptions, id: \.self) { seconds in
-                    Text("\(seconds / 60) min").tag(seconds)
+                )) {
+                    ForEach(Self.freshnessOptions, id: \.self) { seconds in
+                        Text("\(seconds / 60) min").tag(seconds)
+                    }
+                    Text("Custom…").tag(-1)
+                    Text("Manual only").tag(0)
                 }
-                Text("Custom…").tag(-1)
-                Text("Manual only").tag(0)
-            }
-            if usesCustomFreshness || (config.listFreshnessSeconds != 0 && !Self.freshnessOptions.contains(config.listFreshnessSeconds)) {
-                LabeledContent("Custom minutes") {
-                    TextField("5–1440", value: $customFreshnessMinutes, format: .number)
-                        .frame(width: 80)
+                if usesCustomFreshness || (config.listFreshnessSeconds != 0 && !Self.freshnessOptions.contains(config.listFreshnessSeconds)) {
+                    TextField("Custom minutes", value: $customFreshnessMinutes, format: .number)
                         .onSubmit {
                             let minutes = min(1440, max(5, customFreshnessMinutes))
                             settings.calendarCLIConfig = config.updating(listFreshnessSeconds: minutes * 60)
                             customFreshnessMinutes = settings.calendarCLIConfig.listFreshnessSeconds / 60
                         }
-                    Text("5–1440 min").foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Meeting list")
+            } footer: {
+                Text(config.listFreshnessSeconds == 0
+                     ? "Meetings load only when you press Refresh."
+                     : "A stale list refreshes when you open the meeting picker or start recording.")
             }
-            Text("A stale day list refreshes when the meeting picker opens or a recording starts. Manual mode fetches only when you press Refresh.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
-            Picker("Attendees", selection: Binding(
+            Section {
+                Picker("Attendees", selection: Binding(
                 get: { config.attendeePolicy },
                 set: { policy in
                     settings.calendarCLIConfig = config.updating(attendeePolicy: policy)
                     configurationChanged()
                 }
-            )) {
-                Text("Load on demand").tag(CalendarCLIConfig.AttendeePolicy.onDemand)
-                Text("Never").tag(CalendarCLIConfig.AttendeePolicy.never)
-            }
-            Text("On demand loads rosters only when you press Load attendees for a specific meeting. Matching and selection never fetch attendees.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            LabeledContent("Attendee limit") {
-                Stepper(value: Binding(
-                    get: { config.maxAttendees },
-                    set: { value in
-                        settings.calendarCLIConfig = config.updating(maxAttendees: value)
-                        configurationChanged()
-                    }
-                ), in: 1...100) {
-                    Text("\(config.maxAttendees)")
-                        .monospacedDigit()
+                )) {
+                    Text("Load on demand").tag(CalendarCLIConfig.AttendeePolicy.onDemand)
+                    Text("Never").tag(CalendarCLIConfig.AttendeePolicy.never)
                 }
-            }
-            Text("Meetings with more invitees omit the whole roster. The limit caps what dBrief saves, not what the connector retrieves.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            statusFooter(config: config)
-
-            HStack {
-                Button {
-                    runConnectionTest()
-                } label: {
-                    if testState == .running {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Testing…")
+                if config.attendeePolicy == .onDemand {
+                    LabeledContent("Maximum attendees") {
+                        Stepper(value: Binding(
+                            get: { config.maxAttendees },
+                            set: { value in
+                                settings.calendarCLIConfig = config.updating(maxAttendees: value)
+                                configurationChanged()
+                            }
+                        ), in: 1...100) {
+                            Text("\(config.maxAttendees)").monospacedDigit()
                         }
-                    } else {
-                        Text("Test connection")
                     }
                 }
-                .disabled(testState == .running || !config.isConfigured)
-
-                Button {
-                    runRefresh()
-                } label: {
-                    if refreshState == .running {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Refreshing…")
-                        }
-                    } else {
-                        Text("Refresh")
-                    }
-                }
-                .disabled(refreshState == .running || !config.isConfigured)
-
-                Button("Clear cache", role: .destructive) {
-                    recordingManager.clearCalendarCLICache()
-                    refreshStatus()
-                }
-                .disabled(!config.isConfigured)
+            } header: {
+                Text("Meeting attendees")
+            } footer: {
+                Text(config.attendeePolicy == .never
+                     ? "Attendee rosters are never loaded. Invite bodies are never saved."
+                     : "Rosters load only when requested for one meeting. Larger meetings omit the roster; invite bodies are never saved.")
             }
 
-            Text("Calendar content passes through your Claude connector and consumes Claude usage. dBrief saves only titles, times and — when you explicitly request them — attendee names and emails. Invite bodies are never kept.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+                    LabeledContent("Timeout") {
+                        Text("\(config.timeoutSeconds) s")
+                            .monospacedDigit()
+                            .frame(width: 52, alignment: .trailing)
+                        Slider(value: Binding(
+                            get: { Double(config.timeoutSeconds) },
+                            set: { settings.calendarCLIConfig = config.updating(timeoutSeconds: Int($0)) }
+                        ), in: 30...300, step: 5)
+                        .frame(maxWidth: 220)
+                    }
 
-            if modelSelection.wrappedValue == "__custom" || config.command != nil {
-                LabeledContent("Advanced command") {
-                    TextField("Leave empty for the managed Claude command", text: Binding(
+                    TextField("CLI command", text: Binding(
                         get: { config.command ?? "" },
                         set: { settings.calendarCLIConfig = config.updating(command: $0.isEmpty ? nil : $0) }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 320)
+                    ), prompt: Text("Managed Claude command"))
                     .onSubmit { configurationChanged() }
+                    if let command = config.command, !command.isEmpty, !config.validateCommand() {
+                        Label("The command conflicts with managed Claude options.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
                 }
-                if let command = config.command, !command.isEmpty, !config.validateCommand() {
-                    Label("The command contains flags that conflict with the managed invocation (--model, --output-format, --json-schema, tool allowlist).", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+            } footer: {
+                Text("Calendar requests consume Claude usage. dBrief saves titles, times, and attendees only when requested.")
             }
         }
         .onAppear {
             customFreshnessMinutes = max(5, config.listFreshnessSeconds / 60)
+            if let modelID = config.modelID,
+               !Self.modelChoices.contains(where: { $0.id == modelID }) {
+                customModelID = modelID
+            }
             refreshStatus()
         }
         .onDisappear {
@@ -309,19 +299,15 @@ struct SettingsCalendarCLISection: View {
 
     @ViewBuilder
     private func statusFooter(config: CalendarCLIConfig) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 5) {
             if !config.isConfigured {
-                Label("Set your mailbox email to connect.", systemImage: "person.crop.circle")
-                    .font(.caption)
+                Label("Enter a mailbox to connect", systemImage: "person.crop.circle")
                     .foregroundStyle(.orange)
-            }
-            if let last = lastSuccessfulRefresh {
-                Text("Last successful refresh: \(last.formatted(date: .abbreviated, time: .standard))")
-                    .font(.caption)
+            } else if let last = lastSuccessfulRefresh {
+                Label("Updated \(last.formatted(date: .abbreviated, time: .shortened))", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
             } else {
-                Text("Not loaded yet. A day list loads when a recording starts, or with Refresh.")
-                    .font(.caption)
+                Label("No meetings loaded yet", systemImage: "calendar")
                     .foregroundStyle(.secondary)
             }
             switch testState {
@@ -333,42 +319,33 @@ struct SettingsCalendarCLISection: View {
                 } icon: {
                     Image(systemName: partial ? "exclamationmark.triangle" : "checkmark.circle")
                 }
-                .font(.caption)
                 .foregroundStyle(partial ? Color.orange : Color.green)
             case .blocked:
                 Label("Access blocked — check the Claude login and connector permission, then retest.", systemImage: "lock.fill")
-                    .font(.caption)
                     .foregroundStyle(.red)
             case .failed:
                 Label("The calendar CLI call failed. Check the claude command and its login.", systemImage: "xmark.circle")
-                    .font(.caption)
                     .foregroundStyle(.red)
             default:
                 EmptyView()
             }
             switch refreshState {
-            case .reachable(let events, let partial):
-                Label(partial
-                      ? "Refresh incomplete — showing the last saved meeting list. Press Refresh to retry."
-                      : "Meeting list updated (\(events) events).",
-                      systemImage: partial ? "exclamationmark.triangle" : "checkmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(partial ? Color.orange : Color.green)
+            case .reachable(_, let partial) where partial:
+                Label("Refresh incomplete; saved meetings remain available.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
             case .blocked:
                 Label("Refresh blocked — check Claude connector approval, then retry.", systemImage: "lock.fill")
-                    .font(.caption).foregroundStyle(.orange)
+                    .foregroundStyle(.orange)
             case .failed:
                 Label("Refresh failed — showing saved meetings if available. Press Refresh to retry.", systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                    .foregroundStyle(.orange)
             case .unconfigured:
                 Label("Set your mailbox before refreshing.", systemImage: "person.crop.circle")
-                    .font(.caption).foregroundStyle(.orange)
-            case .idle, .running:
+                    .foregroundStyle(.orange)
+            case .idle, .running, .reachable:
                 EmptyView()
             }
-            Text("First use may ask you to approve the calendar tool in Terminal; the connector uses your Claude subscription login. Switching accounts requires clearing the cache and retesting.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
+        .font(.caption)
     }
 }

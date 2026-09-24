@@ -141,13 +141,27 @@ struct SettingsCalendarSection: View {
                 }
 
             case .claudeCLI:
-                SettingsCalendarCLISection()
+                EmptyView()
 
             case .disabled:
                 EmptyView()
             }
 
-            if settings.effectiveCalendarSource != .disabled {
+        }
+        .listRowBackground(Color.clear)
+        .onAppear {
+            reloadICalCalendars()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            reloadICalCalendars()
+        }
+
+        if settings.effectiveCalendarSource == .claudeCLI {
+            SettingsCalendarCLISection()
+        }
+
+        if settings.effectiveCalendarSource != .disabled {
+            Section {
                 Picker("Automatic match window", selection: $settings.calendarMatchWindowMinutes) {
                     ForEach(AppSettings.calendarMatchWindowOptions, id: \.self) { minutes in
                         if minutes == 0 {
@@ -157,25 +171,15 @@ struct SettingsCalendarSection: View {
                         }
                     }
                 }
-                Text("Automatically links overlapping events and non-overlapping events whose start time is within the selected window.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Toggle(
-                    "Show all meetings from the recording day",
+                    "Show all meetings from recording day",
                     isOn: $settings.showAllMeetingsFromRecordingDay
                 )
-                Text("Adds the day’s other calendar events to the post-recording Meeting picker. Events outside the automatic match window are never selected automatically.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Meeting matching")
+            } footer: {
+                Text("Overlapping meetings match automatically. The window also permits nearby starts; other meetings appear only in the picker.")
             }
-        }
-        .listRowBackground(Color.clear)
-        .onAppear {
-            reloadICalCalendars()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-            reloadICalCalendars()
         }
     }
 
