@@ -25,7 +25,11 @@ actor CalendarCLIService {
     /// update the new scope.
     private var generation = 0
 
-    private var listTasks: [String: Task<CalendarCLIResult, Error>] = [:]
+    private struct ListFlight {
+        let id: UUID
+        let task: Task<CalendarCLIListRead, Error>
+    }
+    private var listTasks: [String: ListFlight] = [:]
     private var detailTasks: [String: Task<CalendarCLIEntry, Error>] = [:]
 
     /// Automatic (non-forced) refreshes back off for this long after a failure.
@@ -54,14 +58,31 @@ actor CalendarCLIService {
 
     // MARK: - Reads
 
-    /// The cached snapshot for the window, however old. Staleness of loaded
+    /// The unexpired cached snapshot for the window. Staleness of loaded
     /// rosters is derived here (never persisted) from the TTL because list
     /// responses carry no revision data, and the cap is re-applied on every
     /// read so a lowered cap is respected even before a purge runs.
     func cached(window: CalendarCLIWindow, config: CalendarCLIConfig) async -> [CalendarCLIEntry] {
+        cachedSnapshot(window: window, config: config).entries
+    }
+
+    func cachedSnapshot(window: CalendarCLIWindow, config: CalendarCLIConfig) -> CalendarCLIListRead {
         let scope = CalendarCLIScope(config: config)
-        guard let snapshot = cachedSnapshot(scope: scope, window: window) else { return [] }
-        return snapshot.entries.map { adjusted($0, config: config) }
+        let snapshot = cachedSnapshot(scope: scope, window: window)
+        return makeRead(window: window, snapshot: snapshot, config: config,
+                        outcome: .cached,
+                        persistence: persistenceOutcomes[Self.taskKey(scope: scope, window: window)])
+    }
+
+    private func makeRead(window: CalendarCLIWindow, snapshot: CalendarCLIStoredListSnapshot?,
+                          config: CalendarCLIConfig, outcome: CalendarCLIListOutcome,
+                          persistence: CalendarCLIPersistenceOutcome?) -> CalendarCLIListRead {
+        CalendarCLIListRead(window: window,
+                            entries: snapshot?.entries.map { adjusted($0, config: config) } ?? [],
+                            hasCompleteSnapshot: snapshot != nil,
+                            lastSuccessfulRefresh: snapshot?.lastSuccessfulRefresh,
+                            lastAttempt: snapshot?.lastAttempt,
+                            outcome: outcome, persistence: persistence)
     }
 
     private func cachedSnapshot(scope: CalendarCLIScope, window: CalendarCLIWindow) -> CalendarCLIStoredListSnapshot? {
@@ -99,82 +120,105 @@ actor CalendarCLIService {
     }
 
     func refresh(window: CalendarCLIWindow, config: CalendarCLIConfig, force: Bool) async throws -> [CalendarCLIEntry] {
+        let read = try await refreshSnapshot(window: window, config: config, force: force)
+        if read.outcome == .failed { throw CalendarCLIServiceError.refreshFailed }
+        return read.entries
+    }
+
+    func refreshSnapshot(window: CalendarCLIWindow, config: CalendarCLIConfig,
+                         force: Bool) async throws -> CalendarCLIListRead {
+        try Task.checkCancellation()
         let scope = CalendarCLIScope(config: config)
         let key = Self.taskKey(scope: scope, window: window)
-        let startGeneration = generation
         let currentTime = now()
+        let previous = cachedSnapshot(scope: scope, window: window)
+
+        if let existing = listTasks[key] {
+            let read = try await existing.task.value
+            try Task.checkCancellation()
+            return read
+        }
 
         if !force, config.listFreshnessSeconds == 0 {
-            return cachedSnapshot(scope: scope, window: window)?.entries ?? []
+            return makeRead(window: window, snapshot: previous, config: config,
+                            outcome: .manualOnly, persistence: persistenceOutcomes[key])
         }
 
-        // Automatic triggers honor the retry cooldown; forced refresh bypasses.
         if !force, let cooldownUntil = listCooldowns[key], currentTime < cooldownUntil {
-            return cachedSnapshot(scope: scope, window: window)?.entries ?? []
+            return makeRead(window: window, snapshot: previous, config: config,
+                            outcome: listAttemptOutcomes[key] == .partial ? .partial : .blocked,
+                            persistence: persistenceOutcomes[key])
         }
 
-        // Fresh snapshots are returned without a call; only demand (or staleness)
-        // reaches the connector.
-        let previous = cachedSnapshot(scope: scope, window: window)
-        if !force, let lastSuccess = previous?.lastSuccessfulRefresh,
-           currentTime.timeIntervalSince(lastSuccess) < TimeInterval(config.listFreshnessSeconds) {
-            return previous?.entries ?? []
+        if !CalendarCLIRefreshPolicy.shouldRefresh(window: window,
+            lastSuccessfulRefresh: previous?.lastSuccessfulRefresh, now: currentTime,
+            freshnessSeconds: config.listFreshnessSeconds, force: force) {
+            return makeRead(window: window, snapshot: previous, config: config,
+                            outcome: .cached, persistence: persistenceOutcomes[key])
         }
 
-        // Join already-running work instead of duplicating it.
-        if let existing = listTasks[key] {
-            let outcome = try await existing.value
-            return outcome.completeness == .complete ? outcome.raw : (outcome.previous?.entries ?? [])
+        let id = UUID()
+        let startGeneration = generation
+        let task = Task<CalendarCLIListRead, Error> {
+            try await self.performRefresh(window: window, config: config, scope: scope,
+                key: key, previous: previous, generation: startGeneration, id: id)
         }
+        listTasks[key] = ListFlight(id: id, task: task)
+        let read = try await task.value
+        try Task.checkCancellation()
+        return read
+    }
 
-        let previousSnapshot = previous
-        let task = Task<CalendarCLIResult, Error> { [transport, now] in
-            let result = try await transport.list(window: window, config: config)
-            let attempt = now()
-            var persistedEntries: [CalendarCLIEntry]?
-            if result.completeness == .complete {
-                persistedEntries = result.entries
-            }
-            return CalendarCLIResult(entries: persistedEntries, raw: result.entries,
-                                     completeness: result.completeness, attempt: attempt,
-                                     previous: previousSnapshot)
+    private func performRefresh(window: CalendarCLIWindow, config: CalendarCLIConfig,
+                                scope: CalendarCLIScope, key: String,
+                                previous: CalendarCLIStoredListSnapshot?, generation startGeneration: Int,
+                                id: UUID) async throws -> CalendarCLIListRead {
+        defer {
+            if listTasks[key]?.id == id { listTasks[key] = nil }
         }
-        listTasks[key] = task
-        defer { listTasks[key] = nil }
-
         do {
-            let outcome = try await task.value
-            // An old generation may no longer write to the new scope.
-            guard generation == startGeneration else { throw CancellationError() }
-
-            if outcome.completeness == .complete {
+            let result = try await transport.list(window: window, config: config)
+            guard generation == startGeneration, !Task.isCancelled else { throw CancellationError() }
+            let attempt = now()
+            if result.completeness == .complete {
                 listAttemptOutcomes[key] = .complete
                 listCooldowns[key] = nil
                 let snapshot = CalendarCLIStoredListSnapshot(
                     scope: scope, window: window,
-                    entries: outcome.raw,
-                    lastSuccessfulRefresh: outcome.attempt,
-                    lastAttempt: outcome.attempt
+                    entries: result.entries,
+                    lastSuccessfulRefresh: attempt,
+                    lastAttempt: attempt
                 )
                 memorySnapshots[key] = snapshot
-                persistenceOutcomes[key] = store.storeList(snapshot)
-                reconcileRosterStaleness(scope: scope, stored: previousSnapshot, fresh: outcome.raw, config: config)
-                return outcome.raw
+                let persistence = store.storeList(snapshot)
+                persistenceOutcomes[key] = persistence
+                return makeRead(window: window, snapshot: snapshot, config: config,
+                                outcome: .refreshed, persistence: persistence)
             } else {
-                listAttemptOutcomes[key] = outcome.completeness == .partial ? .partial : .blocked
-                // Partial/blocked: preserve the last complete snapshot.
-                store.updateListAttempt(scope: scope, window: window, date: outcome.attempt)
-                if outcome.completeness == .blocked {
-                    listCooldowns[key] = outcome.attempt.addingTimeInterval(Self.retryCooldown)
-                }
-                return previousSnapshot?.entries ?? []
+                let isPartial = result.completeness == .partial
+                listAttemptOutcomes[key] = isPartial ? .partial : .blocked
+                listCooldowns[key] = attempt.addingTimeInterval(Self.retryCooldown)
+                store.updateListAttempt(scope: scope, window: window, date: attempt)
+                var retained = previous
+                retained?.lastAttempt = attempt
+                if let retained { memorySnapshots[key] = retained }
+                return makeRead(window: window, snapshot: retained, config: config,
+                                outcome: isPartial ? .partial : .blocked,
+                                persistence: persistenceOutcomes[key])
             }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            guard generation == startGeneration, !Task.isCancelled else { throw CancellationError() }
+            let attempt = now()
             listAttemptOutcomes[key] = .failed
-            // A failure keeps the cache and opens the automatic retry cooldown.
-            listCooldowns[key] = now().addingTimeInterval(Self.retryCooldown)
-            store.updateListAttempt(scope: scope, window: window, date: now())
-            throw error
+            listCooldowns[key] = attempt.addingTimeInterval(Self.retryCooldown)
+            store.updateListAttempt(scope: scope, window: window, date: attempt)
+            var retained = previous
+            retained?.lastAttempt = attempt
+            if let retained { memorySnapshots[key] = retained }
+            return makeRead(window: window, snapshot: retained, config: config,
+                            outcome: .failed, persistence: persistenceOutcomes[key])
         }
     }
 
@@ -237,7 +281,7 @@ actor CalendarCLIService {
         listCooldowns = [:]
         memorySnapshots = [:]
         persistenceOutcomes = [:]
-        for (_, task) in listTasks { task.cancel() }
+        for (_, flight) in listTasks { flight.task.cancel() }
         listTasks = [:]
         for (_, task) in detailTasks { task.cancel() }
         detailTasks = [:]
@@ -301,33 +345,6 @@ actor CalendarCLIService {
         )
     }
 
-    /// During a complete list refresh, a loaded roster whose occurrence now
-    /// reports a different revision goes stale without any fetch. Absent
-    /// revisions keep the TTL rule handled at read time.
-    private func reconcileRosterStaleness(scope: CalendarCLIScope, stored: CalendarCLIStoredListSnapshot?, fresh: [CalendarCLIEntry], config: CalendarCLIConfig) {
-        guard let stored, !stored.entries.isEmpty else { return }
-        var changed = false
-        var entries = stored.entries
-        for (index, old) in entries.enumerated() {
-            guard old.attendeeState == .loaded else { continue }
-            guard let freshEntry = fresh.first(where: { $0.key == old.key }) else { continue }
-            if let newRevision = freshEntry.sourceRevision,
-               let rosterRevision = old.sourceRevision, newRevision != rosterRevision {
-                entries[index] = CalendarCLIEntry(
-                    key: old.key, event: old.event, sourceRevision: old.sourceRevision,
-                    detailsFetchedAt: old.detailsFetchedAt, attendeeState: .stale,
-                    attendeeCount: old.attendeeCount, isCancelled: old.isCancelled
-                )
-                changed = true
-            }
-        }
-        if changed {
-            var snapshot = stored
-            snapshot.entries = entries
-            store.storeList(snapshot)
-        }
-    }
-
     private func isFresh(_ entry: CalendarCLIEntry, config: CalendarCLIConfig, at date: Date) -> Bool {
         switch entry.attendeeState {
         case .loaded, .none, .omittedLargeMeeting:
@@ -349,18 +366,10 @@ actor CalendarCLIService {
     }
 }
 
-private struct CalendarCLIResult: Sendable {
-    /// Entries eligible to become the new complete snapshot (nil otherwise).
-    let entries: [CalendarCLIEntry]?
-    let raw: [CalendarCLIEntry]
-    let completeness: CalendarCLICompleteness
-    let attempt: Date
-    let previous: CalendarCLIStoredListSnapshot?
-}
-
 enum CalendarCLIServiceError: Error, LocalizedError {
     case attendeePolicyForbids
     case identityMismatch
+    case refreshFailed
 
     var errorDescription: String? {
         switch self {
@@ -368,6 +377,8 @@ enum CalendarCLIServiceError: Error, LocalizedError {
             "Attendee loading is set to Never for the Claude CLI calendar source."
         case .identityMismatch:
             "The fetched roster did not match the requested meeting."
+        case .refreshFailed:
+            "The calendar list could not be refreshed."
         }
     }
 }

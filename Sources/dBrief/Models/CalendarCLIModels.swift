@@ -41,6 +41,20 @@ enum CalendarCLICompleteness: String, Codable, Sendable {
     case complete, partial, blocked
 }
 
+enum CalendarCLIListOutcome: Sendable, Equatable {
+    case cached, refreshed, manualOnly, partial, blocked, failed
+}
+
+struct CalendarCLIListRead: Sendable {
+    let window: CalendarCLIWindow
+    let entries: [CalendarCLIEntry]
+    let hasCompleteSnapshot: Bool
+    let lastSuccessfulRefresh: Date?
+    let lastAttempt: Date?
+    let outcome: CalendarCLIListOutcome
+    let persistence: CalendarCLIPersistenceOutcome?
+}
+
 /// One cached calendar occurrence. `event` always carries an empty body for
 /// this source: invite bodies are never output, persisted, or analyzed.
 /// List-stage entries carry an empty attendee array; rosters only ever load

@@ -9,6 +9,17 @@ import Testing
 @MainActor
 struct CalendarCLILifecycleTests {
 
+    @Test("A zero-duration recording at midnight retains its original day")
+    func zeroDurationMidnightWindow() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0).unsafelyUnwrapped
+        let midnight = CalendarCLITimeParsing.connectorUTCDate("2026-09-24T00:00:00Z").unsafelyUnwrapped
+        let windows = RecordingManager.calendarCLIDayWindows(
+            from: midnight, to: midnight, matchWindow: 0, calendar: calendar)
+        #expect(windows.count == 1)
+        #expect(windows.first?.start == midnight)
+    }
+
     // MARK: - Harness
 
     @MainActor

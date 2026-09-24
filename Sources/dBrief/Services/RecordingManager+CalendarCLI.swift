@@ -17,11 +17,10 @@ extension RecordingManager {
         guard config.isConfigured else { return .unconfigured }
         guard let window = Self.calendarCLIDayWindows(
             from: recording.date, to: recording.date, matchWindow: 0).first else { return .failed }
-        let scope = CalendarCLIScope(config: config)
-        let before = await calendarCLIService.status(scope: scope, window: window)?.lastSuccessfulRefresh
         let generation = calendarCLIConfigGeneration
         do {
-            let entries = try await calendarCLIService.refresh(window: window, config: config, force: force)
+            let read = try await calendarCLIService.refreshSnapshot(window: window, config: config, force: force)
+            let entries = read.entries
             guard appSettings.effectiveCalendarSource == .claudeCLI,
                   calendarCLIConfigGeneration == generation,
                   appSettings.calendarCLIConfig == baseConfig else { return .failed }
@@ -39,18 +38,14 @@ extension RecordingManager {
                 }
             }
             recording.calendarCandidates = candidates
-            let attemptOutcome = await calendarCLIService.lastAttemptOutcome(window: window, config: config)
-            if selectionMissing, force, attemptOutcome == .complete { return .selectionMissing }
-            if !force, config.listFreshnessSeconds == 0 { return .manualOnly }
-            if force || before == nil || (before.map { Date().timeIntervalSince($0) >= TimeInterval(config.listFreshnessSeconds) } ?? false) {
-                switch attemptOutcome {
-                case .partial: return .partial
-                case .blocked: return .blocked
-                case .failed: return .failed
-                case .complete, .none: break
-                }
+            if selectionMissing, force, read.outcome == .refreshed { return .selectionMissing }
+            switch read.outcome {
+            case .manualOnly: return .manualOnly
+            case .partial: return .partial
+            case .blocked: return .blocked
+            case .failed: return .failed
+            case .cached, .refreshed: return .complete
             }
-            return .complete
         } catch {
             return .failed
         }
@@ -72,7 +67,7 @@ extension RecordingManager {
         let paddedStart = start.addingTimeInterval(-max(0, matchWindow))
         let paddedEnd = end.addingTimeInterval(max(0, matchWindow))
         var cursor = calendar.startOfDay(for: paddedStart)
-        while cursor < paddedEnd {
+        while cursor < paddedEnd || (windows.isEmpty && cursor == paddedEnd) {
             guard let day = calendar.dateInterval(of: .day, for: cursor) else { break }
             let key = "\(day.start.timeIntervalSince1970)"
             if seen.insert(key).inserted {
@@ -103,7 +98,7 @@ extension RecordingManager {
             for window in windows {
                 // The service's TTL gate makes this a fetch only when the
                 // snapshot is absent or stale.
-                _ = try? await self.calendarCLIService.refresh(
+                _ = try? await self.calendarCLIService.refreshSnapshot(
                     window: window, config: config, force: false)
                 if Task.isCancelled { return }
             }
@@ -131,11 +126,11 @@ extension RecordingManager {
         var events: [CalendarEvent] = []
         var seen = Set<String>()
         for window in windows {
-            var entries = await calendarCLIService.cached(window: window, config: config)
-            if entries.isEmpty {
-                entries = (try? await calendarCLIService.refresh(
-                    window: window, config: config, force: false)) ?? []
-            }
+            let read = try? await calendarCLIService.refreshSnapshot(
+                window: window, config: config, force: false)
+            let entries: [CalendarCLIEntry]
+            if let read { entries = read.entries }
+            else { entries = await calendarCLIService.cachedSnapshot(window: window, config: config).entries }
             for entry in entries {
                 calendarCLIEntryByEventID[entry.event.id] = entry
                 if seen.insert(entry.event.id).inserted {
@@ -282,15 +277,13 @@ extension RecordingManager {
         let windows = Self.calendarCLIDayWindows(from: now, to: now, matchWindow: 0)
         guard let window = windows.first else { return .failed }
         do {
-            let entries = try await calendarCLIService.refresh(
+            let read = try await calendarCLIService.refreshSnapshot(
                 window: window, config: config, force: true)
-            _ = entries
-            let cached = await calendarCLIService.cached(window: window, config: config)
-            switch await calendarCLIService.lastAttemptOutcome(window: window, config: config) {
-            case .complete: return .reachable(events: cached.count, partial: false)
-            case .partial: return .reachable(events: cached.count, partial: true)
+            switch read.outcome {
+            case .refreshed, .cached: return .reachable(events: read.entries.count, partial: false)
+            case .partial: return .reachable(events: read.entries.count, partial: true)
             case .blocked: return .blocked
-            case .failed, .none: return .failed
+            case .failed, .manualOnly: return .failed
             }
         } catch {
             Logger.calendar.error("Calendar CLI manual refresh failed: \(error.localizedDescription)")

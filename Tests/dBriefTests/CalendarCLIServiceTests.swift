@@ -7,6 +7,197 @@ import Foundation
 /// preservation semantics.
 struct CalendarCLIServiceTests {
 
+    actor GatedTransport: CalendarCLITransporting {
+        private var requests: [CheckedContinuation<CalendarCLIListResult, Error>] = []
+        private let detailEntry: CalendarCLIEntry
+
+        init(detailEntry: CalendarCLIEntry) { self.detailEntry = detailEntry }
+
+        func list(window: CalendarCLIWindow, config: CalendarCLIConfig) async throws -> CalendarCLIListResult {
+            try await withCheckedThrowingContinuation { requests.append($0) }
+        }
+
+        func detail(entry: CalendarCLIEntry, config: CalendarCLIConfig) async throws -> CalendarCLIEntry {
+            detailEntry
+        }
+
+        func pendingCount() -> Int { requests.count }
+
+        func releaseFirst(_ result: Result<CalendarCLIListResult, Error>) {
+            guard !requests.isEmpty else { return }
+            let request = requests.removeFirst()
+            request.resume(with: result)
+        }
+
+        func waitForCount(_ count: Int) async -> Bool {
+            for _ in 0..<100 {
+                if requests.count >= count { return true }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return false
+        }
+    }
+
+    @Test("An old completion cannot remove or overwrite a replacement flight")
+    func oldCompletionCannotAffectReplacement() async throws {
+        let window = Self.makeWindow()
+        let clock = FixedClock(Date())
+        let oldEntry = Self.makeEntry(window: window, title: "Old")
+        let newEntry = Self.makeEntry(window: window, title: "New")
+        let transport = GatedTransport(detailEntry: oldEntry)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = CalendarCLICacheStore(directory: directory, now: clock.reader)
+        let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
+        let config = Self.makeConfig()
+
+        let oldTask = Task { try await service.refreshSnapshot(window: window, config: config, force: true) }
+        #expect(await transport.waitForCount(1))
+        await service.invalidate()
+        let replacement = Task { try await service.refreshSnapshot(window: window, config: config, force: true) }
+        #expect(await transport.waitForCount(2))
+        await transport.releaseFirst(.success(Self.completeResult([oldEntry])))
+        do { _ = try await oldTask.value; Issue.record("Old request was not cancelled") }
+        catch is CancellationError { }
+        catch { Issue.record("Unexpected old-request error") }
+        let joined = Task { try await service.refreshSnapshot(window: window, config: config, force: true) }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await transport.pendingCount() == 1)
+        await transport.releaseFirst(.success(Self.completeResult([newEntry])))
+        let a = try await replacement.value
+        let b = try await joined.value
+        #expect(a.entries == [newEntry])
+        #expect(b.entries == [newEntry])
+        #expect(store.loadList(scope: CalendarCLIScope(config: config), window: window)?.entries == [newEntry])
+    }
+
+    @Test("Clear cache rejects a late response without writing to disk")
+    func clearRejectsLateWrite() async throws {
+        let window = Self.makeWindow()
+        let entry = Self.makeEntry(window: window)
+        let transport = GatedTransport(detailEntry: entry)
+        let clock = FixedClock(Date())
+        let store = CalendarCLICacheStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString), now: clock.reader)
+        let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
+        let config = Self.makeConfig()
+        let pending = Task { try await service.refreshSnapshot(window: window, config: config, force: true) }
+        #expect(await transport.waitForCount(1))
+        await service.clearCache()
+        await transport.releaseFirst(.success(Self.completeResult([entry])))
+        do { _ = try await pending.value; Issue.record("Cleared request was not cancelled") }
+        catch is CancellationError { }
+        catch { Issue.record("Unexpected cleared-request error") }
+        #expect(store.loadList(scope: CalendarCLIScope(config: config), window: window) == nil)
+    }
+
+    @Test("A late failure cannot start a cooldown for the replacement generation")
+    func lateFailureCannotStartCooldown() async throws {
+        let window = Self.makeWindow()
+        let entry = Self.makeEntry(window: window)
+        let transport = GatedTransport(detailEntry: entry)
+        let clock = FixedClock(Date())
+        let store = CalendarCLICacheStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString), now: clock.reader)
+        let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
+        let config = Self.makeConfig()
+        let pending = Task { try await service.refreshSnapshot(window: window, config: config, force: true) }
+        #expect(await transport.waitForCount(1))
+        await service.invalidate()
+        await transport.releaseFirst(.failure(CalendarCLIServiceError.refreshFailed))
+        do { _ = try await pending.value; Issue.record("Old failure was not cancelled") }
+        catch is CancellationError { }
+        catch { Issue.record("Unexpected old-request error") }
+        let fresh = Task { try await service.refreshSnapshot(window: window, config: config, force: false) }
+        #expect(await transport.waitForCount(1))
+        await transport.releaseFirst(.success(Self.completeResult([entry])))
+        #expect(try await fresh.value.entries == [entry])
+    }
+
+    @Test("A historical empty snapshot fetched before day-end refreshes once")
+    func historicalEmptySnapshotRefreshesOnce() async throws {
+        let window = Self.makeWindow()
+        let clock = FixedClock(window.end.addingTimeInterval(86_400))
+        let entry = Self.makeEntry(window: window)
+        let transport = FakeTransport(listResult: Self.completeResult([]), detailResult: entry)
+        let (service, store) = Self.makeService(transport: transport, clock: clock)
+        let config = Self.makeConfig()
+        let scope = CalendarCLIScope(config: config)
+        store.storeList(.init(scope: scope, window: window, entries: [],
+                              lastSuccessfulRefresh: window.end.addingTimeInterval(-60),
+                              lastAttempt: window.end.addingTimeInterval(-60)))
+        let first = try await service.refreshSnapshot(window: window, config: config, force: false)
+        #expect(first.outcome == .refreshed)
+        #expect(first.hasCompleteSnapshot)
+        #expect(first.entries.isEmpty)
+        let second = try await service.refreshSnapshot(window: window, config: config, force: false)
+        #expect(second.outcome == .cached)
+        #expect(transport.listCallCount == 1)
+    }
+
+    @Test("A failed refresh returns typed cached data and an attempt stamp")
+    func failureReturnsTypedRead() async throws {
+        let window = Self.makeWindow()
+        let clock = FixedClock(Date())
+        let entry = Self.makeEntry(window: window)
+        let transport = FakeTransport(listResult: Self.completeResult([]), detailResult: entry)
+        transport.listError = CalendarCLIServiceError.identityMismatch
+        let (service, store) = Self.makeService(transport: transport, clock: clock)
+        let config = Self.makeConfig()
+        let old = clock.now.addingTimeInterval(-7200)
+        store.storeList(.init(scope: CalendarCLIScope(config: config), window: window,
+                              entries: [entry], lastSuccessfulRefresh: old, lastAttempt: old))
+        let read = try await service.refreshSnapshot(window: window, config: config, force: true)
+        #expect(read.outcome == .failed)
+        #expect(read.entries == [entry])
+        #expect(read.lastSuccessfulRefresh == old)
+        #expect(read.lastAttempt == clock.now)
+    }
+
+    @Test("Partial responses preserve complete data and cool down automatic retry")
+    func partialCooldown() async throws {
+        let window = Self.makeWindow()
+        let clock = FixedClock(Date())
+        let entry = Self.makeEntry(window: window)
+        let transport = FakeTransport(listResult: CalendarCLIListResult(
+            entries: [], completeness: .partial, message: nil), detailResult: entry)
+        let (service, store) = Self.makeService(transport: transport, clock: clock)
+        let config = Self.makeConfig()
+        let success = window.end.addingTimeInterval(-60)
+        store.storeList(.init(scope: CalendarCLIScope(config: config), window: window,
+                              entries: [entry], lastSuccessfulRefresh: success, lastAttempt: success))
+        let first = try await service.refreshSnapshot(window: window, config: config, force: false)
+        let second = try await service.refreshSnapshot(window: window, config: config, force: false)
+        #expect(first.outcome == .partial)
+        #expect(second.outcome == .partial)
+        #expect(second.entries == [entry])
+        #expect(transport.listCallCount == 1)
+        let forced = try await service.refreshSnapshot(window: window, config: config, force: true)
+        #expect(forced.outcome == .partial)
+        #expect(transport.listCallCount == 2)
+    }
+
+    @Test("Joined waiters receive the same finalized list result")
+    func concurrentWaitersReceiveFinalRead() async throws {
+        let window = Self.makeWindow()
+        let clock = FixedClock(Date())
+        let entry = Self.makeEntry(window: window)
+        let transport = FakeTransport(listResult: Self.completeResult([entry]), detailResult: entry)
+        transport.holdNextListCall()
+        let (service, _) = Self.makeService(transport: transport, clock: clock)
+        let config = Self.makeConfig()
+        async let first = service.refreshSnapshot(window: window, config: config, force: true)
+        async let second = service.refreshSnapshot(window: window, config: config, force: true)
+        try await Task.sleep(for: .milliseconds(20))
+        transport.releaseListCalls()
+        let (a, b) = try await (first, second)
+        #expect(a.outcome == .refreshed)
+        #expect(b.outcome == .refreshed)
+        #expect(a.entries == b.entries)
+        #expect(a.lastSuccessfulRefresh == b.lastSuccessfulRefresh)
+        #expect(a.persistence == b.persistence)
+        #expect(transport.listCallCount == 1)
+    }
+
     @Test("A successful list stays readable in memory when disk persistence fails")
     func persistenceFailureRetainsMemory() async throws {
         let clock = FixedClock(Date())
@@ -23,8 +214,12 @@ struct CalendarCLIServiceTests {
         let transport = FakeTransport(listResult: Self.completeResult([entry]), detailResult: entry)
         let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
         let config = Self.makeConfig()
-        #expect(try await service.refresh(window: window, config: config, force: true) == [entry])
-        #expect(await service.cached(window: window, config: config) == [entry])
+        let refreshed = try await service.refreshSnapshot(window: window, config: config, force: true)
+        #expect(refreshed.entries == [entry])
+        #expect(refreshed.persistence == .failed)
+        let cached = await service.cachedSnapshot(window: window, config: config)
+        #expect(cached.entries == [entry])
+        #expect(cached.persistence == .failed)
         #expect(await service.lastPersistenceOutcome(window: window, config: config) == .failed)
         #expect(store.loadList(scope: CalendarCLIScope(config: config), window: window) == nil)
     }
@@ -340,8 +535,8 @@ struct CalendarCLIServiceTests {
         let scope = CalendarCLIScope(config: config)
         store.storeList(CalendarCLIStoredListSnapshot(
             scope: scope, window: Self.makeWindow(), entries: [loaded],
-            lastSuccessfulRefresh: clock.now.addingTimeInterval(-2 * 60 * 60),
-            lastAttempt: clock.now.addingTimeInterval(-2 * 60 * 60)
+            lastSuccessfulRefresh: Self.makeWindow().end.addingTimeInterval(-2 * 60 * 60),
+            lastAttempt: Self.makeWindow().end.addingTimeInterval(-2 * 60 * 60)
         ))
 
         let refreshed = try await service.refresh(window: Self.makeWindow(), config: config, force: false)
