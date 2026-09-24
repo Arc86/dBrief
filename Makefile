@@ -29,7 +29,7 @@ MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/
 # paste the printed SHA256 into FFMPEG_SHA256 to make builds reproducible and verified.
 FFMPEG_VERSION ?= latest
 FFMPEG_URL ?= https://ffmpeg.martin-riedl.de/redirect/$(FFMPEG_VERSION)/macos/arm64/release/ffmpeg.zip
-FFMPEG_SHA256 ?= 393e4c395020a1cb7cbd77fbe00599ce69d1c6466fee0dbd59d13f86a81a1611
+FFMPEG_SHA256 ?= c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
 FFMPEG_CACHE = .build/ffmpeg
 
 # Version is the single source of truth in Info.plist; never hardcode it here.
