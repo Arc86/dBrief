@@ -28,6 +28,7 @@ final class AppSettings {
         static let autoSummary = "autoSummary"
         static let autoActionItems = "autoActionItems"
         static let autoTags = "autoTags"
+        static let autoLoadCalendarParticipants = "autoLoadCalendarParticipants"
         static let aiProcessingEnabled = "aiProcessingEnabled"
         static let callDetectionEnabled = "callDetectionEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
@@ -219,6 +220,10 @@ final class AppSettings {
 
     var autoTags: Bool {
         didSet { UserDefaults.standard.set(autoTags, forKey: Keys.autoTags) }
+    }
+
+    var autoLoadCalendarParticipants: Bool {
+        didSet { UserDefaults.standard.set(autoLoadCalendarParticipants, forKey: Keys.autoLoadCalendarParticipants) }
     }
 
     var aiProcessingEnabled: Bool {
@@ -937,6 +942,7 @@ final class AppSettings {
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true
         self.autoActionItems = defaults.object(forKey: Keys.autoActionItems) as? Bool ?? true
         self.autoTags = defaults.object(forKey: Keys.autoTags) as? Bool ?? true
+        self.autoLoadCalendarParticipants = defaults.object(forKey: Keys.autoLoadCalendarParticipants) as? Bool ?? false
         self.aiProcessingEnabled = defaults.object(forKey: Keys.aiProcessingEnabled) as? Bool ?? true
 
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)

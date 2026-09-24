@@ -81,7 +81,13 @@ extension ProcessingPipeline {
         if let record = latest {
             fallback = QueueItem(id: input.jobID, transcribe: record.request.transcribe,
                 summary: record.request.summary, actionItems: record.request.actionItems,
-                tags: record.request.tags, titleWasUserProvided: record.request.titleWasUserProvided,
+                tags: record.request.tags,
+                loadCalendarParticipants: record.request.loadCalendarParticipants,
+                calendarParticipantSelection: record.source.calendarParticipantSelection,
+                calendarParticipantConfiguration: record.source.calendarParticipantConfiguration,
+                calendarParticipantsNative: record.calendarParticipantEnrichment?.state == .completed
+                    && record.source.calendarParticipantSelection == nil,
+                titleWasUserProvided: record.request.titleWasUserProvided,
                 autoQueued: false, profileID: record.source.profileID ?? fallback.profileID)
         }
         do {

@@ -187,6 +187,49 @@ struct CalendarCLILifecycleTests {
 
     // MARK: - No unsolicited reads
 
+    @Test("Participant admission freezes selected occurrence without a connector call")
+    func participantAdmissionIsImmediate() {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let (recording, _, entry) = Self.seedCandidate(harness)
+        let profileID = harness.settings.activeProfile.id
+        let admission = harness.manager.calendarParticipantAdmission(
+            for: recording, requested: true, profileID: profileID)
+        #expect(admission.selection?.entry.key == entry.key)
+        #expect(admission.selection?.scope.mailbox == "ada@example.com")
+        #expect(harness.transport.detailCalls == 0)
+        #expect(admission.configuration?.effort == harness.settings.effectiveCalendarCLIConfig.effort)
+        harness.settings.calendarCLIConfig = harness.settings.calendarCLIConfig.updating(effort: .high)
+        #expect(admission.configuration?.effort != harness.settings.effectiveCalendarCLIConfig.effort)
+    }
+
+    @Test("A legacy selected event without connector identity is skipped, not guessed")
+    func missingParticipantIdentityIsSkipped() {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let recording = harness.recording()
+        recording.calendarEvent = CalendarEvent(title: "Legacy", attendees: [], body: "",
+            startDate: recording.date, endDate: recording.date.addingTimeInterval(1800))
+        let admission = harness.manager.calendarParticipantAdmission(
+            for: recording, requested: true, profileID: harness.settings.activeProfile.id)
+        #expect(admission.selection == nil)
+        #expect(admission.configuration != nil)
+        #expect(harness.transport.detailCalls == 0)
+    }
+
+    @Test("Native calendar admission uses existing invitees without a Claude request")
+    func nativeParticipantAdmission() {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let (recording, _, _) = Self.seedCandidate(harness)
+        harness.settings.calendarSource = .iCal
+        let admission = harness.manager.calendarParticipantAdmission(
+            for: recording, requested: true, profileID: harness.settings.activeProfile.id)
+        #expect(admission.isNative)
+        #expect(admission.selection == nil)
+        #expect(harness.transport.detailCalls == 0)
+    }
+
     @Test("Picker loads a recording day on demand and refreshes it without changing the selection")
     func pickerRefresh() async {
         let harness = Harness()

@@ -10,6 +10,7 @@ struct PostRecordingSheet: View {
     @State private var summary = true
     @State private var actionItems = true
     @State private var tags = true
+    @State private var loadCalendarParticipants = false
     @State private var meetingTitle = ""
     @State private var participantNames: [String] = []
     /// The roster the sheet last auto-filled, so a later attendee load can
@@ -46,10 +47,19 @@ struct PostRecordingSheet: View {
         summary = reviewProfile.overrides.autoSummary ?? appSettings.autoSummary
         actionItems = reviewProfile.overrides.autoActionItems ?? appSettings.autoActionItems
         tags = reviewProfile.overrides.autoTags ?? appSettings.autoTags
+        loadCalendarParticipants = appSettings.resolvedAutoLoadCalendarParticipants(for: reviewProfile)
     }
 
     private var reviewAIEnabled: Bool {
         reviewProfile.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled
+    }
+
+    private var acceptedCalendarParticipantLoad: Bool {
+        guard loadCalendarParticipants, appState.currentRecording?.calendarEvent != nil else { return false }
+        if appSettings.effectiveCalendarSource == .claudeCLI {
+            return appSettings.effectiveCalendarCLIConfig.attendeePolicy == .onDemand
+        }
+        return appSettings.effectiveCalendarSource != .disabled
     }
 
     private var reviewNeedsTranscriptionEndpoint: Bool {
@@ -180,10 +190,11 @@ struct PostRecordingSheet: View {
                     }
                 }
                 .labelsHidden()
-                if appSettings.effectiveCalendarSource == .claudeCLI,
-                   recording.calendarEvent != nil,
-                   appSettings.calendarCLIConfig.attendeePolicy == .onDemand {
-                    attendeeLoadButton(for: recording)
+                if appSettings.effectiveCalendarSource == .claudeCLI {
+                    calendarAttendeesBlock(for: recording)
+                } else if recording.calendarEvent != nil {
+                    Text("Calendar attendees are already included with the selected meeting.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
 
@@ -306,7 +317,8 @@ struct PostRecordingSheet: View {
                                 transcribe: transcribe,
                                 summary: summary && transcribe,
                                 actionItems: actionItems && transcribe,
-                                tags: tags && transcribe
+                                tags: tags && transcribe,
+                                loadCalendarParticipants: acceptedCalendarParticipantLoad
                             )
                         }
                     }
@@ -322,7 +334,8 @@ struct PostRecordingSheet: View {
                             transcribe: transcribe,
                             summary: summary && transcribe,
                             actionItems: actionItems && transcribe,
-                            tags: tags && transcribe
+                            tags: tags && transcribe,
+                            loadCalendarParticipants: acceptedCalendarParticipantLoad
                         )
                     } label: {
                         HStack(spacing: 7) {
@@ -689,43 +702,54 @@ struct PostRecordingSheet: View {
         case omittedLarge(Int)
         case unavailable
         case failed
+
+        var isLoaded: Bool {
+            if case .done = self { return true }
+            return false
+        }
     }
 
     @ViewBuilder
-    private func attendeeLoadButton(for recording: Recording) -> some View {
-        HStack(spacing: 8) {
-            switch attendeeLoadState {
-            case .idle:
-                EmptyView()
-            case .loading:
-                ProgressView().controlSize(.small)
-            case .done(let message):
-                Text(message)
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.secondary)
-            case .omittedLarge(let count):
-                Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.secondary)
-            case .unavailable:
-                Text("Attendee roster unavailable")
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.secondary)
-            case .failed:
-                Text("Attendee load failed — try again")
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.secondary)
+    private func calendarAttendeesBlock(for recording: Recording) -> some View {
+        let allowed = recording.calendarEvent != nil
+            && appSettings.effectiveCalendarCLIConfig.attendeePolicy == .onDemand
+        VStack(alignment: .leading, spacing: 6) {
+            BrandKicker("Calendar attendees")
+            BrandCheckRow(title: "Load during processing", isOn: $loadCalendarParticipants, enabled: allowed)
+            Text("Fetch invitees during processing; you can start immediately.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !allowed {
+                Text(recording.calendarEvent == nil
+                     ? "Choose a meeting to load its attendees."
+                     : "Attendee loading is set to Never in Calendar settings.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Button {
-                loadAttendees(for: recording)
-            } label: {
-                Label(
-                    attendeeLoadState == .loading ? "Loading…" : "Load attendees",
-                    systemImage: "person.2"
-                )
+            HStack(spacing: 8) {
+                switch attendeeLoadState {
+                case .idle:
+                    EmptyView()
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .done(let message):
+                    Text(message).font(.brandMono(10.5)).foregroundStyle(.secondary)
+                case .omittedLarge(let count):
+                    Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
+                        .font(.brandMono(10.5)).foregroundStyle(.secondary)
+                case .unavailable:
+                    Text("Attendee roster unavailable").font(.brandMono(10.5)).foregroundStyle(.secondary)
+                case .failed:
+                    Text("Attendee load failed — try again").font(.brandMono(10.5)).foregroundStyle(.secondary)
+                }
+                Button {
+                    loadAttendees(for: recording)
+                } label: {
+                    Label(attendeeLoadState == .loading ? "Loading…"
+                          : attendeeLoadState.isLoaded ? "Refresh" : "Load now",
+                          systemImage: "person.2")
+                }
+                .controlSize(.small)
+                .disabled(!allowed || attendeeLoadState == .loading)
             }
-            .controlSize(.small)
-            .disabled(attendeeLoadState == .loading)
         }
     }
 
@@ -735,8 +759,8 @@ struct PostRecordingSheet: View {
         Task { @MainActor in
             let outcome = await recordingManager.loadCalendarCLIAttendees(for: recording)
             switch outcome {
-            case .loaded:
-                attendeeLoadState = .done("Attendees loaded")
+            case .loaded(let count):
+                attendeeLoadState = .done("\(count) attendee\(count == 1 ? "" : "s") loaded")
                 applyLoadedRoster(to: recording)
             case .noInvitees:
                 attendeeLoadState = .done("No invitees")

@@ -4,6 +4,48 @@ import Testing
 
 @Suite("Processing job persistence")
 struct ProcessingJobStoreTests {
+    @Test("Job journal freezes participant intent and omits raw command")
+    func participantIntentSurvivesJobStore() async throws {
+        let fixture = try TemporaryFixture()
+        defer { fixture.remove() }
+        let store = ProcessingJobStore(rootURL: fixture.url)
+        var job = makeJob()
+        let selection = CalendarParticipantSelection(scope: CalendarCLICacheTests.scope,
+            entry: CalendarCLICacheTests.entry())
+        let secret = "custom-cli --credential=private-token"
+        let config = CalendarCLIConfig.unnormalized(timeoutSeconds: 30,
+            mailboxEmail: selection.scope.mailbox, command: secret)
+        let safe = CalendarParticipantRequestConfiguration(config: config, scope: selection.scope)
+        job.request = .init(transcribe: false, summary: false, actionItems: false, tags: false,
+                            loadCalendarParticipants: true, titleWasUserProvided: false,
+                            autoResume: true)
+        job.source.calendarParticipantSelection = selection
+        job.source.calendarParticipantConfiguration = safe
+        job.calendarParticipantEnrichment = .init(selection: selection)
+        try await store.save(job)
+        let loaded = try #require(try await store.load(id: job.id))
+        #expect(loaded.request.loadCalendarParticipants)
+        #expect(loaded.source.calendarParticipantSelection?.entry.key == selection.entry.key)
+        #expect(loaded.source.calendarParticipantConfiguration == safe)
+        #expect(loaded.calendarParticipantEnrichment?.state == .pending)
+        let encoded = String(decoding: try JSONEncoder().encode(loaded), as: UTF8.self)
+        #expect(!encoded.contains(secret))
+        #expect(!encoded.contains("private-token"))
+
+        var legacy = try #require(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any])
+        var request = try #require(legacy["request"] as? [String: Any])
+        request.removeValue(forKey: "loadCalendarParticipants")
+        legacy["request"] = request
+        legacy.removeValue(forKey: "calendarParticipantEnrichment")
+        var source = try #require(legacy["source"] as? [String: Any])
+        source.removeValue(forKey: "calendarParticipantSelection")
+        source.removeValue(forKey: "calendarParticipantConfiguration")
+        legacy["source"] = source
+        let migrated = try JSONDecoder().decode(PersistedProcessingJob.self,
+            from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(!migrated.request.loadCalendarParticipants)
+        #expect(migrated.calendarParticipantEnrichment == nil)
+    }
     private func makeJob(
         id: UUID = UUID(),
         recordingID: UUID = UUID(),

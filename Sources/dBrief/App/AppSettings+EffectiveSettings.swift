@@ -116,6 +116,14 @@ extension AppSettings {
         activeProfile.overrides.autoTags ?? autoTags
     }
 
+    var effectiveAutoLoadCalendarParticipants: Bool {
+        activeProfile.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
+    }
+
+    func resolvedAutoLoadCalendarParticipants(for profile: MeetingProfile?) -> Bool {
+        profile?.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
+    }
+
     var effectiveRecordingFolderURL: URL {
         resolvedFolderURL(
             overridePath: activeProfile.overrides.recordingFolderPath,

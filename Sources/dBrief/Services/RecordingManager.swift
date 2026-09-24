@@ -609,6 +609,7 @@ final class RecordingManager {
               summary: appSettings.effectiveAutoSummary,
               actionItems: appSettings.effectiveAutoActionItems,
               tags: appSettings.effectiveAutoTags,
+              loadCalendarParticipants: appSettings.effectiveAutoLoadCalendarParticipants,
               configuration: AutomaticPostRecordingConfiguration(settings: appSettings))
     }
 
@@ -645,10 +646,12 @@ final class RecordingManager {
                 case .review: break
                 case .process:
                     self.startProcessing(transcribe: request.transcribe, summary: request.summary,
-                                         actionItems: request.actionItems, tags: request.tags)
+                                         actionItems: request.actionItems, tags: request.tags,
+                                         loadCalendarParticipants: request.loadCalendarParticipants)
                 case .queue:
                     Task { await self.queueForLater(transcribe: request.transcribe, summary: request.summary,
-                                                   actionItems: request.actionItems, tags: request.tags) }
+                                                   actionItems: request.actionItems, tags: request.tags,
+                                                   loadCalendarParticipants: request.loadCalendarParticipants) }
                 }
                 return
             }
@@ -1321,6 +1324,11 @@ final class RecordingManager {
             summary: request?.summary ?? appSettings.autoSummary,
             actionItems: request?.actionItems ?? appSettings.autoActionItems,
             tags: request?.tags ?? appSettings.autoTags,
+            loadCalendarParticipants: request?.loadCalendarParticipants ?? false,
+            calendarParticipantSelection: job.persistedRecord?.source.calendarParticipantSelection,
+            calendarParticipantConfiguration: job.persistedRecord?.source.calendarParticipantConfiguration,
+            calendarParticipantsNative: job.persistedRecord?.calendarParticipantEnrichment?.state == .completed
+                && job.persistedRecord?.source.calendarParticipantSelection == nil,
             titleWasUserProvided: request?.titleWasUserProvided
                 ?? job.recording.titleWasUserProvided,
             autoQueued: false,
@@ -1349,6 +1357,7 @@ final class RecordingManager {
         recording: Recording,
         queuedAudioURL: URL? = nil,
         persistedRequest: PersistedProcessingJob.Request? = nil,
+        participantAdmission: CalendarParticipantAdmission = .none,
         existingRecord: PersistedProcessingJob? = nil,
         reprocessingAttemptID: UUID? = nil,
         onPreparationFailure: ((String) -> Void)? = nil,
@@ -1402,7 +1411,8 @@ final class RecordingManager {
                         let record = self.makePersistedJob(
                             id: job.id,
                             recording: recording,
-                            request: persistedRequest
+                            request: persistedRequest,
+                            participantAdmission: participantAdmission
                         )
                         job.persistedRecord = try await self.processingJobStore.create(
                             record,
@@ -1440,10 +1450,11 @@ final class RecordingManager {
         id: UUID,
         recording: Recording,
         request: PersistedProcessingJob.Request,
+        participantAdmission: CalendarParticipantAdmission = .none,
         status: PersistedProcessingJob.Status = .running
     ) -> PersistedProcessingJob {
         let now = Date()
-        return PersistedProcessingJob(
+        var record = PersistedProcessingJob(
             id: id,
             recordingID: recording.id,
             createdAt: now,
@@ -1458,6 +1469,8 @@ final class RecordingManager {
                 associatedApp: recording.associatedApp,
                 participants: recording.participants,
                 calendarEvent: recording.calendarEvent,
+                calendarParticipantSelection: participantAdmission.selection,
+                calendarParticipantConfiguration: participantAdmission.configuration,
                 echoSuppressionApplied: recording.echoSuppressionApplied,
                 recoveryManifestPath: recording.recoveryManifestURL?.path,
                 stagedInputPath: recording.importSourceURL?.path,
@@ -1467,6 +1480,15 @@ final class RecordingManager {
                 profileID: appSettings.activeProfile.id
             )
         )
+        if request.loadCalendarParticipants {
+            let isNative = participantAdmission.isNative
+            record.calendarParticipantEnrichment = CalendarParticipantEnrichmentRecord(
+                selection: participantAdmission.selection,
+                state: isNative ? .completed
+                    : participantAdmission.selection == nil ? .skipped : .pending,
+                completedAt: isNative ? now : nil)
+        }
+        return record
     }
 
     private func processingRequest(
@@ -1474,6 +1496,7 @@ final class RecordingManager {
         summary: Bool,
         actionItems: Bool,
         tags: Bool,
+        loadCalendarParticipants: Bool = false,
         titleWasUserProvided: Bool,
         autoResume: Bool
     ) -> PersistedProcessingJob.Request {
@@ -1482,6 +1505,7 @@ final class RecordingManager {
             summary: summary,
             actionItems: actionItems,
             tags: tags,
+            loadCalendarParticipants: loadCalendarParticipants,
             titleWasUserProvided: titleWasUserProvided,
             autoResume: autoResume
         )
@@ -1562,6 +1586,7 @@ final class RecordingManager {
             summary: item.summary,
             actionItems: item.actionItems,
             tags: item.tags,
+            loadCalendarParticipants: item.loadCalendarParticipants,
             titleWasUserProvided: item.titleWasUserProvided,
             autoResume: item.autoQueued
         )
@@ -1570,7 +1595,11 @@ final class RecordingManager {
             id: item.id,
             recording: recording,
             queuedAudioURL: audioURL,
-            persistedRequest: request
+            persistedRequest: request,
+            participantAdmission: CalendarParticipantAdmission(
+                selection: item.calendarParticipantSelection,
+                configuration: item.calendarParticipantConfiguration,
+                isNative: item.calendarParticipantsNative)
         ) { job in
             await self.processRecording(
                 job: job,
@@ -1876,7 +1905,8 @@ final class RecordingManager {
         catch { appState.lastError = error.localizedDescription }
     }
 
-    func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
+    func startProcessing(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
+                         loadCalendarParticipants: Bool = false) {
         cancelPostRecordingAutomation()
         guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id,
@@ -1887,7 +1917,9 @@ final class RecordingManager {
         if appState.processingJob != nil {
             Task { await self.queueForLater(recording: recording, token: token,
                                             transcribe: transcribe, summary: summary,
-                                            actionItems: actionItems, tags: tags, autoQueued: true) }
+                                            actionItems: actionItems, tags: tags,
+                                            loadCalendarParticipants: loadCalendarParticipants,
+                                            autoQueued: true) }
             return
         }
         guard canLaunchProcessing(for: recording) else {
@@ -1900,15 +1932,19 @@ final class RecordingManager {
             return
         }
         appSettings.routeAutomatically(to: profileID, for: recording.id)
+        let participantAdmission = calendarParticipantAdmission(
+            for: recording, requested: loadCalendarParticipants, profileID: profileID)
         let request = processingRequest(
             transcribe: transcribe,
             summary: summary,
             actionItems: actionItems,
             tags: tags,
+            loadCalendarParticipants: loadCalendarParticipants,
             titleWasUserProvided: recording.titleWasUserProvided,
             autoResume: true
         )
-        launchJob(recording: recording, persistedRequest: request, onPreparationFailure: { message in
+        launchJob(recording: recording, persistedRequest: request,
+                  participantAdmission: participantAdmission, onPreparationFailure: { message in
             self.postRecordingAction.finish(token: token, error: message)
         }) { job in
             // The processing screen now owns progress; capture may proceed independently.
@@ -1944,6 +1980,11 @@ final class RecordingManager {
             summary: request?.summary ?? appSettings.autoSummary,
             actionItems: request?.actionItems ?? appSettings.autoActionItems,
             tags: request?.tags ?? appSettings.autoTags,
+            loadCalendarParticipants: request?.loadCalendarParticipants ?? false,
+            calendarParticipantSelection: job.persistedRecord?.source.calendarParticipantSelection,
+            calendarParticipantConfiguration: job.persistedRecord?.source.calendarParticipantConfiguration,
+            calendarParticipantsNative: job.persistedRecord?.calendarParticipantEnrichment?.state == .completed
+                && job.persistedRecord?.source.calendarParticipantSelection == nil,
             titleWasUserProvided: request?.titleWasUserProvided ?? job.recording.titleWasUserProvided,
             autoQueued: false, profileID: job.persistedRecord?.source.profileID ?? appSettings.activeProfile.id)
         job.task?.cancel()
@@ -2150,6 +2191,7 @@ final class RecordingManager {
             summary: appSettings.autoSummary && appSettings.autoTranscribe,
             actionItems: appSettings.autoActionItems && appSettings.autoTranscribe,
             tags: appSettings.autoTags && appSettings.autoTranscribe,
+            loadCalendarParticipants: appSettings.effectiveAutoLoadCalendarParticipants,
             titleWasUserProvided: recording.titleWasUserProvided,
             autoResume: true
         )
@@ -2226,13 +2268,15 @@ final class RecordingManager {
         summary: Bool,
         actionItems: Bool,
         tags: Bool,
+        loadCalendarParticipants: Bool = false,
         autoQueued: Bool = false
     ) async {
         cancelPostRecordingAutomation()
         guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id, action: .queue) else { return }
         await queueForLater(recording: recording, token: token, transcribe: transcribe,
-            summary: summary, actionItems: actionItems, tags: tags, autoQueued: autoQueued)
+            summary: summary, actionItems: actionItems, tags: tags,
+            loadCalendarParticipants: loadCalendarParticipants, autoQueued: autoQueued)
     }
 
     private func finalizePostRecording(_ recording: Recording, token: UUID) async throws {
@@ -2244,13 +2288,15 @@ final class RecordingManager {
 
     private func queueForLater(
         recording: Recording, token: UUID, transcribe: Bool, summary: Bool,
-        actionItems: Bool, tags: Bool, autoQueued: Bool
+        actionItems: Bool, tags: Bool, loadCalendarParticipants: Bool, autoQueued: Bool
     ) async {
         defer { postRecordingAction.finish(token: token) }
         // Finalization suspends; another worker can finish and release its route
         // before the marker is written. Retain the choice made at invocation.
         let profileID = recording.profileSelection.retainedManualChoice(savedManualID: appSettings.activeProfileId)
             ?? recording.profileSelection.appliedID ?? appSettings.activeProfile.id
+        let participantAdmission = calendarParticipantAdmission(
+            for: recording, requested: loadCalendarParticipants, profileID: profileID)
         do {
             try await finalizePostRecording(recording, token: token)
         } catch {
@@ -2265,6 +2311,10 @@ final class RecordingManager {
             summary: summary && transcribe,
             actionItems: actionItems && transcribe,
             tags: tags && transcribe,
+            loadCalendarParticipants: loadCalendarParticipants,
+            calendarParticipantSelection: participantAdmission.selection,
+            calendarParticipantConfiguration: participantAdmission.configuration,
+            calendarParticipantsNative: participantAdmission.isNative,
             titleWasUserProvided: recording.titleWasUserProvided,
             autoQueued: autoQueued,
             profileID: profileID

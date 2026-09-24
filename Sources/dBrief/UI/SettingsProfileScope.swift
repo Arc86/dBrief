@@ -8,7 +8,7 @@ struct SettingsProfileScope {
         case language, vocabulary, transcriptionEngine, transcriptionService
         case aiEnabled, aiEngine, aiProvider, analysisEffort, calendarEffort
         case summaryPrompt, actionsPrompt, tagsPrompt
-        case transcriptionTask, summaryTask, actionsTask, tagsTask
+        case transcriptionTask, summaryTask, actionsTask, tagsTask, calendarParticipantsTask
         case recordingFolder, transcriptFolder, obsidianVault, obsidianFolder
         var id: String { rawValue }
 
@@ -30,6 +30,7 @@ struct SettingsProfileScope {
             case .summaryTask: \.autoSummary
             case .actionsTask: \.autoActionItems
             case .tagsTask: \.autoTags
+            case .calendarParticipantsTask: \.autoLoadCalendarParticipants
             case .recordingFolder: \.recordingFolderPath
             case .transcriptFolder: \.transcriptionFolderPath
             case .obsidianVault: \.obsidianVaultPath
@@ -138,6 +139,8 @@ struct SettingsProfileScope {
         toggle(.summaryTask, "Summary task", settings.autoSummary, overrides.autoSummary)
         toggle(.actionsTask, "Action items task", settings.autoActionItems, overrides.autoActionItems)
         toggle(.tagsTask, "Tags task", settings.autoTags, overrides.autoTags)
+        toggle(.calendarParticipantsTask, "Calendar attendees", settings.autoLoadCalendarParticipants,
+               overrides.autoLoadCalendarParticipants)
         destination(.recordingFolder, "Recording folder", settings.recordingFolderURL, overrides.recordingFolderPath)
         destination(.transcriptFolder, "Transcript folder", settings.transcriptionFolderURL, overrides.transcriptionFolderPath)
 

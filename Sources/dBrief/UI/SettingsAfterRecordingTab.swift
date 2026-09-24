@@ -14,12 +14,14 @@ struct SettingsAfterRecordingTab: View {
                 Toggle("Generate summary", isOn: $settings.autoSummary)
                 Toggle("Extract action items", isOn: $settings.autoActionItems)
                 Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
+                Toggle("Load calendar attendees during processing", isOn: $settings.autoLoadCalendarParticipants)
             } header: {
                 SettingsSearchHeading("Task Defaults", section: .afterRecordingTasks)
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("These shared app defaults select the tasks offered after recording. Profiles can override each task in Profiles. The profile’s automation policy controls when those tasks start.")
                     Text("Summary, action items, and tags require AI analysis. Transcription remains available when AI analysis is off, and saved task choices are kept.")
+                    Text("Calendar attendees can load during processing even when transcription and AI analysis are off.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

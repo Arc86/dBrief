@@ -56,6 +56,20 @@ import Testing
         #expect(state.isPending)
     }
 
+    @Test("Calendar participant intent is independent of transcription and AI")
+    func calendarParticipantOnlyAutomation() {
+        var profile = MeetingProfile(name: "Calendar-only")
+        profile.postRecordingPolicy = .process
+        let request = AutomaticPostRecordingRequest(recordingID: UUID(), profile: profile,
+            transcribe: false, summary: true, actionItems: true, tags: true,
+            loadCalendarParticipants: true)
+        #expect(!request.transcribe && !request.summary && !request.actionItems && !request.tags)
+        #expect(request.loadCalendarParticipants)
+        let automation = PostRecordingAutomation()
+        automation.schedule(request)
+        #expect(automation.isPending)
+    }
+
     private func request() -> AutomaticPostRecordingRequest {
         var profile = MeetingProfile(name: "Auto")
         profile.postRecordingPolicy = .process

@@ -7,6 +7,34 @@ import os
 /// never delayed by calendar work; all CLI calls run inside owned tasks.
 extension RecordingManager {
 
+    /// Captured synchronously at admission, before queue finalization or job
+    /// journal creation suspends. A missing legacy connector identity is left
+    /// nil so processing records a skip instead of guessing a meeting.
+    func calendarParticipantAdmission(for recording: Recording, requested: Bool,
+                                      profileID: UUID) -> CalendarParticipantAdmission {
+        guard requested else { return .none }
+        if appSettings.effectiveCalendarSource != .claudeCLI {
+            return CalendarParticipantAdmission(selection: nil, configuration: nil,
+                isNative: recording.calendarEvent != nil
+                    && appSettings.effectiveCalendarSource != .disabled)
+        }
+        guard let profile = appSettings.profiles.first(where: { $0.id == profileID }) else { return .none }
+        let config = appSettings.resolvedCalendarCLIConfig(for: profile)
+        guard config.isConfigured, config.attendeePolicy == .onDemand else { return .none }
+        let scope = CalendarCLIScope(config: config)
+        let configuration = CalendarParticipantRequestConfiguration(config: config, scope: scope)
+        guard let event = recording.calendarEvent,
+              let entry = calendarCLIEntryByEventID[event.id],
+              !entry.key.resourceURI.isEmpty,
+              entry.key.mailbox == scope.mailbox,
+              entry.key.calendar == scope.calendar else {
+            return CalendarParticipantAdmission(selection: nil, configuration: configuration)
+        }
+        return CalendarParticipantAdmission(
+            selection: CalendarParticipantSelection(scope: scope, entry: entry),
+            configuration: configuration)
+    }
+
     /// Refreshes the selected recording's day list for the post-recording picker.
     /// A cached list remains visible while the connector runs. A selected event
     /// is retained for review if it disappears from a complete new snapshot.

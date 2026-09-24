@@ -620,10 +620,16 @@ struct SettingsProfilesTab: View {
                 overrideRow("Auto tags", \.autoTags, defaultValue: appSettings.autoTags) {
                     boolToggle("Generate tags", \.autoTags, fallback: appSettings.autoTags)
                 }
+                overrideRow("Calendar attendees", \.autoLoadCalendarParticipants,
+                            defaultValue: appSettings.autoLoadCalendarParticipants) {
+                    boolToggle("Load calendar attendees during processing", \.autoLoadCalendarParticipants,
+                               fallback: appSettings.autoLoadCalendarParticipants)
+                }
             } label: {
                 overrideGroupLabel("Task Defaults", section: .profileTasks, keyPaths: [
                     isSet(\.autoTranscribe), isSet(\.autoSummary),
-                    isSet(\.autoActionItems), isSet(\.autoTags)
+                    isSet(\.autoActionItems), isSet(\.autoTags),
+                    isSet(\.autoLoadCalendarParticipants)
                 ])
             }
         }

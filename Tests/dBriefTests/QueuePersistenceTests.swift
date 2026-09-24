@@ -4,6 +4,28 @@ import Testing
 
 @Suite("Serialized queue persistence")
 struct QueuePersistenceTests {
+    @Test("Queue marker preserves participant intent and exact occurrence")
+    func participantIntentSurvivesMarker() async throws {
+        let directory = try root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let audio = directory.appendingPathComponent("meeting.m4a")
+        try Data("audio".utf8).write(to: audio)
+        let selection = CalendarParticipantSelection(scope: CalendarCLICacheTests.scope,
+            entry: CalendarCLICacheTests.entry())
+        let config = CalendarCLIConfig.unnormalized(timeoutSeconds: 30,
+            mailboxEmail: CalendarCLICacheTests.scope.mailbox)
+        let safe = CalendarParticipantRequestConfiguration(config: config, scope: selection.scope)
+        let item = QueueItem(transcribe: false, summary: false, actionItems: false,
+            tags: false, loadCalendarParticipants: true,
+            calendarParticipantSelection: selection, calendarParticipantConfiguration: safe)
+        let store = QueueScheduleStore(url: directory.appendingPathComponent("schedule.json"))
+        try await store.saveItem(item, for: audio)
+        let loaded = try QueueItem.load(from: directory.appendingPathComponent("meeting.queue.json"))
+        #expect(loaded.loadCalendarParticipants)
+        #expect(loaded.calendarParticipantSelection?.entry.key == selection.entry.key)
+        #expect(loaded.calendarParticipantSelection?.scope == selection.scope)
+        #expect(loaded.calendarParticipantConfiguration == safe)
+    }
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

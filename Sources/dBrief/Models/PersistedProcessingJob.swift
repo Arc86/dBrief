@@ -45,10 +45,34 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         let summary: Bool
         let actionItems: Bool
         let tags: Bool
+        let loadCalendarParticipants: Bool
         let titleWasUserProvided: Bool
         /// Interrupted running jobs resume automatically. Explicitly deferred or
         /// cancelled work remains queued for user action.
         let autoResume: Bool
+
+        init(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
+             loadCalendarParticipants: Bool = false, titleWasUserProvided: Bool,
+             autoResume: Bool) {
+            self.transcribe = transcribe
+            self.summary = summary
+            self.actionItems = actionItems
+            self.tags = tags
+            self.loadCalendarParticipants = loadCalendarParticipants
+            self.titleWasUserProvided = titleWasUserProvided
+            self.autoResume = autoResume
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(transcribe: try c.decode(Bool.self, forKey: .transcribe),
+                summary: try c.decode(Bool.self, forKey: .summary),
+                actionItems: try c.decode(Bool.self, forKey: .actionItems),
+                tags: try c.decode(Bool.self, forKey: .tags),
+                loadCalendarParticipants: try c.decodeIfPresent(Bool.self, forKey: .loadCalendarParticipants) ?? false,
+                titleWasUserProvided: try c.decode(Bool.self, forKey: .titleWasUserProvided),
+                autoResume: try c.decode(Bool.self, forKey: .autoResume))
+        }
     }
 
     struct Source: Codable, Equatable, Sendable {
@@ -59,6 +83,8 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
         var associatedApp: String?
         var participants: [String]
         var calendarEvent: CalendarEvent?
+        var calendarParticipantSelection: CalendarParticipantSelection? = nil
+        var calendarParticipantConfiguration: CalendarParticipantRequestConfiguration? = nil
         var echoSuppressionApplied: Bool
 
         var recoveryManifestPath: String?
@@ -89,6 +115,9 @@ struct PersistedProcessingJob: Codable, Equatable, Sendable, Identifiable {
     /// independent of the AI-enabled setting at the time recovery runs.
     var analysisOutputSaved: Bool?
     var markdownExport: MarkdownExportPlan?
+    /// Independent of the linear processing checkpoint: roster enrichment may
+    /// overlap transcription and is committed when its join completes.
+    var calendarParticipantEnrichment: CalendarParticipantEnrichmentRecord? = nil
     /// Explicit removal from queue/recovery is not a deletion of the recording.
     var dismissedFromQueue: Bool? = nil
 

@@ -1,0 +1,50 @@
+import Foundation
+import Testing
+@testable import dBrief
+
+struct CalendarParticipantEnrichmentTests {
+    @Test("Selection roundtrip preserves scope and occurrence identity")
+    func selectionRoundtripUsesStableOccurrence() throws {
+        let value = CalendarParticipantSelection(scope: CalendarCLICacheTests.scope,
+            entry: CalendarCLICacheTests.entry())
+        let decoded = try JSONDecoder().decode(CalendarParticipantSelection.self,
+            from: JSONEncoder().encode(value))
+        #expect(decoded.entry.key == value.entry.key)
+        #expect(decoded.scope == value.scope)
+    }
+
+    @Test("Queue and job requests default legacy participant intent off")
+    func legacyIntentDefaultsOff() throws {
+        let legacyQueue = Data(#"{"transcribe":false,"summary":false,"actionItems":false,"tags":false}"#.utf8)
+        let queue = try JSONDecoder().decode(QueueItem.self, from: legacyQueue)
+        #expect(!queue.loadCalendarParticipants)
+        let legacyRequest = Data(#"{"transcribe":false,"summary":false,"actionItems":false,"tags":false,"titleWasUserProvided":false,"autoResume":true}"#.utf8)
+        let request = try JSONDecoder().decode(PersistedProcessingJob.Request.self, from: legacyRequest)
+        #expect(!request.loadCalendarParticipants)
+    }
+
+    @Test("Enabled and disabled queue intent survive serialization")
+    func queueIntentRoundtrip() throws {
+        for enabled in [false, true] {
+            let item = QueueItem(transcribe: false, summary: false, actionItems: false,
+                tags: false, loadCalendarParticipants: enabled)
+            let decoded = try JSONDecoder().decode(QueueItem.self, from: JSONEncoder().encode(item))
+            #expect(decoded.loadCalendarParticipants == enabled)
+        }
+    }
+
+    @Test("Durable request configuration contains a digest, not a custom command")
+    func durableConfigurationOmitsCommand() throws {
+        let secret = "custom-cli --credential=do-not-persist"
+        let config = CalendarCLIConfig.unnormalized(timeoutSeconds: 30,
+            mailboxEmail: "ada@example.com", command: secret)
+        let value = CalendarParticipantRequestConfiguration(config: config,
+            scope: CalendarCLICacheTests.scope)
+        let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+        #expect(!json.contains(secret))
+        #expect(!json.contains("do-not-persist"))
+        #expect(value.matches(config: config, scope: CalendarCLICacheTests.scope))
+        #expect(!value.matches(config: config.updating(command: "other-cli"),
+            scope: CalendarCLICacheTests.scope))
+    }
+}

@@ -24,6 +24,7 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var autoSummary: Bool?
     var autoActionItems: Bool?
     var autoTags: Bool?
+    var autoLoadCalendarParticipants: Bool?
     var recordingFolderPath: String?
     var transcriptionFolderPath: String?
     var obsidianVaultPath: String?
@@ -47,6 +48,7 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         autoSummary: Bool? = nil,
         autoActionItems: Bool? = nil,
         autoTags: Bool? = nil,
+        autoLoadCalendarParticipants: Bool? = nil,
         recordingFolderPath: String? = nil,
         transcriptionFolderPath: String? = nil,
         obsidianVaultPath: String? = nil,
@@ -68,6 +70,7 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         self.autoSummary = autoSummary
         self.autoActionItems = autoActionItems
         self.autoTags = autoTags
+        self.autoLoadCalendarParticipants = autoLoadCalendarParticipants
         self.recordingFolderPath = recordingFolderPath
         self.transcriptionFolderPath = transcriptionFolderPath
         self.obsidianVaultPath = obsidianVaultPath
@@ -98,6 +101,7 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         autoSummary = try c.decodeIfPresent(Bool.self, forKey: .autoSummary)
         autoActionItems = try c.decodeIfPresent(Bool.self, forKey: .autoActionItems)
         autoTags = try c.decodeIfPresent(Bool.self, forKey: .autoTags)
+        autoLoadCalendarParticipants = try c.decodeIfPresent(Bool.self, forKey: .autoLoadCalendarParticipants)
         recordingFolderPath = try c.decodeIfPresent(String.self, forKey: .recordingFolderPath)
         transcriptionFolderPath = try c.decodeIfPresent(String.self, forKey: .transcriptionFolderPath)
         obsidianVaultPath = try c.decodeIfPresent(String.self, forKey: .obsidianVaultPath)

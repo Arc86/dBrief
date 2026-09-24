@@ -4,6 +4,47 @@ import Testing
 
 @MainActor
 struct ProfileBehaviorTests {
+    @Test("Calendar participant default inherits, overrides, and resets")
+    func calendarParticipantInheritance() throws {
+        let previous = UserDefaults.standard.object(forKey: "autoLoadCalendarParticipants")
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: "autoLoadCalendarParticipants") }
+            else { UserDefaults.standard.removeObject(forKey: "autoLoadCalendarParticipants") }
+        }
+        try withCleanProfileDefaults {
+            let settings = AppSettings()
+            settings.autoLoadCalendarParticipants = false
+            let created = settings.createProfile(name: "Calendar participants")
+            let index = try #require(settings.profiles.firstIndex(where: { $0.id == created.id }))
+            #expect(!settings.resolvedAutoLoadCalendarParticipants(for: settings.profiles[index]))
+            settings.profiles[index].overrides.autoLoadCalendarParticipants = true
+            #expect(settings.resolvedAutoLoadCalendarParticipants(for: settings.profiles[index]))
+            let decoded = try JSONDecoder().decode(MeetingProfile.self,
+                from: JSONEncoder().encode(settings.profiles[index]))
+            #expect(decoded.overrides.autoLoadCalendarParticipants == true)
+            settings.profiles[index].overrides.autoLoadCalendarParticipants = nil
+            #expect(!settings.resolvedAutoLoadCalendarParticipants(for: settings.profiles[index]))
+        }
+    }
+
+    @Test("Editing a profile does not change accepted participant intent")
+    func acceptedParticipantIntentIsFrozen() throws {
+        try withCleanProfileDefaults {
+            let settings = AppSettings()
+            let created = settings.createProfile(name: "Frozen calendar")
+            let index = try #require(settings.profiles.firstIndex(where: { $0.id == created.id }))
+            settings.profiles[index].overrides.autoLoadCalendarParticipants = true
+            settings.profiles[index].overrides.calendarCLIReasoningEffort = .low
+            let accepted = AutomaticPostRecordingRequest(recordingID: UUID(),
+                profile: settings.profiles[index], transcribe: false, summary: false,
+                actionItems: false, tags: false, loadCalendarParticipants: true)
+            settings.profiles[index].overrides.autoLoadCalendarParticipants = false
+            settings.profiles[index].overrides.calendarCLIReasoningEffort = .high
+            #expect(accepted.loadCalendarParticipants)
+            #expect(accepted.profile.overrides.autoLoadCalendarParticipants == true)
+            #expect(accepted.profile.overrides.calendarCLIReasoningEffort == .low)
+        }
+    }
     private func withCleanProfileDefaults(_ body: () throws -> Void) throws {
         UserDefaults.standard.removeObject(forKey: "profiles")
         UserDefaults.standard.removeObject(forKey: "activeProfileId")

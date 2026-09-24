@@ -22,9 +22,11 @@ struct AutomaticPostRecordingRequest: Equatable, Sendable {
     let summary: Bool
     let actionItems: Bool
     let tags: Bool
+    let loadCalendarParticipants: Bool
     let configuration: AutomaticPostRecordingConfiguration?
 
     init(recordingID: UUID, profile: MeetingProfile, transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool,
+         loadCalendarParticipants: Bool = false,
          configuration: AutomaticPostRecordingConfiguration? = nil) {
         self.recordingID = recordingID
         self.profile = profile
@@ -32,6 +34,7 @@ struct AutomaticPostRecordingRequest: Equatable, Sendable {
         self.summary = summary && transcribe
         self.actionItems = actionItems && transcribe
         self.tags = tags && transcribe
+        self.loadCalendarParticipants = loadCalendarParticipants
         self.configuration = configuration
     }
 }
@@ -70,7 +73,8 @@ struct AutomaticPostRecordingConfiguration: Equatable, Sendable {
         ]
         toggles = [settings.effectiveAIProcessingEnabled, settings.diarizationEnabled,
                    settings.effectiveRemoveFillerWords, settings.remoteChunkingEnabled,
-                   settings.obsidianEnabled, settings.obsidianIncludeTranscript]
+                   settings.obsidianEnabled, settings.obsidianIncludeTranscript,
+                   settings.effectiveAutoLoadCalendarParticipants]
     }
 }
 

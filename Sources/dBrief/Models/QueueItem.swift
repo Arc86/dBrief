@@ -7,6 +7,10 @@ struct QueueItem: Codable, Sendable, Identifiable {
     var summary: Bool
     var actionItems: Bool
     var tags: Bool
+    var loadCalendarParticipants: Bool = false
+    var calendarParticipantSelection: CalendarParticipantSelection? = nil
+    var calendarParticipantConfiguration: CalendarParticipantRequestConfiguration? = nil
+    var calendarParticipantsNative: Bool = false
     /// Preserves the user's custom-title choice across the queue so AI title generation
     /// stays suppressed when the item is processed later. Defaults false for old queue files.
     var titleWasUserProvided: Bool = false
@@ -26,6 +30,10 @@ struct QueueItem: Codable, Sendable, Identifiable {
         summary: Bool,
         actionItems: Bool,
         tags: Bool,
+        loadCalendarParticipants: Bool = false,
+        calendarParticipantSelection: CalendarParticipantSelection? = nil,
+        calendarParticipantConfiguration: CalendarParticipantRequestConfiguration? = nil,
+        calendarParticipantsNative: Bool = false,
         titleWasUserProvided: Bool = false,
         autoQueued: Bool = false,
         profileID: UUID? = nil
@@ -35,6 +43,10 @@ struct QueueItem: Codable, Sendable, Identifiable {
         self.summary = summary
         self.actionItems = actionItems
         self.tags = tags
+        self.loadCalendarParticipants = loadCalendarParticipants
+        self.calendarParticipantSelection = calendarParticipantSelection
+        self.calendarParticipantConfiguration = calendarParticipantConfiguration
+        self.calendarParticipantsNative = calendarParticipantsNative
         self.titleWasUserProvided = titleWasUserProvided
         self.autoQueued = autoQueued
         self.profileID = profileID
@@ -53,6 +65,10 @@ struct QueueItem: Codable, Sendable, Identifiable {
         summary = try c.decode(Bool.self, forKey: .summary)
         actionItems = try c.decode(Bool.self, forKey: .actionItems)
         tags = try c.decode(Bool.self, forKey: .tags)
+        loadCalendarParticipants = try c.decodeIfPresent(Bool.self, forKey: .loadCalendarParticipants) ?? false
+        calendarParticipantSelection = try c.decodeIfPresent(CalendarParticipantSelection.self, forKey: .calendarParticipantSelection)
+        calendarParticipantConfiguration = try c.decodeIfPresent(CalendarParticipantRequestConfiguration.self, forKey: .calendarParticipantConfiguration)
+        calendarParticipantsNative = try c.decodeIfPresent(Bool.self, forKey: .calendarParticipantsNative) ?? false
         titleWasUserProvided = try c.decodeIfPresent(Bool.self, forKey: .titleWasUserProvided) ?? false
         autoQueued = try c.decodeIfPresent(Bool.self, forKey: .autoQueued) ?? false
         profileID = try c.decodeIfPresent(UUID.self, forKey: .profileID)
