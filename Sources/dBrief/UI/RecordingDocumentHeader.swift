@@ -29,10 +29,13 @@ struct RecordingDocumentHeader: View {
     let title: String
     let sentiment: String?
     let speakers: [HeaderSpeaker]
+    let meetingPeople: [String]
+    let onAssignSpeaker: ((String, String) -> Void)?
     let date: Date
     let metrics: [ViewerMetric]
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showingMeetingPeople = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -53,7 +56,38 @@ struct RecordingDocumentHeader: View {
             // Row 2 — avatars + date  ·····  metrics
             HStack(alignment: .center, spacing: 12) {
                 if !speakers.isEmpty {
-                    AvatarStack(speakers: speakers)
+                    AvatarStack(speakers: speakers, meetingPeople: meetingPeople,
+                                onAssignSpeaker: onAssignSpeaker)
+                }
+                if !meetingPeople.isEmpty {
+                    Button {
+                        showingMeetingPeople = true
+                    } label: {
+                        Label("People (\(meetingPeople.count))", systemImage: "person.2")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showingMeetingPeople) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("People in this meeting")
+                                .font(.headline)
+                            Text("Invitees are not assigned to transcript speakers until matched or confirmed.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(meetingPeople, id: \.self) { name in
+                                        Text(name)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: 280)
+                        }
+                        .padding(16)
+                        .frame(width: 300)
+                    }
+                    .accessibilityLabel("Show \(meetingPeople.count) people in this meeting")
                 }
                 Text(date, format: .dateTime.weekday().day().month().hour().minute())
                     .font(.callout)
@@ -94,6 +128,8 @@ struct RecordingDocumentHeader: View {
 /// Overlapping circular avatars for the header. Shows up to four, then a "+N" chip.
 private struct AvatarStack: View {
     let speakers: [HeaderSpeaker]
+    let meetingPeople: [String]
+    let onAssignSpeaker: ((String, String) -> Void)?
 
     private let maxShown = 4
     private let size: CGFloat = 26
@@ -103,13 +139,19 @@ private struct AvatarStack: View {
         let overflow = speakers.count - shown.count
         HStack(spacing: -8) {
             ForEach(shown) { speaker in
-                SpeakerAvatar(
-                    speakerId: speaker.id,
-                    name: speaker.name,
-                    size: size,
-                    overrideColor: speaker.isMe ? .accentColor : nil
-                )
-                .overlay(Circle().stroke(.background, lineWidth: 1.5))
+                if let onAssignSpeaker, !meetingPeople.isEmpty {
+                    Menu {
+                        ForEach(meetingPeople, id: \.self) { name in
+                            Button(name) { onAssignSpeaker(speaker.id, name) }
+                        }
+                    } label: {
+                        avatar(for: speaker)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Name this speaker from the meeting people")
+                } else {
+                    avatar(for: speaker)
+                }
             }
             if overflow > 0 {
                 Text("+\(overflow)")
@@ -122,6 +164,16 @@ private struct AvatarStack: View {
             }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func avatar(for speaker: HeaderSpeaker) -> some View {
+        SpeakerAvatar(
+            speakerId: speaker.id,
+            name: speaker.name,
+            size: size,
+            overrideColor: speaker.isMe ? .accentColor : nil
+        )
+        .overlay(Circle().stroke(.background, lineWidth: 1.5))
     }
 }
 

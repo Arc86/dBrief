@@ -329,6 +329,10 @@ struct TranscriptDetailView: View {
             title: recording.generatedTitle ?? recording.meetingTitleDraft,
             sentiment: insights?.sentiment,
             speakers: headerSpeakers,
+            meetingPeople: PersonName.displayList(recording.participants + (recording.calendarEvent?.attendeeNames ?? [])),
+            onAssignSpeaker: isReprocessing ? nil : { speakerID, name in
+                renameSpeaker(speakerId: speakerID, to: name)
+            },
             date: recording.date,
             metrics: headerMetrics
         )
@@ -1227,9 +1231,14 @@ struct TranscriptDetailView: View {
 
     /// Rename the whole speaker (swap on name collision — see `SpeakerReassignment.rename`).
     private func renameSpeaker(turn: SpeakerTurn, to newName: String) {
+        guard let id = turn.speakerId else { return }
+        renameSpeaker(speakerId: id, to: newName)
+    }
+
+    private func renameSpeaker(speakerId id: String, to newName: String) {
         guard !isReprocessing else { return }
         customRenameTurn = nil
-        guard var transcript = richTranscript, let id = turn.speakerId else { return }
+        guard var transcript = richTranscript else { return }
         // Link to a voice-library person when the chosen name is already known.
         let knownId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
         transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: knownId)
