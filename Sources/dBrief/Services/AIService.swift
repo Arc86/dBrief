@@ -26,7 +26,7 @@ actor AIService {
 
     func extractActionItems(transcription: String, endpoint: Endpoint, systemPrompt: String) async throws -> [String] {
         let response = try await chatCompletion(
-            systemPrompt: systemPrompt,
+            systemPrompt: systemPrompt + "\nEach concrete action item must begin with [Owner] (or [Owner 1/Owner 2] for shared work). Use [Unassigned] only when its owner is unknown. Keep the configured no-action-items response unchanged.",
             userMessage: "Extract action items from this transcription:\n\n\(transcription)",
             endpoint: endpoint,
             stage: .actionItems
