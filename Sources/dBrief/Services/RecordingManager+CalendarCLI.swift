@@ -39,6 +39,7 @@ extension RecordingManager {
             }
             recording.calendarCandidates = candidates
             if selectionMissing, force, read.outcome == .refreshed { return .selectionMissing }
+            if read.persistence == .failed { return .saveFailed }
             switch read.outcome {
             case .manualOnly: return .manualOnly
             case .partial: return .partial
@@ -318,7 +319,7 @@ enum CalendarCLIConnectionOutcome: Equatable, Sendable {
 }
 
 enum CalendarCLIPickerOutcome: Equatable, Sendable {
-    case complete, manualOnly, partial, blocked, failed, unconfigured, selectionMissing
+    case complete, manualOnly, partial, blocked, failed, saveFailed, unconfigured, selectionMissing
 }
 
 /// Bounded outcomes for the attendee action; no meeting content.

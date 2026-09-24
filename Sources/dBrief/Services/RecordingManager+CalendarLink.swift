@@ -3,11 +3,22 @@ import Foundation
 extension RecordingManager {
     /// Always query the recording's original day, including when opened from history.
     func calendarEventsForLinking(_ recording: Recording) async throws -> [CalendarEvent] {
-        let audio = recording.finalizedAudioURL ?? recording.fileURL
-        let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
-        let start = metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date
-        let end = start.addingTimeInterval(metadata?.durationSeconds ?? recording.duration)
+        try await refreshCalendarMeetingsForLinking(recording, force: false).events
+    }
+
+    func cachedCalendarMeetingsForLinking(_ recording: Recording) async throws -> CalendarLinkMeetingList {
+        try await calendarMeetingsForLinking(recording, refresh: false, force: false)
+    }
+
+    func refreshCalendarMeetingsForLinking(_ recording: Recording, force: Bool) async throws -> CalendarLinkMeetingList {
+        try await calendarMeetingsForLinking(recording, refresh: true, force: force)
+    }
+
+    private func calendarMeetingsForLinking(_ recording: Recording, refresh: Bool,
+                                            force: Bool) async throws -> CalendarLinkMeetingList {
+        let (start, end) = try await calendarLinkRecordingSpan(recording)
         let events: [CalendarEvent]
+        var cliDays: [CalendarCLIListRead] = []
         switch appSettings.effectiveCalendarSource {
         case .iCal:
             guard calendarService.authorizationStatus() == .fullAccess else {
@@ -19,17 +30,53 @@ extension RecordingManager {
             events = await outlookCalendarService.findEvents(recordingStart: start, recordingEnd: end,
                 includeFullRecordingDay: true)
         case .claudeCLI:
-            // Historical linking fetches the original day's metadata only;
-            // rosters load later through the explicit attendee action.
-            events = await calendarCLIEvents(recordingStart: start, recordingEnd: end)
+            let config = appSettings.effectiveCalendarCLIConfig
+            guard config.isConfigured else { throw CalendarLinkError.calendarAccess }
+            let matchWindow = TimeInterval(appSettings.calendarMatchWindowMinutes * 60)
+            let windows = Self.calendarCLIDayWindows(from: start, to: end, matchWindow: matchWindow)
+            for window in windows {
+                let read: CalendarCLIListRead
+                if refresh {
+                    read = try await calendarCLIService.refreshSnapshot(window: window,
+                        config: config, force: force)
+                } else {
+                    let cached = await calendarCLIService.cachedSnapshot(window: window, config: config)
+                    read = config.listFreshnessSeconds == 0
+                        ? CalendarCLIListRead(window: cached.window, entries: cached.entries,
+                            hasCompleteSnapshot: cached.hasCompleteSnapshot,
+                            lastSuccessfulRefresh: cached.lastSuccessfulRefresh,
+                            lastAttempt: cached.lastAttempt, outcome: .manualOnly,
+                            persistence: cached.persistence)
+                        : cached
+                }
+                cliDays.append(read)
+            }
+            var unique: [CalendarEvent] = []
+            var seen = Set<String>()
+            for day in cliDays {
+                for entry in day.entries where seen.insert(entry.event.id).inserted {
+                    unique.append(entry.event)
+                }
+            }
+            events = unique
         case .disabled:
             throw CalendarLinkError.calendarAccess
         }
         try Task.checkCancellation()
         let matches = CalendarMatcher.rankedMatches(from: events, recordingStart: start, recordingEnd: end,
             fallbackWindow: TimeInterval(appSettings.calendarMatchWindowMinutes * 60))
-        return CalendarMatcher.displayCandidates(from: events, automaticMatches: matches,
+        let display = CalendarMatcher.displayCandidates(from: events, automaticMatches: matches,
             recordingStart: start, includeFullRecordingDay: true)
+        return CalendarLinkMeetingList(recordingStart: start, recordingEnd: end,
+                                       events: display, cliDays: cliDays)
+    }
+
+    private func calendarLinkRecordingSpan(_ recording: Recording) async throws -> (Date, Date) {
+        let audio = recording.finalizedAudioURL ?? recording.fileURL
+        let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
+        let start = metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date
+        let end = start.addingTimeInterval(metadata?.durationSeconds ?? recording.duration)
+        return (start, end)
     }
 
     func linkCalendar(_ event: CalendarEvent, to recording: Recording,

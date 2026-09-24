@@ -461,6 +461,87 @@ struct CalendarCLILifecycleTests {
 
     // MARK: - Historical linking
 
+    @Test("Manual-only transcript linking stays empty until Refresh this date is pressed")
+    func manualOnlyHistoricalLinking() async throws {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        harness.settings.calendarCLIConfig = .unnormalized(timeoutSeconds: 30,
+            mailboxEmail: "ada@example.com", listFreshnessSeconds: 0)
+        let recording = harness.recording(start: harness.clock.now.addingTimeInterval(-86_400))
+        let cached = try await harness.manager.cachedCalendarMeetingsForLinking(recording)
+        #expect(cached.events.isEmpty)
+        #expect(cached.cliDays.first?.outcome == .manualOnly)
+        #expect(!cached.cliDays.first!.hasCompleteSnapshot)
+        #expect(harness.transport.listCalls == 0)
+        _ = await harness.manager.refreshCalendarCLINow()
+        #expect(harness.transport.listCalls == 1)
+        let stillMissing = try await harness.manager.cachedCalendarMeetingsForLinking(recording)
+        #expect(!stillMissing.cliDays.first!.hasCompleteSnapshot)
+        let refreshed = try await harness.manager.refreshCalendarMeetingsForLinking(recording, force: true)
+        #expect(refreshed.cliDays.first?.outcome == .refreshed)
+        #expect(refreshed.cliDays.first?.hasCompleteSnapshot == true)
+        #expect(harness.transport.listCalls == 2)
+    }
+
+    @Test("A nonempty stale original-day snapshot refreshes on opening")
+    func staleLinkSnapshotRefreshes() async throws {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let recording = harness.recording(start: harness.clock.now.addingTimeInterval(3600))
+        let window = try #require(RecordingManager.calendarCLIDayWindows(
+            from: recording.date, to: recording.date.addingTimeInterval(recording.duration),
+            matchWindow: TimeInterval(harness.settings.calendarMatchWindowMinutes * 60)).first)
+        let scope = CalendarCLIScope(config: harness.settings.effectiveCalendarCLIConfig)
+        let old = CalendarCLICacheTests.entry(start: recording.date)
+        let store = CalendarCLICacheStore(directory: harness.storeDirectory)
+        store.storeList(.init(scope: scope, window: window, entries: [old],
+                              lastSuccessfulRefresh: harness.clock.now.addingTimeInterval(-7200),
+                              lastAttempt: harness.clock.now.addingTimeInterval(-7200)))
+        let cached = try await harness.manager.cachedCalendarMeetingsForLinking(recording)
+        #expect(cached.events.first?.title == "Weekly Sync")
+        let refreshed = try await harness.manager.refreshCalendarMeetingsForLinking(recording, force: false)
+        #expect(refreshed.cliDays.first?.outcome == .refreshed)
+        #expect(harness.transport.listCalls == 1)
+    }
+
+    @Test("A complete empty historical day fetched after day-end does not refetch")
+    func historicalCompleteEmptyDoesNotRefetch() async throws {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let recording = harness.recording(start: harness.clock.now.addingTimeInterval(-86_400))
+        let window = try #require(RecordingManager.calendarCLIDayWindows(
+            from: recording.date, to: recording.date.addingTimeInterval(recording.duration),
+            matchWindow: TimeInterval(harness.settings.calendarMatchWindowMinutes * 60)).first)
+        let afterDay = window.end.addingTimeInterval(60)
+        let store = CalendarCLICacheStore(directory: harness.storeDirectory)
+        store.storeList(.init(scope: CalendarCLIScope(config: harness.settings.effectiveCalendarCLIConfig),
+                              window: window, entries: [], lastSuccessfulRefresh: afterDay,
+                              lastAttempt: afterDay))
+        let list = try await harness.manager.refreshCalendarMeetingsForLinking(recording, force: false)
+        #expect(list.cliDays.first?.outcome == .cached)
+        #expect(list.emptyMessage == "No meetings found for this date.")
+        #expect(harness.transport.listCalls == 0)
+    }
+
+    @Test("Transcript linking uses metadata date instead of recording construction date")
+    func linkingUsesMetadataDate() async throws {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let audio = harness.storeDirectory.appendingPathComponent("original.m4a")
+        let metadataDate = harness.clock.now.addingTimeInterval(-86_400)
+        let payload = RecordingMetadataPayload(dateISO8601: ISO8601DateFormatter().string(from: metadataDate),
+            durationSeconds: 120, meetingTitle: "meeting", masterFileName: "original.m4a",
+            segmentFileNames: [], warnings: [])
+        try JSONEncoder().encode(payload).write(to: audio.deletingPathExtension().appendingPathExtension("json"))
+        let recording = Recording(date: harness.clock.now, fileURL: audio,
+                                  duration: 30, meetingTitleDraft: "meeting")
+        let list = try await harness.manager.cachedCalendarMeetingsForLinking(recording)
+        #expect(list.recordingStart == metadataDate)
+        #expect(list.recordingEnd == metadataDate.addingTimeInterval(120))
+        #expect(list.cliDays.first?.window.start != RecordingManager.calendarCLIDayWindows(
+            from: recording.date, to: recording.date, matchWindow: 0).first?.start)
+    }
+
     @MainActor
     @Test("Historical linking fetches the original day metadata only")
     func historicalLinkingFetchesOriginalDay() async {

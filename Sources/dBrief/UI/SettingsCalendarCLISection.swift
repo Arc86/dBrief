@@ -85,7 +85,7 @@ struct SettingsCalendarCLISection: View {
                         if refreshState == .running {
                             Label("Refreshing…", systemImage: "arrow.clockwise")
                         } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
+                            Label("Refresh today", systemImage: "arrow.clockwise")
                         }
                     }
                     .buttonStyle(.borderedProminent)

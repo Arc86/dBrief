@@ -7,16 +7,26 @@ struct CalendarLinkSheet: View {
     @Environment(RecordingManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
     @State private var events: [CalendarEvent] = []
-    @State private var selectedID: String?
+    @State private var meetingList: CalendarLinkMeetingList?
+    @State private var selectedID: CalendarLinkSelectionID?
+    @State private var retainedSelection: (CalendarLinkSelectionID, CalendarEvent)?
     @State private var updateTitle = false
     @State private var updateParticipants = false
     @State private var loading = true
+    @State private var refreshing = false
+    @State private var refreshTask: Task<Void, Never>?
+    @State private var requestID = UUID()
     @State private var saving = false
     @State private var saved = false
     @State private var error: String?
     @State private var showAnalysis = false
 
-    private var selected: CalendarEvent? { events.first { $0.id == selectedID } }
+    private var selected: CalendarEvent? { events.first { selectionID(for: $0) == selectedID } }
+
+    private func selectionID(for event: CalendarEvent) -> CalendarLinkSelectionID {
+        if let retainedSelection, retainedSelection.1.id == event.id { return retainedSelection.0 }
+        return meetingList?.selectionID(for: event) ?? .event(event.id)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -37,41 +47,57 @@ struct CalendarLinkSheet: View {
                     }
                 }
             } else {
-                Text("Meetings from the recording’s original day, with likely matches first.")
+                Text(meetingList.map {
+                    "Meetings from \($0.recordingStart.formatted(date: .abbreviated, time: .omitted)), with likely matches first."
+                } ?? "Meetings from the recording’s original day, with likely matches first.")
                     .foregroundStyle(.secondary)
-                if loading {
+                if loading && meetingList == nil {
                     ProgressView("Loading meetings…")
-                } else if events.isEmpty {
-                    Text("No meetings were found. Check the selected calendars and calendar access in Settings, then try again.")
-                    Button("Try Again") { Task { await load() } }
                 } else {
-                    Picker("Meeting", selection: $selectedID) {
-                        Text("Choose a meeting").tag(String?.none)
-                        ForEach(events) { event in
-                            Text(label(event)).tag(Optional(event.id))
-                        }
+                    if let status = meetingList?.statusMessage {
+                        Label(status, systemImage: "calendar.badge.clock")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
-                    if let event = selected {
-                        if !event.attendeeNames.isEmpty {
-                            Text(event.attendeeNames.joined(separator: ", ")).font(.callout)
+                    if refreshing { ProgressView("Refreshing this date…").controlSize(.small) }
+                    if events.isEmpty {
+                        if let empty = meetingList?.emptyMessage {
+                            Text(empty).foregroundStyle(.secondary)
                         }
-                        if !event.body.isEmpty {
-                            ScrollView { Text(event.body).font(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
-                                .frame(maxHeight: 130)
+                    } else {
+                        Picker("Meeting", selection: Binding(
+                            get: { selectedID },
+                            set: { selectedID = $0; if retainedSelection?.0 != $0 { retainedSelection = nil } }
+                        )) {
+                            Text("Choose a meeting").tag(Optional<CalendarLinkSelectionID>.none)
+                            ForEach(events) { event in
+                                Text(label(event)).tag(Optional(selectionID(for: event)))
+                            }
                         }
-                        Toggle("Use meeting title", isOn: $updateTitle)
-                        Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
-                        Text("The full calendar context is saved even when these fields are kept.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if let event = selected {
+                            if !event.attendeeNames.isEmpty {
+                                Text(event.attendeeNames.joined(separator: ", ")).font(.callout)
+                            }
+                            if !event.body.isEmpty {
+                                ScrollView { Text(event.body).font(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
+                                    .frame(maxHeight: 130)
+                            }
+                            Toggle("Use meeting title", isOn: $updateTitle)
+                            Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
+                            Text("The full calendar context is saved even when these fields are kept.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
                 HStack {
+                    Button("Refresh this date") { startRefresh(force: true) }
+                        .disabled(loading || refreshing || saving)
                     Spacer()
                     Button("Cancel") { close() }.keyboardShortcut(.cancelAction).disabled(saving)
                     Button("Link Meeting") { save() }
                         .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                        .disabled(selected == nil || loading || saving)
+                        .disabled(selected == nil || saving)
                     if saving { ProgressView().controlSize(.small) }
                 }
             }
@@ -79,13 +105,16 @@ struct CalendarLinkSheet: View {
         .padding(24).frame(width: 540)
         .disabled(saving)
         .interactiveDismissDisabled(saving)
-        .task { await load() }
+        .task(id: recording.id) { await loadCached() }
+        .onDisappear { refreshTask?.cancel(); requestID = UUID() }
         .sheet(isPresented: $showAnalysis, onDismiss: { close() }) {
             ReprocessingSheet(recording: recording, operation: .analysis)
         }
     }
 
     private func close() {
+        refreshTask?.cancel()
+        requestID = UUID()
         if let dismissAction { dismissAction() }
         else { dismiss() }
     }
@@ -95,15 +124,62 @@ struct CalendarLinkSheet: View {
         return event.isAllDay ? "\(title) — All day" : "\(title) — \(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 
-    private func load() async {
+    private func loadCached() async {
+        refreshTask?.cancel()
+        refreshing = false
+        let token = UUID()
+        requestID = token
         loading = true
         error = nil
-        defer { loading = false }
         do {
-            events = try await manager.calendarEventsForLinking(recording)
-            selectedID = events.first { $0.id == recording.calendarEvent?.id }?.id
+            let list = try await manager.cachedCalendarMeetingsForLinking(recording)
+            guard requestID == token, !Task.isCancelled else { return }
+            apply(list)
+            if selectedID == nil, let prior = recording.calendarEvent,
+               let match = events.first(where: { $0.id == prior.id }) {
+                selectedID = selectionID(for: match)
+            }
+            loading = false
+            if !list.cliDays.isEmpty { startRefresh(force: false) }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch {
+            guard requestID == token else { return }
+            self.error = error.localizedDescription
+            loading = false
+        }
+    }
+
+    private func startRefresh(force: Bool) {
+        guard !refreshing else { return }
+        let token = UUID()
+        requestID = token
+        refreshing = true
+        refreshTask = Task { @MainActor in
+            defer { if requestID == token { refreshing = false } }
+            do {
+                let list = try await manager.refreshCalendarMeetingsForLinking(recording, force: force)
+                guard requestID == token, !Task.isCancelled else { return }
+                apply(list)
+                error = nil
+            } catch is CancellationError { }
+            catch {
+                guard requestID == token, !Task.isCancelled else { return }
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func apply(_ list: CalendarLinkMeetingList) {
+        let oldSelection = selected
+        let oldID = selectedID
+        meetingList = list
+        events = list.events
+        retainedSelection = nil
+        if let oldID, !events.contains(where: { list.selectionID(for: $0) == oldID }),
+           let oldSelection {
+            events.append(oldSelection)
+            retainedSelection = (oldID, oldSelection)
+        }
     }
 
     private func save() {

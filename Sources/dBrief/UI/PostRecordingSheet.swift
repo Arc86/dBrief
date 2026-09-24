@@ -654,6 +654,9 @@ struct PostRecordingSheet: View {
         case .blocked:
             Label("Calendar access blocked. Check Claude connector approval, then press Refresh.", systemImage: "lock")
                 .font(.caption).foregroundStyle(.orange)
+        case .saveFailed:
+            Label("Loaded, but could not save the cache.", systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange)
         case .selectionMissing:
             Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.orange)
