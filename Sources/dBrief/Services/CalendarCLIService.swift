@@ -258,10 +258,11 @@ actor CalendarCLIService {
                         detailsFetchedAt: saved.detailsFetchedAt, attendeeState: .omittedLargeMeeting,
                         attendeeCount: count, isCancelled: saved.isCancelled)
                 }
-                return saved
+                if saved.attendeeState != .omittedLargeMeeting { return saved }
             }
             if isFresh(entry, config: config, at: now()),
-               entry.event.attendees.count <= config.maxAttendees {
+               entry.event.attendees.count <= config.maxAttendees,
+               entry.attendeeState != .omittedLargeMeeting {
                 return entry
             }
         }

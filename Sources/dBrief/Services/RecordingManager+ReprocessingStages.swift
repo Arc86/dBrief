@@ -246,8 +246,14 @@ extension RecordingManager {
                resolved.key == calendarSelection.entry.key,
                (resolved.attendeeCount ?? resolved.event.attendees.count) <= effective.maxAttendees {
                 job.recording.calendarEvent = resolved.event
-            } else if appState.processingSteps.indices.contains(stepIndex) {
-                appState.processingSteps[stepIndex].detail = "Calendar attendees were unavailable"
+            } else {
+                if appState.processingSteps.indices.contains(stepIndex) {
+                    appState.processingSteps[stepIndex].detail = "Calendar attendees were unavailable"
+                }
+                let allowed = latest.flatMap { calendarConfiguration?.restoredConfig(using: $0) }
+                if allowed == nil || (job.recording.calendarEvent?.attendees.count ?? 0) > (allowed?.maxAttendees ?? 0) {
+                    job.recording.calendarEvent = calendarSelection.entry.event.replacing(attendees: [])
+                }
             }
         }
         guard let rich = job.recording.richTranscript else { throw ReprocessingError.missingTranscript }

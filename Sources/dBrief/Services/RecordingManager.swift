@@ -905,6 +905,7 @@ final class RecordingManager {
     private func finishCalendarParticipantWork(for job: ProcessingJob) async throws {
         guard let task = job.calendarParticipantTask else { return }
         var outcome = try await task.value
+        var redactedForCurrentPolicy = false
         try requireProcessingOwnership(job)
         guard var record = job.persistedRecord,
               record.calendarParticipantEnrichment?.selection == outcome.selection else {
@@ -919,17 +920,22 @@ final class RecordingManager {
             } else {
                 appSettings.effectiveCalendarCLIConfig
             }
-            if let frozen = record.source.calendarParticipantConfiguration,
-               let current,
-               let config = frozen.restoredConfig(using: current),
-               config.attendeePolicy != .never,
-               selection.scope == frozen.scope,
+            let frozen = record.source.calendarParticipantConfiguration
+            let permitted = current.flatMap { frozen?.restoredConfig(using: $0) }
+            if let config = permitted,
+               selection.scope == frozen?.scope,
                let resolved = outcome.resolvedEntry,
                resolved.key == selection.entry.key,
                (resolved.attendeeCount ?? resolved.event.attendees.count) <= config.maxAttendees {
                 record.source.calendarEvent = resolved.event
-            } else if outcome.state == .completed {
-                outcome = .init(selection: selection, state: .warning, completedAt: Date())
+            } else {
+                if outcome.state == .completed {
+                    outcome = .init(selection: selection, state: .warning, completedAt: Date())
+                }
+                if permitted == nil || (record.source.calendarEvent?.attendees.count ?? 0) > (permitted?.maxAttendees ?? 0) {
+                    record.source.calendarEvent = selection.entry.event.replacing(attendees: [])
+                    redactedForCurrentPolicy = true
+                }
             }
         }
         record.calendarParticipantEnrichment = outcome
@@ -937,6 +943,10 @@ final class RecordingManager {
         try await processingJobStore.save(record)
         try requireProcessingOwnership(job)
         job.persistedRecord = record
+        if redactedForCurrentPolicy {
+            job.recording.calendarEvent = record.source.calendarEvent
+            calendarContextRevision += 1
+        }
         if outcome.state == .completed, let event = record.source.calendarEvent {
             if let audio = job.recording.finalizedAudioURL {
                 do {

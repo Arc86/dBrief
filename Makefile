@@ -25,8 +25,8 @@ MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/
 # Static ffmpeg bundled into the app so DMG users get full audio processing
 # (mix/DSP/AAC encode/segmentation) without installing Homebrew.
 # Source: martin-riedl.de static macOS arm64 build (alternatives: osxexperts.net).
-# The SHA256 is the lock; the URL is only a fetch hint. After the first build,
-# paste the printed SHA256 into FFMPEG_SHA256 to make builds reproducible and verified.
+# The archive SHA256 is the lock; the URL is only a fetch hint. Verify the ZIP
+# before extracting it on every build so a stale cached binary cannot bypass it.
 FFMPEG_VERSION ?= latest
 FFMPEG_URL ?= https://ffmpeg.martin-riedl.de/redirect/$(FFMPEG_VERSION)/macos/arm64/release/ffmpeg.zip
 FFMPEG_SHA256 ?= c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
@@ -63,26 +63,27 @@ app: build
 	if ls $(BUILD_DIR)/*.bundle >/dev/null 2>&1; then cp -R $(BUILD_DIR)/*.bundle $(RESOURCES)/; fi
 	@set -e; \
 	mkdir -p $(FFMPEG_CACHE); \
+	FFMPEG_ZIP="$(FFMPEG_CACHE)/ffmpeg.zip"; \
 	FFMPEG_BIN="$(FFMPEG_CACHE)/ffmpeg"; \
-	if [ ! -x "$$FFMPEG_BIN" ]; then \
+	if [ ! -f "$$FFMPEG_ZIP" ]; then \
 		echo "Downloading static ffmpeg ($(FFMPEG_VERSION), macos arm64)…"; \
-		curl -L -o "$(FFMPEG_CACHE)/ffmpeg.zip" "$(FFMPEG_URL)"; \
-		unzip -o -j "$(FFMPEG_CACHE)/ffmpeg.zip" -d "$(FFMPEG_CACHE)"; \
-		chmod +x "$$FFMPEG_BIN"; \
+		curl --fail --location --show-error -o "$$FFMPEG_ZIP" "$(FFMPEG_URL)"; \
 	fi; \
-	ACTUAL_SHA="$$(shasum -a 256 "$$FFMPEG_BIN" | awk '{print $$1}')"; \
+	ACTUAL_SHA="$$(shasum -a 256 "$$FFMPEG_ZIP" | awk '{print $$1}')"; \
 	if [ -n "$(FFMPEG_SHA256)" ]; then \
 		if [ "$$ACTUAL_SHA" != "$(FFMPEG_SHA256)" ]; then \
-			echo "ERROR: bundled ffmpeg SHA256 mismatch (expected $(FFMPEG_SHA256), got $$ACTUAL_SHA)." >&2; \
+			echo "ERROR: ffmpeg archive SHA256 mismatch (expected $(FFMPEG_SHA256), got $$ACTUAL_SHA)." >&2; \
 			echo "       The upstream artifact changed; re-pin FFMPEG_SHA256 after auditing." >&2; \
 			exit 1; \
 		fi; \
-		echo "ffmpeg SHA256 verified ($$ACTUAL_SHA)."; \
+		echo "ffmpeg archive SHA256 verified ($$ACTUAL_SHA)."; \
 	else \
 		echo "WARNING: FFMPEG_SHA256 is unset — bundling unverified ffmpeg."; \
 		echo "         Pin this SHA256 in the Makefile for reproducible builds:"; \
 		echo "           $$ACTUAL_SHA"; \
 	fi; \
+	unzip -o -j "$$FFMPEG_ZIP" -d "$(FFMPEG_CACHE)"; \
+	chmod +x "$$FFMPEG_BIN"; \
 	cp "$$FFMPEG_BIN" $(MACOS)/ffmpeg; \
 	chmod +x $(MACOS)/ffmpeg
 	cp packaging/FFMPEG-NOTICE.txt $(RESOURCES)/FFMPEG-NOTICE.txt

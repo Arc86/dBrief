@@ -206,11 +206,7 @@ struct SettingsPermissionsTab: View {
         switch PermissionRecoveryPolicy.action(for: permissionState(for: speechStatus)) {
         case .requestAccess:
             Task {
-                _ = await withCheckedContinuation { continuation in
-                    SFSpeechRecognizer.requestAuthorization { status in
-                        continuation.resume(returning: status)
-                    }
-                }
+                _ = await LocalTranscriptionService.requestAccess()
                 refreshStatuses()
             }
         case .openSystemSettings:

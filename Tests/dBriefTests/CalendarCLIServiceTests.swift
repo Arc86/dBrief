@@ -74,6 +74,29 @@ struct CalendarCLIServiceTests {
         #expect(await transport.calls == 1)
     }
 
+    @Test("Raising the attendee cap refetches a previously omitted roster")
+    func raisedCapRefetchesOmission() async throws {
+        let clock = FixedClock(Date())
+        let window = Self.makeWindow()
+        let request = Self.makeEntry(window: window)
+        let config = Self.makeConfig().updating(maxAttendees: 3)
+        let omitted = CalendarCLIEntry(key: request.key, event: request.event,
+            sourceRevision: request.sourceRevision, detailsFetchedAt: clock.now,
+            attendeeState: .omittedLargeMeeting, attendeeCount: 2)
+        let loaded = CalendarCLIEntry(key: request.key,
+            event: request.event.replacing(attendees: [
+                .init(name: "Alex", email: nil), .init(name: "Sam", email: nil)]),
+            sourceRevision: request.sourceRevision, detailsFetchedAt: clock.now,
+            attendeeState: .loaded, attendeeCount: 2)
+        let transport = FakeTransport(listResult: Self.completeResult([]), detailResult: loaded)
+        let (service, store) = Self.makeService(transport: transport, clock: clock)
+        #expect(store.storeDetail(scope: CalendarCLIScope(config: config), entry: omitted) == .saved)
+        let result = try await service.detail(entry: request, config: config, force: false)
+        #expect(result.attendeeState == .loaded)
+        #expect(result.event.attendees.count == 2)
+        #expect(transport.detailCallCount == 1)
+    }
+
     actor GatedTransport: CalendarCLITransporting {
         private var requests: [CheckedContinuation<CalendarCLIListResult, Error>] = []
         private let detailEntry: CalendarCLIEntry
