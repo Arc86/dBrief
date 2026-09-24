@@ -17,7 +17,9 @@ struct QueuePersistenceTests {
         let safe = CalendarParticipantRequestConfiguration(config: config, scope: selection.scope)
         let item = QueueItem(transcribe: false, summary: false, actionItems: false,
             tags: false, loadCalendarParticipants: true,
-            calendarParticipantSelection: selection, calendarParticipantConfiguration: safe)
+            calendarParticipantSelection: selection, calendarParticipantConfiguration: safe,
+            selectedCalendarEvent: selection.entry.event,
+            selectedParticipants: ["Manual speaker"])
         let store = QueueScheduleStore(url: directory.appendingPathComponent("schedule.json"))
         try await store.saveItem(item, for: audio)
         let loaded = try QueueItem.load(from: directory.appendingPathComponent("meeting.queue.json"))
@@ -25,6 +27,8 @@ struct QueuePersistenceTests {
         #expect(loaded.calendarParticipantSelection?.entry.key == selection.entry.key)
         #expect(loaded.calendarParticipantSelection?.scope == selection.scope)
         #expect(loaded.calendarParticipantConfiguration == safe)
+        #expect(loaded.selectedCalendarEvent == selection.entry.event)
+        #expect(loaded.selectedParticipants == ["Manual speaker"])
     }
     private func root() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

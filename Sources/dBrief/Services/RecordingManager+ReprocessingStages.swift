@@ -26,7 +26,10 @@ extension RecordingManager {
     }
 
     func executeReprocessing(_ stage: ReprocessingWorkflow.Stage, job: ProcessingJob,
-                             options: ReprocessingOptions) async throws -> ReprocessingWorkflow.Result {
+                             options: ReprocessingOptions,
+                             calendarSelection: CalendarParticipantSelection? = nil,
+                             calendarConfiguration: CalendarParticipantRequestConfiguration? = nil,
+                             calendarProfileID: UUID? = nil) async throws -> ReprocessingWorkflow.Result {
         let index = appState.processingSteps.count
         let name = switch stage {
         case .transcription: "Retranscribing audio"
@@ -51,7 +54,9 @@ extension RecordingManager {
         case .speakers:
             result = try await reprocessSpeakers(job: job, options: options)
         case .analysis:
-            try await reprocessAnalysis(job: job, options: options, stepIndex: index)
+            try await reprocessAnalysis(job: job, options: options, stepIndex: index,
+                calendarSelection: calendarSelection, calendarConfiguration: calendarConfiguration,
+                calendarProfileID: calendarProfileID)
             result = .completed
         }
         try requireProcessingOwnership(job)
@@ -208,8 +213,43 @@ extension RecordingManager {
             diarizationTime: nil, speakerEmbeddings: embeddings.filter { ids.contains($0.key) }, modelName: original.modelName)
     }
 
-    func reprocessAnalysis(job: ProcessingJob, options: ReprocessingOptions, stepIndex: Int) async throws {
+    func reprocessAnalysis(job: ProcessingJob, options: ReprocessingOptions, stepIndex: Int,
+                           calendarSelection: CalendarParticipantSelection? = nil,
+                           calendarConfiguration: CalendarParticipantRequestConfiguration? = nil,
+                           calendarProfileID: UUID? = nil) async throws {
         let config = try options.analysisConfiguration(settings: appSettings)
+        if options.loadCalendarParticipants == true, let calendarSelection {
+            let current: CalendarCLIConfig? = if let id = calendarProfileID {
+                appSettings.profiles.first(where: { $0.id == id })
+                    .map { appSettings.resolvedCalendarCLIConfig(for: $0) }
+            } else {
+                appSettings.effectiveCalendarCLIConfig
+            }
+            let outcome = try await processingPipeline.enrichCalendarParticipants(
+                prior: .init(selection: calendarSelection),
+                frozenConfiguration: calendarConfiguration,
+                currentConfiguration: current,
+                fetch: { entry, effective in
+                    try await self.calendarCLIService.detail(entry: entry, config: effective, force: false)
+                })
+            try requireProcessingOwnership(job)
+            let latest: CalendarCLIConfig? = if let id = calendarProfileID {
+                appSettings.profiles.first(where: { $0.id == id })
+                    .map { appSettings.resolvedCalendarCLIConfig(for: $0) }
+            } else {
+                appSettings.effectiveCalendarCLIConfig
+            }
+            if outcome.state == .completed,
+               let latest,
+               let effective = calendarConfiguration?.restoredConfig(using: latest),
+               let resolved = outcome.resolvedEntry,
+               resolved.key == calendarSelection.entry.key,
+               (resolved.attendeeCount ?? resolved.event.attendees.count) <= effective.maxAttendees {
+                job.recording.calendarEvent = resolved.event
+            } else if appState.processingSteps.indices.contains(stepIndex) {
+                appState.processingSteps[stepIndex].detail = "Calendar attendees were unavailable"
+            }
+        }
         guard let rich = job.recording.richTranscript else { throw ReprocessingError.missingTranscript }
         // AI sees the user's current edited words, never an older raw sidecar.
         let raw = TranscriptionResult(text: rich.segments.map(\.text).joined(separator: " "),

@@ -65,6 +65,17 @@ struct CalendarParticipantRequestConfiguration: Codable, Equatable, Sendable {
         self == Self(config: config, scope: scope)
     }
 
+    /// Uses only the current command when its digest and target still match;
+    /// model, effort and timeout remain frozen from job admission. A lowered
+    /// current cap and Never policy still take effect before any read.
+    func restoredConfig(using current: CalendarCLIConfig) -> CalendarCLIConfig? {
+        guard current.attendeePolicy == .onDemand,
+              CalendarCLIScope(config: current) == scope,
+              Self.digest(current.command) == commandDigest else { return nil }
+        return current.updating(modelID: .some(modelID), effort: effort,
+            timeoutSeconds: timeoutSeconds, maxAttendees: min(maxAttendees, current.maxAttendees))
+    }
+
     private static func digest(_ command: String?) -> String {
         let source = command ?? "managed-claude-calendar-command-v1"
         return SHA256.hash(data: Data(source.utf8))

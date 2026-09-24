@@ -87,6 +87,8 @@ extension ProcessingPipeline {
                 calendarParticipantConfiguration: record.source.calendarParticipantConfiguration,
                 calendarParticipantsNative: record.calendarParticipantEnrichment?.state == .completed
                     && record.source.calendarParticipantSelection == nil,
+                selectedCalendarEvent: record.source.calendarEvent,
+                selectedParticipants: record.source.participants,
                 titleWasUserProvided: record.request.titleWasUserProvided,
                 autoQueued: false, profileID: record.source.profileID ?? fallback.profileID)
         }

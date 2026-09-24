@@ -29,6 +29,8 @@ struct ReprocessingOptions: Codable, Sendable {
     var parakeetModelVariant: String
     var diarizationEnabled: Bool
     var regenerateAI: Bool = true
+    /// Nil in older attempts; only a new explicit choice enables a roster read.
+    var loadCalendarParticipants: Bool? = nil
     var speakerIdMode: AppSettings.SpeakerIdMode
     var transcriptionEndpoint: Endpoint?
     var aiEndpoint: Endpoint?

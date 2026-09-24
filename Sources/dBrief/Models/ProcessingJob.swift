@@ -27,6 +27,8 @@ final class ProcessingJob {
     /// run inside this handle so `cancelProcessing()` can cancel the *whole* job and the
     /// auto-drain can't start a second job while a resumed analysis is still running.
     var task: Task<Void, Never>?
+    var calendarParticipantTask: Task<CalendarParticipantEnrichmentRecord, Error>?
+    var calendarParticipantStepIndex: Int?
 
     /// The finalized audio URL when this job came from the on-disk queue. Completion
     /// removes the matching `.queue.json` sidecar (via `removeQueueFile(for:)`) before

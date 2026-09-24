@@ -11,12 +11,14 @@ struct ReprocessingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var options: ReprocessingOptions?
     @State private var usingPrevious = false
+    @State private var supportsCalendarReload = false
 
     var body: some View {
         Group {
             if let options {
                 ReprocessingEditor(recording: recording, initialOptions: options,
-                    usingPrevious: usingPrevious, dismissAction: dismissAction)
+                    usingPrevious: usingPrevious, supportsCalendarReload: supportsCalendarReload,
+                    dismissAction: dismissAction)
             } else {
                 VStack(spacing: 16) {
                     ProgressView("Loading settings…")
@@ -27,8 +29,10 @@ struct ReprocessingSheet: View {
         }
         .task {
             let previous = await manager.lastReprocessingOptions(for: recording)
+            let canReload = await manager.canReloadCalendarParticipants(for: recording)
             guard !Task.isCancelled else { return }
             usingPrevious = previous != nil
+            supportsCalendarReload = canReload
             var value = previous ?? ReprocessingOptions(settings: settings, operation: operation)
             value.operation = operation
             options = value
@@ -44,6 +48,7 @@ struct ReprocessingSheet: View {
 private struct ReprocessingEditor: View {
     let recording: Recording
     let usingPrevious: Bool
+    let supportsCalendarReload: Bool
     let dismissAction: (() -> Void)?
     @State private var options: ReprocessingOptions
     @State private var isStarting = false
@@ -55,9 +60,11 @@ private struct ReprocessingEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool,
+         supportsCalendarReload: Bool,
          dismissAction: (() -> Void)?) {
         self.recording = recording
         self.usingPrevious = usingPrevious
+        self.supportsCalendarReload = supportsCalendarReload
         self.dismissAction = dismissAction
         _options = State(initialValue: initialOptions)
     }
@@ -199,6 +206,11 @@ private struct ReprocessingEditor: View {
     private var analysisControls: some View {
         Section("AI analysis") {
             LabeledContent("AI engine", value: options.aiEngine.displayName)
+            if supportsCalendarReload {
+                Toggle("Refresh selected calendar attendees", isOn: Binding(
+                    get: { options.loadCalendarParticipants == true },
+                    set: { options.loadCalendarParticipants = $0 }))
+            }
             Picker("AI output language", selection: outputLanguageSelection) {
                 Text("Match transcript").tag("match")
                 Text("English").tag("en")

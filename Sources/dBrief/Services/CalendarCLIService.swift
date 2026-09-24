@@ -30,7 +30,11 @@ actor CalendarCLIService {
         let task: Task<CalendarCLIListRead, Error>
     }
     private var listTasks: [String: ListFlight] = [:]
-    private var detailTasks: [String: Task<CalendarCLIEntry, Error>] = [:]
+    private struct DetailFlight {
+        let id: UUID
+        let task: Task<CalendarCLIEntry, Error>
+    }
+    private var detailTasks: [String: DetailFlight] = [:]
 
     /// Automatic (non-forced) refreshes back off for this long after a failure.
     static let retryCooldown: TimeInterval = 5 * 60
@@ -243,27 +247,54 @@ actor CalendarCLIService {
             return omitted
         }
 
-        if !force, isFresh(entry, config: config, at: now()) {
-            return entry
+        if !force {
+            if let saved = store.loadDetail(scope: scope, key: entry.key),
+               (entry.sourceRevision == nil || saved.sourceRevision == entry.sourceRevision),
+               isFresh(saved, config: config, at: now()) {
+                let count = saved.attendeeCount ?? saved.event.attendees.count
+                if count > config.maxAttendees {
+                    return CalendarCLIEntry(key: saved.key,
+                        event: saved.event.replacing(attendees: []), sourceRevision: saved.sourceRevision,
+                        detailsFetchedAt: saved.detailsFetchedAt, attendeeState: .omittedLargeMeeting,
+                        attendeeCount: count, isCancelled: saved.isCancelled)
+                }
+                return saved
+            }
+            if isFresh(entry, config: config, at: now()),
+               entry.event.attendees.count <= config.maxAttendees {
+                return entry
+            }
         }
 
         let key = Self.rosterKey(scope: scope, key: entry.key, cap: config.maxAttendees)
+        let flight: DetailFlight
         if let existing = detailTasks[key] {
-            return try await existing.value
+            flight = existing
+        } else {
+            flight = DetailFlight(id: UUID(), task: Task { [transport] in
+                try await transport.detail(entry: entry, config: config)
+            })
+            detailTasks[key] = flight
+        }
+        defer {
+            if detailTasks[key]?.id == flight.id { detailTasks[key] = nil }
         }
 
-        let task = Task<CalendarCLIEntry, Error> { [transport] in
-            try await transport.detail(entry: entry, config: config)
-        }
-        detailTasks[key] = task
-        defer { detailTasks[key] = nil }
-
-        let updated = try await task.value
+        var updated = try await flight.task.value
+        try Task.checkCancellation()
         guard generation == startGeneration, rosterGeneration == startRosterGeneration else {
             throw CancellationError()
         }
         guard updated.key == entry.key else {
             throw CalendarCLIServiceError.identityMismatch
+        }
+        let verifiedCount = updated.attendeeCount ?? updated.event.attendees.count
+        if verifiedCount > config.maxAttendees {
+            updated = CalendarCLIEntry(key: updated.key,
+                event: updated.event.replacing(attendees: []),
+                sourceRevision: updated.sourceRevision, detailsFetchedAt: updated.detailsFetchedAt,
+                attendeeState: .omittedLargeMeeting, attendeeCount: verifiedCount,
+                isCancelled: updated.isCancelled)
         }
         if updated.attendeeState == .loaded || updated.attendeeState == .none
             || updated.attendeeState == .omittedLargeMeeting {
@@ -283,7 +314,7 @@ actor CalendarCLIService {
         persistenceOutcomes = [:]
         for (_, flight) in listTasks { flight.task.cancel() }
         listTasks = [:]
-        for (_, task) in detailTasks { task.cancel() }
+        for (_, flight) in detailTasks { flight.task.cancel() }
         detailTasks = [:]
     }
 

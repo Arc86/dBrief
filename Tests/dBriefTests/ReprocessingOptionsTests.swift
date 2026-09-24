@@ -54,6 +54,16 @@ struct ReprocessingOptionsTests {
         #expect(restored.operation == .analysis)
     }
 
+    @Test func olderAttemptDoesNotOptInToCalendarRosterRead() throws {
+        let options = ReprocessingOptions(settings: AppSettings(), operation: .analysis)
+        let data = try JSONEncoder().encode(options)
+        var json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json.removeValue(forKey: "loadCalendarParticipants")
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+        let restored = try JSONDecoder().decode(ReprocessingOptions.self, from: legacy)
+        #expect(restored.loadCalendarParticipants != true)
+    }
+
     @Test func frozenAnalysisAndCleanupIgnoreLaterGlobalChanges() throws {
         let settings = AppSettings()
         let originalOutput = settings.outputLanguage

@@ -9,6 +9,9 @@ struct ReprocessingRequest: Codable, Sendable {
     let duration: Double
     let participants: [String]
     let calendarEvent: CalendarEvent?
+    var calendarParticipantSelection: CalendarParticipantSelection? = nil
+    var calendarParticipantConfiguration: CalendarParticipantRequestConfiguration? = nil
+    var calendarProfileID: UUID? = nil
 }
 
 enum ReprocessingError: LocalizedError {
@@ -73,6 +76,13 @@ extension RecordingManager {
         return (try? await reprocessingStore.canRestore(audioURL: audio)) == true
     }
 
+    func canReloadCalendarParticipants(for recording: Recording) async -> Bool {
+        guard let audio = recording.finalizedAudioURL else { return false }
+        return await processingJobStore.discover().jobs.contains {
+            $0.source.finalizedAudioPath == audio.path && $0.source.calendarParticipantSelection != nil
+        }
+    }
+
     func startReprocessing(for recording: Recording, options: ReprocessingOptions) async throws {
         guard let audio = recording.finalizedAudioURL else { throw ReprocessingError.missingAudio }
         guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, !queueMutationInProgress, !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
@@ -96,12 +106,23 @@ extension RecordingManager {
         }) else { throw ReprocessingError.busy }
         try Task.checkCancellation()
         let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
-        let request = ReprocessingRequest(options: options, recordingID: metadata?.recordingID ?? recording.id,
+        let priorCalendar = existingJobs.jobs
+            .filter { $0.source.finalizedAudioPath == audio.path && $0.source.calendarParticipantSelection != nil }
+            .max { $0.updatedAt < $1.updatedAt }
+        guard options.loadCalendarParticipants != true || priorCalendar != nil else {
+            throw ReprocessingError.failedAnalysis("No saved Claude calendar occurrence is available for this recording.")
+        }
+        var request = ReprocessingRequest(options: options, recordingID: metadata?.recordingID ?? recording.id,
             date: metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date,
             title: metadata?.meetingTitle ?? recording.meetingTitleDraft,
             duration: metadata?.durationSeconds ?? recording.duration,
             participants: metadata?.participants ?? recording.participants,
             calendarEvent: metadata?.calendarEvent ?? recording.calendarEvent)
+        if options.loadCalendarParticipants == true {
+            request.calendarParticipantSelection = priorCalendar?.source.calendarParticipantSelection
+            request.calendarParticipantConfiguration = priorCalendar?.source.calendarParticipantConfiguration
+            request.calendarProfileID = priorCalendar?.source.profileID
+        }
         let attempt = try await reprocessingStore.prepare(audioURL: audio, configuration: JSONEncoder().encode(request))
         invalidateReprocessingChat(audio)
         reprocessingAttempts.append(attempt)
@@ -204,7 +225,10 @@ extension RecordingManager {
                     case .analysis: .analysis
                     }
                     try await store.checkpoint(attemptID: job.id, status: status)
-                    return try await self.executeReprocessing(stage, job: job, options: options)
+                    return try await self.executeReprocessing(stage, job: job, options: options,
+                        calendarSelection: request.calendarParticipantSelection,
+                        calendarConfiguration: request.calendarParticipantConfiguration,
+                        calendarProfileID: request.calendarProfileID)
                 }, checkpoint: { @MainActor stage in
                     try self.requireProcessingOwnership(job)
                     try await store.checkpoint(attemptID: job.id, status: .ready, completedStage: stage.rawValue)

@@ -38,13 +38,18 @@ struct CalendarParticipantEnrichmentTests {
         let secret = "custom-cli --credential=do-not-persist"
         let config = CalendarCLIConfig.unnormalized(timeoutSeconds: 30,
             mailboxEmail: "ada@example.com", command: secret)
+        let scope = CalendarCLIScope(config: config)
         let value = CalendarParticipantRequestConfiguration(config: config,
-            scope: CalendarCLICacheTests.scope)
+            scope: scope)
         let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
         #expect(!json.contains(secret))
         #expect(!json.contains("do-not-persist"))
-        #expect(value.matches(config: config, scope: CalendarCLICacheTests.scope))
+        #expect(value.matches(config: config, scope: scope))
         #expect(!value.matches(config: config.updating(command: "other-cli"),
-            scope: CalendarCLICacheTests.scope))
+            scope: scope))
+        let changedEffort = config.updating(effort: .high)
+        #expect(value.restoredConfig(using: changedEffort)?.effort == config.effort)
+        #expect(value.restoredConfig(using: config.updating(command: "other-cli")) == nil)
+        #expect(value.restoredConfig(using: config.updating(attendeePolicy: .never)) == nil)
     }
 }

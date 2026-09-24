@@ -830,6 +830,10 @@ final class RecordingManager {
                         let stage: PersistedProcessingJob.FailureStage = job.persistedRecord?.checkpoint.hasCompleted(.diarized) == true ? .speakerReview : .diarization
                         throw ProcessingPipeline.PreparationFailure(stage: stage, phase: .speakers, underlying: error)
                     }
+                }, startParticipants: { @MainActor in
+                    try self.startCalendarParticipantWork(for: job)
+                }, finishParticipants: { @MainActor in
+                    try await self.finishCalendarParticipantWork(for: job)
                 }, validateOwnership: { @MainActor in try self.requireProcessingOwnership(job) }))
             try requireProcessingOwnership(job)
             if prepared.heldForReview || appState.pendingSpeakerReview?.recording === recording { return }
@@ -837,6 +841,8 @@ final class RecordingManager {
                 actionItems: actionItems, tags: tags, localAIAvailable: localAIAvailable,
                 perf: prepared.perf, stopBeforeIntegrations: stopBeforeIntegrations)
         } catch {
+            job.calendarParticipantTask?.cancel()
+            job.calendarParticipantTask = nil
             guard !Task.isCancelled, appState.processingJob === job else { return }
             let failure = error as? ProcessingPipeline.PreparationFailure
                 ?? .init(stage: .persistence, phase: .finalization, underlying: error)
@@ -869,6 +875,93 @@ final class RecordingManager {
     @MainActor private final class PreparationProgress {
         var finalizationIndex: Int?
         var transcriptionIndex: Int?
+    }
+
+    private func startCalendarParticipantWork(for job: ProcessingJob) throws {
+        try requireProcessingOwnership(job)
+        guard job.calendarParticipantTask == nil,
+              let record = job.persistedRecord,
+              let prior = record.calendarParticipantEnrichment else { return }
+        let currentConfig: CalendarCLIConfig? = if let id = record.source.profileID {
+            appSettings.profiles.first(where: { $0.id == id })
+                .map { appSettings.resolvedCalendarCLIConfig(for: $0) }
+        } else {
+            appSettings.effectiveCalendarCLIConfig
+        }
+        let frozenConfig = record.source.calendarParticipantConfiguration
+        let pipeline = processingPipeline
+        let service = calendarCLIService
+        job.calendarParticipantStepIndex = appState.processingSteps.count
+        appState.processingSteps.append(ProcessingStep(name: "Calendar attendees", status: .inProgress))
+        job.calendarParticipantTask = Task {
+            try await pipeline.enrichCalendarParticipants(prior: prior,
+                frozenConfiguration: frozenConfig, currentConfiguration: currentConfig,
+                fetch: { entry, config in
+                    try await service.detail(entry: entry, config: config, force: false)
+                })
+        }
+    }
+
+    private func finishCalendarParticipantWork(for job: ProcessingJob) async throws {
+        guard let task = job.calendarParticipantTask else { return }
+        var outcome = try await task.value
+        try requireProcessingOwnership(job)
+        guard var record = job.persistedRecord,
+              record.calendarParticipantEnrichment?.selection == outcome.selection else {
+            throw CancellationError()
+        }
+        // A settings change while the roster was loading must not publish a
+        // result that the current policy or attendee cap now forbids.
+        if let selection = outcome.selection {
+            let current: CalendarCLIConfig? = if let id = record.source.profileID {
+                appSettings.profiles.first(where: { $0.id == id })
+                    .map { appSettings.resolvedCalendarCLIConfig(for: $0) }
+            } else {
+                appSettings.effectiveCalendarCLIConfig
+            }
+            if let frozen = record.source.calendarParticipantConfiguration,
+               let current,
+               let config = frozen.restoredConfig(using: current),
+               config.attendeePolicy != .never,
+               selection.scope == frozen.scope,
+               let resolved = outcome.resolvedEntry,
+               resolved.key == selection.entry.key,
+               (resolved.attendeeCount ?? resolved.event.attendees.count) <= config.maxAttendees {
+                record.source.calendarEvent = resolved.event
+            } else if outcome.state == .completed {
+                outcome = .init(selection: selection, state: .warning, completedAt: Date())
+            }
+        }
+        record.calendarParticipantEnrichment = outcome
+        record.updatedAt = Date()
+        try await processingJobStore.save(record)
+        try requireProcessingOwnership(job)
+        job.persistedRecord = record
+        if outcome.state == .completed, let event = record.source.calendarEvent {
+            if let audio = job.recording.finalizedAudioURL {
+                do {
+                    try await RecordingMetadataStore.shared.linkCalendar(event, audioURL: audio,
+                        updateTitle: false, updateParticipants: false)
+                } catch {
+                    Logger.recording.error("Could not persist enriched calendar context: \(error.localizedDescription)")
+                }
+                try requireProcessingOwnership(job)
+            }
+            job.recording.calendarEvent = event
+            calendarContextRevision += 1
+            await updateMetadataSidecar(.meetingContext(
+                participants: PersonName.displayList(job.recording.participants),
+                calendarAttendees: event.attendeeNames),
+                for: job.recording, job: job, describing: "calendar attendees")
+            try requireProcessingOwnership(job)
+        }
+        if let index = job.calendarParticipantStepIndex {
+            if outcome.state == .warning {
+                appState.processingSteps[index].detail = "Calendar attendees were unavailable"
+            }
+            markCompleted(index)
+        }
+        job.calendarParticipantTask = nil
     }
 
     private func finalizePreparation(job: ProcessingJob, progress: PreparationProgress) async throws {
@@ -1177,6 +1270,8 @@ final class RecordingManager {
     /// Actor persistence precedes UI release; stale callbacks never drain/reset queues.
     private func finishJob(_ job: ProcessingJob, completed: Bool = true) async {
         guard !Task.isCancelled, appState.processingJob === job else { return }
+        job.calendarParticipantTask?.cancel()
+        job.calendarParticipantTask = nil
         let succeeded = !appState.processingSteps.contains {
             if case .failed = $0.status { return true }
             return false
@@ -1329,6 +1424,8 @@ final class RecordingManager {
             calendarParticipantConfiguration: job.persistedRecord?.source.calendarParticipantConfiguration,
             calendarParticipantsNative: job.persistedRecord?.calendarParticipantEnrichment?.state == .completed
                 && job.persistedRecord?.source.calendarParticipantSelection == nil,
+            selectedCalendarEvent: job.persistedRecord?.source.calendarEvent,
+            selectedParticipants: job.persistedRecord?.source.participants ?? job.recording.participants,
             titleWasUserProvided: request?.titleWasUserProvided
                 ?? job.recording.titleWasUserProvided,
             autoQueued: false,
@@ -1573,6 +1670,8 @@ final class RecordingManager {
             finalizedAudioURL: audioURL
         )
         recording.titleWasUserProvided = item.titleWasUserProvided
+        recording.calendarEvent = item.selectedCalendarEvent
+        recording.participants = item.selectedParticipants
         if let profileID = item.profileID {
             guard appSettings.profiles.contains(where: { $0.id == profileID }) else {
                 queueLoadError = "This queued recording’s profile was deleted. Choose a profile and retry from the recording."
@@ -1985,9 +2084,13 @@ final class RecordingManager {
             calendarParticipantConfiguration: job.persistedRecord?.source.calendarParticipantConfiguration,
             calendarParticipantsNative: job.persistedRecord?.calendarParticipantEnrichment?.state == .completed
                 && job.persistedRecord?.source.calendarParticipantSelection == nil,
+            selectedCalendarEvent: job.persistedRecord?.source.calendarEvent,
+            selectedParticipants: job.persistedRecord?.source.participants ?? job.recording.participants,
             titleWasUserProvided: request?.titleWasUserProvided ?? job.recording.titleWasUserProvided,
             autoQueued: false, profileID: job.persistedRecord?.source.profileID ?? appSettings.activeProfile.id)
         job.task?.cancel()
+        job.calendarParticipantTask?.cancel()
+        job.calendarParticipantTask = nil
         appState.processingJob = nil
         appState.liveInferenceText = nil
         for i in appState.processingSteps.indices {
@@ -2315,6 +2418,8 @@ final class RecordingManager {
             calendarParticipantSelection: participantAdmission.selection,
             calendarParticipantConfiguration: participantAdmission.configuration,
             calendarParticipantsNative: participantAdmission.isNative,
+            selectedCalendarEvent: recording.calendarEvent,
+            selectedParticipants: recording.participants,
             titleWasUserProvided: recording.titleWasUserProvided,
             autoQueued: autoQueued,
             profileID: profileID

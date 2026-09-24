@@ -7,6 +7,73 @@ import Foundation
 /// preservation semantics.
 struct CalendarCLIServiceTests {
 
+    @Test("A persisted fresh roster avoids the connector after restart")
+    func persistedFreshRosterAvoidsConnectorAfterRestart() async throws {
+        let clock = FixedClock(Date())
+        let window = Self.makeWindow()
+        let config = Self.makeConfig()
+        let loaded = Self.loadedEntry(window: window, revision: "R1", clock: clock)
+        let transport = FakeTransport(listResult: Self.completeResult([]), detailResult: loaded)
+        let (_, store) = Self.makeService(transport: transport, clock: clock)
+        #expect(store.storeDetail(scope: CalendarCLIScope(config: config), entry: loaded) == .saved)
+        let request = Self.makeEntry(window: window, revision: "R1")
+        let restarted = CalendarCLIService(transport: transport,
+            store: CalendarCLICacheStore(directory: store.directory, now: clock.reader), now: clock.reader)
+        let result = try await restarted.detail(entry: request, config: config, force: false)
+        #expect(result.attendeeState == .loaded)
+        #expect(result.event.attendees == loaded.event.attendees)
+        #expect(transport.detailCallCount == 0)
+    }
+
+    private actor GatedDetailTransport: CalendarCLITransporting {
+        var pending: CheckedContinuation<CalendarCLIEntry, Error>?
+        var calls = 0
+        func list(window: CalendarCLIWindow, config: CalendarCLIConfig) async throws -> CalendarCLIListResult {
+            CalendarCLIListResult(entries: [], completeness: .complete, message: nil)
+        }
+        func detail(entry: CalendarCLIEntry, config: CalendarCLIConfig) async throws -> CalendarCLIEntry {
+            calls += 1
+            return try await withCheckedThrowingContinuation { pending = $0 }
+        }
+        func waitForRequest() async -> Bool {
+            for _ in 0..<100 {
+                if pending != nil { return true }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return false
+        }
+        func release(_ entry: CalendarCLIEntry) {
+            pending?.resume(returning: entry)
+            pending = nil
+        }
+    }
+
+    @Test("Manual and processing detail callers share one capped result")
+    func detailCallersCoalesce() async throws {
+        let clock = FixedClock(Date())
+        let window = Self.makeWindow()
+        let config = Self.makeConfig().updating(maxAttendees: 1)
+        let request = Self.makeEntry(window: window)
+        let loaded = CalendarCLIEntry(key: request.key,
+            event: request.event.replacing(attendees: [
+                .init(name: "Alex", email: nil), .init(name: "Sam", email: nil)]),
+            sourceRevision: request.sourceRevision, detailsFetchedAt: clock.now,
+            attendeeState: .loaded, attendeeCount: 2)
+        let transport = GatedDetailTransport()
+        let store = CalendarCLICacheStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString), now: clock.reader)
+        let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
+        async let manual = service.detail(entry: request, config: config, force: false)
+        async let processing = service.detail(entry: request, config: config, force: false)
+        #expect(await transport.waitForRequest())
+        await transport.release(loaded)
+        let (a, b) = try await (manual, processing)
+        #expect(a == b)
+        #expect(a.attendeeState == .omittedLargeMeeting)
+        #expect(a.event.attendees.isEmpty)
+        #expect(await transport.calls == 1)
+    }
+
     actor GatedTransport: CalendarCLITransporting {
         private var requests: [CheckedContinuation<CalendarCLIListResult, Error>] = []
         private let detailEntry: CalendarCLIEntry

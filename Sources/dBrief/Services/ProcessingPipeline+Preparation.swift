@@ -32,6 +32,8 @@ extension ProcessingPipeline {
         var retireQueue: @Sendable () async throws -> Void
         var transcriptCommitted: @Sendable (TranscriptionResult, Bool) async throws -> Void
         var speakers: @Sendable (TranscriptionResult, TranscriptionPerf) async throws -> Bool
+        var startParticipants: @Sendable () async throws -> Void = {}
+        var finishParticipants: @Sendable () async throws -> Void = {}
         var validateOwnership: @Sendable () async throws -> Void = {}
     }
 
@@ -45,6 +47,8 @@ extension ProcessingPipeline {
         do {
             try await validatePreparation(steps)
             try await steps.waitForCalendar()
+            try await validatePreparation(steps)
+            try await steps.startParticipants()
             try await validatePreparation(steps)
             let finalizeStart = now()
             try await steps.finalize()
@@ -93,6 +97,8 @@ extension ProcessingPipeline {
                 try await validatePreparation(steps)
                 try await steps.transcriptCommitted(result, saved == nil)
                 try await validatePreparation(steps)
+                try await steps.finishParticipants()
+                try await validatePreparation(steps)
                 phase = .speakers
                 failureStage = .diarization
                 let held = try await steps.speakers(result, perf)
@@ -102,6 +108,8 @@ extension ProcessingPipeline {
 
             phase = .speakers
             failureStage = .persistence
+            try await steps.finishParticipants()
+            try await validatePreparation(steps)
             try await steps.checkpoint(.speakerReviewCompleted)
             try await validatePreparation(steps)
             return .init(perf: perf, heldForReview: false)
