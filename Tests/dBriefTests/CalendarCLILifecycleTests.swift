@@ -67,6 +67,7 @@ struct CalendarCLILifecycleTests {
     final class LifecycleTransport: CalendarCLITransporting, @unchecked Sendable {
         private let lock = NSLock()
         private var _listCalls = 0
+        private var _lastListEffort: CLIReasoningEffort?
         private var _detailCalls = 0
         private var listGates: [CheckedContinuation<Void, Never>] = []
         private var detailGates: [CheckedContinuation<Void, Never>] = []
@@ -94,6 +95,7 @@ struct CalendarCLILifecycleTests {
         }
 
         var listCalls: Int { lock.withLock { _listCalls } }
+        var lastListEffort: CLIReasoningEffort? { lock.withLock { _lastListEffort } }
         var detailCalls: Int { lock.withLock { _detailCalls } }
 
         func holdNextList() { lock.withLock { holdList = true } }
@@ -113,7 +115,10 @@ struct CalendarCLILifecycleTests {
         }
 
         func list(window: CalendarCLIWindow, config: CalendarCLIConfig) async throws -> CalendarCLIListResult {
-            lock.withLock { _listCalls += 1 }
+            lock.withLock {
+                _listCalls += 1
+                _lastListEffort = config.effort
+            }
             if lock.withLock({ holdList }) {
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                     lock.withLock { listGates.append(c) }
@@ -502,5 +507,35 @@ struct CalendarCLILifecycleTests {
         let events = await task.value
         #expect(events.isEmpty)
         #expect(recording.calendarCandidates.isEmpty)
+    }
+}
+
+extension CalendarCLILifecycleTests {
+    @Test("Picker freezes profile effort and keeps its result across a profile switch")
+    func pickerUsesFrozenProfileEffort() async throws {
+        let harness = Harness()
+        let oldProfiles = harness.settings.profiles
+        let oldActive = harness.settings.activeProfileId
+        defer {
+            harness.settings.profiles = oldProfiles
+            harness.settings.activeProfileId = oldActive
+            harness.cleanup()
+        }
+        let high = MeetingProfile(name: "High", overrides: .init(calendarCLIReasoningEffort: .high))
+        let low = MeetingProfile(name: "Low", overrides: .init(calendarCLIReasoningEffort: .low))
+        harness.settings.profiles = [high, low]
+        harness.settings.setActiveProfile(high.id)
+        harness.transport.holdNextList()
+        let recording = harness.recording()
+        let request = Task { await harness.manager.refreshCalendarCLIPicker(for: recording, force: true) }
+        for _ in 0..<100 where harness.transport.listCalls == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.transport.listCalls == 1)
+        harness.settings.setActiveProfile(low.id)
+        harness.transport.releaseAll()
+        let result = await request.value
+        #expect(result == .complete)
+        #expect(harness.transport.lastListEffort == .high)
     }
 }

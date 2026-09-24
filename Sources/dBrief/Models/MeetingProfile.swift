@@ -15,6 +15,8 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var aiProcessingEnabled: Bool?
     var aiEngine: AppSettings.AIEngine?
     var aiEndpointId: UUID?
+    var localCLIReasoningEffort: CLIReasoningEffort?
+    var calendarCLIReasoningEffort: CLIReasoningEffort?
     var summaryPrompt: String?
     var actionItemsPrompt: String?
     var tagsPrompt: String?
@@ -36,6 +38,8 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         aiProcessingEnabled: Bool? = nil,
         aiEngine: AppSettings.AIEngine? = nil,
         aiEndpointId: UUID? = nil,
+        localCLIReasoningEffort: CLIReasoningEffort? = nil,
+        calendarCLIReasoningEffort: CLIReasoningEffort? = nil,
         summaryPrompt: String? = nil,
         actionItemsPrompt: String? = nil,
         tagsPrompt: String? = nil,
@@ -55,6 +59,8 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         self.aiProcessingEnabled = aiProcessingEnabled
         self.aiEngine = aiEngine
         self.aiEndpointId = aiEndpointId
+        self.localCLIReasoningEffort = localCLIReasoningEffort
+        self.calendarCLIReasoningEffort = calendarCLIReasoningEffort
         self.summaryPrompt = summaryPrompt
         self.actionItemsPrompt = actionItemsPrompt
         self.tagsPrompt = tagsPrompt
@@ -81,6 +87,10 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         aiProcessingEnabled = try c.decodeIfPresent(Bool.self, forKey: .aiProcessingEnabled)
         aiEngine = try c.decodeIfPresent(AppSettings.AIEngine.self, forKey: .aiEngine)
         aiEndpointId = try c.decodeIfPresent(UUID.self, forKey: .aiEndpointId)
+        localCLIReasoningEffort = try c.decodeIfPresent(String.self, forKey: .localCLIReasoningEffort)
+            .flatMap(CLIReasoningEffort.init(rawValue:))
+        calendarCLIReasoningEffort = try c.decodeIfPresent(String.self, forKey: .calendarCLIReasoningEffort)
+            .flatMap(CLIReasoningEffort.init(rawValue:))
         summaryPrompt = try c.decodeIfPresent(String.self, forKey: .summaryPrompt)
         actionItemsPrompt = try c.decodeIfPresent(String.self, forKey: .actionItemsPrompt)
         tagsPrompt = try c.decodeIfPresent(String.self, forKey: .tagsPrompt)

@@ -12,7 +12,8 @@ extension RecordingManager {
     /// is retained for review if it disappears from a complete new snapshot.
     func refreshCalendarCLIPicker(for recording: Recording, force: Bool) async -> CalendarCLIPickerOutcome {
         guard appSettings.effectiveCalendarSource == .claudeCLI else { return .unconfigured }
-        let config = appSettings.calendarCLIConfig
+        let baseConfig = appSettings.calendarCLIConfig
+        let config = appSettings.effectiveCalendarCLIConfig
         guard config.isConfigured else { return .unconfigured }
         guard let window = Self.calendarCLIDayWindows(
             from: recording.date, to: recording.date, matchWindow: 0).first else { return .failed }
@@ -23,7 +24,7 @@ extension RecordingManager {
             let entries = try await calendarCLIService.refresh(window: window, config: config, force: force)
             guard appSettings.effectiveCalendarSource == .claudeCLI,
                   calendarCLIConfigGeneration == generation,
-                  appSettings.calendarCLIConfig == config else { return .failed }
+                  appSettings.calendarCLIConfig == baseConfig else { return .failed }
             let prior = recording.calendarEvent
             let priorKey = prior.flatMap { calendarCLIEntryByEventID[$0.id]?.key }
             var candidates = entries.map(\.event).sorted { $0.startDate < $1.startDate }
@@ -91,8 +92,8 @@ extension RecordingManager {
     /// after capture has successfully started; capture never awaits it.
     func scheduleCalendarCLIPrefetch() {
         guard appSettings.effectiveCalendarSource == .claudeCLI,
-              appSettings.calendarCLIConfig.isConfigured else { return }
-        let config = appSettings.calendarCLIConfig
+              appSettings.effectiveCalendarCLIConfig.isConfigured else { return }
+        let config = appSettings.effectiveCalendarCLIConfig
         let startedAt = Date()
         let matchWindow = TimeInterval(appSettings.calendarMatchWindowMinutes * 60)
         let windows = Self.calendarCLIDayWindows(from: startedAt, to: startedAt, matchWindow: matchWindow)
@@ -121,7 +122,7 @@ extension RecordingManager {
     /// inside the recording's `calendarLookupTask`, which processing already
     /// awaits, so the wait is bounded. Errors leave any cached data usable.
     func calendarCLIEvents(recordingStart: Date, recordingEnd: Date) async -> [CalendarEvent] {
-        let config = appSettings.calendarCLIConfig
+        let config = appSettings.effectiveCalendarCLIConfig
         guard config.isConfigured else { return [] }
         let matchWindow = TimeInterval(appSettings.calendarMatchWindowMinutes * 60)
         let windows = Self.calendarCLIDayWindows(
@@ -166,7 +167,8 @@ extension RecordingManager {
         guard appSettings.effectiveCalendarSource == .claudeCLI else {
             return .sourceInactive
         }
-        let config = appSettings.calendarCLIConfig
+        let baseConfig = appSettings.calendarCLIConfig
+        let config = appSettings.effectiveCalendarCLIConfig
         guard config.isConfigured else { return .sourceInactive }
         guard config.attendeePolicy == .onDemand else { return .policyForbids }
 
@@ -189,7 +191,7 @@ extension RecordingManager {
                 entry: entry, config: config, force: false)
             // Late-completion guards: everything must still line up.
             guard appSettings.effectiveCalendarSource == .claudeCLI,
-                  appSettings.calendarCLIConfig == config,
+                  appSettings.calendarCLIConfig == baseConfig,
                   generation == calendarCLIConfigGeneration,
                   appState.processingJob?.recording.id != recording.id,
                   recording.calendarSelectionRevision == selectionRevision else {
@@ -308,7 +310,7 @@ extension RecordingManager {
     }
 
     func calendarCLIStatus(for recording: Recording) async -> (lastSuccessfulRefresh: Date?, lastAttempt: Date?)? {
-        let config = appSettings.calendarCLIConfig
+        let config = appSettings.effectiveCalendarCLIConfig
         guard let window = Self.calendarCLIDayWindows(
             from: recording.date, to: recording.date, matchWindow: 0).first else { return nil }
         return await calendarCLIService.status(scope: CalendarCLIScope(config: config), window: window)

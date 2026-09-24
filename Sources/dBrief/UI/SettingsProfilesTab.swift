@@ -556,6 +556,30 @@ struct SettingsProfilesTab: View {
                     }
                 }
 
+                overrideRow("AI analysis CLI effort", \.localCLIReasoningEffort,
+                            defaultValue: appSettings.localCLIConfig.effort) {
+                    CLIReasoningEffortPicker(title: "AI analysis CLI effort",
+                        selection: overrideBinding(\.localCLIReasoningEffort,
+                                                   fallback: appSettings.localCLIConfig.effort),
+                        recommendation: .medium)
+                }
+                if appSettings.localCLIConfig.effortProvider == .commandDefault {
+                    Text("AI CLI effort is saved but inactive until Claude Code is selected as its effort provider.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                overrideRow("Calendar CLI effort", \.calendarCLIReasoningEffort,
+                            defaultValue: appSettings.calendarCLIConfig.effort) {
+                    CLIReasoningEffortPicker(title: "Calendar CLI effort",
+                        selection: overrideBinding(\.calendarCLIReasoningEffort,
+                                                   fallback: appSettings.calendarCLIConfig.effort),
+                        recommendation: .low)
+                }
+                if appSettings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true {
+                    Text("Calendar effort is saved but not applicable to the selected Haiku model.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 if let profile = selectedProfile {
                     PromptSettingsRow(kind: .summary, scope: .profile(profile.id))
                     PromptSettingsRow(kind: .actionItems, scope: .profile(profile.id))
@@ -564,6 +588,7 @@ struct SettingsProfilesTab: View {
             } label: {
                 overrideGroupLabel("AI Analysis", section: .profileAI, keyPaths: [
                     isSet(\.aiProcessingEnabled), isSet(\.aiEngine), isSet(\.aiEndpointId),
+                    isSet(\.localCLIReasoningEffort), isSet(\.calendarCLIReasoningEffort),
                     isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)
                 ])
             }

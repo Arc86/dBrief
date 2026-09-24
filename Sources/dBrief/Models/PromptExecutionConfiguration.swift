@@ -47,14 +47,21 @@ enum PromptConfigurationResolver {
         case .appleIntelligence: return .appleIntelligence
         case .qwenLocal: return .localModel
         case .localCLI:
-            guard !settings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PromptAIError.emptyCommand }
-            return .localCLI(settings.localCLIConfig)
+            return .localCLI(try resolvedCLIConfig(identity: identity, settings: settings))
         case .remoteEndpoint:
             let override = profile?.overrides.aiEndpointId.flatMap { id in settings.aiEndpoints.first { $0.id == id } }
             guard let endpoint = override ?? settings.defaultAIEndpoint else { throw PromptAIError.missingEndpoint }
             try validate(endpoint)
             return .remote(endpoint)
         }
+    }
+
+    static func resolvedCLIConfig(identity: PromptIdentity, settings: AppSettings) throws -> LocalCLIConfig {
+        let config = settings.resolvedLocalCLIConfig(for: try profile(identity: identity, settings: settings))
+        guard !config.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PromptAIError.emptyCommand
+        }
+        return config
     }
 
     static func fallbackExplanation(identity: PromptIdentity, settings: AppSettings) -> String? {

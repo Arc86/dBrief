@@ -42,9 +42,8 @@ final class PromptEditorSession {
         case .appleIntelligence: return .appleIntelligence
         case .localModel: return .localModel
         case .localCLI:
-            let config = store.settings.localCLIConfig
-            guard !config.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PromptAIError.emptyCommand }
-            return .localCLI(config)
+            return .localCLI(try PromptConfigurationResolver.resolvedCLIConfig(
+                identity: identity, settings: store.settings))
         case .remote(let id):
             guard let endpoint = store.settings.aiEndpoints.first(where: { $0.id == id }) else { throw PromptAIError.missingEndpoint }
             try PromptConfigurationResolver.validate(endpoint)

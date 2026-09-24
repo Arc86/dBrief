@@ -2454,7 +2454,7 @@ final class RecordingManager {
             vocabulary: appSettings.effectiveCustomVocabulary.joined(separator: ", "),
             guidance: .init(summary: appSettings.effectiveSummaryPrompt, actionItems: appSettings.effectiveActionItemsPrompt,
                             tags: appSettings.effectiveTagsPrompt),
-            localCLIConfig: appSettings.localCLIConfig, appleUnavailableReason: appleUnavailable)
+            localCLIConfig: appSettings.effectiveLocalCLIConfig, appleUnavailableReason: appleUnavailable)
         let progress = ProcessingStepProgress(appState: appState, job: job,
             stepIndex: firstNonNil(summaryIndex, actionsIndex, tagsIndex))
         defer { progress.invalidate() }

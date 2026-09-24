@@ -53,7 +53,7 @@ struct AutomaticPostRecordingConfiguration: Equatable, Sendable {
         transcriptionEndpoint = settings.effectiveDefaultTranscriptionEndpoint
         aiEndpoint = settings.effectiveDefaultAIEndpoint
         integrations = settings.integrations
-        localCLI = settings.localCLIConfig
+        localCLI = settings.effectiveLocalCLIConfig
         vocabulary = settings.effectiveCustomVocabulary
         ignoredSegments = settings.effectiveIgnoredSegments.sorted()
         options = [

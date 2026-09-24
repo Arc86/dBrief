@@ -75,7 +75,7 @@ struct ReprocessingOptions: Codable, Sendable {
         remoteChunkMaxUploadMB = settings.remoteChunkMaxUploadMB
         remoteChunkOverlapSeconds = settings.remoteChunkOverlapSeconds
         remoteChunkRetryCount = settings.remoteChunkRetryCount
-        localCLIConfigurationDigest = Self.digest(settings.localCLIConfig)
+        localCLIConfigurationDigest = Self.digest(settings.effectiveLocalCLIConfig)
     }
 
     var requiresTranscription: Bool { operation == .transcribe }
@@ -161,10 +161,10 @@ struct ReprocessingOptions: Codable, Sendable {
             ? try Self.resolve(aiEndpoint, in: settings.aiEndpoints, purpose: "AI analysis") : nil
         var cli = LocalCLIConfig.default
         if aiEngine == .localCLI {
-            guard Self.digest(settings.localCLIConfig) == localCLIConfigurationDigest else {
+            guard Self.digest(settings.effectiveLocalCLIConfig) == localCLIConfigurationDigest else {
                 throw ConfigurationError.cliChanged
             }
-            cli = settings.localCLIConfig
+            cli = settings.effectiveLocalCLIConfig
         }
         let guidance: InsightsGuidance
         if aiEngine == .remoteEndpoint {

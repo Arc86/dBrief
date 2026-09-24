@@ -6,7 +6,8 @@ import Foundation
 struct SettingsProfileScope {
     enum Field: String, CaseIterable, Identifiable {
         case language, vocabulary, transcriptionEngine, transcriptionService
-        case aiEnabled, aiEngine, aiProvider, summaryPrompt, actionsPrompt, tagsPrompt
+        case aiEnabled, aiEngine, aiProvider, analysisEffort, calendarEffort
+        case summaryPrompt, actionsPrompt, tagsPrompt
         case transcriptionTask, summaryTask, actionsTask, tagsTask
         case recordingFolder, transcriptFolder, obsidianVault, obsidianFolder
         var id: String { rawValue }
@@ -20,6 +21,8 @@ struct SettingsProfileScope {
             case .aiEnabled: \.aiProcessingEnabled
             case .aiEngine: \.aiEngine
             case .aiProvider: \.aiEndpointId
+            case .analysisEffort: \.localCLIReasoningEffort
+            case .calendarEffort: \.calendarCLIReasoningEffort
             case .summaryPrompt: \.summaryPrompt
             case .actionsPrompt: \.actionItemsPrompt
             case .tagsPrompt: \.tagsPrompt
@@ -116,6 +119,18 @@ struct SettingsProfileScope {
         toggle(.aiEnabled, "AI analysis", settings.aiProcessingEnabled, overrides.aiProcessingEnabled)
         add(.aiEngine, "AI engine", settings.aiEngine, overrides.aiEngine, format: { $0.displayName })
         provider(.aiProvider, "AI provider", settings.defaultAIEndpoint, overrides.aiEndpointId, settings.aiEndpoints)
+        add(.analysisEffort, "AI analysis CLI effort", settings.localCLIConfig.effort,
+            overrides.localCLIReasoningEffort, format: { Self.effortName($0) },
+            note: (overrides.aiEngine ?? settings.aiEngine) != .localCLI
+                ? "Saved, but inactive until Local CLI is selected as the AI engine."
+                : settings.localCLIConfig.effortProvider == .commandDefault
+                ? "Saved, but inactive until the effort provider is Claude Code." : nil)
+        add(.calendarEffort, "Calendar CLI effort", settings.calendarCLIConfig.effort,
+            overrides.calendarCLIReasoningEffort, format: { Self.effortName($0) },
+            note: settings.effectiveCalendarSource != .claudeCLI
+                ? "Saved, but inactive until Claude CLI is the calendar source."
+                : settings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true
+                ? "Saved, but not applicable to the selected Haiku model." : nil)
         add(.summaryPrompt, "Summary prompt", settings.summaryPrompt, overrides.summaryPrompt, format: { $0 })
         add(.actionsPrompt, "Action items prompt", settings.actionItemsPrompt, overrides.actionItemsPrompt, format: { $0 })
         add(.tagsPrompt, "Tags prompt", settings.tagsPrompt, overrides.tagsPrompt, format: { $0 })
@@ -153,6 +168,17 @@ struct SettingsProfileScope {
 
     func summary(for keyPath: AnyKeyPath) -> Summary? {
         summaries.first { $0.id.keyPath == keyPath }
+    }
+
+    private static func effortName(_ effort: CLIReasoningEffort) -> String {
+        switch effort {
+        case .cliDefault: "CLI default"
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xhigh: "Extra high"
+        case .max: "Maximum"
+        }
     }
 
     private static func isDirectory(_ url: URL) -> Bool {

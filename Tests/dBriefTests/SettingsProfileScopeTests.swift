@@ -102,3 +102,28 @@ struct SettingsProfileScopeTests {
         }
     }
 }
+
+extension SettingsProfileScopeTests {
+    @Test("Scope summarizes both effort overrides without activating the edited profile")
+    func effortOverrideSummaries() throws {
+        try withSettings { settings in
+            let active = MeetingProfile(name: "Active")
+            let edited = MeetingProfile(name: "Edited", overrides: .init(
+                localCLIReasoningEffort: .high, calendarCLIReasoningEffort: .cliDefault))
+            settings.profiles = [active, edited]
+            settings.setActiveProfile(active.id)
+            settings.localCLIConfig = .init(command: "claude -p", timeoutSeconds: 180,
+                                            effort: .medium, effortProvider: .claude)
+            settings.calendarCLIConfig = .default.updating(effort: .low)
+            let scope = SettingsProfileScope(settings: settings, profile: edited)
+            let aiField = try #require(SettingsProfileScope.Field(rawValue: "analysisEffort"))
+            let calendarField = try #require(SettingsProfileScope.Field(rawValue: "calendarEffort"))
+            #expect(scope.summary(for: aiField).defaultValue == "Medium")
+            #expect(scope.summary(for: aiField).profileValue == "High")
+            #expect(scope.summary(for: calendarField).defaultValue == "Low")
+            #expect(scope.summary(for: calendarField).profileValue == "CLI default")
+            #expect(scope.summary(for: aiField).isOverridden)
+            #expect(settings.activeProfileId == active.id)
+        }
+    }
+}

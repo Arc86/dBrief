@@ -81,7 +81,8 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .storage: [.recordingFolder, .transcriptFolder]
         case .transcription: [.language, .transcriptionEngine, .transcriptionService]
         case .vocabulary: [.vocabulary]
-        case .ai: [.aiEnabled, .aiEngine, .aiProvider, .summaryPrompt, .actionsPrompt, .tagsPrompt]
+        case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .calendarEffort,
+                   .summaryPrompt, .actionsPrompt, .tagsPrompt]
         case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask]
         case .integrations: [.obsidianVault, .obsidianFolder]
         default: []

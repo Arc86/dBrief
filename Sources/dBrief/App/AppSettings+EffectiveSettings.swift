@@ -17,6 +17,26 @@ extension AppSettings {
         return profiles[0]
     }
 
+    /// `nil` explicitly resolves app defaults, for global tests and app-scope previews.
+    func resolvedLocalCLIConfig(for profile: MeetingProfile?) -> LocalCLIConfig {
+        var config = localCLIConfig
+        config.effort = profile?.overrides.localCLIReasoningEffort ?? config.effort
+        return config
+    }
+
+    func resolvedCalendarCLIConfig(for profile: MeetingProfile?) -> CalendarCLIConfig {
+        calendarCLIConfig.updating(
+            effort: profile?.overrides.calendarCLIReasoningEffort ?? calendarCLIConfig.effort)
+    }
+
+    var effectiveLocalCLIConfig: LocalCLIConfig {
+        resolvedLocalCLIConfig(for: activeProfile)
+    }
+
+    var effectiveCalendarCLIConfig: CalendarCLIConfig {
+        resolvedCalendarCLIConfig(for: activeProfile)
+    }
+
     var effectiveTranscriptionLanguage: String {
         activeProfile.overrides.transcriptionLanguage ?? transcriptionLanguage
     }
