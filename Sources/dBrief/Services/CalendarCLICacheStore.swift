@@ -1,14 +1,11 @@
 import Foundation
 import CryptoKit
+import Darwin
 import os
 
-/// Persisted day-list snapshot. `lastSuccessfulRefresh` and `lastAttempt` are
-/// explicit: a failed or partial refresh updates the attempt stamp only and
-/// never advances success or touches entries.
 struct CalendarCLIStoredListSnapshot: Codable, Sendable {
     static let currentVersion = 1
-
-    var version: Int = CalendarCLIStoredListSnapshot.currentVersion
+    var version: Int = currentVersion
     var scope: CalendarCLIScope
     var window: CalendarCLIWindow
     var entries: [CalendarCLIEntry]
@@ -16,204 +13,309 @@ struct CalendarCLIStoredListSnapshot: Codable, Sendable {
     var lastAttempt: Date?
 }
 
-/// Atomic, versioned cache storage for the Claude CLI calendar source.
-/// Filenames are digests of scope/occurrence identity — the CLI command is
-/// never part of a path. Corrupt or unsupported files surface as a cache miss,
-/// never as a successful empty result.
+enum CalendarCLIPersistenceOutcome: Sendable, Equatable {
+    case saved, failed
+}
+
+/// Calendar cache storage. All paths below the root are opened relative to a
+/// directory descriptor with O_NOFOLLOW, including reads and atomic writes.
 final class CalendarCLICacheStore: @unchecked Sendable {
     let directory: URL
+    private let now: @Sendable () -> Date
     private let lock = NSLock()
 
-    static let retentionInterval: TimeInterval = 7 * 24 * 60 * 60
-    static let maxListSnapshots = 32
+    static let listRetentionInterval: TimeInterval = 90 * 86_400
+    static let detailRetentionInterval: TimeInterval = 7 * 86_400
+    static let maxListSnapshots = 128
     static let maxDetailEntries = 500
 
-    init(directory: URL = AppSupportPaths.subdirectory("CalendarCLI")) {
+    init(directory: URL = AppSupportPaths.subdirectory("CalendarCLI"),
+         now: @escaping @Sendable () -> Date = { Date() }) {
         self.directory = directory
-        try? Self.prepareDirectory(directory)
+        self.now = now
+        lock.withLock {
+            guard let root = rootFD(create: true) else { return }
+            defer { close(root) }
+            for kind in ["lists", "details"] {
+                if let fd = childDirectoryFD(parent: root, name: kind, create: true) { close(fd) }
+            }
+            sweep(root: root)
+        }
     }
-
-    // MARK: - List snapshots
 
     func loadList(scope: CalendarCLIScope, window: CalendarCLIWindow) -> CalendarCLIStoredListSnapshot? {
         lock.withLock {
-            guard let data = try? Data(contentsOf: listFileURL(scope: scope, window: window)) else { return nil }
-            do {
-                let snapshot = try JSONDecoder().decode(CalendarCLIStoredListSnapshot.self, from: data)
-                guard snapshot.version == CalendarCLIStoredListSnapshot.currentVersion else { return nil }
-                Self.touch(listFileURL(scope: scope, window: window))
-                return snapshot
-            } catch {
-                Logger.calendar.warning("Calendar CLI cache: unreadable list snapshot treated as a miss")
-                return nil
-            }
+            guard let fd = scopeFD(kind: "lists", scope: scope, create: false) else { return nil }
+            defer { close(fd) }
+            let name = listName(window)
+            guard let snapshot: CalendarCLIStoredListSnapshot = read(name, from: fd),
+                  valid(snapshot, scope: scope, window: window) else { return nil }
+            return snapshot
         }
     }
 
-    func storeList(_ snapshot: CalendarCLIStoredListSnapshot) {
+    @discardableResult
+    func storeList(_ snapshot: CalendarCLIStoredListSnapshot) -> CalendarCLIPersistenceOutcome {
         lock.withLock {
-            let url = listFileURL(scope: snapshot.scope, window: snapshot.window)
-            do {
-                try Self.writeAtomically(snapshot, to: url)
-            } catch {
+            guard valid(snapshot, scope: snapshot.scope, window: snapshot.window),
+                  let fd = scopeFD(kind: "lists", scope: snapshot.scope, create: true) else { return .failed }
+            defer { close(fd) }
+            guard write(snapshot, name: listName(snapshot.window), to: fd) else {
                 Logger.calendar.warning("Calendar CLI cache: could not persist list snapshot")
-                return
+                return .failed
             }
-            Self.applyRetention(directory: listsDirectory(for: snapshot.scope),
-                                limit: Self.maxListSnapshots)
+            sweepAll()
+            return .saved
         }
     }
 
-    /// Records a failed/partial attempt without touching entries or success.
     func updateListAttempt(scope: CalendarCLIScope, window: CalendarCLIWindow, date: Date) {
         lock.withLock {
-            let url = listFileURL(scope: scope, window: window)
-            guard var snapshot = Self.readListSnapshot(at: url) else { return }
+            guard let fd = scopeFD(kind: "lists", scope: scope, create: false) else { return }
+            defer { close(fd) }
+            let name = listName(window)
+            guard var snapshot: CalendarCLIStoredListSnapshot = read(name, from: fd),
+                  valid(snapshot, scope: scope, window: window) else { return }
             snapshot.lastAttempt = date
-            try? Self.writeAtomically(snapshot, to: url)
+            _ = write(snapshot, name: name, to: fd)
         }
     }
-
-    // MARK: - Details (rosters)
 
     func loadDetail(scope: CalendarCLIScope, key: CalendarCLIOccurrenceKey) -> CalendarCLIEntry? {
         lock.withLock {
-            let url = detailFileURL(scope: scope, key: key)
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            do {
-                let entry = try JSONDecoder().decode(CalendarCLIEntry.self, from: data)
-                Self.touch(url)
-                return entry
-            } catch {
-                Logger.calendar.warning("Calendar CLI cache: unreadable roster treated as a miss")
-                return nil
-            }
+            guard let fd = scopeFD(kind: "details", scope: scope, create: false) else { return nil }
+            defer { close(fd) }
+            guard let entry: CalendarCLIEntry = read(detailName(scope: scope, key: key), from: fd),
+                  entry.key == key, validDetail(entry) else { return nil }
+            return entry
         }
     }
 
-    func storeDetail(scope: CalendarCLIScope, entry: CalendarCLIEntry) {
+    @discardableResult
+    func storeDetail(scope: CalendarCLIScope, entry: CalendarCLIEntry) -> CalendarCLIPersistenceOutcome {
         lock.withLock {
-            do {
-                try Self.writeAtomically(entry, to: detailFileURL(scope: scope, key: entry.key))
-            } catch {
+            guard validDetail(entry),
+                  let fd = scopeFD(kind: "details", scope: scope, create: true) else { return .failed }
+            defer { close(fd) }
+            guard write(entry, name: detailName(scope: scope, key: entry.key), to: fd) else {
                 Logger.calendar.warning("Calendar CLI cache: could not persist roster")
-                return
+                return .failed
             }
-            Self.applyRetention(directory: detailsDirectory(for: scope),
-                                limit: Self.maxDetailEntries)
+            sweepAll()
+            return .saved
         }
     }
 
-    /// Purges rosters incompatible with the new policy or cap. Lowering the
-    /// cap or selecting Never drops stored people entirely; metadata already
-    /// attached to recordings is untouched (that lives in recording sidecars).
     func purgeRosters(scope: CalendarCLIScope, policy: CalendarCLIConfig.AttendeePolicy, cap: Int) {
         lock.withLock {
-            let details = directory.appendingPathComponent("details", isDirectory: true)
-                .appendingPathComponent(scope.digest, isDirectory: true)
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: details, includingPropertiesForKeys: nil) else { return }
-            for file in files {
-                guard let entry = try? JSONDecoder().decode(CalendarCLIEntry.self, from: Data(contentsOf: file)) else {
-                    try? FileManager.default.removeItem(at: file) // unreadable: drop
+            guard let fd = scopeFD(kind: "details", scope: scope, create: false) else { return }
+            defer { close(fd) }
+            for name in names(in: fd) {
+                guard let entry: CalendarCLIEntry = read(name, from: fd), validDetail(entry) else {
+                    _ = unlinkat(fd, name, 0)
                     continue
                 }
-                let incompatible = policy == .never
-                    || (entry.attendeeState == .loaded && entry.event.attendees.count > cap)
-                if incompatible { try? FileManager.default.removeItem(at: file) }
+                if policy == .never || (entry.attendeeState == .loaded && entry.event.attendees.count > cap) {
+                    _ = unlinkat(fd, name, 0)
+                }
             }
         }
     }
 
     func purgeAll() {
         lock.withLock {
-            for component in ["lists", "details"] {
-                try? FileManager.default.removeItem(
-                    at: directory.appendingPathComponent(component, isDirectory: true))
+            guard let root = rootFD(create: false) else { return }
+            defer { close(root) }
+            for kind in ["lists", "details"] {
+                guard let type = childDirectoryFD(parent: root, name: kind, create: false) else { continue }
+                for scope in names(in: type) {
+                    guard let fd = childDirectoryFD(parent: type, name: scope, create: false) else { continue }
+                    for name in names(in: fd) { _ = unlinkat(fd, name, 0) }
+                    close(fd)
+                    _ = unlinkat(type, scope, AT_REMOVEDIR)
+                }
+                close(type)
             }
         }
     }
 
-    // MARK: - Paths
-
-    private func listsDirectory(for scope: CalendarCLIScope) -> URL {
-        directory.appendingPathComponent("lists", isDirectory: true)
-            .appendingPathComponent(scope.digest, isDirectory: true)
-    }
-
-    private func detailsDirectory(for scope: CalendarCLIScope) -> URL {
-        directory.appendingPathComponent("details", isDirectory: true)
-            .appendingPathComponent(scope.digest, isDirectory: true)
-    }
-
     internal func listFileURL(scope: CalendarCLIScope, window: CalendarCLIWindow) -> URL {
-        listsDirectory(for: scope)
-            .appendingPathComponent("\(Int(window.start.timeIntervalSince1970))-\(Int(window.end.timeIntervalSince1970)).json")
+        directory.appendingPathComponent("lists").appendingPathComponent(scope.digest).appendingPathComponent(listName(window))
     }
 
     internal func detailFileURL(scope: CalendarCLIScope, key: CalendarCLIOccurrenceKey) -> URL {
+        directory.appendingPathComponent("details").appendingPathComponent(scope.digest)
+            .appendingPathComponent(detailName(scope: scope, key: key))
+    }
+
+    private func listName(_ window: CalendarCLIWindow) -> String {
+        "\(Int(window.start.timeIntervalSince1970))-\(Int(window.end.timeIntervalSince1970)).json"
+    }
+
+    private func detailName(scope: CalendarCLIScope, key: CalendarCLIOccurrenceKey) -> String {
         let identity = [scope.digest, key.mailbox, key.calendar, key.resourceURI,
                         String(key.occurrenceStart.timeIntervalSince1970)].joined(separator: "\u{1F}")
         let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined().prefix(24)
-        return detailsDirectory(for: scope).appendingPathComponent("\(digest).json")
+        return "\(digest).json"
     }
 
-    // MARK: - Helpers
+    private func valid(_ snapshot: CalendarCLIStoredListSnapshot, scope: CalendarCLIScope, window: CalendarCLIWindow) -> Bool {
+        guard snapshot.version == CalendarCLIStoredListSnapshot.currentVersion,
+              snapshot.scope == scope, snapshot.window == window,
+              let success = snapshot.lastSuccessfulRefresh, success.isFinite else { return false }
+        let age = now().timeIntervalSince(success)
+        return age >= -300 && age < Self.listRetentionInterval
+    }
 
-    private static func prepareDirectory(_ directory: URL) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        for component in ["lists", "details"] {
-            try fileManager.createDirectory(
-                at: directory.appendingPathComponent(component, isDirectory: true),
-                withIntermediateDirectories: true)
+    private func validDetail(_ entry: CalendarCLIEntry) -> Bool {
+        guard let fetched = entry.detailsFetchedAt, fetched.isFinite else { return false }
+        let age = now().timeIntervalSince(fetched)
+        return age >= -300 && age < Self.detailRetentionInterval
+    }
+
+    private func rootFD(create: Bool) -> Int32? {
+        if create {
+            // Only the cache root itself is created by path; a symlink at that
+            // path is rejected by lstat before the directory is opened.
+            var info = stat()
+            if lstat(directory.path, &info) != 0 {
+                do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]) } catch { return nil }
+            }
         }
-        // Exclude the cache from device backups where the volume supports it.
+        var info = stat()
+        guard lstat(directory.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { return nil }
+        let fd = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        guard fchmod(fd, 0o700) == 0 else { close(fd); return nil }
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var target = directory
         try? target.setResourceValues(values)
+        return fd
     }
 
-    private static func readListSnapshot(at url: URL) -> CalendarCLIStoredListSnapshot? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(CalendarCLIStoredListSnapshot.self, from: data)
+    private func childDirectoryFD(parent: Int32, name: String, create: Bool) -> Int32? {
+        guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { return nil }
+        if create { _ = mkdirat(parent, name, 0o700) }
+        let fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        guard fchmod(fd, 0o700) == 0 else { close(fd); return nil }
+        return fd
     }
 
-    private static func writeAtomically(_ value: some Encodable, to url: URL) throws {
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(value)
-        try data.write(to: url, options: .atomic)
+    private func scopeFD(kind: String, scope: CalendarCLIScope, create: Bool) -> Int32? {
+        guard let root = rootFD(create: create) else { return nil }
+        defer { close(root) }
+        guard let type = childDirectoryFD(parent: root, name: kind, create: create) else { return nil }
+        defer { close(type) }
+        return childDirectoryFD(parent: type, name: scope.digest, create: create)
     }
 
-    /// Read access refreshes the modification date so LRU retention reflects
-    /// actual use rather than write order.
-    private static func touch(_ url: URL) {
-        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+    private func read<T: Decodable>(_ name: String, from directoryFD: Int32, touchAccess: Bool = true) -> T? {
+        guard name.hasSuffix(".json") else { return nil }
+        let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size <= 8 * 1024 * 1024 else { return nil }
+        guard fchmod(fd, 0o600) == 0 else { return nil }
+        guard let data = try? FileHandle(fileDescriptor: fd, closeOnDealloc: false).readToEnd(),
+              let value = try? JSONDecoder().decode(T.self, from: data) else { return nil }
+        if touchAccess { _ = futimes(fd, nil) } // count eviction recency; expiry uses JSON timestamps
+        return value
     }
 
-    /// Evicts entries older than the retention interval, then the least
-    /// recently used beyond the count limit. Bounded sweeps; failures ignored.
-    private static func applyRetention(directory: URL, limit: Int) {
-        let fileManager = FileManager.default
-        guard let files = try? fileManager.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        let dated: [(url: URL, modified: Date)] = files.compactMap { url in
-            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return (url, modified)
+    private func write(_ value: some Encodable, name: String, to directoryFD: Int32) -> Bool {
+        guard name.hasSuffix(".json"),
+              let data = try? JSONEncoder().encode(value) else { return false }
+        let temp = ".\(UUID().uuidString).tmp"
+        let fd = openat(directoryFD, temp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+        guard fd >= 0 else { return false }
+        var success = fchmod(fd, 0o600) == 0
+        if success {
+            success = data.withUnsafeBytes { buffer in
+                guard let base = buffer.baseAddress else { return true }
+                var offset = 0
+                while offset < buffer.count {
+                    let count = Darwin.write(fd, base.advanced(by: offset), buffer.count - offset)
+                    if count <= 0 { return false }
+                    offset += count
+                }
+                return true
+            }
         }
-        let cutoff = Date().addingTimeInterval(-retentionInterval)
-        for entry in dated where entry.modified < cutoff {
-            try? fileManager.removeItem(at: entry.url)
+        if success { success = fsync(fd) == 0 }
+        if close(fd) != 0 { success = false }
+        if success { success = renameat(directoryFD, temp, directoryFD, name) == 0 }
+        if !success { _ = unlinkat(directoryFD, temp, 0) }
+        return success
+    }
+
+    private func names(in fd: Int32) -> [String] {
+        let copy = dup(fd)
+        guard copy >= 0 else { return [] }
+        guard let stream = fdopendir(copy) else { close(copy); return [] }
+        defer { closedir(stream) }
+        var result: [String] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) {
+                    String(cString: $0)
+                }
+            }
+            if name != ".", name != ".." { result.append(name) }
         }
-        let survivors = dated.filter { $0.modified >= cutoff }
-        guard survivors.count > limit else { return }
-        for entry in survivors.sorted(by: { $0.modified < $1.modified }).prefix(survivors.count - limit) {
-            try? fileManager.removeItem(at: entry.url)
+        return result
+    }
+
+    private func sweepAll() {
+        guard let root = rootFD(create: false) else { return }
+        defer { close(root) }
+        sweep(root: root)
+    }
+
+    private func sweep(root: Int32) {
+        for (kind, limit) in [("lists", Self.maxListSnapshots), ("details", Self.maxDetailEntries)] {
+            guard let type = childDirectoryFD(parent: root, name: kind, create: false) else { continue }
+            defer { close(type) }
+            for scope in names(in: type) {
+                guard let fd = childDirectoryFD(parent: type, name: scope, create: false) else { continue }
+                sweepScope(fd: fd, kind: kind, limit: limit)
+                close(fd)
+            }
         }
     }
+
+    private func sweepScope(fd: Int32, kind: String, limit: Int) {
+        var survivors: [(String, Date)] = []
+        for name in names(in: fd) where name.hasSuffix(".json") {
+            let validFile: Bool
+            if kind == "lists" {
+                if let snapshot: CalendarCLIStoredListSnapshot = read(name, from: fd, touchAccess: false),
+                   snapshot.version == CalendarCLIStoredListSnapshot.currentVersion,
+                   let stamp = snapshot.lastSuccessfulRefresh, stamp.isFinite {
+                    let age = now().timeIntervalSince(stamp)
+                    validFile = age >= -300 && age < Self.listRetentionInterval
+                } else { validFile = false }
+            } else {
+                if let entry: CalendarCLIEntry = read(name, from: fd, touchAccess: false) { validFile = validDetail(entry) }
+                else { validFile = false }
+            }
+            guard validFile else { _ = unlinkat(fd, name, 0); continue }
+            var info = stat()
+            guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { continue }
+            survivors.append((name, Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec))))
+        }
+        if survivors.count > limit {
+            for (name, _) in survivors.sorted(by: { $0.1 < $1.1 }).prefix(survivors.count - limit) {
+                _ = unlinkat(fd, name, 0)
+            }
+        }
+    }
+}
+
+private extension Date {
+    var isFinite: Bool { timeIntervalSince1970.isFinite }
 }

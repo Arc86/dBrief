@@ -92,7 +92,7 @@ struct CalendarCLICacheTests {
     @Test("Roster files survive a restart and omitted states persist")
     func rosterSurvivesRestart() {
         let store = Self.makeStore()
-        let fetched = Date(timeIntervalSince1970: 1_789_100_000)
+        let fetched = Date()
         let omitted = CalendarCLIEntry(
             key: Self.entry().key, event: Self.entry().event, sourceRevision: nil,
             detailsFetchedAt: fetched, attendeeState: .omittedLargeMeeting,
@@ -248,5 +248,158 @@ struct CalendarCLICacheTests {
         store.purgeAll()
         #expect(store.loadList(scope: Self.scope, window: Self.window) == nil)
         #expect(store.loadDetail(scope: Self.scope, key: Self.entry().key) == nil)
+    }
+}
+
+extension CalendarCLICacheTests {
+    @Test("The exact ninety-day boundary expires, regardless of intervening reads")
+    func exactListExpiryBoundary() {
+        let clock = CalendarCLIServiceTests.FixedClock(Date())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = CalendarCLICacheStore(directory: directory, now: clock.reader)
+        let success = clock.now
+        #expect(store.storeList(.init(scope: Self.scope, window: Self.window, entries: [],
+                                      lastSuccessfulRefresh: success, lastAttempt: success)) == .saved)
+        clock.advance(89 * 86_400)
+        #expect(store.loadList(scope: Self.scope, window: Self.window) != nil)
+        clock.advance(86_400)
+        #expect(store.loadList(scope: Self.scope, window: Self.window) == nil)
+    }
+
+    @Test("Restart sweeps expired files from scopes other than the active scope")
+    func startupSweepsInactiveScopes() throws {
+        let clock = CalendarCLIServiceTests.FixedClock(Date())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let oldScope = CalendarCLIScope(mailbox: "old@example.com", calendar: "Old", timeZoneID: "UTC")
+        let store = CalendarCLICacheStore(directory: directory, now: clock.reader)
+        #expect(store.storeList(.init(scope: oldScope, window: Self.window, entries: [],
+                                      lastSuccessfulRefresh: clock.now, lastAttempt: clock.now)) == .saved)
+        let oldFile = store.listFileURL(scope: oldScope, window: Self.window)
+        #expect(FileManager.default.fileExists(atPath: oldFile.path))
+        clock.advance(90 * 86_400)
+        _ = CalendarCLICacheStore(directory: directory, now: clock.reader)
+        #expect(!FileManager.default.fileExists(atPath: oldFile.path))
+    }
+
+    @Test("Reading an old broad-permission file repairs it")
+    func repairsExistingFilePermission() throws {
+        let store = Self.makeStore()
+        let now = Date()
+        store.storeList(.init(scope: Self.scope, window: Self.window, entries: [],
+                              lastSuccessfulRefresh: now, lastAttempt: now))
+        let file = store.listFileURL(scope: Self.scope, window: Self.window)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        #expect(store.loadList(scope: Self.scope, window: Self.window) != nil)
+        let mode = try #require(FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int)
+        #expect(mode & 0o777 == 0o600)
+    }
+
+    @Test("A symlinked type, scope, or leaf never exposes its target")
+    func nestedSymlinksAreRejected() throws {
+        let manager = FileManager.default
+        for level in ["type", "scope", "leaf"] {
+            let base = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let target = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? manager.removeItem(at: base); try? manager.removeItem(at: target) }
+            let store = CalendarCLICacheStore(directory: base)
+            try manager.createDirectory(at: target, withIntermediateDirectories: true)
+            let file = store.listFileURL(scope: Self.scope, window: Self.window)
+            let link: URL
+            switch level {
+            case "type":
+                link = base.appendingPathComponent("lists")
+                try manager.removeItem(at: link)
+            case "scope":
+                link = file.deletingLastPathComponent()
+            default:
+                try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                link = file
+            }
+            try manager.createSymbolicLink(at: link, withDestinationURL: target)
+            #expect(store.storeList(.init(scope: Self.scope, window: Self.window, entries: [],
+                                          lastSuccessfulRefresh: Date(), lastAttempt: Date())) == (level == "leaf" ? .saved : .failed))
+            #expect((try manager.contentsOfDirectory(atPath: target.path)).isEmpty)
+        }
+    }
+
+    @Test("List access cannot extend the ninety-day success deadline")
+    func listExpiresBySuccessTime() {
+        let store = Self.makeStore()
+        let old = Date().addingTimeInterval(-91 * 86_400)
+        store.storeList(.init(scope: Self.scope, window: Self.window, entries: [Self.entry()],
+                              lastSuccessfulRefresh: old, lastAttempt: Date()))
+        #expect(store.loadList(scope: Self.scope, window: Self.window) == nil)
+    }
+
+    @Test("Roster details expire independently after seven days")
+    func detailExpiresByFetchTime() {
+        let store = Self.makeStore()
+        let old = Date().addingTimeInterval(-8 * 86_400)
+        let entry = Self.entry(state: .loaded, fetchedAt: old)
+        store.storeDetail(scope: Self.scope, entry: entry)
+        #expect(store.loadDetail(scope: Self.scope, key: entry.key) == nil)
+    }
+
+    @Test("Missing success timestamp is not a complete empty snapshot")
+    func missingSuccessTimestampIsMiss() {
+        let store = Self.makeStore()
+        store.storeList(.init(scope: Self.scope, window: Self.window, entries: [],
+                              lastSuccessfulRefresh: nil, lastAttempt: Date()))
+        #expect(store.loadList(scope: Self.scope, window: Self.window) == nil)
+    }
+
+    @Test("Cache directories and files are owner-only after creation and replacement")
+    func privateFileModes() throws {
+        let store = Self.makeStore()
+        let now = Date()
+        let snapshot = CalendarCLIStoredListSnapshot(
+            scope: Self.scope, window: Self.window, entries: [Self.entry()],
+            lastSuccessfulRefresh: now, lastAttempt: now)
+        store.storeList(snapshot)
+        let file = store.listFileURL(scope: Self.scope, window: Self.window)
+        for directory in [store.directory, store.directory.appendingPathComponent("lists"), file.deletingLastPathComponent()] {
+            let mode = try #require(FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int)
+            #expect(mode & 0o777 == 0o700)
+        }
+        for _ in 0..<2 {
+            store.storeList(snapshot)
+            let mode = try #require(FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int)
+            #expect(mode & 0o777 == 0o600)
+        }
+    }
+
+    @Test("A symlinked cache root never writes into its target")
+    func rootSymlinkIsNotTraversed() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: base)
+            try? FileManager.default.removeItem(at: target)
+        }
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let link = base.appendingPathComponent("cache")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let store = CalendarCLICacheStore(directory: link)
+        store.storeList(.init(scope: Self.scope, window: Self.window, entries: [],
+                              lastSuccessfulRefresh: Date(), lastAttempt: Date()))
+        #expect(!FileManager.default.fileExists(atPath: target.appendingPathComponent("lists").path))
+    }
+
+    @Test("A scope retains 128 recent day snapshots")
+    func listLimitIs128() {
+        let store = Self.makeStore()
+        let now = Date()
+        for day in 0..<129 {
+            let window = CalendarCLIWindow(start: Self.window.start.addingTimeInterval(Double(day) * 86_400),
+                                           end: Self.window.end.addingTimeInterval(Double(day) * 86_400),
+                                           timeZoneID: Self.window.timeZoneID)
+            store.storeList(.init(scope: Self.scope, window: window, entries: [],
+                                  lastSuccessfulRefresh: now, lastAttempt: now))
+        }
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: store.directory.appendingPathComponent("lists").appendingPathComponent(Self.scope.digest),
+            includingPropertiesForKeys: nil)) ?? []
+        #expect(files.count == 128)
     }
 }

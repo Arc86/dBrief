@@ -32,6 +32,8 @@ actor CalendarCLIService {
     static let retryCooldown: TimeInterval = 5 * 60
     private var listCooldowns: [String: Date] = [:]
     private var listAttemptOutcomes: [String: ListAttemptOutcome] = [:]
+    private var memorySnapshots: [String: CalendarCLIStoredListSnapshot] = [:]
+    private var persistenceOutcomes: [String: CalendarCLIPersistenceOutcome] = [:]
 
     /// Roster scope generation: cap/policy identity. Lowering the cap or
     /// selecting Never invalidates in-flight roster work and purges
@@ -58,8 +60,19 @@ actor CalendarCLIService {
     /// read so a lowered cap is respected even before a purge runs.
     func cached(window: CalendarCLIWindow, config: CalendarCLIConfig) async -> [CalendarCLIEntry] {
         let scope = CalendarCLIScope(config: config)
-        guard let snapshot = store.loadList(scope: scope, window: window) else { return [] }
+        guard let snapshot = cachedSnapshot(scope: scope, window: window) else { return [] }
         return snapshot.entries.map { adjusted($0, config: config) }
+    }
+
+    private func cachedSnapshot(scope: CalendarCLIScope, window: CalendarCLIWindow) -> CalendarCLIStoredListSnapshot? {
+        let key = Self.taskKey(scope: scope, window: window)
+        if let snapshot = memorySnapshots[key], let success = snapshot.lastSuccessfulRefresh {
+            let age = now().timeIntervalSince(success)
+            if age >= -300, age < CalendarCLICacheStore.listRetentionInterval { return snapshot }
+            memorySnapshots[key] = nil
+            persistenceOutcomes[key] = nil
+        }
+        return store.loadList(scope: scope, window: window)
     }
 
     /// Read-time adjustments: TTL staleness and cap enforcement. Neither fetches.
@@ -92,17 +105,17 @@ actor CalendarCLIService {
         let currentTime = now()
 
         if !force, config.listFreshnessSeconds == 0 {
-            return store.loadList(scope: scope, window: window)?.entries ?? []
+            return cachedSnapshot(scope: scope, window: window)?.entries ?? []
         }
 
         // Automatic triggers honor the retry cooldown; forced refresh bypasses.
         if !force, let cooldownUntil = listCooldowns[key], currentTime < cooldownUntil {
-            return store.loadList(scope: scope, window: window)?.entries ?? []
+            return cachedSnapshot(scope: scope, window: window)?.entries ?? []
         }
 
         // Fresh snapshots are returned without a call; only demand (or staleness)
         // reaches the connector.
-        let previous = store.loadList(scope: scope, window: window)
+        let previous = cachedSnapshot(scope: scope, window: window)
         if !force, let lastSuccess = previous?.lastSuccessfulRefresh,
            currentTime.timeIntervalSince(lastSuccess) < TimeInterval(config.listFreshnessSeconds) {
             return previous?.entries ?? []
@@ -137,12 +150,14 @@ actor CalendarCLIService {
             if outcome.completeness == .complete {
                 listAttemptOutcomes[key] = .complete
                 listCooldowns[key] = nil
-                store.storeList(CalendarCLIStoredListSnapshot(
+                let snapshot = CalendarCLIStoredListSnapshot(
                     scope: scope, window: window,
                     entries: outcome.raw,
                     lastSuccessfulRefresh: outcome.attempt,
                     lastAttempt: outcome.attempt
-                ))
+                )
+                memorySnapshots[key] = snapshot
+                persistenceOutcomes[key] = store.storeList(snapshot)
                 reconcileRosterStaleness(scope: scope, stored: previousSnapshot, fresh: outcome.raw, config: config)
                 return outcome.raw
             } else {
@@ -176,7 +191,7 @@ actor CalendarCLIService {
         if let count = entry.attendeeCount, count > config.maxAttendees {
             let omitted = CalendarCLIEntry(
                 key: entry.key, event: entry.event, sourceRevision: entry.sourceRevision,
-                detailsFetchedAt: entry.detailsFetchedAt,
+                detailsFetchedAt: now(),
                 attendeeState: .omittedLargeMeeting,
                 attendeeCount: count, isCancelled: entry.isCancelled
             )
@@ -220,6 +235,8 @@ actor CalendarCLIService {
     func invalidate() {
         generation += 1
         listCooldowns = [:]
+        memorySnapshots = [:]
+        persistenceOutcomes = [:]
         for (_, task) in listTasks { task.cancel() }
         listTasks = [:]
         for (_, task) in detailTasks { task.cancel() }
@@ -244,8 +261,12 @@ actor CalendarCLIService {
 
     /// Last success/attempt stamps for status display.
     func status(scope: CalendarCLIScope, window: CalendarCLIWindow) -> (lastSuccessfulRefresh: Date?, lastAttempt: Date?)? {
-        guard let snapshot = store.loadList(scope: scope, window: window) else { return nil }
+        guard let snapshot = cachedSnapshot(scope: scope, window: window) else { return nil }
         return (snapshot.lastSuccessfulRefresh, snapshot.lastAttempt)
+    }
+
+    func lastPersistenceOutcome(window: CalendarCLIWindow, config: CalendarCLIConfig) -> CalendarCLIPersistenceOutcome? {
+        persistenceOutcomes[Self.taskKey(scope: CalendarCLIScope(config: config), window: window)]
     }
 
     func lastAttemptOutcome(window: CalendarCLIWindow, config: CalendarCLIConfig) -> ListAttemptOutcome? {

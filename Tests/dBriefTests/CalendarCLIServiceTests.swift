@@ -7,6 +7,28 @@ import Foundation
 /// preservation semantics.
 struct CalendarCLIServiceTests {
 
+    @Test("A successful list stays readable in memory when disk persistence fails")
+    func persistenceFailureRetainsMemory() async throws {
+        let clock = FixedClock(Date())
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base); try? FileManager.default.removeItem(at: target) }
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let link = base.appendingPathComponent("cache")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let store = CalendarCLICacheStore(directory: link, now: clock.reader)
+        let window = Self.makeWindow()
+        let entry = Self.makeEntry(window: window)
+        let transport = FakeTransport(listResult: Self.completeResult([entry]), detailResult: entry)
+        let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
+        let config = Self.makeConfig()
+        #expect(try await service.refresh(window: window, config: config, force: true) == [entry])
+        #expect(await service.cached(window: window, config: config) == [entry])
+        #expect(await service.lastPersistenceOutcome(window: window, config: config) == .failed)
+        #expect(store.loadList(scope: CalendarCLIScope(config: config), window: window) == nil)
+    }
+
     // MARK: - Fakes
 
     /// Counting fake transport with an optional gate that holds list calls
@@ -125,7 +147,7 @@ struct CalendarCLIServiceTests {
     ) -> (CalendarCLIService, CalendarCLICacheStore) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CalendarCLIServiceTests-\(UUID().uuidString)", isDirectory: true)
-        let store = CalendarCLICacheStore(directory: dir)
+        let store = CalendarCLICacheStore(directory: dir, now: clock.reader)
         let service = CalendarCLIService(transport: transport, store: store, now: clock.reader)
         return (service, store)
     }
