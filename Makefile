@@ -1,6 +1,7 @@
 APP_NAME = dBrief
 EXECUTABLE_NAME = dBrief
 BUILD_DIR = .build/release
+MACOS_SDK_VERSION := $(shell xcrun --sdk macosx --show-sdk-version)
 # Build channel. Defaults produce the production app; the `beta` target overrides
 # these to build a fully separate `dBrief-Beta.app` (`com.dbrief.app.beta`) with
 # its own bundle id, name, and signing cert — so it gets independent macOS TCC
@@ -53,7 +54,11 @@ DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 .PHONY: app run clean build sign dmg package-dmg notarize beta run-beta
 
 build:
-	swift build -c release --arch arm64
+	# SwiftPM currently stamps the deployment target (14.0) as the linked SDK.
+	# Supply the actual SDK so AppKit uses the native appearance of this build.
+	swift build -c release --arch arm64 \
+		-Xlinker -platform_version -Xlinker macos \
+		-Xlinker 14.0 -Xlinker $(MACOS_SDK_VERSION)
 
 app: build
 	rm -rf $(APP_BUNDLE)
