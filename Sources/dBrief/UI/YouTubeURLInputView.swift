@@ -19,6 +19,9 @@ struct YouTubeURLInputView: View {
     @State private var isDownloadingYtDlp = false
     @State private var ytDlpDownloadProgress: Double = 0
     @State private var ytDlpDownloadError: String?
+    @State private var ytDlpUpdateStatus: YouTubeDownloadService.YtDlpUpdateStatus?
+    @State private var isCheckingYtDlpUpdate = false
+    @State private var ytDlpUpdateCheckError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -82,25 +85,25 @@ struct YouTubeURLInputView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // yt-dlp availability section
-            if !ytDlpAvailable {
-                Divider()
-                ytDlpSection
-            }
+            Divider()
+            ytDlpSection
         }
         .padding(.vertical, 4)
         .onAppear {
             ytDlpAvailable = YouTubeDownloadService.findYtDlp() != nil
         }
+        .task(id: ytDlpAvailable) {
+            if ytDlpAvailable { await checkYtDlpUpdate() }
+        }
     }
 
-    // MARK: - yt-dlp unavailable section
+    // MARK: - yt-dlp status
 
     @ViewBuilder
     private var ytDlpSection: some View {
         if isDownloadingYtDlp {
             VStack(alignment: .leading, spacing: 4) {
-                Label("Downloading yt-dlp…", systemImage: "arrow.down.circle")
+                Label(ytDlpAvailable ? "Updating yt-dlp…" : "Downloading yt-dlp…", systemImage: "arrow.down.circle")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
                 ProgressView(value: ytDlpDownloadProgress)
@@ -111,7 +114,7 @@ struct YouTubeURLInputView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        } else {
+        } else if !ytDlpAvailable {
             VStack(alignment: .leading, spacing: 6) {
                 Label("yt-dlp not found", systemImage: "exclamationmark.triangle")
                     .font(.caption.weight(.medium))
@@ -142,6 +145,49 @@ struct YouTubeURLInputView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if isCheckingYtDlpUpdate {
+                    Label("Checking yt-dlp for updates…", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let status = ytDlpUpdateStatus {
+                    if status.updateAvailable {
+                        Text("yt-dlp \(status.installedVersion) · \(status.latestVersion) available")
+                            .font(.caption)
+                        Button {
+                            downloadYtDlp(autoSubmit: false)
+                        } label: {
+                            Label("Update yt-dlp", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isLoading)
+                        Text("The update is stored in dBrief's support folder.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("yt-dlp \(status.installedVersion) is up to date")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let error = ytDlpUpdateCheckError {
+                    Text("Could not check yt-dlp updates: \(error)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Check again") {
+                        Task { await checkYtDlpUpdate() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                if let error = ytDlpDownloadError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
         }
     }
 
@@ -163,7 +209,19 @@ struct YouTubeURLInputView: View {
         }
     }
 
-    private func downloadYtDlp() {
+    private func checkYtDlpUpdate() async {
+        isCheckingYtDlpUpdate = true
+        ytDlpUpdateStatus = nil
+        ytDlpUpdateCheckError = nil
+        do {
+            ytDlpUpdateStatus = try await YouTubeDownloadService.checkYtDlpUpdate()
+        } catch {
+            ytDlpUpdateCheckError = error.localizedDescription
+        }
+        isCheckingYtDlpUpdate = false
+    }
+
+    private func downloadYtDlp(autoSubmit: Bool = true) {
         isDownloadingYtDlp = true
         ytDlpDownloadError = nil
         ytDlpDownloadProgress = 0
@@ -173,8 +231,9 @@ struct YouTubeURLInputView: View {
                     ytDlpDownloadProgress = progress
                 }
                 ytDlpAvailable = true
+                if !autoSubmit { await checkYtDlpUpdate() }
                 // Auto-submit if the user already typed a URL
-                if !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if autoSubmit && !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     submitURL()
                 }
             } catch {
