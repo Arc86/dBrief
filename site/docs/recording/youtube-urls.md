@@ -21,6 +21,8 @@ This feature needs the `yt-dlp` tool. dBrief looks for it in your `PATH` and com
 brew install yt-dlp
 ```
 
+When you open the URL panel, dBrief checks the installed yt-dlp version against the latest stable release. If an update is available, select **Update yt-dlp**. The updated binary is saved in dBrief's support folder and takes precedence over a Homebrew installation. If you're using Homebrew and want to continue managing yt-dlp there, run `brew upgrade yt-dlp` in Terminal instead of using the in-app button.
+
 ## Notes
 
 - Any site `yt-dlp` supports works, not just YouTube.
