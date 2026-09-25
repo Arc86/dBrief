@@ -7,7 +7,7 @@ Unlike the direct Outlook integration, this source needs **no Azure app registra
 ## Setup
 
 1. Install the Claude CLI and sign in (`claude` once in a Terminal). Your account needs the **Microsoft 365 connector** connected and authorized.
-2. In dBrief, go to **Settings → Calendar** and pick **Claude CLI** as the source.
+2. In dBrief, go to **Settings → Integrations → Calendar** and pick **Claude CLI** as the source.
 3. Enter your **mailbox email** — it is passed to the connector explicitly, so a connector login change can never silently redirect queries to a different mailbox.
 4. Optionally enter a **calendar name** (leave empty for the default calendar).
 5. Press **Test connection**. This performs one small bounded read around the current time — it never fetches full meeting resources.

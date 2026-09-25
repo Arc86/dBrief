@@ -12,7 +12,7 @@ When a recording **stops**, dBrief finds the calendar event that best fits the r
 
 The match is chosen by how closely an event's time window fits the recording's actual span, with a preference for meetings that have invitees and a strong penalty for all-day blocks — so a day-long "Focus time" block never wins over the real 30-minute meeting it overlaps.
 
-In **Settings → General → Calendar**, use **Automatic match window** to decide how close a non-overlapping event's start time must be to the recording start. Choose **Only overlapping** for strict matching, or a window from 5 to 60 minutes. The default is 15 minutes.
+In **Settings → Integrations → Calendar**, use **Automatic match window** to decide how close a non-overlapping event's start time must be to the recording start. Choose **Only overlapping** for strict matching, or a window from 5 to 60 minutes. The default is 15 minutes.
 
 ## Picking a different meeting
 
@@ -22,13 +22,14 @@ Enable **Show all meetings from the recording day** to add the day's other event
 
 ## Calendar sources
 
-Configure this in **Settings → General → Calendar** with the **Source** picker:
+Configure this in **Settings → Integrations → Calendar** with the **Source** picker:
 
 | Source | Description |
 |---|---|
 | **Off** | No calendar lookup |
 | **iCal** | Your macOS Calendar (Apple Calendar), via the Calendar permission |
 | **Outlook (Microsoft)** | Microsoft 365 calendar — only appears when the app is built with a Microsoft client ID |
+| **Claude CLI** | Microsoft 365 calendar fetched through your own Claude CLI connector — no Azure app registration and no calendar permission needed |
 
 ### iCal
 
@@ -42,4 +43,10 @@ If a selected calendar becomes unavailable, dBrief keeps the filter in place and
 
 If available, choose **Outlook (Microsoft)** and click **Sign in with Microsoft**. dBrief reads your calendar through the Microsoft Graph API using read-only access, and your sign-in is stored securely in the Keychain. You can sign out at any time.
 
-> **Note:** The Outlook option only shows up in builds configured with a Microsoft Azure client ID. If you only see **Off** and **iCal**, your build uses iCal only.
+> **Note:** The Outlook option only shows up in builds configured with a Microsoft Azure client ID. The **Claude CLI** source is available in every build.
+
+### Claude CLI
+
+Choose **Claude CLI** to fetch your Microsoft 365 calendar through your own [Claude CLI](https://docs.claude.com/en/docs/claude-code) install. It needs no Azure app registration, no Microsoft sign-in inside dBrief, and no Calendar permission — meetings are cached locally per day, and attendees are only fetched when you explicitly ask for them.
+
+For setup, freshness controls, and privacy details, see [Claude CLI Calendar](../integrations/claude-cli-calendar.md).

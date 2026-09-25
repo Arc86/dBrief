@@ -35,7 +35,7 @@ Most meeting recorders send your conversations to someone else's GPU. dBrief doe
 - **Your meetings, your machine** — no dBrief cloud, no account, no telemetry
 - **Auto-delete** — optionally purge old recordings and/or transcripts after a chosen age (off by default)
 - **Bring your own model** — want a remote endpoint? Plug in your key, we never see it
-- **Calendar-aware** — reads your iCal event, so the title, attendees, and time are filled in automatically
+- **Calendar-aware** — matches your recording against your calendar — iCal, Outlook, or your Claude CLI's Microsoft 365 connector — so the title, attendees, and time are filled in automatically
 - **Link meetings later** — choose **Reprocess → Link calendar meeting…** on a saved recording to attach a meeting from its original day. Keep or replace its title and participants, then optionally rerun AI analysis with the saved agenda and attendees. Existing exports and integration deliveries are unchanged.
 - **Four destinations** — Obsidian, Apple Notes, Apple Reminders, Webhook
 
@@ -166,7 +166,7 @@ dBrief asks for the minimum it needs. You can manage any of these in **Settings 
 | Microphone | Recording your voice | Yes |
 | Screen Recording | Capturing system audio (both sides of the call) | Recommended |
 | Speech Recognition | Apple Speech transcription | Only if using Apple Speech |
-| Calendar | Pre-filling meeting title, attendees, and agenda | Only if using iCal calendar matching |
+| Calendar | Pre-filling meeting title, attendees, and agenda | Only for the iCal source (Outlook and Claude CLI don't need it) |
 | Notifications | Completion alerts | Optional |
 | Reminders | Apple Reminders integration | Only if using Reminders |
 
