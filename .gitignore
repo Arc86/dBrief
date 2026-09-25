@@ -34,6 +34,8 @@ DerivedData/
 .serena/
 .impeccable/
 graphify-out/
+/.zcode/
+/.zcodeignore
 
 # Internal development artifacts (not for the public repo)
 # Anchored to the repo root so it does NOT match the published site/docs/.

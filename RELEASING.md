@@ -38,7 +38,7 @@ make run                                                                        
 
 ## 3. Cut a notarized release
 
-First, curate the highlights for this version in [`RELEASE_NOTES.md`](RELEASE_NOTES.md) (headline user-facing changes — auto-generated commit lists read poorly on their own) and commit. Then build, sign, and notarize in one atomic step:
+First, add this version's notes at the top of [`RELEASE_NOTES.md`](RELEASE_NOTES.md), keeping the older version sections below as the permanent history. `RELEASE_NOTES.md` is the archive; the extraction script selects just the requested version for the updater and GitHub. Then commit and build, sign, and notarize in one atomic step:
 
 > **Exclude dev-only tooling.** These notes are user-facing (they feed both the Sparkle update dialog and the GitHub release body), so leave out changes that only affect development or release workflow — e.g. the **beta build channel** (`make beta`/`make run-beta`), Makefile/CI plumbing, and test-only scaffolding. Users of the notarized production build never see those, so they don't belong in the changelog.
 
@@ -65,6 +65,7 @@ codesign -dvvv dBrief.app/Contents/MacOS/dBrief 2>&1 | grep -E 'flags|Authority|
 ```bash
 mkdir -p /tmp/dbrief-appcast
 cp dBrief-<version>.dmg /tmp/dbrief-appcast/
+scripts/extract-release-notes.sh <version> > /tmp/dbrief-appcast/dBrief-<version>.md
 # Per-version release notes for Sparkle's update dialog. The file MUST share the
 # DMG's basename (dBrief-<version>) so generate_appcast pairs it with this item;
 # --embed-release-notes renders the Markdown to HTML and inlines it in the
@@ -90,7 +91,7 @@ git tag v<version>
 git push origin v<version>
 gh release create v<version> dBrief-<version>.dmg /tmp/dbrief-appcast/appcast.xml \
   --title "dBrief <version>" \
-  --notes-file RELEASE_NOTES.md
+  --notes-file /tmp/dbrief-appcast/dBrief-<version>.md
 ```
 
 Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, once/day) or via **Settings → General → Software update → Check Now**.

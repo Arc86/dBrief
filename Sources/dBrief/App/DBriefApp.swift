@@ -236,6 +236,7 @@ struct DBriefApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var context = AppContext()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         appDelegate.recordingManager = context.recordingManager
@@ -297,6 +298,14 @@ struct DBriefApp: App {
                 Image(systemName: "waveform")
                     .symbolRenderingMode(.hierarchical)
                     .accessibilityLabel("dBrief, ready")
+            }
+            // Launch hook for UI debugging: `dBrief --open-settings` presents
+            // the Settings window at startup. Lives on the always-rendered
+            // status-item label because the menu window content is lazy.
+            if CommandLine.arguments.contains("--open-settings") {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .task { openWindow(id: "settings") }
             }
         }
         .menuBarExtraStyle(.window)
