@@ -518,6 +518,7 @@ struct TranscriptDetailView: View {
             insights: insights,
             isGenerating: isGenerating,
             canGenerate: richTranscript != nil && !isReprocessing,
+            actionItemOwners: recording.participants + (recording.calendarEvent?.attendeeNames ?? []),
             isReadOnly: isReprocessing,
             onGenerate: { Task { await generateSummary() } },
             onSave: { updated in await saveInsights(updated) },

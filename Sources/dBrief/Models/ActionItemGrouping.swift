@@ -38,12 +38,12 @@ enum ActionItemParser {
     /// Parses one raw string into one entry per owner it names. A shared owner
     /// such as `[Alice/Bob]` (also `,`, `&`, ` and `) yields one entry per person,
     /// so the item appears under each of their groups.
-    static func parse(_ raw: String) -> [ParsedActionItem] {
+    static func parse(_ raw: String, knownOwners: [String] = []) -> [ParsedActionItem] {
         let range = NSRange(raw.startIndex..., in: raw)
         guard let match = ownerRegex.firstMatch(in: raw, range: range),
               let ownerRange = Range(match.range(at: 1), in: raw),
               let fullRange = Range(match.range, in: raw) else {
-            return [ParsedActionItem(raw: raw, owner: nil, text: cleaned(raw))]
+            return parseLeadingNames(raw, knownOwners: knownOwners)
         }
 
         let ownerBlob = String(raw[ownerRange])
@@ -67,13 +67,13 @@ enum ActionItemParser {
     /// Parses and groups a list of raw items by owner, preserving the order in
     /// which owners first appear. Unassigned items are collected into a trailing
     /// "Unassigned" group.
-    static func group(_ rawItems: [String]) -> [ActionItemGroup] {
+    static func group(_ rawItems: [String], knownOwners: [String] = []) -> [ActionItemGroup] {
         var order: [String] = []
         var buckets: [String: [ParsedActionItem]] = [:]
         var unassigned: [ParsedActionItem] = []
 
         for raw in rawItems {
-            for item in parse(raw) {
+            for item in parse(raw, knownOwners: knownOwners) {
                 guard let owner = item.owner else {
                     unassigned.append(item)
                     continue
@@ -94,6 +94,51 @@ enum ActionItemParser {
     }
 
     // MARK: - Helpers
+
+    /// Models sometimes omit the bracketed format and write "Jesper de slides
+    /// afronden" instead. Match only names known for this meeting, at the start
+    /// of the item; never treat an arbitrary capitalized verb as a person.
+    private static func parseLeadingNames(_ raw: String, knownOwners: [String]) -> [ParsedActionItem] {
+        let original = cleaned(raw)
+        var seenNames: Set<String> = []
+        let names = knownOwners.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("Speaker ") && seenNames.insert($0.lowercased()).inserted }
+        let firstNameCounts = Dictionary(grouping: names, by: { String($0.split(separator: " ").first ?? "").lowercased() })
+        let aliases: [(alias: String, owner: String)] = names.flatMap { name -> [(alias: String, owner: String)] in
+            let first = String(name.split(separator: " ").first ?? "")
+            let display = firstNameCounts[first.lowercased()]?.count == 1 ? first : name
+            return [(name, display)] + (first != name && display == first ? [(first, display)] : [])
+        }.sorted { $0.alias.count > $1.alias.count }
+
+        var remainder = original[...]
+        var owners: [String] = []
+        while let match = aliases.first(where: { candidate in
+            guard remainder.range(of: candidate.alias, options: [.anchored, .caseInsensitive]) != nil else { return false }
+            let suffix = remainder.dropFirst(candidate.alias.count)
+            return suffix.isEmpty || suffix.first?.isWhitespace == true || suffix.first == ":"
+        }) {
+            owners.append(match.owner)
+            remainder = remainder.dropFirst(match.alias.count)
+            remainder = remainder.drop(while: \.isWhitespace)
+            if remainder.first == ":" || remainder.first == "-" {
+                remainder = remainder.dropFirst().drop(while: \.isWhitespace)
+            }
+            let connector = ["en ", "and ", "& ", "/ ", ", "].first {
+                remainder.range(of: $0, options: [.anchored, .caseInsensitive]) != nil
+            }
+            guard let connector else { break }
+            let afterConnector = remainder.dropFirst(connector.count)
+            guard aliases.contains(where: { afterConnector.range(of: $0.alias, options: [.anchored, .caseInsensitive]) != nil }) else { break }
+            remainder = afterConnector
+        }
+        guard !owners.isEmpty, !remainder.isEmpty else {
+            return [ParsedActionItem(raw: raw, owner: nil, text: original)]
+        }
+        let text = cleaned(String(remainder))
+        var seenOwners: Set<String> = []
+        return owners.filter { seenOwners.insert($0).inserted }
+            .map { ParsedActionItem(raw: raw, owner: $0, text: text) }
+    }
 
     private static func splitOwners(_ blob: String) -> [String] {
         let normalized = blob.replacingOccurrences(of: " and ", with: "/")
