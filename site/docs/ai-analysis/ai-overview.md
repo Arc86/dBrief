@@ -7,7 +7,7 @@ After transcription, dBrief uses an AI model to analyse the transcript and gener
 | Output | Description |
 |---|---|
 | **Summary** | A short paragraph covering the main points of the meeting |
-| **Action items** | A list of tasks and follow-ups mentioned in the conversation |
+| **Action items** | A list of tasks and follow-ups mentioned in the conversation, grouped by the owner named on each item — shared tasks appear under everyone listed, and `[Unassigned]` is used only when nobody was mentioned |
 | **Tags** | Keywords extracted from the transcript |
 | **Sentiment** | An overall tone reading (positive, neutral, negative) |
 | **Title** | A generated title for the recording (used in the filename and Markdown header) |
@@ -37,7 +37,7 @@ AI analysis runs after transcription completes. The steps run sequentially: summ
 
 You can edit the prompts dBrief uses for each AI task in **Settings → AI Analysis** (requires Power User Mode). Profiles can also override prompts on a per-meeting basis — see [Meeting Profiles](../profiles/what-are-profiles.md).
 
-Your custom Summary, Action Items, and Tags prompts are honored by **every** engine — the on-device Gemma and Local CLI engines follow them just like Remote Endpoint does, so the analysis matches your instructions no matter which backend you run.
+Your custom Summary, Action Items, and Tags prompts are honored by **every** engine — the on-device Gemma and Local CLI engines follow them just like Remote Endpoint does, so the analysis matches your instructions no matter which backend you run. One exception: action items always carry their owner prefix (`[Owner]`) and are grouped by owner, even when a custom Action Items prompt requests different wording.
 
 ## Turning AI off
 

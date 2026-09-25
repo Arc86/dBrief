@@ -1,3 +1,15 @@
+## Unreleased
+
+### Action items
+
+- **Action items are grouped by owner.** Each task now names who it belongs to — `[Alex] Draft the Q3 plan` — and the summary groups the list under each person's name. Shared tasks (`[Alex/Jordan]`) appear under everyone listed, and `[Unassigned]` is used only when nobody was mentioned. Items still parse when a custom prompt or engine omits the bracket format.
+
+### Fixes
+
+- Restored the full-row tap target on action-item checkboxes in the summary view.
+
+---
+
 ## dBrief 1.4.3
 
 ### Claude CLI calendar source

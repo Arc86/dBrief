@@ -73,7 +73,7 @@ Four AI backends — local-first, remote optional:
 | **Local CLI** | Depends on the tool | Any CLI you configure (`claude`, `ollama`, `llm`…) |
 | **Remote Endpoint** | Network | OpenAI-compatible server |
 
-Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript. Analysis is **name-aware** — participant names from your calendar or manual entry are passed to the AI so people are spelled and attributed correctly.
+Outputs: summary, action items, tags, sentiment, smart title, speaker-attributed transcript. Analysis is **name-aware** — participant names from your calendar or manual entry are passed to the AI so people are spelled and attributed correctly, and action items are grouped by owner in the summary.
 
 **Spoken Summary** — turn any recording's summary into a short, natural audio briefing with an on-device text-to-speech voice (Kokoro for fast English, or multilingual Qwen3), so you can catch up on a meeting hands-free.
 
