@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.colorScheme) private var colorScheme
     @State private var destination = SettingsDestination(page: .general)
     @State private var profileToEdit: UUID?
     @State private var searchText = ""
@@ -14,6 +15,11 @@ struct SettingsView: View {
     private enum Focus: Hashable { case search, results }
     private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var results: [SettingsSearchEntry] { SettingsSearch.results(for: searchText) }
+    // Match the detail canvas in macOS 27 System Settings. Its window color
+    // resolves to a noticeably grayer surface in our SwiftUI settings window.
+    private var canvasColor: Color {
+        colorScheme == .dark ? Color(white: 28.0 / 255.0) : .white
+    }
 
     private func navigate(to target: SettingsDestination) {
         destination = target
@@ -89,6 +95,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .focused($focus, equals: .results)
         .onKeyPress(.return) { openSelectedResult(); return .handled }
         .onExitCommand { clearSearch() }
@@ -109,22 +116,25 @@ struct SettingsView: View {
                     ForEach(SettingsGroup.allCases) { group in
                         Section(group.title) {
                             ForEach(group.pages.filter { SettingsPage.visiblePages(advanced: appSettings.powerUserMode).contains($0) }) { page in
-                                Label {
-                                    Text(page.title).font(.system(size: 14))
-                                } icon: {
+                                HStack(spacing: 10) {
                                     Image(systemName: page.icon)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 16, height: 16)
                                         .foregroundStyle(.white)
                                         .frame(width: 24, height: 24)
                                         .background(page.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    Text(page.title).font(.system(size: 14))
                                 }
                                 .padding(.vertical, 3)
                                 .tag(page)
                             }
                         }
+                        .collapsible(false)
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
                 }
                 Divider()
                 if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
@@ -136,6 +146,13 @@ struct SettingsView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+            .background {
+                // System Settings uses a subtly tinted sidebar against its
+                // white/near-black detail canvas in both appearances.
+                canvasColor
+                    .overlay(Color.primary.opacity(colorScheme == .dark ? 0.04 : 0.07))
+                    .ignoresSafeArea()
+            }
         } detail: {
             // Keep long grouped forms inside the window's viewport. Without
             // this boundary, the header + form stack can report the form's full
@@ -188,12 +205,17 @@ struct SettingsView: View {
                     }
                 }
             }
+            .background(canvasColor.ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
-            Button { focus = .search } label: { Label("Search settings", systemImage: "magnifyingglass") }
-                .keyboardShortcut("f", modifiers: .command)
+            ToolbarItem(placement: .primaryAction) {
+                Button { focus = .search } label: { Image(systemName: "magnifyingglass") }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .accessibilityLabel("Search settings")
+            }
         }
+        .applyWindowAppearanceWhenAvailable(canvasColor)
         .onChange(of: searchText) { _, _ in
             selectedSearchID = results.first?.id
             if !isSearching {
@@ -216,6 +238,18 @@ struct SettingsView: View {
             if !appSettings.showDockIcon {
                 NSApp.setActivationPolicy(.accessory)
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applyWindowAppearanceWhenAvailable(_ color: Color) -> some View {
+        if #available(macOS 15.0, *) {
+            toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .containerBackground(color, for: .window)
+        } else {
+            self
         }
     }
 }

@@ -26,7 +26,10 @@ struct SettingsSection<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: .secondarySystemFill))
+                    // Match the pre-macOS 27 grouped-settings contrast. The
+                    // semantic secondary fill became substantially darker when
+                    // linked against the 27 SDK.
+                    .fill(Color.primary.opacity(0.03))
             )
         }
     }
