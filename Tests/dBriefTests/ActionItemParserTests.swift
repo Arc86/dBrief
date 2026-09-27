@@ -52,4 +52,27 @@ struct ActionItemParserTests {
         #expect(groups.map(\.owner) == ["Alice", "Bob"])
         #expect(groups.allSatisfy { $0.items.count == 1 })
     }
+
+    @Test func groupsNaturalLanguageOwnersFromMeetingRoster() {
+        let groups = ActionItemParser.group([
+            "Jesper de Service Operations-slides afronden",
+            "Hidde de business value map uitwerken",
+            "Hidde en Jesper valideren samen de intro",
+        ], knownOwners: ["Jesper Mol", "Hidde Janssen"])
+        #expect(groups.map(\.owner) == ["Jesper", "Hidde"])
+        #expect(groups[0].items.count == 2)
+        #expect(groups[1].items.count == 2)
+        #expect(groups[0].items[0].text == "de Service Operations-slides afronden")
+        #expect(groups[0].items[1].raw == groups[1].items[1].raw)
+    }
+
+    @Test func doesNotGuessUnknownOrAmbiguousNames() {
+        #expect(ActionItemParser.parse("Review the slides", knownOwners: ["Jesper Mol"])[0].owner == nil)
+        #expect(ActionItemParser.parse("Ann de slides maken", knownOwners: ["Ann Smith", "Ann Jones"])[0].owner == nil)
+    }
+
+    @Test func repeatedRosterNameStillMatchesFirstName() {
+        let item = ActionItemParser.parse("Jesper de slides afronden", knownOwners: ["Jesper Mol", "Jesper Mol"])
+        #expect(item[0].owner == "Jesper")
+    }
 }

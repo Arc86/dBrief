@@ -25,6 +25,8 @@ struct SettingsAfterRecordingTab: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
             }
             .listRowBackground(Color.clear)
 
@@ -49,6 +51,8 @@ struct SettingsAfterRecordingTab: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
             }
             .listRowBackground(Color.clear)
         }

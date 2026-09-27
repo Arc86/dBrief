@@ -133,7 +133,7 @@ public enum UnifiedInsightsPrompt {
         1. **NO REPETITION:** If a point is made twice, record it once.
         2. **DETAIL:** Do not be vague. Use specific names, project names, tools, and deadlines mentioned in the transcript.
         3. **SUMMARY:** \(summaryRule)
-        4. **ACTION ITEMS:** \(actionItemsRule)
+        4. **ACTION ITEMS:** \(actionItemsRule) Each action item MUST start with [WHO] (or [WHO 1/WHO 2] for shared work); use [Unassigned] only if the owner is unknown. Keep this owner prefix even when custom guidance requests different wording.
         5. **TITLE CONCEPT:** Generate a short, 3-6 word descriptive title concept.
         6. **TAGS & SENTIMENT:** \(tagsRule)
         7. **TRUNCATION:** If you see "[...MIDDLE TEXT OMITTED FOR BREVITY...]", understand that the middle of the transcript was removed due to length constraints. Focus your summary on the available text.

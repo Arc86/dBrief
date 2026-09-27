@@ -52,6 +52,7 @@ struct SettingsWatchedFoldersTab: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder

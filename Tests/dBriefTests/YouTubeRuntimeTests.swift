@@ -4,6 +4,18 @@ import Testing
 
 @Suite("YouTube JavaScript runtime discovery")
 struct YouTubeRuntimeTests {
+    @Test func updateCheckComparesReleaseVersionsNumerically() {
+        let older = YouTubeDownloadService.YtDlpUpdateStatus(
+            installedVersion: "2026.09.9", latestVersion: "2026.09.10")
+        let current = YouTubeDownloadService.YtDlpUpdateStatus(
+            installedVersion: "2026.09.10", latestVersion: "2026.09.10")
+        let newer = YouTubeDownloadService.YtDlpUpdateStatus(
+            installedVersion: "2026.09.11", latestVersion: "2026.09.10")
+        #expect(older.updateAvailable)
+        #expect(!current.updateAvailable)
+        #expect(!newer.updateAvailable)
+    }
+
     @Test func homebrewRuntimeIsFoundWithAnAppLaunchPath() {
         let args = YouTubeDownloadService.javaScriptRuntimeArguments(
             searchPath: "/usr/bin:/bin:/usr/sbin:/sbin",

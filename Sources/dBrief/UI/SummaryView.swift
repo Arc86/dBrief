@@ -11,6 +11,7 @@ struct SummaryView: View {
     let insights: RecordingInsights?
     let isGenerating: Bool
     let canGenerate: Bool
+    var actionItemOwners: [String] = []
     var isReadOnly = false
     var onGenerate: () -> Void = {}
     var onSave: (RecordingInsights) async -> Void = { _ in }
@@ -202,7 +203,7 @@ struct SummaryView: View {
     }
 
     private var actionsSection: some View {
-        let groups = ActionItemParser.group(draftActionItems.map(\.text))
+        let groups = ActionItemParser.group(draftActionItems.map(\.text), knownOwners: actionItemOwners)
         return VStack(alignment: .leading, spacing: 12) {
             sectionHeader(key: "actions", icon: "checklist", tint: Color(hex: "30d158"), title: "Action items",
                           trailing: draftActionItems.isEmpty ? nil : "\(draftActionItems.count) total")
@@ -279,6 +280,7 @@ struct SummaryView: View {
                     .foregroundStyle(done ? Color.secondary : TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isReadOnly || isUpdatingActions || isSaving)
@@ -416,7 +418,7 @@ struct SummaryView: View {
                 Text("—").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                let groups = ActionItemParser.group(draftActionItems.map(\.text))
+                let groups = ActionItemParser.group(draftActionItems.map(\.text), knownOwners: actionItemOwners)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(groups) { group in
                         ownerGroup(group)

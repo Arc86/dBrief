@@ -55,29 +55,19 @@ struct ProcessingQueueView: View {
                 if !hasPendingWork && appState.processingJob == nil && manager.queueLoadError == nil {
                     RecordingListEmptyState(title: "No pending work", message: "Queue a recording for later to add it here.", systemImage: "tray")
                 } else if hasPendingWork {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(manager.pendingQueueItems.enumerated()), id: \.element.audioURL) { index, entry in
-                                queuedRow(index: index, audioURL: entry.audioURL, item: entry.item, available: entry.fileSize != nil)
-                            }
-                            ForEach(visibleReprocessing) { attempt in
-                                reprocessingRow(attempt)
-                            }
-                            if !manager.recoveryQueueEntries.isEmpty {
-                                if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
-                                Text("Needs attention").font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary).padding(.horizontal, 6)
-                                ForEach(manager.recoveryQueueEntries) { entry in
-                                    recoveryRow(entry)
-                                }
+                    if visibleWorkRowCount <= 3 && expandedItem == nil {
+                        VStack(alignment: .leading, spacing: 4) {
+                            workRows
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 4) {
+                                workRows
                             }
                         }
+                        .frame(height: 200)
                     }
-                    // MenuBarExtra sizes to minimum content height. A max-only
-                    // frame lets this lazy scroll view collapse to zero, hiding
-                    // recovery rows while the header still counts them. Match
-                    // Recent Recordings' bounded, explicitly sized viewport.
-                    .frame(height: 200)
                 }
 
                 if let error = manager.queueLoadError {
@@ -121,6 +111,28 @@ struct ProcessingQueueView: View {
 
     private var visibleReprocessing: [ReprocessingStore.Attempt] {
         manager.reprocessingAttempts.filter { $0.id != appState.processingJob?.reprocessingAttemptID }
+    }
+
+    private var visibleWorkRowCount: Int {
+        manager.pendingQueueItems.count + visibleReprocessing.count + manager.recoveryQueueEntries.count
+    }
+
+    @ViewBuilder
+    private var workRows: some View {
+        ForEach(Array(manager.pendingQueueItems.enumerated()), id: \.element.audioURL) { index, entry in
+            queuedRow(index: index, audioURL: entry.audioURL, item: entry.item, available: entry.fileSize != nil)
+        }
+        ForEach(visibleReprocessing) { attempt in
+            reprocessingRow(attempt)
+        }
+        if !manager.recoveryQueueEntries.isEmpty {
+            if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
+            Text("Needs attention").font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary).padding(.horizontal, 6)
+            ForEach(manager.recoveryQueueEntries) { entry in
+                recoveryRow(entry)
+            }
+        }
     }
 
     private func reprocessingRow(_ attempt: ReprocessingStore.Attempt) -> some View {
