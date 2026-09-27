@@ -1,3 +1,23 @@
+## dBrief 1.4.4
+
+### Calendar and meeting participants
+
+- **Calendar linking works better for older recordings.** Refresh now checks the recording's original day, and the meeting picker explains whether a lookup is fresh, empty, unavailable, or blocked. Calendar snapshots are stored privately and retained longer, so recent meetings remain available after restarting dBrief.
+- **Load meeting attendees during processing.** Choose this in the post-recording calendar section or in a meeting profile. You can still load or refresh attendees immediately. The detected people also appear in a completed recording's header.
+
+### AI and workflow
+
+- **Set calendar CLI effort separately from AI analysis effort.** Meeting profiles can override either setting, so a calendar lookup can stay lightweight without changing the effort used for summaries and action items.
+- **Action items are grouped by named owner**, making each person's work easier to scan.
+- **YouTube URL import can offer to update yt-dlp** when the installed downloader is out of date.
+
+### Recording and interface fixes
+
+- **Recordings from microphones with discrete multichannel audio now finalize correctly.** dBrief explicitly mixes the channels before creating the mono AAC file, avoiding an FFmpeg failure seen with a nine-channel mic recording.
+- Restored native macOS appearance for Settings and menus.
+
+---
+
 ## dBrief 1.4.3
 
 ### Claude CLI calendar source
