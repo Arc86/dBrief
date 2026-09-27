@@ -74,9 +74,12 @@ struct SettingsVocabularyTab: View {
             } footer: {
                 Text("Choose Edit or double-click a term. Save applies your change; Cancel discards it.")
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Vocabulary")
     }
 

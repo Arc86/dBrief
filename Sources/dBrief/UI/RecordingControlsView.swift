@@ -21,20 +21,40 @@ struct RecordingControlsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Picker(
-                        "",
-                        selection: Binding(
-                            get: { settings.activeProfileId },
-                            set: { settings.setActiveProfile($0) }
-                        )
-                    ) {
+                    Menu {
                         ForEach(settings.profiles) { profile in
-                            Text(profile.name).tag(profile.id)
+                            Button {
+                                settings.setActiveProfile(profile.id)
+                            } label: {
+                                if profile.id == settings.activeProfileId {
+                                    Label(profile.name, systemImage: "checkmark")
+                                } else {
+                                    Text(profile.name)
+                                }
+                            }
                         }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(settings.activeProfile.name)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                        )
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
                     .frame(width: 170)
+                    .accessibilityLabel("Profile")
+                    .accessibilityValue(settings.activeProfile.name)
                 }
             }
 

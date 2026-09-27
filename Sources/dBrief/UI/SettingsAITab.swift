@@ -34,6 +34,8 @@ struct SettingsAITab: View {
                     Text("Controls summary, action-item, and tag analysis by default. Transcription remains available. Profiles can override this setting.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
                 }
                 if !settings.aiProcessingEnabled {
                     Section {
@@ -114,6 +116,8 @@ struct SettingsAITab: View {
                     } footer: {
                         if appSettings.aiEngine != .remoteEndpoint {
                             Text("On-device and Local CLI engines merge these three prompts into a single structured call, so the model returns one JSON result. The output is always JSON regardless of any “output only…” wording — format the summary (e.g. bullets) inside its text.")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .multilineTextAlignment(.leading)
                         }
                     }
                         .listRowBackground(Color.clear)

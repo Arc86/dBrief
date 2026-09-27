@@ -138,13 +138,11 @@ struct RecordingHistoryView: View {
                     ReprocessingRecoveryView().frame(height: 170)
                 } else if recordings.isEmpty {
                     RecordingListEmptyState(title: "No recordings found", message: "Your recent recordings will appear here.", systemImage: "waveform")
+                } else if recordings.count <= 3 && expandedItemId == nil {
+                    historyRows
                 } else {
                     ScrollView {
-                        VStack(spacing: 4) {
-                            ForEach(recordings) { item in
-                                historyRow(item)
-                            }
-                        }
+                        historyRows
                     }
                     .frame(height: 200)
                 }
@@ -166,6 +164,15 @@ struct RecordingHistoryView: View {
             loadedSummaries = [:]
             loadRecordings()
         }
+    }
+
+    private var historyRows: some View {
+        VStack(spacing: 4) {
+            ForEach(recordings) { item in
+                historyRow(item)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func historyRow(_ item: HistoryItem) -> some View {
