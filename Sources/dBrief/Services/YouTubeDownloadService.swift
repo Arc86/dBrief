@@ -27,6 +27,15 @@ enum YouTubeDownloadError: LocalizedError {
 actor YouTubeDownloadService {
     private static let log = Logger.recording
 
+    struct YtDlpUpdateStatus: Sendable {
+        let installedVersion: String
+        let latestVersion: String
+
+        var updateAvailable: Bool {
+            installedVersion.compare(latestVersion, options: .numeric) == .orderedAscending
+        }
+    }
+
     // MARK: - yt-dlp discovery
 
     /// Path where the app stores a self-downloaded yt-dlp binary.
@@ -61,6 +70,27 @@ actor YouTubeDownloadService {
             return path
         }
         return nil
+    }
+
+    /// Compare the executable dBrief will actually use with the latest stable release.
+    nonisolated static func checkYtDlpUpdate() async throws -> YtDlpUpdateStatus? {
+        guard let path = findYtDlp() else { return nil }
+        async let installed = Task.detached {
+            runBlocking(path, args: ["--version"])
+        }.value
+
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        struct Release: Decodable { let tag_name: String }
+        let latest = try JSONDecoder().decode(Release.self, from: data).tag_name
+        guard let installed = await installed, !installed.isEmpty, !latest.isEmpty else {
+            throw URLError(.cannotParseResponse)
+        }
+        return YtDlpUpdateStatus(installedVersion: installed, latestVersion: latest)
     }
 
     /// Finder-launched apps do not inherit the user's shell PATH. yt-dlp only
@@ -111,12 +141,16 @@ actor YouTubeDownloadService {
                     Logger.recording.info("Downloading yt-dlp binary from GitHub…")
 
                     let (asyncBytes, response) = try await URLSession.shared.bytes(from: downloadURL)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                        throw URLError(.badServerResponse)
+                    }
                     let totalBytes = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
 
                     // Stream bytes to a temp file in 64 KB chunks to avoid
                     // holding the whole binary in memory.
-                    let tempURL = FileManager.default.temporaryDirectory
+                    let tempURL = destDir
                         .appendingPathComponent("yt-dlp-\(UUID().uuidString)")
+                    defer { try? FileManager.default.removeItem(at: tempURL) }
                     FileManager.default.createFile(atPath: tempURL.path, contents: nil)
                     let fileHandle = try FileHandle(forWritingTo: tempURL)
 
@@ -140,27 +174,33 @@ actor YouTubeDownloadService {
                     }
                     try fileHandle.close()
 
-                    // Replace any existing copy and move into place
-                    if FileManager.default.fileExists(atPath: destURL.path) {
-                        try FileManager.default.removeItem(at: destURL)
-                    }
-                    try FileManager.default.moveItem(at: tempURL, to: destURL)
-
                     // Make executable (rwxr-xr-x)
                     try FileManager.default.setAttributes(
                         [.posixPermissions: 0o755],
-                        ofItemAtPath: destURL.path
+                        ofItemAtPath: tempURL.path
                     )
 
                     // Remove quarantine flag so macOS doesn't block execution.
                     // yt-dlp's macOS builds are signed; this is a precaution only.
                     let xattr = Process()
                     xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-                    xattr.arguments = ["-d", "com.apple.quarantine", destURL.path]
+                    xattr.arguments = ["-d", "com.apple.quarantine", tempURL.path]
                     xattr.standardOutput = Pipe()
                     xattr.standardError = Pipe()
                     try? xattr.run()
                     xattr.waitUntilExit()
+
+                    // A network error page must never replace a working executable.
+                    guard let version = runBlocking(tempURL.path, args: ["--version"]), !version.isEmpty else {
+                        throw URLError(.cannotParseResponse)
+                    }
+
+                    // Keep the working copy in place until the new binary is ready.
+                    if FileManager.default.fileExists(atPath: destURL.path) {
+                        _ = try FileManager.default.replaceItemAt(destURL, withItemAt: tempURL)
+                    } else {
+                        try FileManager.default.moveItem(at: tempURL, to: destURL)
+                    }
 
                     Logger.recording.info("yt-dlp installed at \(destURL.path, privacy: .public)")
                     continuation.yield(1.0)
