@@ -188,7 +188,7 @@
       render(slug, md, anchor);
     } catch (err) {
       if (version !== loadVersion) return;
-      document.title = "Page not found — dBrief Docs";
+      document.title = "Page not found | dBrief Docs";
       proseEl.innerHTML = `
         <div class="docs-empty">
           <h1>Page not found</h1>
@@ -248,7 +248,9 @@
       proseEl.querySelector(".prose").prepend(titleEl);
     }
 
-    document.title = `${h1Match ? h1Match[1].trim() : "Docs"} — dBrief Docs`;
+    document.title = slug === "index"
+      ? "Docs | dBrief"
+      : `${h1Match ? h1Match[1].trim() : "Docs"} | dBrief Docs`;
     const headingIds = new Set();
     proseEl.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((heading) => {
       const base = heading.textContent.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");

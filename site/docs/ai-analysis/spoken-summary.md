@@ -16,7 +16,7 @@ Open a recording in the [transcript viewer](../history/transcript-viewer.md) and
 2. A player appears with the script and playback controls. Listen to the result.
 3. Click **Save** to keep it, or **Discard** to throw it away.
 
-Once saved, the button becomes **Play Spoken** — clicking it replays the saved audio instantly without regenerating.
+After you save it, the button changes to **Play Spoken**. It replays the saved audio without generating it again.
 
 ## Choosing a voice
 

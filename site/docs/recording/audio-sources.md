@@ -27,7 +27,7 @@ dBrief also adapts on its own when your audio devices change mid-recording, so y
 - If you're on **System Default**, it follows the new default device when you connect one.
 - A microphone you've explicitly picked stays selected as long as it's still connected.
 
-When an automatic switch happens, a brief note appears in the floating recorder (e.g. "Switched to MacBook Pro Microphone") so you know what changed. This works alongside the manual **Mic** chip — both share the same seamless, single-track switch.
+When dBrief switches microphones automatically, the floating recorder shows which mic it chose (for example, "Switched to MacBook Pro Microphone"). You can also switch manually with the **Mic** chip. Both use the same recording track.
 
 ## Echo cancellation
 
