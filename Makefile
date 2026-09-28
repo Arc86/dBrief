@@ -51,7 +51,7 @@ NOTARY_PROFILE ?=
 DMG_STAGING = .build/dmg
 DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 
-.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta
+.PHONY: app run clean build sign dmg package-dmg notarize beta run-beta icons
 
 build:
 	# SwiftPM currently stamps the deployment target (14.0) as the linked SDK.
@@ -59,6 +59,11 @@ build:
 	swift build -c release --arch arm64 \
 		-Xlinker -platform_version -Xlinker macos \
 		-Xlinker 14.0 -Xlinker $(MACOS_SDK_VERSION)
+
+# Regenerate the Tahoe icon with Xcode 26+. Keep the compiled catalog tracked
+# so normal builds still work with Command Line Tools alone.
+icons:
+	./scripts/build-app-icon.sh
 
 app: build
 	rm -rf $(APP_BUNDLE)
@@ -108,6 +113,7 @@ app: build
 		/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$(CONTENTS)/Info.plist" 2>/dev/null || true; \
 	fi
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
+	cp Sources/dBrief/Resources/Assets.car $(RESOURCES)/Assets.car
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons

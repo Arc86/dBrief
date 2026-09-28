@@ -1,0 +1,42 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "Artwork.png",
+          "name": "dBrief",
+          "position": {
+            "scale": 1.22,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "name": "Artwork",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  },
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "srgb:0.018,0.028,0.070,1.000"
+      }
+    }
+  ]
+}
