@@ -1,3 +1,22 @@
+## dBrief 1.4.5
+
+### Speaker review
+
+- **Name speakers from meeting participants, your voice library, or a name you enter yourself.** The redesigned review lets you listen to voice samples, search people by name or company, and track which speakers you've reviewed before confirming. Manually naming a speaker or leaving them unnamed now clears any previously suggested voice-library identity.
+
+### First-time setup
+
+- **Download local models during onboarding.** Setup checks which models your selected transcription, AI analysis, and chat features need, with download progress, cancellation, and retry controls. Models already prepared are skipped, and you can defer downloads to Settings.
+- Added a recording-responsibility acknowledgement reminding you to inform participants and obtain any required consent before recording.
+
+### Fixes and improvements
+
+- **Choose a Claude model for Local CLI AI analysis as well as calendar lookups.** Pick a model family, a specific version, or a custom model ID. Custom selection no longer snaps back to a preset, and the analysis model choice survives shell startup settings.
+- **The CLI calendar meeting picker shows cached meetings while refreshing**, instead of appearing empty until the lookup finishes.
+- Fixed speaker avatars disappearing when assigning meeting names from a recording's header, and refreshed the app icon with correct sizing in Finder.
+
+---
+
 ## dBrief 1.4.4
 
 ### Calendar and meeting participants
