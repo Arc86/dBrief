@@ -13,7 +13,18 @@ struct OnboardingView: View {
     @State private var calendarStatus = EKEventStore.authorizationStatus(for: .event)
     @AppStorage("permissions.didRequestScreenCapture") private var didRequestScreenCapture = false
 
-    private let stepCount = 4
+    @State private var includeDownloadStep = true
+    @State private var checkingModels = false
+
+    private var requiredModels: [LocalModelKind] {
+        OnboardingModelPlan.requiredModels(transcription: appSettings.transcriptionEngine,
+                                          ai: appSettings.aiEngine,
+                                          chatFallback: appSettings.chatFallbackEngine)
+    }
+
+    private var visibleSteps: [Int] {
+        [0, 1, 2] + (includeDownloadStep && !requiredModels.isEmpty ? [3] : []) + [4]
+    }
 
     var body: some View {
         VStack(spacing: 18) {
@@ -25,8 +36,12 @@ struct OnboardingView: View {
                     permissionsStep
                 case 2:
                     endpointStep
+                case 3:
+                    OnboardingModelDownloadView(models: requiredModels) { step = 4 }
                 default:
-                    readyStep
+                    OnboardingRecordingResponsibilityView {
+                        appSettings.hasCompletedOnboarding = true
+                    }
                 }
             }
             .transition(.opacity)
@@ -51,7 +66,7 @@ struct OnboardingView: View {
 
     private var stepIndicator: some View {
         HStack(spacing: 6) {
-            ForEach(0 ..< stepCount, id: \.self) { index in
+            ForEach(visibleSteps, id: \.self) { index in
                 Capsule()
                     .fill(index == step ? Color.accentColor : Color.secondary.opacity(0.25))
                     .frame(width: index == step ? 18 : 6, height: 6)
@@ -371,6 +386,7 @@ struct OnboardingView: View {
                     description: appSettings.aiEngine.shortDescription
                 )
             }
+            .disabled(checkingModels)
 
             if needsEndpoint {
                 HStack(spacing: 8) {
@@ -390,10 +406,27 @@ struct OnboardingView: View {
             }
 
             Button("Continue") {
-                step = 3
+                checkingModels = true
+                Task {
+                    var cached: [LocalModelKind: Bool] = [:]
+                    for kind in requiredModels {
+                        cached[kind] = await recordingManager.isModelCached(kind)
+                    }
+                    let pending = OnboardingModelPlan.pendingModels(
+                        required: requiredModels, cached: cached,
+                        phases: recordingManager.modelDownloads)
+                    includeDownloadStep = !pending.isEmpty
+                    checkingModels = false
+                    step = includeDownloadStep ? 3 : 4
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(checkingModels)
+
+            if checkingModels {
+                ProgressView("Checking models…").controlSize(.small)
+            }
         }
     }
 
@@ -430,22 +463,4 @@ struct OnboardingView: View {
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    // MARK: - Step 3: Ready
-
-    private var readyStep: some View {
-        VStack(spacing: 14) {
-            iconBadge("checkmark.circle.fill", tint: .green)
-
-            Text("You're all set!")
-                .font(.title3.weight(.semibold))
-
-            bodyText("Click the dB icon in your menu bar to record, or press **\(appSettings.recordHotkey.displayString)** from anywhere. You can change anything later in Settings.")
-
-            Button("Start Using dBrief") {
-                appSettings.hasCompletedOnboarding = true
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-        }
-    }
 }
