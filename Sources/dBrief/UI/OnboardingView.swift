@@ -82,7 +82,7 @@ struct OnboardingView: View {
 
     private var welcomeStep: some View {
         VStack(spacing: 14) {
-            if let appIcon = appIconImage() {
+            if let appIcon = DBriefAppIcon.image {
                 Image(nsImage: appIcon)
                     .resizable()
                     .interpolation(.high)
@@ -117,14 +117,6 @@ struct OnboardingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
         }
-    }
-
-    private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-        return NSImage(named: "AppIcon")
     }
 
     // MARK: - Step 1: Permissions

@@ -215,6 +215,7 @@ struct SettingsAITab: View {
                                 appSettings.localCLIConfig.command = template.command
                                 appSettings.localCLIConfig.effortProvider = template.effortProvider
                                 appSettings.localCLIConfig.effort = template.effort
+                                appSettings.localCLIConfig.modelID = nil
                                 cliTestSuccess = nil
                                 cliTestError = nil
                             }
@@ -226,6 +227,19 @@ struct SettingsAITab: View {
 
                 NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: "Local CLI command")
                     .frame(height: 70)
+
+                if appSettings.localCLIConfig.supportsClaudeModel {
+                    ClaudeModelPicker(modelID: Binding(
+                        get: { appSettings.localCLIConfig.modelID },
+                        set: { modelID in
+                            appSettings.localCLIConfig.modelID = modelID
+                            cliTestSuccess = nil
+                            cliTestError = nil
+                        }
+                    ))
+                    Text("An explicit --model option or inline ANTHROPIC_MODEL assignment in the command takes precedence over this picker.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
 
                 HStack {
                     Text("Timeout")

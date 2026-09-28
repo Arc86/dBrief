@@ -85,7 +85,7 @@ actor LocalCLIService {
     private func runPrompt(config: LocalCLIConfig, system: String, user: String, stage: PrivacyOperation.Stage = .analysis) async throws -> String {
         try Task.checkCancellation()
         return try await PrivacyTrace.perform(.init(stage: stage, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
-            try await Self.runShellCommand(config.command, systemPrompt: system, userPrompt: user,
+            try await Self.runShellCommand(config.executionCommand, systemPrompt: system, userPrompt: user,
                 fullPrompt: system + "\n\n" + user, timeoutSeconds: config.timeoutSeconds,
                 effort: config.effort, effortProvider: config.effortProvider)
         }
@@ -109,7 +109,7 @@ actor LocalCLIService {
     func runTest(config: LocalCLIConfig) async throws -> String {
         let sample = "Reply with a short confirmation that you received this prompt."
         let output = try await Self.runShellCommand(
-            config.command,
+            config.executionCommand,
             systemPrompt: sample,
             userPrompt: sample,
             fullPrompt: sample,

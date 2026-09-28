@@ -15,14 +15,17 @@ struct LocalCLIConfig: Codable, Sendable, Equatable {
 
     var effort: CLIReasoningEffort
     var effortProvider: CLIEffortProvider
+    var modelID: String?
 
     init(command: String, timeoutSeconds: Int,
          effort: CLIReasoningEffort = .cliDefault,
-         effortProvider: CLIEffortProvider = .commandDefault) {
+         effortProvider: CLIEffortProvider = .commandDefault,
+         modelID: String? = nil) {
         self.command = command
         self.timeoutSeconds = timeoutSeconds
         self.effort = effort
         self.effortProvider = effortProvider
+        self.modelID = CalendarCLIConfig.sanitizedModelID(modelID)
     }
 
     init(from decoder: Decoder) throws {
@@ -33,10 +36,26 @@ struct LocalCLIConfig: Codable, Sendable, Equatable {
         effort = rawEffort.flatMap(CLIReasoningEffort.init(rawValue:)) ?? .cliDefault
         let rawProvider = try container.decodeIfPresent(String.self, forKey: .effortProvider)
         effortProvider = rawProvider.flatMap(CLIEffortProvider.init(rawValue:)) ?? .commandDefault
+        modelID = CalendarCLIConfig.sanitizedModelID(try container.decodeIfPresent(String.self, forKey: .modelID))
     }
 
     private enum CodingKeys: String, CodingKey {
-        case command, timeoutSeconds, effort, effortProvider
+        case command, timeoutSeconds, effort, effortProvider, modelID
+    }
+
+    /// Direct Claude commands are detected; wrappers opt in via Claude Code.
+    var supportsClaudeModel: Bool {
+        if effortProvider == .claude { return true }
+        guard let executable = command.split(whereSeparator: { $0.isWhitespace }).first else { return false }
+        let path = String(executable).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        return URL(fileURLWithPath: path).lastPathComponent == "claude"
+    }
+
+    /// Export after login-shell startup, so shell initialization cannot replace
+    /// the picker choice. Explicit --model flags in custom commands still win.
+    var executionCommand: String {
+        guard supportsClaudeModel, let id = CalendarCLIConfig.sanitizedModelID(modelID) else { return command }
+        return "export ANTHROPIC_MODEL='\(id)'\n\(command)"
     }
 
     static let `default` = LocalCLIConfig(

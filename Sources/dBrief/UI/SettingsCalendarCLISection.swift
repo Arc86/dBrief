@@ -12,8 +12,6 @@ struct SettingsCalendarCLISection: View {
     @State private var refreshState: ConnectionTestState = .idle
     @State private var lastSuccessfulRefresh: Date?
     @State private var statusTask: Task<Void, Never>?
-    @State private var customModelID = ""
-    @State private var usesCustomModel = false
     @State private var customFreshnessMinutes = 60
     @State private var usesCustomFreshness = false
     @State private var showsAdvanced = false
@@ -28,36 +26,6 @@ struct SettingsCalendarCLISection: View {
 
     /// Freshness options shown as minutes; stored as seconds.
     private static let freshnessOptions: [Int] = [5, 15, 30, 60, 120, 360, 720, 1440].map { $0 * 60 }
-    private static let modelChoices: [(label: String, id: String?)] = [
-        ("Claude default", nil),
-        ("Haiku", "haiku"),
-        ("Sonnet", "sonnet"),
-    ]
-
-    private var modelSelection: Binding<String> {
-        Binding(
-            get: {
-                let modelID = appSettings.calendarCLIConfig.modelID
-                if let id = modelID, Self.modelChoices.contains(where: { $0.id == id }) {
-                    return id
-                }
-                return (modelID != nil || usesCustomModel) ? "__custom" : "__default"
-            },
-            set: { newValue in
-                switch newValue {
-                case "__default":
-                    usesCustomModel = false
-                    appSettings.calendarCLIConfig = appSettings.calendarCLIConfig.updating(modelID: nil)
-                case "__custom":
-                    usesCustomModel = true
-                default:
-                    usesCustomModel = false
-                    appSettings.calendarCLIConfig = appSettings.calendarCLIConfig.updating(modelID: newValue)
-                }
-            }
-        )
-    }
-
     var body: some View {
         @Bindable var settings = appSettings
         let config = settings.calendarCLIConfig
@@ -120,16 +88,13 @@ struct SettingsCalendarCLISection: View {
             }
 
             Section {
-                Picker("Model", selection: modelSelection) {
-                    Text("Claude default").tag("__default")
-                    Text("Haiku").tag("haiku")
-                    Text("Sonnet").tag("sonnet")
-                    Text("Custom model ID").tag("__custom")
-                }
-                if modelSelection.wrappedValue == "__custom" {
-                    TextField("Custom model ID", text: $customModelID, prompt: Text("e.g. claude-haiku-4-5"))
-                        .onSubmit { applyCustomModel() }
-                }
+                ClaudeModelPicker(modelID: Binding(
+                    get: { settings.calendarCLIConfig.modelID },
+                    set: { modelID in
+                        settings.calendarCLIConfig = settings.calendarCLIConfig.updating(modelID: .some(modelID))
+                        configurationChanged()
+                    }
+                ))
 
                 if config.modelID?.lowercased().contains("haiku") == true {
                     LabeledContent("Reasoning effort") { Text("Not applicable") }
@@ -245,10 +210,6 @@ struct SettingsCalendarCLISection: View {
         }
         .onAppear {
             customFreshnessMinutes = max(5, config.listFreshnessSeconds / 60)
-            if let modelID = config.modelID,
-               !Self.modelChoices.contains(where: { $0.id == modelID }) {
-                customModelID = modelID
-            }
             refreshStatus()
         }
         .onDisappear {
@@ -264,13 +225,6 @@ struct SettingsCalendarCLISection: View {
         lastSuccessfulRefresh = nil
         recordingManager.calendarCLIConfigurationChanged()
         refreshStatus()
-    }
-
-    private func applyCustomModel() {
-        let sanitized = CalendarCLIConfig.sanitizedModelID(customModelID)
-        appSettings.calendarCLIConfig = appSettings.calendarCLIConfig.updating(modelID: sanitized)
-        if sanitized == nil { customModelID = "" }
-        configurationChanged()
     }
 
     private func runConnectionTest() {

@@ -106,6 +106,7 @@ final class AppContext {
         if appSettings.showDockIcon {
             NSApp.setActivationPolicy(.regular)
         }
+        DBriefAppIcon.installDockIcon()
 
         // Register the user-configured global hotkey for record toggle
         hotkeyService.register(hotkey: appSettings.recordHotkey) { [weak self] in
@@ -478,7 +479,7 @@ struct MenuBarView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            if let icon = appIconImage() {
+            if let icon = DBriefAppIcon.image {
                 Image(nsImage: icon)
                     .resizable()
                     .interpolation(.high)
@@ -523,14 +524,6 @@ struct MenuBarView: View {
         if appState.isPaused { return Brand.paused }
         if appState.isProcessing { return Brand.processing }
         return Brand.ready
-    }
-
-    private func appIconImage() -> NSImage? {
-        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-        return NSImage(named: "AppIcon")
     }
 
     private func closeMenuBarExtraWindow() {

@@ -30,4 +30,38 @@ struct LocalCLIConfigTests {
         let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
         #expect(encoded["effortProvider"] as? String == "commandDefault")
     }
+    @Test("Claude model choice survives persistence without changing the command")
+    func modelRoundtrip() throws {
+        let config = LocalCLIConfig(command: "claude -p", timeoutSeconds: 180, modelID: "sonnet")
+        let decoded = try JSONDecoder().decode(LocalCLIConfig.self, from: JSONEncoder().encode(config))
+        #expect(decoded.modelID == "sonnet")
+        #expect(decoded.command == "claude -p")
+        #expect(decoded.supportsClaudeModel)
+    }
+
+    @Test("Legacy configs use the command's default model")
+    func legacyModelDefault() throws {
+        let config = try JSONDecoder().decode(LocalCLIConfig.self, from: Data(#"{"command":"claude -p","timeoutSeconds":180}"#.utf8))
+        #expect(config.modelID == nil)
+        #expect(config.executionCommand == config.command)
+    }
+
+    @Test("Model overrides apply only to Claude commands or explicitly selected wrappers")
+    func modelProviderScope() {
+        let other = LocalCLIConfig(command: "ollama run llama3", timeoutSeconds: 30, modelID: "sonnet")
+        #expect(!other.supportsClaudeModel)
+        #expect(other.executionCommand == other.command)
+        let wrapper = LocalCLIConfig(command: "my-wrapper", timeoutSeconds: 30, effortProvider: .claude, modelID: "haiku")
+        #expect(wrapper.supportsClaudeModel)
+        #expect(wrapper.executionCommand.contains("ANTHROPIC_MODEL='haiku'"))
+        let absolute = LocalCLIConfig(command: "'/usr/local/bin/claude' -p", timeoutSeconds: 30)
+        #expect(absolute.supportsClaudeModel)
+    }
+
+    @Test("Invalid model IDs cannot enter the shell command")
+    func invalidModel() {
+        let config = LocalCLIConfig(command: "claude -p", timeoutSeconds: 30, modelID: "bad; touch /tmp/unwanted")
+        #expect(config.executionCommand == config.command)
+    }
+
 }

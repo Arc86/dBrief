@@ -21,7 +21,7 @@ struct CallEndedPopup: View {
             // Content — icon vertically centered against text block
             HStack(alignment: .center, spacing: 14) {
                 // dBrief app icon + live alert dot
-                Image(nsImage: NSApp.applicationIconImage)
+                Image(nsImage: DBriefAppIcon.image ?? NSApp.applicationIconImage)
                     .resizable()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12))

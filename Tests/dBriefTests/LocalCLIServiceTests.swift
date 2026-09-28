@@ -18,6 +18,23 @@ struct LocalCLIServiceTests {
         #expect(output == "HELLO-ENV")
     }
 
+    @Test("The chosen Claude model reaches the subprocess used by Test command")
+    func selectedModelInSubprocess() async throws {
+        let config = LocalCLIConfig(command: "printf '%s' \"$ANTHROPIC_MODEL\"", timeoutSeconds: 10,
+                                    effortProvider: .claude, modelID: "claude-fable-5-1")
+        let output = try await LocalCLIService().runTest(config: config)
+        #expect(output == "claude-fable-5-1")
+    }
+
+    @Test("The chosen Claude model reaches normal completion calls")
+    func selectedModelInCompletion() async throws {
+        let config = LocalCLIConfig(command: "printf '%s' \"$ANTHROPIC_MODEL\"", timeoutSeconds: 10,
+                                    effortProvider: .claude, modelID: "opus")
+        let output = try await LocalCLIService().completeText(systemPrompt: "sys", userMessage: "usr",
+                                                             config: config, stage: .analysis)
+        #expect(output == "opus")
+    }
+
     @Test("System and user prompts are exported separately")
     func systemAndUserPromptsInEnvironment() async throws {
         let output = try await LocalCLIService.runShellCommand(

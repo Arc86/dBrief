@@ -105,9 +105,7 @@ private struct MiniPlayerView: View {
     @Environment(FloatingMiniPlayerController.self) private var controller
 
     private static let cachedIcon: Image = {
-        if let url = Bundle.main.url(forResource: "dBrief-Icon", withExtension: "png"),
-           let img = NSImage(contentsOf: url) { return Image(nsImage: img) }
-        if let img = NSImage(named: "AppIcon") { return Image(nsImage: img) }
+        if let image = DBriefAppIcon.image { return Image(nsImage: image) }
         return Image(systemName: "waveform.circle.fill")
     }()
 

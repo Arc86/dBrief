@@ -140,15 +140,8 @@ private struct AvatarStack: View {
         HStack(spacing: -8) {
             ForEach(shown) { speaker in
                 if let onAssignSpeaker, !meetingPeople.isEmpty {
-                    Menu {
-                        ForEach(meetingPeople, id: \.self) { name in
-                            Button(name) { onAssignSpeaker(speaker.id, name) }
-                        }
-                    } label: {
-                        avatar(for: speaker)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .help("Name this speaker from the meeting people")
+                    SpeakerAssignmentButton(speaker: speaker, meetingPeople: meetingPeople,
+                                            onAssignSpeaker: onAssignSpeaker, size: size)
                 } else {
                     avatar(for: speaker)
                 }
@@ -174,6 +167,52 @@ private struct AvatarStack: View {
             overrideColor: speaker.isMe ? .accentColor : nil
         )
         .overlay(Circle().stroke(.background, lineWidth: 1.5))
+    }
+}
+
+/// A plain button keeps the avatar visible on macOS, where native menus can
+/// replace a custom shape-based label with only their disclosure indicator.
+private struct SpeakerAssignmentButton: View {
+    let speaker: HeaderSpeaker
+    let meetingPeople: [String]
+    let onAssignSpeaker: (String, String) -> Void
+    let size: CGFloat
+    @State private var showingNames = false
+
+    var body: some View {
+        Button {
+            showingNames = true
+        } label: {
+            SpeakerAvatar(speakerId: speaker.id, name: speaker.name, size: size,
+                          overrideColor: speaker.isMe ? .accentColor : nil)
+                .overlay(Circle().stroke(.background, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+        .help("Assign a name to \(speaker.name)")
+        .accessibilityLabel("Assign a name to \(speaker.name)")
+        .popover(isPresented: $showingNames) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Name \(speaker.name)").font(.headline)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(meetingPeople, id: \.self) { name in
+                            Button {
+                                onAssignSpeaker(speaker.id, name)
+                                showingNames = false
+                            } label: {
+                                Label(name, systemImage: "person")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .frame(maxHeight: 240)
+            }
+            .padding(14)
+            .frame(width: 240)
+        }
     }
 }
 

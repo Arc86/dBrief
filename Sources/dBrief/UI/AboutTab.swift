@@ -182,6 +182,9 @@ struct AboutTab: View {
                 logoImage
                     .frame(width: 92, height: 92)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    // Sample the detailed artwork at the display's pixel scale
+                    // before moving it, so the float animates one stable texture.
+                    .drawingGroup()
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
                     .offset(y: animate && !reduceMotion ? -6 : 0)
                     .animation(reduceMotion ? nil : .easeInOut(duration: 3).repeatForever(autoreverses: true), value: animate)
@@ -213,8 +216,11 @@ struct AboutTab: View {
 
     private var logoImage: some View {
         Group {
-            if let icon = NSImage(named: "AppIcon") {
-                Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
+            if let icon = DBriefAppIcon.image {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(Brand.ctaFill(calm: calm))

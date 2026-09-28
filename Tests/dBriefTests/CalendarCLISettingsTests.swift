@@ -82,6 +82,15 @@ struct CalendarCLISettingsTests {
         #expect(loaded.validateCommand())
     }
 
+    @Test("Explicit nil clears a saved calendar model")
+    func clearModelOverride() {
+        let config = CalendarCLIConfig.default.updating(modelID: "sonnet")
+        let cleared = config.updating(modelID: .some(nil))
+        #expect(cleared.modelID == nil)
+        #expect(Self.roundtrip(cleared).modelID == nil)
+        #expect(config.updating(effort: .high).modelID == "sonnet")
+    }
+
     @Test("Old calendar source selections decode unchanged")
     func oldSourceSelectionsUnchanged() {
         #expect(CalendarSource(rawValue: "disabled") == .disabled)
