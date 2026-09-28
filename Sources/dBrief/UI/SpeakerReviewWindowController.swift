@@ -24,8 +24,21 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
 
     private override init() {}
 
-    /// Fixed content width — must match `SpeakerReviewView`'s `.frame(width:)`.
-    private static let windowWidth: CGFloat = 392
+    private final class PresentationTarget {
+        weak var parent: NSWindow?
+        init(parent: NSWindow) { self.parent = parent }
+    }
+
+    /// Retain the launch context across asynchronous/queued speaker detection.
+    /// Windows are weak so a closed viewer naturally falls back to a standalone window.
+    private var presentationTargets: [URL: PresentationTarget] = [:]
+    private weak var presentationParent: NSWindow?
+    private var parentCloseObserver: NSObjectProtocol?
+
+    func preparePresentation(for audioURL: URL, parent: NSWindow?) {
+        let key = audioURL.standardizedFileURL.resolvingSymlinksInPath()
+        presentationTargets[key] = parent.map { PresentationTarget(parent: $0) }
+    }
 
     func configure(appState: AppState, appSettings: AppSettings,
                    recordingManager: RecordingManager, audioPlayer: AudioPlayer) {
@@ -46,7 +59,12 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         }
         isCompleting = false
 
-        let root = SpeakerReviewView(
+        let session = appState.pendingSpeakerReview!
+        let audioURL = session.recording.finalizedAudioURL ?? session.recording.fileURL
+        let target = presentationTargets.removeValue(forKey: audioURL.standardizedFileURL.resolvingSymlinksInPath())
+        let parent = session.origin != .pipeline && target?.parent?.isVisible == true ? target?.parent : nil
+
+        let content = SpeakerReviewView(
             onConfirm: { [weak self] id, edits in self?.complete(sessionID: id) { await recordingManager.finishReview(sessionID: id, confirmed: edits) } },
             onCancel: { [weak self] id in self?.complete(sessionID: id) { await recordingManager.cancelReview(sessionID: id) } }
         )
@@ -55,46 +73,49 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         .environment(recordingManager)
         .environment(audioPlayer)
 
+        // A native sheet has no titlebar controls; the standalone window keeps
+        // its standard titlebar, as the calendar-link window does.
+        let root = parent == nil ? AnyView(content) : AnyView(content.ignoresSafeArea(.container, edges: .top))
+
         let hosting = NSHostingController(rootView: root)
-        // Size the window explicitly instead of letting AppKit resolve the hosting
-        // controller's `preferredContentSize` during the display cycle. That
-        // self-sizing path (safe-area ↔ content-size feedback under a full-size-
-        // content transparent titlebar) can reentrantly re-request a constraints
-        // pass mid-cycle and crash with an uncaught AppKit exception on macOS 26.
-        // The content is a fixed-width column with an intrinsically-sized card
-        // list, so a measured height is safe. Mirrors CallDetectedOverlayController.
+        // Explicit sizing avoids the reentrant AppKit sizing path on macOS 26.
         hosting.sizingOptions = []
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: 200),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            contentRect: NSRect(origin: .zero, size: SpeakerReviewView.contentSize),
+            styleMask: parent == nil ? [.titled, .closable, .miniaturizable] : [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: true
         )
         win.contentViewController = hosting
-        // Size to the SwiftUI content's real fitting height (a one-shot AppKit
-        // measurement, not the crashing `preferredContentSize` auto-size path —
-        // the same pattern `FloatingMiniPlayer` uses safely). The view scrolls
-        // internally past its card cap, so clamp to a sane floor/ceiling.
-        hosting.view.layoutSubtreeIfNeeded()
-        let fitted = hosting.view.fittingSize.height
-        let height = min(max(fitted, 200), 640)
-        win.setContentSize(NSSize(width: Self.windowWidth, height: height))
-        win.title = "Confirm Speakers"
-        // Seamless glass: the material background fills the whole window (incl. under
-        // the titlebar), matching the rest of the app's translucent windows.
-        win.titlebarAppearsTransparent = true
-        win.titleVisibility = .hidden
-        win.isOpaque = false
-        win.backgroundColor = .clear
-        win.isMovableByWindowBackground = true
+        win.setContentSize(SpeakerReviewView.contentSize)
+        win.title = "Identify Speakers"
+        if parent != nil {
+            win.titlebarAppearsTransparent = true
+            win.titleVisibility = .hidden
+        }
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.center()
         self.window = win
 
         if !appSettings.showDockIcon { NSApp.setActivationPolicy(.regular) }
-        bringToFront(win)
+        if let parent {
+            presentationParent = parent
+            parentCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: parent, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.complete(sessionID: session.id) { await recordingManager.cancelReview(sessionID: session.id) }
+                }
+            }
+            bringToFront(parent)
+            // AppKit queues this behind the launch sheet if its dismissal is
+            // still in progress when speaker detection finishes.
+            parent.beginSheet(win)
+        } else {
+            win.center()
+            bringToFront(win)
+        }
     }
 
     private func bringToFront(_ window: NSWindow) {
@@ -111,9 +132,17 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
     }
 
     private func teardown() {
+        if let parentCloseObserver {
+            NotificationCenter.default.removeObserver(parentCloseObserver)
+            self.parentCloseObserver = nil
+        }
         window?.delegate = nil
+        if let window, let parent = presentationParent {
+            parent.endSheet(window)
+        }
         window?.orderOut(nil)
         window = nil
+        presentationParent = nil
         if let appSettings, !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.accessory)
         }
@@ -137,9 +166,6 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         if let recordingManager, let id = appState?.pendingSpeakerReview?.id {
             Task { await recordingManager.cancelReview(sessionID: id) }
         }
-        window = nil
-        if let appSettings, !appSettings.showDockIcon {
-            NSApp.setActivationPolicy(.accessory)
-        }
+        teardown()
     }
 }

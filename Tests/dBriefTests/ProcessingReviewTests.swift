@@ -30,6 +30,17 @@ struct ProcessingReviewTests {
         #expect(saved.segments.first?.text == "Edited words")
         #expect(saved.speakerLabels.first?.displayName == "Alice" && saved.speakerLabels.first?.personId == "person")
     }
+    @Test(arguments: ["Alex", "Old name", "Speaker 1"])
+    func manualConfirmationRemovesPreviouslySuggestedPersonIdentity(name: String) async throws {
+        let audit = Audit()
+        var source = rich
+        source.speakerLabels[0].personId = "previous-person"
+        try await ProcessingPipeline().confirmSpeakers(
+            ["Speaker 1": .init(name: name, personId: nil)], transcript: source, steps: steps(audit))
+        let saved = try #require(await audit.transcript)
+        #expect(saved.speakerLabels.first?.displayName == name)
+        #expect(saved.speakerLabels.first?.personId == nil)
+    }
     @Test func saveFailureDoesNotPublishOrEnroll() async throws {
         let audit = Audit()
         var input = steps(audit)

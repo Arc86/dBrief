@@ -1,13 +1,13 @@
 import Foundation
 
-/// One speaker card in the confirm-first review window.
+/// One detected voice in the confirm-first review.
 struct SpeakerReviewItem: Identifiable, Equatable, Sendable {
     var id: String                 // diarization speaker id
     var proposedName: String       // matched name, or the raw "Speaker N"
     var reason: VoiceIdentityResolver.Reason
     var confidence: Float
     var personId: String?          // library link when the proposal came from a match
-    var clusterEmbedding: [Float]  // for live candidate chips
+    var clusterEmbedding: [Float]  // ranks the library choices
     var snippet: (start: Double, end: Double)?  // representative audio range
 
     static func == (lhs: SpeakerReviewItem, rhs: SpeakerReviewItem) -> Bool {

@@ -152,6 +152,17 @@ enum SpeakerReassignment {
         return out
     }
 
+    /// Review choices replace the entire identity, including an explicit nil library
+    /// link. Ordinary transcript renames retain their existing link by default.
+    static func confirm(_ transcript: RichTranscript, speakerId: String, as choice: ConfirmedSpeaker) -> RichTranscript {
+        guard !choice.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return transcript }
+        var output = rename(transcript, speakerId: speakerId, to: choice.name, personId: choice.personId)
+        if let index = output.speakerLabels.firstIndex(where: { $0.id == speakerId }) {
+            output.speakerLabels[index].personId = choice.personId
+        }
+        return output
+    }
+
     /// The effective display name of a speaker id: its label, or the raw id when unlabeled.
     private static func displayName(in transcript: RichTranscript, id: String) -> String {
         transcript.speakerLabels.first(where: { $0.id == id })?.displayName ?? id

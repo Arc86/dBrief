@@ -142,9 +142,9 @@ extension RecordingManager {
                 try self.requireProcessingOwnership(job)
                 guard !self.processingCancellationInProgress else { throw CancellationError() }
                 guard var rich = job.recording.richTranscript else { throw ReprocessingError.missingTranscript }
-                for (id, choice) in confirmed {
-                    let name = choice.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !name.isEmpty { rich = SpeakerReassignment.rename(rich, speakerId: id, to: name, personId: choice.personId) }
+                for id in confirmed.keys.sorted() {
+                    guard let choice = confirmed[id] else { continue }
+                    rich = SpeakerReassignment.confirm(rich, speakerId: id, as: choice)
                 }
                 try await self.reprocessingStore.stage(JSONEncoder().encode(rich), suffix: "richtranscript.json", attemptID: job.id)
                 try self.requireProcessingOwnership(job)

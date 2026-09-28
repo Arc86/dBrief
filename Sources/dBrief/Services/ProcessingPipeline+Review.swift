@@ -24,7 +24,7 @@ extension ProcessingPipeline {
             guard let confirmation = confirmed[speakerID] else { continue }
             let name = confirmation.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { continue }
-            rich = SpeakerReassignment.rename(rich, speakerId: speakerID, to: name, personId: confirmation.personId)
+            rich = SpeakerReassignment.confirm(rich, speakerId: speakerID, as: confirmation)
             if name != speakerID { enrollments.append((speakerID, name)) }
         }
         try await validateReviewOwner(steps.validateOwnership)

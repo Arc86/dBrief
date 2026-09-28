@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import dBriefWire
 
@@ -251,12 +252,19 @@ private struct ReprocessingEditor: View {
     private func start() {
         isStarting = true
         error = nil
+        let audioURL = recording.finalizedAudioURL ?? recording.fileURL
+        if options.requiresTranscription || options.operation == .speakers {
+            let launchWindow = NSApp.keyWindow
+            let parent = dismissAction == nil ? (launchWindow?.sheetParent ?? launchWindow) : nil
+            SpeakerReviewWindowController.shared.preparePresentation(for: audioURL, parent: parent)
+        }
         Task {
             do {
                 try options.validate()
                 try await manager.startReprocessing(for: recording, options: options)
                 close()
             } catch {
+                SpeakerReviewWindowController.shared.preparePresentation(for: audioURL, parent: nil)
                 self.error = error.localizedDescription
             }
             isStarting = false
