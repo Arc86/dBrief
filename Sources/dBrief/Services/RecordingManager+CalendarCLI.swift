@@ -46,26 +46,22 @@ extension RecordingManager {
         guard let window = Self.calendarCLIDayWindows(
             from: recording.date, to: recording.date, matchWindow: 0).first else { return .failed }
         let generation = calendarCLIConfigGeneration
+        let cached = await calendarCLIService.cachedSnapshot(window: window, config: config)
+        guard appSettings.effectiveCalendarSource == .claudeCLI,
+              calendarCLIConfigGeneration == generation,
+              appSettings.calendarCLIConfig == baseConfig else { return .failed }
+        if cached.hasCompleteSnapshot {
+            // Each recording starts with an empty candidate array. Publish the
+            // saved day before awaiting a stale-list refresh or an existing flight.
+            _ = applyCalendarCLIPickerEntries(cached.entries, window: window, to: recording)
+        }
         do {
             let read = try await calendarCLIService.refreshSnapshot(window: window, config: config, force: force)
             let entries = read.entries
             guard appSettings.effectiveCalendarSource == .claudeCLI,
                   calendarCLIConfigGeneration == generation,
                   appSettings.calendarCLIConfig == baseConfig else { return .failed }
-            let prior = recording.calendarEvent
-            let priorKey = prior.flatMap { calendarCLIEntryByEventID[$0.id]?.key }
-            var candidates = entries.map(\.event).sorted { $0.startDate < $1.startDate }
-            for entry in entries { calendarCLIEntryByEventID[entry.event.id] = entry }
-            var selectionMissing = false
-            if let prior {
-                if let replacement = entries.first(where: { $0.key == priorKey }) {
-                    recording.calendarEvent = replacement.event
-                } else {
-                    selectionMissing = prior.startDate < window.end && prior.endDate > window.start
-                    candidates.append(prior)
-                }
-            }
-            recording.calendarCandidates = candidates
+            let selectionMissing = applyCalendarCLIPickerEntries(entries, window: window, to: recording)
             if selectionMissing, force, read.outcome == .refreshed { return .selectionMissing }
             if read.persistence == .failed { return .saveFailed }
             switch read.outcome {
@@ -78,6 +74,26 @@ extension RecordingManager {
         } catch {
             return .failed
         }
+    }
+
+    private func applyCalendarCLIPickerEntries(
+        _ entries: [CalendarCLIEntry], window: CalendarCLIWindow, to recording: Recording
+    ) -> Bool {
+        let prior = recording.calendarEvent
+        let priorKey = prior.flatMap { calendarCLIEntryByEventID[$0.id]?.key }
+        var candidates = entries.map(\.event).sorted { $0.startDate < $1.startDate }
+        for entry in entries { calendarCLIEntryByEventID[entry.event.id] = entry }
+        var selectionMissing = false
+        if let prior {
+            if let replacement = entries.first(where: { $0.key == priorKey }) {
+                recording.calendarEvent = replacement.event
+            } else {
+                selectionMissing = prior.startDate < window.end && prior.endDate > window.start
+                candidates.append(prior)
+            }
+        }
+        recording.calendarCandidates = candidates
+        return selectionMissing
     }
 
     // MARK: - Windows

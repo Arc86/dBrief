@@ -187,6 +187,34 @@ struct CalendarCLILifecycleTests {
 
     // MARK: - No unsolicited reads
 
+    @Test("Picker publishes saved meetings before a slow refresh completes")
+    func pickerShowsCacheDuringRefresh() async {
+        let harness = Harness()
+        defer { harness.cleanup() }
+        let (seed, _, entry) = Self.seedCandidate(harness)
+        let recording = harness.recording(start: seed.date)
+        let window = RecordingManager.calendarCLIDayWindows(
+            from: recording.date, to: recording.date, matchWindow: 0).first.unsafelyUnwrapped
+        let config = harness.settings.effectiveCalendarCLIConfig
+        let store = CalendarCLICacheStore(directory: harness.storeDirectory, now: harness.clock.reader)
+        #expect(store.storeList(CalendarCLIStoredListSnapshot(
+            scope: CalendarCLIScope(config: config), window: window, entries: [entry],
+            lastSuccessfulRefresh: harness.clock.now.addingTimeInterval(-3600),
+            lastAttempt: harness.clock.now.addingTimeInterval(-3600))) == .saved)
+        harness.transport.holdNextList()
+        let refresh = Task {
+            await harness.manager.refreshCalendarCLIPicker(for: recording, force: true)
+        }
+        for _ in 0..<100 where harness.transport.listCalls == 0 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.transport.listCalls == 1)
+        #expect(recording.calendarCandidates.map(\.id) == [entry.event.id])
+        // Release even when the expectation fails so the test never leaves a waiter behind.
+        harness.transport.releaseAll()
+        _ = await refresh.value
+    }
+
     @Test("Participant admission freezes selected occurrence without a connector call")
     func participantAdmissionIsImmediate() {
         let harness = Harness()
