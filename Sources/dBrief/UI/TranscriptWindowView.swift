@@ -165,13 +165,9 @@ struct TranscriptDetailView: View {
     /// segment. Rebuilt only when the live segments grow.
     @State private var liveTurns: [SpeakerTurn] = []
 
-    /// Rebuilds `liveTurns` from the current live segments.
+    /// Rebuilds `liveTurns` from the current live segments, keeping row identity.
     private func refreshLiveTurns() {
-        let segs = liveSegments.map { seg in
-            RichSegment(start: seg.start, end: seg.end, text: seg.text,
-                        originalText: seg.text, speakerId: seg.speaker)
-        }
-        liveTurns = RichTranscript(segments: segs).speakerTurns()
+        liveTurns = LiveTurnBuilder.turns(from: liveSegments)
     }
 
     var body: some View {
