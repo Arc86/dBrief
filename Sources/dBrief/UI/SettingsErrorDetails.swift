@@ -16,12 +16,12 @@ struct SettingsErrorDetails: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.red)
             }
-            .font(.callout)
+            .uiFont(.callout)
 
             DisclosureGroup("Error details", isExpanded: $isExpanded) {
                 ScrollView {
                     Text(SettingsErrorSanitizer.details(for: error))
-                        .font(.callout)
+                        .uiFont(.callout)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

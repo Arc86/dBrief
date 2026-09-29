@@ -45,7 +45,7 @@ struct TranscriptSegmentRow: View {
                 HStack(spacing: 6) {
                     Button(formattedTimestamp(segment.start)) { onSeek(segment.start) }
                         .buttonStyle(.plain)
-                        .font(.caption2.monospacedDigit())
+                        .uiFont(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
 
                     if isHovered || segment.isStarred {
@@ -85,7 +85,7 @@ struct TranscriptSegmentRow: View {
                 showingSpeakerRename = true
             } label: {
                 Text(displayName)
-                    .font(.system(size: 11, weight: .semibold))
+                    .uiFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(color)
                     .lineLimit(2)
                     .multilineTextAlignment(.trailing)
@@ -109,7 +109,7 @@ struct TranscriptSegmentRow: View {
                     let displayName = speakerDisplayName(for: speakerId)
                     let color = TranscriptDesignTokens.speakerColor(for: speakerId)
                     Text(displayName)
-                        .font(.system(size: 10, weight: .semibold))
+                        .uiFont(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(color.opacity(0.15))
@@ -126,7 +126,7 @@ struct TranscriptSegmentRow: View {
 
                 Button(formattedTimestamp(segment.start)) { onSeek(segment.start) }
                     .buttonStyle(.plain)
-                    .font(.caption2.monospacedDigit())
+                    .uiFont(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -189,7 +189,7 @@ struct TranscriptSegmentRow: View {
                 .onKeyPress(.escape) { cancelEditing(); return .handled }
 
             Text("Esc to cancel · Changes auto-saved")
-                .font(.caption2)
+                .uiFont(.caption2)
                 .foregroundStyle(.tertiary)
 
         } else if displayMode == .segments && !segment.tokens.isEmpty {
@@ -225,17 +225,17 @@ struct TranscriptSegmentRow: View {
     private func speakerRenamePopover(speakerId: String, displayName: String) -> some View {
         VStack(spacing: 8) {
             Text("Rename Speaker")
-                .font(.caption.bold())
+                .uiFont(.caption.bold())
             TextField("Name", text: $speakerRenameText)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 140)
                 .onSubmit { commitRename(speakerId: speakerId) }
             HStack {
                 Button("Cancel") { showingSpeakerRename = false }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                 Button("Save") { commitRename(speakerId: speakerId) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .controlSize(.small)
             }
         }

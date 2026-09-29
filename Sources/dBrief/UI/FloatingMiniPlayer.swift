@@ -47,6 +47,7 @@ final class FloatingMiniPlayerController {
             .environment(recordingManager)
             .environment(self)
             .environment(\.calmAppearance, appSettings?.reduceNeon ?? false)
+            .modifier(AppAppearanceScope(settings: appSettings))
 
         let hosting = NSHostingView(rootView: content)
         panel.contentView = hosting
@@ -103,6 +104,8 @@ private struct MiniPlayerView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(FloatingMiniPlayerController.self) private var controller
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.viewerMode) private var mode
 
     private static let cachedIcon: Image = {
         if let image = DBriefAppIcon.image { return Image(nsImage: image) }
@@ -130,14 +133,14 @@ private struct MiniPlayerView: View {
                         )
 
                         Text(appState.isRecording ? "Recording" : "Paused")
-                            .font(.brandMono(11, weight: .medium))
+                            .uiFont(.brandMono(11, weight: .medium))
                             .foregroundStyle(appState.isRecording ? Brand.recording : Brand.paused)
                     }
 
                     Spacer()
 
                     Text(formattedDuration)
-                        .font(.brandMono(12, weight: .semibold))
+                        .uiFont(.brandMono(12, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
                 .overlay { MiniPlayerDragArea() }
@@ -147,10 +150,10 @@ private struct MiniPlayerView: View {
                     controller.toggleCollapse()
                 } label: {
                     Image(systemName: controller.isCollapsed ? "chevron.down" : "chevron.up")
-                        .font(.caption.weight(.semibold))
+                        .uiFont(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
                 .accessibilityLabel(controller.isCollapsed ? "Expand recording controls" : "Collapse recording controls")
             }
 
@@ -165,9 +168,9 @@ private struct MiniPlayerView: View {
             if let note = appState.recordingStatusNote {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                     Text(note)
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .lineLimit(2)
                 }
                 .foregroundStyle(.secondary)
@@ -182,11 +185,11 @@ private struct MiniPlayerView: View {
                         recordingManager.pauseRecording()
                     } label: {
                         Label("Pause", systemImage: "pause.fill")
-                            .font(.caption.weight(.medium))
+                            .uiFont(.caption.weight(.medium))
                             .frame(maxWidth: .infinity)
                     }
                     .controlSize(.large)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 } else if appState.isPaused {
                     Button {
                         do {
@@ -196,18 +199,18 @@ private struct MiniPlayerView: View {
                         }
                     } label: {
                         Label("Resume", systemImage: "play.fill")
-                            .font(.caption.weight(.medium))
+                            .uiFont(.caption.weight(.medium))
                             .frame(maxWidth: .infinity)
                     }
                     .controlSize(.large)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 }
 
                 Button {
                     Task { await recordingManager.stopRecording() }
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
-                        .font(.caption.weight(.bold))
+                        .uiFont(.caption.weight(.bold))
                 }
                 .controlSize(.large)
                 .buttonStyle(CoralControlButtonStyle())
@@ -216,6 +219,7 @@ private struct MiniPlayerView: View {
         }
         .padding(12)
         .frame(width: 220)
+        .background(palette.surface.color.opacity(mode.isPaper ? 1 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
     }

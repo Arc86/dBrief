@@ -67,7 +67,7 @@ struct SettingsTranscriptionTab: View {
                         Section("Large File Handling", settingsSearch: .transcriptionChunking) {
                             if appSettings.transcriptionEngine != .remoteEndpoint {
                                 Text("These options apply to remote transcription services.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .uiFont(.caption).foregroundStyle(.secondary)
                             }
                             chunkingSection
                         }
@@ -121,7 +121,7 @@ struct SettingsTranscriptionTab: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Transcribe live while recording")
                 Text("Real-time preview (and live chat) using Apple's on-device speech, with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -145,7 +145,7 @@ struct SettingsTranscriptionTab: View {
         case .appleSpeech:
             TranscriptionModelCard(presentation: .local(LocalTranscriptionChoice.apple, modernApple: modernApple),
                                    onChangeModel: { showWhisperComparison = true }) {
-                Label("macOS managed", systemImage: "apple.logo").font(.caption).foregroundStyle(.secondary)
+                Label("macOS managed", systemImage: "apple.logo").uiFont(.caption).foregroundStyle(.secondary)
             }
             DisclosureGroup("Memory and sources") {
                 LocalModelEvidenceView(modelID: LocalTranscriptionChoice.apple)
@@ -156,7 +156,7 @@ struct SettingsTranscriptionTab: View {
             whisperSection
         case .remoteEndpoint:
             Text("Use a remote Whisper API or server. Requires an endpoint.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         }
 
@@ -175,11 +175,11 @@ struct SettingsTranscriptionTab: View {
             }
             DisclosureGroup("Memory and sources") {
                 LocalModelEvidenceView(modelID: id)
-            }.font(.caption)
+            }.uiFont(.caption)
 
             Toggle("Identify speakers", isOn: $settings.diarizationEnabled)
             Text("Identifies who said what via SpeakerKit, after transcription. Adds processing time and ~500 MB memory.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
 
             Button("Remove downloaded Parakeet model") {
@@ -192,11 +192,11 @@ struct SettingsTranscriptionTab: View {
                     }
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.typographyBordered)
             .controlSize(.small)
             if let purgeMessage {
                 Text(purgeMessage)
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -210,18 +210,18 @@ struct SettingsTranscriptionTab: View {
             // — Model group header with help popover —
             HStack(spacing: 6) {
                 Text("Model")
-                    .font(.subheadline)
+                    .uiFont(.subheadline)
                     .foregroundStyle(.secondary)
                 Button {
                     showModelHelp.toggle()
                 } label: {
                     Image(systemName: "info.circle")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
                 .controlSize(.small)
                 .popover(isPresented: $showModelHelp, arrowEdge: .bottom) {
                     Text("Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. When in doubt, keep the recommended one.")
-                        .font(.callout)
+                        .uiFont(.callout)
                         .padding()
                         .frame(width: 260)
                 }
@@ -231,7 +231,7 @@ struct SettingsTranscriptionTab: View {
             if isFetchingWhisperModels && whisperModels.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Loading models…").font(.caption).foregroundStyle(.secondary)
+                    Text("Loading models…").uiFont(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
@@ -245,30 +245,30 @@ struct SettingsTranscriptionTab: View {
             }
 
             HStack {
-                Text("Estimated ratings").font(.caption2).foregroundStyle(.secondary)
+                Text("Estimated ratings").uiFont(.caption2).foregroundStyle(.secondary)
                 Spacer()
             }
             DisclosureGroup("Memory and sources") {
                 WhisperModelImpactView(modelID: settings.whisperModelName,
                                        identifySpeakers: settings.diarizationEnabled)
                     .padding(.top, 8)
-            }.font(.caption)
+            }.uiFont(.caption)
 
             // — Offline fetch error (shown at top level so it's visible without expanding Advanced) —
             if let error = whisperModelFetchError {
                 Label(error, systemImage: "wifi.slash")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.orange)
             }
 
             // — Diarization (plain label, jargon in caption) —
             Divider().padding(.vertical, 6)
-            Text("Speakers").font(.subheadline).foregroundStyle(.secondary)
+            Text("Speakers").uiFont(.subheadline).foregroundStyle(.secondary)
             Toggle(isOn: $settings.diarizationEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Identify different speakers")
                     Text("Diarization — labels who said what. Slower, uses ~500 MB more memory.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
             }
 
@@ -282,7 +282,7 @@ struct SettingsTranscriptionTab: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("When a voice is recognized")
                         Text(settings.speakerIdMode.shortDescription)
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .pickerStyle(.menu)
@@ -295,7 +295,7 @@ struct SettingsTranscriptionTab: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Where it runs")
                             Text("Compute units. Leave on Automatic unless transcription fails on large models.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Picker("", selection: $settings.whisperComputeUnits) {
@@ -312,7 +312,7 @@ struct SettingsTranscriptionTab: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Keep model warm")
                             Text("Loads the Whisper model shortly after launch and after the Mac wakes, to reduce startup time. Can retain model memory while idle.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                     }
 
@@ -322,7 +322,7 @@ struct SettingsTranscriptionTab: View {
                         } label: {
                             Label("Refresh model list", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.typographyBorderless)
                         .controlSize(.small)
                         .help("Refresh model list from HuggingFace")
                         Spacer()
@@ -338,17 +338,17 @@ struct SettingsTranscriptionTab: View {
                             }
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                     if let purgeMessage {
                         Text(purgeMessage)
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.top, 6)
             } label: {
-                Text("Advanced").font(.subheadline)
+                Text("Advanced").uiFont(.subheadline)
             }
         }
     }
@@ -387,15 +387,15 @@ struct SettingsTranscriptionTab: View {
         }
         if settings.transcriptionEngine == .parakeetLocal {
             Text("Parakeet determines the language from its model and the audio. This selection has no effect; it is kept for other engines.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         } else if settings.transcriptionEngine == .appleSpeech && settings.transcriptionLanguage.isEmpty {
             Text("Apple Speech uses the system language when set to Auto.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         } else if settings.transcriptionEngine == .localWhisper && settings.transcriptionLanguage.isEmpty {
             Text("WhisperKit auto-detects language when set to Auto-detect.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -406,7 +406,7 @@ struct SettingsTranscriptionTab: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Remove filler words (um, uh, …)", isOn: $settings.removeFillerWords)
                 Text("Markup and hallucination artifacts are always cleaned. Filler removal is off by default so meeting transcripts stay verbatim.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -421,7 +421,7 @@ struct SettingsTranscriptionTab: View {
         return VStack(alignment: .leading, spacing: 8) {
             Toggle("Filter ignored segments", isOn: $settings.removeIgnoredSegments)
             Text("Drops segments that exactly match a known filler phrase — Whisper silence-hallucinations like “Thank you for watching”, “Subscribe to the channel”, or “♪”. Matching is whole-segment, so real speech that merely contains a phrase is kept.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
 
             if settings.removeIgnoredSegments {
@@ -429,7 +429,7 @@ struct SettingsTranscriptionTab: View {
                     customIgnoredSegmentsEditor
                 } label: {
                     Text("Custom phrases (\(settings.customIgnoredSegments.count)) · \(TranscriptCleanup.defaultIgnoredSegments.count) built-in")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -449,13 +449,13 @@ struct SettingsTranscriptionTab: View {
 
             if settings.customIgnoredSegments.isEmpty {
                 Text("No custom phrases. Built-in phrases are always applied while filtering is on.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(settings.customIgnoredSegments, id: \.self) { phrase in
                     HStack {
                         Text(phrase)
-                            .font(.callout)
+                            .uiFont(.callout)
                         Spacer()
                         Button {
                             settings.customIgnoredSegments.removeAll { $0 == phrase }
@@ -471,7 +471,7 @@ struct SettingsTranscriptionTab: View {
                 Button("Reset to Defaults") {
                     settings.customIgnoredSegments = []
                 }
-                .font(.caption)
+                .uiFont(.caption)
             }
         }
         .padding(.top, 4)
@@ -517,7 +517,8 @@ struct SettingsTranscriptionTab: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
                 .fixedSize()
 
                 Button {
@@ -529,7 +530,7 @@ struct SettingsTranscriptionTab: View {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Spacer()
 
@@ -537,7 +538,7 @@ struct SettingsTranscriptionTab: View {
                     appSettings.defaultTranscriptionEndpointId = selectedEndpointId
                 }
                 .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
             }
         }
     }
@@ -577,12 +578,12 @@ struct SettingsTranscriptionTab: View {
                 }
 
                 Text("Large files are split into smaller chunks, transcribed sequentially, and merged into a single timeline.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Text("Hosted providers may enforce a smaller upload limit. Files above the effective limit are split automatically when the endpoint supports it. Native cloud diarization uses a single file.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -598,13 +599,13 @@ struct SettingsTranscriptionTab: View {
                 Text(endpoint.name)
                     .fontWeight(.medium)
                 Text(endpoint.baseURL)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             if isDefault {
                 Text("Default")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -641,12 +642,12 @@ struct SettingsTranscriptionTab: View {
             Spacer()
 
             Text(isNew ? "Add Transcription Service" : "Edit Transcription Service")
-                .font(.title3)
+                .uiFont(.title3)
                 .fontWeight(.medium)
 
             if editingEndpoint.provider == .deepgram || editingEndpoint.provider == .elevenLabs {
                 Text("\(editingEndpoint.provider == .deepgram ? "Deepgram" : "ElevenLabs") native API. Enter your model and API key; long files and (Deepgram) diarization are handled server-side.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -690,7 +691,7 @@ struct SettingsTranscriptionTab: View {
                     .controlSize(.small)
             } else if !availableModels.isEmpty {
                 Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -709,21 +710,21 @@ struct SettingsTranscriptionTab: View {
                         SettingsErrorDetails(summary: "Connection failed", error: error)
                     }
                 }
-                .font(.callout)
+                .uiFont(.callout)
             }
 
             HStack {
                 Button("Test Connection") {
                     testAndLoadModels()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Spacer()
 
                 Button("Cancel") {
                     isEditing = false
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Button("Save") {
                     if isNew {
@@ -735,7 +736,7 @@ struct SettingsTranscriptionTab: View {
                     }
                     isEditing = false
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.typographyProminent)
                 .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty)
             }
             .frame(maxWidth: 350)

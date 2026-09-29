@@ -23,14 +23,14 @@ struct WhisperModelImpactView: View {
                     Text(String(format: "~%.1f of %.0f GiB RAM%@", total,
                                 Double(physicalMemoryBytes) / 1_073_741_824,
                                 identifySpeakers ? " · includes speakers" : ""))
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
                 if fraction > 0.5 {
                     Label(impact.label, systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.orange)
+                        .uiFont(.caption).foregroundStyle(.orange)
                 }
             } else {
-                Text("Memory estimate unavailable").font(.caption).foregroundStyle(.secondary)
+                Text("Memory estimate unavailable").uiFont(.caption).foregroundStyle(.secondary)
             }
             Group {
                 VStack(alignment: .leading, spacing: 8) {
@@ -46,10 +46,10 @@ struct WhisperModelImpactView: View {
                         }
                     }
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
                 .padding(.top, 6)
             }
-            .font(.caption)
+            .uiFont(.caption)
         }
     }
 

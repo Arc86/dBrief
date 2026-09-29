@@ -17,6 +17,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
         button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         button.setAccessibilityLabel("Microphone input")
         let menu = NSMenu()
+        menu.font = button.font
         menu.delegate = context.coordinator
         button.menu = menu
         context.coordinator.rebuild(menu)

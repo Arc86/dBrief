@@ -17,21 +17,21 @@ struct ShortcutRecorderView: View {
                 if isRecording { stop() } else { start() }
             } label: {
                 Text(isRecording ? "Press shortcut…" : hotkey.displayString)
-                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .uiFont(.system(.body, design: .rounded).weight(.medium))
                     .monospaced()
                     .frame(minWidth: 110)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.typographyBordered)
             .tint(isRecording ? .accentColor : nil)
 
             if isRecording {
                 Text(hint ?? "esc to cancel")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             } else if hotkey != .default {
                 Button("Reset") { hotkey = .default }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.typographyBorderless)
                     .controlSize(.small)
             }
         }

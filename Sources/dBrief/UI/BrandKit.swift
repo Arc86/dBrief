@@ -131,7 +131,7 @@ struct GradientButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .uiFont(.system(size: 15, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
@@ -149,7 +149,7 @@ struct GradientButtonStyle: ButtonStyle {
 struct GlassControlButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .uiFont(.system(size: 14, weight: .semibold))
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
@@ -166,7 +166,7 @@ struct GlassControlButtonStyle: ButtonStyle {
 struct SheetActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .uiFont(.system(size: 13, weight: .medium))
             .foregroundStyle(.primary)
             .padding(.horizontal, 16)
             .frame(height: 38)
@@ -181,7 +181,7 @@ struct SheetActionButtonStyle: ButtonStyle {
 struct CoralControlButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .bold))
+            .uiFont(.system(size: 14, weight: .bold))
             .foregroundStyle(Brand.coral)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
@@ -247,6 +247,7 @@ extension Font {
 struct BrandKicker: View {
     let text: String
     var color: Color = .secondary
+    @Environment(\.uiTypography) private var typography
 
     init(_ text: String, color: Color = .secondary) {
         self.text = text
@@ -254,9 +255,9 @@ struct BrandKicker: View {
     }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.brandMono(10, weight: .medium))
-            .tracking(1.6)
+        Text(typography.readingFont == .openDyslexic ? text : text.uppercased())
+            .uiFont(.brandMono(10, weight: .medium))
+            .tracking(typography.readingFont == .openDyslexic ? 0 : 1.6)
             .foregroundStyle(color)
     }
 }
@@ -280,7 +281,7 @@ struct ParticipantPill: View {
             if let onEdit {
                 Button(action: onEdit) {
                     Text(name)
-                        .font(.system(size: 12.5))
+                        .uiFont(.system(size: 12.5))
                         .foregroundStyle(.primary)
                         .underline(hovering, color: .primary.opacity(0.35))
                 }
@@ -289,7 +290,7 @@ struct ParticipantPill: View {
                 .help("Click to edit this name")
             } else {
                 Text(name)
-                    .font(.system(size: 12.5))
+                    .uiFont(.system(size: 12.5))
                     .foregroundStyle(.primary)
             }
             Button(action: onRemove) {
@@ -340,7 +341,7 @@ struct BrandCheckRow: View {
                     }
                 }
                 Text(title)
-                    .font(.system(size: 14))
+                    .uiFont(.system(size: 14))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }

@@ -11,7 +11,12 @@ struct TranscriptBrowserView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.calmAppearance) private var calm
+
+    private var palette: ViewerPalette {
+        ViewerThemeResolver.resolve(
+            mode: appSettings.viewerAppearance.effectiveMode(systemIsDark: colorScheme == .dark),
+            sourceHex: appSettings.viewerAppearance.sourceAccentHex, nonNeon: appSettings.reduceNeon)
+    }
 
     @State private var searchText = ""
     @State private var statusFilter: LibraryRecordingStatus?
@@ -77,55 +82,15 @@ struct TranscriptBrowserView: View {
     }
 
     private var navigationShell: some View {
-        // Native collapsible + resizable sidebar (system component) hosting the
-        // redesigned meeting list. The neon ambient lives on the detail side; the
-        // sidebar uses the standard vibrant sidebar material (the navigation glass
-        // layer). `sidebarOpen` maps to the split view's column visibility so the
-        // native sidebar toggle + the persisted open/closed state stay in sync.
-        NavigationSplitView(columnVisibility: Binding(
-            get: { sidebarOpen ? .all : .detailOnly },
-            set: { newValue in sidebarOpen = (newValue != .detailOnly) }
-        )) {
+        ViewerLibraryLayout(sidebarOpen: sidebarOpen, onToggleSidebar: { sidebarOpen.toggle() }) {
             sidebar
-                .scrollContentBackground(.hidden)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
             mainPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background { TranscriptDesignTokens.ambientBackground(scheme: colorScheme, calm: calm) }
+                .background(palette.canvas.color)
         }
-        .navigationTitle("dBrief")
         .frame(minWidth: 760, minHeight: 480)
-        .toolbar {
-            // Refresh + Settings sit at the leading edge, right next to the native
-            // sidebar-collapse toggle.
-            ToolbarItemGroup(placement: .navigation) {
-                Button { reload() } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh")
-                .accessibilityLabel("Refresh recordings")
-
-                Menu {
-                    Picker("View", selection: viewSelection) {
-                        ForEach(LibrarySmartView.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    Divider()
-                    Button("Rebuild Search Index") { library.refresh(rebuild: true) }
-                        .disabled(library.isRefreshing)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .help("Library options")
-                .accessibilityLabel("Library options")
-
-                Button { openWindow(id: "settings") } label: {
-                    Image(systemName: "gearshape")
-                }
-                .help("Open Settings (⌘,)")
-                .accessibilityLabel("Open Settings")
-            }
-        }
+        .modifier(ViewerWindowChrome())
     }
 
     private var selectionLifecycle: some View {
@@ -177,6 +142,7 @@ struct TranscriptBrowserView: View {
             if ready { reload(); rebuildDetailRecording() }
             else { library.suspend(); detailRecording = nil }
         }
+        .modifier(ViewerAppearanceScope(settings: appSettings))
     }
 
     private var browserContent: some View {
@@ -266,72 +232,48 @@ struct TranscriptBrowserView: View {
     }
 
     private var sidebar: some View {
-        VStack(spacing: 0) {
-            searchField
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-
-            TranscriptLibraryFilters(view: viewSelection, status: $statusFilter,
-                                     isLoading: library.showsInitialLoading)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-            if let scope = scopeDescription {
-                Text(scope).font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12).padding(.bottom, 8)
-            }
-            if let error = library.error {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(error).font(.caption)
-                    Button("Retry") { library.refresh() }
+        ViewerLibrarySidebar(
+            searchText: $searchText,
+            selectedView: viewSelection,
+            statusFilter: $statusFilter,
+            isLoading: library.showsInitialLoading,
+            isRefreshing: library.isRefreshing,
+            error: library.error,
+            emptyMessage: sidebarEmptyMessage,
+            isRecordEnabled: appState.isIdle,
+            onRecord: {
+                appState.lastError = nil
+                Task { try? await recordingManager.startRecording() }
+            },
+            onRefresh: reload,
+            onRebuildSearchIndex: { library.refresh(rebuild: true) },
+            onSettings: { openWindow(id: "settings") }
+        ) { statusMenu in
+            if liveRecording != nil || processingRecording != nil {
+                sidebarSectionHeading("In Progress")
+                if let live = liveRecording {
+                    LiveSidebarRow(recording: live, isProcessing: false,
+                        isSelected: selection == live.fileURL,
+                        onTap: { selectRecording(live.fileURL) })
                 }
-                .padding(12)
-            }
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    if liveRecording != nil || processingRecording != nil {
-                        sectionLabel("In Progress")
-                        if let live = liveRecording {
-                            LiveSidebarRow(recording: live, isProcessing: false,
-                                isSelected: selection == live.fileURL,
-                                onTap: { selectRecording(live.fileURL) })
-                        }
-                        if let proc = processingRecording {
-                            LiveSidebarRow(recording: proc, isProcessing: true,
-                                isSelected: selection == proc.fileURL,
-                                onTap: { selectRecording(proc.fileURL) })
-                        }
-                    }
-                    smartResults
-                    if !library.hasMatches && !library.showsInitialLoading && library.error == nil {
-                        Text(searchText.isEmpty ? emptyDescription : "No matches for this search.")
-                            .font(.callout).foregroundStyle(.secondary).padding()
-                    }
+                if let proc = processingRecording {
+                    LiveSidebarRow(recording: proc, isProcessing: true,
+                        isSelected: selection == proc.fileURL,
+                        onTap: { selectRecording(proc.fileURL) })
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-                .overlayScrollers()
             }
-
-            recordButton
-                .padding(12)
-        }
-    }
-
-    private var scopeDescription: String? {
-        switch library.selectedView {
-        case .failedJobs, .queuedInterrupted: "Queued and recovery work from all folders."
-        case .recentlyProcessed: "Successfully processed in the last seven days."
-        case .peopleThisMonth: "People in this month's recordings in the selected folder."
-        case .unfinishedActions: "Open action items in the selected folder."
-        case .all: nil
+            smartResults(statusMenu: statusMenu)
         }
     }
 
     private var emptyDescription: String {
-        switch library.selectedView {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "No matches for this search."
+        }
+        if let statusFilter {
+            return "No recordings with status \(statusFilter.title)."
+        }
+        return switch library.selectedView {
         case .all: "No recordings in this folder."
         case .unfinishedActions: "No unfinished actions."
         case .failedJobs: "No failed jobs."
@@ -341,58 +283,96 @@ struct TranscriptBrowserView: View {
         }
     }
 
-    @ViewBuilder private var smartResults: some View {
-        if library.selectedView.includesRecoveryWork {
-            ForEach(library.workMatches) { item in
-                Button {
-                    selection = nil
-                    detailRecording = nil
-                    selectedWork = item
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.title).font(.headline).lineLimit(2)
-                        Text(item.status).font(.caption).foregroundStyle(.secondary)
-                        Text(item.date, style: .date).font(.caption).foregroundStyle(.secondary)
-                        if let audio = item.audioURL {
-                            Text(audio.deletingLastPathComponent().path)
-                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(selectedWork?.id == item.id ? Color.accentColor.opacity(0.15) : .clear,
-                                in: RoundedRectangle(cornerRadius: 8))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
-                .accessibilityValue("\(item.status), \(item.date.formatted(date: .abbreviated, time: .shortened))")
-                .accessibilityAddTraits(selectedWork?.id == item.id ? .isSelected : [])
-            }
-        } else if library.selectedView == .peopleThisMonth {
-            ForEach(library.peopleGroups) { group in
-                DisclosureGroup {
-                    ForEach(group.recordings) { row(for: $0) }
-                } label: {
-                    Text("\(group.person.name) (\(group.recordings.count))")
-                        .font(.headline)
-                }
-                .padding(.vertical, 6)
-            }
-        } else if library.selectedView == .all {
-            if !thisWeekItems.isEmpty {
-                sectionLabel("This week", count: thisWeekItems.count)
+    private var sidebarEmptyMessage: String? {
+        guard !library.hasMatches,
+              liveRecording == nil,
+              processingRecording == nil,
+              !library.showsInitialLoading,
+              library.error == nil else { return nil }
+        return emptyDescription
+    }
+
+    @ViewBuilder private func smartResults(statusMenu: ViewerSidebarStatusFilterMenu) -> some View {
+        switch library.selectedView {
+        case .all:
+            VStack(alignment: .leading, spacing: 2) {
+                sidebarResultsHeading("This week", statusMenu: statusMenu)
                 ForEach(thisWeekItems) { row(for: $0) }
-            }
-            if !earlierItems.isEmpty {
-                sectionLabel("Earlier", count: earlierItems.count, collapsed: earlierCollapsed) {
-                    withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
+
+                if !earlierItems.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Text("Earlier")
+                                .uiFont(.system(size: 12, weight: .medium))
+                                .foregroundStyle(palette.secondary.color)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(palette.secondary.color)
+                                .rotationEffect(.degrees(earlierCollapsed ? -90 : 0))
+                        }
+                        .frame(height: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Earlier recordings")
+                    .accessibilityValue(earlierCollapsed ? "Collapsed" : "Expanded")
+                    .accessibilityHint("Shows recordings outside this week.")
+
+                    if !earlierCollapsed {
+                        ForEach(earlierItems) { row(for: $0) }
+                    }
                 }
-                if !earlierCollapsed { ForEach(earlierItems) { row(for: $0) } }
             }
-        } else {
-            // Preserve SQL processing-time ordering for Recently Processed.
-            ForEach(filteredItems) { row(for: $0) }
+        case .unfinishedActions:
+            VStack(alignment: .leading, spacing: 2) {
+                sidebarResultsHeading("Unfinished actions", count: filteredItems.count, statusMenu: statusMenu)
+                ForEach(filteredItems) { row(for: $0) }
+            }
+        case .recentlyProcessed:
+            VStack(alignment: .leading, spacing: 2) {
+                sidebarResultsHeading("Recently processed", count: filteredItems.count, statusMenu: statusMenu)
+                // Preserve SQL processing-time ordering for Recently Processed.
+                ForEach(filteredItems) { row(for: $0) }
+            }
+        case .failedJobs, .queuedInterrupted:
+            VStack(alignment: .leading, spacing: 2) {
+                sidebarResultsHeading(
+                    library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
+                    count: library.workMatches.count
+                )
+                ForEach(library.workMatches) { sidebarWorkRow($0) }
+            }
+        case .peopleThisMonth:
+            VStack(alignment: .leading, spacing: 2) {
+                sidebarResultsHeading("People this month", count: library.peopleGroups.count, statusMenu: statusMenu)
+                ForEach(library.peopleGroups) { group in
+                    DisclosureGroup {
+                        ForEach(group.recordings) { row(for: $0) }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 14))
+                                .foregroundStyle(palette.secondary.color)
+                                .accessibilityHidden(true)
+                            Text(group.person.name)
+                                .uiFont(.system(size: 12, weight: .medium))
+                                .foregroundStyle(palette.text.color)
+                                .lineLimit(1)
+                            Spacer(minLength: 3)
+                            Text("\(group.recordings.count)")
+                                .uiFont(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(palette.secondary.color)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .tint(palette.accentText.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                }
+            }
         }
     }
 
@@ -413,89 +393,78 @@ struct TranscriptBrowserView: View {
         .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript) }
     }
 
-    /// Section header for the meeting list. Passing `collapsed`/`onToggle` makes it
-    /// a tappable, collapsible header with a chevron (used by "Earlier").
-    private func sectionLabel(_ text: String,
-                              count: Int? = nil,
-                              collapsed: Bool? = nil,
-                              onToggle: (() -> Void)? = nil) -> some View {
-        let content = HStack(spacing: 7) {
-            Text(text.uppercased())
-                .font(.system(size: 11, weight: .bold).monospaced())
-                .tracking(1.2)
-                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme).opacity(0.55))
+    private func sidebarResultsHeading(
+        _ title: String,
+        count: Int? = nil,
+        statusMenu: ViewerSidebarStatusFilterMenu? = nil
+    ) -> some View {
+        HStack(spacing: 7) {
+            Text(title)
+                .uiFont(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.secondary.color)
             if let count {
                 Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(TranscriptDesignTokens.chipFill(scheme: colorScheme)))
+                    .uiFont(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(palette.secondary.color)
             }
             Spacer(minLength: 4)
-            if let collapsed {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(collapsed ? -90 : 0))
-            }
+            if let statusMenu { statusMenu }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 14)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-
-        return Group {
-            if let onToggle {
-                Button(action: onToggle) { content }
-                    .buttonStyle(.plain)
-            } else {
-                content
-            }
-        }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: colorScheme))
-            TextField("Search recordings and transcripts", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-        }
-        .padding(.horizontal, 10)
+        .padding(.leading, 9)
+        .padding(.trailing, 3)
         .frame(height: 32)
-        .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(TranscriptDesignTokens.chipFill(scheme: colorScheme))
-                .overlay(RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(TranscriptDesignTokens.chipBorder(scheme: colorScheme), lineWidth: 1))
-        }
+        .accessibilityElement(children: .contain)
     }
 
-    private var recordButton: some View {
-        Button {
-            appState.lastError = nil
-            Task { try? await recordingManager.startRecording() }
+    private func sidebarSectionHeading(_ title: String) -> some View {
+        Text(title)
+            .uiFont(.system(size: 12, weight: .semibold))
+            .foregroundStyle(palette.secondary.color)
+            .padding(.horizontal, 9)
+            .padding(.top, 7)
+            .padding(.bottom, 4)
+    }
+
+    private func sidebarWorkRow(_ item: LibraryWorkItem) -> some View {
+        let isSelected = selectedWork?.id == item.id
+        return Button {
+            selection = nil
+            detailRecording = nil
+            selectedWork = item
         } label: {
-            HStack(spacing: 9) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("Record meeting")
-                    .font(.system(size: 14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .uiFont(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? palette.accentText.color : palette.text.color)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(item.status)
+                    Text("·")
+                    Text(item.date, style: .date)
+                }
+                .uiFont(.system(size: 10).monospaced())
+                .foregroundStyle(palette.secondary.color)
+                if let audio = item.audioURL {
+                    Text(audio.deletingLastPathComponent().path)
+                        .uiFont(.system(size: 10))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 40)
-            .background(TranscriptDesignTokens.brandFill(calm: calm), in: RoundedRectangle(cornerRadius: 10))
-            .shadow(color: calm ? .clear : Color(hex: "8b4dff").opacity(0.5), radius: calm ? 0 : 14, x: 0, y: calm ? 0 : 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                isSelected ? palette.selected.color : .clear,
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-        .disabled(!appState.isIdle)
-        .opacity(appState.isIdle ? 1 : 0.5)
-        .help(appState.isIdle ? "Start a new recording" : "Already recording")
+        .accessibilityLabel(item.title)
+        .accessibilityValue("\(item.status), \(item.date.formatted(date: .abbreviated, time: .shortened))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Helpers
@@ -581,47 +550,28 @@ private let sidebarDateFormatter: DateFormatter = {
     return f
 }()
 
-private let sidebarStatusGreen = Color(hex: "28c840")
-
-/// Selectable meeting row matching the redesign: title + mono caption, a gradient
-/// fill + coral→violet bar when selected, a hover tint otherwise.
-private struct SidebarRecordingRow: View {
+/// Selectable recording row with theme-adapted selection and hover states.
+struct SidebarRecordingRow: View {
     let item: RecordingBrowserItem
     let isSelected: Bool
     let onTap: () -> Void
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
     @State private var hovering = false
-
-    private var doneColor: Color {
-        scheme == .dark ? Color(hex: "54e6ff") : Color.secondary
-    }
 
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected
-                        ? TranscriptDesignTokens.bodyText(scheme: scheme)
-                        : TranscriptDesignTokens.bodyText(scheme: scheme).opacity(0.85))
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
                     .lineLimit(1)
                 caption
             }
-            .padding(.vertical, 10)
-            .padding(.leading, isSelected ? 14 : 12)
-            .padding(.trailing, 12)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { background }
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(TranscriptDesignTokens.accentBarFill(calm: calm))
-                        .frame(width: 3)
-                        .padding(.vertical, 10)
-                }
-            }
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -633,19 +583,12 @@ private struct SidebarRecordingRow: View {
     private var caption: some View {
         HStack(spacing: 7) {
             Text(captionText)
-            if item.statusText == "Done" {
-                if isSelected {
-                    Circle().fill(Color.secondary.opacity(0.5)).frame(width: 3, height: 3)
-                    Text("Done").foregroundStyle(doneColor)
-                } else {
-                    Circle().fill(sidebarStatusGreen).frame(width: 5, height: 5)
-                }
-            } else if !item.statusText.isEmpty {
-                Text(item.statusText).foregroundStyle(.secondary)
+            if !item.statusText.isEmpty {
+                Text(item.statusText)
             }
         }
-        .font(.system(size: 11).monospaced())
-        .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: scheme))
+        .uiFont(.system(size: 11))
+        .foregroundStyle(palette.secondary.color)
     }
 
     private var captionText: String {
@@ -656,13 +599,11 @@ private struct SidebarRecordingRow: View {
     @ViewBuilder
     private var background: some View {
         if isSelected {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme, calm: calm))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(palette.selected.color)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(TranscriptDesignTokens.sidebarHoverFill(scheme: scheme))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(palette.selected.color.opacity(0.55))
         }
     }
 }
@@ -673,8 +614,7 @@ private struct LiveSidebarRow: View {
     let isProcessing: Bool
     let isSelected: Bool
     let onTap: () -> Void
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var pulse = false
@@ -690,8 +630,8 @@ private struct LiveSidebarRow: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: scheme))
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Circle().fill(dotColor).frame(width: 6, height: 6)
@@ -700,33 +640,22 @@ private struct LiveSidebarRow: View {
                         .accessibilityHidden(true)
                     Text(statusText)
                 }
-                .font(.system(size: 11).monospaced())
-                .foregroundStyle(TranscriptDesignTokens.secondaryText(scheme: scheme))
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
             }
-            .padding(.vertical, 10)
-            .padding(.leading, isSelected ? 14 : 12)
-            .padding(.trailing, 12)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(TranscriptDesignTokens.sidebarActiveFill(scheme: scheme, calm: calm))
-                        .overlay(RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(TranscriptDesignTokens.sidebarActiveBorder(scheme: scheme), lineWidth: 1))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(palette.selected.color)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(TranscriptDesignTokens.sidebarHoverFill(scheme: scheme))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(palette.selected.color.opacity(0.55))
                 }
             }
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(TranscriptDesignTokens.accentBarFill(calm: calm))
-                        .frame(width: 3)
-                        .padding(.vertical, 10)
-                }
-            }
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

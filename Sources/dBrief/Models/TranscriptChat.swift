@@ -19,16 +19,24 @@ struct ChatMessage: Identifiable, Sendable, Codable, Equatable {
 
     /// Share the same visible answer between rendering, copying and speech.
     var displayParts: (reasoning: String?, answer: String) {
-        guard role == .assistant, let open = content.range(of: "<think>") else {
+        guard role == .assistant, content.contains("<think>") else {
             return (nil, content)
         }
-        let before = String(content[..<open.lowerBound])
-        let after = content[open.upperBound...]
-        let close = after.range(of: "</think>")
-        let reasoning = String(after[..<(close?.lowerBound ?? after.endIndex)])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let answer = before + (close.map { String(after[$0.upperBound...]) } ?? "")
-        return (reasoning.isEmpty ? nil : reasoning,
+        var cursor = content.startIndex
+        var answer = ""
+        var reasoningBlocks: [String] = []
+        // Models can emit more than one reasoning block. Keep every block out
+        // of the shared answer used by rendering, Copy, speech and file export.
+        while let open = content.range(of: "<think>", range: cursor..<content.endIndex) {
+            answer += content[cursor..<open.lowerBound]
+            let close = content.range(of: "</think>", range: open.upperBound..<content.endIndex)
+            let reasoning = content[open.upperBound..<(close?.lowerBound ?? content.endIndex)]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reasoning.isEmpty { reasoningBlocks.append(reasoning) }
+            cursor = close?.upperBound ?? content.endIndex
+        }
+        answer += content[cursor...]
+        return (reasoningBlocks.isEmpty ? nil : reasoningBlocks.joined(separator: "\n\n"),
                 answer.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 

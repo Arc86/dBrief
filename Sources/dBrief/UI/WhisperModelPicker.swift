@@ -48,9 +48,9 @@ struct WhisperModelPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Choose a transcription model").font(.title2.bold())
+            Text("Choose a transcription model").uiFont(.title2.bold())
             Text("Estimated ratings")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField("Search all models", text: $search)
                     .textFieldStyle(.roundedBorder)
@@ -84,13 +84,13 @@ struct WhisperModelPicker: View {
             Divider()
             HStack(alignment: .firstTextBaseline) {
                 Text(LocalTranscriptionChoice.title(selectedID))
-                    .font(.headline).lineLimit(2)
+                    .uiFont(.headline).lineLimit(2)
                 Spacer()
                 Button("Memory & sources") { showDetails.toggle() }
                     .popover(isPresented: $showDetails) {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text(LocalTranscriptionChoice.title(selectedID)).font(.headline)
+                                Text(LocalTranscriptionChoice.title(selectedID)).uiFont(.headline)
                                 if LocalTranscriptionChoice.engine(selectedID) == .localWhisper {
                                     WhisperModelImpactView(modelID: selectedID, identifySpeakers: identifySpeakers)
                                 } else {
@@ -103,20 +103,20 @@ struct WhisperModelPicker: View {
             memorySummary
             if !modelIDs.contains(selectedID) && !LocalTranscriptionChoice.extraIDs.contains(selectedID) {
                 Text("Saved model is absent from the catalog; availability is unverified.")
-                    .font(.caption).foregroundStyle(.orange)
+                    .uiFont(.caption).foregroundStyle(.orange)
             }
             if WhisperModelCatalog.entries[selectedID]?.englishOnly == true || selectedID == LocalTranscriptionChoice.parakeetV2, !language.isEmpty,
                language.lowercased().split(separator: "-").first != "en" {
                 Text("English only. Choose a multilingual model for the selected language.")
-                    .font(.caption).foregroundStyle(.orange)
+                    .uiFont(.caption).foregroundStyle(.orange)
             }
             HStack {
                 Text("\(visibleIDs.count) models · No download until used")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Use model") { onSelect(selectedID); dismiss() }
-                    .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction).buttonStyle(.typographyProminent)
             }
         }
         .padding(20)
@@ -144,12 +144,12 @@ struct WhisperModelPicker: View {
             HStack(spacing: 8) {
                 if LocalTranscriptionChoice.extraIDs.contains(id) {
                     Text(id == LocalTranscriptionChoice.apple ? "macOS managed" : "Local model")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
                 if let downloaded = cached[id] {
                     Label(downloaded ? "Downloaded" : "Not downloaded",
                           systemImage: downloaded ? "checkmark.circle" : "arrow.down.circle")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.secondary.opacity(0.1), in: Capsule())
                 }
@@ -158,7 +158,8 @@ struct WhisperModelPicker: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.button)
+        .buttonStyle(.typographyBorderless).menuIndicator(.hidden).fixedSize()
                 .accessibilityLabel("Model actions")
             }
         }
@@ -177,12 +178,12 @@ struct WhisperModelPicker: View {
                     .accessibilityValue(String(format: "%.0f percent", total / max(installed, 1) * 100))
                 Text(String(format: "~%.1f of %.0f GiB RAM%@", total, installed,
                             identifySpeakers ? " · includes speakers" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             }
         } else {
             Text(selectedID == LocalTranscriptionChoice.apple
                  ? "Memory and language downloads managed by macOS"
-                 : "Memory guidance unavailable").font(.caption).foregroundStyle(.secondary)
+                 : "Memory guidance unavailable").uiFont(.caption).foregroundStyle(.secondary)
         }
     }
 }

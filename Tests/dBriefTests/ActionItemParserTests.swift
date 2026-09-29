@@ -47,10 +47,43 @@ struct ActionItemParserTests {
         #expect(groups.last?.items.count == 1)
     }
 
-    @Test func sharedOwnerAppearsUnderEachGroup() {
-        let groups = ActionItemParser.group(["[Alice/Bob] to review the draft"])
-        #expect(groups.map(\.owner) == ["Alice", "Bob"])
-        #expect(groups.allSatisfy { $0.items.count == 1 })
+    @Test func sharedTaskAppearsOnceWithBothOwners() {
+        let raw = "[Hidde 1/Jesper 2] Seismic pagina opleveren voor vrijdag"
+        let groups = ActionItemParser.group([raw])
+        #expect(groups.map(\.owner) == ["Hidde & Jesper"])
+        #expect(groups.flatMap(\.items).count == 1)
+        #expect(groups.first?.items.first?.raw == raw)
+        #expect(groups.first?.items.first?.text == "Seismic pagina opleveren voor vrijdag")
+    }
+
+    @Test func numberedAndCleanNamesUseTheSameCard() {
+        let groups = ActionItemParser.group([
+            "[Hidde 1/Jesper 2] review version 2", "[Jesper/Hidde] send version 3",
+            "[Hidde 1] prepare", "[Hidde] finish",
+        ])
+        #expect(groups.map(\.owner) == ["Hidde & Jesper", "Hidde"])
+        #expect(groups.first?.owners == ["Hidde", "Jesper"])
+        #expect(groups.map { $0.items.count } == [2, 2])
+        #expect(groups.first?.items.first?.text == "review version 2")
+    }
+
+    @Test func unnamedSpeakerNumbersRemainDistinct() {
+        let groups = ActionItemParser.group(["[Speaker 1/Speaker 2] review"])
+        #expect(groups.first?.owners == ["Speaker 1", "Speaker 2"])
+    }
+
+    @Test func sharedGroupsKeepIndividualTasksSeparateAndIgnoreOwnerOrder() {
+        let groups = ActionItemParser.group([
+            "[Alice] to draft", "[Alice/Bob] to review", "[Bob & Alice] to ship", "[Bob] to deploy",
+        ])
+        #expect(groups.map(\.owner) == ["Alice", "Alice & Bob", "Bob"])
+        #expect(groups.map { $0.items.count } == [1, 2, 1])
+    }
+
+    @Test func repeatedSharedOwnerDoesNotCreateAnotherCard() {
+        let groups = ActionItemParser.group(["[Alice/Alice] to review"])
+        #expect(groups.map(\.owner) == ["Alice"])
+        #expect(groups.flatMap(\.items).count == 1)
     }
 
     @Test func groupsNaturalLanguageOwnersFromMeetingRoster() {
@@ -59,11 +92,12 @@ struct ActionItemParserTests {
             "Hidde de business value map uitwerken",
             "Hidde en Jesper valideren samen de intro",
         ], knownOwners: ["Jesper Mol", "Hidde Janssen"])
-        #expect(groups.map(\.owner) == ["Jesper", "Hidde"])
-        #expect(groups[0].items.count == 2)
-        #expect(groups[1].items.count == 2)
+        #expect(groups.map(\.owner) == ["Jesper", "Hidde", "Hidde & Jesper"])
+        #expect(groups[0].items.count == 1)
+        #expect(groups[1].items.count == 1)
+        #expect(groups[2].items.count == 1)
         #expect(groups[0].items[0].text == "de Service Operations-slides afronden")
-        #expect(groups[0].items[1].raw == groups[1].items[1].raw)
+        #expect(groups.last?.items.first?.text == "valideren samen de intro")
     }
 
     @Test func doesNotGuessUnknownOrAmbiguousNames() {

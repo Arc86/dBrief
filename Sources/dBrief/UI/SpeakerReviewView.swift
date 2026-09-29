@@ -137,17 +137,17 @@ private struct SpeakerReviewHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Who’s speaking?").font(.title2.weight(.semibold))
+            Text("Who’s speaking?").uiFont(.title2.weight(.semibold))
             Text(beforeAnalysis ? "Name the voices before continuing with analysis." : "Choose who each voice belongs to.")
                 .foregroundStyle(.secondary)
             if let meetingTitle {
                 Label("\(meetingTitle) · \(attendeeCount) attendees", systemImage: "calendar")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .uiFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                     .help(meetingTitle)
                     .padding(.top, 5)
             } else if attendeeCount > 0 {
                 Label("\(attendeeCount) meeting participants", systemImage: "person.2")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 5)
+                    .uiFont(.caption).foregroundStyle(.secondary).padding(.top, 5)
             }
         }
         .padding(.horizontal, 24)
@@ -164,8 +164,8 @@ private struct SpeakerReviewListRow: View {
         HStack(spacing: 10) {
             SpeakerReviewAvatar(name: name, named: name != item.id, size: 30)
             VStack(alignment: .leading, spacing: 3) {
-                Text(name).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(2)
-                Text(status).font(.caption).foregroundStyle(.secondary)
+                Text(name).uiFont(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(2)
+                Text(status).uiFont(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             if reviewed {
@@ -201,13 +201,13 @@ private struct SpeakerReviewPicker: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(draft.edits[item.id]?.name ?? item.proposedName)
-                    .font(.title3.weight(.semibold)).lineLimit(2)
+                    .uiFont(.title3.weight(.semibold)).lineLimit(2)
                 Text("Choose who this voice belongs to.").foregroundStyle(.secondary)
                 SpeakerReviewVoiceSample(item: item, url: masterAudioURL, player: samplePlayer)
                     .padding(.top, 4)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text("Search meeting & library").font(.callout.weight(.medium))
+                Text("Search meeting & library").uiFont(.callout.weight(.medium))
                 TextField("Find a person…", text: $draft.search)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Search meeting and library")
@@ -253,12 +253,12 @@ private struct SpeakerReviewChoiceGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(title).uiFont(.caption.weight(.medium)).foregroundStyle(.secondary)
                 .padding(.bottom, 3)
             if loading {
                 ProgressView("Loading library…").controlSize(.small)
             } else if choices.isEmpty {
-                Text(emptyMessage).font(.callout).foregroundStyle(.secondary)
+                Text(emptyMessage).uiFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(choices) { choice in
                     SpeakerReviewPersonRow(choice: choice, selected: isSelected(choice)) {
@@ -286,9 +286,9 @@ private struct SpeakerReviewPersonRow: View {
             HStack(spacing: 8) {
                 SpeakerReviewAvatar(name: choice.name, named: false, size: 25)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(choice.name).font(.callout).multilineTextAlignment(.leading)
+                    Text(choice.name).uiFont(.callout).multilineTextAlignment(.leading)
                     if let detail = choice.detail, !detail.isEmpty {
-                        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(detail).uiFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 2)
@@ -314,7 +314,7 @@ private struct SpeakerReviewManualName: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Enter a name manually").font(.callout.weight(.medium))
+            Text("Enter a name manually").uiFont(.callout.weight(.medium))
             HStack(spacing: 8) {
                 TextField("e.g. Alex de Jong", text: $name)
                     .textFieldStyle(.roundedBorder).controlSize(.large)
@@ -322,7 +322,7 @@ private struct SpeakerReviewManualName: View {
                     .onSubmit(onApply)
                 Button("Use name", action: onApply).disabled(!canApply)
             }
-            Text("No meeting or library match needed.").font(.caption).foregroundStyle(.secondary)
+            Text("No meeting or library match needed.").uiFont(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -345,7 +345,7 @@ private struct SpeakerReviewVoiceSample: View {
             .controlSize(.small)
         } else {
             Label("Voice sample unavailable", systemImage: "waveform.slash")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -360,10 +360,10 @@ private struct SpeakerReviewFooter: View {
     var body: some View {
         HStack(spacing: 12) {
             Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
-            Text("\(reviewedCount) of \(speakerCount) reviewed").font(.caption).foregroundStyle(.secondary)
+            Text("\(reviewedCount) of \(speakerCount) reviewed").uiFont(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("Confirm speakers", action: onConfirm)
-                .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                .buttonStyle(.typographyProminent).keyboardShortcut(.defaultAction)
                 .disabled(!canConfirm)
         }
         .padding(.horizontal, 24)
@@ -378,7 +378,7 @@ private struct SpeakerReviewAvatar: View {
 
     var body: some View {
         Text(Theme.initials(for: name))
-            .font(.system(size: size / 3, weight: .semibold))
+            .uiFont(.system(size: size / 3, weight: .semibold))
             .foregroundStyle(named ? Color.accentColor : Color.secondary)
             .frame(width: size, height: size)
             .background(named ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.08), in: Circle())

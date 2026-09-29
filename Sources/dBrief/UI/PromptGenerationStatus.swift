@@ -29,7 +29,7 @@ struct PromptGenerationStatus: View {
                 } else {
                     ProgressView().controlSize(.small)
                 }
-                Text(title).font(.callout.weight(.medium))
+                Text(title).uiFont(.callout.weight(.medium))
                 Spacer(minLength: 0)
                 Button("Cancel", action: cancel).controlSize(.small)
             }
@@ -37,10 +37,10 @@ struct PromptGenerationStatus: View {
                 HStack(spacing: 10) {
                     ProgressView(value: fraction).accessibilityLabel("Model download")
                     Text(fraction, format: .percent.precision(.fractionLength(0)))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .uiFont(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
-            if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            if let detail { Text(detail).uiFont(.caption).foregroundStyle(.secondary) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

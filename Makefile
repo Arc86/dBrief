@@ -116,6 +116,7 @@ app: build
 	cp Sources/dBrief/Resources/Assets.car $(RESOURCES)/Assets.car
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
+	cp -R Sources/dBrief/Resources/Fonts $(RESOURCES)/Fonts
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
 	@set -e; \
 	LOCAL_METALLIB="$$(find .build -type f -name 'default.metallib' | head -n 1)"; \

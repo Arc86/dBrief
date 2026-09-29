@@ -41,6 +41,26 @@ actor InsightsStore {
         try write(updated, to: url)
     }
 
+    /// Merge the fields actually edited by the user into the current sidecar.
+    /// This stays in one actor turn, so a checkbox or export update cannot be
+    /// overwritten by the older snapshot from when the editor was opened.
+    func saveAnalysisEdit(_ edited: RecordingInsights, basedOn baseline: RecordingInsights,
+                          to url: URL) throws -> RecordingInsights {
+        try Task.checkCancellation()
+        guard edited.version == RecordingInsights.currentVersion else {
+            throw InsightsStoreError.unsupportedVersion(edited.version)
+        }
+        guard var current = try read(from: url) else { throw InsightsStoreError.noSidecarURL }
+        if edited.summary != baseline.summary { current.summary = edited.summary }
+        if edited.actionItems != baseline.actionItems { current.actionItems = edited.actionItems }
+        if edited.tags != baseline.tags { current.tags = edited.tags }
+        current.completedActionItems = current.completedActionItems.map {
+            Array(Set($0).intersection(current.actionItems)).sorted()
+        }
+        try write(current, to: url)
+        return current
+    }
+
     /// Read, modify and verify synchronously within this actor turn. Awaiting a
     /// public load/save between those steps would permit stale competing writes.
     func setActionCompleted(_ action: String, completed: Bool, at url: URL) throws -> RecordingInsights {

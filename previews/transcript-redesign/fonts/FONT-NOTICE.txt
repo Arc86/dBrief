@@ -1,0 +1,11 @@
+OpenDyslexic by Abelardo Gonzalez
+Source: https://github.com/antijingoist/open-dyslexic/blob/master/woff/OpenDyslexic-Regular.woff
+Official project: https://opendyslexic.org/
+
+Embedded font notices:
+Original Fonts are © Bitstream. OpenDyslexic changes and additional glyphs by Abelardo Gonzalez are licensed under a Creative Commons Attribution 3.0 Unported License.
+Based on a work at http://dyslexicfonts.com. ♡2012 by Abelardo Gonzalez. Copying is an act of love. Please copy.
+Bitstream license available here: http://opendyslexic.org/legal/
+Fonts are © Bitstream. OpenDyslexic changes and additional glyphs by Abelardo Gonzalez are licensed under a Creative Commons Attribution 3.0 Unported License.
+Based on a work at http://dyslexicfonts.com. ♡2012 by Abelardo Gonzalez. Copying is an act of love. Please copy.
+Bitstream license available here: http://opendyslexic.org/legal/

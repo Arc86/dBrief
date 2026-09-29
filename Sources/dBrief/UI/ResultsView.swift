@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ResultsView: View {
+    @Environment(\.uiTypography) private var typography
     @Environment(\.openWindow) var openWindow
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
@@ -30,12 +31,12 @@ struct ResultsView: View {
             // Header
             HStack {
                 Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                    .font(.headline)
+                    .uiFont(.headline)
                     .lineLimit(1)
                 Spacer()
                 if recording.duration > 0 {
                     Text(recording.formattedDuration)
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -58,7 +59,7 @@ struct ResultsView: View {
                         if let summary = recording.summary {
                             collapsibleSection(.summary, title: "Summary") {
                                 Text(.init(summary))
-                                    .font(.callout)
+                                    .uiFont(.callout)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
@@ -70,16 +71,16 @@ struct ResultsView: View {
                                     let visible = isCollapsed ? [] : (showAllActionItems ? Array(items[...]) : Array(items.prefix(3)))
                                     ForEach(Array(visible.enumerated()), id: \.offset) { _, item in
                                         HStack(alignment: .top, spacing: 6) {
-                                            Text("◦").foregroundStyle(.secondary).font(.caption)
-                                            Text(item).font(.callout)
+                                            Text("◦").foregroundStyle(.secondary).uiFont(.caption)
+                                            Text(item).uiFont(.callout)
                                         }
                                     }
                                     if !isCollapsed && !showAllActionItems && items.count > 3 {
                                         Button("+\(items.count - 3) more") {
                                             showAllActionItems = true
                                         }
-                                        .buttonStyle(.borderless)
-                                        .font(.caption)
+                                        .buttonStyle(.typographyBorderless)
+                                        .uiFont(.caption)
                                         .foregroundStyle(.blue)
                                         .padding(.leading, 14)
                                     }
@@ -94,18 +95,18 @@ struct ResultsView: View {
                                     if let sentiment = recording.sentiment {
                                         HStack {
                                             Text("Sentiment")
-                                                .font(.caption)
+                                                .uiFont(.caption)
                                                 .foregroundStyle(.secondary)
                                             Spacer()
                                             Text(sentiment)
-                                                .font(.caption)
+                                                .uiFont(.caption)
                                         }
                                     }
                                     if let tags = recording.tags, !tags.isEmpty {
                                         FlowLayout(spacing: 4) {
                                             ForEach(tags, id: \.self) { tag in
                                                 Text(tag)
-                                                    .font(.caption)
+                                                    .uiFont(.caption)
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 2)
                                                     .background(.fill)
@@ -121,7 +122,7 @@ struct ResultsView: View {
                         // AI failed but transcription succeeded — show transcript
                         collapsibleSection(.transcript, title: "Transcript") {
                             Text(.init(transcription.text))
-                                .font(.callout)
+                                .uiFont(.callout)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -150,7 +151,7 @@ struct ResultsView: View {
         HStack(spacing: 4) {
             ForEach(Array(appState.processingSteps.filter { isSignificantStep($0) }.enumerated()), id: \.offset) { index, step in
                 if index > 0 {
-                    Text("·").font(.caption2).foregroundStyle(.secondary)
+                    Text("·").uiFont(.caption2).foregroundStyle(.secondary)
                 }
                 stepChip(step)
             }
@@ -182,7 +183,7 @@ struct ResultsView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .font(.caption2)
+        .uiFont(.caption2)
     }
 
     private func abbreviatedStepName(_ name: String) -> String {
@@ -209,11 +210,11 @@ struct ResultsView: View {
             } label: {
                 HStack {
                     Text(title)
-                        .font(.caption)
+                        .uiFont(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
+                        .textCase(typography.readingFont == .openDyslexic ? nil : .uppercase)
+                        .tracking(typography.readingFont == .openDyslexic ? 0 : 0.5)
                     Spacer()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.caption2)
@@ -244,10 +245,10 @@ struct ResultsView: View {
                 .font(.callout)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Low available memory")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .fontWeight(.semibold)
                 Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB but only \(String(format: "%.1f", warning.availableGB)) GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps\(warning.hasRemoteEndpoint ? " or retry with a remote endpoint" : "") if it stalls.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -260,7 +261,7 @@ struct ResultsView: View {
     private var retryBanner: some View {
         HStack(spacing: 8) {
             Text("Retry AI with remote endpoint?")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Retry") {
@@ -270,7 +271,7 @@ struct ResultsView: View {
                     await recordingManager.retryAIAnalysis(for: recording)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.typographyProminent)
             .controlSize(.mini)
         }
         .padding(10)
@@ -286,7 +287,7 @@ struct ResultsView: View {
             Button(copied ? "Copied!" : "Copy Notes") {
                 copyNotes(recording: recording)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.typographyProminent)
             .controlSize(.small)
             .disabled(recording.transcription == nil && recording.summary == nil)
 
@@ -298,7 +299,7 @@ struct ResultsView: View {
                     NSWorkspace.shared.open(url)
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.typographyBordered)
             .controlSize(.small)
             .disabled(markdownURL == nil)
 
@@ -309,7 +310,7 @@ struct ResultsView: View {
                     openWindow(id: "transcript")
                     NSApp.activate(ignoringOtherApps: true)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .controlSize(.small)
             }
 
@@ -317,7 +318,7 @@ struct ResultsView: View {
                 appState.processingSteps.removeAll()
                 appState.preflightWarning = nil
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.typographyBordered)
             .controlSize(.small)
         }
     }

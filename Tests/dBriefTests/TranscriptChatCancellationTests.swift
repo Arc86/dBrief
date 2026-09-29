@@ -88,11 +88,14 @@ struct TranscriptChatCancellationTests {
             return
         }
         try await waitUntil { service.messages.last?.content == reply }
+        let streamingAnswer = try #require(service.messages.last)
+        #expect(!service.canExportAnswer(streamingAnswer))
         chatWindow?.contentView?.layoutSubtreeIfNeeded()
         service.stopGenerating()
         chatWindow?.contentView?.layoutSubtreeIfNeeded()
         #expect(!service.isStreaming)
         #expect(service.messages.last?.content == reply)
+        #expect(service.canExportAnswer(streamingAnswer))
         #expect(service.streamingError == nil)
         // Queue the new request immediately, before persistence or old-task cleanup.
         let second = Task { await service.send("Second question") }

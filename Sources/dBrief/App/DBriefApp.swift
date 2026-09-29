@@ -253,6 +253,7 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.microsoftAuthService)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
         } label: {
             if context.appState.isRecording || context.appState.isPaused {
                 HStack(spacing: 4) {
@@ -263,7 +264,7 @@ struct DBriefApp: App {
                     if context.appSettings.showMenuBarRecordingDuration {
                         Text(formatMenuBarDuration(context.appState.recordingDuration))
                             .monospacedDigit()
-                            .font(.caption)
+                            .uiFont(.caption)
                     }
                 }
                 .accessibilityElement(children: .ignore)
@@ -289,7 +290,7 @@ struct DBriefApp: App {
                     Image(systemName: "waveform")
                         .symbolRenderingMode(.hierarchical)
                     Text("\(context.appState.queuedCount)")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.orange)
                 }
                 .accessibilityElement(children: .ignore)
@@ -310,6 +311,7 @@ struct DBriefApp: App {
                 .environment(context.microsoftAuthService)
                 .environment(context.updaterController)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
                 .frame(minWidth: 800, minHeight: 550)
                 .onChange(of: context.appSettings.recordHotkey) { _, newValue in
                     context.hotkeyService.update(hotkey: newValue)
@@ -327,8 +329,10 @@ struct DBriefApp: App {
                 .environment(context.recordingManager)
                 .environment(context.transcriptChatStore)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
         }
         .defaultSize(width: 1100, height: 720)
+        .windowStyle(.hiddenTitleBar)
     }
 }
 
@@ -345,6 +349,7 @@ private func formatMenuBarDuration(_ duration: TimeInterval) -> String {
 
 struct MenuBarView: View {
     @Environment(\.openWindow) var openWindow
+    @Environment(\.viewerPalette) private var palette
 
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
@@ -389,11 +394,11 @@ struct MenuBarView: View {
                         NSApp.activate(ignoringOtherApps: true)
                     } label: {
                         Label("Transcript viewer", systemImage: "rectangle.split.2x1")
-                            .font(.callout.weight(.semibold))
+                            .uiFont(.callout.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 3)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.large)
                     .help("Open the transcript viewer")
 
@@ -414,7 +419,7 @@ struct MenuBarView: View {
                                 Label("Transcribe File...", systemImage: "doc.badge.plus")
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.typographyBordered)
                             .controlSize(.small)
                             .disabled(!appState.isIdle)
 
@@ -424,7 +429,7 @@ struct MenuBarView: View {
                                 Label("YouTube URL...", systemImage: "play.rectangle")
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.typographyBordered)
                             .controlSize(.small)
                             .disabled(!appState.isIdle)
                         }
@@ -435,29 +440,7 @@ struct MenuBarView: View {
                     }
                 }
 
-                Divider()
 
-                HStack(spacing: 10) {
-                    Button {
-                        closeMenuBarExtraWindow()
-                        openWindow(id: "settings")
-                        NSApp.activate(ignoringOtherApps: true)
-                    } label: {
-                        Text("Settings...")
-                    }
-                    .keyboardShortcut(",", modifiers: .command)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-
-                    Spacer()
-
-                    Button("Quit dBrief") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                    .keyboardShortcut("q", modifiers: .command)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                }
             }
         }
         .task {
@@ -475,6 +458,7 @@ struct MenuBarView: View {
         // Let the window-style popover size to its content rather than forcing a
         // hard pixel width; the ideal/min keep it sensible without fighting the OS.
         .frame(minWidth: 340, idealWidth: 360)
+        .background(palette.canvas.color)
     }
 
     private var header: some View {
@@ -488,16 +472,22 @@ struct MenuBarView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 Image(systemName: "waveform.circle.fill")
-                    .font(.title2)
+                    .uiFont(.title2)
                     .foregroundStyle(.blue)
             }
 
             Text("dBrief")
-                .font(.headline)
+                .uiFont(.headline)
 
             Spacer()
 
             statusPill
+
+            MenuBarSettingsMenu {
+                closeMenuBarExtraWindow()
+                openWindow(id: "settings")
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 
@@ -505,7 +495,7 @@ struct MenuBarView: View {
         HStack(spacing: 6) {
             BrandStatusDot(color: statusColor, size: 8, pulse: appState.isRecording)
             Text(statusLabel)
-                .font(.brandMono(11))
+                .uiFont(.brandMono(11))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
@@ -530,5 +520,30 @@ struct MenuBarView: View {
         for window in NSApp.windows where window.level == .statusBar {
             window.orderOut(nil)
         }
+    }
+}
+
+/// Secondary app controls stay compact even with a larger accessibility font.
+struct MenuBarSettingsMenu: View {
+    let onSettings: () -> Void
+
+    var body: some View {
+        Menu {
+            Button("Settings…", action: onSettings)
+                .keyboardShortcut(",", modifiers: .command)
+            Divider()
+            Button("Quit dBrief") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 14))
+                .frame(width: 24, height: 24)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Settings and app controls")
+        .help("Settings and app controls")
     }
 }

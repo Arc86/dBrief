@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.viewerPalette) private var palette
     @State private var destination = SettingsDestination(page: .general)
     @State private var profileToEdit: UUID?
     @State private var searchText = ""
@@ -18,7 +19,9 @@ struct SettingsView: View {
     // Match the detail canvas in macOS 27 System Settings. Its window color
     // resolves to a noticeably grayer surface in our SwiftUI settings window.
     private var canvasColor: Color {
-        colorScheme == .dark ? Color(white: 28.0 / 255.0) : .white
+        appSettings.viewerAppearance.effectiveMode(systemIsDark: colorScheme == .dark).isPaper
+            ? palette.canvas.color
+            : (colorScheme == .dark ? Color(white: 28.0 / 255.0) : .white)
     }
 
     private func navigate(to target: SettingsDestination) {
@@ -77,13 +80,13 @@ struct SettingsView: View {
         List(selection: $selectedSearchID) {
             if results.isEmpty {
                 Text("No settings found. Try another word.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .uiFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(results) { result in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(result.title)
                         Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 3)
@@ -124,7 +127,7 @@ struct SettingsView: View {
                                         .foregroundStyle(.white)
                                         .frame(width: 24, height: 24)
                                         .background(page.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                    Text(page.title).font(.system(size: 14))
+                                    Text(page.title).uiFont(.system(size: 14))
                                 }
                                 .padding(.vertical, 3)
                                 .tag(page)
@@ -139,7 +142,7 @@ struct SettingsView: View {
                 Divider()
                 if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
                     Text("dBrief v\(version)")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)

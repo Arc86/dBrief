@@ -37,12 +37,12 @@ struct CallDetectedPopup: View {
                     BrandKicker("Call detected", color: Brand.coral)
 
                     Text("\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected")
-                        .font(.system(size: 15, weight: .bold))
+                        .uiFont(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
                     Text("Want dBrief to record and brief it?")
-                        .font(.system(size: 13))
+                        .uiFont(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
@@ -50,7 +50,7 @@ struct CallDetectedPopup: View {
                         Button("Not now") {
                             appState.showCallDetectedPopup = false
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.regular)
 
                         Button {
@@ -66,7 +66,7 @@ struct CallDetectedPopup: View {
                                 RecordGlyph(size: 14)
                                 Text("Record")
                             }
-                            .font(.system(size: 13, weight: .bold))
+                            .uiFont(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 7)

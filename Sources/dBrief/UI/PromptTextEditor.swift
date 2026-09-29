@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Immediate, in-memory editing. No preference writes or debounced teardown commits.
 struct PromptTextEditor: NSViewRepresentable {
+    @Environment(\.uiTypography) private var typography
     @Bindable var session: PromptEditorSession
     var fontSize: Double
 
@@ -28,7 +29,7 @@ struct PromptTextEditor: NSViewRepresentable {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         text.defaultParagraphStyle = paragraph
-        text.font = .systemFont(ofSize: fontSize)
+        text.font = AppFontStyle.system(size: fontSize).nsFont(using: typography)
         text.string = session.draft.text
         text.delegate = context.coordinator
         text.setAccessibilityLabel("\(session.identity.kind.title) prompt instructions")
@@ -39,7 +40,7 @@ struct PromptTextEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let text = scroll.documentView as? NSTextView else { return }
         context.coordinator.session = session
-        text.font = .systemFont(ofSize: fontSize)
+        text.font = AppFontStyle.system(size: fontSize).nsFont(using: typography)
         if text.string != session.draft.text {
             let selection = text.selectedRange()
             text.undoManager?.disableUndoRegistration()

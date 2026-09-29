@@ -42,7 +42,7 @@ struct SettingsStorageTab: View {
 
                 if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
                     Text("Cleanup runs at launch and then daily while dBrief stays open.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if let lastRun = appSettings.lastRetentionCleanupDate {
@@ -54,12 +54,12 @@ struct SettingsStorageTab: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            .font(.caption)
+                            .uiFont(.caption)
                         }
                     } else {
                         LabeledContent("Last cleanup") {
                             Text("Not run yet")
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -109,7 +109,7 @@ struct SettingsStorageTab: View {
                 HStack(spacing: 8) {
                     if let message = cleanupMessage[category] {
                         Text(message)
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -118,14 +118,14 @@ struct SettingsStorageTab: View {
                     }
 
                     Button(category == .recordings ? "Delete old recordings…" : "Delete old transcripts…") { pendingCleanup = category }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                         .disabled(runningCleanup != nil)
                 }
             }
 
             Text(help)
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -143,7 +143,7 @@ struct SettingsStorageTab: View {
                 Button("Choose...") {
                     chooseFolder(completion: onChoose)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
             }
         }
     }

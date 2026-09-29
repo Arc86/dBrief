@@ -31,19 +31,19 @@ struct CalendarLinkSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(saved ? "Calendar meeting linked" : "Link calendar meeting")
-                .font(.title2.weight(.semibold))
+                .uiFont(.title2.weight(.semibold))
             if saved {
                 Text("The meeting context is saved. Existing generated results are kept until you choose to regenerate them.")
                 Text("Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees.")
                     .foregroundStyle(.secondary)
                 Text("Previously exported files and content sent to integrations are not updated automatically.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .uiFont(.callout).foregroundStyle(.secondary)
                 HStack {
                     Spacer()
                     Button("Done") { close() }.keyboardShortcut(.cancelAction)
                     if hasTranscript {
                         Button("Re-run AI analysis…") { showAnalysis = true }
-                            .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                            .buttonStyle(.typographyProminent).keyboardShortcut(.defaultAction)
                     }
                 }
             } else {
@@ -56,7 +56,7 @@ struct CalendarLinkSheet: View {
                 } else {
                     if let status = meetingList?.statusMessage {
                         Label(status, systemImage: "calendar.badge.clock")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .uiFont(.callout).foregroundStyle(.secondary)
                             .accessibilityAddTraits(.updatesFrequently)
                     }
                     if refreshing { ProgressView("Refreshing this date…").controlSize(.small) }
@@ -76,27 +76,27 @@ struct CalendarLinkSheet: View {
                         }
                         if let event = selected {
                             if !event.attendeeNames.isEmpty {
-                                Text(event.attendeeNames.joined(separator: ", ")).font(.callout)
+                                Text(event.attendeeNames.joined(separator: ", ")).uiFont(.callout)
                             }
                             if !event.body.isEmpty {
-                                ScrollView { Text(event.body).font(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
+                                ScrollView { Text(event.body).uiFont(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
                                     .frame(maxHeight: 130)
                             }
                             Toggle("Use meeting title", isOn: $updateTitle)
                             Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
                             Text("The full calendar context is saved even when these fields are kept.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
-                if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+                if let error { Text(error).foregroundStyle(.red).uiFont(.callout).textSelection(.enabled) }
                 HStack {
                     Button("Refresh this date") { startRefresh(force: true) }
                         .disabled(loading || refreshing || saving)
                     Spacer()
                     Button("Cancel") { close() }.keyboardShortcut(.cancelAction).disabled(saving)
                     Button("Link Meeting") { save() }
-                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .buttonStyle(.typographyProminent).keyboardShortcut(.defaultAction)
                         .disabled(selected == nil || saving)
                     if saving { ProgressView().controlSize(.small) }
                 }

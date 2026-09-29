@@ -6,6 +6,7 @@ import SwiftUI
 struct SpeakerPillView: View {
     let speakerId: String?
     let displayName: String
+    @Environment(\.uiTypography) private var typography
     /// Optional tap handler. If nil the pill is non-interactive.
     var action: (() -> Void)? = nil
 
@@ -21,9 +22,9 @@ struct SpeakerPillView: View {
     }
 
     private var pillLabel: some View {
-        Text(displayName.uppercased())
-            .font(.system(size: 9, weight: .bold))
-            .kerning(0.5)
+        Text(typography.readingFont == .openDyslexic ? displayName : displayName.uppercased())
+            .uiFont(.system(size: 9, weight: .bold))
+            .kerning(typography.readingFont == .openDyslexic ? 0 : 0.5)
             .foregroundColor(.white)
             .padding(.vertical, 2)
             .padding(.horizontal, 8)

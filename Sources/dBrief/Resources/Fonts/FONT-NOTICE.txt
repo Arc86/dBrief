@@ -1,0 +1,46 @@
+OpenDyslexic font files are bundled for transcript reading.
+
+The Regular, Bold, Italic, and Bold-Italic OTF files are copied unmodified from
+the official OpenDyslexic source repository:
+https://github.com/antijingoist/opendyslexic
+
+Upstream revision: 1824da5c0e41dc3e13ffc7f3a636dcaf695d61b7
+Upstream directory: compiled/
+Embedded OpenType versions and PostScript names:
+- Regular: Version 0.990; PostScript OpenDyslexic-Regular
+- Bold: Version 0.990; PostScript OpenDyslexic-Bold
+- Italic: Version 0.950; PostScript OpenDyslexic-Italic
+- Bold-Italic: Version 0.940; PostScript OpenDyslexic-Bold-Italic
+
+CoreText confirms all four belong to the OpenDyslexic family (the regular font
+name used by the app is exactly OpenDyslexic-Regular). Each font's embedded
+license metadata identifies Abbie Gonzalez and SIL Open Font License 1.1.
+The matching full upstream license text is included as OpenDyslexic-OFL.txt;
+its copyright and reserved-font-name text is preserved.
+
+SHA-256 checksums:
+- OpenDyslexic-Regular.otf: 32f5840fb2bf844bdabafe372591ddfb9286e98117f5b21950aaf54ea856919a
+- OpenDyslexic-Bold.otf: 5d690ea8c7ccb0d5d5d81487826a395e9b20a6c1d606f1f262c060d2bef4f03
+- OpenDyslexic-Italic.otf: dfa0185bb0d47cb76cb5d082531822d0dca03152f5b6ec6c9f6e3f8d00b71782
+- OpenDyslexic-Bold-Italic.otf: b50779f4f547917a648d38976a664cab8952563112ce03209ff568b1eb364090
+
+Inter font files are bundled for transcript reading.
+
+The Regular, Bold, Italic, and Bold-Italic OTF files are copied unmodified from
+the official Inter 4.1 release:
+https://github.com/rsms/inter/releases/tag/v4.1
+Release archive: https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+Upstream directory: extras/otf/
+PostScript names: Inter-Regular, Inter-Bold, Inter-Italic, Inter-BoldItalic.
+The full upstream SIL Open Font License 1.1 is included as Inter-OFL.txt.
+
+SHA-256 checksums:
+- Inter-Regular.otf: d4f2b9e148059a15f014cb0f0b8fea8cd11bfa447dd483bedf1b0adc0e2ba799
+- Inter-Bold.otf: 9fc6261e817d0b1b2bf1953d8799bb1c837d11aeebbf83ae352e7b4d6de6425d
+- Inter-Italic.otf: 3bdf49f72ad2f2959a2619ceef700784504f6d17f502e2e2bc6edce5d43ca631
+- Inter-BoldItalic.otf: 84e07cd77951a855c668f71e63af261f42d019dc80e963326b4c560b1fca8dcd
+
+Default uses the macOS system sans-serif outside Paper modes and the built-in
+Georgia font in Paper modes. The explicit San Francisco option always uses
+the macOS system sans-serif, including in Paper modes. Inter and OpenDyslexic
+fall back to the system sans-serif if font registration or lookup fails.

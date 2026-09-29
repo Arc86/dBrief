@@ -72,7 +72,8 @@ final class CallDetectedOverlayController {
             .environment(appState)
             .environment(appSettings)
             .environment(recordingManager)
-            .environment(\.calmAppearance, appSettings.reduceNeon))
+            .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings)))
 
         // Auto-dismiss after the configured delay (0 = never). Any user interaction
         // sets showCallDetectedPopup = false → hide(), which cancels this task.
@@ -98,7 +99,8 @@ final class CallDetectedOverlayController {
             .environment(appState)
             .environment(appSettings)
             .environment(recordingManager)
-            .environment(\.calmAppearance, appSettings.reduceNeon))
+            .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings)))
 
         // Auto-dismiss is default-safe here: timing out just keeps recording (sets the flag
         // false → hideCallEnded(), takes no stop action).

@@ -80,6 +80,62 @@ struct SpeakerTurnTests {
         #expect(t.speakerTurns().count == 2)
     }
 
+    @Test func shortChunksReadAsOneParagraphWithoutChangingSegments() {
+        let segments = [
+            seg("Dat", speaker: "A", start: 0, end: 1),
+            seg("zei je net.", speaker: "A", start: 1, end: 2),
+            seg("Dat vond ik mooi.", speaker: "A", start: 2, end: 3),
+        ]
+        let turn = RichTranscript(segments: segments).speakerTurns()[0]
+        #expect(turn.readingParagraphRanges == [0..<turn.text.count])
+        #expect(turn.segments.map(\.id) == segments.map(\.id))
+        #expect(turn.text == "Dat zei je net. Dat vond ik mooi.")
+        #expect(turn.startTime == 0 && turn.endTime == 3)
+        let search = TranscriptSearch.search(turns: [(id: turn.id, text: turn.text)], query: "Dat zei")
+        #expect(search.matches.count == 1)
+        #expect(search.matches.first?.turnId == turn.id)
+        #expect(search.matches.first?.location == 0)
+        #expect(search.matches.first?.length == 7)
+    }
+
+    @Test func meaningfulPauseStartsANewParagraphWithExactOffsets() {
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg("Café 👩🏽‍💻", speaker: "A", start: 0, end: 1),
+            seg("volgende zin", speaker: "A", start: 3, end: 4),
+        ])
+        let characters = Array(turn.text)
+        let paragraphs = turn.readingParagraphRanges.map { String(characters[$0]) }
+        #expect(paragraphs == ["Café 👩🏽‍💻", "volgende zin"])
+    }
+
+    @Test func longMonologuesKeepReadableParagraphBreaks() {
+        let text = String(repeating: "word ", count: 75)
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg(text, speaker: "A", start: 0, end: 20),
+            seg("Next sentence.", speaker: "A", start: 20, end: 22),
+        ])
+        #expect(turn.readingParagraphRanges == [0..<text.count, (text.count + 1)..<turn.text.count])
+    }
+
+    @Test func rebuildingAfterSegmentEditRefreshesCachedDisplayFields() {
+        let first = seg("Short", speaker: "A", start: 0, end: 1)
+        let second = seg("continuation", speaker: "A", start: 1, end: 2)
+        let oldTurn = SpeakerTurn(speakerId: "A", segments: [first, second])
+
+        var editedFirst = first
+        editedFirst.text = String(repeating: "x", count: 360)
+        let updatedTurn = SpeakerTurn(speakerId: "A", segments: [editedFirst, second])
+
+        #expect(updatedTurn.id == first.id)
+        #expect(updatedTurn.segments.map(\.id) == [first.id, second.id])
+        #expect(updatedTurn.text == "\(String(repeating: "x", count: 360)) continuation")
+        #expect(updatedTurn.readingParagraphRanges == [0..<360, 361..<updatedTurn.text.count])
+
+        #expect(oldTurn.id == first.id)
+        #expect(oldTurn.text == "Short continuation")
+        #expect(oldTurn.readingParagraphRanges == [0..<oldTurn.text.count])
+    }
+
     @Test func trailingRunMerged() {
         // Last run must be appended even without a following different speaker.
         let t = RichTranscript(version: 1, segments: [

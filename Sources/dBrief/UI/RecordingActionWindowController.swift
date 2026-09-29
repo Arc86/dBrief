@@ -83,6 +83,7 @@ final class RecordingActionWindowController {
         .environment(appSettings)
         .environment(recordingManager)
         .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings))
         presenter.show(
             title: operation.title,
             contentSize: NSSize(width: 530, height: 580),
@@ -104,6 +105,7 @@ final class RecordingActionWindowController {
         .environment(appSettings)
         .environment(recordingManager)
         .environment(\.calmAppearance, appSettings.reduceNeon)
+            .modifier(AppAppearanceScope(settings: appSettings))
         presenter.show(
             title: "Link Calendar Meeting",
             contentSize: NSSize(width: 540, height: 300),

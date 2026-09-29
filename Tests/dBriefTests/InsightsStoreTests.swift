@@ -75,6 +75,31 @@ struct InsightsStoreTests {
         #expect(saved.summary == "After")
     }
 
+    @Test("A completion racing a user edit survives when its raw action is unchanged")
+    func completionRacingAnalysisEditIsPreserved() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = InsightsStore()
+        let baseline = RecordingInsights(
+            summary: "Before edit",
+            actionItems: ["Alice: send notes"],
+            tags: ["planning"],
+            sentiment: "Neutral",
+            markdownPath: nil
+        )
+        try await store.save(baseline, to: url)
+        var edited = baseline
+        edited.summary = "User's summary edit"
+
+        async let completion = store.setActionCompleted("Alice: send notes", completed: true, at: url)
+        async let edit = store.saveAnalysisEdit(edited, basedOn: baseline, to: url)
+        _ = try await (completion, edit)
+
+        let saved = try #require(try await store.load(from: url))
+        #expect(saved.summary == "User's summary edit")
+        #expect(saved.completedActions == ["Alice: send notes"])
+    }
+
     @Test func changedMissingCorruptAndFutureActionsDoNotWrite() async throws {
         let url = tempURL()
         defer { try? FileManager.default.removeItem(at: url) }

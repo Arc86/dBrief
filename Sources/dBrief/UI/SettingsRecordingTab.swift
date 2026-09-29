@@ -15,7 +15,7 @@ struct SettingsRecordingTab: View {
                     ShortcutRecorderView(hotkey: $settings.recordHotkey)
                 }
                 Text("Global shortcut to toggle recording from anywhere. Defaults to ⌃⌥⌘R.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)
@@ -35,7 +35,7 @@ struct SettingsRecordingTab: View {
                             Text("After 60 seconds").tag(60)
                         }
                         Text("Automatically dismiss the “call detected” prompt if you don't respond. Clicking the prompt cancels the timer.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -52,7 +52,7 @@ struct SettingsRecordingTab: View {
                         }
                     }
                     Text("Detects when the meeting app stops using the microphone (Teams, Zoom, Slack, Meet). On older macOS, only works when the meeting app fully quits.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -62,7 +62,7 @@ struct SettingsRecordingTab: View {
                 Section("Call Platforms", settingsSearch: .callPlatforms) {
                     if !appSettings.callDetectionEnabled {
                         Text("Call detection is off. These platform choices will apply when you enable it.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(CallDetectionService.knownCallApps, id: \.bundleId) { app in
                         let isEnabled = !appSettings.disabledCallApps.contains(app.bundleId)
@@ -111,7 +111,7 @@ struct SettingsRecordingTab: View {
                     Button("Refresh device list") {
                         inputDevices = AudioInputDeviceManager.availableInputDevices()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 }
             }
             .listRowBackground(Color.clear)
@@ -119,7 +119,7 @@ struct SettingsRecordingTab: View {
             Section("Echo Cancellation", settingsSearch: .echoCancellation) {
                 Toggle("Reduce microphone echo", isOn: $settings.acousticEchoCancellation)
                 Text("Reduces meeting audio picked up by your microphone when using speakers. Automatically skipped with headphones.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)
@@ -127,12 +127,12 @@ struct SettingsRecordingTab: View {
             Section("Recording Indicators", settingsSearch: .recordingIndicators) {
                 Toggle("Show floating recording window", isOn: $settings.showMiniRecordingView)
                 Text("The small floating window that shows recording status and audio levels while you record.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Toggle("Show recording duration in the menu bar", isOn: $settings.showMenuBarRecordingDuration)
                 Text("When off, the menu bar shows only the red record indicator while recording — the elapsed time is hidden.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)

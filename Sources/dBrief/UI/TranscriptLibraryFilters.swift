@@ -18,11 +18,12 @@ struct TranscriptLibraryFilters: View {
                     Text(view.title).lineLimit(1).truncationMode(.tail)
                     Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                 }
-                .font(.system(size: 12, weight: .medium))
+                .uiFont(.system(size: 12, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
             .menuIndicator(.hidden)
             .accessibilityLabel("Library view")
             .accessibilityValue(view.title)
@@ -40,11 +41,12 @@ struct TranscriptLibraryFilters: View {
                     HStack(spacing: 4) {
                         Image(systemName: status == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                             .font(.system(size: 14))
-                        if let status { Text(status.title).font(.caption) }
+                        if let status { Text(status.title).uiFont(.caption) }
                     }
                     .foregroundStyle(status == nil ? Color.secondary : Color.accentColor)
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .accessibilityLabel("Filter by recording status")

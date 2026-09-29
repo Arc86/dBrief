@@ -44,10 +44,10 @@ struct OnboardingModelDownloadView: View {
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
 
             Text("Prepare your models")
-                .font(.title3.weight(.semibold))
+                .uiFont(.title3.weight(.semibold))
 
             Text("Download the models for your selected transcription and AI features. Once downloaded, these models run on your Mac.")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -69,7 +69,7 @@ struct OnboardingModelDownloadView: View {
 
             if !pending.isEmpty {
                 Text("You can set this up later in Settings. These features need their models before use.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -81,20 +81,20 @@ struct OnboardingModelDownloadView: View {
                         for kind in models { recordingManager.cancelDownload(kind) }
                         onContinue()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.large)
                 }
 
                 if pending.isEmpty {
                     Button("Continue", action: onContinue)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.typographyProminent)
                         .controlSize(.large)
                         .disabled(checkingCache)
                 } else {
                     Button(isDownloading ? "Downloading…" : "Download models") {
                         for kind in pending { recordingManager.downloadModel(kind) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .controlSize(.large)
                     .disabled(checkingCache || isDownloading || !recordingManager.canDownloadModels)
                 }
@@ -134,20 +134,20 @@ private struct OnboardingModelDownloadCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(purpose).font(.caption).foregroundStyle(.secondary)
-            Text(title).font(.callout.weight(.medium))
+            Text(purpose).uiFont(.caption).foregroundStyle(.secondary)
+            Text(title).uiFont(.callout.weight(.medium))
 
             switch phase {
             case .idle:
                 if checkingCache {
                     Label("Checking…", systemImage: "ellipsis.circle")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 } else if cached {
                     Label("Ready", systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(.green)
+                        .uiFont(.caption).foregroundStyle(.green)
                 } else {
                     Label("Waiting to download", systemImage: "arrow.down.circle")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
             case .downloading(let progress, let label):
                 if let progress {
@@ -157,21 +157,21 @@ private struct OnboardingModelDownloadCard: View {
                 }
                 HStack(spacing: 8) {
                     if progress == nil { ProgressView().controlSize(.small) }
-                    Text(label).font(.caption).foregroundStyle(.secondary)
+                    Text(label).uiFont(.caption).foregroundStyle(.secondary)
                     if let progress {
                         Text(min(max(progress, 0), 1), format: .percent.precision(.fractionLength(0)))
-                            .font(.caption.monospacedDigit())
+                            .uiFont(.caption.monospacedDigit())
                     }
                     Spacer(minLength: 4)
                     Button("Cancel", action: onCancel)
-                        .buttonStyle(.borderless).controlSize(.small)
+                        .buttonStyle(.typographyBorderless).controlSize(.small)
                 }
             case .failed(let message):
                 Text(message)
-                    .font(.caption).foregroundStyle(.orange)
+                    .uiFont(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Retry", action: onDownload)
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(.typographyBordered).controlSize(.small)
                     .disabled(!canDownload)
             }
         }
@@ -193,26 +193,26 @@ struct OnboardingRecordingResponsibilityView: View {
                 .frame(width: 64, height: 64)
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
 
-            Text("Before you record").font(.title3.weight(.semibold))
+            Text("Before you record").uiFont(.title3.weight(.semibold))
 
             Text("Let everyone know before recording a meeting or call.")
-                .font(.callout.weight(.medium))
+                .uiFont(.callout.weight(.medium))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("You are responsible for how you use dBrief, including informing participants, obtaining any required consent, and following applicable laws and your organisation’s policies.")
-                .font(.callout).foregroundStyle(.secondary)
+                .uiFont(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("dBrief does not notify participants or obtain consent on your behalf.")
-                .font(.callout).foregroundStyle(.secondary)
+                .uiFont(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             Toggle(isOn: $acknowledged) {
                 Text("I understand my responsibility to use dBrief lawfully and obtain any required consent.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .toggleStyle(.checkbox)
@@ -224,7 +224,7 @@ struct OnboardingRecordingResponsibilityView: View {
                 guard acknowledged else { return }
                 onFinish()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.typographyProminent)
             .controlSize(.large)
             .disabled(!acknowledged)
         }

@@ -51,12 +51,12 @@ struct ClaudeModelPicker: View {
                 }
             if !customModelID.isEmpty, CalendarCLIConfig.sanitizedModelID(customModelID) == nil {
                 Text("Use a model ID without spaces or shell characters. The previous selection is kept until the ID is valid.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         Text("Model families follow Claude's current aliases. Versions stay pinned. Availability depends on your Claude account and provider.")
-            .font(.caption)
+            .uiFont(.caption)
             .foregroundStyle(.secondary)
             .onAppear { customModelID = modelID ?? "" }
     }

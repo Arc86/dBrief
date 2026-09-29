@@ -18,16 +18,17 @@ struct ParsedActionItem: Identifiable, Hashable, Sendable {
     var id: String { (owner ?? "") + "\u{1F} " + raw }
 }
 
-/// All action items for one owner, in first-appearance order.
+/// Action items for one person or shared set of owners, in first-appearance order.
 struct ActionItemGroup: Identifiable {
     /// `nil` owner is surfaced under this label.
     static let unassignedLabel = "Unassigned"
 
-    let owner: String
+    let owners: [String]
     let items: [ParsedActionItem]
 
-    var id: String { owner }
-    var isUnassigned: Bool { owner == Self.unassignedLabel }
+    var owner: String { owners.isEmpty ? Self.unassignedLabel : owners.joined(separator: " & ") }
+    var id: String { owners.sorted().joined(separator: "\u{1F}") }
+    var isUnassigned: Bool { owners.isEmpty }
 }
 
 /// Pure parsing/grouping of raw action-item strings. Unit-testable, no UI.
@@ -37,7 +38,7 @@ enum ActionItemParser {
 
     /// Parses one raw string into one entry per owner it names. A shared owner
     /// such as `[Alice/Bob]` (also `,`, `&`, ` and `) yields one entry per person,
-    /// so the item appears under each of their groups.
+    /// so grouping can collect the complete set of owners.
     static func parse(_ raw: String, knownOwners: [String] = []) -> [ParsedActionItem] {
         let range = NSRange(raw.startIndex..., in: raw)
         guard let match = ownerRegex.firstMatch(in: raw, range: range),
@@ -64,31 +65,35 @@ enum ActionItemParser {
         return owners.map { ParsedActionItem(raw: raw, owner: $0, text: text) }
     }
 
-    /// Parses and groups a list of raw items by owner, preserving the order in
-    /// which owners first appear. Unassigned items are collected into a trailing
-    /// "Unassigned" group.
+    /// Groups each task once by its complete set of owners. Shared tasks get
+    /// their own card; reversing the names does not create another group.
     static func group(_ rawItems: [String], knownOwners: [String] = []) -> [ActionItemGroup] {
         var order: [String] = []
         var buckets: [String: [ParsedActionItem]] = [:]
+        var groupOwners: [String: [String]] = [:]
         var unassigned: [ParsedActionItem] = []
 
         for raw in rawItems {
-            for item in parse(raw, knownOwners: knownOwners) {
-                guard let owner = item.owner else {
-                    unassigned.append(item)
-                    continue
-                }
-                if buckets[owner] == nil {
-                    buckets[owner] = []
-                    order.append(owner)
-                }
-                buckets[owner]?.append(item)
+            let parsed = parse(raw, knownOwners: knownOwners)
+            guard let first = parsed.first else { continue }
+            var seen: Set<String> = []
+            let owners = parsed.compactMap(\.owner).map(displayOwnerName).filter { seen.insert($0).inserted }
+            guard !owners.isEmpty else {
+                unassigned.append(first)
+                continue
             }
+            let key = owners.sorted().joined(separator: "\u{1F}")
+            if buckets[key] == nil {
+                buckets[key] = []
+                groupOwners[key] = owners
+                order.append(key)
+            }
+            buckets[key]?.append(ParsedActionItem(raw: raw, owner: owners.joined(separator: " & "), text: first.text))
         }
 
-        var groups = order.map { ActionItemGroup(owner: $0, items: buckets[$0] ?? []) }
+        var groups = order.map { ActionItemGroup(owners: groupOwners[$0] ?? [], items: buckets[$0] ?? []) }
         if !unassigned.isEmpty {
-            groups.append(ActionItemGroup(owner: ActionItemGroup.unassignedLabel, items: unassigned))
+            groups.append(ActionItemGroup(owners: [], items: unassigned))
         }
         return groups
     }
@@ -138,6 +143,16 @@ enum ActionItemParser {
         var seenOwners: Set<String> = []
         return owners.filter { seenOwners.insert($0).inserted }
             .map { ParsedActionItem(raw: raw, owner: $0, text: text) }
+    }
+
+    /// Older AI output copied the numbers from the "Owner 1/Owner 2" template.
+    /// Remove those suffixes for display and grouping, preserving the raw task
+    /// used for persistence. Unnamed speaker identifiers still need their number.
+    private static func displayOwnerName(_ owner: String) -> String {
+        guard owner.range(of: #"(?i)^Speaker\s+\d+$"#, options: .regularExpression) == nil else {
+            return owner
+        }
+        return owner.replacingOccurrences(of: #"\s+\d+$"#, with: "", options: .regularExpression)
     }
 
     private static func splitOwners(_ blob: String) -> [String] {

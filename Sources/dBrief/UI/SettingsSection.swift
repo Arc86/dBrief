@@ -15,7 +15,7 @@ struct SettingsSection<Content: View>: View {
                     Text(title)
                 }
             }
-                .font(.headline)
+                .uiFont(.headline)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
 

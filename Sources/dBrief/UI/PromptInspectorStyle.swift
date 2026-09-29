@@ -4,7 +4,7 @@ import SwiftUI
 struct PromptPrimaryAction: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26, *) { content.buttonStyle(.glassProminent).controlSize(.large) }
-        else { content.buttonStyle(.borderedProminent).controlSize(.large) }
+        else { content.buttonStyle(.typographyProminent).controlSize(.large) }
     }
 }
 
@@ -15,8 +15,8 @@ struct PromptInspectorHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: symbol).font(.system(size: 23, weight: .medium)).foregroundStyle(.tint)
-            Text(title).font(.title3.weight(.semibold))
-            Text(subtitle).font(.callout).foregroundStyle(.secondary)
+            Text(title).uiFont(.title3.weight(.semibold))
+            Text(subtitle).uiFont(.callout).foregroundStyle(.secondary)
         }.padding(.bottom, 6)
     }
 }
@@ -28,8 +28,8 @@ struct PromptEngineLabel: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "cpu").foregroundStyle(.secondary).padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
-                Text(name).font(.callout.weight(.medium))
-                Text(destination).font(.caption).foregroundStyle(.secondary)
+                Text(name).uiFont(.callout.weight(.medium))
+                Text(destination).uiFont(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }.padding(12).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))

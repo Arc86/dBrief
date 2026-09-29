@@ -53,7 +53,7 @@ struct ModelDownloadButton: View {
         HStack(spacing: 8) {
             if cached {
                 Label("Downloaded", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(compact ? Color.secondary : Color.green)
                     .padding(.horizontal, compact ? 8 : 0)
                     .padding(.vertical, compact ? 4 : 0)
@@ -67,7 +67,8 @@ struct ModelDownloadButton: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .accessibilityLabel("Model download actions")
@@ -75,7 +76,7 @@ struct ModelDownloadButton: View {
                 Button("Re-download") {
                     recordingManager.downloadModel(kind, forceRedownload: true)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
                 .controlSize(.small)
                 .disabled(!recordingManager.canDownloadModels)
                 }
@@ -83,7 +84,7 @@ struct ModelDownloadButton: View {
                 Button("Download model") {
                     recordingManager.downloadModel(kind)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .controlSize(.small)
                 .disabled(!recordingManager.canDownloadModels)
             }
@@ -102,13 +103,13 @@ struct ModelDownloadButton: View {
                     .controlSize(.small)
             }
             Text(label)
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Cancel") {
                 recordingManager.cancelDownload(kind)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.typographyBorderless)
             .controlSize(.small)
         }
     }
@@ -116,14 +117,14 @@ struct ModelDownloadButton: View {
     private func failedRow(_ message: String) -> some View {
         HStack(spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.orange)
                 .lineLimit(2)
             Spacer()
             Button("Retry") {
                 recordingManager.downloadModel(kind)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.typographyBorderless)
             .controlSize(.small)
         }
     }
@@ -137,16 +138,16 @@ struct TranscriptionEngineGuideView: View {
                 ForEach(TranscriptionEngineGuide.entries) { entry in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry.title)
-                            .font(.caption)
+                            .uiFont(.caption)
                             .fontWeight(.medium)
                         Text(entry.detail)
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
             .padding(.top, 4)
         }
-        .font(.caption)
+        .uiFont(.caption)
     }
 }

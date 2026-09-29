@@ -73,22 +73,22 @@ struct PostRecordingSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Profile for this recording: \(reviewProfile.name)")
-                .font(.caption.weight(.semibold))
+                .uiFont(.caption.weight(.semibold))
             if let recording = appState.currentRecording {
                 if recording.awaitingProfileContext {
                     Text("Checking calendar context for profile selection…")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 } else if recording.profileSelection.isManual {
                     Text("Profile chosen manually for this recording")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 } else if let match = recording.profileSelection.match,
                           let profile = appSettings.profiles.first(where: { $0.id == match.profileID }) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recording.profileSelection.isDeferred
                              ? "Suggested: \(profile.name) — waiting for the current job"
                              : "Selected automatically: \(profile.name)")
-                            .font(.caption.weight(.semibold))
-                        Text(match.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption.weight(.semibold))
+                        Text(match.reasons.joined(separator: " · ")).uiFont(.caption).foregroundStyle(.secondary)
                         if recording.profileSelection.isDeferred {
                             Button("Keep current profile") { recordingManager.cancelPostRecordingAutomation() }
                         }
@@ -101,9 +101,9 @@ struct PostRecordingSheet: View {
                         Text(request.profile.postRecordingPolicy == .process
                              ? "Processing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds"
                              : "Queueing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds")
-                            .font(.headline).monospacedDigit()
+                            .uiFont(.headline).monospacedDigit()
                         Text("Choose Review instead to change this recording’s options.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button("Review instead") { recordingManager.cancelPostRecordingAutomation() }
@@ -133,7 +133,7 @@ struct PostRecordingSheet: View {
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Text(recordingManager.postRecordingAction.action?.title ?? "Recording complete")
-                        .font(.system(size: 15, weight: .bold))
+                        .uiFont(.system(size: 15, weight: .bold))
                         .fixedSize(horizontal: false, vertical: true)
                     profilePill
                 }
@@ -143,7 +143,7 @@ struct PostRecordingSheet: View {
                         Label(recording.formattedDuration, systemImage: "clock")
                         Label(recording.formattedFileSize, systemImage: "doc")
                     }
-                    .font(.brandMono(10.5))
+                    .uiFont(.brandMono(10.5))
                     .foregroundStyle(.secondary)
                     .labelStyle(.titleAndIcon)
                     .fixedSize()
@@ -153,11 +153,11 @@ struct PostRecordingSheet: View {
             // Meeting title
             HStack {
                 Text("Meeting title")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .uiFont(.system(size: 12.5, weight: .semibold))
                 Spacer()
                 if appState.currentRecording?.calendarEvent != nil {
                     Label("Calendar linked", systemImage: "calendar")
-                        .font(.brandMono(9.5))
+                        .uiFont(.brandMono(9.5))
                         .foregroundStyle(Brand.cyan2)
                         .padding(.horizontal, 9).padding(.vertical, 3)
                         .background(Brand.cyanTint, in: Capsule())
@@ -171,7 +171,7 @@ struct PostRecordingSheet: View {
                (appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty) {
                 if appSettings.effectiveCalendarSource == .claudeCLI {
                     HStack {
-                        Text("Today's meetings").font(.caption.weight(.semibold))
+                        Text("Today's meetings").uiFont(.caption.weight(.semibold))
                         Spacer()
                         if calendarPickerRefreshing {
                             ProgressView().controlSize(.small).accessibilityLabel("Refreshing meeting list")
@@ -194,12 +194,12 @@ struct PostRecordingSheet: View {
                     calendarAttendeesBlock(for: recording)
                 } else if recording.calendarEvent != nil {
                     Text("Calendar attendees are already included with the selected meeting.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
             }
 
             Text("Used for file naming · YYYY-MM-DD_HHMM_[meeting-title].md")
-                .font(.brandMono(10.5))
+                .uiFont(.brandMono(10.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,10 +207,10 @@ struct PostRecordingSheet: View {
             // Participants
             if appSettings.diarizationEnabled {
                 Text("Participants")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .uiFont(.system(size: 12.5, weight: .semibold))
                 participantsField
                 Text("Type a name and press return · matched to speakers in order of first appearance")
-                    .font(.brandMono(10.5))
+                    .uiFont(.brandMono(10.5))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,18 +233,18 @@ struct PostRecordingSheet: View {
             if reviewAIEnabled {
                 if !transcribe {
                     Text("Transcription is required for AI analysis.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(Brand.paused)
                 }
             } else {
                 Text("AI processing is disabled in Settings.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if reviewNeedsTranscriptionEndpoint && transcribe {
                 Text("No transcription endpoint configured. Add one in Settings.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(Brand.coral)
             }
 
@@ -269,12 +269,12 @@ struct PostRecordingSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     BrandKicker("Auto-send destinations")
                     Text(enabledDestinationNames.joined(separator: ", "))
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if appSettings.integrations.webhook.enabled {
                         Text("Webhook fields: \(webhookFieldsDescription)")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -342,7 +342,7 @@ struct PostRecordingSheet: View {
                             Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
                             Text("Process")
                         }
-                        .font(.system(size: 13, weight: .bold))
+                        .uiFont(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
                         .frame(height: 38)
@@ -356,7 +356,7 @@ struct PostRecordingSheet: View {
                 }
 
                 Text("**Skip** keeps the audio and stops here · **Delete** removes the file")
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -419,19 +419,19 @@ struct PostRecordingSheet: View {
                 Text(state.progress == 1
                      ? "Finishing save… Please keep dBrief open."
                      : "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else if state.recordingID == appState.currentRecording?.id, let error = state.error {
             Label("Couldn’t finish: \(error) Try again, or choose another action.", systemImage: "exclamationmark.triangle")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(Brand.coral)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         } else if appState.processingJob != nil {
             Text("Another recording is processing. Process saves this recording and queues it to run automatically.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -441,9 +441,9 @@ struct PostRecordingSheet: View {
     private var deleteConfirmation: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Delete this recording?")
-                .font(.system(size: 13, weight: .semibold))
+                .uiFont(.system(size: 13, weight: .semibold))
             Text("The audio file is permanently removed from disk. This can’t be undone.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -452,13 +452,13 @@ struct PostRecordingSheet: View {
                 Button("Cancel") {
                     withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = false }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Button {
                     Task { await recordingManager.discardRecording() }
                 } label: {
                     Label("Delete", systemImage: "trash")
-                        .font(.system(size: 13, weight: .semibold))
+                        .uiFont(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
@@ -489,10 +489,10 @@ struct PostRecordingSheet: View {
         } label: {
             HStack(spacing: 6) {
                 Text("Profile:")
-                    .font(.system(size: 11))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Text(reviewProfile.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -540,7 +540,7 @@ struct PostRecordingSheet: View {
                 }
                 TextField("Add name…", text: $participantInput)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .uiFont(.system(size: 13))
                     .frame(minWidth: 90)
                     .focused($participantFieldFocused)
                     .onSubmit(addParticipant)
@@ -652,34 +652,34 @@ struct PostRecordingSheet: View {
     private var calendarPickerStatus: some View {
         if let refreshed = calendarPickerLastRefresh {
             Text("Updated \(refreshed.formatted(date: .abbreviated, time: .shortened))")
-                .font(.caption2).foregroundStyle(.secondary)
+                .uiFont(.caption2).foregroundStyle(.secondary)
         }
         switch calendarPickerOutcome {
         case .manualOnly:
             Text("Manual mode: press Refresh for the latest meetings.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         case .partial, .failed:
             Label(calendarPickerLastRefresh == nil
                   ? "Meeting list unavailable. Press Refresh to retry."
                   : "Showing saved meetings; refresh failed. Press Refresh to retry.",
                   systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.caption).foregroundStyle(.orange)
         case .blocked:
             Label("Calendar access blocked. Check Claude connector approval, then press Refresh.", systemImage: "lock")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.caption).foregroundStyle(.orange)
         case .saveFailed:
             Label("Loaded, but could not save the cache.", systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.caption).foregroundStyle(.orange)
         case .selectionMissing:
             Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.caption).foregroundStyle(.orange)
         case .unconfigured:
             Text("Add a mailbox in Calendar settings to load meetings.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         case .complete, .none:
             if !calendarPickerRefreshing, calendarPickerLastRefresh != nil,
                appState.currentRecording?.calendarCandidates.isEmpty == true {
-                Text("No meetings for this day.").font(.caption).foregroundStyle(.secondary)
+                Text("No meetings for this day.").uiFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -717,12 +717,12 @@ struct PostRecordingSheet: View {
             BrandKicker("Calendar attendees")
             BrandCheckRow(title: "Load during processing", isOn: $loadCalendarParticipants, enabled: allowed)
             Text("Fetch invitees during processing; you can start immediately.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
             if !allowed {
                 Text(recording.calendarEvent == nil
                      ? "Choose a meeting to load its attendees."
                      : "Attendee loading is set to Never in Calendar settings.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
                 switch attendeeLoadState {
@@ -731,14 +731,14 @@ struct PostRecordingSheet: View {
                 case .loading:
                     ProgressView().controlSize(.small)
                 case .done(let message):
-                    Text(message).font(.brandMono(10.5)).foregroundStyle(.secondary)
+                    Text(message).uiFont(.brandMono(10.5)).foregroundStyle(.secondary)
                 case .omittedLarge(let count):
                     Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
-                        .font(.brandMono(10.5)).foregroundStyle(.secondary)
+                        .uiFont(.brandMono(10.5)).foregroundStyle(.secondary)
                 case .unavailable:
-                    Text("Attendee roster unavailable").font(.brandMono(10.5)).foregroundStyle(.secondary)
+                    Text("Attendee roster unavailable").uiFont(.brandMono(10.5)).foregroundStyle(.secondary)
                 case .failed:
-                    Text("Attendee load failed — try again").font(.brandMono(10.5)).foregroundStyle(.secondary)
+                    Text("Attendee load failed — try again").uiFont(.brandMono(10.5)).foregroundStyle(.secondary)
                 }
                 Button {
                     loadAttendees(for: recording)
@@ -866,7 +866,7 @@ private struct ParticipantEditField: View {
     var body: some View {
         TextField("Name", text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 12.5))
+            .uiFont(.system(size: 12.5))
             .focused($focused)
             // Hug the text like the pill it replaces; FlowLayout needs a concrete width.
             .frame(width: max(80, CGFloat(text.count) * 7.2 + 20))

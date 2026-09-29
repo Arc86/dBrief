@@ -34,6 +34,7 @@ struct RecordingDocumentHeader: View {
     let date: Date
     let metrics: [ViewerMetric]
 
+    @Environment(\.uiTypography) private var typography
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingMeetingPeople = false
 
@@ -42,8 +43,8 @@ struct RecordingDocumentHeader: View {
             // Row 1 — title + sentiment
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(title)
-                    .font(.system(size: 23, weight: .bold))
-                    .tracking(-0.4)
+                    .uiFont(.system(size: 23, weight: .bold))
+                    .tracking(typography.readingFont == .openDyslexic ? 0 : -0.4)
                     .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -64,15 +65,15 @@ struct RecordingDocumentHeader: View {
                         showingMeetingPeople = true
                     } label: {
                         Label("People (\(meetingPeople.count))", systemImage: "person.2")
-                            .font(.caption)
+                            .uiFont(.caption)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.typographyBorderless)
                     .popover(isPresented: $showingMeetingPeople) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("People in this meeting")
-                                .font(.headline)
+                                .uiFont(.headline)
                             Text("Invitees are not assigned to transcript speakers until matched or confirmed.")
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.secondary)
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -90,7 +91,7 @@ struct RecordingDocumentHeader: View {
                     .accessibilityLabel("Show \(meetingPeople.count) people in this meeting")
                 }
                 Text(date, format: .dateTime.weekday().day().month().hour().minute())
-                    .font(.callout)
+                    .uiFont(.callout)
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 12)
@@ -110,12 +111,12 @@ struct RecordingDocumentHeader: View {
             ForEach(metrics) { metric in
                 VStack(alignment: .center, spacing: 2) {
                     Text(metric.value)
-                        .font(.system(size: 17, weight: .bold).monospacedDigit())
+                        .uiFont(.system(size: 17, weight: .bold).monospacedDigit())
                         .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
                     Text(metric.label)
-                        .font(.system(size: 10, weight: .semibold).monospaced())
-                        .tracking(0.8)
-                        .textCase(.uppercase)
+                        .uiFont(.system(size: 10, weight: .semibold).monospaced())
+                        .tracking(typography.readingFont == .openDyslexic ? 0 : 0.8)
+                        .textCase(typography.readingFont == .openDyslexic ? nil : .uppercase)
                         .foregroundStyle(TranscriptDesignTokens.sectionLabel(scheme: colorScheme))
                 }
                 .accessibilityElement(children: .ignore)
@@ -148,7 +149,7 @@ private struct AvatarStack: View {
             }
             if overflow > 0 {
                 Text("+\(overflow)")
-                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .uiFont(.system(size: size * 0.4, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: size, height: size)
                     .background(.quaternary, in: Circle())
@@ -192,7 +193,7 @@ private struct SpeakerAssignmentButton: View {
         .accessibilityLabel("Assign a name to \(speaker.name)")
         .popover(isPresented: $showingNames) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Name \(speaker.name)").font(.headline)
+                Text("Name \(speaker.name)").uiFont(.headline)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(meetingPeople, id: \.self) { name in
@@ -204,7 +205,7 @@ private struct SpeakerAssignmentButton: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.vertical, 4)
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.typographyBorderless)
                         }
                     }
                 }
@@ -235,7 +236,7 @@ struct SentimentPill: View {
                 .frame(width: 6, height: 6)
                 .shadow(color: tone, radius: 4)
             Text(sentiment.capitalized)
-                .font(.system(size: 12, weight: .semibold))
+                .uiFont(.system(size: 12, weight: .semibold))
         }
         .foregroundStyle(tone)
         .padding(.vertical, 4)

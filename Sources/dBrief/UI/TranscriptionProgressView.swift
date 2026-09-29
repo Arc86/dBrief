@@ -33,11 +33,11 @@ struct TranscriptionProgressView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text("Memory")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(fraction > 0.6 ? color : .secondary)
                 }
                 GeometryReader { geo in
@@ -57,7 +57,7 @@ struct TranscriptionProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(isComplete ? "Processing Complete" : "Processing...")
-                .font(.headline)
+                .uiFont(.headline)
 
             ForEach(appState.processingSteps) { step in
                 VStack(alignment: .leading, spacing: 2) {
@@ -65,11 +65,11 @@ struct TranscriptionProgressView: View {
                         stepIcon(for: step.status)
                             .frame(width: 16)
                         Text(step.name)
-                            .font(.callout)
+                            .uiFont(.callout)
                         Spacer()
                         if case .inProgress = step.status, appState.memoryPressureLevel == .critical {
                             Text("⚠ Low RAM")
-                                .font(.caption2)
+                                .uiFont(.caption2)
                                 .foregroundStyle(.yellow)
                         }
                     }
@@ -83,14 +83,14 @@ struct TranscriptionProgressView: View {
                     }
                     if case .inProgress = step.status, let detail = step.detail, !detail.isEmpty {
                         Text(detail)
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 24)
                     }
                     if case .failed(let message) = step.status, !message.isEmpty {
                         ScrollView {
                             Text(message)
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.red)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
@@ -105,7 +105,7 @@ struct TranscriptionProgressView: View {
                 Divider()
                 ScrollView {
                     Text(liveText)
-                        .font(.system(.caption, design: .monospaced))
+                        .uiFont(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
@@ -124,7 +124,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label("Stop", systemImage: "stop.fill")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                     .tint(.red)
                 }
@@ -137,7 +137,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label(title, systemImage: "text.viewfinder")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                 }
 
@@ -147,7 +147,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label("Review speakers", systemImage: "person.crop.circle.badge.questionmark")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .controlSize(.small)
                 }
             }
@@ -181,7 +181,7 @@ struct TranscriptionProgressView: View {
                             }
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
 
                     Spacer()
@@ -189,7 +189,7 @@ struct TranscriptionProgressView: View {
                     Button("Close") {
                         appState.processingSteps.removeAll()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                 }
             }

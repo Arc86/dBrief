@@ -13,7 +13,7 @@ struct PromptImprovementPanel: View {
                         if session.engineSelection == .configured, let note = PromptConfigurationResolver.fallbackExplanation(identity: session.identity, settings: session.store.settings) {
                             Text(note).foregroundStyle(.secondary)
                         }
-                    }.font(.callout)
+                    }.uiFont(.callout)
                 } else if let error = session.configurationError { Text(error).foregroundStyle(.secondary) }
                 DisclosureGroup("Improvement request", isExpanded: $showRequest) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -24,9 +24,9 @@ struct PromptImprovementPanel: View {
                         ViewThatFits(in: .horizontal) {
                             HStack { shortcuts }
                             VStack(alignment: .leading) { shortcuts }
-                        }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+                        }.buttonStyle(.typographyBordered).buttonBorderShape(.capsule).controlSize(.small)
                         Text("Uses this prompt and your request. No recording is sent.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .uiFont(.callout).foregroundStyle(.secondary)
                     }.padding(.top, 8)
                 }
                 HStack {
@@ -42,23 +42,23 @@ struct PromptImprovementPanel: View {
                 if let error = session.improvementError { Text(error).foregroundStyle(.secondary).textSelection(.enabled) }
                 if let suggestion = session.suggestion {
                     Divider()
-                    Text("Suggested prompt").font(.headline)
+                    Text("Suggested prompt").uiFont(.headline)
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
-                        Text("• \(change)").font(.callout).foregroundStyle(.secondary)
+                        Text("• \(change)").uiFont(.callout).foregroundStyle(.secondary)
                     }
-                    Text(suggestion.response.prompt).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                    Text(suggestion.response.prompt).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                     if !session.canApplySuggestion {
                         Text("The prompt, request, or AI configuration changed. Generate a new suggestion.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .uiFont(.callout).foregroundStyle(.secondary)
                     }
                     HStack {
                         Button("Use suggestion") { session.applySuggestion() }
                             .modifier(PromptPrimaryAction()).disabled(!session.canApplySuggestion)
                         Button("Discard") { session.discardSuggestion() }
                     }
-                    Text("Replaces the draft. Save when you’re ready.").font(.caption).foregroundStyle(.secondary)
+                    Text("Replaces the draft. Save when you’re ready.").uiFont(.caption).foregroundStyle(.secondary)
                 }
             }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }

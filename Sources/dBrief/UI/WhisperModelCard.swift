@@ -74,7 +74,7 @@ struct TranscriptionModelCard<Actions: View>: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(Color.accentColor).accessibilityLabel("Selected")
                     }
-                    Text(title).font(.headline)
+                    Text(title).uiFont(.headline)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 8)
@@ -88,19 +88,19 @@ struct TranscriptionModelCard<Actions: View>: View {
                     ratings
                 }
             }
-            .font(.caption).foregroundStyle(.secondary)
-            Text(summary).font(.caption).foregroundStyle(.secondary)
+            .uiFont(.caption).foregroundStyle(.secondary)
+            Text(summary).uiFont(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let onChangeModel {
                 Divider()
                 HStack {
                     Text("Current model")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button(action: onChangeModel) {
                         Label("Change model…", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.regular)
                     .accessibilityHint("Opens the local transcription model picker")
                 }

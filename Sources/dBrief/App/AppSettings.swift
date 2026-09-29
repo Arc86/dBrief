@@ -543,6 +543,16 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(reduceNeon, forKey: Keys.reduceNeon) }
     }
 
+    /// App-wide viewer preferences. Existing reading keys remain the storage
+    /// authority; meeting profiles never override appearance or reading choices.
+    var viewerAppearance: ViewerAppearancePreferences {
+        didSet { viewerAppearance.save(to: .standard) }
+    }
+
+    var uiTypography: AppTypographyPreferences {
+        didSet { uiTypography.save(to: .standard) }
+    }
+
     /// Lifetime total of audio seconds dBrief has transcribed to text. A
     /// monotonically-increasing odometer that survives "Clear benchmark stats".
     var lifetimeTranscribedSeconds: Double {
@@ -914,6 +924,8 @@ final class AppSettings {
 
     init() {
         let defaults = UserDefaults.standard
+        self.viewerAppearance = ViewerAppearancePreferences.load(from: defaults)
+        self.uiTypography = AppTypographyPreferences.load(from: defaults)
 
         self.recordingFolderURL = Self.loadBookmarkURL(key: Keys.recordingFolderBookmark)
             ?? Self.defaultRecordingFolder()

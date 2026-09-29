@@ -82,7 +82,7 @@ struct SettingsProfilesTab: View {
     private var profileListPane: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Profiles")
-                .font(.headline)
+                .uiFont(.headline)
                 .padding(.leading, 2)
 
             List(selection: $selectedProfileId) {
@@ -99,7 +99,7 @@ struct SettingsProfilesTab: View {
 
             if let statusMessage {
                 Text(statusMessage)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -112,20 +112,20 @@ struct SettingsProfilesTab: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name)
-                    .font(.body.weight(.medium))
+                    .uiFont(.body.weight(.medium))
                     .lineLimit(1)
                 if profile.id == appSettings.activeProfileId {
                     Label("Saved selection", systemImage: "checkmark.seal.fill")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(Color.accentColor)
                 }
                 if profile.id == appSettings.automaticProfileId {
                     Text("Automatic selection")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 } else if profile.id != appSettings.activeProfileId && profile.preset == .custom {
                     Text("Custom profile")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -217,7 +217,7 @@ struct SettingsProfilesTab: View {
             .fixedSize()
             .help("More actions")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.typographyBorderless)
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
     }
@@ -230,13 +230,13 @@ struct SettingsProfilesTab: View {
             Form {
                 Section {
                     Text("Editing profile: \(selectedProfile.name)")
-                        .font(.headline)
+                        .uiFont(.headline)
                     Text("Overrides apply to recordings that use this profile. Opening this editor does not select it for recording. A running processing stage keeps its captured settings. Later stages may use updated settings.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     if selectedProfile.id == appSettings.automaticProfileId {
                         Text("Temporarily selected by automatic routing. Your saved profile selection is unchanged.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -249,7 +249,7 @@ struct SettingsProfilesTab: View {
                         }
                     }
                     Text("Automatic actions wait 10 seconds so you can choose Review instead. Processing uses this profile’s task defaults and configured destinations. Queue automatically saves the work for manual processing later.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
                 transcriptionOverridesSection
                 aiOverridesSection
@@ -284,7 +284,7 @@ struct SettingsProfilesTab: View {
                             rules.removeAll { $0.id == rule.id }
                             profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
                         } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.typographyBorderless)
                         .accessibilityLabel("Remove condition")
                     }
                 }
@@ -294,7 +294,7 @@ struct SettingsProfilesTab: View {
                     profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
                 }
                 Text("Every condition must match. Higher priority wins, then more conditions. Email domains match exactly. Empty conditions never match.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -341,12 +341,12 @@ struct SettingsProfilesTab: View {
 
                     if profile.id == appSettings.activeProfileId {
                         Label("Saved profile selection", systemImage: "checkmark.seal.fill")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(Color.accentColor)
                     } else {
                         Button("Use as saved profile") { appSettings.setActiveProfile(profile.id) }
                             .controlSize(.small)
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.typographyBordered)
                     }
                 }
             }
@@ -384,12 +384,12 @@ struct SettingsProfilesTab: View {
                 Button("Restore shared defaults…") {
                     isConfirmingSharedReset = true
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
             }
 
             ForEach(appSettings.warnings(for: profile), id: \.self) { warning in
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.orange)
             }
         }
@@ -453,7 +453,7 @@ struct SettingsProfilesTab: View {
                             defaultValue: appSettings.transcriptionLanguage) {
                     if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
                         Text("Language override is inactive with Parakeet.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     } else if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .appleSpeech {
                         AppleSpeechLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
@@ -468,7 +468,7 @@ struct SettingsProfilesTab: View {
                 }
                 if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
                     Text("Parakeet ignores the language selection. Any saved override is kept for other engines.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -495,7 +495,7 @@ struct SettingsProfilesTab: View {
                             defaultValue: appSettings.defaultTranscriptionEndpoint?.id) {
                     if appSettings.transcriptionEndpoints.isEmpty {
                         Text("No transcription services configured.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.transcriptionEndpointId,
@@ -521,7 +521,7 @@ struct SettingsProfilesTab: View {
             DisclosureGroup(isExpanded: $showAIOverrides) {
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
                     Text("AI analysis is off for this profile. You can configure its options for later use; transcription remains available.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 overrideRow("AI processing", \.aiProcessingEnabled,
@@ -543,7 +543,7 @@ struct SettingsProfilesTab: View {
                             defaultValue: appSettings.defaultAIEndpoint?.id) {
                     if appSettings.aiEndpoints.isEmpty {
                         Text("No AI providers configured.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.aiEndpointId,
@@ -565,7 +565,7 @@ struct SettingsProfilesTab: View {
                 }
                 if appSettings.localCLIConfig.effortProvider == .commandDefault {
                     Text("AI CLI effort is saved but inactive until Claude Code is selected as its effort provider.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
 
                 overrideRow("Calendar CLI effort", \.calendarCLIReasoningEffort,
@@ -577,7 +577,7 @@ struct SettingsProfilesTab: View {
                 }
                 if appSettings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true {
                     Text("Calendar effort is saved but not applicable to the selected Haiku model.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
 
                 if let profile = selectedProfile {
@@ -599,11 +599,11 @@ struct SettingsProfilesTab: View {
         Section {
             DisclosureGroup(isExpanded: $showTaskOverrides) {
                 Text("These are the default tasks after recording. The profile’s automation setting controls whether they start automatically.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
                     Text("Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 overrideRow("Transcription task", \.autoTranscribe,
@@ -669,10 +669,10 @@ struct SettingsProfilesTab: View {
         let active = keyPaths.filter { $0 }.count
         let total = keyPaths.count
         return HStack {
-            SettingsSearchHeading(LocalizedStringKey(title), section: section).font(.headline)
+            SettingsSearchHeading(LocalizedStringKey(title), section: section).uiFont(.headline)
             Spacer()
             Text("\(active) of \(total) overridden")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(active > 0 ? Color.accentColor : Color.secondary)
         }
     }
@@ -703,13 +703,13 @@ struct SettingsProfilesTab: View {
             }
             if let summary {
                 Text("\(enabled ? "App default" : "Use app default") — \(summary.defaultValue)")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .help(summary.defaultValue)
                 if let note = summary.note {
                     Text("\(note) Profile setting: \(summary.profileValue)")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -746,7 +746,7 @@ struct SettingsProfilesTab: View {
                         overrideBinding(keyPath, fallback: fallback).wrappedValue = url.path
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .controlSize(.small)
             }
         }

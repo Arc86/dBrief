@@ -4,9 +4,9 @@ import OSLog
 import dBriefWire
 
 /// Right-hand detail pane of the recording viewer. A calm shared document header
-/// sits above one of three views — Summary, Transcript, or Chat — switched from
-/// the toolbar. The active view is data-driven on open: Summary when a summary
-/// exists, otherwise Transcript.
+/// sits above Summary, Transcript, Actions, or Meeting Insights. Chat remains
+/// an independent inspector. The initial document is Summary when available,
+/// otherwise Transcript.
 struct TranscriptDetailView: View {
     let recording: Recording
     /// Called after the recording's files are deleted, so the browser can drop
@@ -16,17 +16,33 @@ struct TranscriptDetailView: View {
     @Environment(AppContext.self) private var context
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(TranscriptChatStore.self) private var chatStore
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.viewerReading) private var reading
+    @Environment(\.viewerMode) private var appearanceMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Persisted display preferences
-    @AppStorage("transcriptFontSize") private var fontSize: Int = 16
-    @AppStorage("showSpeakerNames") private var showSpeakerNames: Bool = true
+    private var showSpeakerNames: Bool {
+        get { context.appSettings.viewerAppearance.showSpeakerNames }
+        nonmutating set { context.appSettings.viewerAppearance.showSpeakerNames = newValue }
+    }
+    @State private var showReadingOptions = false
+    @State private var showTranscriptReadingOptions = false
+
+    private var readingPreferencesBinding: Binding<ViewerAppearancePreferences> {
+        Binding(
+            get: { context.appSettings.viewerAppearance },
+            set: { context.appSettings.viewerAppearance = $0 }
+        )
+    }
 
     /// Which content view is showing in the main pane.
-    private enum ViewerMode: Hashable { case summary, transcript }
-    @State private var mode: ViewerMode = .transcript
+    @State private var mode: ViewerDocumentMode = .transcript
+    @State private var analysisEditorPresented = false
+    @State private var analysisEditorBaseline: RecordingInsights?
+    @State private var analysisSaveError: String?
+    @FocusState private var transcriptSearchFocused: Bool
 
     /// Whether the assistant (chat) side panel is open beside the content.
     @AppStorage("transcriptAssistantOpen") private var assistantOpen = false
@@ -71,6 +87,7 @@ struct TranscriptDetailView: View {
     @State private var searchDebounce: Task<Void, Never>?
     /// Bumped to ask the transcript `ScrollViewReader` to scroll to the current match.
     @State private var searchScrollTick = 0
+    @State private var transcriptScrollFollow = TranscriptScrollFollowController()
 
     // Speaker reassignment
     @State private var customRenameTurn: SpeakerTurn?
@@ -178,26 +195,41 @@ struct TranscriptDetailView: View {
             } else if loadFailed {
                 failedState
             } else if richTranscript != nil {
-                // Header (and the toolbar search) stay full-width on top; the
-                // assistant panel sits beside the body region below the divider
-                // (a plain HStack, not `.inspector`, which spans the full window
-                // height and would overlap the header).
-                VStack(spacing: 0) {
+                ViewerDocumentLayout {
                     documentHeader
-                    Divider()
                     if isReprocessing {
                         Label("Reprocessing pending — current results are read-only. Manage the attempt in Queue & Recovery.", systemImage: "clock")
-                            .font(.callout).foregroundStyle(.secondary).padding(12)
+                            .uiFont(.callout).foregroundStyle(palette.secondary.color).padding(12)
                     } else if offerReanalysis { reanalysisBanner }
-                    HStack(spacing: 0) {
-                        bodyContent
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        if assistantOpen {
-                            assistantResizeHandle
-                            assistantPanel
-                        }
+                    if mode != .transcript, insights?.basedOnPreviousTranscript == true {
+                        Label("Based on the previous transcript", systemImage: "exclamationmark.circle")
+                            .uiFont(.callout)
+                            .foregroundStyle(palette.secondary.color)
+                            .frame(maxWidth: 920, alignment: .leading)
                     }
+                } document: {
+                    bodyContent
+                } playback: {
+                    if ViewerPresentationPolicy.showsPlayback(mode: mode,
+                        hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive) {
+                        playerBar
+                    }
+                } assistant: {
+                    HStack(spacing: 0) {
+                        assistantResizeHandle
+                        assistantPanel.padding(.vertical, 20).padding(.trailing, 20)
+                    }
+                    .frame(width: assistantOpen
+                        ? (assistantPanelLiveWidth ?? assistantPanelWidth) + 21
+                        : 0)
+                    .opacity(assistantOpen ? 1 : 0)
+                    .clipped()
+                    .allowsHitTesting(assistantOpen)
+                    .disabled(!assistantOpen)
+                    .accessibilityHidden(!assistantOpen)
+                    .animation(reduceMotion ? nil : ViewerMotion.panel, value: assistantOpen)
                 }
+                .background(palette.canvas.color)
             } else {
                 loadingState
             }
@@ -208,10 +240,15 @@ struct TranscriptDetailView: View {
         // what actually removes the duplicate.
         .navigationTitle("")
         .toolbar {
-            if context.recordingManager.reprocessingRecoveryReady || isCaptureLive { toolbarContent }
+            if (context.recordingManager.reprocessingRecoveryReady || isCaptureLive) && (isLive || richTranscript == nil) { toolbarContent }
         }
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
+        }
+        .onChange(of: assistantOpen) { _, isOpen in
+            // The animated panel stays mounted. Preserve the previous hide
+            // behavior, which stopped read-aloud through onDisappear.
+            if !isOpen { chatService?.stopReading() }
         }
         .onChange(of: context.recordingManager.reprocessingRecoveryReady) { _, ready in
             if !ready { invalidateDerivedWork(); richTranscript = nil; insights = nil }
@@ -226,13 +263,11 @@ struct TranscriptDetailView: View {
         .onChange(of: richTranscript) { _, newValue in
             displayedTurns = newValue?.speakerTurns() ?? []
         }
-        .modifier(TranscriptSearchableModifier(
-            enabled: !isLive,
-            query: $searchQuery,
-            isPresented: $isSearchPresented,
-            onSubmitSearch: gotoNextMatch))
         .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
+        .onChange(of: transcriptSearchFocused) { _, focused in
+            if focused { isSearchPresented = true }
+        }
         .onChange(of: isSearchPresented) { _, presented in
             if !presented {
                 searchQuery = ""
@@ -276,6 +311,12 @@ struct TranscriptDetailView: View {
                 recomputeSearch()
                 if !showSpeakerNames { showSpeakerNames = true }
                 if commit.offerReanalysis && hasSummary { offerReanalysis = true }
+            }
+        }
+        .sheet(isPresented: $analysisEditorPresented) {
+            if let baseline = analysisEditorBaseline {
+                RecordingAnalysisEditor(baseline: baseline, isReadOnly: isReprocessing, saveError: analysisSaveError,
+                    onSave: { await saveInsights($0) }, onCancel: { analysisEditorPresented = false })
             }
         }
         .sheet(isPresented: $showPrivacyReceipt) {
@@ -325,17 +366,68 @@ struct TranscriptDetailView: View {
     // MARK: - Document header
 
     private var documentHeader: some View {
-        RecordingDocumentHeader(
+        ViewerHeader(
             title: recording.generatedTitle ?? recording.meetingTitleDraft,
-            sentiment: insights?.sentiment,
-            speakers: headerSpeakers,
-            meetingPeople: PersonName.displayList(recording.participants + (recording.calendarEvent?.attendeeNames ?? [])),
-            onAssignSpeaker: isReprocessing ? nil : { speakerID, name in
-                renameSpeaker(speakerId: speakerID, to: name)
+            mode: $mode,
+            readingOptionsPresented: $showReadingOptions,
+            readingPreferences: readingPreferencesBinding,
+            unfinishedActions: insights?.unfinishedActionItems.count ?? 0,
+            assistantOpen: assistantOpen,
+            onToggleAssistant: {
+                assistantOpen.toggle()
+                if assistantOpen, chatService == nil { buildChatService() }
             },
-            date: recording.date,
-            metrics: headerMetrics
-        )
+            onPrivacyReceipt: { showPrivacyReceipt = true },
+            onDelete: { showDeleteConfirm = true }
+        ) {
+            documentCommands
+        }
+        .frame(maxWidth: 920)
+    }
+
+    private var documentCommands: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { Spacer(minLength: 0); copyAndEditCommands; processingCommands }
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) { Spacer(minLength: 0); copyAndEditCommands }
+                HStack(spacing: 8) { Spacer(minLength: 0); processingCommands }
+            }
+            VStack(alignment: .trailing, spacing: 8) { copyAndEditCommands; processingCommands }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .uiFont(.system(size: 12))
+        .buttonStyle(ViewerCommandButtonStyle())
+        .tint(palette.accentText.color)
+    }
+
+    @ViewBuilder private var copyAndEditCommands: some View {
+        Button { copySelectedDocument() } label: {
+            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+        }
+        if mode != .transcript {
+            Button {
+                analysisEditorBaseline = insights
+                analysisSaveError = nil
+                analysisEditorPresented = true
+            } label: { Label("Edit", systemImage: "pencil") }
+                .disabled(isReprocessing || insights == nil)
+        }
+    }
+
+    @ViewBuilder private var processingCommands: some View {
+        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Re-process")
+            .environment(context.appSettings)
+            .environment(context.recordingManager)
+            .environment(context.appState)
+        if mode == .summary {
+            Menu {
+                if hasSpokenSummary {
+                    Button("Play Spoken Summary") { Task { await playSavedSpokenSummary() } }
+                }
+                Button(hasSpokenSummary ? "Regenerate Spoken Summary" : "Generate Spoken Summary") { startSpokenSummary() }
+            } label: { Label("Spoken Summary", systemImage: "waveform") }
+                .disabled(isReprocessing || insights?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false)
+        }
     }
 
     /// Shown after a speaker rename changes who-said-what: offers to regenerate
@@ -345,7 +437,7 @@ struct TranscriptDetailView: View {
             Image(systemName: "person.text.rectangle")
                 .foregroundStyle(.secondary)
             Text("Speaker names changed — regenerate analysis?")
-                .font(.callout)
+                .uiFont(.callout)
             Spacer(minLength: 8)
             if isGenerating {
                 ProgressView().controlSize(.small)
@@ -354,15 +446,16 @@ struct TranscriptDetailView: View {
                     offerReanalysis = false
                     Task { await generateSummary() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.typographyProminent)
                 .controlSize(.small)
                 Button {
                     offerReanalysis = false
                 } label: {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
                 .help("Dismiss")
+                .accessibilityLabel("Dismiss speaker-name prompt")
             }
         }
         .padding(.horizontal, 14)
@@ -370,31 +463,6 @@ struct TranscriptDetailView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 12)
         .padding(.top, 8)
-    }
-
-    private var headerSpeakers: [HeaderSpeaker] {
-        // Respect the "Speaker Names" display toggle: when off, the header avatar
-        // stack hides too, matching the transcript rows.
-        guard showSpeakerNames else { return [] }
-        return uniqueSpeakerIds.map { id in
-            HeaderSpeaker(id: id, name: displayName(for: id), isMe: id == meSpeakerId)
-        }
-    }
-
-    /// Borderless metric group, built as a filtered array so dividers are always
-    /// correct: a metric appears only when its data exists.
-    private var headerMetrics: [ViewerMetric] {
-        var metrics: [ViewerMetric] = []
-        if let insights, !insights.actionItems.isEmpty {
-            metrics.append(ViewerMetric(id: "actions", label: "Actions", value: "\(insights.actionItems.count)"))
-        }
-        if let insights, !insights.tags.isEmpty {
-            metrics.append(ViewerMetric(id: "tags", label: "Tags", value: "\(insights.tags.count)"))
-        }
-        if recording.duration > 0 {
-            metrics.append(ViewerMetric(id: "audio", label: "Audio", value: recording.formattedDuration))
-        }
-        return metrics
     }
 
     // MARK: - Toolbar
@@ -411,15 +479,16 @@ struct TranscriptDetailView: View {
                 } label: {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .symbolVariant(showLiveChat ? .fill : .none)
-                        .foregroundStyle(showLiveChat ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(showLiveChat ? palette.accentText.color : palette.secondary.color)
                 }
                 .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
+                .accessibilityLabel(showLiveChat ? "Hide live chat" : "Show live chat")
                 .disabled(isReprocessing)
                 .accessibilityAddTraits(showLiveChat ? .isSelected : [])
             } else {
                 Picker("View", selection: $mode) {
-                    Text("Summary").tag(ViewerMode.summary)
-                    Text("Transcript").tag(ViewerMode.transcript)
+                    Text("Summary").tag(ViewerDocumentMode.summary)
+                    Text("Transcript").tag(ViewerDocumentMode.transcript)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -436,7 +505,7 @@ struct TranscriptDetailView: View {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
                         .symbolVariant(assistantOpen ? .fill : .none)
                 }
-                .foregroundStyle(assistantOpen ? Color.accentColor : Color.secondary)
+                .foregroundStyle(assistantOpen ? palette.accentText.color : palette.secondary.color)
                 .help(assistantOpen ? "Hide assistant" : "Chat with this transcript")
                 .accessibilityAddTraits(assistantOpen ? .isSelected : [])
             }
@@ -458,15 +527,16 @@ struct TranscriptDetailView: View {
                     .environment(context.appState)
             }
 
-            Menu {
-                Stepper(value: $fontSize, in: 12...24) {
-                    Text("Font Size: \(fontSize) pt")
-                }
-                Toggle("Speaker Names", isOn: $showSpeakerNames)
-            } label: {
+            Button { showReadingOptions.toggle() } label: {
                 Image(systemName: "textformat.size")
             }
             .help("Display options")
+            .accessibilityLabel("Display options")
+            .popover(isPresented: $showReadingOptions) {
+                ViewerPopoverContent {
+                    ViewerReadingOptions(preferences: readingPreferencesBinding)
+                }
+            }
 
             Button {
                 showPrivacyReceipt = true
@@ -488,7 +558,7 @@ struct TranscriptDetailView: View {
             if isSearching {
                 Divider()
                 Text(searchCounterLabel)
-                    .font(.caption.monospacedDigit())
+                    .uiFont(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .help("Search matches")
                 Button { gotoPrevMatch() } label: {
@@ -496,11 +566,13 @@ struct TranscriptDetailView: View {
                 }
                 .disabled(searchResult.matches.isEmpty)
                 .help("Previous match (⌘⇧G)")
+                .accessibilityLabel("Previous search match")
                 Button { gotoNextMatch() } label: {
                     Image(systemName: "chevron.down")
                 }
                 .disabled(searchResult.matches.isEmpty)
                 .help("Next match (⌘G)")
+                .accessibilityLabel("Next search match")
             }
         }
     }
@@ -509,45 +581,92 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var bodyContent: some View {
-        switch mode {
-        case .summary:    summaryBody
-        case .transcript: transcriptBody
+        Group {
+            switch mode {
+                case .summary:
+                    summaryBody.transition(documentModeTransition)
+                case .actions:
+                    RecordingActionsView(insights: insights,
+                        owners: recording.participants + (recording.calendarEvent?.attendeeNames ?? []),
+                        isReadOnly: isReprocessing, speakerLabels: richTranscript?.speakerLabels ?? [], isGenerating: isGenerating,
+                        canGenerate: richTranscript != nil && !isReprocessing,
+                        onGenerate: { Task { await generateSummary() } },
+                        onSetActionCompleted: { action, completed in
+                            guard !isReprocessing else { throw CancellationError() }
+                            guard let url = recording.insightsSidecarURL else { throw InsightsStoreError.noSidecarURL }
+                            let revision = context.recordingManager.reprocessingResultsRevision
+                            let saved = try await context.insightsStore.setActionCompleted(action, completed: completed, at: url)
+                            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { throw CancellationError() }
+                            insights = saved
+                            return saved
+                        })
+                        .transition(documentModeTransition)
+                case .meetingInsights:
+                    MeetingInsightsView(recording: recording, richTranscript: richTranscript, insights: insights,
+                                        isReadOnly: isReprocessing, onPrivacyReceipt: { showPrivacyReceipt = true }) {
+                        ForEach(uniqueSpeakerIds, id: \.self) { id in
+                            if let turn = displayedTurns.first(where: { $0.speakerId == id }) {
+                                speakerLabel(turn: turn, isMe: id == meSpeakerId)
+                            }
+                        }
+                    }
+                    .transition(documentModeTransition)
+                case .transcript:
+                    transcriptBody.transition(documentModeTransition)
+            }
         }
+        .animation(reduceMotion ? nil : ViewerMotion.document, value: mode)
     }
 
-    // MARK: - Summary
+    private var documentModeTransition: AnyTransition {
+        reduceMotion ? .identity : .opacity
+    }
 
     private var summaryBody: some View {
-        SummaryView(
-            insights: insights,
-            isGenerating: isGenerating,
-            canGenerate: richTranscript != nil && !isReprocessing,
-            actionItemOwners: recording.participants + (recording.calendarEvent?.attendeeNames ?? []),
-            isReadOnly: isReprocessing,
-            onGenerate: { Task { await generateSummary() } },
-            onSave: { updated in await saveInsights(updated) },
-            onCopy: { text in await RecordingClipboard.copy(text, for: recording) },
-            onSetActionCompleted: { action, completed in
-                guard !isReprocessing else { throw CancellationError() }
-                guard let url = recording.insightsSidecarURL else { throw InsightsStoreError.noSidecarURL }
-                let saved = try await context.insightsStore.setActionCompleted(action, completed: completed, at: url)
-                insights = saved
-                return saved
-            },
-            hasSpokenSummary: hasSpokenSummary,
-            onGenerateSpoken: { startSpokenSummary() },
-            onPlaySpoken: { Task { await playSavedSpokenSummary() } }
-        )
+        SummaryView(insights: insights, isGenerating: isGenerating,
+                    canGenerate: richTranscript != nil && !isReprocessing,
+                    isReadOnly: isReprocessing, onGenerate: { Task { await generateSummary() } })
     }
 
     // MARK: - Transcript
 
     private var transcriptBody: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundStyle(palette.secondary.color)
+                TextField("Search transcript", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .focused($transcriptSearchFocused)
+                    .onSubmit { gotoNextMatch() }
+                    .onExitCommand { transcriptSearchFocused = false; isSearchPresented = false }
+                    .accessibilityLabel("Search transcript")
+                if isSearching {
+                    Text(searchCounterLabel).uiFont(.caption.monospacedDigit()).foregroundStyle(palette.secondary.color)
+                    Button { gotoPrevMatch() } label: { Image(systemName: "chevron.up") }
+                        .disabled(searchResult.matches.isEmpty).help("Previous match (⌘⇧G)")
+                        .accessibilityLabel("Previous search match")
+                    Button { gotoNextMatch() } label: { Image(systemName: "chevron.down") }
+                        .disabled(searchResult.matches.isEmpty).help("Next match (⌘G)")
+                        .accessibilityLabel("Next search match")
+                    Button { searchQuery = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .help("Clear search")
+                        .accessibilityLabel("Clear search")
+                }
+                Button { showTranscriptReadingOptions.toggle() } label: { Image(systemName: "textformat.size") }
+                    .help("Display options").accessibilityLabel("Display options")
+                    .popover(isPresented: $showTranscriptReadingOptions) {
+                        ViewerPopoverContent {
+                            ViewerReadingOptions(preferences: readingPreferencesBinding)
+                        }
+                    }
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            Divider().overlay(palette.divider.color)
             transcriptList
-            Divider()
-            playerBar
         }
+        .modifier(ViewerCard())
+        .task { if isSearchPresented { transcriptSearchFocused = true } }
     }
 
     private var transcriptList: some View {
@@ -565,26 +684,39 @@ struct TranscriptDetailView: View {
                     transcriptRow(turn)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 3, leading: 36, bottom: 3, trailing: 36))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                         .id(turn.id)
                 }
             }
             .listStyle(.plain)
             .contentMargins(.vertical, 19, for: .scrollContent)
             .overlayScrollers()
+            .background(TranscriptScrollFollowObserver(controller: transcriptScrollFollow))
             .scrollContentBackground(.hidden)
             .scrollIndicators(.automatic)
+            .onAppear {
+                transcriptScrollFollow.resumeFollowing()
+                if let audioURL = recording.finalizedAudioURL, audioPlayer.currentFileURL == audioURL {
+                    currentTime = audioPlayer.currentTime
+                }
+            }
             .onChange(of: audioPlayer.currentTime) { oldTime, newTime in
+                guard let audioURL = recording.finalizedAudioURL,
+                      audioPlayer.currentFileURL == audioURL else { return }
                 currentTime = newTime
                 // Playback ticks at 10 Hz. Reissuing an animated scroll for the
                 // same row continually retargets the native List and makes it bounce.
-                guard let active = activeTurn(at: newTime),
+                guard transcriptScrollFollow.shouldFollow,
+                      let active = activeTurn(at: newTime),
                       active.id != activeTurn(at: oldTime)?.id else { return }
                 if reduceMotion {
                     proxy.scrollTo(active.id, anchor: .center)
                 } else {
                     withAnimation { proxy.scrollTo(active.id, anchor: .center) }
                 }
+            }
+            .onChange(of: audioPlayer.isPlaying) { _, isPlaying in
+                if isPlaying { transcriptScrollFollow.resumeFollowing() }
             }
             .onChange(of: searchScrollTick) { _, _ in
                 guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
@@ -601,7 +733,7 @@ struct TranscriptDetailView: View {
     /// Border drawn around the active speaker's presence dot — matches the panel
     /// base so the dot reads as sitting on the avatar.
     private var avatarRingBorder: Color {
-        colorScheme == .dark ? Color(hex: "07070b") : .white
+        palette.surface.color
     }
 
     /// One speaker turn: an avatar + connecting lane on the left, a capped-measure
@@ -612,16 +744,19 @@ struct TranscriptDetailView: View {
         let active = isTurnActive(turn)
         let hasSpeaker = turn.speakerId != nil
         let isMe = hasSpeaker && turn.speakerId == meSpeakerId
-        let color = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: turn.speakerId)
+        let color = ViewerSpeakerPalette.color(for: turn.speakerId, mode: appearanceMode).color
         let isLast = turn.id == displayedTurns.last?.id
 
         HStack(alignment: .top, spacing: 14) {
             if hasSpeaker {
                 avatarLane(turn: turn, color: color, active: active, drawLane: !isLast)
                     .frame(width: 34)
+            } else {
+                // Keep unattributed fragments on the same reading column.
+                Color.clear.frame(width: 34, height: 1)
             }
             turnContent(turn: turn, color: color, active: active, isMe: isMe, hasSpeaker: hasSpeaker)
-                .frame(maxWidth: 660, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
@@ -640,7 +775,7 @@ struct TranscriptDetailView: View {
                 if active { Circle().fill(color.opacity(0.25)).frame(width: 42, height: 42) }
             }
             .overlay(alignment: .bottomTrailing) {
-                if active { PresenceDot(border: avatarRingBorder) }
+                if active { PresenceDot(border: avatarRingBorder, color: color) }
             }
             if drawLane {
                 Capsule()
@@ -655,7 +790,7 @@ struct TranscriptDetailView: View {
     @ViewBuilder
     private func turnContent(turn: SpeakerTurn, color: Color, active: Bool, isMe: Bool, hasSpeaker: Bool) -> some View {
         // Highlighting must not change wrapping or row height while List scrolls.
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: CGFloat(reading.density.speakerHeaderGap)) {
             HStack(spacing: 10) {
                 if showSpeakerNames, hasSpeaker {
                     speakerLabel(turn: turn, isMe: isMe)
@@ -664,26 +799,23 @@ struct TranscriptDetailView: View {
                 Spacer(minLength: 8)
                 HStack(spacing: 5) {
                     if active {
-                        PulsingDot(color: Color(hex: "30d158"), size: 5)
+                        PulsingDot(color: color, size: 5)
                     } else {
                         Color.clear.frame(width: 5, height: 5)
                     }
-                    Text("PLAYING").font(.system(size: 10).monospaced())
+                    Text("PLAYING").uiFont(.system(size: 10).monospaced())
                 }
                 .foregroundStyle(color)
                 .opacity(active ? 1 : 0)
                 .accessibilityHidden(!active)
             }
-            ForEach(Array(paragraphs(for: turn).enumerated()), id: \.offset) { _, para in
-                Text(para)
-                    .font(.system(size: CGFloat(fontSize)))
-                    .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme).opacity(active ? 1 : 0.92))
-                    .lineSpacing(CGFloat(fontSize) * 0.45)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            ViewerTranscriptText(text: turn.text, paragraphRanges: turn.readingParagraphRanges,
+                matches: isSearching ? matchesByTurn[turn.id] ?? [] : [],
+                currentMatchIndex: currentMatchIndex)
+                .equatable()
         }
-        .padding(EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16))
+        .padding(EdgeInsets(top: transcriptRowPadding(turn), leading: 16,
+                           bottom: transcriptRowPadding(turn), trailing: 16))
         .background {
             if active {
                 RoundedRectangle(cornerRadius: 12)
@@ -696,8 +828,8 @@ struct TranscriptDetailView: View {
     private func timecodeChip(_ time: TimeInterval, color: Color?) -> some View {
         Button { seek(to: time) } label: {
             Text(timecode(time))
-                .font(.system(size: 11).monospaced())
-                .foregroundStyle(color ?? TranscriptDesignTokens.timestampText(scheme: colorScheme))
+                .uiFont(.system(size: 11).monospaced())
+                .foregroundStyle(color ?? palette.secondary.color)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1)
                 .background {
@@ -710,27 +842,10 @@ struct TranscriptDetailView: View {
         .help("Jump to this point")
     }
 
-    /// Splits the (search-highlighted) turn text back into per-segment paragraphs so
-    /// long monologues read as paragraphs. Slicing the already-highlighted string by
-    /// segment offsets keeps search-match positions intact.
-    private func paragraphs(for turn: SpeakerTurn) -> [AttributedString] {
-        let full = highlightedText(turn)
-        guard turn.segments.count > 1 else { return [full] }
-        let chars = full.characters
-        let total = chars.count
-        var result: [AttributedString] = []
-        var offset = 0
-        for seg in turn.segments {
-            if offset >= total { break }
-            let lower = chars.index(chars.startIndex, offsetBy: offset)
-            let upper = chars.index(lower, offsetBy: min(seg.text.count, total - offset))
-            let slice = AttributedString(full[lower..<upper])
-            if !String(slice.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.append(slice)
-            }
-            offset += seg.text.count + 1   // + the single space `SpeakerTurn.text` joins with
-        }
-        return result.isEmpty ? [full] : result
+    private func transcriptRowPadding(_ turn: SpeakerTurn) -> CGFloat {
+        CGFloat((turn.readingParagraphRanges.last?.upperBound ?? 0) < 120
+            ? min(reading.density.rowVerticalPadding, 9)
+            : reading.density.rowVerticalPadding)
     }
 
     private func speakerLabel(turn: SpeakerTurn, isMe: Bool) -> some View {
@@ -740,16 +855,17 @@ struct TranscriptDetailView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(displayName(for: id))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: id))
+                    .uiFont(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(ViewerSpeakerPalette.color(for: id, mode: appearanceMode).color)
                 if isMe {
                     Text("· You")
-                        .font(.system(size: 11))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
         .disabled(isReprocessing)
         .fixedSize()
         // The "Custom name…" typing fallback. Each turn's label carries the popover, but
@@ -857,40 +973,22 @@ struct TranscriptDetailView: View {
     }
 
     private func timecode(_ time: TimeInterval) -> String {
-        let total = Int(time)
+        guard time.isFinite else { return "—" }
+        let total = Int(min(max(0, time), Double(Int.max) / 2))
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Player
 
-    /// Proportional who-spoke-when timeline for the audio bar, merged from the
-    /// transcript's speaker segments (silence collapses into adjacent runs).
-    private var speakerStripSegments: [SpeakerStripSegment] {
-        guard let t = richTranscript else { return [] }
-        var segs: [SpeakerStripSegment] = []
-        for seg in t.segments {
-            let dur = max(0, seg.end - seg.start)
-            guard dur > 0 else { continue }
-            let key = seg.speakerId ?? "·nil"
-            let isMe = seg.speakerId != nil && seg.speakerId == meSpeakerId
-            let color = isMe ? Color.accentColor : TranscriptDesignTokens.speakerColor(for: seg.speakerId)
-            if !segs.isEmpty, segs[segs.count - 1].colorKey == key {
-                segs[segs.count - 1].weight += dur
-            } else {
-                segs.append(SpeakerStripSegment(colorKey: key, color: color, weight: dur))
-            }
-        }
-        // A single-speaker (or un-diarized) timeline adds no information.
-        return segs.count > 1 ? segs : []
-    }
-
     @ViewBuilder
     private var playerBar: some View {
         if let audioURL = recording.finalizedAudioURL {
-            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime, speakerStrip: speakerStripSegments)
+            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime,
+                                recordingDuration: recording.duration, segments: richTranscript?.segments ?? [],
+                                speakerLabels: richTranscript?.speakerLabels ?? [])
         } else {
             Text("Audio file not found")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(8)
         }
@@ -905,15 +1003,23 @@ struct TranscriptDetailView: View {
         }
     }
 
-    /// The assistant chat shown as a right-hand side panel below the document
-    /// header (collapsible via the toolbar Chat toggle, drag-resizable via the
-    /// handle on its leading edge). A side column below the header, so it sits
-    /// beside the body without the native `.inspector` chrome that would span the
-    /// full window height and overlap the header.
     private var assistantPanel: some View {
-        VStack(spacing: 0) {
-            assistantHeader
-            Divider()
+        ViewerAssistantPanel(
+            onDevice: isOnDeviceAI,
+            onClose: { assistantOpen = false },
+            onClearChat: { chatService?.clearMessages() },
+            clearChatDisabled: isReprocessing || chatService?.isStreaming != false || chatService?.messages.isEmpty != false,
+            onPromptSelected: { template in chatService?.draftInput = template.prompt },
+            promptTemplatesDisabled: isReprocessing || chatService?.isStreaming != false,
+            chatFontSize: Binding(
+                get: { context.appSettings.viewerAppearance.chatFontSize },
+                set: { size in
+                    var preferences = context.appSettings.viewerAppearance
+                    preferences.chatFontSize = size
+                    context.appSettings.viewerAppearance = preferences
+                }
+            )
+        ) {
             chatContent
         }
         .frame(width: assistantPanelLiveWidth ?? assistantPanelWidth)
@@ -922,7 +1028,8 @@ struct TranscriptDetailView: View {
     /// Draggable divider on the panel's leading edge. Dragging left widens the
     /// panel; the new width is clamped and persisted via `assistantPanelWidth`.
     private var assistantResizeHandle: some View {
-        Divider()
+        Color.clear
+            .frame(width: 1)
             .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()))
             .gesture(
                 // Measure in `.global` space: the handle moves as the panel
@@ -950,34 +1057,18 @@ struct TranscriptDetailView: View {
             .onHover { inside in
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
-    }
-
-    private var assistantHeader: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 24, height: 24)
-                .background(TranscriptDesignTokens.brandFill(calm: calm), in: RoundedRectangle(cornerRadius: 7))
-            Text("dBrief Assistant")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-            Spacer(minLength: 8)
-            if isOnDeviceAI {
-                Text("ON-DEVICE")
-                    .font(.system(size: 10).monospaced())
-                    .tracking(0.8)
-                    .foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Assistant width")
+            .accessibilityValue("\(Int(assistantPanelLiveWidth ?? assistantPanelWidth)) points")
+            .accessibilityAdjustableAction { direction in
+                let delta: Double
+                switch direction {
+                case .increment: delta = 20
+                case .decrement: delta = -20
+                @unknown default: return
+                }
+                assistantPanelWidth = min(max(assistantPanelWidth + delta, assistantPanelWidthRange.lowerBound), assistantPanelWidthRange.upperBound)
             }
-            Button { assistantOpen = false } label: {
-                Image(systemName: "xmark").font(.caption2).foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Hide assistant")
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 52)
-        .background(.bar)
     }
 
     // MARK: - Chat
@@ -993,7 +1084,7 @@ struct TranscriptDetailView: View {
                 Spacer()
                 ProgressView()
                 Text("Preparing chat…")
-                    .font(.callout)
+                    .uiFont(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -1013,7 +1104,7 @@ struct TranscriptDetailView: View {
                 Image(systemName: "bubble.left.and.bubble.right")
                     .foregroundStyle(.secondary)
                 Text("Chat")
-                    .font(.caption.weight(.semibold))
+                    .uiFont(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
@@ -1025,6 +1116,7 @@ struct TranscriptDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Hide chat")
+                .accessibilityLabel("Hide live chat")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -1059,11 +1151,11 @@ struct TranscriptDetailView: View {
                     .fill(isProcessingLive ? Color.orange : Color.red)
                     .frame(width: 9, height: 9)
                 Text(isProcessingLive ? (step?.name ?? "Processing…") : "Recording — live transcript")
-                    .font(.caption.weight(.semibold))
+                    .uiFont(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(liveSegments.count) segments")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             if let progress = step?.progress {
@@ -1072,7 +1164,7 @@ struct TranscriptDetailView: View {
             }
             if let detail = step?.detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1156,15 +1248,15 @@ struct TranscriptDetailView: View {
                 ProgressView()
             }
             Text(headline)
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
             if isProcessingLive, let detail = inProgressStep?.detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Text(subtitle)
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -1175,13 +1267,13 @@ struct TranscriptDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             if showSpeakerNames, let id = turn.speakerId {
                 Text(id)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TranscriptDesignTokens.speakerColor(for: id))
+                    .uiFont(.caption.weight(.semibold))
+                    .foregroundStyle(ViewerSpeakerPalette.color(for: id, mode: appearanceMode).color)
             }
             Text(turn.text)
-                .font(.system(size: CGFloat(fontSize)))
-                .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-                .lineSpacing(CGFloat(fontSize) * 0.4)
+                .font(ViewerFonts.font(for: reading, effectiveMode: appearanceMode))
+                .foregroundStyle(palette.text.color)
+                .lineSpacing(ViewerFonts.additionalLineSpacing(for: reading, effectiveMode: appearanceMode))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1192,11 +1284,14 @@ struct TranscriptDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             if showSpeakerNames {
                 Text(speaker)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TranscriptDesignTokens.speakerColor(for: speaker))
+                    .uiFont(.caption.weight(.semibold))
+                    .foregroundStyle(ViewerSpeakerPalette.color(for: speaker, mode: appearanceMode).color)
             }
             Text(text)
-                .font(.system(size: CGFloat(fontSize)).italic())
+                .font(reading.readingFont == .openDyslexic
+                      ? ViewerFonts.font(for: reading, effectiveMode: appearanceMode)
+                      : ViewerFonts.font(for: reading, effectiveMode: appearanceMode).italic())
+                .lineSpacing(ViewerFonts.additionalLineSpacing(for: reading, effectiveMode: appearanceMode))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1221,7 +1316,7 @@ struct TranscriptDetailView: View {
             Text("Transcript unavailable")
                 .foregroundStyle(.secondary)
             Button("Rebuild") { rebuildTranscript() }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .disabled(isReprocessing)
             Spacer()
         }
@@ -1323,9 +1418,12 @@ struct TranscriptDetailView: View {
     }
 
     private func seek(to time: TimeInterval) {
-        guard let audioURL = recording.finalizedAudioURL else { return }
+        guard time.isFinite, let audioURL = recording.finalizedAudioURL,
+              FileManager.default.fileExists(atPath: audioURL.path) else { return }
+        transcriptScrollFollow.resumeFollowing()
         if audioPlayer.currentFileURL != audioURL { audioPlayer.play(url: audioURL) }
-        audioPlayer.seek(to: time)
+        guard audioPlayer.currentFileURL == audioURL, audioPlayer.duration.isFinite, audioPlayer.duration > 0 else { return }
+        audioPlayer.seek(to: min(audioPlayer.duration, max(0, time)))
     }
 
     private func setMeSpeaker(_ id: String?) {
@@ -1345,6 +1443,29 @@ struct TranscriptDetailView: View {
     private func copyTranscript() {
         guard let transcript = richTranscript else { return }
         let text = transcript.segments.map { $0.text }.joined(separator: "\n")
+        Task {
+            copied = await RecordingClipboard.copy(text, for: recording)
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+
+    private func copySelectedDocument() {
+        let text: String
+        switch mode {
+        case .transcript:
+            copyTranscript()
+            return
+        case .summary:
+            text = insights?.summary ?? ""
+        case .actions:
+            text = insights?.actionItems.map { action in
+                "- [\(insights?.completedActions.contains(action) == true ? "x" : " ")] \(action)"
+            }.joined(separator: "\n") ?? ""
+        case .meetingInsights:
+            text = MeetingInsightsCopy.text(recording: recording, richTranscript: richTranscript, insights: insights)
+        }
+        guard !text.isEmpty else { return }
         Task {
             copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))
@@ -1501,11 +1622,11 @@ struct TranscriptDetailView: View {
     }
 
     /// Zero-size buttons that register Find keyboard shortcuts without adding any
-    /// visible UI (the `.searchable` field is the only visible search affordance):
+    /// visible UI (the card header owns the visible search field):
     /// ⌘F focuses search, ⌘G / ⌘⇧G step next/previous match.
     private var findShortcuts: some View {
         Group {
-            Button("") { if !isLive { isSearchPresented = true } }
+            Button("") { if !isLive { mode = .transcript; isSearchPresented = true; transcriptSearchFocused = true } }
                 .keyboardShortcut("f", modifiers: .command)
             Button("") { gotoNextMatch() }
                 .keyboardShortcut("g", modifiers: .command)
@@ -1519,24 +1640,6 @@ struct TranscriptDetailView: View {
 
     /// Builds the row text with search highlights. Returns plain (un-highlighted)
     /// text when there is no active query or no matches in this turn.
-    private func highlightedText(_ turn: SpeakerTurn) -> AttributedString {
-        var attr = AttributedString(turn.text)
-        guard isSearching, let turnMatches = matchesByTurn[turn.id], !turnMatches.isEmpty else {
-            return attr
-        }
-        let chars = attr.characters
-        let count = chars.count
-        for match in turnMatches {
-            guard match.location >= 0, match.location + match.length <= count else { continue }
-            let lower = chars.index(chars.startIndex, offsetBy: match.location)
-            let upper = chars.index(lower, offsetBy: match.length)
-            attr[lower..<upper].backgroundColor = match.globalIndex == currentMatchIndex
-                ? TranscriptDesignTokens.searchHighlightCurrent(scheme: colorScheme)
-                : TranscriptDesignTokens.searchHighlight(scheme: colorScheme)
-        }
-        return attr
-    }
-
     // MARK: - Persistence
 
     private func saveTranscript(_ transcript: RichTranscript) {
@@ -1606,31 +1709,48 @@ struct TranscriptDetailView: View {
     }
 
     private func saveInsights(_ updated: RecordingInsights) async {
-        guard !isReprocessing else { return }
+        analysisSaveError = nil
+        guard !isReprocessing else {
+            analysisSaveError = "Reprocessing is in progress. Your draft has been kept."
+            return
+        }
+        guard let baseline = analysisEditorBaseline, let url = recording.insightsSidecarURL else {
+            analysisSaveError = InsightsStoreError.noSidecarURL.localizedDescription
+            return
+        }
         let revision = context.recordingManager.reprocessingResultsRevision
         do {
-            try await context.insightsStore.save(updated, for: recording)
-            let saved = try await context.insightsStore.load(for: recording)
-            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { return }
+            let saved = try await context.insightsStore.saveAnalysisEdit(updated, basedOn: baseline, to: url)
+            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else {
+                throw CancellationError()
+            }
             insights = saved
-            if let path = updated.markdownPath {
-                let url = URL(fileURLWithPath: path)
-                if FileManager.default.fileExists(atPath: url.path) {
-                    let receiptContext = await recording.privacyContext()
-                    try? await PrivacyTrace.$context.withValue(receiptContext) {
-                        try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text, .metadata],
-                                                             destination: .local(provider: .fileSystem))) {
-                            // Re-read after receipt I/O so concurrent user edits
-                            // aren't replaced using an older in-memory note.
-                            guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else { throw CancellationError() }
-                            let existing = try String(contentsOf: url, encoding: .utf8)
-                            let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: updated)
-                            try rewritten.write(to: url, atomically: true, encoding: .utf8)
+            if let path = saved.markdownPath {
+                let markdownURL = URL(fileURLWithPath: path)
+                if FileManager.default.fileExists(atPath: markdownURL.path) {
+                    do {
+                        let receiptContext = await recording.privacyContext()
+                        try await PrivacyTrace.$context.withValue(receiptContext) {
+                            try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text, .metadata],
+                                                                 destination: .local(provider: .fileSystem))) {
+                                let latest = try await context.insightsStore.load(from: url) ?? saved
+                                guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else {
+                                    throw CancellationError()
+                                }
+                                let existing = try String(contentsOf: markdownURL, encoding: .utf8)
+                                let rewritten = MarkdownInsightsUpdater.update(markdown: existing, with: latest)
+                                try rewritten.write(to: markdownURL, atomically: true, encoding: .utf8)
+                            }
                         }
+                    } catch {
+                        analysisSaveError = "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. \(error.localizedDescription)"
+                        return
                     }
                 }
             }
+            analysisEditorPresented = false
         } catch {
+            analysisSaveError = "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)"
             Logger.recording.error("Failed to save insights sidecar")
         }
     }
@@ -1697,7 +1817,7 @@ struct TranscriptDetailView: View {
 
         // Data-driven default view: Summary when one exists, else Transcript.
         // A resumed (non-empty) chat opens the assistant panel beside it.
-        mode = hasSummary ? .summary : .transcript
+        mode = ViewerPresentationPolicy.initialMode(hasSummary: hasSummary)
         if resumedChat { assistantOpen = true }
         recomputeSearch()
     }
@@ -1754,42 +1874,20 @@ struct PulsingDot: View {
     }
 }
 
-/// Green presence dot with a panel-matching border, pulsing on the active avatar.
+/// Speaker-coloured presence dot with a panel-matching border, pulsing on the active avatar.
 struct PresenceDot: View {
     let border: Color
+    let color: Color
     @State private var on = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Circle()
-            .fill(Color(hex: "30d158"))
+            .fill(color)
             .frame(width: 9, height: 9)
             .overlay(Circle().strokeBorder(border, lineWidth: 2))
             .scaleEffect(reduceMotion ? 1 : (on ? 1.1 : 0.9))
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
             .onAppear { on = !reduceMotion }
             .accessibilityHidden(true)
-    }
-}
-
-/// Applies the native macOS toolbar search field only when `enabled` (finished
-/// recordings). On macOS the field shows full-width when the toolbar has room and
-/// collapses to a magnifying-glass loupe when the window is narrow — no extra code.
-private struct TranscriptSearchableModifier: ViewModifier {
-    let enabled: Bool
-    @Binding var query: String
-    @Binding var isPresented: Bool
-    let onSubmitSearch: () -> Void
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content
-                .searchable(text: $query,
-                            isPresented: $isPresented,
-                            placement: .toolbar,
-                            prompt: "Search transcript")
-                .onSubmit(of: .search, onSubmitSearch)
-        } else {
-            content
-        }
     }
 }

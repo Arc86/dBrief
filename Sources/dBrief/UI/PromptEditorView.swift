@@ -29,7 +29,7 @@ struct PromptEditorView: View {
             }
             if let error = session.errorMessage {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(error).font(.callout).textSelection(.enabled)
+                    Text(error).uiFont(.callout).textSelection(.enabled)
                     Button("Reload saved") { try? session.reloadSaved() }
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -43,25 +43,26 @@ struct PromptEditorView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(session.draft.baseline.scopeName, systemImage: session.identity.scope == .appDefaults ? "slider.horizontal.3" : "person.crop.circle")
-                .font(.callout.weight(.medium))
+                .uiFont(.callout.weight(.medium))
                 .padding(.horizontal, 11).padding(.vertical, 6)
                 .background(.quaternary, in: Capsule())
             Text(session.identity.scope == .appDefaults ? "Shared with inheriting profiles" : "Changes apply to this profile")
-                .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                .uiFont(.callout).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
         }.padding(.horizontal, 22).padding(.vertical, 10)
     }
     private var editor: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Text("Instructions").font(.headline)
+                Text("Instructions").uiFont(.headline)
                 Spacer()
                 Menu {
                     ForEach(session.identity.kind.templates) { template in
                         Button(template.name) { session.applyText(template.text) }
                     }
                 } label: { Image(systemName: "doc.badge.plus") }
-                .menuStyle(.borderlessButton).fixedSize()
+                .menuStyle(.button)
+        .buttonStyle(.typographyBorderless).fixedSize()
                 .help("Start from a template").accessibilityLabel("Start from a template")
                 .disabled(session.identity.kind.templates.isEmpty)
                 ControlGroup {
@@ -71,13 +72,13 @@ struct PromptEditorView: View {
                         .disabled(fontSize >= 22).accessibilityLabel("Increase prompt text size")
                 }.fixedSize()
             }.padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 6)
-            Text(session.identity.kind.description).font(.callout).foregroundStyle(.secondary)
+            Text(session.identity.kind.description).uiFont(.callout).foregroundStyle(.secondary)
                 .padding(.horizontal, 22).padding(.bottom, 8)
             PromptTextEditor(session: session, fontSize: fontSize)
             DisclosureGroup("Output format") {
-                Text(session.identity.kind.outputContract).font(.caption).foregroundStyle(.secondary)
+                Text(session.identity.kind.outputContract).uiFont(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 12)
+            }.uiFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 12)
         }
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -106,9 +107,9 @@ struct PromptEditorView: View {
         HStack(spacing: 12) {
             Label(session.draft.hasChanges ? "Unsaved changes" : "All changes saved",
                   systemImage: session.draft.hasChanges ? "circle.fill" : "checkmark.circle")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
             Spacer()
-            Button("Close", action: close).buttonStyle(.borderless)
+            Button("Close", action: close).buttonStyle(.typographyBorderless)
             Button("Save changes") { try? session.save() }
                 .keyboardShortcut("s", modifiers: .command)
                 .modifier(PromptPrimaryAction()).disabled(!session.draft.canSave)

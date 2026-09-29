@@ -50,6 +50,9 @@ final class TranscriptChatService {
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
     private(set) var streamingNotice: String? = nil
+    /// A draft belongs to this recording's existing session, so hiding its
+    /// inspector does not discard it. It is deliberately not a sidecar field.
+    var draftInput = ""
     let speechPlayer = VoicePreviewPlayer()
     private(set) var spokenMessageID: UUID?
     private var speechTask: Task<Void, Never>?
@@ -58,6 +61,36 @@ final class TranscriptChatService {
         await RecordingClipboard.copy(message.displayParts.answer, contextProvider: {
             await self.privacyRecording?.privacyContext()
         })
+    }
+
+    func canExportAnswer(_ message: ChatMessage) -> Bool {
+        guard !invalidated, message.role == .assistant,
+              let current = messages.first(where: { $0.id == message.id }),
+              current.role == .assistant,
+              !(isStreaming && messages.last?.id == current.id) else { return false }
+        return !current.displayParts.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Export only a completed answer still owned by this session. Recheck after
+    /// receipt I/O: a save panel can outlive clearing or reprocessing the chat.
+    func exportAnswer(_ message: ChatMessage, format: ChatAnswerExportFormat, to destination: URL) async throws {
+        guard canExportAnswer(message) else { throw answerExportUnavailable }
+        let context = await privacyRecording?.privacyContext()
+        try await PrivacyTrace.$context.withValue(context) {
+            try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text],
+                                                 destination: .local(provider: .fileSystem))) {
+                guard canExportAnswer(message),
+                      let current = messages.first(where: { $0.id == message.id }) else {
+                    throw answerExportUnavailable
+                }
+                try ChatAnswerExport.write(ChatAnswerExport.payload(for: current, format: format), to: destination)
+            }
+        }
+    }
+
+    private var answerExportUnavailable: NSError {
+        NSError(domain: "dBrief.AnswerExport", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "This answer is no longer available to export. Wait for it to finish, or reopen the current conversation."])
     }
 
     func toggleReadAloud(_ message: ChatMessage) {

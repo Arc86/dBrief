@@ -39,7 +39,7 @@ struct ProcessingQueueView: View {
                         Image(systemName: "waveform").foregroundStyle(.secondary)
                             .frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(job.recording.meetingTitleDraft).font(.callout).lineLimit(1)
+                            Text(job.recording.meetingTitleDraft).uiFont(.callout).lineLimit(1)
                             RecordingListStatus(title: "Processing", systemImage: "arrow.triangle.2.circlepath")
                         }
                         Spacer(minLength: 0)
@@ -72,11 +72,11 @@ struct ProcessingQueueView: View {
 
                 if let error = manager.queueLoadError {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.caption).fixedSize(horizontal: false, vertical: true)
+                        .uiFont(.caption).fixedSize(horizontal: false, vertical: true)
                 }
                 if hasPendingWork {
                     Text("Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .uiFont(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -95,14 +95,14 @@ struct ProcessingQueueView: View {
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
                         Button("Process Queue") { Task { await manager.startProcessingQueue() } }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.typographyProminent)
                             .disabled(manager.queueLoadError != nil)
                     }
                 }
                 .disabled(editing)
             }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.typographyBordered)
         .controlSize(.small)
         .task { await manager.refreshWorkQueue() }
         .onChange(of: appState.processingJob?.id) { _, _ in Task { await manager.refreshWorkQueue() } }
@@ -127,7 +127,7 @@ struct ProcessingQueueView: View {
         }
         if !manager.recoveryQueueEntries.isEmpty {
             if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
-            Text("Needs attention").font(.caption.weight(.semibold))
+            Text("Needs attention").uiFont(.caption.weight(.semibold))
                 .foregroundStyle(.secondary).padding(.horizontal, 6)
             ForEach(manager.recoveryQueueEntries) { entry in
                 recoveryRow(entry)
@@ -143,10 +143,10 @@ struct ProcessingQueueView: View {
                 Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
             } metadata: {
                 Text("\(request?.options.operation.title ?? "Reprocessing") · \(attempt.status == .queued ? "Queued" : "Needs attention")")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             } actions: {
                 VStack(alignment: .leading, spacing: 6) {
-                    if let message = attempt.message { Text(message).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                    if let message = attempt.message { Text(message).uiFont(.caption).fixedSize(horizontal: false, vertical: true) }
                     HStack {
                         RecordingListAction(title: "Resume", systemImage: "play") {
                             Task { await manager.resumeReprocessing(attempt.id) }
@@ -165,7 +165,7 @@ struct ProcessingQueueView: View {
         return RecordingListRow(title: title, expanded: expandedItem == key, toggle: {
             expandedItem = expandedItem == key ? nil : key
         }) {
-            Text("\(index + 1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            Text("\(index + 1)").uiFont(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 .accessibilityLabel("Queue position \(index + 1)")
         } metadata: {
             HStack(spacing: 6) {
@@ -213,7 +213,7 @@ struct ProcessingQueueView: View {
         } actions: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(entry.status + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .uiFont(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {
                     RecordingListAction(title: entry.isDelivery ? "Integrations…" : "Resume",

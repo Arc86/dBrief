@@ -56,7 +56,7 @@ struct SettingsCalendarCLISection: View {
                             Label("Refresh today", systemImage: "arrow.clockwise")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .disabled(refreshState == .running || !config.isConfigured)
 
                     Button {
@@ -108,7 +108,7 @@ struct SettingsCalendarCLISection: View {
                     ), recommendation: .low)
                     if config.modelID == nil || (config.modelID != "sonnet" && config.modelID != "opus") {
                         Text("Support depends on your Claude model.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.caption).foregroundStyle(.secondary)
                     }
                 }
 
@@ -316,6 +316,6 @@ struct SettingsCalendarCLISection: View {
                 EmptyView()
             }
         }
-        .font(.caption)
+        .uiFont(.caption)
     }
 }

@@ -12,11 +12,11 @@ struct PromptSettingsRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text(kind.title)
-                    Text(status(snapshot)).font(.caption).foregroundStyle(.secondary)
+                    Text(status(snapshot)).uiFont(.caption).foregroundStyle(.secondary)
                 }
                 if let snapshot {
                     Text(PromptDraft(snapshot: snapshot).text)
-                        .font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                        .uiFont(.callout).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

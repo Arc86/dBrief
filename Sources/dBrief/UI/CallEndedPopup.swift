@@ -37,12 +37,12 @@ struct CallEndedPopup: View {
                     BrandKicker("Call ended", color: Brand.coral)
 
                     Text("\(appState.callEndedApp ?? "Call") ended")
-                        .font(.system(size: 15, weight: .bold))
+                        .uiFont(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
                     Text("Stop recording and brief it?")
-                        .font(.system(size: 13))
+                        .uiFont(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
@@ -50,7 +50,7 @@ struct CallEndedPopup: View {
                         Button("Keep recording") {
                             appState.showCallEndedPopup = false
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.regular)
 
                         Button {
@@ -65,7 +65,7 @@ struct CallEndedPopup: View {
                                     .font(.system(size: 12, weight: .bold))
                                 Text("Stop")
                             }
-                            .font(.system(size: 13, weight: .bold))
+                            .uiFont(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 7)

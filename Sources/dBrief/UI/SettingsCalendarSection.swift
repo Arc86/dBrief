@@ -33,7 +33,7 @@ struct SettingsCalendarSection: View {
             case .iCal:
                 if calendarStatus == .fullAccess {
                     Text("Looks up the matching calendar event when a recording stops and pre-fills title, participants, and agenda context.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
 
                     LabeledContent("Calendars") {
@@ -75,11 +75,11 @@ struct SettingsCalendarSection: View {
                                     .font(.caption2.weight(.semibold))
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                     }
 
                     Text("Only events from the selected calendars are considered for automatic matching and the post-recording Meeting picker.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if settings.selectedICalCalendarIDs?.isEmpty == true {
@@ -87,19 +87,19 @@ struct SettingsCalendarSection: View {
                             "No calendars selected. iCal matching will return no meetings.",
                             systemImage: "exclamationmark.triangle.fill"
                         )
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                     } else if unavailableICalCalendarCount > 0 {
                         Label(
                             unavailableICalCalendarMessage,
                             systemImage: "exclamationmark.triangle.fill"
                         )
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                     }
                 } else {
                     Text("Grant Calendar access in the Permissions tab to enable this.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -110,14 +110,14 @@ struct SettingsCalendarSection: View {
                             Text(microsoftAuthService.accountInfo?.displayName ?? "Microsoft Account")
                                 .fontWeight(.medium)
                             Text(microsoftAuthService.accountInfo?.email ?? "")
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Sign out") {
                             microsoftAuthService.signOut()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
@@ -131,10 +131,10 @@ struct SettingsCalendarSection: View {
                                 }
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.typographyProminent)
                         if let error = outlookSignInError {
                             Text(error)
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.red)
                         }
                     }

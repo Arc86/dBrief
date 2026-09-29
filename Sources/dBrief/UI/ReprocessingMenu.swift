@@ -9,6 +9,7 @@ enum ReprocessingMenuPresentationStyle: Equatable {
 struct ReprocessingMenu: View {
     let recording: Recording
     var hasTranscript = true
+    var label: String? = nil
     var presentationStyle: ReprocessingMenuPresentationStyle = .sheet
     @Environment(RecordingManager.self) private var manager
     @State private var showCalendarLink = false
@@ -39,7 +40,7 @@ struct ReprocessingMenu: View {
             Divider()
             Button("Restore previous results") { restore() }.disabled(!canRestore)
         } label: {
-            Label(hasTranscript ? "Reprocess" : "Transcribe", systemImage: "arrow.trianglehead.2.clockwise")
+            Label(label ?? (hasTranscript ? "Reprocess" : "Transcribe"), systemImage: "arrow.trianglehead.2.clockwise")
         }
         .disabled(locked || isRestoring || !manager.reprocessingRecoveryReady)
         .help(locked ? "This recording has a pending attempt in Queue & Recovery" : "Reprocess this recording")
@@ -111,9 +112,9 @@ struct ReprocessingRecoveryView: View {
                 ProgressView("Checking saved recording results…")
             } else {
                 Label("Recording recovery needs attention", systemImage: "exclamationmark.triangle")
-                    .font(.headline)
+                    .uiFont(.headline)
                 Text(appState.lastError ?? "Saved results are not ready to open.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .uiFont(.callout).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).textSelection(.enabled)
             }
             Button("Retry Recovery") {

@@ -25,7 +25,7 @@ struct PromptEnginePicker: View {
             Text(session.identity.kind == .voiceStyle && session.panel == .preview
                  ? "Applies to AI improvements. Audio uses your configured voice."
                  : "For this window only · app settings stay unchanged")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         }
     }
 }

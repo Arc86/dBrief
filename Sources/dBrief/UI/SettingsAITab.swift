@@ -32,7 +32,7 @@ struct SettingsAITab: View {
                     SettingsSearchHeading("AI Analysis", section: .aiEnabled)
                 } footer: {
                     Text("Controls summary, action-item, and tag analysis by default. Transcription remains available. Profiles can override this setting.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
@@ -52,12 +52,12 @@ struct SettingsAITab: View {
                     }
                     .pickerStyle(.menu)
                     Text(engineDescription(for: settings.aiEngine))
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     if (appSettings.powerUserMode || searchAdvanced), (settings.aiEngine == .qwenLocal || (searchAdvanced && searchRequest?.section == .aiEngine)) {
                         if settings.aiEngine != .qwenLocal {
                             Text("These model options apply to the local Gemma engine.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                         Picker("Output language", selection: outputLanguageSelectionBinding) {
                             Text("Match transcript").tag("matchInput")
@@ -96,11 +96,11 @@ struct SettingsAITab: View {
                                 }
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                         if let purgeMessage {
                             Text(purgeMessage)
-                                .font(.caption2)
+                                .uiFont(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -126,7 +126,7 @@ struct SettingsAITab: View {
                     Section("Local CLI", settingsSearch: .aiCLI) {
                         if appSettings.aiEngine != .localCLI {
                             Text("These options apply when Local CLI is selected as the AI engine.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                         localCLISection
                     }
@@ -221,7 +221,8 @@ struct SettingsAITab: View {
                             }
                         }
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
                     .fixedSize()
                 }
 
@@ -238,7 +239,7 @@ struct SettingsAITab: View {
                         }
                     ))
                     Text("An explicit --model option or inline ANTHROPIC_MODEL assignment in the command takes precedence over this picker.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
 
                 HStack {
@@ -280,19 +281,19 @@ struct SettingsAITab: View {
                         }
                     ), recommendation: .medium)
                     Text("The effort setting applies to this child process. An inline environment assignment in a custom command can override it.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("Select Claude Code as the effort provider for a Claude wrapper command. Other commands keep their own settings.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(.secondary)
                 }
 
                 Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout. The command runs with your login shell's PATH; if a tool still isn't found, use its absolute path (find it with `which <tool>` in Terminal).")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 8) {
                     Button("Test command") { testCLICommand() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                         .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if isTestingCLI {
@@ -302,7 +303,7 @@ struct SettingsAITab: View {
 
                 if let cliTestSuccess {
                     Text(cliTestSuccess.isEmpty ? "Command ran successfully (no output)." : "Output: \(cliTestSuccess)")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.green)
                         .lineLimit(4)
                         .textSelection(.enabled)
@@ -335,11 +336,11 @@ struct SettingsAITab: View {
             }
             .pickerStyle(.menu)
             Text("The Local CLI runs once per recording and can't stream, so the transcript chat window uses this engine instead.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             if appSettings.chatFallbackEngine == .remoteEndpoint {
                 Text("Chat uses the default endpoint selected below.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -385,7 +386,8 @@ struct SettingsAITab: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+        .buttonStyle(.typographyBorderless)
                 .fixedSize()
 
                 Button {
@@ -397,7 +399,7 @@ struct SettingsAITab: View {
                     Image(systemName: "minus")
                 }
                 .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Spacer()
 
@@ -405,7 +407,7 @@ struct SettingsAITab: View {
                     appSettings.defaultAIEndpointId = selectedEndpointId
                 }
                 .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
             }
         }
     }
@@ -421,13 +423,13 @@ struct SettingsAITab: View {
                 Text(endpoint.name)
                     .fontWeight(.medium)
                 Text("\(endpoint.baseURL) (\(endpoint.modelName))")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             if isDefault {
                 Text("Default")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -471,12 +473,12 @@ struct SettingsAITab: View {
             Spacer()
 
             Text(isNew ? "Add AI Provider" : "Edit AI Provider")
-                .font(.title3)
+                .uiFont(.title3)
                 .fontWeight(.medium)
 
             if editingEndpoint.provider == .anthropic {
                 Text("Anthropic Messages API (native). Enter your model name and API key.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -529,7 +531,7 @@ struct SettingsAITab: View {
                         .foregroundStyle(.red)
                 }
             }
-            .font(.caption)
+            .uiFont(.caption)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: 350, alignment: .leading)
 
@@ -538,7 +540,7 @@ struct SettingsAITab: View {
                     .controlSize(.small)
             } else if !availableModels.isEmpty {
                 Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -557,21 +559,21 @@ struct SettingsAITab: View {
                         SettingsErrorDetails(summary: "Connection failed", error: error)
                     }
                 }
-                .font(.callout)
+                .uiFont(.callout)
             }
 
             HStack {
                 Button("Test Connection") {
                     testAndLoadModels()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Spacer()
 
                 Button("Cancel") {
                     isEditing = false
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
 
                 Button("Save") {
                     guard isOutputTokenLimitValid else { return }
@@ -585,7 +587,7 @@ struct SettingsAITab: View {
                     }
                     isEditing = false
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.typographyProminent)
                 .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty || !isOutputTokenLimitValid)
             }
             .frame(maxWidth: 350)

@@ -30,7 +30,7 @@ struct YouTubeURLInputView: View {
                 Image(systemName: "play.rectangle.fill")
                     .foregroundStyle(.red)
                 Text("YouTube / Video URL")
-                    .font(.subheadline.weight(.medium))
+                    .uiFont(.subheadline.weight(.medium))
                 Spacer()
                 Button {
                     isVisible = false
@@ -38,7 +38,7 @@ struct YouTubeURLInputView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
                 .accessibilityLabel("Close URL input")
                 .disabled(isLoading || isDownloadingYtDlp)
             }
@@ -62,7 +62,7 @@ struct YouTubeURLInputView: View {
                             .frame(width: 40)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.typographyProminent)
                 .controlSize(.small)
                 .disabled(
                     !ytDlpAvailable
@@ -74,13 +74,13 @@ struct YouTubeURLInputView: View {
 
             if isLoading {
                 Label("Downloading audio…", systemImage: "arrow.down.circle")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if let error = loadError {
                 Text(error)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -104,25 +104,25 @@ struct YouTubeURLInputView: View {
         if isDownloadingYtDlp {
             VStack(alignment: .leading, spacing: 4) {
                 Label(ytDlpAvailable ? "Updating yt-dlp…" : "Downloading yt-dlp…", systemImage: "arrow.down.circle")
-                    .font(.caption.weight(.medium))
+                    .uiFont(.caption.weight(.medium))
                     .foregroundStyle(.primary)
                 ProgressView(value: ytDlpDownloadProgress)
                     .progressViewStyle(.linear)
                 if ytDlpDownloadProgress > 0 {
                     Text("\(Int(ytDlpDownloadProgress * 100))%")
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
         } else if !ytDlpAvailable {
             VStack(alignment: .leading, spacing: 6) {
                 Label("yt-dlp not found", systemImage: "exclamationmark.triangle")
-                    .font(.caption.weight(.medium))
+                    .uiFont(.caption.weight(.medium))
                     .foregroundStyle(.orange)
 
                 if let error = ytDlpDownloadError {
                     Text(error)
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -136,55 +136,55 @@ struct YouTubeURLInputView: View {
                             systemImage: "arrow.down.circle"
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .controlSize(.small)
                     .tint(ytDlpDownloadError == nil ? .accentColor : .orange)
                 }
 
                 Text("Or install manually: brew install yt-dlp")
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 if isCheckingYtDlpUpdate {
                     Label("Checking yt-dlp for updates…", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 } else if let status = ytDlpUpdateStatus {
                     if status.updateAvailable {
                         Text("yt-dlp \(status.installedVersion) · \(status.latestVersion) available")
-                            .font(.caption)
+                            .uiFont(.caption)
                         Button {
                             downloadYtDlp(autoSubmit: false)
                         } label: {
                             Label("Update yt-dlp", systemImage: "arrow.down.circle")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                         .disabled(isLoading)
                         Text("The update is stored in dBrief's support folder.")
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.secondary)
                     } else {
                         Text("yt-dlp \(status.installedVersion) is up to date")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else if let error = ytDlpUpdateCheckError {
                     Text("Could not check yt-dlp updates: \(error)")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     Button("Check again") {
                         Task { await checkYtDlpUpdate() }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
                 }
 
                 if let error = ytDlpDownloadError {
                     Text(error)
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.red)
                 }
             }

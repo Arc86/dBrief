@@ -25,6 +25,7 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
             let view = PromptEditorView(session: session, close: { [weak self, weak window] in
                 guard let window else { return }; self?.requestClose(window)
             }).environment(context)
+                .modifier(AppAppearanceScope(settings: context.appSettings))
             let hosting = NSHostingController(rootView: view)
             hosting.sizingOptions = []
             window.contentViewController = hosting

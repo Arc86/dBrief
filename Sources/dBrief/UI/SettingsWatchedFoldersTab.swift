@@ -16,7 +16,7 @@ struct SettingsWatchedFoldersTab: View {
                         if enabled { context.watchedFolderService.start() }
                     }
                 Text("Drop an audio file into a watched folder and dBrief transcribes, analyzes, and exports it automatically — no recording needed. Your original file stays where it is; a copy is imported into your recordings.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             .listRowBackground(Color.clear)
@@ -25,7 +25,7 @@ struct SettingsWatchedFoldersTab: View {
                 Section("Folders") {
                     if appSettings.watchedFolders.isEmpty {
                         Text("No folders yet. Add one to start watching for dropped-in audio.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(appSettings.watchedFolders) { folder in
@@ -38,14 +38,14 @@ struct SettingsWatchedFoldersTab: View {
                     } label: {
                         Label("Add Folder…", systemImage: "plus")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 }
                 .listRowBackground(Color.clear)
 
                 Section("Options") {
                     Toggle("Notify when a new file is detected", isOn: $settings.watchedFolderNotifyOnDetect)
                     Text("New files use your global processing preferences (Settings → AI Analysis). Only files added **after** a folder is watched are processed — existing files are left alone. Files are picked up once they finish copying.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .listRowBackground(Color.clear)
@@ -73,9 +73,9 @@ struct SettingsWatchedFoldersTab: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(URL(fileURLWithPath: folder.displayPath).lastPathComponent)
-                    .font(.callout)
+                    .uiFont(.callout)
                 Text(folder.displayPath)
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

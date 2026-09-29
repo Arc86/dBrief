@@ -88,10 +88,10 @@ private struct ReprocessingEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(options.operation.title).font(.title2.weight(.semibold))
+            Text(options.operation.title).uiFont(.title2.weight(.semibold))
             Text(recording.generatedTitle ?? recording.meetingTitleDraft).lineLimit(2)
             Text(usingPrevious ? "Using previous attempt settings" : "Using current defaults")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
             Form {
                 if options.requiresTranscription { transcriptionControls }
                 if options.requiresAnalysis { analysisControls }
@@ -103,9 +103,9 @@ private struct ReprocessingEditor: View {
             .formStyle(.grouped)
             .frame(minHeight: 160, maxHeight: 390)
             Text("Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt.")
-                .font(.callout).foregroundStyle(.secondary)
+                .uiFont(.callout).foregroundStyle(.secondary)
             if let message = error ?? validationError {
-                Text(message).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+                Text(message).foregroundStyle(.red).uiFont(.callout).textSelection(.enabled)
             }
             HStack {
                 Spacer()
@@ -113,7 +113,7 @@ private struct ReprocessingEditor: View {
                     .disabled(isStarting)
                 Button(appState.processingJob == nil ? "Start" : "Add to Queue") { start() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .disabled(isStarting || validationError != nil)
                 if isStarting { ProgressView().controlSize(.small) }
             }
@@ -164,15 +164,15 @@ private struct ReprocessingEditor: View {
             switch options.engine {
             case .localWhisper:
                 LabeledContent("Whisper model", value: WhisperModelInfo.parse(options.whisperModelName).displayName)
-                Text("Models download on first use.").font(.caption).foregroundStyle(.secondary)
+                Text("Models download on first use.").uiFont(.caption).foregroundStyle(.secondary)
             case .parakeetLocal:
                 LabeledContent("Parakeet model", value: ParakeetModelInfo.find(options.parakeetModelVariant).displayName)
                 Text("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             case .remoteEndpoint:
                 LabeledContent("Model", value: options.transcriptionEndpoint?.modelName ?? "No endpoint configured")
             case .appleSpeech:
-                Text("Uses Apple's speech model for the selected language.").font(.caption).foregroundStyle(.secondary)
+                Text("Uses Apple's speech model for the selected language.").uiFont(.caption).foregroundStyle(.secondary)
             }
             if options.engine != .remoteEndpoint {
                 Button("Change model") { showWhisperComparison = true }
@@ -181,7 +181,7 @@ private struct ReprocessingEditor: View {
             Toggle("Regenerate AI analysis", isOn: $options.regenerateAI)
             if !options.regenerateAI {
                 Text("Existing analysis will be kept and marked as based on the previous transcript.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -239,7 +239,7 @@ private struct ReprocessingEditor: View {
                 Text("Transcript for vocabulary correction → \(destination(options.aiEndpoint))")
             }
             Text("Speaker detection runs on this Mac. Integration delivery and exports are separate actions.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         }
     }
 

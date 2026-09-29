@@ -8,6 +8,7 @@ struct RecordingControlsView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.uiTypography) private var typography
     @Environment(\.openWindow) private var openWindow
 
 
@@ -18,7 +19,7 @@ struct RecordingControlsView: View {
             if appState.isIdle {
                 HStack {
                     Text("Profile")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Menu {
@@ -62,7 +63,7 @@ struct RecordingControlsView: View {
             if appState.isRecording || appState.isPaused {
                 HStack(alignment: .firstTextBaseline) {
                     Text(formattedDuration)
-                        .font(.brandMono(30, weight: .semibold))
+                        .uiFont(.brandMono(30, weight: .semibold))
                         .foregroundStyle(.primary)
                     Spacer()
                     HStack(spacing: 7) {
@@ -72,8 +73,8 @@ struct RecordingControlsView: View {
                             pulse: appState.isRecording
                         )
                         Text(appState.isPaused ? "PAUSED" : "REC")
-                            .font(.brandMono(11, weight: .bold))
-                            .tracking(1.4)
+                            .uiFont(.brandMono(11, weight: .bold))
+                            .tracking(typography.readingFont == .openDyslexic ? 0 : 1.4)
                             .foregroundStyle(appState.isPaused ? Brand.paused : Brand.recording)
                     }
                 }
@@ -103,8 +104,8 @@ struct RecordingControlsView: View {
                 .buttonStyle(GradientButtonStyle())
 
                 Text("⌃ ⌥ ⌘ R")
-                    .font(.brandMono(11))
-                    .tracking(2)
+                    .uiFont(.brandMono(11))
+                    .tracking(typography.readingFont == .openDyslexic ? 0 : 2)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity)
             } else {
@@ -141,7 +142,7 @@ struct RecordingControlsView: View {
 
                     if recordingManager.hasSystemAudioPermission {
                         Label("System Audio", systemImage: "speaker.wave.2.fill")
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.green)
                     }
                     Spacer()
@@ -152,9 +153,9 @@ struct RecordingControlsView: View {
                             NSApp.activate(ignoringOtherApps: true)
                         } label: {
                             Label("Live Transcript", systemImage: "text.viewfinder")
-                                .font(.caption2)
+                                .uiFont(.caption2)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                     }
                 }
@@ -202,7 +203,7 @@ struct RecordingControlsView: View {
                     }
                     .frame(height: 110)
                 }
-                .font(.caption)
+                .uiFont(.caption)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -215,7 +216,7 @@ struct RecordingControlsView: View {
                         .foregroundStyle(noticeColor)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(notice)
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if appState.durabilityNoticeIsWarning {
@@ -231,7 +232,7 @@ struct RecordingControlsView: View {
                                     NSWorkspace.shared.open(InterruptedSessionStore.defaultRootURL)
                                 }
                             }
-                            .font(.caption)
+                            .uiFont(.caption)
                         }
                     }
                     Spacer(minLength: 4)

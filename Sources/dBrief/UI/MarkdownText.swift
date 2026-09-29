@@ -9,26 +9,30 @@ import SwiftUI
 /// emits into one attributed text value, delegating inline spans to `AttributedString`.
 struct MarkdownText: View {
     private let rendered: AttributedString
+    private let usesReadingFont: Bool
+    @Environment(\.uiTypography) private var typography
 
-    init(_ text: String) {
-        rendered = Self.render(text)
+    init(_ text: String, readingFont: Font? = nil) {
+        rendered = Self.render(text, readingFont: readingFont)
+        usesReadingFont = readingFont != nil
     }
 
     var body: some View {
         // A single selectable text view avoids a nested SwiftUI layout graph for
         // every line when a streamed response becomes formatted after Stop.
-        Text(rendered)
+        Text(usesReadingFont ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static func render(_ text: String) -> AttributedString {
+    static func render(_ text: String, readingFont: Font? = nil) -> AttributedString {
         var result = AttributedString()
         for (index, block) in parse(text).enumerated() {
             if index > 0 { result += AttributedString("\n") }
             switch block {
             case .heading(let level, let text):
                 var heading = inline(text)
-                heading.font = headingFont(level)
+                heading.font = readingFont.map { $0.weight(.semibold) } ?? headingFont(level)
+                heading[MarkdownHeadingLevel.self] = level
                 result += heading
             case .bullet(let text):
                 result += AttributedString("• ") + inline(text)
@@ -39,6 +43,22 @@ struct MarkdownText: View {
             case .spacer:
                 break
             }
+        }
+        return result
+    }
+
+    /// Adjust the cached heading spans when UI preferences change without parsing again.
+    @MainActor
+    static func appHeadingFonts(in rendered: AttributedString, typography: AppTypographyPreferences) -> AttributedString {
+        var result = rendered
+        for run in rendered.runs {
+            guard let level = run[MarkdownHeadingLevel.self] else { continue }
+            let style: AppFontStyle = switch level {
+            case 1: .title3.bold()
+            case 2: .headline
+            default: .subheadline.bold()
+            }
+            result[run.range].font = style.resolve(using: typography)
         }
         return result
     }
@@ -105,4 +125,9 @@ struct MarkdownText: View {
             return .paragraph(text: line)
         }
     }
+}
+
+private enum MarkdownHeadingLevel: AttributedStringKey {
+    typealias Value = Int
+    static let name = "dBrief.markdownHeadingLevel"
 }

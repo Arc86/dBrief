@@ -8,13 +8,12 @@ struct NativeTextView: NSViewRepresentable {
     var monospaced: Bool = false
     var accessibilityName: String = "Text editor"
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.uiTypography) private var typography
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         let textView = scrollView.documentView as! NSTextView
-        textView.font = monospaced
-            ? .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-            : .systemFont(ofSize: NSFont.smallSystemFontSize)
+        textView.font = editorFont
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -31,6 +30,7 @@ struct NativeTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let textView = nsView.documentView as! NSTextView
+        textView.font = editorFont
         textView.setAccessibilityLabel(accessibilityName)
         textView.isEditable = isEnabled
         textView.setAccessibilityEnabled(isEnabled)
@@ -42,6 +42,11 @@ struct NativeTextView: NSViewRepresentable {
             textView.string = text
             context.coordinator.lastPushed = text
         }
+    }
+
+    private var editorFont: NSFont {
+        AppFontStyle.system(size: NSFont.smallSystemFontSize, design: monospaced ? .monospaced : .default)
+            .nsFont(using: typography)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -111,6 +116,7 @@ struct NativeTextField: NSViewRepresentable {
     /// A descriptive name for VoiceOver; examples/placeholders are often ambiguous.
     var accessibilityName: String? = nil
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.uiTypography) private var typography
 
     func makeNSView(context: Context) -> NSTextField {
         let field: NSTextField
@@ -120,6 +126,7 @@ struct NativeTextField: NSViewRepresentable {
             field = NSTextField()
         }
         field.placeholderString = placeholder
+        field.font = AppFontStyle.body.nsFont(using: typography)
         field.stringValue = text
         field.delegate = context.coordinator
         field.bezelStyle = .roundedBezel
@@ -133,6 +140,7 @@ struct NativeTextField: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         nsView.placeholderString = placeholder
+        nsView.font = AppFontStyle.body.nsFont(using: typography)
         nsView.setAccessibilityLabel(accessibilityName ?? placeholder)
         nsView.isEnabled = isEnabled
         if nsView.stringValue != text {

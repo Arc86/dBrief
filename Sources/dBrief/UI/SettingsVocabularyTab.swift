@@ -15,7 +15,7 @@ struct SettingsVocabularyTab: View {
                     Text("Terms you add here help the AI understand your domain. After transcription, the AI corrects misspellings of these terms in the transcript. During analysis, they're provided to generate more accurate summaries and action items.")
                     Text("Add names, acronyms, product names, and technical terms your recordings commonly include.")
                 }
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
             }
 
@@ -29,13 +29,13 @@ struct SettingsVocabularyTab: View {
                 }
                 if let addError {
                     Text(addError)
-                        .font(.callout)
+                        .uiFont(.callout)
                         .foregroundStyle(.red)
                 }
                 if let originalTerm = editor.originalTerm {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Editing “\(originalTerm)”")
-                            .font(.callout)
+                            .uiFont(.callout)
                         HStack {
                             TextField("Term", text: $editor.text)
                                 .textFieldStyle(.roundedBorder)
@@ -48,7 +48,7 @@ struct SettingsVocabularyTab: View {
                         }
                         if let error = editor.error {
                             Text(error)
-                                .font(.callout)
+                                .uiFont(.callout)
                                 .foregroundStyle(.red)
                         }
                     }

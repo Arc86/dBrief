@@ -48,9 +48,9 @@ struct ModelPerformanceView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 SettingsSearchHeading("Model Performance", section: .benchmark)
-                    .font(.headline)
+                    .uiFont(.headline)
                 Text("\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -118,7 +118,7 @@ struct ModelPerformanceView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Recent Transcriptions")
             Text("Per-recording step timing — expand a row to see where the time went.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             VStack(spacing: 6) {
                 ForEach(rows) { row in
@@ -136,10 +136,10 @@ struct ModelPerformanceView: View {
             Text(records.isEmpty
                  ? "No performance data yet."
                  : "No sessions in this time range.")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
             Text("Metrics are recorded automatically each time a recording is transcribed or analyzed.")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
@@ -154,25 +154,25 @@ struct ModelPerformanceView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
                     Label("Fastest Model", systemImage: "bolt.fill")
-                        .font(.caption.weight(.semibold))
+                        .uiFont(.caption.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                     Spacer()
                     Text("\(stat.sessions) \(stat.sessions == 1 ? "session" : "sessions")")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Text(stat.model)
-                    .font(.title3.weight(.semibold))
+                    .uiFont(.title3.weight(.semibold))
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(String(format: "%.1f×", stat.headlineSpeed))
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .uiFont(.system(size: 46, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.accentColor)
                     Text(stat.inferenceSpeedup != nil
                          ? "model speed, faster than real-time"
                          : "end-to-end, faster than real-time")
-                        .font(.callout)
+                        .uiFont(.callout)
                         .foregroundStyle(.secondary)
                 }
 
@@ -192,7 +192,7 @@ struct ModelPerformanceView: View {
                         }
                     }
                 }
-                .font(.callout)
+                .uiFont(.callout)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(6)
@@ -225,7 +225,7 @@ struct ModelPerformanceView: View {
                         .gaugeStyle(.accessoryLinearCapacity)
                         .tint(.accentColor)
                         Text(String(format: "%.1f×", stat.headlineSpeed))
-                            .font(.callout.monospacedDigit())
+                            .uiFont(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 44, alignment: .trailing)
                     }
@@ -253,7 +253,7 @@ struct ModelPerformanceView: View {
                 }
                 TableColumn("Avg. analysis", value: \.avgTime) { stat in
                     Text(Self.formatDuration(stat.avgTime))
-                        .font(.callout.monospacedDigit())
+                        .uiFont(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 TableColumn("Sessions", value: \.sessions) { stat in
@@ -272,13 +272,13 @@ struct ModelPerformanceView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.headline)
+            .uiFont(.headline)
             .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
     }
 
     private func badge(_ text: String, accent: Bool) -> some View {
         Text(text)
-            .font(.caption2.weight(.bold))
+            .uiFont(.caption2.weight(.bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(
@@ -354,7 +354,7 @@ private struct RecentRecordingRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 if row.transcriptionModel != nil || row.audioDuration != nil {
                     Text(modelSubtitle)
-                        .font(.caption.weight(.medium))
+                        .uiFont(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
@@ -378,22 +378,22 @@ private struct RecentRecordingRow: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(row.label)
-                .font(.callout.weight(.medium))
+                .uiFont(.callout.weight(.medium))
                 .lineLimit(1)
             Spacer(minLength: 6)
             if row.isSlowerThanUsual {
                 Text("slower than usual")
-                    .font(.caption2.weight(.semibold))
+                    .uiFont(.caption2.weight(.semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(Color.orange.opacity(0.18)))
                     .foregroundStyle(.orange)
             }
             Text(headerContext)
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
             speedBadge
             Text(ModelPerformanceView.formatDuration(row.total))
-                .font(.callout.monospacedDigit())
+                .uiFont(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 56, alignment: .trailing)
         }
@@ -438,7 +438,7 @@ private struct RecentRecordingRow: View {
                     EmptyView()
                 }
                 Text(String(format: "%.1f×", rt))
-                    .font(.callout.monospacedDigit().weight(.semibold))
+                    .uiFont(.callout.monospacedDigit().weight(.semibold))
             }
             .help("Transcription speed relative to real-time (audio ÷ transcription time)")
         }
@@ -454,15 +454,15 @@ private struct RecentRecordingRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack {
                     Text(step.kind.title)
-                        .font(.caption)
+                        .uiFont(.caption)
                     Spacer()
                     Text(ModelPerformanceView.formatDuration(step.duration))
-                        .font(.caption.monospacedDigit())
+                        .uiFont(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 if let caption = step.caption, !caption.isEmpty {
                     Text(caption)
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .foregroundStyle(.tertiary)
                 }
             }

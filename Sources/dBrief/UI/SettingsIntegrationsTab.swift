@@ -39,9 +39,9 @@ struct SettingsIntegrationsTab: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(destination.displayName)
-                    .font(.body)
+                    .uiFont(.body)
                 Text(statusText(for: destination))
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -93,7 +93,7 @@ struct SettingsIntegrationsTab: View {
                         Button("Choose...") {
                             chooseVault { url in appSettings.obsidianVaultURL = url }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                     }
                 }
 
@@ -108,14 +108,14 @@ struct SettingsIntegrationsTab: View {
                                 appSettings.obsidianDefaultFolderRelativePath = relativePath
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .disabled(appSettings.obsidianVaultURL == nil)
                     }
                 }
 
                 if appSettings.obsidianVaultURL == nil {
                     Text("Select an Obsidian vault to enable folder selection.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -123,7 +123,7 @@ struct SettingsIntegrationsTab: View {
                     Text("Include transcript in notes")
                 }
                 Text("When off, notes contain only the summary, action items, and tags. Enable to append the full transcript.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -168,7 +168,7 @@ struct SettingsIntegrationsTab: View {
                     { appSettings.integrations.appleReminders.listName = $0 }
                 ))
                 Text("Only action items are sent as reminders.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                 testButton(for: .appleReminders)
             }
@@ -206,7 +206,7 @@ struct SettingsIntegrationsTab: View {
                 )
                 if appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty {
                     Text("Token and parent ID are required when Notion is enabled.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 testButton(for: .notion)
@@ -238,7 +238,7 @@ struct SettingsIntegrationsTab: View {
                 )
                 if appSettings.evernoteToken.isEmpty {
                     Text("Token is required when Evernote is enabled.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 testButton(for: .evernote)
@@ -265,11 +265,11 @@ struct SettingsIntegrationsTab: View {
                     set: { appSettings.integrations.googleKeep.fields = $0 }
                 )
                 Text("Google Keep API is enterprise/admin oriented and may require Workspace setup.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                 if appSettings.googleKeepToken.isEmpty {
                     Text("Token is required when Google Keep is enabled.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 testButton(for: .googleKeep)
@@ -301,7 +301,7 @@ struct SettingsIntegrationsTab: View {
                 )
                 if appSettings.oneNoteToken.isEmpty {
                     Text("Token is required when OneNote is enabled.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 testButton(for: .oneNote)
@@ -345,11 +345,11 @@ struct SettingsIntegrationsTab: View {
                     .frame(width: 80)
                 }
                 Text("Unconfirmed sends can be retried from History → Integrations. Each delivery includes an Idempotency-Key; duplicate protection depends on your receiver supporting it.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Text("Headers")
-                    .font(.subheadline)
+                    .uiFont(.subheadline)
                     .foregroundStyle(.secondary)
 
                 ForEach(Array(appSettings.integrations.webhook.headers.enumerated()), id: \.element.id) { index, header in
@@ -376,7 +376,7 @@ struct SettingsIntegrationsTab: View {
                 } label: {
                     Label("Add header", systemImage: "plus.circle")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.typographyBorderless)
 
                 deliveryFieldsEditor(
                     title: "Send fields",
@@ -386,7 +386,7 @@ struct SettingsIntegrationsTab: View {
 
                 if appSettings.integrations.webhook.url.isEmpty {
                     Text("Webhook URL is required when webhook is enabled.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 testButton(for: .webhook)
@@ -402,7 +402,7 @@ struct SettingsIntegrationsTab: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
 
             ForEach(DeliveryField.allCases) { field in
@@ -576,12 +576,12 @@ struct SettingsIntegrationsTab: View {
                     Text("Test connection")
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.typographyBordered)
             .disabled(isTesting.contains(destination))
 
             if let message = connectionMessages[destination] {
                 Text(message)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(message == "Connection successful" ? .green : .red)
             }
         }

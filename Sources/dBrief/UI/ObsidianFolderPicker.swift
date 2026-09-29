@@ -10,7 +10,7 @@ struct ObsidianFolderPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.subheadline)
+                .uiFont(.subheadline)
                 .foregroundStyle(.secondary)
 
             HStack {
@@ -30,7 +30,7 @@ struct ObsidianFolderPicker: View {
 
             if appSettings.obsidianVaultURL == nil {
                 Text("Select an Obsidian vault in Settings > Integrations.")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }

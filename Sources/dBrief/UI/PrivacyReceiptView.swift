@@ -8,7 +8,7 @@ struct PrivacyReceiptView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Privacy receipt").font(.title2.bold())
+                Text("Privacy receipt").uiFont(.title2.bold())
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
@@ -17,7 +17,7 @@ struct PrivacyReceiptView: View {
             if let snapshot {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(snapshot.heading, systemImage: snapshot.hasGaps ? "exclamationmark.triangle" : "list.bullet.rectangle")
-                        .font(.headline)
+                        .uiFont(.headline)
                     if snapshot.hasUnreadableReceipt {
                         Text("Some evidence could not be read. It may be damaged, unavailable, or from an unsupported version.")
                     }
@@ -31,21 +31,21 @@ struct PrivacyReceiptView: View {
                         Text("No processing attempts are available. Missing evidence does not mean processing stayed on this Mac.")
                     }
                 }
-                .font(.callout)
+                .uiFont(.callout)
                 List(snapshot.attempts) { attempt in
                     DisclosureGroup {
                         attemptDetails(attempt)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(attempt.operation.stage.receiptLabel).font(.headline)
+                                Text(attempt.operation.stage.receiptLabel).uiFont(.headline)
                                 Spacer()
-                                Text(attempt.outcome.receiptLabel).font(.callout)
+                                Text(attempt.outcome.receiptLabel).uiFont(.callout)
                             }
                             Text("\(attempt.operation.destination.provider.receiptLabel) · \(attempt.operation.destination.location.receiptLabel)")
                                 .foregroundStyle(.secondary)
                             Text(attempt.startedAt.formatted(date: .abbreviated, time: .standard))
-                                .font(.caption).foregroundStyle(.secondary)
+                                .uiFont(.caption).foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 4)
                     }
@@ -55,7 +55,7 @@ struct PrivacyReceiptView: View {
                 ProgressView("Loading evidence…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Text("This receipt covers recorded attempts, including retries. It makes no claims about earlier activity or provider retention. Externally managed apps and processes may sync or send data elsewhere. A start without a completion does not prove whether data was received.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(.secondary)
         }
         .padding(20)
         .frame(minWidth: 580, idealWidth: 680, minHeight: 450, idealHeight: 600)
@@ -89,7 +89,7 @@ struct PrivacyReceiptView: View {
             }
             detail("Run", attempt.runID.uuidString)
         }
-        .font(.callout).padding(.vertical, 8)
+        .uiFont(.callout).padding(.vertical, 8)
     }
 
     private func detail(_ title: String, _ value: String) -> some View {

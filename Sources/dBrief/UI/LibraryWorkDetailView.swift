@@ -22,14 +22,14 @@ struct LibraryWorkDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(item.title).font(.title).textSelection(.enabled)
+                Text(item.title).uiFont(.title).textSelection(.enabled)
                 LabeledContent("Status", value: item.status)
                 LabeledContent("Date", value: item.date.formatted(date: .abbreviated, time: .shortened))
                 if !item.associatedApp.isEmpty {
                     LabeledContent("Application", value: item.associatedApp)
                 }
                 if let audio = item.audioURL {
-                    Text(audio.path).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(audio.path).uiFont(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([audio]) }
                 }
                 Text(item.target == .delivery
@@ -46,7 +46,7 @@ struct LibraryWorkDetailView: View {
                             catch { if !Task.isCancelled { self.error = error.localizedDescription } }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
                     .disabled(disabled || actionTask != nil)
                     if actionTask != nil { ProgressView().controlSize(.small) }
                 }

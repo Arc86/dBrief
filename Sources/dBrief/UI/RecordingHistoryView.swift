@@ -197,7 +197,7 @@ struct RecordingHistoryView: View {
                 .frame(width: 30, height: 30)
                 .background(Brand.violetTint, in: Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.typographyBorderless)
             .accessibilityLabel(
                 "\(audioPlayer.currentFileURL == item.url && audioPlayer.isPlaying ? "Pause" : "Play") \(item.displayName)"
             )
@@ -237,9 +237,9 @@ struct RecordingHistoryView: View {
                 ), hasTranscript: item.hasTranscript,
                     presentationStyle: recordingActionPresentationStyle)
                 .menuStyle(.button)
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .controlSize(.mini)
-                .font(.caption2)
+                .uiFont(.caption2)
                 .foregroundStyle(.primary)
                 .fixedSize()
 
@@ -337,10 +337,10 @@ struct RecordingHistoryView: View {
             } label: {
                 Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.typographyBorderless)
 
             Text(audioPlayer.formattedCurrentTime)
-                .font(.caption.monospacedDigit())
+                .uiFont(.caption.monospacedDigit())
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -364,14 +364,14 @@ struct RecordingHistoryView: View {
             .frame(height: 6)
 
             Text(audioPlayer.formattedDuration)
-                .font(.caption.monospacedDigit())
+                .uiFont(.caption.monospacedDigit())
 
             Button {
                 audioPlayer.stop()
             } label: {
                 Image(systemName: "xmark.circle")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.typographyBorderless)
         }
     }
 

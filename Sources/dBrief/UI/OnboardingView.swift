@@ -78,7 +78,7 @@ struct OnboardingView: View {
     /// A consistent multi-line body text style that wraps instead of truncating.
     private func bodyText(_ string: LocalizedStringKey) -> some View {
         Text(string)
-            .font(.callout)
+            .uiFont(.callout)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -109,7 +109,7 @@ struct OnboardingView: View {
             }
 
             Text("Welcome to dBrief")
-                .font(.title3.weight(.semibold))
+                .uiFont(.title3.weight(.semibold))
 
             bodyText("Record, transcribe, and analyze meetings and voice notes — right from your menu bar.")
 
@@ -119,7 +119,7 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.caption)
+            .uiFont(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -129,7 +129,7 @@ struct OnboardingView: View {
             Button("Get Started") {
                 step = 1
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.typographyProminent)
             .controlSize(.large)
         }
     }
@@ -141,7 +141,7 @@ struct OnboardingView: View {
             iconBadge("lock.shield.fill", tint: .orange)
 
             Text("Permissions")
-                .font(.title3.weight(.semibold))
+                .uiFont(.title3.weight(.semibold))
 
             bodyText("Enable at least one audio source. Use Microphone for your voice, Screen Recording for system audio, or both for calls.")
 
@@ -177,7 +177,7 @@ struct OnboardingView: View {
 
             if !canContinueWithAudioPermissions {
                 Label("Enable Microphone, Screen Recording, or both to continue.", systemImage: "exclamationmark.circle.fill")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -186,13 +186,13 @@ struct OnboardingView: View {
                 Button("Refresh") {
                     refreshPermissionStatuses()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.typographyBordered)
                 .controlSize(.large)
 
                 Button("Continue") {
                     step = 2
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.typographyProminent)
                 .controlSize(.large)
                 .disabled(!canContinueWithAudioPermissions)
             }
@@ -211,9 +211,9 @@ struct OnboardingView: View {
                 .foregroundStyle(state.isGranted ? .green : .orange)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.callout.weight(.medium))
+                Text(title).uiFont(.callout.weight(.medium))
                 Text(subtitle)
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -222,15 +222,15 @@ struct OnboardingView: View {
 
             if state.isGranted {
                 Text("Granted")
-                    .font(.caption2.weight(.semibold))
+                    .uiFont(.caption2.weight(.semibold))
                     .foregroundStyle(.green)
             } else if let actionTitle = permissionActionTitle(for: state) {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .controlSize(.small)
             } else {
                 Text("Restricted")
-                    .font(.caption2.weight(.semibold))
+                    .uiFont(.caption2.weight(.semibold))
                     .foregroundStyle(.orange)
             }
         }
@@ -363,7 +363,7 @@ struct OnboardingView: View {
             iconBadge("cpu", tint: .accentColor)
 
             Text("Transcription & AI")
-                .font(.title3.weight(.semibold))
+                .uiFont(.title3.weight(.semibold))
 
             bodyText("Pick how recordings are turned into text and summaries. The defaults run fully on-device — no account or server needed.")
 
@@ -395,10 +395,10 @@ struct OnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
                     SettingsLink { Text("Settings") }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                 }
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
                 .padding(10)
                 .frame(maxWidth: .infinity)
@@ -420,7 +420,7 @@ struct OnboardingView: View {
                     step = includeDownloadStep ? 3 : 4
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.typographyProminent)
             .controlSize(.large)
             .disabled(checkingModels)
 
@@ -440,7 +440,7 @@ struct OnboardingView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .uiFont(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             Picker(title, selection: selection) {
@@ -452,7 +452,7 @@ struct OnboardingView: View {
             .labelsHidden()
 
             Text(description)
-                .font(.caption2)
+                .uiFont(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)

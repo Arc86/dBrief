@@ -127,7 +127,7 @@ struct SpeakerAvatar: View {
             .frame(width: size, height: size)
             .overlay(
                 Text(Theme.initials(for: name))
-                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .uiFont(.system(size: size * 0.42, weight: .semibold))
                     .foregroundStyle(.white)
             )
             .accessibilityLabel(Text(name))

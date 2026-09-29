@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// external-links list, and a privacy seal. Adapts the dark neon design to the
 /// hybrid Light/Dark BrandKit treatment so it reads in both schemes.
 struct AboutTab: View {
+    @Environment(\.uiTypography) private var uiTypography
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.calmAppearance) private var calm
     @Environment(UpdaterController.self) private var updaterController
@@ -100,9 +101,9 @@ struct AboutTab: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Create a support report")
-                        .font(.system(size: 14.5, weight: .semibold))
+                        .uiFont(.system(size: 14.5, weight: .semibold))
                     Text("Exports app, storage, recovery, and recording-lifecycle events. Audio, transcripts, meeting titles, names, file paths, and credentials are excluded.")
-                        .font(.system(size: 12.5))
+                        .uiFont(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -111,10 +112,10 @@ struct AboutTab: View {
 
             HStack(spacing: 10) {
                 Button("Export diagnostics…") { exportDiagnostics() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.typographyProminent)
 
                 Button("Show recovery files") { showRecoveryFolder() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                     .disabled(!FileManager.default.fileExists(
                         atPath: InterruptedSessionStore.defaultRootURL.path
                     ))
@@ -122,7 +123,7 @@ struct AboutTab: View {
 
             if let diagnosticsStatus {
                 Text(diagnosticsStatus)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(diagnosticsStatus.hasPrefix("Couldn’t") ? .red : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -193,10 +194,10 @@ struct AboutTab: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    SettingsSearchHeading(Text("dBrief").font(.system(size: 34, weight: .heavy)).tracking(-1), section: .about)
+                    SettingsSearchHeading(Text("dBrief").font(AppFontStyle.system(size: 34, weight: .heavy).resolve(using: uiTypography)).tracking(uiTypography.readingFont == .openDyslexic ? 0 : -1), section: .about)
                         .foregroundStyle(.primary)
                     Text("v\(shortVersion)")
-                        .font(.brandMono(12))
+                        .uiFont(.brandMono(12))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 4)
@@ -208,7 +209,7 @@ struct AboutTab: View {
                  + Text("remembered.")
                     .foregroundStyle(Brand.violet)
                     .fontWeight(.semibold))
-                    .font(.system(size: 15))
+                    .uiFont(.system(size: 15))
             }
             Spacer(minLength: 0)
         }
@@ -245,16 +246,16 @@ struct AboutTab: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text("Keep dBrief up to date")
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .uiFont(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text("You're on v\(shortVersion)")
-                    .font(.brandMono(12))
+                    .uiFont(.brandMono(12))
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             Button("Check for updates") { updaterController.checkForUpdates() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13.5, weight: .semibold))
+                .uiFont(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(Color(nsColor: .windowBackgroundColor))
                 .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(Color.primary, in: Capsule())
@@ -273,12 +274,12 @@ struct AboutTab: View {
         return LazyVGrid(columns: columns, spacing: 1) {
             ForEach(buildInfo) { row in
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(row.key.uppercased())
-                        .font(.brandMono(10))
-                        .tracking(0.8)
+                    Text(uiTypography.readingFont == .openDyslexic ? row.key : row.key.uppercased())
+                        .uiFont(.brandMono(10))
+                        .tracking(uiTypography.readingFont == .openDyslexic ? 0 : 0.8)
                         .foregroundStyle(.tertiary)
                     Text(row.value)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .uiFont(.system(size: 13.5, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1).truncationMode(.tail)
                 }
@@ -310,10 +311,10 @@ struct AboutTab: View {
                                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(link.label)
-                                .font(.system(size: 14, weight: .medium))
+                                .uiFont(.system(size: 14, weight: .medium))
                                 .foregroundStyle(.primary)
                             Text(link.meta)
-                                .font(.brandMono(11.5))
+                                .uiFont(.brandMono(11.5))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)
@@ -340,7 +341,7 @@ struct AboutTab: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Brand.violet)
             Text("Your meetings never leave your Mac. Zero telemetry. Zero analytics. Zero accounts.")
-                .font(.system(size: 13))
+                .uiFont(.system(size: 13))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -354,11 +355,11 @@ struct AboutTab: View {
     private var footer: some View {
         HStack(alignment: .center, spacing: 16) {
             Text("© 2026 dBrief · MIT License")
-                .font(.brandMono(12))
+                .uiFont(.brandMono(12))
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 0)
             Text("Made for people who forget what was decided on Tuesday.")
-                .font(.system(size: 12))
+                .uiFont(.system(size: 12))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.trailing)
         }

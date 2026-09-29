@@ -26,7 +26,7 @@ struct SettingsProfileScopeView: View {
                     Text(scope.isAutomatic
                          ? "This profile is temporarily selected automatically. Controls below edit app defaults."
                          : "This is your saved profile. Controls below edit app defaults.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 10) {
@@ -42,7 +42,7 @@ struct SettingsProfileScopeView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .font(.caption)
+                        .uiFont(.caption)
                     }
                     .frame(maxHeight: 170)
                 }

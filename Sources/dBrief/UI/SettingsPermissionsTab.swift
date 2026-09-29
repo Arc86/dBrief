@@ -56,19 +56,19 @@ struct SettingsPermissionsTab: View {
                         Button("Microphone") {
                             openSystemSettingsPane("Privacy_Microphone")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         Button("Screen Recording") {
                             openSystemSettingsPane("Privacy_ScreenCapture")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         Button("Speech") {
                             openSystemSettingsPane("Privacy_SpeechRecognition")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                         Button("Calendar") {
                             openSystemSettingsPane("Privacy_Calendars")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.typographyBordered)
                     }
                 }
 
@@ -76,7 +76,7 @@ struct SettingsPermissionsTab: View {
                     Button("Refresh") {
                         refreshStatuses()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 }
             }
             .listRowBackground(Color.clear)
@@ -301,7 +301,7 @@ private struct PermissionRow: View {
                         action()
                     }
                     .disabled(actionTitle == "Granted")
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.typographyBordered)
                 }
             }
         }

@@ -33,7 +33,9 @@ struct SettingsSearchEntry: Identifiable, Equatable, Sendable {
 
 enum SettingsSearch {
     static let entries: [SettingsSearchEntry] = SettingsPage.allCases.map(SettingsSearchEntry.init(page:)) + [
-        .init("appearance", "Appearance and startup", "start login dock icon neon accents theme", section: .appearance),
+        .init("appearance", "Appearance and startup", "start login dock icon non neon accents theme light dark paper dark paper viewer accent color blue violet green orange gradient follow system default mode", section: .appearance),
+        .init("uiTypography", "UI font and size", "interface global app text typography font size point size default san francisco inter georgia open dyslexic opendyslexic dyslexia monospace", section: .appearance),
+        .init("reading", "Transcript reading options", "display font text size point size reading density compact comfortable spacious speaker names georgia open dyslexic opendyslexic dyslexia monospace reset", section: .appearance),
         .init("advanced", "Show advanced settings", "power user mode benchmarks model options prompts", section: .appearance),
         .init("updates", "Software updates", "check now automatic update version", section: .softwareUpdate),
         .init("setup", "Setup guide", "welcome onboarding first run", section: .setupGuide),

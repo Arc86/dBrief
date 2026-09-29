@@ -66,7 +66,7 @@ struct SpokenSummaryPlayerView: View {
             if let progress {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Preparing voice model…")
-                        .font(.system(size: 13))
+                        .uiFont(.system(size: 13))
                         .foregroundStyle(.secondary)
                     ProgressView(value: progress)
                         .tint(Brand.violet)
@@ -87,7 +87,7 @@ struct SpokenSummaryPlayerView: View {
         HStack(spacing: 11) {
             ProgressView().controlSize(.small)
             Text(text)
-                .font(.system(size: 14))
+                .uiFont(.system(size: 14))
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -123,7 +123,7 @@ struct SpokenSummaryPlayerView: View {
                         Spacer()
                         Text(bindableAudioPlayer.formattedDuration)
                     }
-                    .font(.brandMono(11))
+                    .uiFont(.brandMono(11))
                     .foregroundStyle(.secondary)
                 }
             }
@@ -161,7 +161,7 @@ struct SpokenSummaryPlayerView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Brand.coral)
                 Text(message)
-                    .font(.system(size: 13))
+                    .uiFont(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

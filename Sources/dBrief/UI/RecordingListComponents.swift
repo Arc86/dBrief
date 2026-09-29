@@ -17,8 +17,8 @@ struct RecordingListSectionHeader<Actions: View>: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.headline).foregroundStyle(.primary)
-                        Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                        Text(title).uiFont(.headline).foregroundStyle(.primary)
+                        Text(subtitle).uiFont(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -44,7 +44,7 @@ struct RecordingListIconButton: View {
         Button(action: action) {
             Image(systemName: systemImage).frame(width: 24, height: 24)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.typographyBorderless)
         .help(title)
         .accessibilityLabel(title)
     }
@@ -61,7 +61,7 @@ struct RecordingListStatus: View {
         } icon: {
             Image(systemName: systemImage).foregroundStyle(tint)
         }
-        .font(.caption2)
+        .uiFont(.caption2)
         .fixedSize()
         .accessibilityLabel("Status: \(title)")
     }
@@ -85,9 +85,9 @@ struct RecordingListRow<Leading: View, Metadata: View, Actions: View>: View {
                 Button(action: toggle) {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(title).font(.callout).foregroundStyle(.primary)
+                            Text(title).uiFont(.callout).foregroundStyle(.primary)
                                 .lineLimit(1).help(title)
-                            metadata.font(.caption2).foregroundStyle(.secondary)
+                            metadata.uiFont(.caption2).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -122,10 +122,10 @@ struct RecordingListAction: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.caption2)
+                .uiFont(.caption2)
                 .foregroundStyle(destructive ? .red : .primary)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.typographyBordered)
         .controlSize(.mini)
     }
 }
@@ -140,8 +140,8 @@ struct RecordingListEmptyState: View {
             Image(systemName: systemImage).foregroundStyle(.secondary)
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.callout)
-                Text(message).font(.caption).foregroundStyle(.secondary)
+                Text(title).uiFont(.callout)
+                Text(message).uiFont(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

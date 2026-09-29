@@ -22,7 +22,7 @@ struct SettingsSpokenVoiceTab: View {
                 }
                 .pickerStyle(.menu)
                 Text(settings.ttsEngine.shortDescription)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
 
                 switch settings.ttsEngine {
@@ -34,7 +34,7 @@ struct SettingsSpokenVoiceTab: View {
                     }
                     .pickerStyle(.menu)
                     Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     Picker("Voice", selection: $settings.ttsVoice) {
                         ForEach(TTSVoice.allCases, id: \.self) { voice in
@@ -43,7 +43,7 @@ struct SettingsSpokenVoiceTab: View {
                     }
                     .pickerStyle(.menu)
                     Text(settings.ttsVoice.detail)
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     Picker("Language", selection: $settings.ttsLanguage) {
                         ForEach(TTSLanguage.allCases, id: \.self) { language in
@@ -52,14 +52,14 @@ struct SettingsSpokenVoiceTab: View {
                     }
                     .pickerStyle(.menu)
                     Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     voicePreviewRow
                     if settings.ttsModelSize.supportsVoiceInstruction {
                         PromptSettingsRow(kind: .voiceStyle)
                     } else {
                         Text("Voice style requires the 1.7B model. Your instruction is kept for when you switch back.")
-                            .font(.caption)
+                            .uiFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 case .kokoro:
@@ -70,7 +70,7 @@ struct SettingsSpokenVoiceTab: View {
                     }
                     .pickerStyle(.menu)
                     Text("English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules.")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                     voicePreviewRow
                 }
@@ -131,12 +131,12 @@ struct SettingsSpokenVoiceTab: View {
                 case .preparingVoice(let progress):
                     ProgressView().controlSize(.small)
                     Text(progress != nil ? "Preparing voice… \(Int((progress ?? 0) * 100))%" : "Preparing voice…")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 case .synthesizing:
                     ProgressView().controlSize(.small)
                     Text("Synthesizing…")
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

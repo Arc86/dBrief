@@ -19,6 +19,6 @@ struct LocalModelEvidenceView: View {
                     : "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3")!)
                 Link("FluidAudio Apple Silicon implementation", destination: URL(string: "https://github.com/FluidInference/FluidAudio")!)
             }
-        }.font(.caption).fixedSize(horizontal: false, vertical: true)
+        }.uiFont(.caption).fixedSize(horizontal: false, vertical: true)
     }
 }
