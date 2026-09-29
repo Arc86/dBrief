@@ -49,11 +49,13 @@ struct RecordingHistoryView: View {
     @State private var recordings: [HistoryItem] = []
     /// Tracks the in-flight load so overlapping loads can't resolve out of order.
     @State private var loadTask: Task<Void, Never>?
-    @State private var expandedItemId: UUID?
-    @State private var loadedSummaries: [UUID: String] = [:]
+    @State private var expandedItemId: URL?
+    @State private var loadedSummaries: [URL: String] = [:]
 
-    struct HistoryItem: Identifiable, Sendable {
-        let id = UUID()
+    struct HistoryItem: Identifiable, Equatable, Sendable {
+        /// Keyed by the audio file so a reload keeps each row's identity; a random
+        /// id made every reload replace every row (the stale-list flash).
+        var id: URL { url }
         let url: URL
         let name: String
         let date: Date
@@ -67,6 +69,8 @@ struct RecordingHistoryView: View {
         /// AI-generated title persisted to the metadata sidecar after
         /// post-processing; preferred over the filename-derived name. See #71.
         var generatedTitle: String? = nil
+        /// Resolved off-main while building the list, never during rendering.
+        var markdownURL: URL? = nil
 
         /// Derived processing state for the row's status badge. AI analysis is
         /// signalled by the `<base>.insights.json` sidecar (written only when a
@@ -112,11 +116,6 @@ struct RecordingHistoryView: View {
             let minutes = total / 60
             let seconds = total % 60
             return String(format: "%d:%02d", minutes, seconds)
-        }
-
-        var markdownURL: URL? {
-            let candidate = url.deletingPathExtension().appendingPathExtension("md")
-            return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
         }
 
         var displayName: String {
@@ -391,8 +390,20 @@ struct RecordingHistoryView: View {
             }.value
             guard !Task.isCancelled, recordingManager.reprocessingRecoveryReady,
                   revision == recordingManager.reprocessingResultsRevision else { return }
-            recordings = loaded
+            if recordings != loaded { recordings = loaded }
+            let reconciled = Self.reconcile(loaded: loaded, summaries: loadedSummaries, expanded: expandedItemId)
+            if reconciled.summaries.count != loadedSummaries.count { loadedSummaries = reconciled.summaries }
+            if reconciled.expanded != expandedItemId { expandedItemId = reconciled.expanded }
         }
+    }
+
+    /// Drops cached summaries and expansion for recordings no longer listed, so
+    /// state can't accumulate across reloads.
+    static func reconcile(loaded: [HistoryItem], summaries: [URL: String], expanded: URL?)
+        -> (summaries: [URL: String], expanded: URL?) {
+        let present = Set(loaded.map(\.id))
+        return (summaries.filter { present.contains($0.key) },
+                expanded.flatMap { present.contains($0) ? $0 : nil })
     }
 
     nonisolated private static func buildHistoryItems(in folder: URL) -> [HistoryItem] {
@@ -424,6 +435,9 @@ struct RecordingHistoryView: View {
                 generatedTitle = meta["generatedTitle"] as? String
             }
 
+            let markdownCandidate = base.appendingPathExtension("md")
+            let markdownURL = FileManager.default.fileExists(atPath: markdownCandidate.path) ? markdownCandidate : nil
+
             return HistoryItem(
                 url: entry.url,
                 name: base.lastPathComponent,
@@ -435,7 +449,8 @@ struct RecordingHistoryView: View {
                 hasRichTranscript: hasRichTranscript,
                 hasInsights: hasInsights,
                 isQueued: isQueued,
-                generatedTitle: generatedTitle
+                generatedTitle: generatedTitle,
+                markdownURL: markdownURL
             )
         }
     }
