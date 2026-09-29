@@ -19,6 +19,16 @@ enum ViewerPresentationPolicy {
         hasSummary ? .summary : .transcript
     }
 
+    /// The data-driven default applies once per opened recording; later reloads
+    /// (reprocess, speaker review) keep whichever tab the user is on.
+    static func modeAfterLoad(
+        current: ViewerDocumentMode,
+        hasAppliedInitialMode: Bool,
+        hasSummary: Bool
+    ) -> ViewerDocumentMode {
+        hasAppliedInitialMode ? current : initialMode(hasSummary: hasSummary)
+    }
+
     static func showsPlayback(
         mode: ViewerDocumentMode,
         hasFinalizedAudio: Bool,

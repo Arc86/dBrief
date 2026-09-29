@@ -39,6 +39,8 @@ struct TranscriptDetailView: View {
 
     /// Which content view is showing in the main pane.
     @State private var mode: ViewerDocumentMode = .transcript
+    /// Whether the data-driven default tab was applied for this recording.
+    @State private var didApplyInitialMode = false
     @State private var analysisEditorPresented = false
     @State private var analysisEditorBaseline: RecordingInsights?
     @State private var analysisSaveError: String?
@@ -242,7 +244,7 @@ struct TranscriptDetailView: View {
         // what actually removes the duplicate.
         .navigationTitle("")
         .toolbar {
-            if (context.recordingManager.reprocessingRecoveryReady || isCaptureLive) && (isLive || richTranscript == nil) { toolbarContent }
+            if (context.recordingManager.reprocessingRecoveryReady || isCaptureLive) && (isLive || loadFailed) { toolbarContent }
         }
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
@@ -1653,12 +1655,19 @@ struct TranscriptDetailView: View {
         }
     }
 
-    private func loadInsights() async {
-        guard context.recordingManager.reprocessingRecoveryReady else { return }
+    /// Reads the insights sidecar. Outer `nil` = stale (cancelled or superseded by
+    /// a reprocessing revision); `.some(nil)` = no sidecar.
+    private func fetchInsights() async -> RecordingInsights?? {
+        guard context.recordingManager.reprocessingRecoveryReady else { return nil }
         let revision = context.recordingManager.reprocessingResultsRevision
         let loaded = (try? await context.insightsStore.load(for: recording)) ?? nil
         guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady,
-              revision == context.recordingManager.reprocessingResultsRevision else { return }
+              revision == context.recordingManager.reprocessingResultsRevision else { return nil }
+        return .some(loaded)
+    }
+
+    private func loadInsights() async {
+        guard let loaded = await fetchInsights() else { return }
         insights = loaded
         refreshSpokenSummaryAvailability()
     }
@@ -1768,23 +1777,34 @@ struct TranscriptDetailView: View {
     private func loadTranscript() async {
         guard context.recordingManager.reprocessingRecoveryReady || isCaptureLive else { return }
         let revision = context.recordingManager.reprocessingResultsRevision
-        setTranscript(nil)
-        loadFailed = false
-        insights = nil
-        await loadKnownPeople()
-        guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
-              revision == context.recordingManager.reprocessingResultsRevision else { return }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && (context.recordingManager.reprocessingRecoveryReady || isCaptureLive)
+                && revision == context.recordingManager.reprocessingResultsRevision
+        }
 
         // Live recording: nothing on disk yet — the view renders from the
         // in-memory live segments, and chat uses the live provider.
         if isLive {
             chatService = chatStore.session(for: recording.fileURL)
+            await loadKnownPeople()
             return
         }
 
-        await loadInsights()
-        guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
-              revision == context.recordingManager.reprocessingResultsRevision else { return }
+        // The current document stays on screen until its replacement is ready; a
+        // newly selected recording starts empty because the view is keyed by URL.
+        guard let loadedInsights = await fetchInsights(), isCurrent() else { return }
+
+        var transcript: RichTranscript?
+        if let cached = recording.richTranscript {
+            transcript = cached
+        } else {
+            do {
+                transcript = try await context.transcriptStore.load(for: recording)
+                guard isCurrent() else { return }
+            } catch {
+                transcript = recording.transcription.map { RichTranscriptBuilder().build(from: $0) }
+            }
+        }
 
         // Restore any in-progress chat session for this recording.
         var resumedChat = false
@@ -1795,28 +1815,19 @@ struct TranscriptDetailView: View {
             chatService = nil
         }
 
-        if let cached = recording.richTranscript {
-            setTranscript(cached)
-        } else {
-            do {
-                let loaded = try await context.transcriptStore.load(for: recording)
-                guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
-              revision == context.recordingManager.reprocessingResultsRevision else { return }
-                setTranscript(loaded)
-            } catch {
-                if let result = recording.transcription {
-                    setTranscript(RichTranscriptBuilder().build(from: result))
-                } else {
-                    loadFailed = true
-                }
-            }
-        }
-
-        // Data-driven default view: Summary when one exists, else Transcript.
-        // A resumed (non-empty) chat opens the assistant panel beside it.
-        mode = ViewerPresentationPolicy.initialMode(hasSummary: hasSummary)
+        // Publish insights, transcript and tab in one update.
+        insights = loadedInsights
+        refreshSpokenSummaryAvailability()
+        setTranscript(transcript)
+        loadFailed = transcript == nil
+        mode = ViewerPresentationPolicy.modeAfterLoad(
+            current: mode, hasAppliedInitialMode: didApplyInitialMode, hasSummary: hasSummary)
+        didApplyInitialMode = true
         if resumedChat { assistantOpen = true }
         recomputeSearch()
+
+        // Only the rename menu needs these; don't hold the first paint for them.
+        await loadKnownPeople()
     }
 
     private func invalidateDerivedWork() {
