@@ -27,6 +27,15 @@ final class WaveformCache {
         entries[url.standardizedFileURL]?.samples
     }
 
+    /// Samples for a view's first frame, only when they match the file on disk —
+    /// an in-place replacement must not paint the old waveform even briefly.
+    func seed(for url: URL, modificationDate: Date?) -> [Float]? {
+        guard let modificationDate,
+              let entry = entries[url.standardizedFileURL],
+              entry.modificationDate == modificationDate else { return nil }
+        return entry.samples
+    }
+
     func samples(for url: URL, modificationDate: Date?) -> [Float]? {
         let key = url.standardizedFileURL
         guard let entry = entries[key], entry.modificationDate == modificationDate else { return nil }

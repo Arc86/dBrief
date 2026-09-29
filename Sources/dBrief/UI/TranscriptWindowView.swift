@@ -595,17 +595,15 @@ struct TranscriptDetailView: View {
             ForEach(ViewerPresentationPolicy.mountedModes(visited: visitedModes, current: mode), id: \.self) { tab in
                 let isCurrent = tab == mode
                 documentContent(for: tab)
-                    .opacity(isCurrent ? 1 : 0)
-                    .allowsHitTesting(isCurrent)
-                    .disabled(!isCurrent)
-                    .accessibilityHidden(!isCurrent)
-                    .zIndex(isCurrent ? 1 : 0)
+                    .modifier(ViewerMountedTab(isCurrent: isCurrent))
             }
         }
         .onChange(of: mode, initial: true) { previous, current in
             visitedModes.insert(previous)
             visitedModes.insert(current)
             if current == .transcript { transcriptScrollFollow.resumeFollowing() }
+            // Typing must never go into the hidden transcript's search field.
+            else if transcriptSearchFocused { transcriptSearchFocused = false }
         }
     }
 
@@ -1836,5 +1834,20 @@ struct PresenceDot: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
             .onAppear { on = !reduceMotion }
             .accessibilityHidden(true)
+    }
+}
+
+/// A document tab that stays mounted while hidden. No `.disabled`: it writes
+/// `isEnabled` into the environment, which bypasses the Equatable transcript rows
+/// and re-renders every one of them on each tab switch.
+struct ViewerMountedTab: ViewModifier {
+    let isCurrent: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isCurrent ? 1 : 0)
+            .allowsHitTesting(isCurrent)
+            .accessibilityHidden(!isCurrent)
+            .zIndex(isCurrent ? 1 : 0)
     }
 }

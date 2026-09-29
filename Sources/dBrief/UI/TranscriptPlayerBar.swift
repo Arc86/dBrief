@@ -32,7 +32,10 @@ struct TranscriptPlayerBar: View {
         self.segments = segments
         self.speakerLabels = speakerLabels
         // Seed from the cache so a revisit's first frame already shows the waveform.
-        _waveformSamples = State(initialValue: WaveformCache.shared.peek(audioURL) ?? [])
+        // (The stat runs only when an entry exists.)
+        let cache = WaveformCache.shared
+        _waveformSamples = State(initialValue: cache.peek(audioURL) == nil ? [] :
+            cache.seed(for: audioURL, modificationDate: WaveformCache.modificationDate(of: audioURL)) ?? [])
     }
 
     private var isThisFile: Bool { audioPlayer.currentFileURL == audioURL }

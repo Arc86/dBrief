@@ -61,24 +61,40 @@ struct WindowDragBlocker: NSViewRepresentable {
     var suppressed: Bool
 
     final class BlockerView: NSView {
-        /// The window's original value while this view has suppressed dragging.
-        private var restoreValue: Bool?
+        /// Per-window count of handles currently suppressing background dragging,
+        /// and the value to restore when the last one releases. A single shared
+        /// count means overlapping handles can never restore a suppressed value.
+        private static var suppressions: [ObjectIdentifier: (count: Int, original: Bool)] = [:]
+        private var isSuppressing = false
 
         func apply(suppressed: Bool) {
             guard let window else { return }
             if suppressed {
-                guard restoreValue == nil else { return }
-                restoreValue = window.isMovableByWindowBackground
-                window.isMovableByWindowBackground = false
+                guard !isSuppressing else { return }
+                isSuppressing = true
+                let key = ObjectIdentifier(window)
+                if let entry = Self.suppressions[key] {
+                    Self.suppressions[key] = (entry.count + 1, entry.original)
+                } else {
+                    Self.suppressions[key] = (1, window.isMovableByWindowBackground)
+                    window.isMovableByWindowBackground = false
+                }
             } else {
                 releaseSuppression(on: window)
             }
         }
 
         func releaseSuppression(on window: NSWindow) {
-            guard let value = restoreValue else { return }
-            window.isMovableByWindowBackground = value
-            restoreValue = nil
+            guard isSuppressing else { return }
+            isSuppressing = false
+            let key = ObjectIdentifier(window)
+            guard let entry = Self.suppressions[key] else { return }
+            if entry.count > 1 {
+                Self.suppressions[key] = (entry.count - 1, entry.original)
+            } else {
+                Self.suppressions[key] = nil
+                window.isMovableByWindowBackground = entry.original
+            }
         }
     }
 
