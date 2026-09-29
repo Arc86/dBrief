@@ -41,6 +41,8 @@ struct TranscriptDetailView: View {
     @State private var mode: ViewerDocumentMode = .transcript
     /// Whether the data-driven default tab was applied for this recording.
     @State private var didApplyInitialMode = false
+    /// Tabs opened at least once for this recording; they stay mounted.
+    @State private var visitedModes: Set<ViewerDocumentMode> = []
     @State private var analysisEditorPresented = false
     @State private var analysisEditorBaseline: RecordingInsights?
     @State private var analysisSaveError: String?
@@ -586,14 +588,32 @@ struct TranscriptDetailView: View {
 
     // MARK: - Body (mode-switched content the inspector sits beside)
 
-    @ViewBuilder
     private var bodyContent: some View {
-        // ZStack, not Group: during a mode change the outgoing and incoming
-        // documents must share one frame (cross-fade), not stack in the layout's VStack.
+        // Visited tabs stay mounted and cross-fade in one shared frame (ZStack), so
+        // switching back does not rebuild them. Hidden tabs are inert.
         ZStack {
-            switch mode {
+            ForEach(ViewerPresentationPolicy.mountedModes(visited: visitedModes, current: mode), id: \.self) { tab in
+                let isCurrent = tab == mode
+                documentContent(for: tab)
+                    .opacity(isCurrent ? 1 : 0)
+                    .allowsHitTesting(isCurrent)
+                    .disabled(!isCurrent)
+                    .accessibilityHidden(!isCurrent)
+                    .zIndex(isCurrent ? 1 : 0)
+            }
+        }
+        .onChange(of: mode, initial: true) { previous, current in
+            visitedModes.insert(previous)
+            visitedModes.insert(current)
+            if current == .transcript { transcriptScrollFollow.resumeFollowing() }
+        }
+    }
+
+    @ViewBuilder
+    private func documentContent(for tab: ViewerDocumentMode) -> some View {
+            switch tab {
                 case .summary:
-                    summaryBody.transition(documentModeTransition)
+                    summaryBody
                 case .actions:
                     RecordingActionsView(insights: insights,
                         owners: recording.participants + (recording.calendarEvent?.attendeeNames ?? []),
@@ -609,7 +629,6 @@ struct TranscriptDetailView: View {
                             insights = saved
                             return saved
                         })
-                        .transition(documentModeTransition)
                 case .meetingInsights:
                     MeetingInsightsView(recording: recording, richTranscript: richTranscript, insights: insights,
                                         isReadOnly: isReprocessing, onPrivacyReceipt: { showPrivacyReceipt = true }) {
@@ -619,11 +638,9 @@ struct TranscriptDetailView: View {
                             }
                         }
                     }
-                    .transition(documentModeTransition)
                 case .transcript:
-                    transcriptBody.transition(documentModeTransition)
+                    transcriptBody
             }
-        }
     }
 
     private var documentModeTransition: AnyTransition {
@@ -688,8 +705,14 @@ struct TranscriptDetailView: View {
             // while preserving text selection. (Audio-scrub-to-end stayed fine
             // because `scrollTo` only ever realized the destination rows.)
             List {
+                let menuKey = speakerMenuKey
+                let lastID = displayedTurns.last?.id
                 ForEach(displayedTurns) { turn in
-                    transcriptRow(turn)
+                    TranscriptTurnRow(model: rowModel(for: turn, lastID: lastID, menuKey: menuKey),
+                                      onSeek: { seek(to: $0) }) {
+                        speakerLabel(turn: turn, isMe: turn.speakerId != nil && turn.speakerId == meSpeakerId)
+                    }
+                        .equatable()
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
@@ -738,116 +761,36 @@ struct TranscriptDetailView: View {
         }
     }
 
-    /// Border drawn around the active speaker's presence dot — matches the panel
-    /// base so the dot reads as sitting on the avatar.
-    private var avatarRingBorder: Color {
-        palette.surface.color
+    /// Everything a row displays, as values. Rows whose model is unchanged skip
+    /// their body on a parent re-render.
+    private func rowModel(for turn: SpeakerTurn, lastID: UUID?, menuKey: Int) -> TranscriptTurnRowModel {
+        let matches = isSearching ? matchesByTurn[turn.id] ?? [] : []
+        let isRenaming = customRenameTurn?.id == turn.id
+        return .init(
+            turn: turn,
+            isActive: isTurnActive(turn),
+            isLast: turn.id == lastID,
+            isMe: turn.speakerId != nil && turn.speakerId == meSpeakerId,
+            showSpeakerName: showSpeakerNames,
+            displayName: displayName(for: turn.speakerId ?? ""),
+            color: ViewerSpeakerPalette.color(for: turn.speakerId, mode: appearanceMode).color,
+            matches: matches,
+            currentMatchIndex: TranscriptTurnRow<EmptyView>.rowMatchIndex(matches: matches, current: currentMatchIndex),
+            rowPadding: transcriptRowPadding(turn),
+            headerGap: CGFloat(reading.density.speakerHeaderGap),
+            menuKey: isRenaming ? ~menuKey : menuKey)
     }
 
-    /// One speaker turn: an avatar + connecting lane on the left, a capped-measure
-    /// content column on the right. The currently-playing turn is "lit" — a ring +
-    /// pulsing presence dot on the avatar and a tinted card around the text.
-    @ViewBuilder
-    private func transcriptRow(_ turn: SpeakerTurn) -> some View {
-        let active = isTurnActive(turn)
-        let hasSpeaker = turn.speakerId != nil
-        let isMe = hasSpeaker && turn.speakerId == meSpeakerId
-        let color = ViewerSpeakerPalette.color(for: turn.speakerId, mode: appearanceMode).color
-        let isLast = turn.id == displayedTurns.last?.id
-
-        HStack(alignment: .top, spacing: 14) {
-            if hasSpeaker {
-                avatarLane(turn: turn, color: color, active: active, drawLane: !isLast)
-                    .frame(width: 34)
-            } else {
-                // Keep unattributed fragments on the same reading column.
-                Color.clear.frame(width: 34, height: 1)
-            }
-            turnContent(turn: turn, color: color, active: active, isMe: isMe, hasSpeaker: hasSpeaker)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { seek(to: turn.startTime) }
-    }
-
-    private func avatarLane(turn: SpeakerTurn, color: Color, active: Bool, drawLane: Bool) -> some View {
-        VStack(spacing: 7) {
-            SpeakerAvatar(
-                speakerId: turn.speakerId ?? "",
-                name: displayName(for: turn.speakerId ?? ""),
-                size: 34,
-                overrideColor: color
-            )
-            .background {
-                if active { Circle().fill(color.opacity(0.25)).frame(width: 42, height: 42) }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if active { PresenceDot(border: avatarRingBorder, color: color) }
-            }
-            if drawLane {
-                Capsule()
-                    .fill(color.opacity(active ? 0.30 : 0.22))
-                    .frame(width: 2)
-                    .frame(maxHeight: .infinity)
-            }
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    @ViewBuilder
-    private func turnContent(turn: SpeakerTurn, color: Color, active: Bool, isMe: Bool, hasSpeaker: Bool) -> some View {
-        // Highlighting must not change wrapping or row height while List scrolls.
-        VStack(alignment: .leading, spacing: CGFloat(reading.density.speakerHeaderGap)) {
-            HStack(spacing: 10) {
-                if showSpeakerNames, hasSpeaker {
-                    speakerLabel(turn: turn, isMe: isMe)
-                }
-                timecodeChip(turn.startTime, color: active ? color : nil)
-                Spacer(minLength: 8)
-                HStack(spacing: 5) {
-                    if active {
-                        PulsingDot(color: color, size: 5)
-                    } else {
-                        Color.clear.frame(width: 5, height: 5)
-                    }
-                    Text("PLAYING").uiFont(.system(size: 10).monospaced())
-                }
-                .foregroundStyle(color)
-                .opacity(active ? 1 : 0)
-                .accessibilityHidden(!active)
-            }
-            ViewerTranscriptText(text: turn.text, paragraphRanges: turn.readingParagraphRanges,
-                matches: isSearching ? matchesByTurn[turn.id] ?? [] : [],
-                currentMatchIndex: currentMatchIndex)
-                .equatable()
-        }
-        .padding(EdgeInsets(top: transcriptRowPadding(turn), leading: 16,
-                           bottom: transcriptRowPadding(turn), trailing: 16))
-        .background {
-            if active {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.06))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(color.opacity(0.16), lineWidth: 1))
-            }
-        }
-    }
-
-    private func timecodeChip(_ time: TimeInterval, color: Color?) -> some View {
-        Button { seek(to: time) } label: {
-            Text(timecode(time))
-                .uiFont(.system(size: 11).monospaced())
-                .foregroundStyle(color ?? palette.secondary.color)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background {
-                    if let color {
-                        RoundedRectangle(cornerRadius: 5).fill(color.opacity(0.14))
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .help("Jump to this point")
+    /// Changes whenever anything the speaker menu shows or does changes.
+    private var speakerMenuKey: Int {
+        var hasher = Hasher()
+        hasher.combine(transcriptRevision)
+        hasher.combine(knownPeopleNames)
+        hasher.combine(embeddedSpeakerIds)
+        hasher.combine(enrolledSpeakerIds)
+        hasher.combine(isReprocessing)
+        hasher.combine(recording.participants)
+        return hasher.finalize()
     }
 
     private func transcriptRowPadding(_ turn: SpeakerTurn) -> CGFloat {
@@ -973,12 +916,6 @@ struct TranscriptDetailView: View {
 
     private func displayName(for id: String) -> String {
         richTranscript?.speakerLabels.first(where: { $0.id == id })?.displayName ?? id
-    }
-
-    private func timecode(_ time: TimeInterval) -> String {
-        guard time.isFinite else { return "—" }
-        let total = Int(min(max(0, time), Double(Int.max) / 2))
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Player

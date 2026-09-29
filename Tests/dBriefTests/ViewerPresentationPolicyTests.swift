@@ -46,3 +46,20 @@ import Testing
     }
 
 }
+
+@Suite struct ViewerMountedModesTests {
+    @Test func onlyTheCurrentTabIsMountedAtFirst() {
+        #expect(ViewerPresentationPolicy.mountedModes(visited: [], current: .summary) == [.summary])
+    }
+
+    @Test func visitedTabsStayMountedInStableOrder() {
+        let mounted = ViewerPresentationPolicy.mountedModes(
+            visited: [.meetingInsights, .summary], current: .transcript)
+        #expect(mounted == [.summary, .transcript, .meetingInsights])
+    }
+
+    @Test func theCurrentTabIsNeverDuplicated() {
+        let mounted = ViewerPresentationPolicy.mountedModes(visited: [.transcript], current: .transcript)
+        #expect(mounted == [.transcript])
+    }
+}

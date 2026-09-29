@@ -3,7 +3,7 @@ import Foundation
 /// A merged run of consecutive `RichSegment`s from the same speaker.
 /// Used for display only — the underlying segments are preserved for seeking,
 /// editing, and persistence.
-struct SpeakerTurn: Identifiable, Sendable {
+struct SpeakerTurn: Identifiable, Sendable, Equatable {
     let id: UUID
     let speakerId: String?
     let segments: [RichSegment]
