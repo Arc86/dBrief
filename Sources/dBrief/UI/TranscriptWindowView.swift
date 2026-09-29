@@ -216,7 +216,7 @@ struct TranscriptDetailView: View {
                 } playback: {
                     if ViewerPresentationPolicy.showsPlayback(mode: mode,
                         hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive) {
-                        playerBar
+                        playerBar.transition(documentModeTransition)
                     }
                 } assistant: {
                     HStack(spacing: 0) {
@@ -234,6 +234,7 @@ struct TranscriptDetailView: View {
                     .animation(reduceMotion ? nil : ViewerMotion.panel, value: assistantOpen)
                 }
                 .background(palette.canvas.color)
+                .animation(reduceMotion ? nil : ViewerMotion.document, value: mode)
             } else {
                 loadingState
             }
@@ -582,7 +583,9 @@ struct TranscriptDetailView: View {
 
     @ViewBuilder
     private var bodyContent: some View {
-        Group {
+        // ZStack, not Group: during a mode change the outgoing and incoming
+        // documents must share one frame (cross-fade), not stack in the layout's VStack.
+        ZStack {
             switch mode {
                 case .summary:
                     summaryBody.transition(documentModeTransition)
@@ -616,7 +619,6 @@ struct TranscriptDetailView: View {
                     transcriptBody.transition(documentModeTransition)
             }
         }
-        .animation(reduceMotion ? nil : ViewerMotion.document, value: mode)
     }
 
     private var documentModeTransition: AnyTransition {
