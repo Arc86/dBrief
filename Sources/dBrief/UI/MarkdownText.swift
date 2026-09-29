@@ -8,19 +8,24 @@ import SwiftUI
 /// `#`/`-`/`1.` syntax. This view parses the common block elements the model
 /// emits into one attributed text value, delegating inline spans to `AttributedString`.
 struct MarkdownText: View {
-    private let rendered: AttributedString
-    private let usesReadingFont: Bool
+    // Only the source is stored: `init` runs on every parent re-render (e.g. each
+    // tab switch), so parsing there re-rendered the whole summary each time. The
+    // parse happens in `body`, which SwiftUI skips while these inputs are unchanged,
+    // and goes through a cache for views that are rebuilt with the same text.
+    private let text: String
+    private let readingFont: Font?
     @Environment(\.uiTypography) private var typography
 
     init(_ text: String, readingFont: Font? = nil) {
-        rendered = Self.render(text, readingFont: readingFont)
-        usesReadingFont = readingFont != nil
+        self.text = text
+        self.readingFont = readingFont
     }
 
     var body: some View {
+        let rendered = MarkdownRenderCache.shared.rendered(text, readingFont: readingFont)
         // A single selectable text view avoids a nested SwiftUI layout graph for
         // every line when a streamed response becomes formatted after Stop.
-        Text(usesReadingFont ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
+        Text(readingFont != nil ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -130,4 +135,46 @@ struct MarkdownText: View {
 private enum MarkdownHeadingLevel: AttributedStringKey {
     typealias Value = Int
     static let name = "dBrief.markdownHeadingLevel"
+}
+
+/// Parsed Markdown by source text and font, least-recently-used eviction.
+@MainActor
+final class MarkdownRenderCache {
+    static let shared = MarkdownRenderCache()
+
+    private struct Key: Hashable {
+        let text: String
+        let readingFont: Font?
+    }
+
+    private var entries: [Key: AttributedString] = [:]
+    private var recency: [Key] = []
+    private let limit: Int
+    /// How many times text was actually parsed (for tests).
+    private(set) var renderCount = 0
+
+    init(limit: Int = 64) {
+        self.limit = limit
+    }
+
+    func rendered(_ text: String, readingFont: Font?) -> AttributedString {
+        let key = Key(text: text, readingFont: readingFont)
+        if let cached = entries[key] {
+            touch(key)
+            return cached
+        }
+        renderCount += 1
+        let result = MarkdownText.render(text, readingFont: readingFont)
+        entries[key] = result
+        touch(key)
+        while recency.count > limit {
+            entries[recency.removeFirst()] = nil
+        }
+        return result
+    }
+
+    private func touch(_ key: Key) {
+        recency.removeAll { $0 == key }
+        recency.append(key)
+    }
 }
