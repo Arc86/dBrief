@@ -48,3 +48,23 @@ private struct ViewerWindowConfiguration: NSViewRepresentable {
         }
     }
 }
+
+/// The viewer window is draggable by its background, so a drag that starts on a
+/// resize handle would move the window while also resizing the panel. This
+/// AppKit backing opts its area out of window dragging.
+struct WindowDragBlocker: NSViewRepresentable {
+    final class BlockerView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+    }
+
+    func makeNSView(context: Context) -> BlockerView { BlockerView() }
+    func updateNSView(_ view: BlockerView, context: Context) {}
+}
+
+extension View {
+    /// Keeps drags that start on this view (e.g. a divider) from moving a
+    /// background-draggable window.
+    func preventsWindowDrag() -> some View {
+        background(WindowDragBlocker())
+    }
+}

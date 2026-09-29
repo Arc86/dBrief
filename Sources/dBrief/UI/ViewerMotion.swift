@@ -3,9 +3,9 @@ import SwiftUI
 /// Short, restrained transitions for the transcript viewer. Call sites opt in
 /// to these animations so playback, streaming, and resize gestures stay direct.
 enum ViewerMotion {
-    static let panel = Animation.easeInOut(duration: 0.26)
-    static let document = Animation.easeInOut(duration: 0.20)
-    static let popover = Animation.easeInOut(duration: 0.22)
+    static let panel = Animation.easeOut(duration: 0.16)
+    static let document = Animation.easeOut(duration: 0.12)
+    static let popover = Animation.easeOut(duration: 0.14)
 }
 
 /// Fades controls inside a native SwiftUI popover while leaving the system

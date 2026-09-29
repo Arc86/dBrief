@@ -1033,7 +1033,7 @@ struct TranscriptDetailView: View {
     private var assistantResizeHandle: some View {
         Color.clear
             .frame(width: 1)
-            .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()))
+            .overlay(Color.clear.frame(width: 8).contentShape(Rectangle()).preventsWindowDrag())
             .gesture(
                 // Measure in `.global` space: the handle moves as the panel
                 // resizes, so a handle-local `translation` feeds back on itself

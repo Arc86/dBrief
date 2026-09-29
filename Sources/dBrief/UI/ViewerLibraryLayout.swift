@@ -80,7 +80,7 @@ struct ViewerLibraryLayout<Sidebar: View, Detail: View>: View {
 
     private var resizeHandle: some View {
         palette.divider.color
-            .overlay(Color.clear.frame(width: 10).contentShape(Rectangle()))
+            .overlay(Color.clear.frame(width: 10).contentShape(Rectangle()).preventsWindowDrag())
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
                 .onChanged { value in
                     let start = dragStartWidth ?? sidebarWidth
