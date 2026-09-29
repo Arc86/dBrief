@@ -113,6 +113,10 @@ struct TranscriptDetailView: View {
     /// `richTranscript`, which is only ever replaced wholesale (load,
     /// re-diarize, rename, edit).
     @State private var displayedTurns: [SpeakerTurn] = []
+    /// Bumped by `setTranscript(_:)`; keys the per-speaker menu cache.
+    @State private var transcriptRevision = 0
+    /// Per-speaker rename/move menu data, shared by every row of that speaker.
+    @State private var speakerMenuCache = SpeakerMenuCache()
 
     private var uniqueSpeakerIds: [String] {
         guard let t = richTranscript else { return [] }
@@ -175,6 +179,7 @@ struct TranscriptDetailView: View {
     /// frame renders new segments with the previous turn grouping.
     private func setTranscript(_ transcript: RichTranscript?) {
         richTranscript = transcript
+        transcriptRevision += 1
         displayedTurns = transcript?.speakerTurns() ?? []
     }
 
@@ -884,29 +889,24 @@ struct TranscriptDetailView: View {
         }
     }
 
-    /// Selection-based speaker actions, split into Rename / Move / This-is-me. Candidates are
-    /// computed lazily here (only when the menu opens), not per row render.
+    /// Selection-based speaker actions, split into Rename / Move / This-is-me. `Menu` builds
+    /// its items eagerly, so the candidate data comes from a per-speaker cache instead of
+    /// scanning the transcript once per row.
     @ViewBuilder
     private func speakerMenuContent(turn: SpeakerTurn, isMe: Bool) -> some View {
-        let transcript = richTranscript ?? RichTranscript(segments: [])
-        let attendees = (recording.calendarEvent?.attendeeNames ?? []) + recording.calendarCandidates.flatMap(\.attendeeNames)
-        let cands = SpeakerReassignment.candidates(
-            in: transcript,
-            currentSpeakerId: turn.speakerId,
+        let menu = speakerMenuCache.data(for: turn.speakerId, inputs: .init(
+            revision: transcriptRevision,
+            transcript: richTranscript ?? RichTranscript(segments: []),
             participants: recording.participants,
-            calendarAttendees: attendees,
-            knownPeople: knownPeopleNames)
+            attendees: (recording.calendarEvent?.attendeeNames ?? []) + recording.calendarCandidates.flatMap(\.attendeeNames),
+            knownPeople: knownPeopleNames))
         // Rename targets, grouped by source. Picking a meeting/library name that already
         // belongs to another speaker swaps them (handled in `SpeakerReassignment.rename`).
-        let meetingNames = cands.filter { $0.source == .meeting }.map(\.displayName)
-        let libraryNames = cands.filter { $0.source == .library }.map(\.displayName)
+        let meetingNames = menu.meetingNames
+        let libraryNames = menu.libraryNames
         // Move targets: the other existing speakers.
-        let others = cands.compactMap { c -> SpeakerMoveTarget? in
-            guard let sid = c.existingSpeakerId, !c.isCurrent else { return nil }
-            return SpeakerMoveTarget(id: sid, displayName: c.displayName)
-        }
-        let segCount = SpeakerReassignment.segmentCount(in: transcript, speakerId: turn.speakerId)
-        let hasSegmentsBeyondTurn = segCount > turn.segments.count
+        let others = menu.others
+        let hasSegmentsBeyondTurn = menu.segmentCount > turn.segments.count
 
         // Rename — grouped into "In this meeting" and "Voice library", plus a custom fallback.
         if meetingNames.isEmpty && libraryNames.isEmpty {
