@@ -12,7 +12,7 @@ struct NativeControlTypography: NSViewRepresentable {
 
     func updateNSView(_ view: NativeControlTypographyHost, context: Context) {
         view.preferences = preferences
-        view.scheduleRefresh()
+        view.scheduleRefresh(trigger: .swiftUIUpdate)
     }
 
     static func dismantleNSView(_ view: NativeControlTypographyHost, coordinator: ()) {
@@ -27,6 +27,35 @@ final class NativeControlTypographyHost: NSView {
     private var windowObserver: NSObjectProtocol?
     private var menuObserver: NSObjectProtocol?
     private var refreshScheduled = false
+    private var trailingRefreshScheduled = false
+    /// What the last walk applied, so default typography can skip further walks.
+    private var lastApplied: AppTypographyPreferences?
+    private var lastRefresh = Date.distantPast
+
+    enum RefreshTrigger {
+        /// `NSWindow.didUpdateNotification`: fires after every event, including each
+        /// scroll frame, so it must stay cheap.
+        case windowUpdate
+        /// The hosting view changed or was attached: always reconcile.
+        case swiftUIUpdate
+    }
+
+    /// Whether a refresh must walk the window. With default typography there is
+    /// nothing to restyle, so per-event window updates skip the walk — unless a
+    /// custom style was applied earlier and must be restored once.
+    static func shouldRefresh(preferences: AppTypographyPreferences,
+                              lastApplied: AppTypographyPreferences?,
+                              trigger: RefreshTrigger) -> Bool {
+        guard trigger == .windowUpdate else { return true }
+        let standard = AppTypographyPreferences()
+        if preferences == standard { return lastApplied != nil && lastApplied != standard }
+        return true
+    }
+
+    /// Per-event refreshes closer together than this are coalesced.
+    static func isThrottled(sinceLastRefresh interval: TimeInterval) -> Bool {
+        interval < 0.1
+    }
 
     init(preferences: AppTypographyPreferences) {
         self.preferences = preferences
@@ -44,7 +73,7 @@ final class NativeControlTypographyHost: NSView {
         windowObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didUpdateNotification, object: window, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleRefresh() }
+            MainActor.assumeIsolated { self?.scheduleRefresh(trigger: .windowUpdate) }
         }
         menuObserver = NotificationCenter.default.addObserver(
             forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
@@ -62,7 +91,7 @@ final class NativeControlTypographyHost: NSView {
                 self.applicator.apply(to: menu, preferences: self.preferences)
             }
         }
-        scheduleRefresh()
+        scheduleRefresh(trigger: .swiftUIUpdate)
     }
 
     static func ownsTrackingContext(hostWindow: NSWindow?, eventWindow: NSWindow?,
@@ -84,14 +113,30 @@ final class NativeControlTypographyHost: NSView {
         }
     }
 
-    func scheduleRefresh() {
-        guard !refreshScheduled, window != nil else { return }
+    func scheduleRefresh(trigger: RefreshTrigger) {
+        guard window != nil,
+              Self.shouldRefresh(preferences: preferences, lastApplied: lastApplied, trigger: trigger)
+        else { return }
+        if trigger == .windowUpdate, Self.isThrottled(sinceLastRefresh: Date().timeIntervalSince(lastRefresh)) {
+            // Keep one trailing refresh so controls created mid-burst still get styled.
+            guard !trailingRefreshScheduled else { return }
+            trailingRefreshScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self else { return }
+                self.trailingRefreshScheduled = false
+                self.scheduleRefresh(trigger: .windowUpdate)
+            }
+            return
+        }
+        guard !refreshScheduled else { return }
         refreshScheduled = true
         // SwiftUI may finish installing or replacing its native children after updateNSView.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.refreshScheduled = false
             guard let content = self.window?.contentView else { return }
+            self.lastRefresh = Date()
+            self.lastApplied = self.preferences
             self.applicator.apply(to: content, preferences: self.preferences)
         }
     }
@@ -150,7 +195,10 @@ final class NativeControlTypographyApplicator {
                                       fallback: original, preferences: fieldPreferences)
                 if !placeholder.isEqual(to: styled) { field.placeholderAttributedString = styled }
             } else if let placeholder = field.placeholderString, !placeholder.isEmpty {
-                field.placeholderAttributedString = restyled(NSAttributedString(string: placeholder),
+                // Keep the system placeholder colour: an attributed string without a
+                // colour would draw in default black, unreadable on dark themes.
+                field.placeholderAttributedString = restyled(
+                    NSAttributedString(string: placeholder, attributes: [.foregroundColor: NSColor.placeholderTextColor]),
                     owner: field, slot: "placeholder", fallback: original, preferences: fieldPreferences)
             }
             // AppKit's shared field editor is not part of the text field's view subtree.
