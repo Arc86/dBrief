@@ -13,6 +13,9 @@ struct ProviderPreset: Identifiable, Hashable, Sendable {
     let help: String
     /// Application allowance, not the model's maximum. Sources: site/docs/ai-analysis/remote-endpoint.md.
     var defaultOutputTokenLimit: Int = 4096
+    /// Earlier defaults for this preset. Saved endpoints still using one keep the
+    /// preset's output allowance after the default moves to a newer model.
+    var previousDefaultModels: Set<String> = []
 
     func makeEndpoint() -> Endpoint {
         Endpoint(name: name, baseURL: baseURL, modelName: defaultModel, provider: provider)
@@ -23,8 +26,9 @@ enum ProviderPresets {
     /// AI-analysis providers.
     static let ai: [ProviderPreset] = [
         ProviderPreset(id: "anthropic", name: "Anthropic (Claude)", provider: .anthropic,
-                       baseURL: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6",
-                       help: "API key from console.anthropic.com", defaultOutputTokenLimit: 16_384),
+                       baseURL: "https://api.anthropic.com", defaultModel: "claude-sonnet-5-5",
+                       help: "API key from console.anthropic.com", defaultOutputTokenLimit: 16_384,
+                       previousDefaultModels: ["claude-sonnet-4-6"]),
         ProviderPreset(id: "gemini", name: "Google Gemini", provider: .openAICompatible,
                        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.5-flash",
                        help: "OpenAI-compatible endpoint. API key from aistudio.google.com", defaultOutputTokenLimit: 16_384),
@@ -52,7 +56,7 @@ enum ProviderPresets {
         return ai.first {
             $0.provider == endpoint.provider
                 && URL(string: $0.baseURL)?.host?.lowercased() == host
-                && $0.defaultModel.lowercased() == model
+                && ($0.defaultModel.lowercased() == model || $0.previousDefaultModels.contains(model))
         }?.defaultOutputTokenLimit ?? 4096
     }
 
