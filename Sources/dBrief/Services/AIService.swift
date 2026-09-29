@@ -218,20 +218,36 @@ actor AIService {
         return request
     }
 
+    /// Model families that still accept a non-default `temperature`. Anything else —
+    /// Sonnet 5+, Opus 4.7+, Opus 5+, Fable, and future models — returns a 400 for
+    /// non-default sampling parameters, so it is omitted for them.
+    private nonisolated static let temperatureAcceptingModels = [
+        "claude-3", "haiku-4-5", "sonnet-4-5", "sonnet-4-6", "opus-4-0", "opus-4-1", "opus-4-5", "opus-4-6",
+    ]
+
+    nonisolated static func anthropicAcceptsTemperature(model: String) -> Bool {
+        let name = model.lowercased()
+        return temperatureAcceptingModels.contains { name.contains($0) }
+    }
+
+    nonisolated static func applyAnthropicSampling(to body: inout [String: Any], model: String) {
+        if anthropicAcceptsTemperature(model: model) { body["temperature"] = 0.3 }
+    }
+
     private nonisolated static func anthropicStreamRequest(
         systemPrompt: String,
         userMessage: String,
         endpoint: Endpoint
     ) throws -> URLRequest {
         guard let url = endpoint.messagesURL else { throw AIServiceError.invalidEndpoint }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": endpoint.modelName,
             "max_tokens": endpoint.resolvedMaxOutputTokens,
-            "temperature": 0.3,
             "system": systemPrompt,
             "messages": [["role": "user", "content": userMessage]],
             "stream": true,
         ]
+        applyAnthropicSampling(to: &body, model: endpoint.modelName)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -428,13 +444,13 @@ actor AIService {
             throw AIServiceError.invalidEndpoint
         }
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": endpoint.modelName,
             "max_tokens": endpoint.resolvedMaxOutputTokens,
-            "temperature": 0.3,
             "system": systemPrompt,
             "messages": [["role": "user", "content": userMessage]],
         ]
+        Self.applyAnthropicSampling(to: &body, model: endpoint.modelName)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
