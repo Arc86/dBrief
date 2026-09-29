@@ -19,6 +19,22 @@ struct TranscriptPlayerBar: View {
     @State private var waveformRequestID: UUID?
     @State private var loadedWaveformURL: URL?
 
+    init(
+        audioURL: URL,
+        currentTime: Binding<TimeInterval>,
+        recordingDuration: TimeInterval = 0,
+        segments: [RichSegment] = [],
+        speakerLabels: [SpeakerLabel] = []
+    ) {
+        self.audioURL = audioURL
+        self._currentTime = currentTime
+        self.recordingDuration = recordingDuration
+        self.segments = segments
+        self.speakerLabels = speakerLabels
+        // Seed from the cache so a revisit's first frame already shows the waveform.
+        _waveformSamples = State(initialValue: WaveformCache.shared.peek(audioURL) ?? [])
+    }
+
     private var isThisFile: Bool { audioPlayer.currentFileURL == audioURL }
 
     /// Use the loaded player's duration once it owns this URL; otherwise use
@@ -69,18 +85,24 @@ struct TranscriptPlayerBar: View {
         .modifier(ViewerCard())
         .task(id: audioURL) {
             guard loadedWaveformURL != audioURL else { return }
-            loadedWaveformURL = nil
             let requestID = UUID()
             waveformRequestID = requestID
             let requestedURL = audioURL
-            audioFileExists = false
+            let exists = FileManager.default.fileExists(atPath: requestedURL.path)
+            let modified = exists ? WaveformCache.modificationDate(of: requestedURL) : nil
+            audioFileExists = exists
+
+            if exists, let cached = WaveformCache.shared.samples(for: requestedURL, modificationDate: modified) {
+                if waveformSamples != cached { waveformSamples = cached }
+                loadedWaveformURL = requestedURL
+                rebuildSpeakerTimelineCache()
+                return
+            }
+
+            loadedWaveformURL = nil
             waveformSamples = []
             normalizedSpeakerRanges = []
             sampledSpeakerIDs = []
-
-            let exists = FileManager.default.fileExists(atPath: requestedURL.path)
-            guard waveformRequestID == requestID else { return }
-            audioFileExists = exists
             rebuildSpeakerTimelineCache()
             guard exists else {
                 loadedWaveformURL = requestedURL
@@ -89,6 +111,7 @@ struct TranscriptPlayerBar: View {
 
             let samples = await WaveformGenerator.generate(from: requestedURL)
             guard !Task.isCancelled, waveformRequestID == requestID else { return }
+            WaveformCache.shared.store(samples, for: requestedURL, modificationDate: modified)
             waveformSamples = samples
             loadedWaveformURL = requestedURL
             rebuildSpeakerTimelineCache()
