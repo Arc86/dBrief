@@ -17,7 +17,12 @@ struct TranscriptChatView: View {
 
     var body: some View {
         VStack(spacing: 15) {
-            if chatService.messages.isEmpty {
+            if chatService.messages.isEmpty && chatService.isLoadingHistory {
+                // Hold the space while a saved conversation loads, rather than
+                // flashing the empty-state prompt it is about to replace.
+                Color.clear
+                    .frame(minHeight: 0, maxHeight: .infinity)
+            } else if chatService.messages.isEmpty {
                 emptyState
                     .frame(minHeight: 0, maxHeight: .infinity)
             } else {

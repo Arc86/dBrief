@@ -149,6 +149,9 @@ final class TranscriptChatService {
     /// can't append to an empty conversation before persisted history arrives
     /// (which would no-op the load and overwrite the saved file).
     private var loadTask: Task<Void, Never>?
+    /// True while a saved conversation is read from disk, so the chat view can
+    /// hold its empty state instead of flashing it before the history appears.
+    private(set) var isLoadingHistory = false
     /// True when `messages` has changed since the last successful write — lets
     /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
     private var hasUnsavedChanges = false
@@ -170,6 +173,7 @@ final class TranscriptChatService {
         activeSendID = nil
         saveTask = nil
         loadTask = nil
+        isLoadingHistory = false
         chatStore = nil
         persistenceURL = nil
         hasUnsavedChanges = false
@@ -332,7 +336,11 @@ final class TranscriptChatService {
     /// `enablePersistence`.
     func startLoadingPersisted() {
         guard !invalidated else { return }
-        loadTask = Task { await loadPersisted() }
+        isLoadingHistory = true
+        loadTask = Task {
+            await loadPersisted()
+            isLoadingHistory = false
+        }
     }
 
     /// Adopt a previously-saved conversation from disk. No-op if persistence
