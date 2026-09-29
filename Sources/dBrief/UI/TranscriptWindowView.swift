@@ -107,10 +107,9 @@ struct TranscriptDetailView: View {
 
     /// Turns derived from `richTranscript`, cached so playback ticks (10 Hz
     /// `currentTime` updates) don't re-run the O(segments) merge on every body
-    /// evaluation. Rebuilt by `.onChange(of: richTranscript)` — `richTranscript`
-    /// is only ever replaced wholesale (load, re-diarize, rename, edit), and
-    /// unchanged arrays compare by COW buffer identity, so the check is O(1)
-    /// on ticks.
+    /// evaluation. Written only by `setTranscript(_:)`, together with
+    /// `richTranscript`, which is only ever replaced wholesale (load,
+    /// re-diarize, rename, edit).
     @State private var displayedTurns: [SpeakerTurn] = []
 
     private var uniqueSpeakerIds: [String] {
@@ -168,6 +167,13 @@ struct TranscriptDetailView: View {
     /// Rebuilds `liveTurns` from the current live segments, keeping row identity.
     private func refreshLiveTurns() {
         liveTurns = LiveTurnBuilder.turns(from: liveSegments)
+    }
+
+    /// Assigns the transcript and its display turns in the same update, so no
+    /// frame renders new segments with the previous turn grouping.
+    private func setTranscript(_ transcript: RichTranscript?) {
+        richTranscript = transcript
+        displayedTurns = transcript?.speakerTurns() ?? []
     }
 
     var body: some View {
@@ -247,7 +253,7 @@ struct TranscriptDetailView: View {
             if !isOpen { chatService?.stopReading() }
         }
         .onChange(of: context.recordingManager.reprocessingRecoveryReady) { _, ready in
-            if !ready { invalidateDerivedWork(); richTranscript = nil; insights = nil }
+            if !ready { invalidateDerivedWork(); setTranscript(nil); insights = nil }
         }
         .onChange(of: isReprocessing, initial: true) { _, locked in
             if locked { invalidateDerivedWork() }
@@ -255,9 +261,6 @@ struct TranscriptDetailView: View {
         .onChange(of: context.recordingManager.reprocessingResultsRevision) { _, _ in
             invalidateDerivedWork()
             Task { await reloadReprocessedResults() }
-        }
-        .onChange(of: richTranscript) { _, newValue in
-            displayedTurns = newValue?.speakerTurns() ?? []
         }
         .background { if !isLive { findShortcuts } }
         .onChange(of: searchQuery) { _, _ in scheduleSearchRecompute() }
@@ -1334,7 +1337,7 @@ struct TranscriptDetailView: View {
         // Link to a voice-library person when the chosen name is already known.
         let knownId = knownPersonIds[newName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
         transcript = SpeakerReassignment.rename(transcript, speakerId: id, to: newName, personId: knownId)
-        richTranscript = transcript
+        setTranscript(transcript)
         saveTranscript(transcript)
         recomputeSearch()
         // Growth loop (Phase 3): enroll this speaker's voiceprint, then link the
@@ -1353,7 +1356,7 @@ struct TranscriptDetailView: View {
                let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
                t.speakerLabels[i].personId != personId {
                 t.speakerLabels[i].personId = personId
-                richTranscript = t
+                setTranscript(t)
                 saveTranscript(t)
             }
             if hasSummary { offerReanalysis = true }
@@ -1380,7 +1383,7 @@ struct TranscriptDetailView: View {
                let i = t.speakerLabels.firstIndex(where: { $0.id == id }),
                t.speakerLabels[i].personId != personId {
                 t.speakerLabels[i].personId = personId
-                richTranscript = t
+                setTranscript(t)
                 saveTranscript(t)
             }
         }
@@ -1393,7 +1396,7 @@ struct TranscriptDetailView: View {
         let ids = Set(turn.segments.map(\.id))
         transcript = SpeakerReassignment.apply(.existing(speakerId: toSpeakerId), to: transcript,
                                                segmentIds: ids, scope: scope, newId: "")
-        richTranscript = transcript
+        setTranscript(transcript)
         saveTranscript(transcript)
         recomputeSearch()
     }
@@ -1426,7 +1429,7 @@ struct TranscriptDetailView: View {
         guard !isReprocessing else { return }
         guard var transcript = richTranscript else { return }
         transcript.meSpeakerId = id
-        richTranscript = transcript
+        setTranscript(transcript)
         saveTranscript(transcript)
     }
 
@@ -1573,13 +1576,11 @@ struct TranscriptDetailView: View {
         return "\(currentMatchIndex + 1) of \(searchResult.matches.count)"
     }
 
-    /// Recomputes matches over the current transcript's turns. Derives them from
-    /// `richTranscript` (not the cached `displayedTurns`) because several callers
-    /// run synchronously right after assigning `richTranscript`, before the
-    /// `.onChange` refresh of the cache has fired. Keeps `currentMatchIndex` in
-    /// bounds; callers decide when to reset it to 0.
+    /// Recomputes matches over the displayed turns. `setTranscript(_:)` keeps
+    /// `displayedTurns` in sync, so callers may run this right after assigning.
+    /// Keeps `currentMatchIndex` in bounds; callers decide when to reset it to 0.
     private func recomputeSearch() {
-        let turns = (richTranscript?.speakerTurns() ?? []).map { (id: $0.id, text: $0.text) }
+        let turns = displayedTurns.map { (id: $0.id, text: $0.text) }
         let result = TranscriptSearch.search(turns: turns, query: searchQuery)
         searchResult = result
         matchesByTurn = Dictionary(grouping: result.matches, by: \.turnId)
@@ -1767,7 +1768,7 @@ struct TranscriptDetailView: View {
     private func loadTranscript() async {
         guard context.recordingManager.reprocessingRecoveryReady || isCaptureLive else { return }
         let revision = context.recordingManager.reprocessingResultsRevision
-        richTranscript = nil
+        setTranscript(nil)
         loadFailed = false
         insights = nil
         await loadKnownPeople()
@@ -1795,16 +1796,16 @@ struct TranscriptDetailView: View {
         }
 
         if let cached = recording.richTranscript {
-            richTranscript = cached
+            setTranscript(cached)
         } else {
             do {
                 let loaded = try await context.transcriptStore.load(for: recording)
                 guard !Task.isCancelled, context.recordingManager.reprocessingRecoveryReady || isCaptureLive,
               revision == context.recordingManager.reprocessingResultsRevision else { return }
-                richTranscript = loaded
+                setTranscript(loaded)
             } catch {
                 if let result = recording.transcription {
-                    richTranscript = RichTranscriptBuilder().build(from: result)
+                    setTranscript(RichTranscriptBuilder().build(from: result))
                 } else {
                     loadFailed = true
                 }
@@ -1844,7 +1845,7 @@ struct TranscriptDetailView: View {
         guard !isReprocessing else { return }
         guard let result = recording.transcription else { return }
         let built = RichTranscriptBuilder().build(from: result)
-        richTranscript = built
+        setTranscript(built)
         loadFailed = false
         recomputeSearch()
         saveTranscript(built)
