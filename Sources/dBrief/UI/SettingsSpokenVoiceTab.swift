@@ -25,6 +25,16 @@ struct SettingsSpokenVoiceTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Picker("Language", selection: languageBinding) {
+                    ForEach(settings.ttsEngine.supportedLanguages, id: \.self) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(languageCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 switch settings.ttsEngine {
                 case .qwen3:
                     Picker("Voice model", selection: $settings.ttsModelSize) {
@@ -45,15 +55,6 @@ struct SettingsSpokenVoiceTab: View {
                     Text(settings.ttsVoice.detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Picker("Language", selection: $settings.ttsLanguage) {
-                        ForEach(TTSLanguage.allCases, id: \.self) { language in
-                            Text(language.displayName).tag(language)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    Text("Each voice sounds best in its native language. Choose the language your summary is written in.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     voicePreviewRow
                     if settings.ttsModelSize.supportsVoiceInstruction {
                         PromptSettingsRow(kind: .voiceStyle)
@@ -63,13 +64,13 @@ struct SettingsSpokenVoiceTab: View {
                             .foregroundStyle(.secondary)
                     }
                 case .kokoro:
-                    Picker("Voice", selection: $settings.ttsKokoroVoice) {
-                        ForEach(KokoroVoice.allCases, id: \.self) { voice in
+                    Picker("Voice", selection: kokoroVoiceBinding) {
+                        ForEach(KokoroVoice.voices(for: settings.spokenSummaryLanguage), id: \.self) { voice in
                             Text("\(voice.displayName) · \(voice.detail)").tag(voice)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text("English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules.")
+                    Text(kokoroDownloadNote)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     voicePreviewRow
@@ -90,16 +91,36 @@ struct SettingsSpokenVoiceTab: View {
         .padding(.top, -20)
     }
 
-    /// A short sample sentence in the language the preview will be spoken in.
-    /// Qwen3 uses the selected output language; Kokoro speaks English.
-    private var previewSampleText: String {
-        switch appSettings.ttsEngine {
-        case .qwen3:
-            return appSettings.ttsLanguage.sampleText
-        case .kokoro:
-            return TTSLanguage.english.sampleText
+    /// Shows the language in effect; picking one also moves Kokoro to a voice that speaks it.
+    private var languageBinding: Binding<TTSLanguage> {
+        Binding(get: { appSettings.spokenSummaryLanguage }, set: { language in
+            appSettings.ttsLanguage = language
+            appSettings.ttsKokoroVoice = KokoroVoice.resolved(appSettings.ttsKokoroVoice, for: language)
+        })
+    }
+
+    private var kokoroVoiceBinding: Binding<KokoroVoice> {
+        Binding(get: { appSettings.effectiveKokoroVoice }, set: { appSettings.ttsKokoroVoice = $0 })
+    }
+
+    private var languageCaption: String {
+        let chosen = appSettings.ttsLanguage
+        if chosen != appSettings.spokenSummaryLanguage {
+            return "\(chosen.displayName) isn't available with \(appSettings.ttsEngine.displayName), so English is used."
+        }
+        return "The summary is written and spoken in this language."
+    }
+
+    private var kokoroDownloadNote: String {
+        switch appSettings.spokenSummaryLanguage {
+        case .japanese: "Japanese uses its own voice model (about 217 MB), downloaded on first use, then works offline."
+        case .english: "English voices download on first use (about 510 KB each), then work offline. British voices currently use US pronunciation rules."
+        default: "Voices download on first use, then work offline."
         }
     }
+
+    /// A short sample sentence in the language the summary will be spoken in.
+    private var previewSampleText: String { appSettings.spokenSummaryLanguage.sampleText }
 
     /// Audition the selected voice/language/model/style with a short sample.
     @ViewBuilder

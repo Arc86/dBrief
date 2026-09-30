@@ -32,10 +32,12 @@ struct PromptPreviewPanel: View {
               let actions = try? store.load(.init(kind: .actionItems, scope: scope)),
               let tags = try? store.load(.init(kind: .tags, scope: scope)) else { return nil }
         let profile: MeetingProfile? = if case .profile(let id) = scope { settings.profiles.first { $0.id == id } } else { nil }
-        return .init(identity: session.identity, draftText: session.draft.text, sample: sample, configuration: config,
+        var request = PromptPreviewRequest(identity: session.identity, draftText: session.draft.text, sample: sample, configuration: config,
                      outputLanguage: settings.outputLanguage, vocabulary: (profile?.overrides.customVocabulary ?? settings.customVocabulary).joined(separator: ", "),
                      summaryGuidance: PromptDraft(snapshot: summary).text, actionItemsGuidance: PromptDraft(snapshot: actions).text,
                      tagsGuidance: PromptDraft(snapshot: tags).text)
+        request.spokenSummaryLanguage = settings.spokenSummaryLanguage
+        return request
     }
     var body: some View {
         ScrollView {

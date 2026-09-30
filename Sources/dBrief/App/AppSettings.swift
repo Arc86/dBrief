@@ -598,7 +598,26 @@ final class AppSettings {
         Output valid JSON only. No markdown code fences, no explanation.
         """
 
+    /// The briefing language is appended at runtime from the Spoken Summary language
+    /// setting (`SpokenSummaryPrompt.systemPrompt`), so this stays language-neutral.
     static let defaultSpokenSummaryPrompt = """
+        You are an assistant that turns a meeting's written summary and action items \
+        into a short, natural-sounding spoken briefing to be read aloud by a \
+        text-to-speech voice. \
+        Produce flowing spoken prose only — no headings, bullet points, markdown, \
+        emoji, or list markers. \
+        Open with one sentence framing what the meeting was about, then narrate the \
+        key points and decisions conversationally, and finish by mentioning the most \
+        important action items and who owns them. \
+        Keep it concise (roughly 150-220 words), use complete sentences, and spell out \
+        abbreviations where it helps listening. \
+        Do not add meta commentary like "here is your summary" — start directly with \
+        the briefing.
+        """
+
+    /// The pre-language-setting default. A stored prompt equal to this is migrated
+    /// to `defaultSpokenSummaryPrompt`; customized prompts are left alone.
+    static let legacyDefaultSpokenSummaryPrompt = """
         You are an assistant that turns a meeting's written summary and action items \
         into a short, natural-sounding spoken briefing to be read aloud by a \
         text-to-speech voice. \
@@ -613,6 +632,11 @@ final class AppSettings {
         Do not add meta commentary like "here is your summary" — start directly with \
         the briefing.
         """
+
+    static func migratedSpokenSummaryPrompt(stored: String?) -> String {
+        guard let stored, stored != legacyDefaultSpokenSummaryPrompt else { return defaultSpokenSummaryPrompt }
+        return stored
+    }
 
     /// Default calm-delivery style instruction for the Spoken Summary TTS voice.
     /// Followed only by the 1.7B model.
@@ -727,7 +751,9 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(ttsVoice.rawValue, forKey: Keys.ttsVoice) }
     }
 
-    /// Qwen3-TTS output language used for spoken-summary synthesis. Settings → AI Analysis.
+    /// Chosen spoken-summary language (both engines). Use `spokenSummaryLanguage`
+    /// for the value in effect, which falls back to English when the selected engine
+    /// can't speak this one. Settings → Spoken Summary.
     var ttsLanguage: TTSLanguage {
         didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
     }
@@ -748,12 +774,25 @@ final class AppSettings {
     /// TTS engine. Kokoro derives language from its voice id and has no style
     /// instruction or model-size control, so those are `nil` for it.
     var ttsSynthesisParams: (engine: String, voice: String?, language: String?, instruction: String?, model: String?) {
+        let language = spokenSummaryLanguage.rawValue
         switch ttsEngine {
         case .kokoro:
-            return (ttsEngine.rawValue, ttsKokoroVoice.rawValue, nil, nil, nil)
+            return (ttsEngine.rawValue, effectiveKokoroVoice.rawValue, language, nil, nil)
         case .qwen3:
-            return (ttsEngine.rawValue, ttsVoice.rawValue, ttsLanguage.rawValue, ttsDeliveryInstruction, ttsModelSize.rawValue)
+            return (ttsEngine.rawValue, ttsVoice.rawValue, language, ttsDeliveryInstruction, ttsModelSize.rawValue)
         }
+    }
+
+    /// The language the spoken summary is written and spoken in.
+    var spokenSummaryLanguage: TTSLanguage { ttsEngine.resolvedLanguage(ttsLanguage) }
+
+    /// The Kokoro voice actually used: the chosen one if it speaks the summary
+    /// language, otherwise that language's default voice.
+    var effectiveKokoroVoice: KokoroVoice { KokoroVoice.resolved(ttsKokoroVoice, for: spokenSummaryLanguage) }
+
+    /// The rewrite prompt with the summary language appended.
+    var spokenSummarySystemPrompt: String {
+        SpokenSummaryPrompt.systemPrompt(base: spokenSummaryPrompt, language: spokenSummaryLanguage)
     }
 
     var remoteChunkingEnabled: Bool {
@@ -1046,7 +1085,7 @@ final class AppSettings {
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt
         self.tagsPrompt = defaults.string(forKey: Keys.tagsPrompt) ?? Self.defaultTagsPrompt
-        self.spokenSummaryPrompt = defaults.string(forKey: Keys.spokenSummaryPrompt) ?? Self.defaultSpokenSummaryPrompt
+        self.spokenSummaryPrompt = Self.migratedSpokenSummaryPrompt(stored: defaults.string(forKey: Keys.spokenSummaryPrompt))
         self.ttsDeliveryInstruction = defaults.string(forKey: Keys.ttsDeliveryInstruction) ?? Self.defaultTTSDeliveryInstruction
         self.ttsModelSize = (defaults.string(forKey: Keys.ttsModelSize)).flatMap(TTSModelSize.init(rawValue:)) ?? .large
         self.ttsVoice = (defaults.string(forKey: Keys.ttsVoice)).flatMap(TTSVoice.init(rawValue:)) ?? .ryan

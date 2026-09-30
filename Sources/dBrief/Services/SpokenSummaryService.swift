@@ -198,8 +198,8 @@ final class SpokenSummaryService: Identifiable {
                 guard !invalidated else { throw CancellationError() }
                 let summary = SpokenSummary(
                     script: script, audioFileName: audioURL.lastPathComponent,
-                    voice: appSettings.ttsVoice.rawValue,
-                    language: appSettings.ttsLanguage.rawValue,
+                    voice: appSettings.ttsSynthesisParams.voice ?? appSettings.ttsVoice.rawValue,
+                    language: appSettings.spokenSummaryLanguage.rawValue,
                     engine: appSettings.effectiveAIEngine.rawValue, generatedAt: Date()
                 )
                 let encoder = JSONEncoder()
@@ -231,7 +231,7 @@ final class SpokenSummaryService: Identifiable {
             ? appSettings.chatFallbackEngine
             : appSettings.effectiveAIEngine
 
-        let systemPrompt = appSettings.spokenSummaryPrompt
+        let systemPrompt = appSettings.spokenSummarySystemPrompt
         let userMessage = insightsInput(insights, truncateForAppleIntelligence: engine == .appleIntelligence)
 
         switch engine {
