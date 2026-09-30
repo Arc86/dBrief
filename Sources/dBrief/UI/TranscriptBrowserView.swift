@@ -410,7 +410,7 @@ struct TranscriptBrowserView: View {
             item: item,
             isSelected: selection == item.url,
             onTap: { selectRecording(item.url) })
-        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript) }
+        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript, presentationStyle: .window) }
     }
 
     /// Section header for the meeting list. Passing `collapsed`/`onToggle` makes it
