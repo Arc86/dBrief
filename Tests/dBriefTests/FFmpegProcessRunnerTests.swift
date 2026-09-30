@@ -42,7 +42,7 @@ struct FFmpegProcessRunnerTests {
         do {
             _ = try await runner.run(
                 executable: "/bin/sleep",
-                arguments: ["10"],
+                arguments: [String(Int(TestTiming.asyncDeadlineSeconds))],
                 monitorProgress: true
             )
             Issue.record("Expected the inactive process to be stopped")
@@ -73,7 +73,7 @@ struct FFmpegProcessRunnerTests {
         let run = Task {
             try await runner.run(
                 executable: "/bin/sleep",
-                arguments: ["10"],
+                arguments: [String(Int(TestTiming.asyncDeadlineSeconds))],
                 monitorProgress: true
             )
         }

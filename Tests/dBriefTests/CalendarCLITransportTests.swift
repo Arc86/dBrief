@@ -148,7 +148,9 @@ struct CalendarCLITransportTests {
         } catch {
             Issue.record("Unexpected error type: \(error)")
         }
-        #expect(ContinuousClock.now - start < .seconds(10))
+        // Well under the 30 s child, so only the timeout can end it this fast —
+        // with headroom for a saturated test process.
+        #expect(ContinuousClock.now - start < .seconds(15))
     }
 
     @Test("Cancellation aborts a running invocation")

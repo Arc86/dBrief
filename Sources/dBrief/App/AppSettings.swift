@@ -591,7 +591,7 @@ final class AppSettings {
         If the same task is mentioned multiple times, list it once. \
         Format each item as a single line starting with "- [Owner] ", followed by \
         the specific task and deadline or timeframe if mentioned. For a shared task, \
-        use "[Owner 1/Owner 2]". Use "[Unassigned]" only when no owner can be identified. \
+        use actual names separated by a slash, e.g. "[Alice/Bob]", without adding numbers. Use "[Unassigned]" only when no owner can be identified. \
         Output ONLY the list. No introductory text, headers, or markdown code blocks. \
         If there are no concrete action items, output exactly: "- No action items identified"
         """

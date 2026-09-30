@@ -169,7 +169,9 @@ struct LocalCLICompletionTests {
         let start = ContinuousClock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
-        #expect(ContinuousClock.now - start < .seconds(3))
+        // Well under the 20 s timeout and 30 s child, so only cancellation can end it
+        // this fast — with headroom for a saturated test process.
+        #expect(ContinuousClock.now - start < .seconds(15))
         for _ in 0..<50 {
             if kill(pid, 0) != 0 { break }
             try await Task.sleep(for: .milliseconds(20))

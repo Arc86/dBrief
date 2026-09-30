@@ -17,7 +17,7 @@ struct RecordingReviewSlotTests {
         func recording() -> Recording { .init(fileURL: URL(fileURLWithPath: "/tmp/synthetic-review-\(UUID()).caf")) }
     }
     private func wait(_ condition: () -> Bool) async throws {
-        let end = ContinuousClock.now.advanced(by: .seconds(5))
+        let end = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while !condition(), ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(5)) }
         try #require(condition())
     }

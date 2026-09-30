@@ -160,7 +160,7 @@ struct PromptAsyncSessionTests {
     }
 
     private func waitUntil(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while !condition() && ContinuousClock.now < deadline { await Task.yield() }
         try #require(condition())
     }

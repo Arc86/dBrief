@@ -16,7 +16,7 @@ struct PrivacyHTTPTraceTests {
         try payload.write(to: file)
         var request = URLRequest(url: server.url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 5
+        request.timeoutInterval = TestTiming.asyncDeadlineSeconds
         let context = PrivacyTrace.Context(receiptURL: folder.appendingPathComponent("receipt.json"),
             store: PrivacyReceiptStore(gapDirectoryURL: folder.appendingPathComponent("gaps")))
         let operation = PrivacyOperation(stage: .transcription, data: [.recordingAudio, .text, .metadata],
