@@ -1,5 +1,10 @@
+import FluidAudio
 import Foundation
 import dBriefWire
+
+// FluidAudio's debug/info lines can contain recognized transcript text; keep only
+// warnings and errors. Set before any FluidAudio logger runs.
+AppLogger.minimumLevel = .warning
 
 // Parse --support-base <path> so the helper resolves the SAME model cache as the
 // app (the helper's Bundle.main.bundleIdentifier differs from the app's).

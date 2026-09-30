@@ -205,8 +205,9 @@ actor ParakeetTranscriptionService {
         let fm = FileManager.default
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
-            ModelHub.clearCache(for: .parakeetV3, directory: modelsDir)
-            ModelHub.clearCache(for: .parakeetV2, directory: modelsDir)
+            for repo in [Repo.parakeetV2, .parakeetV3, .parakeetUltra, .parakeetRedux] {
+                ModelHub.clearCache(for: repo, directory: modelsDir)
+            }
         }
         Logger.localAI.info("Parakeet: model cache purged")
     }
@@ -229,17 +230,21 @@ actor ParakeetTranscriptionService {
         }
     }
 
-    /// Coarse on-disk check: the FluidAudio model cache directory is non-empty.
-    nonisolated func isModelDownloaded() -> Bool {
-        let fm = FileManager.default
-        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return false
+    /// Whether this variant's own model files are in FluidAudio's cache.
+    nonisolated func isModelDownloaded(variant: String) -> Bool {
+        let version = Self.asrVersion(for: variant)
+        return AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: version), version: version)
+    }
+
+    /// The FluidAudio model a variant loads. Resolved through the shared catalog,
+    /// so unknown or OS-unsupported variants load the same default the UI shows.
+    static func asrVersion(for variant: String) -> AsrModelVersion {
+        switch ParakeetModelInfo.find(variant).id {
+        case "v2": .v2
+        case "ultra": .ultra
+        case "redux": .redux
+        default: .v3
         }
-        let modelsDir = appSupport.appendingPathComponent("FluidAudio/Models")
-        guard let contents = try? fm.contentsOfDirectory(atPath: modelsDir.path) else {
-            return false
-        }
-        return !contents.isEmpty
     }
 
     // MARK: - Private
@@ -251,7 +256,7 @@ actor ParakeetTranscriptionService {
         asrManager = nil
         loadedVariant = nil
 
-        let version: AsrModelVersion = variant == "v2" ? .v2 : .v3
+        let version = Self.asrVersion(for: variant)
         Logger.localAI.info("Parakeet: downloading/loading \(variant, privacy: .public)")
 
         let models = try await AsrModels.downloadAndLoad(

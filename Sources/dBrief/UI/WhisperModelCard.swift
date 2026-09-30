@@ -20,12 +20,17 @@ extension TranscriptionCardPresentation {
                             : "Apple Speech · older or unsupported-locale fallback is not rated.",
                          accuracy: modernApple ? 4 : nil, speed: modernApple ? 4 : nil)
         }
-        guard LocalTranscriptionChoice.engine(id) == .parakeetLocal else { return nil }
-        let model = ParakeetModelInfo.find(id == LocalTranscriptionChoice.parakeetV2 ? "v2" : "v3")
-        return .init(title: model.displayName, language: model.id == "v2" ? "English only" : "25 European languages",
+        guard let variant = LocalTranscriptionChoice.parakeetVariant(id) else { return nil }
+        let model = ParakeetModelInfo.find(variant)
+        let summary = switch model.id {
+        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; ratings are family estimates."
+        case "redux": "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes."
+        default: "Parakeet / FluidAudio · fast transcription; ratings are family estimates."
+        }
+        return .init(title: model.displayName, language: model.isEnglishOnly ? "English only" : "25 European languages",
                      footprint: String(format: "~%.1f GiB RAM", Double(model.estimatedMemoryMB) / 1024),
-                     summary: "Parakeet / FluidAudio · fast transcription; ratings are family estimates.",
-                     accuracy: 4, speed: 5)
+                     summary: summary,
+                     accuracy: 4, speed: model.id == "redux" ? 4 : 5)
     }
 }
 

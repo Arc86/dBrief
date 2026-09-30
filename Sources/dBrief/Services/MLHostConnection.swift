@@ -135,6 +135,10 @@ actor MLHostConnection {
         stdinHandle = nil
         ingestContinuation?.finish()
         ingestContinuation = nil
+        // The retired process's exit is ignored below, so fail its callers here.
+        let dead = pending
+        pending.removeAll()
+        for (_, p) in dead { p.onCrash() }
     }
 
     // MARK: process lifecycle
@@ -165,8 +169,8 @@ actor MLHostConnection {
             guard !data.isEmpty else { return }
             continuation.yield(data)
         }
-        proc.terminationHandler = { [weak self] _ in
-            Task { await self?.handleTermination() }
+        proc.terminationHandler = { [weak self] exited in
+            Task { await self?.handleTermination(of: exited) }
         }
         do {
             try proc.run()
@@ -210,7 +214,10 @@ actor MLHostConnection {
         }
     }
 
-    private func handleTermination() {
+    private func handleTermination(of exited: Process) {
+        // A retired helper can exit after its replacement launched; only the
+        // current process's exit may clear state and fail pending requests.
+        guard exited === process else { return }
         let dead = pending
         pending.removeAll()
         process = nil

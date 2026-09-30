@@ -83,11 +83,12 @@ struct ProcessingModelProvenanceTests {
         var profile = MeetingProfile(name: "Parakeet provenance fixture")
         profile.overrides.transcriptionEngine = .parakeetLocal
         settings.profiles = [profile]
-        for variant in ["v2", "v3", "obsolete-variant", ""] {
+        for variant in ["v2", "v3", "ultra", "obsolete-variant", ""] {
             settings.parakeetModelVariant = variant
             let snapshot = ProcessingPipeline.TranscriptionSettings(settings: settings)
-            // The backend selects v2 only for that exact value, otherwise v3.
-            let expected = variant == "v2" ? "v2 (CoreML)" : "v3 (CoreML)"
+            // The label names the model the backend actually loads: known variants
+            // load themselves, anything else resolves to v3.
+            let expected = ["v2", "ultra"].contains(variant) ? "\(variant) (CoreML)" : "v3 (CoreML)"
             settings.parakeetModelVariant = variant == "v2" ? "v3" : "v2"
             #expect(snapshot.modelName == expected)
             #expect(snapshot.cleanup.modelName == expected)

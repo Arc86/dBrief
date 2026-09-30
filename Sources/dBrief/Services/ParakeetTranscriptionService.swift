@@ -28,8 +28,8 @@ final class ParakeetTranscriptionService: Sendable {
 
     func prepareModel(variant: String) async throws { _ = try await connection.call(.downloadParakeet(variant: variant)) }
     func purgeModels() async throws { _ = try await connection.call(.purgeParakeet) }
-    func isModelDownloaded() async -> Bool {
-        guard case let .boolResult(b) = try? await connection.call(.isParakeetCached) else { return false }
+    func isModelDownloaded(variant: String) async -> Bool {
+        guard case let .boolResult(b) = try? await connection.call(.isParakeetCached(variant: variant)) else { return false }
         return b
     }
 }
