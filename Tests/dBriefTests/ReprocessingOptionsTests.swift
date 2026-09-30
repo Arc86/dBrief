@@ -175,6 +175,19 @@ struct ReprocessingOptionsTests {
         #expect(!transcription.requiresAnalysis)
     }
 
+    @Test func multilingualParakeetVariantsAcceptNonEnglishAndUnknownVariantsAreRejected() throws {
+        let settings = AppSettings()
+        var options = ReprocessingOptions(settings: settings, operation: .transcribe)
+        options.engine = .parakeetLocal
+        options.spokenLanguage = "nl"
+        for model in ParakeetModelInfo.available where !model.isEnglishOnly {
+            options.parakeetModelVariant = model.id
+            try options.validate()
+        }
+        options.parakeetModelVariant = "obsolete-variant"
+        #expect(throws: ReprocessingOptions.ConfigurationError.self) { try options.validate() }
+    }
+
     @Test func unsupportedModelLanguageCombinationIsRejected() {
         let settings = AppSettings()
         var options = ReprocessingOptions(settings: settings, operation: .transcribe)

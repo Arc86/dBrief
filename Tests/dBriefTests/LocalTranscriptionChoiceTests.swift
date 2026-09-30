@@ -19,6 +19,22 @@ struct LocalTranscriptionChoiceTests {
         #expect(Set(LocalTranscriptionChoice.extraIDs).isDisjoint(with: Set(WhisperModelInfo.fallbackModelNames)))
     }
 
+    @Test func everyParakeetVariantRoundTripsThroughItsPickerID() {
+        for model in ParakeetModelInfo.available {
+            let id = LocalTranscriptionChoice.id(engine: .parakeetLocal, whisper: "custom-whisper", parakeet: model.id)
+            #expect(id == LocalTranscriptionChoice.parakeet(model.id))
+            #expect(LocalTranscriptionChoice.engine(id) == .parakeetLocal)
+            #expect(LocalTranscriptionChoice.parakeetVariant(id) == model.id)
+            #expect(LocalTranscriptionChoice.title(id) == model.displayName)
+            #expect(LocalTranscriptionChoice.extraIDs.contains(id))
+        }
+        // A stale or unsupported saved variant still routes to Parakeet, resolved to the default.
+        #expect(LocalTranscriptionChoice.engine("parakeet:obsolete") == .parakeetLocal)
+        #expect(LocalTranscriptionChoice.parakeetVariant("parakeet:obsolete") == ParakeetModelInfo.defaultID)
+        #expect(LocalTranscriptionChoice.parakeetVariant("custom-whisper") == nil)
+        #expect(LocalTranscriptionChoice.parakeetVariant(LocalTranscriptionChoice.apple) == nil)
+    }
+
     @Test func appleFallbackHasNoInventedScore() {
         let fallback = TranscriptionCardPresentation.local(LocalTranscriptionChoice.apple)
         #expect(fallback?.accuracy == nil)
@@ -30,10 +46,13 @@ struct LocalTranscriptionChoiceTests {
     }
 
     @Test func parakeetGuidanceAndUnknownFallback() {
-        for id in [LocalTranscriptionChoice.parakeetV2, LocalTranscriptionChoice.parakeetV3] {
+        for model in ParakeetModelInfo.available {
+            let id = LocalTranscriptionChoice.parakeet(model.id)
             #expect(TranscriptionCardPresentation.local(id)?.accuracy == 4)
-            #expect(TranscriptionCardPresentation.local(id)?.speed == 5)
-            #expect(LocalTranscriptionChoice.runtimeGiB(id) != nil)
+            // Redux trades speed for size (~34% slower than v3 on the ANE upstream).
+            #expect(TranscriptionCardPresentation.local(id)?.speed == (model.id == "redux" ? 4 : 5))
+            #expect(TranscriptionCardPresentation.local(id)?.language == (model.isEnglishOnly ? "English only" : "25 European languages"))
+            #expect(LocalTranscriptionChoice.runtimeGiB(id) == Double(model.estimatedMemoryMB) / 1024)
         }
         #expect(TranscriptionCardPresentation.local("unknown") == nil)
         #expect(LocalTranscriptionChoice.runtimeGiB("unknown") == nil)

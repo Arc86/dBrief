@@ -323,7 +323,7 @@ actor MLOrchestrator: MLBackend {
 
     func isWhisperCached(name: String) async -> Bool { whisperService.isModelDownloaded(name: name) }
     func isLLMCached() async -> Bool { await insightsService.isModelDownloaded() }
-    func isParakeetCached() async -> Bool { parakeetService.isModelDownloaded() }
+    func isParakeetCached(variant: String) async -> Bool { parakeetService.isModelDownloaded(variant: variant) }
     func fetchWhisperModels(repo: String) async throws -> [String] {
         try await WhisperKitTranscriptionService.fetchAvailableModels(repo: repo)
     }

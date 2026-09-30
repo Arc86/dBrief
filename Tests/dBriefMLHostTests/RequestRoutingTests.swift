@@ -51,7 +51,8 @@ actor MockBackend: MLBackend {
     func downloadParakeet(variant: String) async throws {}
     func isWhisperCached(name: String) async -> Bool { true }
     func isLLMCached() async -> Bool { false }
-    func isParakeetCached() async -> Bool { true }
+    // Only "ultra" is cached, so a routed answer proves which variant was asked about.
+    func isParakeetCached(variant: String) async -> Bool { variant == "ultra" }
     func fetchWhisperModels(repo: String) async throws -> [String] { ["openai_whisper-small"] }
     func purgeModels() async throws {}
     func purgeWhisper() async throws {}
@@ -82,6 +83,15 @@ actor MockBackend: MLBackend {
         #expect(states.map(\.id) == [first, second, third, first, second, third])
         #expect(states.map(\.channel) == [.plugin, .parakeet, .plugin, .plugin, .parakeet, .plugin])
         #expect(MLProgress.sink == nil)
+    }
+    @Test func parakeetCacheCheckRoutesTheRequestedVariant() async throws {
+        for (variant, cached) in [("ultra", true), ("v3", false)] {
+            let collected = EventCollector()
+            let router = RequestRouter(backend: MockBackend()) { collected.append($0) }
+            await router.handle(.init(id: UUID(), request: .isParakeetCached(variant: variant)))
+            let answers = collected.events.compactMap { if case let .boolResult(b) = $0.event { b } else { nil } }
+            #expect(answers == [cached])
+        }
     }
     @Test func nestedStageFailureIsEmittedBeforeSuccessfulParentResult() async throws {
         let collected = EventCollector()
