@@ -107,17 +107,30 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.currentTime = self.player?.currentTime ?? 0
-                if let limit = self.endLimit, self.currentTime >= limit {
-                    self.endLimit = nil
-                    self.playingTag = nil
-                    self.pause()
-                }
+        // One timer at a time, even if resume() is called twice.
+        stopTimer()
+        timer = Self.scheduleTickTimer { [weak self] in
+            guard let self else { return }
+            self.currentTime = self.player?.currentTime ?? 0
+            if let limit = self.endLimit, self.currentTime >= limit {
+                self.endLimit = nil
+                self.playingTag = nil
+                self.pause()
             }
         }
+    }
+
+    /// Schedules the 10 Hz playback tick on the main run loop in `.common` modes, so
+    /// it keeps firing while menus track, scrollers drag and windows resize (a plain
+    /// `scheduledTimer` only fires in `.default`). Main run-loop timers fire on the
+    /// main thread, so no `Task` hop is needed per tick.
+    static func scheduleTickTimer(interval: TimeInterval = 0.1,
+                                  _ tick: @escaping @MainActor () -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+            MainActor.assumeIsolated { tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     private func stopTimer() {
