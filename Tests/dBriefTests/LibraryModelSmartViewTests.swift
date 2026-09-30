@@ -47,7 +47,7 @@ struct LibraryModelSmartViewTests {
         let index = LibraryIndex(cacheRoot: root.appendingPathComponent("cache"), jobsRoot: root.appendingPathComponent("jobs"))
         let model = RecordingLibraryModel(index: index, selectionStore: selection)
         model.open(folder)
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while (model.refreshedRevision == 0 || model.matches.isEmpty) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -55,7 +55,7 @@ struct LibraryModelSmartViewTests {
         #expect(model.matches.map(\.name) == ["open"])
     }
     private func waitForQuery(_ model: RecordingLibraryModel) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while (model.isRefreshing || model.isQuerying) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

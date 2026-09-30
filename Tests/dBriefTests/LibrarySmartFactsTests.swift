@@ -327,7 +327,7 @@ struct LibrarySmartFactsTests {
         try Data(#"{"transcribe":true,"summary":false,"actionItems":false,"tags":false}"#.utf8).write(to: marker)
         let model = RecordingLibraryModel(index: index)
         model.open(folder, configuredQueueFolders: [other, other])
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while model.refreshedRevision == 0 && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

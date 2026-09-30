@@ -112,7 +112,7 @@ struct LibraryWorkNavigationTests {
             try await LibraryWorkNavigation.resolve(row, jobs: jobs, deliveries: deliveries,
                 sessionsRoot: root.appendingPathComponent("sessions"))
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while !(await deliveries.entered) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

@@ -171,11 +171,11 @@ struct LibraryIndexTests {
         try write(["generatedTitle": "Replacement"], base: base, ext: "json")
         let gate = IndexCommitGate()
         let rebuilding = LibraryIndex(cacheRoot: root.appendingPathComponent("cache"), jobsRoot: root.appendingPathComponent("jobs"),
-            beforeCommit: { gate.entered.signal(); _ = gate.resume.wait(timeout: .now() + 10) })
+            beforeCommit: { gate.entered.signal(); _ = gate.resume.wait(timeout: .now() + TestTiming.asyncDeadlineSeconds) })
         let refresh = Task { try await rebuilding.refresh(in: folder, rebuild: true) }
         let started = await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                continuation.resume(returning: gate.entered.wait(timeout: .now() + 10) == .success)
+                continuation.resume(returning: gate.entered.wait(timeout: .now() + TestTiming.asyncDeadlineSeconds) == .success)
             }
         }
         #expect(started)
@@ -252,12 +252,12 @@ struct LibraryIndexTests {
         try Data([2]).write(to: newlySelected)
         let gate = IndexCommitGate()
         let delayed = LibraryIndex(cacheRoot: root.appendingPathComponent("cache"), jobsRoot: root.appendingPathComponent("jobs"),
-            beforeCommit: { gate.entered.signal(); _ = gate.resume.wait(timeout: .now() + 10) })
+            beforeCommit: { gate.entered.signal(); _ = gate.resume.wait(timeout: .now() + TestTiming.asyncDeadlineSeconds) })
         let model = RecordingLibraryModel(index: delayed)
         model.open(folder)
         let started = await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                continuation.resume(returning: gate.entered.wait(timeout: .now() + 10) == .success)
+                continuation.resume(returning: gate.entered.wait(timeout: .now() + TestTiming.asyncDeadlineSeconds) == .success)
             }
         }
         #expect(started)
@@ -274,7 +274,7 @@ struct LibraryIndexTests {
     }
 
     @MainActor private func waitUntil(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while !condition() && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

@@ -12,7 +12,7 @@ struct ModelDownloadCoordinatorTests {
     }
 
     private func waitUntil(_ condition: () async -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while !(await condition()) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
