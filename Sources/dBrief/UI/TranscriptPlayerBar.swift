@@ -12,31 +12,9 @@ struct TranscriptPlayerBar: View {
     var speakerLabels: [SpeakerLabel] = []
 
     @State private var audioFileExists = false
-    @State private var waveformSamples: [Float] = []
-    @State private var normalizedSpeakerRanges: [SpeakerTimeRange] = []
-    @State private var sampledSpeakerIDs: [String?] = []
     @State private var speakerLegend: [SpeakerLegendEntry] = []
-    @State private var waveformRequestID: UUID?
-    @State private var loadedWaveformURL: URL?
-
-    init(
-        audioURL: URL,
-        currentTime: Binding<TimeInterval>,
-        recordingDuration: TimeInterval = 0,
-        segments: [RichSegment] = [],
-        speakerLabels: [SpeakerLabel] = []
-    ) {
-        self.audioURL = audioURL
-        self._currentTime = currentTime
-        self.recordingDuration = recordingDuration
-        self.segments = segments
-        self.speakerLabels = speakerLabels
-        // Seed from the cache so a revisit's first frame already shows the waveform.
-        // (The stat runs only when an entry exists.)
-        let cache = WaveformCache.shared
-        _waveformSamples = State(initialValue: cache.peek(audioURL) == nil ? [] :
-            cache.seed(for: audioURL, modificationDate: WaveformCache.modificationDate(of: audioURL)) ?? [])
-    }
+    @State private var timelineRuns: [SpeakerTimelineRun] = []
+    @State private var timelineColors: [String: Color] = [:]
 
     private var isThisFile: Bool { audioPlayer.currentFileURL == audioURL }
 
@@ -87,55 +65,25 @@ struct TranscriptPlayerBar: View {
         .padding(16)
         .modifier(ViewerCard())
         .task(id: audioURL) {
-            guard loadedWaveformURL != audioURL else { return }
-            let requestID = UUID()
-            waveformRequestID = requestID
-            let requestedURL = audioURL
-            let exists = FileManager.default.fileExists(atPath: requestedURL.path)
-            let modified = exists ? WaveformCache.modificationDate(of: requestedURL) : nil
-            audioFileExists = exists
-
-            if exists, let cached = WaveformCache.shared.samples(for: requestedURL, modificationDate: modified) {
-                if waveformSamples != cached { waveformSamples = cached }
-                loadedWaveformURL = requestedURL
-                rebuildSpeakerTimelineCache()
-                return
-            }
-
-            loadedWaveformURL = nil
-            waveformSamples = []
-            normalizedSpeakerRanges = []
-            sampledSpeakerIDs = []
-            rebuildSpeakerTimelineCache()
-            guard exists else {
-                loadedWaveformURL = requestedURL
-                return
-            }
-
-            let samples = await WaveformGenerator.generate(from: requestedURL)
-            guard !Task.isCancelled, waveformRequestID == requestID else { return }
-            WaveformCache.shared.store(samples, for: requestedURL, modificationDate: modified)
-            waveformSamples = samples
-            loadedWaveformURL = requestedURL
-            rebuildSpeakerTimelineCache()
+            audioFileExists = FileManager.default.fileExists(atPath: audioURL.path)
         }
         .onAppear {
             rebuildSpeakerLegend()
-            rebuildSpeakerTimelineCache()
+            rebuildSpeakerTimeline()
         }
         .onChange(of: segments) { _, _ in
             rebuildSpeakerLegend()
-            rebuildSpeakerTimelineCache()
+            rebuildSpeakerTimeline()
         }
         .onChange(of: speakerLabels) { _, _ in rebuildSpeakerLegend() }
-        .onChange(of: playbackDuration) { _, _ in rebuildSpeakerTimelineCache() }
-        .onChange(of: waveformSamples.count) { _, _ in rebuildSpeakerTimelineCache() }
+        .onChange(of: playbackDuration) { _, _ in rebuildSpeakerTimeline() }
+        .onChange(of: mode) { _, _ in rebuildTimelineColors() }
     }
 
     private var waveform: some View {
-        WaveformView(
-            samples: waveformSamples,
-            speakerIDs: sampledSpeakerIDs,
+        SpeakerTimelineBar(
+            runs: timelineRuns,
+            colors: timelineColors,
             playbackFraction: playbackFraction,
             palette: palette,
             mode: mode,
@@ -146,22 +94,24 @@ struct TranscriptPlayerBar: View {
         .frame(height: 42)
     }
 
-    private func rebuildSpeakerTimelineCache() {
-        guard waveformSamples.count > 0,
-              playbackDuration.isFinite,
-              playbackDuration > 0 else {
-            normalizedSpeakerRanges = []
-            sampledSpeakerIDs = []
+    private func rebuildSpeakerTimeline() {
+        guard playbackDuration.isFinite, playbackDuration > 0 else {
+            timelineRuns = []
             return
         }
-
         let ranges = SpeakerTimeline.normalize(segments, duration: playbackDuration)
-        normalizedSpeakerRanges = ranges
-        sampledSpeakerIDs = SpeakerTimeline.sampledSpeakerIDs(
-            in: ranges,
-            duration: playbackDuration,
-            count: waveformSamples.count
-        )
+        let sampled = SpeakerTimeline.sampledSpeakerIDs(in: ranges, duration: playbackDuration,
+                                                        count: SpeakerTimelineBarLayout.resolution)
+        timelineRuns = SpeakerTimelineBarLayout.runs(sampledIDs: sampled)
+        rebuildTimelineColors()
+    }
+
+    private func rebuildTimelineColors() {
+        var colors: [String: Color] = [:]
+        for id in Set(timelineRuns.compactMap(\.speakerID)) {
+            colors[id] = ViewerSpeakerPalette.color(for: id, mode: mode).color
+        }
+        timelineColors = colors
     }
 
     private func rebuildSpeakerLegend() {

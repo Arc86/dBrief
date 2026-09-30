@@ -47,15 +47,4 @@ struct ReviewFixTests {
         a.apply(suppressed: false)
         #expect(window.isMovableByWindowBackground)
     }
-
-    // Minor #2 (re-graded): a replaced file's old waveform must not seed the first frame.
-    @Test func seedingValidatesTheFileVersion() {
-        let cache = WaveformCache(limit: 4)
-        let url = URL(fileURLWithPath: "/tmp/seed.m4a")
-        let old = Date(timeIntervalSince1970: 1)
-        cache.store([0.5], for: url, modificationDate: old)
-        #expect(cache.seed(for: url, modificationDate: old) == [0.5])
-        #expect(cache.seed(for: url, modificationDate: Date(timeIntervalSince1970: 2)) == nil)
-        #expect(cache.seed(for: url, modificationDate: nil) == nil)
-    }
 }

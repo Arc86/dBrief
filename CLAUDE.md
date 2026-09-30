@@ -304,7 +304,7 @@ A drop-in transcription queue: audio files dropped into a watched folder are aut
 Glass-styled transcript window with word-level timestamps and audio sync:
 
 - **`TranscriptWindowView`** — root window; hosts `TranscriptSidePanel` (segment list) and `TranscriptChatView`
-- **`TranscriptPlayerBar`** — frosted-glass audio controls with seek and playback sync
+- **`TranscriptPlayerBar`** — frosted-glass audio controls with a speaker timeline bar (who spoke when, coloured by speaker; no audio waveform) and seek/playback sync
 - **`SpeakerTurnCard`** — card per speaker turn, merges consecutive same-speaker segments
 - **`SpeakerPillView`** — colored speaker badge (dead code; speaker assignment is triggered from the turn card speaker label in `TranscriptWindowView` via `speakerMenuContent` + `SpeakerRenamePopover`)
 - **`TranscriptDesignTokens`** — shared color/spacing constants for the glass UI system

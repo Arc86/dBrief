@@ -711,9 +711,10 @@ private struct ViewerPlaybackNativeFixture: View {
                 Text("Speaker timeline — gaps and overlap remain neutral")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
-                WaveformView(
-                    samples: samples,
-                    speakerIDs: speakerIDs,
+                SpeakerTimelineBar(
+                    runs: SpeakerTimelineBarLayout.runs(sampledIDs: speakerIDs),
+                    colors: Dictionary(uniqueKeysWithValues: Set(speakerIDs.compactMap { $0 })
+                        .map { ($0, ViewerSpeakerPalette.color(for: $0, mode: mode).color) }),
                     playbackFraction: 0.38,
                     palette: palette,
                     mode: mode,
