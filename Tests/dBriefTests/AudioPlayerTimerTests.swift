@@ -14,10 +14,12 @@ struct AudioPlayerTimerTests {
         var ticks = 0
         let timer = AudioPlayer.scheduleTickTimer(interval: 0.05) { ticks += 1 }
         defer { timer.invalidate() }
-        let deadline = Date().addingTimeInterval(0.4)
-        while Date() < deadline {
-            _ = RunLoop.main.run(mode: .eventTracking, before: deadline)
+        // Generous deadline: a loaded machine (full parallel suite) delays ticks, but
+        // default-mode scheduling delivers none at all in .eventTracking.
+        let deadline = Date().addingTimeInterval(3)
+        while ticks < 3, Date() < deadline {
+            _ = RunLoop.main.run(mode: .eventTracking, before: Date().addingTimeInterval(0.1))
         }
-        #expect(ticks >= 4)
+        #expect(ticks >= 3)
     }
 }
