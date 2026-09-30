@@ -3,6 +3,7 @@ import dBriefWire
 
 // Test-only helper that speaks the frame protocol with canned behavior.
 // Behaviors via env: STUB_MODE = echo | crash-once | crash-always | crash-second | error
+//                              | closes-after-unload
 //                              | finished-first | multi-frame
 // Cross-restart flag files persist a stub's "have I crashed yet" state. Their
 // paths come from env (STUB_FLAG_1 / STUB_FLAG_2) so concurrently-running tests
@@ -18,6 +19,9 @@ func flag(_ key: String, default name: String) -> URL {
 }
 let crashFlag = flag("STUB_FLAG_1", default: "stub_crashed")
 
+// closes-after-unload: like the real helper, `.forceUnload` drains and closes
+// admission, but the process stays alive and rejects every later request.
+var admissionClosed = false
 var interleavedProgressRequests: [RequestEnvelope] = []
 var previousProgressRequest: UUID?
 var reader = FrameReader()
@@ -27,6 +31,19 @@ while true {
     reader.append(chunk)
     for frame in reader.drainFrames() {
         guard let env = try? JSONDecoder().decode(RequestEnvelope.self, from: frame) else { continue }
+        if mode == "closes-after-unload" {
+            if admissionClosed {
+                send(EventEnvelope(id: env.id, channel: .plugin,
+                    event: .error(WireError(kind: .generic, message: "ML helper is shutting down"))))
+                continue
+            }
+            if case .forceUnload = env.request {
+                admissionClosed = true
+                send(EventEnvelope(id: env.id, channel: .plugin, event: .voidResult))
+                send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
+                continue
+            }
+        }
         switch mode {
         case "interleaved-progress":
             if case .cancel = env.request { continue }
