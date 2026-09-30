@@ -54,7 +54,7 @@ enum PromptKind: String, CaseIterable, Hashable, Sendable {
         case .actionItems:
             [.init(name: "With owners and deadlines", text: "Extract confirmed action items as a bullet list. For each item include the task, owner, and deadline when stated. Mark missing owners or deadlines as not specified. Do not treat suggestions as commitments. Use the source language unless another language is requested.")]
         case .spokenSummary:
-            [.init(name: "Brief recap", text: "Write a short spoken recap from these meeting insights. Start with the main outcome, then cover decisions and next steps. Use short sentences and natural transitions. Preserve facts and the source language. Do not read headings or bullet markers aloud.")]
+            [.init(name: "Brief recap", text: "Write a short spoken recap from these meeting insights. Start with the main outcome, then cover decisions and next steps. Use short sentences and natural transitions. Preserve facts. Do not read headings or bullet markers aloud.")]
         case .tags, .voiceStyle: []
         }
     }
