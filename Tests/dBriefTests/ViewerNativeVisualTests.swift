@@ -829,7 +829,6 @@ private struct ViewerPlayerBarNativeFixture: View {
                 .foregroundStyle(palette.heading.color)
             TranscriptPlayerBar(
                 audioURL: audioURL,
-                currentTime: .constant(0),
                 recordingDuration: recordingDuration,
                 segments: segments,
                 speakerLabels: speakerLabels

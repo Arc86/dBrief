@@ -68,7 +68,6 @@ struct TranscriptDetailView: View {
 
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
-    @State private var currentTime: TimeInterval = 0
     /// The lit turn, written by `PlaybackFollower` only when it changes.
     @State private var activeTurnID: UUID?
     /// Whether this recording is playing (drives the row pulse).
@@ -907,7 +906,7 @@ struct TranscriptDetailView: View {
     @ViewBuilder
     private var playerBar: some View {
         if let audioURL = recording.finalizedAudioURL {
-            TranscriptPlayerBar(audioURL: audioURL, currentTime: $currentTime,
+            TranscriptPlayerBar(audioURL: audioURL,
                                 recordingDuration: recording.duration, segments: richTranscript?.segments ?? [],
                                 speakerLabels: richTranscript?.speakerLabels ?? [])
         } else {

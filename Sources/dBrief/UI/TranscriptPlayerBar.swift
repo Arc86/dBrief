@@ -6,7 +6,6 @@ struct TranscriptPlayerBar: View {
     @Environment(\.viewerMode) private var mode
 
     let audioURL: URL
-    @Binding var currentTime: TimeInterval
     var recordingDuration: TimeInterval = 0
     var segments: [RichSegment] = []
     var speakerLabels: [SpeakerLabel] = []
@@ -28,9 +27,14 @@ struct TranscriptPlayerBar: View {
     }
 
     private var displayTime: TimeInterval {
-        let value = isThisFile ? audioPlayer.currentTime : currentTime
-        guard value.isFinite else { return 0 }
-        return playbackDuration > 0 ? min(max(0, value), playbackDuration) : max(0, value)
+        Self.displayTime(isThisFile: isThisFile, playerTime: audioPlayer.currentTime, duration: playbackDuration)
+    }
+
+    /// While another recording is loaded, this one shows its start: pressing
+    /// Play here starts from 0:00, so an older position would be misleading.
+    static func displayTime(isThisFile: Bool, playerTime: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        guard isThisFile, playerTime.isFinite else { return 0 }
+        return duration > 0 ? min(max(0, playerTime), duration) : max(0, playerTime)
     }
 
     private var playbackFraction: Double {
@@ -143,7 +147,6 @@ struct TranscriptPlayerBar: View {
         let actualDuration = audioPlayer.duration
         let target = min(actualDuration, max(0, actualDuration * clampedFraction))
         audioPlayer.seek(to: target)
-        currentTime = target
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

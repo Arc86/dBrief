@@ -40,9 +40,9 @@ import Testing
     }
 
     @Test func onlyOrdinaryForwardPlaybackAnimatesTheFollowScroll() {
-        #expect(PlaybackFocus.animatesFollowScroll(from: 10.0, to: 10.1))
-        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 3.0))    // seek back
-        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 40.0))   // seek / scrub forward
-        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 10.0))
+        #expect(PlaybackFocus.animatesFollowScroll(from: 10.0, to: 10.1, isPlaying: true, rate: 1))
+        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 3.0, isPlaying: true, rate: 1))    // seek back
+        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 40.0, isPlaying: true, rate: 1))   // seek / scrub forward
+        #expect(!PlaybackFocus.animatesFollowScroll(from: 10.0, to: 10.0, isPlaying: true, rate: 1))
     }
 }

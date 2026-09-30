@@ -11,12 +11,14 @@ enum PlaybackFocus {
         return turns.first { time >= $0.startTime && time < $0.endTime }?.id
     }
 
-    /// Animate follow-scrolls only for ordinary forward playback (ticks are
-    /// 0.1 s apart). A seek or scrub jumps without animation, so overlapping
-    /// List scroll animations can't stack and bounce.
-    static func animatesFollowScroll(from old: TimeInterval, to new: TimeInterval) -> Bool {
+    /// Animate follow-scrolls only for ordinary playback ticks (0.1 s × rate
+    /// apart). Any seek or scrub — even a small forward one, or any while paused —
+    /// jumps without animation, so overlapping List scroll animations can't stack.
+    static func animatesFollowScroll(from old: TimeInterval, to new: TimeInterval,
+                                     isPlaying: Bool, rate: Float) -> Bool {
+        guard isPlaying else { return false }
         let delta = new - old
-        return delta > 0 && delta < 0.5
+        return delta > 0 && delta <= 0.25 * max(Double(rate), 0.5)
     }
 }
 
@@ -42,32 +44,37 @@ struct PlaybackFollower: ViewModifier {
         content
             .onAppear { refresh(scroll: false, animated: false) }
             .onChange(of: audioPlayer.currentTime) { old, new in
-                refresh(scroll: true, animated: PlaybackFocus.animatesFollowScroll(from: old, to: new))
+                refresh(scroll: true, animated: PlaybackFocus.animatesFollowScroll(
+                    from: old, to: new, isPlaying: audioPlayer.isPlaying, rate: audioPlayer.playbackRate))
             }
             .onChange(of: audioPlayer.isPlaying) { _, playing in
-                refresh(scroll: false, animated: false)
+                let active = refresh(scroll: false, animated: false)
                 // Pressing Play after scrolling away jumps back to the active turn.
+                // Uses the id just resolved, not the binding read back.
                 if playing {
                     follow.resumeFollowing()
-                    if let activeTurnID, follow.shouldFollow { proxy.scrollTo(activeTurnID, anchor: .center) }
+                    if let active, follow.shouldFollow { proxy.scrollTo(active, anchor: .center) }
                 }
             }
             .onChange(of: audioPlayer.currentFileURL) { _, _ in refresh(scroll: false, animated: false) }
             .onChange(of: turns) { _, _ in refresh(scroll: false, animated: false) }
     }
 
-    private func refresh(scroll: Bool, animated: Bool) {
+    /// Updates the bindings and returns the resolved active turn.
+    @discardableResult
+    private func refresh(scroll: Bool, animated: Bool) -> UUID? {
         let playing = isThisFile && audioPlayer.isPlaying
         if isPlaying != playing { isPlaying = playing }
         let id = PlaybackFocus.activeTurnID(time: audioPlayer.currentTime, turns: turns,
                                             isThisFile: isThisFile, isPlaying: audioPlayer.isPlaying)
-        guard id != activeTurnID else { return }
+        guard id != activeTurnID else { return id }
         activeTurnID = id
-        guard scroll, let id, follow.shouldFollow else { return }
+        guard scroll, let id, follow.shouldFollow else { return id }
         if animated && !reduceMotion {
             withAnimation { proxy.scrollTo(id, anchor: .center) }
         } else {
             proxy.scrollTo(id, anchor: .center)
         }
+        return id
     }
 }

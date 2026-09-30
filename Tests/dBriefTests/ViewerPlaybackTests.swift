@@ -122,14 +122,12 @@ private final class PlayerMountState {
 private struct PlayerMountFixture: View {
     @Bindable var state: PlayerMountState
     let audioURL: URL
-    @State private var currentTime: TimeInterval = 0
 
     var body: some View {
         Group {
             if state.isMounted {
                 TranscriptPlayerBar(
                     audioURL: audioURL,
-                    currentTime: $currentTime,
                     recordingDuration: 30,
                     segments: [],
                     speakerLabels: []

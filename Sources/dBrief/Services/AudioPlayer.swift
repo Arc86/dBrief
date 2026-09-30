@@ -110,13 +110,15 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         // One timer at a time, even if resume() is called twice.
         stopTimer()
         timer = Self.scheduleTickTimer { [weak self] in
-            guard let self else { return }
+            // A player released while playing stops its timer instead of leaking it.
+            guard let self else { return false }
             self.currentTime = self.player?.currentTime ?? 0
             if let limit = self.endLimit, self.currentTime >= limit {
                 self.endLimit = nil
                 self.playingTag = nil
                 self.pause()
             }
+            return true
         }
     }
 
@@ -124,10 +126,13 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     /// it keeps firing while menus track, scrollers drag and windows resize (a plain
     /// `scheduledTimer` only fires in `.default`). Main run-loop timers fire on the
     /// main thread, so no `Task` hop is needed per tick.
+    /// `tick` returns false to stop the timer.
     static func scheduleTickTimer(interval: TimeInterval = 0.1,
-                                  _ tick: @escaping @MainActor () -> Void) -> Timer {
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
-            MainActor.assumeIsolated { tick() }
+                                  _ tick: @escaping @MainActor () -> Bool) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { timer in
+            MainActor.assumeIsolated {
+                if !tick() { timer.invalidate() }
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         return timer
