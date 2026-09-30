@@ -4,6 +4,8 @@ import SwiftUI
 struct TranscriptTurnRowModel: Equatable {
     var turn: SpeakerTurn
     var isActive: Bool
+    /// The active turn pulses only while audio is playing; paused, it stays lit but still.
+    var isPulsing: Bool
     var isLast: Bool
     var isMe: Bool
     var showSpeakerName: Bool
@@ -78,7 +80,7 @@ struct TranscriptTurnRow<SpeakerLabel: View>: View, Equatable {
             }
             .overlay(alignment: .bottomTrailing) {
                 // Border matches the panel base so the dot reads as sitting on the avatar.
-                if model.isActive { PresenceDot(border: palette.surface.color, color: model.color) }
+                if model.isActive { PresenceDot(border: palette.surface.color, color: model.color, animated: model.isPulsing) }
             }
             if !model.isLast {
                 Capsule()
@@ -101,7 +103,7 @@ struct TranscriptTurnRow<SpeakerLabel: View>: View, Equatable {
                 Spacer(minLength: 8)
                 HStack(spacing: 5) {
                     if model.isActive {
-                        PulsingDot(color: model.color, size: 5)
+                        PulsingDot(color: model.color, size: 5, animated: model.isPulsing)
                     } else {
                         Color.clear.frame(width: 5, height: 5)
                     }

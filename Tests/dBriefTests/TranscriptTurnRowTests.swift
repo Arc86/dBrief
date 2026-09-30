@@ -7,9 +7,9 @@ import Testing
         RichSegment(start: 0, end: 1, text: "Hello there", originalText: "Hello there", speakerId: "S1"),
     ])
 
-    private func model(active: Bool = false, name: String = "Alice", menuKey: Int = 0,
+    private func model(active: Bool = false, pulsing: Bool = false, name: String = "Alice", menuKey: Int = 0,
                        matches: [TranscriptSearch.Match] = [], current: Int = -1) -> TranscriptTurnRow<EmptyView>.Model {
-        .init(turn: turn, isActive: active, isLast: false, isMe: false, showSpeakerName: true,
+        .init(turn: turn, isActive: active, isPulsing: pulsing, isLast: false, isMe: false, showSpeakerName: true,
               displayName: name, color: .blue, matches: matches, currentMatchIndex: current,
               rowPadding: 12, headerGap: 6, menuKey: menuKey)
     }
@@ -28,6 +28,10 @@ import Testing
         #expect(row(model()) != row(model(active: true)))
         #expect(row(model()) != row(model(name: "Bob")))
         #expect(row(model()) != row(model(menuKey: 1)))
+    }
+
+    @Test func pausingStopsThePulseAndRerendersTheRow() {
+        #expect(row(model(active: true, pulsing: true)) != row(model(active: true, pulsing: false)))
     }
 
     @Test func currentMatchIsOnlyPassedToTheTurnThatOwnsIt() {

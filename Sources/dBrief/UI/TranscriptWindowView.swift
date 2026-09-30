@@ -69,6 +69,10 @@ struct TranscriptDetailView: View {
     @State private var richTranscript: RichTranscript?
     @State private var loadFailed = false
     @State private var currentTime: TimeInterval = 0
+    /// The lit turn, written by `PlaybackFollower` only when it changes.
+    @State private var activeTurnID: UUID?
+    /// Whether this recording is playing (drives the row pulse).
+    @State private var isPlaybackRunning = false
     @State private var chatService: TranscriptChatService?
     @State private var insights: RecordingInsights?
     @State private var spokenSummaryService: SpokenSummaryService?
@@ -723,30 +727,10 @@ struct TranscriptDetailView: View {
             .background(TranscriptScrollFollowObserver(controller: transcriptScrollFollow))
             .scrollContentBackground(.hidden)
             .scrollIndicators(.automatic)
-            .onAppear {
-                transcriptScrollFollow.resumeFollowing()
-                if let audioURL = recording.finalizedAudioURL, audioPlayer.currentFileURL == audioURL {
-                    currentTime = audioPlayer.currentTime
-                }
-            }
-            .onChange(of: audioPlayer.currentTime) { oldTime, newTime in
-                guard let audioURL = recording.finalizedAudioURL,
-                      audioPlayer.currentFileURL == audioURL else { return }
-                currentTime = newTime
-                // Playback ticks at 10 Hz. Reissuing an animated scroll for the
-                // same row continually retargets the native List and makes it bounce.
-                guard transcriptScrollFollow.shouldFollow,
-                      let active = activeTurn(at: newTime),
-                      active.id != activeTurn(at: oldTime)?.id else { return }
-                if reduceMotion {
-                    proxy.scrollTo(active.id, anchor: .center)
-                } else {
-                    withAnimation { proxy.scrollTo(active.id, anchor: .center) }
-                }
-            }
-            .onChange(of: audioPlayer.isPlaying) { _, isPlaying in
-                if isPlaying { transcriptScrollFollow.resumeFollowing() }
-            }
+            .onAppear { transcriptScrollFollow.resumeFollowing() }
+            .modifier(PlaybackFollower(audioURL: recording.finalizedAudioURL, turns: displayedTurns,
+                                       proxy: proxy, follow: transcriptScrollFollow,
+                                       activeTurnID: $activeTurnID, isPlaying: $isPlaybackRunning))
             .onChange(of: searchScrollTick) { _, _ in
                 guard searchResult.matches.indices.contains(currentMatchIndex) else { return }
                 let turnId = searchResult.matches[currentMatchIndex].turnId
@@ -764,9 +748,11 @@ struct TranscriptDetailView: View {
     private func rowModel(for turn: SpeakerTurn, lastID: UUID?, menuKey: Int) -> TranscriptTurnRowModel {
         let matches = isSearching ? matchesByTurn[turn.id] ?? [] : []
         let isRenaming = customRenameTurn?.id == turn.id
+        let active = isTurnActive(turn)
         return .init(
             turn: turn,
-            isActive: isTurnActive(turn),
+            isActive: active,
+            isPulsing: active && isPlaybackRunning,
             isLast: turn.id == lastID,
             isMe: turn.speakerId != nil && turn.speakerId == meSpeakerId,
             showSpeakerName: showSpeakerNames,
@@ -1343,16 +1329,7 @@ struct TranscriptDetailView: View {
     // MARK: - Actions
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
-        currentTime >= turn.startTime && currentTime < turn.endTime
-    }
-
-    /// The first turn containing `time`. A linear scan over the cached
-    /// `displayedTurns` (the O(n) speakerTurns() rebuild that made this hot is
-    /// now cached, per 4.1). Kept as first-match — not a binary search — because
-    /// diarized turns can overlap slightly at their boundaries, and the earlier
-    /// scroll-to code matched the first overlapping turn.
-    private func activeTurn(at time: TimeInterval) -> SpeakerTurn? {
-        displayedTurns.first { time >= $0.startTime && time < $0.endTime }
+        turn.id == activeTurnID
     }
 
     private func seek(to time: TimeInterval) {
@@ -1805,16 +1782,29 @@ struct TranscriptDetailView: View {
 struct PulsingDot: View {
     let color: Color
     var size: CGFloat = 6
-    @State private var on = false
+    var animated = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        if animated && !reduceMotion {
+            PulsingDotAnimation(color: color, size: size)
+        } else {
+            Circle().fill(color).frame(width: size, height: size).accessibilityHidden(true)
+        }
+    }
+}
+
+private struct PulsingDotAnimation: View {
+    let color: Color
+    let size: CGFloat
+    @State private var on = false
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .scaleEffect(reduceMotion ? 1 : (on ? 1.15 : 0.85))
-            .opacity(reduceMotion ? 1 : (on ? 1 : 0.5))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = !reduceMotion }
+            .scaleEffect(on ? 1.15 : 0.85)
+            .opacity(on ? 1 : 0.5)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
             .accessibilityHidden(true)
     }
 }
@@ -1823,16 +1813,33 @@ struct PulsingDot: View {
 struct PresenceDot: View {
     let border: Color
     let color: Color
-    @State private var on = false
+    var animated = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        if animated && !reduceMotion {
+            PresenceDotAnimation(border: border, color: color)
+        } else {
+            dot.accessibilityHidden(true)
+        }
+    }
+    private var dot: some View {
+        Circle().fill(color).frame(width: 9, height: 9)
+            .overlay(Circle().strokeBorder(border, lineWidth: 2))
+    }
+}
+
+private struct PresenceDotAnimation: View {
+    let border: Color
+    let color: Color
+    @State private var on = false
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 9, height: 9)
             .overlay(Circle().strokeBorder(border, lineWidth: 2))
-            .scaleEffect(reduceMotion ? 1 : (on ? 1.1 : 0.9))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = !reduceMotion }
+            .scaleEffect(on ? 1.1 : 0.9)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
             .accessibilityHidden(true)
     }
 }
