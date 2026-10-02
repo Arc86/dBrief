@@ -5,7 +5,7 @@ import dBriefWire
 /// from evidence coordinates; output carries a scoped ownership receipt only.
 final class LiveASRNormalizer {
     enum Failure: Error { case invalidReceipt, discontinuity, invalidOutput }
-    struct Batch {
+    struct Batch: Sendable {
         let samples: [Float]
         let reservation: LiveCaptureIngress.NormalizedReservation
     }

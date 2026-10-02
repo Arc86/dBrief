@@ -161,4 +161,17 @@ import dBriefWire
         #expect(pool.statistics(.microphone).converterSamples == 0)
         #expect(pool.takeLosses(.microphone).isEmpty)
     }
+
+    @Test func heldEofOutputIsSealedBeforeLaterDisposalEvenAfterConverterRetirement() throws {
+        let f = Fixture(), pool = f.pool(), normalizer = try LiveASRNormalizer(scope: f.scope,ingress: pool)
+        if let batch = try normalizer.convert(f.buffer(pool)) { #expect(batch.reservation.discard(batch.samples.count)) }
+        let tail = try #require(try normalizer.finish())
+        #expect(pool.statistics(.microphone).converterSamples == 0)
+        pool.retireInput()
+        let sealed = pool.takeLosses(.microphone)
+        #expect(sealed.count == 1 && sealed.first?.sourceEpoch == f.rawEpoch && sealed.first?.frames == nil)
+        #expect(pool.statistics(.microphone).pendingSamples == 4096 + tail.samples.count)
+        #expect(tail.reservation.discard(tail.samples.count))
+        #expect(pool.takeLosses(.microphone).isEmpty)
+    }
 }

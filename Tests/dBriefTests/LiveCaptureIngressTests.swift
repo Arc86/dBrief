@@ -6,6 +6,21 @@ import dBriefWire
 @testable import dBrief
 
 @Suite struct LiveCaptureIngressTests {
+    @Test func discardedRawCreditCannotFreeAllocationBytesBeforeItsLastReceiptDies() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input(),rawByteLimit: 64)
+        var ticket = f.reserve(pool,count: 16)
+        try #require(ticket != nil)
+        var alias = ticket
+        ticket?.discard(reason: .overload)
+        #expect(pool.statistics(.microphone).pendingSamples == 4096)
+        #expect(pool.statistics(.microphone).rawBytes == 64)
+        #expect(pool.takeLosses(.microphone).count == 1)
+        ticket = nil
+        withExtendedLifetime(alias) { #expect(pool.statistics(.microphone).rawBytes == 64) }
+        alias = nil
+        #expect(pool.statistics(.microphone).rawBytes == 0)
+        #expect(pool.takeLosses(.microphone).isEmpty)
+    }
     @Test func microphoneAndSystemWritesSurviveLiveRawBudgetOverload() async throws {
         for source in [LiveSource.microphone,.system] {
             let identity = LiveSessionIdentity(recordingID: UUID(),captureSessionID: UUID())
@@ -62,17 +77,37 @@ import dBriefWire
         let count = limit - 4096
         let raw = try #require(f.reserve(budget,count: count))
         #expect(budget.statistics(.microphone).pendingSamples == limit)
-        #expect(f.reserve(budget,count: 1,start: count) == nil)
         let normalized = try #require(budget.normalize(raw,scope: f.scope,emittedSamples: count))
         #expect(budget.statistics(.microphone).pendingSamples == limit)
         #expect(budget.schedule(normalized,start: 0,count: count))
         #expect(budget.markDispatched(scope: f.scope,end: Int64(count)))
         #expect(budget.statistics(.microphone).nativeSamples == count)
+        #expect(f.reserve(budget,count: 1,start: count) == nil)
         #expect(f.reserve(budget,count: 1,start: count + 1) == nil)
         #expect(budget.consume(scope: f.scope,end: 100))
         let next = try #require(f.reserve(budget,count: 100,start: count + 2))
         withExtendedLifetime(next) { #expect(budget.statistics(.microphone).pendingSamples == limit) }
         #expect(!budget.consume(scope: f.scope,end: Int64(count + 1)))
+    }
+
+    @Test func lossLatchOutlivesEvidenceDrainAndOldRawDisposalCannotCutAcceptedReplacement() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        var old = f.reserve(pool,count: 100)
+        try #require(old != nil)
+        pool.recordLoss(source: .microphone,metadata: f.metadata(100,count: 100),reason: .unavailable)
+        #expect(pool.takeLosses(.microphone).count == 1)
+        #expect(pool.continuityLoss(scope: f.scope) == .unavailable)
+        let next = LiveEpoch(id: UUID(),source: .microphone,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: nil)
+        #expect(pool.replaceEpoch(old: f.scope,new: next))
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: next.id)
+        old?.discard(reason: .overload); old = nil
+        #expect(pool.continuityLoss(scope: scope) == nil)
+        let raw = try #require(f.reserve(pool,count: 100,start: 200))
+        let normalized = try #require(pool.normalize(raw,scope: scope,emittedSamples: 100))
+        pool.recordLoss(source: .microphone,metadata: f.metadata(300,count: 100),reason: .unavailable)
+        #expect(!pool.schedule(normalized,start: 0,count: 100))
+        #expect(pool.statistics(.microphone).nativeSamples == 0)
+        #expect(normalized.contains(100))
     }
 
     @Test func cutsFreeOnlyUndispatchedInputUntilTheMatchingNativeReplacementReceipt() throws {

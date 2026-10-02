@@ -16,7 +16,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
         let owner: LiveCaptureIngress
         let source: LiveSource
         fileprivate init(owner: LiveCaptureIngress, source: LiveSource) { self.owner = owner; self.source = source }
-        func discard(reason: LiveGapReason) { owner.releaseRaw(id,reason: reason) }
+        func discard(reason: LiveGapReason) { owner.discardRaw(id,reason: reason) }
         deinit { owner.releaseRaw(id,reason: .overload) }
     }
     final class NormalizedReservation: @unchecked Sendable {
@@ -26,10 +26,12 @@ final class LiveCaptureIngress: @unchecked Sendable {
         fileprivate init(owner: LiveCaptureIngress, scope: LiveLaneScope) { self.owner = owner; self.scope = scope }
         func contains(_ count: Int) -> Bool { owner.hasUnclaimed(self,count: count) }
         func discard(_ count: Int) -> Bool { owner.discardNormalized(self,count: count) }
+        func recordLoss(reason: LiveGapReason) { owner.recordNormalizedLoss(id,reason: reason) }
         deinit { owner.releaseNormalized(id) }
     }
     private struct Raw {
         let source: LiveSource
+        let scope: LiveLaneScope
         let metadata: LiveAudioMetadata
         let frames: Int64
         let rate: Int64
@@ -38,8 +40,14 @@ final class LiveCaptureIngress: @unchecked Sendable {
         var capacity: Int
         var normalized = false
         var lossRecorded = false
+        var discarded = false
     }
-    private struct Normalized { let scope: LiveLaneScope; var remaining: Int }
+    private struct Normalized {
+        let scope: LiveLaneScope
+        let sourceEpoch: UUID
+        var remaining: Int
+        var lossRecorded = false
+    }
     private struct Native {
         var start: Int64
         let end: Int64
@@ -58,6 +66,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
         var expectedOutput: Int64 = 0
         var emittedOutput: Int64 = 0
         var losses: [LiveCaptureRawLoss] = []
+        var continuityLoss: LiveGapReason?
     }
     let input: LiveSessionBegin
     private let lock = NSLock()
@@ -83,6 +92,12 @@ final class LiveCaptureIngress: @unchecked Sendable {
 
     func matches(_ input: LiveSessionBegin) -> Bool { valid && self.input == input }
 
+    /// Loss is an admission latch, independent of draining its evidence inbox.
+    /// Only an accepted native replacement clears the current source's latch.
+    func continuityLoss(scope: LiveLaneScope) -> LiveGapReason? {
+        lock.withLock { lanes[scope.source]?.scope == scope ? lanes[scope.source]?.continuityLoss : nil }
+    }
+
     func claimConverter(scope: LiveLaneScope, owner: UUID) -> Bool {
         lock.withLock {
             guard valid, !retired, var lane = lanes[scope.source], lane.scope == scope,
@@ -101,7 +116,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
                        frames: Int, rate: Double, bytes: Int, format: AVAudioFormat, converterOwner: UUID) -> Int? {
         lock.withLock {
             guard ticket.owner === self, ticket.source == scope.source, !retired,
-                  let item = raw[ticket.id], !item.normalized, lanes[scope.source]?.scope == scope,
+                  let item = raw[ticket.id], !item.normalized, !item.discarded, lanes[scope.source]?.scope == scope,
                   lanes[scope.source]?.converterOwner == converterOwner, item.format == format,
                   item.metadata == metadata, item.frames == Int64(frames), Double(item.rate) == rate,
                   item.bytes == bytes else { return nil }
@@ -133,7 +148,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             guard statisticsWhileLocked(scope.source).pendingSamples - oldHeld + held + emittedSamples <= sampleLimit else { return nil }
             lane.emittedOutput = emitted.partialValue; lanes[scope.source] = lane
             let result = NormalizedReservation(owner: self,scope: scope)
-            normalized[result.id] = .init(scope: scope,remaining: emittedSamples)
+            normalized[result.id] = .init(scope: scope,sourceEpoch: sourceEpoch,remaining: emittedSamples)
             return result
         }
     }
@@ -144,6 +159,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             guard valid, let lane = lanes[source], source.isCaptureSource,
                   (source == .microphone ? metadata.role == .mic : metadata.role == .system) else { return nil }
             guard !retired, !closing || closingTail else {
+                lanes[source]?.continuityLoss = .stopped
                 addLoss(source,metadata: metadata,reason: .stopped); return nil
             }
             guard frames > 0, bytes > 0, bytes <= byteLimit, rate.isFinite,
@@ -153,14 +169,16 @@ final class LiveCaptureIngress: @unchecked Sendable {
                   raw.values.filter({ $0.source == source }).count < 64,
                   normalized.values.filter({ $0.scope.source == source }).count < 64,
                   lane.native.count < 128 else {
+                lanes[source]?.continuityLoss = .overload
                 addLoss(source,metadata: metadata,reason: .overload); return nil
             }
             let stats = statisticsWhileLocked(source)
             guard capacity <= sampleLimit - stats.pendingSamples, bytes <= byteLimit - stats.rawBytes else {
+                lanes[source]?.continuityLoss = .overload
                 addLoss(source,metadata: metadata,reason: .overload); return nil
             }
             let ticket = RawReservation(owner: self,source: source)
-            raw[ticket.id] = .init(source: source,metadata: metadata,frames: Int64(frames),rate: Int64(rate),bytes: bytes,format: format,capacity: capacity)
+            raw[ticket.id] = .init(source: source,scope: lane.scope,metadata: metadata,frames: Int64(frames),rate: Int64(rate),bytes: bytes,format: format,capacity: capacity)
             return ticket
         }
     }
@@ -170,7 +188,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
     /// Raw capacity transfers atomically to converter/output ownership.
     func normalize(_ ticket: RawReservation, scope: LiveLaneScope, emittedSamples: Int) -> NormalizedReservation? {
         lock.withLock {
-            guard ticket.owner === self, var item = raw[ticket.id], !item.normalized,
+            guard ticket.owner === self, var item = raw[ticket.id], !item.normalized, !item.discarded,
                   !retired, var lane = lanes[item.source], lane.scope == scope, emittedSamples >= 0,
                   emittedSamples <= sampleLimit,
                   normalized.values.filter({ $0.scope.source == item.source }).count < 64 else { return nil }
@@ -193,7 +211,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             lanes[item.source] = lane
             item.capacity = 0; item.normalized = true; raw[ticket.id] = item
             let result = NormalizedReservation(owner: self,scope: scope)
-            normalized[result.id] = .init(scope: scope,remaining: emittedSamples)
+            normalized[result.id] = .init(scope: scope,sourceEpoch: item.metadata.sourceEpoch,remaining: emittedSamples)
             return result
         }
     }
@@ -216,6 +234,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
         lock.withLock {
             guard ticket.owner === self, !retired, var entry = normalized[ticket.id],
                   entry.scope == ticket.scope, var lane = lanes[entry.scope.source], lane.scope == entry.scope,
+                  lane.continuityLoss == nil,
                   count > 0, count <= entry.remaining, start == lane.scheduled, lane.native.count < 128 else { return false }
             let end = start.addingReportingOverflow(Int64(count))
             guard !end.overflow else { return false }
@@ -262,6 +281,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
                   input.epochs.first(where: { $0.source == new.source })?.engineRevision == new.engineRevision else { return false }
             lane.native.removeAll(); lane.scheduled = 0; lane.consumed = 0
             lane.scope = .init(identity: input.identity,source: new.source,epochID: new.id)
+            lane.continuityLoss = nil
             lanes[old.source] = lane; return true
         }
     }
@@ -278,6 +298,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
                 item.lossRecorded = true; raw[id] = item
                 addLoss(item.source,metadata: item.metadata,reason: .stopped)
             }
+            for id in normalized.keys { recordNormalizedLossWhileLocked(id,reason: .stopped) }
             for source in lanes.keys {
                 if let epoch = lanes[source]?.converterEpoch { recordConverterLossWhileLocked(source,sourceEpoch: epoch,reason: .stopped) }
             }
@@ -292,7 +313,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
     }
 
     func recordLoss(source: LiveSource, metadata: LiveAudioMetadata, reason: LiveGapReason) {
-        lock.withLock { addLoss(source,metadata: metadata,reason: reason) }
+        lock.withLock { lanes[source]?.continuityLoss = reason; addLoss(source,metadata: metadata,reason: reason) }
     }
     func recordConverterLoss(source: LiveSource, sourceEpoch: UUID, owner: UUID, reason: LiveGapReason) {
         lock.withLock {
@@ -319,10 +340,34 @@ final class LiveCaptureIngress: @unchecked Sendable {
         }
     }
     private func releaseNormalized(_ id: UUID) { lock.withLock { normalized[id] = nil } }
+    private func recordNormalizedLoss(_ id: UUID, reason: LiveGapReason) {
+        lock.withLock { recordNormalizedLossWhileLocked(id,reason: reason) }
+    }
+    private func recordNormalizedLossWhileLocked(_ id: UUID, reason: LiveGapReason) {
+        guard var entry = normalized[id], entry.remaining > 0, !entry.lossRecorded else { return }
+        entry.lossRecorded = true; normalized[id] = entry
+        addLoss(entry.scope.source,metadata: .init(sourceEpoch: entry.sourceEpoch,
+            role: entry.scope.source == .microphone ? .mic : .system,timestamp: .unavailable,
+            emittedFrames: nil,writeOutcome: .failed,converter: nil),reason: reason)
+    }
     private func releaseRaw(_ id: UUID, reason: LiveGapReason) {
         lock.withLock {
             guard let item = raw.removeValue(forKey: id) else { return }
-            if !item.normalized && !item.lossRecorded { addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason) }
+            if !item.normalized && !item.lossRecorded {
+                if lanes[item.source]?.scope == item.scope { lanes[item.source]?.continuityLoss = retired ? .stopped : reason }
+                addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason)
+            }
+        }
+    }
+    private func discardRaw(_ id: UUID, reason: LiveGapReason) {
+        lock.withLock {
+            guard var item = raw[id], !item.normalized, !item.discarded else { return }
+            if lanes[item.source]?.scope == item.scope { lanes[item.source]?.continuityLoss = retired ? .stopped : reason }
+            if !item.lossRecorded { addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason) }
+            item.lossRecorded = true; item.discarded = true; item.capacity = 0
+            // Discard ends admission, not the retained PCM allocation lifetime.
+            // Its bytes and receipt slot return only on the last RAII release.
+            raw[id] = item
         }
     }
     private func statisticsWhileLocked(_ source: LiveSource) -> Statistics {
