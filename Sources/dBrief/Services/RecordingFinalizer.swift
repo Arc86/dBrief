@@ -7,6 +7,7 @@ struct RecordingFinalizationResult: Sendable {
     let metadataURL: URL
     let warnings: [String]
     let ffmpegDiagnostics: FFmpegRunDiagnostics?
+    var playbackMapping: RecordingPlaybackMapping? = nil
 }
 
 struct FFmpegRunDiagnostics: Sendable {
@@ -46,8 +47,13 @@ actor RecordingFinalizer {
     private let serialization = FinalizationMutex()
     private let processRunner = FFmpegProcessRunner()
     private let metadataStore: RecordingMetadataStore
+    private let resolveFFmpeg: @Sendable () -> String?
 
-    init(metadataStore: RecordingMetadataStore = .shared) { self.metadataStore = metadataStore }
+    init(metadataStore: RecordingMetadataStore = .shared,
+         resolveFFmpeg: @escaping @Sendable () -> String? = { FFmpegLocator.resolve() }) {
+        self.metadataStore = metadataStore
+        self.resolveFFmpeg = resolveFFmpeg
+    }
 
     func finalize(
         tracks: CapturedTracks,
@@ -89,7 +95,8 @@ actor RecordingFinalizer {
 
         var warnings: [String] = []
         var ffmpegDiagnostics: FFmpegRunDiagnostics?
-        let ffmpegPath = FFmpegLocator.resolve()
+        let ffmpegPath = resolveFFmpeg()
+        let playbackMapping: RecordingPlaybackMapping
 
         if let ffmpegPath {
             // Only pass tracks that actually exist and have audio data.
@@ -114,16 +121,17 @@ actor RecordingFinalizer {
                     echoSuppressionEnabled: echoSuppressionEnabled,
                     onProgress: onProgress
                 )
+                playbackMapping = .encodedAAC(usableTracks)
             } catch let error as RecordingFinalizerError where error.preservesRawTracks {
                 try? fileManager.removeItem(at: masterURL)
                 throw error
             } catch {
                 warnings.append("ffmpeg merge failed; using one raw CAF as the master. \(error.localizedDescription)")
-                try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
+                playbackMapping = .rawTrackCopy(try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL))
             }
         } else {
             warnings.append("ffmpeg not found. Skipped merge and AAC encode; master is raw CAF.")
-            try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL)
+            playbackMapping = .rawTrackCopy(try fallbackPromoteTrack(tracks: tracks, targetURL: masterURL))
         }
 
         var segmentURLs: [URL] = []
@@ -153,7 +161,8 @@ actor RecordingFinalizer {
             masterFileName: masterURL.lastPathComponent,
             segmentFileNames: segmentURLs.map(\.lastPathComponent),
             warnings: warnings,
-            associatedApp: snapshot.associatedApp
+            associatedApp: snapshot.associatedApp,
+            playbackMapping: playbackMapping
         )
         let metadataURL = masterURL.deletingPathExtension().appendingPathExtension("json")
         try await metadataStore.create(metadataPayload, at: metadataURL)
@@ -174,7 +183,8 @@ actor RecordingFinalizer {
             segmentAudioURLs: segmentURLs,
             metadataURL: metadataURL,
             warnings: warnings,
-            ffmpegDiagnostics: ffmpegDiagnostics
+            ffmpegDiagnostics: ffmpegDiagnostics,
+            playbackMapping: playbackMapping
         )
     }
 
@@ -225,7 +235,7 @@ actor RecordingFinalizer {
         var warnings: [String] = []
         var segmentURLs: [URL] = []
         if segmentationEnabled && snapshot.duration > 1800 {
-            if let ffmpegPath = FFmpegLocator.resolve() {
+            if let ffmpegPath = resolveFFmpeg() {
                 do {
                     segmentURLs = try await createSegments(ffmpegPath: ffmpegPath, masterURL: masterURL)
                     if segmentURLs.isEmpty {
@@ -490,12 +500,16 @@ actor RecordingFinalizer {
         }
     }
 
-    func fallbackPromoteTrack(tracks: CapturedTracks, targetURL: URL) throws {
+    @discardableResult
+    func fallbackPromoteTrack(tracks: CapturedTracks, targetURL: URL) throws -> AudioTrackWriter.Role {
         let source: URL
+        let role: AudioTrackWriter.Role
         if let mic = tracks.micURL, hasAudioContent(mic) {
             source = mic
+            role = .mic
         } else if let system = tracks.systemURL, hasAudioContent(system) {
             source = system
+            role = .system
         } else {
             throw RecordingFinalizerError.ffmpegFailed("No usable track for fallback.")
         }
@@ -503,6 +517,7 @@ actor RecordingFinalizer {
             try fileManager.removeItem(at: targetURL)
         }
         try fileManager.copyItem(at: source, to: targetURL)
+        return role
     }
 
     private func runFFmpeg(
@@ -653,11 +668,12 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
     /// Retained even when a recording is never queued or processed.
     var associatedApp: String? = nil
     var lastProcessingCompletion: ProcessingCompletionStamp? = nil
+    var playbackMapping: RecordingPlaybackMapping? = nil
 
     private enum CodingKeys: String, CodingKey {
         case recordingID, dateISO8601, durationSeconds, meetingTitle, masterFileName
         case segmentFileNames, warnings, generatedTitle, participants, calendarAttendees, associatedApp
-        case lastProcessingCompletion, calendarEvent
+        case lastProcessingCompletion, calendarEvent, playbackMapping
     }
 
     init(
@@ -671,7 +687,8 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         generatedTitle: String? = nil,
         participants: [String] = [],
         calendarAttendees: [String] = [],
-        associatedApp: String? = nil
+        associatedApp: String? = nil,
+        playbackMapping: RecordingPlaybackMapping? = nil
     ) {
         self.recordingID = recordingID
         self.dateISO8601 = dateISO8601
@@ -684,6 +701,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         self.participants = participants
         self.calendarAttendees = calendarAttendees
         self.associatedApp = associatedApp
+        self.playbackMapping = playbackMapping
     }
 
     init(from decoder: Decoder) throws {
@@ -701,6 +719,7 @@ struct RecordingMetadataPayload: Codable, Equatable, Sendable {
         calendarEvent = try c.decodeIfPresent(CalendarEvent.self, forKey: .calendarEvent)
         associatedApp = try c.decodeIfPresent(String.self, forKey: .associatedApp)
         lastProcessingCompletion = try c.decodeIfPresent(ProcessingCompletionStamp.self, forKey: .lastProcessingCompletion)
+        playbackMapping = try c.decodeIfPresent(RecordingPlaybackMapping.self, forKey: .playbackMapping)
     }
 }
 

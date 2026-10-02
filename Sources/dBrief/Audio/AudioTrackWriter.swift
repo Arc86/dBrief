@@ -26,7 +26,7 @@ struct AudioCaptureWriteDiagnostics: Sendable {
 }
 
 final class AudioTrackWriter: @unchecked Sendable {
-    enum Role: String, Sendable { case system, mic }
+    enum Role: String, Codable, Sendable { case system, mic }
 
     let url: URL
     let role: Role
@@ -76,7 +76,8 @@ final class AudioTrackWriter: @unchecked Sendable {
         }
     }
 
-    func write(_ buffer: AVAudioPCMBuffer) throws {
+    @discardableResult
+    func write(_ buffer: AVAudioPCMBuffer) throws -> AudioTrackWriteReceipt {
         try lock.withLock {
             if audioFile == nil {
                 let format = buffer.format
@@ -112,15 +113,18 @@ final class AudioTrackWriter: @unchecked Sendable {
                 if droppedCount == 1 {
                     log.error("[AudioTrackWriter:\(self.role.rawValue, privacy: .public)] format mismatch — dropping buffer. Got \(buffer.format.sampleRate, privacy: .public)Hz \(buffer.format.channelCount, privacy: .public)ch, file is \(file.processingFormat.sampleRate, privacy: .public)Hz \(file.processingFormat.channelCount, privacy: .public)ch")
                 }
-                return
+                return .dropped(.formatMismatch)
             }
 
             _peakLevel = AudioLevelMeter.peak(in: buffer)
             pendingPeakLevel = max(pendingPeakLevel, _peakLevel)
             do {
+                let startFrame = file.framePosition
                 try file.write(from: buffer)
                 buffersWritten += 1
                 framesWritten += Int64(buffer.frameLength)
+                return .written(startFrame: startFrame, frameCount: Int64(buffer.frameLength),
+                                sampleRate: file.processingFormat.sampleRate)
             } catch {
                 writeErrorCount += 1
                 throw error

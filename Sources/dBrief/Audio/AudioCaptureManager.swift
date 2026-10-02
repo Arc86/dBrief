@@ -318,18 +318,10 @@ final class AudioCaptureManager {
         writer: AudioTrackWriter,
         liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
     ) -> @Sendable (CMSampleBuffer) -> Void {
+        let sink = SystemCaptureSink(writer: writer, liveSink: liveSink)
         return { sampleBuffer in
             guard let pcm = sampleBuffer.toPCMBuffer() else { return }
-            do {
-                try writer.write(pcm)
-            } catch {
-                log.error("System write error: \(error.localizedDescription, privacy: .public)")
-            }
-            // `toPCMBuffer()` already allocates a fresh buffer each callback and the
-            // writer is done with it synchronously above, so it can be handed to the
-            // live consumer directly — no second copy needed (unlike the mic tap,
-            // whose buffer storage AVAudioEngine reuses across callbacks).
-            if let liveSink { liveSink.yield(LiveAudioBuffer(pcm)) }
+            sink.receive(pcm, presentationTime: sampleBuffer.presentationTimeStamp)
         }
     }
 
@@ -404,7 +396,7 @@ final class AudioCaptureManager {
         }
         let sink = MicCaptureSink(writer: writer, converter: converter, liveSink: micLiveContinuation)
         micSink = sink
-        return { buffer, _ in sink.receive(buffer) }
+        return { buffer, time in sink.receive(buffer, time: time) }
     }
 
     /// Switch the microphone input device mid-recording without losing the in-progress
@@ -626,7 +618,11 @@ final class AudioCaptureManager {
 /// mutated after the copy — so `@unchecked Sendable` is sound.
 struct LiveAudioBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
-    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+    let metadata: LiveAudioMetadata?
+    init(_ buffer: AVAudioPCMBuffer, metadata: LiveAudioMetadata? = nil) {
+        self.buffer = buffer
+        self.metadata = metadata
+    }
 }
 
 extension AVAudioPCMBuffer {

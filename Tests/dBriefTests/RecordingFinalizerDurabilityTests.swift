@@ -63,6 +63,9 @@ struct RecordingFinalizerDurabilityTests {
 
         #expect(files.fileExists(atPath: result.masterAudioURL.path))
         #expect(result.ffmpegDiagnostics?.exitStatus == 0)
+        #expect(result.playbackMapping == .encodedAAC(.init(systemURL: nil, micURL: mic)))
+        let metadata = try JSONDecoder().decode(RecordingMetadataPayload.self, from: Data(contentsOf: result.metadataURL))
+        #expect(metadata.playbackMapping == result.playbackMapping)
         #expect(!files.fileExists(atPath: mic.path))
     }
 
