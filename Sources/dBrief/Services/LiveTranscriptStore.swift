@@ -57,7 +57,8 @@ actor LiveTranscriptStore {
 
     init(identity: LiveSessionIdentity) { self.identity = identity }
 
-    func beginEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+    /// Read-only preflight; beginEpoch repeats this check at the actual write.
+    func checkEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
         guard epoch.source.isCaptureSource, !epoch.engineRevision.isEmpty, epoch.engineRevision.utf8.count <= 256,
@@ -72,6 +73,12 @@ actor LiveTranscriptStore {
         }
         if let origin = epoch.meetingOriginNanoseconds, let cutoff = lastKnownCutoff, origin < cutoff { return .rejected(.invalidRange) }
         if let origin = epoch.meetingOriginNanoseconds, let prior = qualifiedFrontiers[epoch.source], origin < prior { return .rejected(.invalidRange) }
+        return .accepted
+    }
+
+    func beginEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+        let admission = checkEpoch(owner: owner,epoch: epoch)
+        guard admission == .accepted else { return admission }
         if let origin = epoch.meetingOriginNanoseconds {
             let old = lanes[epoch.source], start = qualifiedFrontiers[epoch.source] ?? 0
             if origin > start {
@@ -374,7 +381,15 @@ actor LiveTranscriptStore {
 
     func projection() -> LiveTranscriptProjection {
         .init(segments: ordered(Array(segments.values)), partials: lanes.values.compactMap(\.partial).sorted { $0.source.rawValue < $1.source.rawValue },
-              lanes: laneValues(), revision: revision, isClosed: isClosed)
+              lanes: laneValues(), revision: revision, isClosed: isClosed, coverage: coverage)
+    }
+
+    /// Preview retirement changes display only; frozen evidence is unaffected.
+    func clearPartials(owner: LiveSessionIdentity) -> LiveStoreAdmission {
+        guard owner == identity else { return .rejected(.wrongOwner) }
+        guard !isClosed else { return .duplicate }
+        for source in lanes.keys { lanes[source]?.partial = nil }
+        return .accepted
     }
 
     func snapshot(selection: LiveSnapshotSelection = .committed) -> TranscriptSnapshot {

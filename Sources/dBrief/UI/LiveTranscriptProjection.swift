@@ -8,4 +8,6 @@ struct LiveTranscriptProjection: Sendable, Equatable {
     let lanes: [LiveLaneWatermarks]
     let revision: UInt64
     let isClosed: Bool
+    /// Source-local gaps remain visible even when no common clock is qualified.
+    var coverage: [LiveCoverageInterval] = []
 }

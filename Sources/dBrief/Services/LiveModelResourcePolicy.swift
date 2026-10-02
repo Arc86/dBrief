@@ -57,8 +57,10 @@ actor LiveModelResourcePolicy {
         let lease: LiveResourceLease
         let profile: LiveResourceProfile
         var attributionRunning: Bool
+        var attributionResident = false
         var resident = false
         var bytes: UInt64 { profile.asrBytes + (attributionRunning ? profile.attributionBytes ?? 0 : 0) }
+        var pendingAttributionBytes: UInt64 { attributionRunning && !attributionResident ? profile.attributionBytes ?? 0 : 0 }
     }
     private let profiles: [String: [LiveResourceProfile]]
     private var active: Reservation?
@@ -123,11 +125,16 @@ actor LiveModelResourcePolicy {
         active = nil
     }
 
-    /// The helper's readiness receipt, not admission itself, confirms its model
-    /// allocation is reflected in current available-memory telemetry.
+    /// ASR readiness confirms only its own allocation in current telemetry.
+    /// An enabled but unallocated attribution model keeps its pending charge.
     func confirmResident(_ lease: LiveResourceLease) {
         guard active?.lease == lease else { return }
         active?.resident = true
+    }
+
+    func confirmAttributionResident(_ lease: LiveResourceLease) {
+        guard active?.lease == lease, active?.attributionRunning == true else { return }
+        active?.attributionResident = true
     }
 
     /// A preview decision never reserves memory. Execution uses this atomic
@@ -171,8 +178,10 @@ actor LiveModelResourcePolicy {
             model = value
         case .configuredRemote: return .admitted
         }
-        guard let extra = active.profile.concurrentChatModels[model],
-              Self.fits(extra,headroom: active.profile.headroomBytes,available: measurement.availableBytes) else { return .deferred }
+        guard let extra = active.profile.concurrentChatModels[model] else { return .deferred }
+        let allocation = extra.addingReportingOverflow(active.pendingAttributionBytes)
+        guard !allocation.overflow,
+              Self.fits(allocation.partialValue,headroom: active.profile.headroomBytes,available: measurement.availableBytes) else { return .deferred }
         return .admitted
     }
 

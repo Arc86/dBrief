@@ -66,6 +66,7 @@ actor MLHostConnection {
     private struct LiveEpochInbox { let source: LiveSource; var nextSequence: UInt64 = 0 }
     private var liveEpochs: [UUID: LiveEpochInbox] = [:]
     private var retiredEpochs: Set<UUID> = []
+    private var retiredLiveProcesses: [Process] = []
 
     func beginLive(_ input: LiveSessionBegin) throws -> AsyncThrowingStream<LiveSessionEvent, Error> {
         guard role == .live, !liveUsed, !liveEnded else { throw MLHostError.protocolViolation }
@@ -228,6 +229,17 @@ actor MLHostConnection {
         for (_, p) in dead { p.onCrash(MLHostError.helperCrashed) }
     }
 
+    /// Resource ownership needs an exit receipt, including a process already
+    /// killed by its deadline. This wait runs off actor and never delays audio
+    /// closure; the capture coordinator releases its lease in a separate task.
+    func shutdownLiveAndWaitForExit() async {
+        guard role == .live else { return }
+        failLive(MLHostError.helperCrashed)
+        let retired = retiredLiveProcesses
+        await Task.detached { for child in retired { child.waitUntilExit() } }.value
+        retiredLiveProcesses.removeAll { child in retired.contains { $0 === child } }
+    }
+
     // MARK: process lifecycle
 
     private func ensureRunning() throws {
@@ -361,6 +373,7 @@ actor MLHostConnection {
 
     private func stopLiveProcess() {
         liveDeadline?.cancel(); liveDeadline = nil
+        if let process, !retiredLiveProcesses.contains(where: { $0 === process }) { retiredLiveProcesses.append(process) }
         if let process, process.isRunning { _ = kill(process.processIdentifier, SIGKILL) }
         process = nil
         liveWriter?.retire(); liveWriter = nil; stdinHandle = nil

@@ -17,6 +17,22 @@ private struct ResourceFixture {
 }
 
 @Suite struct LiveResourceAdmissionTests {
+    @Test func asrReadinessCannotSpendStillPendingAttributionMemoryOnChat() async throws {
+        let f = ResourceFixture(), policy = LiveModelResourcePolicy(profiles: [f.profile])
+        let lease = try await policy.admit(identity: f.identity,request: f.request(labels: true),measurement: f.measurement())
+        #expect(lease.attributionEnabled)
+        await policy.confirmResident(lease)
+        // ASR is resident but DIA's 200 bytes are still an additional allocation.
+        // Chat300 + pendingDIA200 + headroom100 cannot fit current available500.
+        #expect(await policy.decide(.localChat(model: "configured-model"),measurement: f.measurement(500)) == .deferred)
+        #expect(await policy.reserveJob(owner: UUID(),job: .localChat(model: "configured-model"),measurement: f.measurement(500)) == nil)
+        let stale = LiveResourceLease(id: UUID(),identity: lease.identity,request: lease.request,attributionEnabled: true,reservedBytes: lease.reservedBytes)
+        await policy.confirmAttributionResident(stale)
+        #expect(await policy.decide(.localChat(model: "configured-model"),measurement: f.measurement(500)) == .deferred)
+        await policy.confirmAttributionResident(lease)
+        #expect(await policy.decide(.localChat(model: "configured-model"),measurement: f.measurement(400)) == .admitted)
+    }
+
     @Test func unknownProfilesCannotEnableNativeAndBaselineJobsStayAvailable() async {
         let f = ResourceFixture(), policy = LiveModelResourcePolicy()
         await #expect(throws: LiveResourceRejection.unsupported) { try await policy.admit(identity: f.identity,request: f.request(),measurement: f.measurement()) }
