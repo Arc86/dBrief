@@ -11,9 +11,10 @@ struct NemotronEvaluationOptions: Sendable {
     let chunkMs: Int
     let lanes: Int
     let allowDownload: Bool
+    var references: URL? = nil
     static func parse(_ arguments: [String]) throws -> Self {
         let pathKeys = ["--manifest", "--input-directory", "--model-directory", "--report"]
-        let valueKeys = Set(pathKeys + ["--chunk-ms", "--lanes"])
+        let valueKeys = Set(pathKeys + ["--chunk-ms", "--lanes", "--references"])
         var values: [String: String] = [:], flags = Set<String>()
         var index = 0
         while index < arguments.count {
@@ -32,12 +33,16 @@ struct NemotronEvaluationOptions: Sendable {
         guard flags.contains("--nemotron-evaluate"), pathKeys.allSatisfy({ values[$0]?.hasPrefix("/") == true }),
               let chunkMs = Int(values["--chunk-ms"] ?? "1120"), let lanes = Int(values["--lanes"] ?? "1"),
               [1, 2].contains(lanes) else { throw NemotronSessionError.invalidConfiguration }
+        guard values["--references"] == nil || values["--references"]!.hasPrefix("/") else {
+            throw NemotronSessionError.invalidConfiguration
+        }
         _ = try NemotronDecoderConfiguration(language: .auto, chunkMs: chunkMs)
         return .init(manifest: URL(fileURLWithPath: values["--manifest"]!),
             inputDirectory: URL(fileURLWithPath: values["--input-directory"]!),
             modelDirectory: URL(fileURLWithPath: values["--model-directory"]!),
             report: URL(fileURLWithPath: values["--report"]!), chunkMs: chunkMs, lanes: lanes,
-            allowDownload: flags.contains("--allow-download"))
+            allowDownload: flags.contains("--allow-download"),
+            references: values["--references"].map { URL(fileURLWithPath: $0) })
     }
 }
 
@@ -135,13 +140,14 @@ enum NemotronEvaluationRunner {
     dBriefMLHost --nemotron-evaluate --manifest /absolute/manifest.json
       --input-directory /absolute/fixtures --model-directory /absolute/variant
       --report /absolute/new-report.json [--chunk-ms 560|1120|2240] [--lanes 1|2]
-      [--allow-download]
+      [--allow-download] [--references /absolute/references.json]
 
     Input is mono 16 kHz Float32 little-endian PCM, paced in at most 100 ms packets.
     Without --allow-download, model-directory is an existing full multilingual variant.
     With --allow-download, model-directory is the explicit download cache root;
     the full multilingual variant is selected independently of EN/NL/auto hints.
-    Reports contain aggregate metrics, not transcript text; quality remains unscored.
+    Optional private references score committed utterances without serializing text.
+    Reports contain aggregate metrics; numeric scores do not accept the quality gate.
     """
 
     static func run(_ options: NemotronEvaluationOptions) async throws -> NemotronEvaluationReport {

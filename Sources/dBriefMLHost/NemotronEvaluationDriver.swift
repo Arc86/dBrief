@@ -35,6 +35,7 @@ struct NemotronFixtureMetrics: Codable, Sendable {
     let commitLagFromAcceptedEndMs: [Double]
     let finishAndReplacementMs: [Double]
     let failureStage: String?
+    var referenceScore: NemotronReferenceScore? = nil
 }
 
 struct NemotronEvaluationReport: Codable, Sendable {
@@ -54,11 +55,20 @@ struct NemotronEvaluationReport: Codable, Sendable {
     let modelTreeSHA256: String?
     let modelPreparationMs: Double
     let fixtures: [NemotronFixtureMetrics]
+    var referenceSHA256: String? = nil
+}
+
+private struct NemotronUnscoredFixtureMetrics: Sendable {
+    var metrics: NemotronFixtureMetrics
+    let references: NemotronReferenceAccumulator?
 }
 
 struct NemotronEvaluationDriver: Sendable {
     let clock: any NemotronEvaluationClock
     let loadFactory: @Sendable (NemotronEvaluationOptions, [NemotronDecoderConfiguration.Language]) async throws -> any NemotronDecoderMaking
+    var scoreReferences: @Sendable (NemotronReferenceAccumulator, Bool) -> NemotronReferenceScore = {
+        $0.result(runCompleted: $1)
+    }
     func run(_ options: NemotronEvaluationOptions) async throws -> NemotronEvaluationReport {
         let manifestHandle = try FileHandle(forReadingFrom: options.manifest)
         defer { try? manifestHandle.close() }
@@ -78,13 +88,14 @@ struct NemotronEvaluationDriver: Sendable {
                                                              utteranceEnds: fixture.utteranceEnds)
             return PreparedFixture(fixture: fixture, input: input, packets: packets)
         }
+        let references = try options.references.map { try NemotronReferenceSet.load(at: $0, manifest: manifest) }
         let started = clock.now()
         let factory: any NemotronDecoderMaking
         do { factory = try await loadFactory(options, manifest.fixtures.map(\.language)) }
         catch {
             if error is CancellationError { throw error }
             return report(options, status: "failed", manifest: manifestData, modelHash: nil,
-                          modelLoadMs: (clock.now() - started) * 1000, fixtures: [])
+                          modelLoadMs: (clock.now() - started) * 1000, fixtures: [], references: references?.sha256)
         }
         let loadMs = (clock.now() - started) * 1000
         var results: [NemotronFixtureMetrics] = []
@@ -93,20 +104,33 @@ struct NemotronEvaluationDriver: Sendable {
         for start in stride(from: 0, to: prepared.count, by: options.lanes) {
             try Task.checkCancellation()
             let batch = Array(prepared[start..<min(start + options.lanes, prepared.count)])
-            let values = try await withThrowingTaskGroup(of: NemotronFixtureMetrics.self) { group in
+            let values = try await withThrowingTaskGroup(of: NemotronUnscoredFixtureMetrics.self) { group in
                 for fixture in batch {
-                    group.addTask { try await self.runFixture(fixture, options: options, factory: factory) }
+                    group.addTask { try await self.runFixture(fixture, options: options, factory: factory,
+                        references: references?.fixtures[fixture.fixture.id]) }
                 }
-                var values: [NemotronFixtureMetrics] = []
+                var values: [NemotronUnscoredFixtureMetrics] = []
                 for try await value in group { values.append(value) }
                 return values
             }
-            results += values
+            // All native lanes are idle before any edit-distance CPU work. A
+            // shorter lane's scoring must not distort the other lane's pacing.
+            for value in values {
+                var metrics = value.metrics
+                if let references = value.references {
+                    let beforeScore = clock.now()
+                    var score = scoreReferences(references, metrics.status == "completed")
+                    score.editScoringMs = max(0, (clock.now() - beforeScore) * 1000)
+                    metrics.referenceScore = score
+                }
+                results.append(metrics)
+            }
         }
         let order = Dictionary(uniqueKeysWithValues: manifest.fixtures.enumerated().map { ($0.element.id, $0.offset) })
         results.sort { order[$0.fixtureID]! < order[$1.fixtureID]! }
         return report(options, status: results.allSatisfy { $0.status == "completed" } ? "completed" : "failed",
-            manifest: manifestData, modelHash: factory.modelFingerprint, modelLoadMs: loadMs, fixtures: results)
+            manifest: manifestData, modelHash: factory.modelFingerprint, modelLoadMs: loadMs, fixtures: results,
+            references: references?.sha256)
     }
 
     private struct PreparedFixture: Sendable {
@@ -116,8 +140,9 @@ struct NemotronEvaluationDriver: Sendable {
     }
 
     private func runFixture(_ prepared: PreparedFixture, options: NemotronEvaluationOptions,
-                            factory: any NemotronDecoderMaking) async throws -> NemotronFixtureMetrics {
-        let metrics = FixtureMeasurement(clock: clock)
+                            factory: any NemotronDecoderMaking,
+                            references: [NemotronReferenceUtterance]?) async throws -> NemotronUnscoredFixtureMetrics {
+        let metrics = FixtureMeasurement(clock: clock, references: references)
         let session = NemotronDecoderSession(factory: factory, emit: metrics.receive)
         let config = try NemotronDecoderConfiguration(language: prepared.fixture.language, chunkMs: options.chunkMs)
         var readSamples: Int64 = 0, processingMs: [Double] = [], finishMs: [Double] = [], maxLag: Double = 0
@@ -156,14 +181,16 @@ struct NemotronEvaluationDriver: Sendable {
     }
 
     private func report(_ options: NemotronEvaluationOptions, status: String, manifest: Data,
-                        modelHash: String?, modelLoadMs: Double, fixtures: [NemotronFixtureMetrics]) -> NemotronEvaluationReport {
+                        modelHash: String?, modelLoadMs: Double, fixtures: [NemotronFixtureMetrics],
+                        references: String?) -> NemotronEvaluationReport {
         .init(schemaVersion: 1, status: status, qualityGate: "not-evaluated", timingProvenance: "RNNT-emission-frames",
             confidenceProvenance: "synthetic-1.0-not-recognition-certainty", runtime: "FluidAudio-0.17.4",
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory, chunkMs: options.chunkMs, lanes: options.lanes,
             allowDownload: options.allowDownload,
             manifestSHA256: SHA256.hash(data: manifest).map { String(format: "%02x", $0) }.joined(),
-            modelTreeSHA256: modelHash, modelPreparationMs: modelLoadMs, fixtures: fixtures)
+            modelTreeSHA256: modelHash, modelPreparationMs: modelLoadMs, fixtures: fixtures,
+            referenceSHA256: references)
     }
 }
 
@@ -191,7 +218,11 @@ private final class FixtureMeasurement: @unchecked Sendable {
     private var firstPartial = false
     private var firstPartialMs: [Double] = [], commitLagMs: [Double] = []
     private var committedRanges: [NemotronEvidenceRange] = [], gaps: [NemotronEvidenceRange] = []
-    init(clock: any NemotronEvaluationClock) { self.clock = clock; readyOrigin = clock.now() }
+    private var referenceScoring: NemotronReferenceAccumulator?
+    init(clock: any NemotronEvaluationClock, references: [NemotronReferenceUtterance]?) {
+        self.clock = clock; readyOrigin = clock.now()
+        referenceScoring = references.map { NemotronReferenceAccumulator(references: $0) }
+    }
     func beginPacing(at time: Double) { lock.withLock { pacingOrigin = time } }
     func receive(_ event: NemotronDecoderEvent) {
         lock.withLock {
@@ -216,6 +247,7 @@ private final class FixtureMeasurement: @unchecked Sendable {
                 if let pacingOrigin {
                     commitLagMs.append(max(0, (clock.now() - pacingOrigin - Double(value.range.upperBound) / 16000) * 1000))
                 }
+                referenceScoring?.record(value)
                 readyOrigin = clock.now()
             case .gap(let range): gaps.append(.init(range))
             case .unavailable: break
@@ -224,16 +256,16 @@ private final class FixtureMeasurement: @unchecked Sendable {
     }
     func result(fixture: NemotronFixtureManifest.Fixture, status: String, sampleCount: Int64,
                 readSamples: Int64, sha256: String, processingMs: [Double], finishMs: [Double], maxLag: Double,
-                failureStage: String?) -> NemotronFixtureMetrics {
+                failureStage: String?) -> NemotronUnscoredFixtureMetrics {
         lock.withLock {
-            .init(fixtureID: fixture.id, language: fixture.language.rawValue, status: status,
+            .init(metrics: .init(fixtureID: fixture.id, language: fixture.language.rawValue, status: status,
                 sampleCount: sampleCount, readSampleCount: readSamples, sha256: sha256,
                 committedSamples: committedSamples, utterances: utterances, textCharacters: characters,
                 emissionTokens: tokens, partialEvents: partials, maxHeldSamples: held,
                 processingMs: processingMs, replacementMs: replacements, maxPacingLagMs: maxLag,
                 consumedBeforeFlushSamples: consumed, committedRanges: committedRanges, gaps: gaps,
                 firstPartialFromUtteranceStartMs: firstPartialMs, commitLagFromAcceptedEndMs: commitLagMs,
-                finishAndReplacementMs: finishMs, failureStage: failureStage)
+                finishAndReplacementMs: finishMs, failureStage: failureStage), references: referenceScoring)
         }
     }
 }
