@@ -104,11 +104,17 @@ public struct LiveHelperProgress: Codable, Sendable, Equatable {
     public let inFlightSamples: Int64
     public let heldSamples: Int64
     public let creditSamples: Int64
+    /// Evidence processed by ASR may exceed the common releasable prefix when
+    /// another native consumer retains input. Legacy ASR-only frames omit it.
+    public let asrConsumedSampleEnd: Int64?
+    public var effectiveASRConsumedSampleEnd: Int64 { asrConsumedSampleEnd ?? consumedSampleEnd }
     public init(capturedSampleEnd: Int64, admittedSampleEnd: Int64, consumedSampleEnd: Int64,
-                queuedSamples: Int64, inFlightSamples: Int64, heldSamples: Int64, creditSamples: Int64) {
+                queuedSamples: Int64, inFlightSamples: Int64, heldSamples: Int64, creditSamples: Int64,
+                asrConsumedSampleEnd: Int64? = nil) {
         self.capturedSampleEnd = capturedSampleEnd; self.admittedSampleEnd = admittedSampleEnd
         self.consumedSampleEnd = consumedSampleEnd; self.queuedSamples = queuedSamples
         self.inFlightSamples = inFlightSamples; self.heldSamples = heldSamples; self.creditSamples = creditSamples
+        self.asrConsumedSampleEnd = asrConsumedSampleEnd
     }
 }
 

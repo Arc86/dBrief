@@ -80,7 +80,120 @@ private actor CapturePublicationGate {
     func release() { waiter?.resume(); waiter = nil }
 }
 
+private actor CaptureFrontierPublicationGate {
+    let rejectProgress: Bool
+    var blocked = false
+    var waiter: CheckedContinuation<Void, Never>?
+    init(rejectProgress: Bool) { self.rejectProgress = rejectProgress }
+    func admit(_ event: LiveTranscriptEvent, store: LiveTranscriptStore) async -> LiveStoreAdmission {
+        let reject: Bool
+        switch event.payload {
+        case .progress(let p): reject = rejectProgress && p.consumedSampleEnd == 4096
+        case .partial(let p): reject = !rejectProgress && p.text == "Fail publication"
+        default: reject = false
+        }
+        if reject {
+            blocked = true; await withCheckedContinuation { waiter = $0 }
+            return .rejected(.invalidRange)
+        }
+        return await store.admit(event)
+    }
+    func release() { waiter?.resume(); waiter = nil }
+}
+
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test(arguments: [false,true])
+    func splitASREvidenceRetainsNativeRemainderThroughCommitAndClosure(invalidNextCredit: Bool) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let input = f.input(), ingress = LiveCaptureIngress(input: input)
+        let c = LiveCaptureSessionCoordinator(input: input,store: store,transport: await t.transport(),ingress: ingress)
+        await t.holdTeardown()
+        defer { Task { await t.release(); await c.retire() } }
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        let rawEpoch = UUID()
+        for index in 0..<3 {
+            let metadata = LiveAudioMetadata(sourceEpoch: rawEpoch,role: .mic,timestamp: .unavailable,
+                emittedFrames: .init(startFrame: Int64(index*1600),frameCount: 1600,sampleRate: 16000),writeOutcome: .failed,converter: nil)
+            let raw = try #require(ingress.reserveRaw(source: .microphone,metadata: metadata,frames: 1600,rate: 16000,bytes: 6400))
+            let normalized = try #require(ingress.normalize(raw,scope: f.scope(f.mic),emittedSamples: 1600))
+            #expect(await c.offer(scope: f.scope(f.mic),samples: Array(repeating: 1,count: 1600),reservation: normalized) == .scheduled)
+            try #require(await captureEventually { await t.requests.count == index+1 })
+            await t.emit(f.event(f.mic,UInt64(index+1),.admitted(packetSequence: UInt64(index),sampleEnd: Int64((index+1)*1600))))
+        }
+        let progress = try ConsumptionFrontierFixture.progress(LiveHelperProgress.self,end: 4800,common: 4096,asr: 4800,helper: true)
+        await t.emit(f.event(f.mic,4,.progress(progress)))
+        #expect(await captureEventually { ingress.statistics(.microphone).nativeSamples == 704 })
+        let segment = CommittedLiveSegment(id: .init(epochID: f.mic.id,index: 0),source: .microphone,
+            range: .init(samples: .init(start: 0,end: 4800),meeting: nil),text: "Flushed actual ASR")
+        await t.emit(f.event(f.mic,5,.committed(segment)))
+        #expect(await captureEventually { await store.projection().segments == [segment] })
+        #expect(ingress.statistics(.microphone).nativeSamples == 704)
+        if invalidNextCredit {
+            // An invalid common > ASR report must fail before returning any
+            // credit; even logical closure keeps all 704 until actual exit.
+            await t.emit(f.event(f.mic,6,.progress(try ConsumptionFrontierFixture.progress(LiveHelperProgress.self,end: 4800,common: 4500,asr: 4096,helper: true))))
+        } else {
+            await c.beginClosing(); await c.hardwareDidClose()
+            await t.emit(f.event(f.mic,6,.barrierCompleted(requestID: UUID(),kind: .finish,sampleEnd: 4800)))
+            await t.emit(f.event(f.mic,7,.closed(sampleEnd: 4800))); await t.emit(.finished(f.identity))
+        }
+        try await c.waitUntilClosed()
+        let display = await store.projection(), lane = try #require(display.lanes.first)
+        #expect(display.isClosed && display.segments == [segment])
+        #expect(try ConsumptionFrontierFixture.effectiveASR(lane.progress,common: lane.progress.consumedSampleEnd) == 4800)
+        #expect(lane.progress.consumedSampleEnd == 4096 && ingress.statistics(.microphone).nativeSamples == 704)
+        await t.release()
+        #expect(await captureEventually { ingress.statistics(.microphone).nativeSamples == 0 })
+    }
+
+    @Test(arguments: [Optional<Int64>.some(4000),Optional<Int64>.some(4801),Optional<Int64>.some(-1),Optional<Int64>.some(4500),Optional<Int64>.none])
+    func invalidHelperASRFrontiersCannotRemainReady(asr: Int64?) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
+        defer { Task { await c.retire() } }
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        for count in [3200,1600] { #expect(await c.offer(scope: f.scope(f.mic),samples: Array(repeating: 0,count: count)) == .scheduled) }
+        try #require(await captureEventually { await t.requests.count == 2 })
+        await t.emit(f.event(f.mic,1,.progress(try ConsumptionFrontierFixture.progress(LiveHelperProgress.self,end: 4800,common: 4096,asr: 4800,helper: true))))
+        try #require(await captureEventually { await store.projection().lanes.first?.progress.effectiveASRConsumedSampleEnd == 4800 })
+        await t.emit(f.event(f.mic,2,.progress(try ConsumptionFrontierFixture.progress(LiveHelperProgress.self,end: 4800,common: 4096,asr: asr,helper: true))))
+        #expect(await captureEventually { await c.readySources.isEmpty })
+        await c.retire(); try await c.waitUntilClosed()
+        #expect(await store.projection().lanes.first?.progress.effectiveASRConsumedSampleEnd == 4800)
+    }
+
+    @Test(arguments: [false,true])
+    func failedPublicationClosureKeepsOnlyActualAcceptedASREvidence(rejectProgress: Bool) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), gate = CaptureFrontierPublicationGate(rejectProgress: rejectProgress)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let c = LiveCaptureSessionCoordinator(input: f.input(),store: store,transport: await t.transport(),storeAccess: .init(admit: { await gate.admit($0,store: store) }))
+        defer { Task { await gate.release(); await c.retire() } }
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        for count in [3200,1600] { #expect(await c.offer(scope: f.scope(f.mic),samples: Array(repeating: 0,count: count)) == .scheduled) }
+        try #require(await captureEventually { await t.requests.count == 2 })
+        await t.emit(f.event(f.mic,1,.progress(try ConsumptionFrontierFixture.progress(LiveHelperProgress.self,end: 4800,common: 4096,asr: 4800,helper: true))))
+        if !rejectProgress {
+            try #require(await captureEventually { await store.projection().lanes.first?.progress.consumedSampleEnd == 4096 })
+            await t.emit(f.event(f.mic,2,.partial(.init(epochID: f.mic.id,source: .microphone,revision: 1,samples: .init(start: 0,end: 4800),text: "Fail publication"))))
+        }
+        try #require(await captureEventually { await gate.blocked })
+        #expect(await c.offer(scope: f.scope(f.mic),samples: Array(repeating: 0,count: 1600)) == .scheduled)
+        await gate.release(); try await c.waitUntilClosed()
+        let display = await store.projection(), lane = try #require(display.lanes.first)
+        #expect(display.isClosed && lane.progress.capturedSampleEnd == 6400)
+        #expect(lane.progress.admittedSampleEnd == (rejectProgress ? 0 : 4800))
+        #expect(lane.progress.consumedSampleEnd == (rejectProgress ? 0 : 4096))
+        #expect(try ConsumptionFrontierFixture.effectiveASR(lane.progress,common: lane.progress.consumedSampleEnd) == (rejectProgress ? 0 : 4800))
+    }
+
     @Test func oneSourcePauseRetiresOnlyItsPreviewAndMalformedAckKeepsTheHealthySource() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,both: true)
         try await c.start()

@@ -152,9 +152,13 @@ public struct LiveLaneProgress: Codable, Sendable, Equatable {
     public let capturedSampleEnd: Int64
     public let admittedSampleEnd: Int64
     public let consumedSampleEnd: Int64
-    public init(capturedSampleEnd: Int64, admittedSampleEnd: Int64, consumedSampleEnd: Int64) {
+    public let asrConsumedSampleEnd: Int64?
+    public var effectiveASRConsumedSampleEnd: Int64 { asrConsumedSampleEnd ?? consumedSampleEnd }
+    public init(capturedSampleEnd: Int64, admittedSampleEnd: Int64, consumedSampleEnd: Int64,
+                asrConsumedSampleEnd: Int64? = nil) {
         self.capturedSampleEnd = capturedSampleEnd; self.admittedSampleEnd = admittedSampleEnd
         self.consumedSampleEnd = consumedSampleEnd
+        self.asrConsumedSampleEnd = asrConsumedSampleEnd
     }
 }
 

@@ -171,9 +171,11 @@ actor LiveTranscriptStore {
         switch event.payload {
         case .progress(let progress):
             guard progress.consumedSampleEnd >= lane.progress.consumedSampleEnd,
+                  progress.effectiveASRConsumedSampleEnd >= lane.progress.effectiveASRConsumedSampleEnd,
                   progress.admittedSampleEnd >= lane.progress.admittedSampleEnd,
                   progress.capturedSampleEnd >= lane.progress.capturedSampleEnd,
-                  progress.consumedSampleEnd >= 0, progress.consumedSampleEnd <= progress.admittedSampleEnd,
+                  progress.consumedSampleEnd >= 0, progress.consumedSampleEnd <= progress.effectiveASRConsumedSampleEnd,
+                  progress.effectiveASRConsumedSampleEnd <= progress.admittedSampleEnd,
                   progress.admittedSampleEnd <= progress.capturedSampleEnd,
                   lane.epoch.meetingOriginNanoseconds == nil || meetingTime(progress.capturedSampleEnd, in: lane.epoch) != nil else {
                 return .rejected(.invalidRange)
@@ -250,7 +252,7 @@ actor LiveTranscriptStore {
 
     private func validSettlement(_ range: LiveEvidenceRange, in lane: Lane, consumed: Bool) -> Bool {
         guard range.isValid, let samples = range.samples, samples.start == lane.settled,
-              samples.end <= (consumed ? lane.progress.consumedSampleEnd : lane.progress.capturedSampleEnd) else { return false }
+              samples.end <= (consumed ? lane.progress.effectiveASRConsumedSampleEnd : lane.progress.capturedSampleEnd) else { return false }
         if lane.epoch.meetingOriginNanoseconds != nil {
             guard let meeting = range.meeting, meeting.startNanoseconds == lane.meeting,
                   meeting.startNanoseconds == meetingTime(samples.start, in: lane.epoch),

@@ -131,7 +131,8 @@ actor LiveASROrchestrator {
         let pending = lane.queued + lane.inFlight + held
         send(source, .progress(.init(capturedSampleEnd: lane.captured, admittedSampleEnd: lane.admitted,
             consumedSampleEnd: lane.consumed, queuedSamples: lane.queued, inFlightSamples: lane.inFlight, heldSamples: held,
-            creditSamples: lane.state == .active ? max(0, Int64(begin.configuration.pendingSampleLimit) - pending) : 0)))
+            creditSamples: lane.state == .active ? max(0, Int64(begin.configuration.pendingSampleLimit) - pending) : 0,
+            asrConsumedSampleEnd: lane.consumed)))
     }
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
         guard var lane = lanes[source], lane.state != .closed else { return }

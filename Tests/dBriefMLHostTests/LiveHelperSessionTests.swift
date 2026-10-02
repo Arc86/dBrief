@@ -167,6 +167,7 @@ private struct LiveHelperFixture: Sendable {
         #expect(await audit.wait { events in events.contains { if case .progress(let p) = $0.payload { p.consumedSampleEnd == chunk && p.inFlightSamples == 0 && p.queuedSamples == 0 } else { false } } })
         let progress = audit.lanes.compactMap { if case .progress(let p) = $0.payload { p } else { nil } }.last
         #expect(progress?.admittedSampleEnd == total && progress?.heldSamples == total - chunk)
+        #expect(progress?.asrConsumedSampleEnd == chunk)
         #expect(progress?.creditSamples == Int64(tier*16+32000) - (total-chunk))
         #expect(!audit.lanes.contains { if case .committed = $0.payload { true } else { false } })
         let barrierID = UUID()

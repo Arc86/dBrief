@@ -43,6 +43,7 @@ actor LiveCaptureSessionCoordinator {
         var dispatched: Int64 = 0
         var admitted: Int64 = 0
         var consumed: Int64 = 0
+        var asrConsumed: Int64 = 0
         var settled: Int64 = 0
         var nextPacket: UInt64 = 0
         var nextDispatchedPacket: UInt64 = 0
@@ -442,12 +443,14 @@ actor LiveCaptureSessionCoordinator {
                 guard !pending.overflow, !total.overflow, p.queuedSamples >= 0, p.inFlightSamples >= 0, p.heldSamples >= 0,
                       p.capturedSampleEnd >= p.admittedSampleEnd, p.capturedSampleEnd <= lane.dispatched,
                       p.admittedSampleEnd >= lane.admitted, p.admittedSampleEnd <= lane.dispatched,
-                      p.consumedSampleEnd >= lane.consumed, p.consumedSampleEnd <= p.admittedSampleEnd,
+                      p.consumedSampleEnd >= lane.consumed, p.consumedSampleEnd <= p.effectiveASRConsumedSampleEnd,
+                      p.effectiveASRConsumedSampleEnd >= lane.asrConsumed, p.effectiveASRConsumedSampleEnd <= p.admittedSampleEnd,
                       total.partialValue == p.admittedSampleEnd - p.consumedSampleEnd,
                       total.partialValue <= Int64(input.configuration.pendingSampleLimit),
                       p.creditSamples == (lane.closed || lane.paused ? 0 : Int64(input.configuration.pendingSampleLimit) - total.partialValue) else { terminate(.unavailable); return }
                 if let ingress, !ingress.consume(scope: event.scope,end: p.consumedSampleEnd) { terminate(.unavailable); return }
                 lanes[source]?.admitted = p.admittedSampleEnd; lanes[source]?.consumed = p.consumedSampleEnd
+                lanes[source]?.asrConsumed = p.effectiveASRConsumedSampleEnd
                 publishProgress(source)
             case .partial(let partial):
                 guard !closing, lane.cutReason == nil, !lane.paused, lane.pauseBoundary == nil else { return }
@@ -458,7 +461,7 @@ actor LiveCaptureSessionCoordinator {
                 guard lane.cutReason == nil else { return }
                 guard segment.id.epochID == lane.epoch.id, segment.source == source, segment.isValid,
                       segment.range.meeting == nil, segment.range.savedAudio.isEmpty,
-                      let samples = segment.range.samples, samples.start == lane.settled, samples.end <= lane.consumed,
+                      let samples = segment.range.samples, samples.start == lane.settled, samples.end <= lane.asrConsumed,
                       let range = evidence(lane.epoch,samples.start,samples.end) else { terminate(.unavailable); return }
                 let mapped = CommittedLiveSegment(id: segment.id,source: source,range: range,text: segment.text,
                     words: segment.words,language: segment.language,diarizerContextID: segment.diarizerContextID)
@@ -468,7 +471,7 @@ actor LiveCaptureSessionCoordinator {
                 guard interval.epochID == lane.epoch.id, interval.source == source, interval.kind != .committed,
                       interval.committedSegmentID == nil, interval.range.meeting == nil, interval.range.savedAudio.isEmpty,
                       let samples = interval.range.samples, samples.start == lane.settled,
-                      samples.end <= (interval.kind == .processedSilence ? lane.consumed : lane.captured),
+                      samples.end <= (interval.kind == .processedSilence ? lane.asrConsumed : lane.captured),
                       let range = evidence(lane.epoch,samples.start,samples.end) else { terminate(.unavailable); return }
                 if publish(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: interval.kind)))) { lanes[source]?.settled = samples.end }
             case .needsEpochReplacement: cut(source,reason: lane.cutReason ?? .engineRestart)
@@ -620,7 +623,7 @@ actor LiveCaptureSessionCoordinator {
             lanes[source]?.packets.removeAll(); lanes[source]?.receipts.removeAll(); lanes[source]?.ready = false
             // At most three terminal publications per source beyond the fixed
             // normal inbox. Never discard an already queued evidence commit.
-            publications.append(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed))))
+            publications.append(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed,asrConsumedSampleEnd: lane.asrConsumed))))
             if lane.settled < lane.captured, let range = evidence(lane.epoch,lane.settled,lane.captured) {
                 publications.append(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: .gap(reason ?? .unavailable)))))
                 lanes[source]?.settled = lane.captured
@@ -642,7 +645,7 @@ actor LiveCaptureSessionCoordinator {
 
     @discardableResult private func publishProgress(_ source: LiveSource) -> Bool {
         guard let lane = lanes[source] else { return false }
-        return publish(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed))))
+        return publish(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed,asrConsumedSampleEnd: lane.asrConsumed))))
     }
 
     @discardableResult private func publish(_ item: Publication) -> Bool {
@@ -749,7 +752,8 @@ actor LiveCaptureSessionCoordinator {
                 let captured = max(existing?.progress.capturedSampleEnd ?? 0,capturedByEpoch[epoch.id] ?? 0)
                 var sequence = storeSequences[epoch.id] ?? 0
                 let progress = LiveLaneProgress(capturedSampleEnd: captured,
-                    admittedSampleEnd: existing?.progress.admittedSampleEnd ?? 0,consumedSampleEnd: existing?.progress.consumedSampleEnd ?? 0)
+                    admittedSampleEnd: existing?.progress.admittedSampleEnd ?? 0,consumedSampleEnd: existing?.progress.consumedSampleEnd ?? 0,
+                    asrConsumedSampleEnd: existing?.progress.effectiveASRConsumedSampleEnd ?? 0)
                 let advanced = await store.admit(.init(identity: input.identity,epochID: epoch.id,source: source,sequence: sequence,payload: .progress(progress)))
                 guard advanced == .accepted || advanced == .duplicate else { recoverySucceeded = false; break }
                 sequence += 1
