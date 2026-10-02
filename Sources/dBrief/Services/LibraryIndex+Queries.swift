@@ -7,6 +7,7 @@ extension LibraryIndex {
     nonisolated func smartResults(in folder: URL, view: LibrarySmartView, text: String = "",
                                  status: LibraryRecordingStatus? = nil, now: Date = Date(), calendar: Calendar = .current,
                                  excludingWorkIDs: Set<UUID> = [], excludingAudioURLs: Set<URL> = []) async throws -> LibrarySmartResults {
+        try Task.checkCancellation()
         let url = databaseURL(for: folder)
         let query = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
@@ -83,7 +84,11 @@ extension LibraryIndex {
             try Task.checkCancellation()
             return LibrarySmartResults(recordings: try rows.map { try JSONDecoder().decode(RecordingBrowserItem.self, from: Data($0[0].utf8)) })
         }
-        return try await withTaskCancellationHandler(operation: { try await query.value }, onCancel: { query.cancel() })
+        return try await withTaskCancellationHandler(operation: {
+            let result = try await query.value
+            try Task.checkCancellation()
+            return result
+        }, onCancel: { query.cancel() })
     }
 
     private enum QueryFailure: Error, LocalizedError {
