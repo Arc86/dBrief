@@ -13,6 +13,7 @@ final class MicCaptureSink: @unchecked Sendable {
     private let writer: AudioTrackWriter
     private let converter: MicFormatConverter?
     private let liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
+    private let liveIngress: LiveCaptureIngress?
     private let drain: Drain?
     private var isFinished = false
     private let sourceEpoch = UUID()
@@ -24,10 +25,11 @@ final class MicCaptureSink: @unchecked Sendable {
     private var inputRateChanged = false
 
     init(writer: AudioTrackWriter, converter: MicFormatConverter? = nil,
-         liveSink: AsyncStream<LiveAudioBuffer>.Continuation? = nil, drain: Drain? = nil) {
+         liveSink: AsyncStream<LiveAudioBuffer>.Continuation? = nil, liveIngress: LiveCaptureIngress? = nil, drain: Drain? = nil) {
         self.writer = writer
         self.converter = converter
         self.liveSink = liveSink
+        self.liveIngress = liveIngress
         if let drain {
             self.drain = drain
         } else if let converter {
@@ -81,13 +83,26 @@ final class MicCaptureSink: @unchecked Sendable {
             Logger.audio.error("Mic write error: \(error.localizedDescription, privacy: .public)")
         }
         // Engine tap storage is reused. Copy before handing it to an async consumer.
-        if let liveSink, let copy = buffer.deepCopy() {
+        if let liveSink {
             let context: LiveAudioConverterContext? = converter != nil || isDrain ? .init(
                 firstInputTimestamp: firstInputTimestamp ?? .unavailable, latestInputTimestamp: latestInputTimestamp,
                 admittedInputFrameCount: admittedInputFrames,
                 inputSampleRate: inputRateChanged ? nil : inputSampleRate, isDrain: isDrain) : nil
-            liveSink.yield(LiveAudioBuffer(copy, metadata: .init(sourceEpoch: sourceEpoch, role: .mic,
-                timestamp: timestamp, emittedFrames: range, writeOutcome: outcome, converter: context)))
+            let metadata = LiveAudioMetadata(sourceEpoch: sourceEpoch,role: .mic,timestamp: timestamp,
+                emittedFrames: range,writeOutcome: outcome,converter: context)
+            var reservation: LiveCaptureIngress.RawReservation?
+            if let liveIngress {
+                guard let bytes = buffer.liveAllocationBytes(compact: true) else {
+                    liveIngress.recordLoss(source: .microphone,metadata: metadata,reason: .unavailable); return
+                }
+                guard let admitted = liveIngress.reserveRaw(source: .microphone,metadata: metadata,
+                    frames: Int(buffer.frameLength),rate: buffer.format.sampleRate,bytes: bytes,closingTail: isDrain) else { return }
+                reservation = admitted
+            }
+            guard let copy = buffer.deepCopy(frameCapacity: liveIngress == nil ? nil : buffer.frameLength) else {
+                reservation?.discard(reason: .unavailable); return
+            }
+            liveSink.yield(LiveAudioBuffer(copy,metadata: metadata,ingress: reservation))
         }
     }
 }

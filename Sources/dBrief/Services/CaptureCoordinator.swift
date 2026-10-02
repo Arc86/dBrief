@@ -9,6 +9,7 @@ final class CaptureCoordinator {
         let id: UUID
         let startedAt: Date
         var captureSessionID = UUID()
+        var liveIngress: LiveCaptureIngress? = nil
         var inputDeviceUID: String? = nil
         var acousticEchoCancellation = true
         var echoSuppression = false
@@ -70,7 +71,9 @@ final class CaptureCoordinator {
 
         static func live(_ audio: AudioCaptureManager) -> Self {
             var result = Self(start: { request, url in
-                let streams = request.liveTranscription ? audio.makeLiveAudioStreams() : nil
+                let identity = LiveSessionIdentity(recordingID: request.id,captureSessionID: request.captureSessionID)
+                let ingress = request.liveIngress.flatMap { $0.input.identity == identity ? $0 : nil }
+                let streams = request.liveTranscription ? audio.makeLiveAudioStreams(ingress: ingress) : nil
                 try await audio.startRecording(to: url, inputDeviceUID: request.inputDeviceUID,
                                                acousticEchoCancellationEnabled: request.acousticEchoCancellation)
                 return streams.map { .init(mic: $0.mic, system: $0.system) }
@@ -328,6 +331,8 @@ final class CaptureCoordinator {
         owned.wantsStop = true
         isStopping = true
         hardware.bindEvents(nil)
+        let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
+        if owned.request.liveIngress?.input.identity == identity { owned.request.liveIngress?.closeInput() }
         owned.statusClear?.cancel()
         owned.statusClear = nil
         if let derivative = owned.derivative {

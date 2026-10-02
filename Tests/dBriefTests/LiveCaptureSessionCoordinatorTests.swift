@@ -80,6 +80,35 @@ private actor CapturePublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func sharedIngressTransfersActualConsumedCreditsAndRetainsCutNativeUntilReplacement() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let input = f.input(), ingress = LiveCaptureIngress(input: input)
+        let c = LiveCaptureSessionCoordinator(input: input,store: store,transport: await t.transport(),ingress: ingress)
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 1 })
+        let metadata = LiveAudioMetadata(sourceEpoch: UUID(),role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 0,frameCount: 3200,sampleRate: 16000),writeOutcome: .failed,converter: nil)
+        let raw = try #require(ingress.reserveRaw(source: .microphone,metadata: metadata,frames: 3200,rate: 16000,bytes: 12800))
+        let normalized = try #require(ingress.normalize(raw,scope: f.scope(f.mic),emittedSamples: 3200))
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [0]) == .rejected)
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [Float](repeating: 0,count: 3200),reservation: normalized) == .scheduled)
+        #expect(await captureEventually { await t.requests.count == 1 })
+        #expect(ingress.statistics(.microphone).nativeSamples == 3200)
+        await t.emit(f.event(f.mic,1,.progress(.init(capturedSampleEnd: 3200,admittedSampleEnd: 3200,consumedSampleEnd: 1600,
+            queuedSamples: 0,inFlightSamples: 0,heldSamples: 1600,creditSamples: 48320))))
+        #expect(await captureEventually { ingress.statistics(.microphone).nativeSamples == 1600 })
+        #expect(await store.projection().lanes.first?.settledSampleEnd == 0)
+        await c.recordDiscontinuity(scope: f.scope(f.mic),reason: .overload)
+        #expect(await captureEventually { await t.requests.contains { if case .cut = $0 { return true }; return false } })
+        #expect(ingress.statistics(.microphone).nativeSamples == 1600)
+        let epoch = LiveEpoch(id: UUID(),source: .microphone,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: nil)
+        #expect(await captureEventually { (try? await c.replaceEpoch(scope: f.scope(f.mic),epoch: epoch)) == true })
+        #expect(ingress.statistics(.microphone).nativeSamples == 0)
+        await c.retire(); try await c.waitUntilClosed()
+    }
+
     @Test func consumedCreditsDoNotSettleAndOverloadPreservesOnlyTheCommittedPrefix() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,tier: 560)
         try await c.start()

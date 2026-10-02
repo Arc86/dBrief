@@ -70,6 +70,7 @@ final class AudioCaptureManager {
     /// yield deep-copied buffers here in addition to writing the CAF tracks.
     private var micLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
     private var systemLiveContinuation: AsyncStream<LiveAudioBuffer>.Continuation?
+    private var liveIngress: LiveCaptureIngress?
 
     /// Bound on buffered live audio. Live transcription is an explicitly lossy
     /// preview, so we cap the queue and drop the oldest buffers rather than let
@@ -82,7 +83,8 @@ final class AudioCaptureManager {
     /// Creates fresh live audio streams (mic + system) for real-time transcription.
     /// MUST be called *before* `startRecording` so the tap handlers capture the sinks.
     /// The streams stay open across pause/resume and are finished by `stopRecording`.
-    func makeLiveAudioStreams() -> (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>) {
+    func makeLiveAudioStreams(ingress: LiveCaptureIngress? = nil) -> (mic: AsyncStream<LiveAudioBuffer>, system: AsyncStream<LiveAudioBuffer>) {
+        liveIngress = ingress
         let mic = AsyncStream<LiveAudioBuffer>(bufferingPolicy: .bufferingNewest(Self.liveBufferLimit)) { continuation in
             self.micLiveContinuation = continuation
         }
@@ -95,6 +97,7 @@ final class AudioCaptureManager {
     private func finishLiveStreams() {
         micLiveContinuation?.finish(); micLiveContinuation = nil
         systemLiveContinuation?.finish(); systemLiveContinuation = nil
+        liveIngress?.closeInput(); liveIngress = nil
     }
 
     var microphoneAuthorizationState: PermissionAuthorizationState {
@@ -291,11 +294,12 @@ final class AudioCaptureManager {
     ) -> Task<Void, Error> {
         // Freeze sinks and callbacks before the content-filter suspension.
         let liveSink = systemLiveContinuation
+        let liveIngress = self.liveIngress
         let status = statusNoteHandler
         return systemLifecycle.start(make: { [weak self] id in
             let filter = try await SystemAudioCapture.createContentFilter()
             let capture = try SystemAudioCapture(filter: filter)
-            capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: liveSink)
+            capture.audioBufferHandler = Self.makeSystemHandler(writer: writer, liveSink: liveSink,liveIngress: liveIngress)
             capture.unexpectedStopHandler = { [weak self] failure in
                 Task { @MainActor [weak self] in
                     guard let self, self.systemLifecycle.accepts(id) else { return }
@@ -316,9 +320,9 @@ final class AudioCaptureManager {
 
     private nonisolated static func makeSystemHandler(
         writer: AudioTrackWriter,
-        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?
+        liveSink: AsyncStream<LiveAudioBuffer>.Continuation?, liveIngress: LiveCaptureIngress? = nil
     ) -> @Sendable (CMSampleBuffer) -> Void {
-        let sink = SystemCaptureSink(writer: writer, liveSink: liveSink)
+        let sink = SystemCaptureSink(writer: writer, liveSink: liveSink,liveIngress: liveIngress)
         return { sampleBuffer in
             guard let pcm = sampleBuffer.toPCMBuffer() else { return }
             sink.receive(pcm, presentationTime: sampleBuffer.presentationTimeStamp)
@@ -394,7 +398,7 @@ final class AudioCaptureManager {
             }
             converter = created
         }
-        let sink = MicCaptureSink(writer: writer, converter: converter, liveSink: micLiveContinuation)
+        let sink = MicCaptureSink(writer: writer, converter: converter, liveSink: micLiveContinuation,liveIngress: liveIngress)
         micSink = sink
         return { buffer, time in sink.receive(buffer, time: time) }
     }
@@ -619,9 +623,11 @@ final class AudioCaptureManager {
 struct LiveAudioBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
     let metadata: LiveAudioMetadata?
-    init(_ buffer: AVAudioPCMBuffer, metadata: LiveAudioMetadata? = nil) {
+    let ingress: LiveCaptureIngress.RawReservation?
+    init(_ buffer: AVAudioPCMBuffer, metadata: LiveAudioMetadata? = nil, ingress: LiveCaptureIngress.RawReservation? = nil) {
         self.buffer = buffer
         self.metadata = metadata
+        self.ingress = ingress
     }
 }
 
@@ -629,17 +635,30 @@ extension AVAudioPCMBuffer {
     /// Allocates a new buffer with the same format and copies the raw frame data,
     /// so the copy can safely outlive a tap's reused storage. Handles both
     /// interleaved and non-interleaved layouts by copying each audio buffer.
-    func deepCopy() -> AVAudioPCMBuffer? {
-        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else { return nil }
+    func deepCopy(frameCapacity capacity: AVAudioFrameCount? = nil) -> AVAudioPCMBuffer? {
+        guard capacity.map({ $0 >= frameLength }) ?? true,
+              let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity ?? frameCapacity) else { return nil }
         copy.frameLength = frameLength
         let src = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
         let dst = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
         guard src.count == dst.count else { return nil }
         for i in 0..<src.count {
             guard let s = src[i].mData, let d = dst[i].mData else { continue }
+            guard src[i].mDataByteSize <= dst[i].mDataByteSize else { return nil }
             memcpy(d, s, Int(src[i].mDataByteSize))
             dst[i].mDataByteSize = src[i].mDataByteSize
         }
         return copy
+    }
+
+    /// Count the allocation retained by the live consumer, including all channel
+    /// planes. Native mic copies trim unused tap capacity; legacy copies do not.
+    func liveAllocationBytes(compact: Bool) -> Int? {
+        let frames = Int64(compact ? frameLength : frameCapacity)
+        let planes = format.isInterleaved ? Int64(1) : Int64(format.channelCount)
+        let bytes = frames.multipliedReportingOverflow(by: Int64(format.streamDescription.pointee.mBytesPerFrame))
+        let total = bytes.partialValue.multipliedReportingOverflow(by: planes)
+        guard frames > 0, planes > 0, !bytes.overflow, !total.overflow, total.partialValue > 0 else { return nil }
+        return Int(exactly: total.partialValue)
     }
 }
