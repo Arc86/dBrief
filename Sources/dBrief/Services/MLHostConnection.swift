@@ -41,6 +41,9 @@ actor MLHostConnection {
         var onEvent: (MLEvent) -> Void
         var onCrash: (Error) -> Void
         var privacyTrace: PrivacyMLTrace? = nil
+        var liveRequest: LiveSessionRequest? = nil
+        var liveReplied = false
+        var liveCompletionSeen = false
     }
     private var pending: [UUID: Pending] = [:]
 
@@ -63,10 +66,17 @@ actor MLHostConnection {
     private var liveUsed = false
     private var liveEnded = false
     private var liveDeadline: Task<Void, Never>?
-    private struct LiveEpochInbox { let source: LiveSource; var nextSequence: UInt64 = 0 }
+    private struct LiveEpochInbox {
+        let source: LiveSource
+        var nextSequence: UInt64 = 0
+        var deferred: [LiveLaneEvent] = []
+    }
     private var liveEpochs: [UUID: LiveEpochInbox] = [:]
     private var retiredEpochs: Set<UUID> = []
     private var retiredLiveProcesses: [Process] = []
+    private var liveBarriers = LiveBarrierReceipts()
+    private var liveTerminalReceived = false
+    private var deferredLiveTerminal: LiveSessionEvent?
 
     func beginLive(_ input: LiveSessionBegin) throws -> AsyncThrowingStream<LiveSessionEvent, Error> {
         guard role == .live, !liveUsed, !liveEnded else { throw MLHostError.protocolViolation }
@@ -88,19 +98,25 @@ actor MLHostConnection {
     }
 
     func sendLive(_ request: LiveSessionRequest) async throws -> LiveSessionReply {
-        guard role == .live, liveUsed, !liveEnded, process?.isRunning == true else { throw MLHostError.protocolViolation }
+        guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, process?.isRunning == true else { throw MLHostError.protocolViolation }
         if case .begin = request { throw MLHostError.protocolViolation }
         guard pending.count < 128 else { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
         let id = UUID()
         let envelope = RequestEnvelope(id: id, request: .live(request))
         try validateLiveFrame(envelope)
-        var replacement: (UUID, LiveEpoch)?
         if case .replaceEpoch(let identity, let oldID, let epoch) = request {
             guard identity == liveBegin?.identity, liveEpochs[oldID]?.source == epoch.source,
                   liveEpochs[epoch.id] == nil, !retiredEpochs.contains(epoch.id) else { throw LiveProtocolError.staleScope }
-            liveEpochs[epoch.id] = .init(source: epoch.source); replacement = (oldID,epoch)
+            liveEpochs[epoch.id] = .init(source: epoch.source)
         }
-        let result: LiveSessionReply = try await withCheckedThrowingContinuation { cont in
+        if case .barrier(let barrier) = request {
+            guard barrier.scope.identity == liveBegin?.identity,
+                  liveEpochs[barrier.scope.epochID]?.source == barrier.scope.source,
+                  !retiredEpochs.contains(barrier.scope.epochID) else { throw LiveProtocolError.staleScope }
+            do { try liveBarriers.reserve(id,barrier: barrier) }
+            catch { failLive(error); throw error }
+        }
+        return try await withCheckedThrowingContinuation { cont in
             let resolved = ResolveOnce()
             pending[id] = Pending(onEvent: { event in
                 switch event {
@@ -108,18 +124,9 @@ actor MLHostConnection {
                 case .finished: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
                 default: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
                 }
-            }, onCrash: { error in if resolved.tryResolve() { cont.resume(throwing: error) } })
+            }, onCrash: { error in if resolved.tryResolve() { cont.resume(throwing: error) } }, liveRequest: request)
             write(.init(id: id,request: .live(request)))
         }
-        if let (oldID, epoch) = replacement {
-            if result == .accepted { liveEpochs[oldID] = nil; retiredEpochs.insert(oldID) }
-            else {
-                // A rejected command cannot have legitimately started its decoder.
-                if liveEpochs[epoch.id]?.nextSequence != 0 { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
-                liveEpochs[epoch.id] = nil
-            }
-        }
-        return result
     }
 
     func armLiveDeadline(_ duration: Duration) {
@@ -383,6 +390,8 @@ actor MLHostConnection {
     private func failLive(_ error: Error) {
         guard role == .live else { return }
         liveEnded = true
+        liveBarriers.removeAll(); deferredLiveTerminal = nil
+        for epoch in liveEpochs.keys { liveEpochs[epoch]?.deferred.removeAll() }
         liveStream?.finish(throwing: error); liveStream = nil
         let dead = pending; pending.removeAll()
         stopLiveProcess()
@@ -405,16 +414,22 @@ actor MLHostConnection {
                 let envelope = try frameDecoder.decode(EventEnvelope.self,from: frame)
                 guard envelope.channel == .live else { throw MLHostError.protocolViolation }
                 if envelope.id == liveRequestID {
-                    guard !liveEnded else { continue }
                     switch envelope.event {
                     case .live(.reply(.accepted)): break
                     case .live(.reply(.rejected(let error))): failLive(error)
                     case .live(.event(let event)): try receiveLive(event)
                     default: throw MLHostError.protocolViolation
                     }
-                } else if let inbox = pending[envelope.id] {
+                } else if var inbox = pending[envelope.id] {
                     switch envelope.event {
-                    case .live(.reply), .finished: inbox.onEvent(envelope.event)
+                    case .live(.reply(let reply)):
+                        guard !inbox.liveReplied, let request = inbox.liveRequest else { throw MLHostError.protocolViolation }
+                        try receiveLiveReply(envelope.id,request: request,reply: reply)
+                        inbox.liveReplied = true; pending[envelope.id] = inbox
+                        inbox.onEvent(envelope.event)
+                    case .finished:
+                        guard inbox.liveReplied else { throw MLHostError.protocolViolation }
+                        inbox.onEvent(envelope.event)
                     default: throw MLHostError.protocolViolation
                     }
                     if case .finished = envelope.event { pending[envelope.id] = nil }
@@ -430,6 +445,7 @@ actor MLHostConnection {
         case .lane(let lane):
             guard lane.scope.identity == begin.identity else { throw MLHostError.protocolViolation }
             if retiredEpochs.contains(lane.scope.epochID) { return }
+            guard !liveTerminalReceived else { throw MLHostError.protocolViolation }
             guard var inbox = liveEpochs[lane.scope.epochID], inbox.source == lane.scope.source,
                   lane.sequence == inbox.nextSequence, lane.sequence < .max else { throw MLHostError.protocolViolation }
             // Embedded evidence must have the same source and epoch as its wire scope.
@@ -440,12 +456,71 @@ actor MLHostConnection {
                 guard segment.id.epochID == lane.scope.epochID, segment.source == lane.scope.source else { throw MLHostError.protocolViolation }
             case .settled(let interval):
                 guard interval.epochID == lane.scope.epochID, interval.source == lane.scope.source else { throw MLHostError.protocolViolation }
+            case .barrierCompleted(let id,let kind,let end):
+                try liveBarriers.complete(id,scope: lane.scope,kind: kind,end: end)
+                // A pre-reply completion must remain provable even if accepted
+                // outer replacement later retires its whole epoch and buffer.
+                pending[id]?.liveCompletionSeen = true
             default: break
             }
-            inbox.nextSequence += 1; liveEpochs[lane.scope.epochID] = inbox
+            inbox.nextSequence += 1
+            // A completion can overtake its command reply. Preserve this lane's
+            // suffix until acceptance; the other source keeps publishing.
+            if !inbox.deferred.isEmpty || { if case .barrierCompleted(let id,_,_) = lane.payload { !liveBarriers.canPublish(id) } else { false } }() {
+                guard inbox.deferred.count < 16 else { throw MLHostError.protocolViolation }
+                inbox.deferred.append(lane); liveEpochs[lane.scope.epochID] = inbox
+                try drainLiveEpoch(lane.scope.epochID)
+                return
+            }
+            liveEpochs[lane.scope.epochID] = inbox
+            try publishLive(event)
         case .finished(let identity), .failed(let identity,_):
-            guard identity == begin.identity else { throw MLHostError.protocolViolation }
+            guard identity == begin.identity, !liveTerminalReceived else { throw MLHostError.protocolViolation }
+            liveTerminalReceived = true
+            if case .finished = event, liveEpochs.values.contains(where: { !$0.deferred.isEmpty }) {
+                deferredLiveTerminal = event; return
+            }
+            try publishLive(event)
         }
+    }
+
+    private func receiveLiveReply(_ id: UUID, request: LiveSessionRequest, reply: LiveSessionReply) throws {
+        if pending[id]?.liveCompletionSeen == true, reply != .accepted { throw MLHostError.protocolViolation }
+        switch request {
+        case .barrier(let barrier):
+            if !retiredEpochs.contains(barrier.scope.epochID) {
+                try liveBarriers.reply(id,value: reply)
+                try drainLiveEpoch(barrier.scope.epochID)
+            }
+        case .replaceEpoch(_,let oldID,let epoch):
+            if reply == .accepted {
+                liveBarriers.retire(oldID); liveEpochs[oldID] = nil; retiredEpochs.insert(oldID)
+            } else {
+                // A rejected command cannot have legitimately started its decoder.
+                guard liveEpochs[epoch.id]?.nextSequence == 0 else { throw MLHostError.protocolViolation }
+                liveEpochs[epoch.id] = nil
+            }
+        default: break
+        }
+        try publishDeferredLiveTerminal()
+    }
+
+    private func drainLiveEpoch(_ epochID: UUID) throws {
+        while let lane = liveEpochs[epochID]?.deferred.first {
+            if case .barrierCompleted(let id,_,_) = lane.payload, !liveBarriers.canPublish(id) { return }
+            liveEpochs[epochID]?.deferred.removeFirst()
+            try publishLive(.lane(lane))
+        }
+        try publishDeferredLiveTerminal()
+    }
+
+    private func publishDeferredLiveTerminal() throws {
+        guard let terminal = deferredLiveTerminal, liveEpochs.values.allSatisfy({ $0.deferred.isEmpty }) else { return }
+        deferredLiveTerminal = nil; try publishLive(terminal)
+    }
+
+    private func publishLive(_ event: LiveSessionEvent) throws {
+        if case .lane(let lane) = event, case .barrierCompleted(let id,_,_) = lane.payload { try liveBarriers.published(id) }
         guard let liveStream else { return }
         if case .dropped = liveStream.yield(event) { throw MLHostError.protocolViolation }
         switch event {

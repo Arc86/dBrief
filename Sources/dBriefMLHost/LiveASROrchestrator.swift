@@ -226,7 +226,9 @@ actor LiveASROrchestrator {
         var payload: LiveLaneEvent.Payload?
         if !result.range.isEmpty {
             if result.output.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                payload = .settled(.init(epochID: scope.epochID,source: scope.source,range: range,kind: .processedSilence))
+                // Recognition absence supplies no acoustic silence certificate.
+                // Settle the real processed prefix without cutting its source.
+                payload = .settled(.init(epochID: scope.epochID,source: scope.source,range: range,kind: .gap(.unavailable)))
             } else {
                 var words: [LiveWordSpan] = []
                 for timing in result.output.timings.prefix(512) where !timing.token.isEmpty && timing.token.utf8.count <= 4096 {

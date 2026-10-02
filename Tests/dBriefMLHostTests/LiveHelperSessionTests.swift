@@ -15,11 +15,11 @@ private final class LiveHelperAudit: @unchecked Sendable {
     }
 }
 private actor ChunkLiveDecoder: NemotronStreamingDecoder {
-    let chunk: Int64, scripted: Bool, release: LifetimeSignal
+    let chunk: Int64, scripted: Bool, release: LifetimeSignal, output: String?
     nonisolated let partial: @Sendable (String) -> Void
     private var count: Int64 = 0, sum: Float = 0
-    init(chunk: Int, scripted: Bool, release: LifetimeSignal, partial: @escaping @Sendable (String) -> Void) {
-        self.chunk = Int64(chunk); self.scripted = scripted; self.release = release; self.partial = partial
+    init(chunk: Int, scripted: Bool, release: LifetimeSignal, output: String?, partial: @escaping @Sendable (String) -> Void) {
+        self.chunk = Int64(chunk); self.scripted = scripted; self.release = release; self.output = output; self.partial = partial
     }
     func process(samples: [Float]) async throws -> NemotronDecoderProgress {
         if samples.first == 9 { await release.wait() }
@@ -28,15 +28,19 @@ private actor ChunkLiveDecoder: NemotronStreamingDecoder {
         let consumed = scripted ? min(count,24000) : count / chunk * chunk
         return .init(consumedSamples: consumed, heldSamples: count-consumed)
     }
-    func finish() async throws -> NemotronDecoderOutput { .init(text: sum == 0 ? "" : "Utterance \(Int(sum))", timings: []) }
+    func finish() async throws -> NemotronDecoderOutput { .init(text: output ?? (sum == 0 ? "" : "Utterance \(Int(sum))"), timings: []) }
 }
 private actor LiveFixtureFactory: NemotronDecoderMaking {
     let scripted: Bool, release: LifetimeSignal
+    private var outputs: [String]
     private var callbacks: [@Sendable (String) -> Void] = []
-    init(scripted: Bool = false, release: LifetimeSignal = .init()) { self.scripted = scripted; self.release = release }
+    init(scripted: Bool = false, release: LifetimeSignal = .init(), outputs: [String] = []) {
+        self.scripted = scripted; self.release = release; self.outputs = outputs
+    }
     func makeDecoder(configuration: NemotronDecoderConfiguration, partial: @escaping @Sendable (String) -> Void) async throws -> any NemotronStreamingDecoder {
         callbacks.append(partial)
-        return ChunkLiveDecoder(chunk: configuration.chunkSamples, scripted: scripted, release: release, partial: partial)
+        let output = outputs.isEmpty ? nil : outputs.removeFirst()
+        return ChunkLiveDecoder(chunk: configuration.chunkSamples, scripted: scripted, release: release, output: output, partial: partial)
     }
     func lateCallback() { callbacks.last?("Old callback") }
 }
@@ -56,6 +60,63 @@ private struct LiveHelperFixture: Sendable {
 }
 
 @Suite struct LiveHelperSessionTests {
+    @Test(arguments: [LiveFinishBarrier.Kind.utterance, .pause, .finish], ["", " \n\t "])
+    func emptyRecognitionOfNonzeroPCMSettlesAnUnavailablePrefix(kind: LiveFinishBarrier.Kind, text: String) async throws {
+        let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory(outputs: [text])
+        let helper = LiveASROrchestrator(loader: { _ in factory }, emit: audit.append)
+        #expect(await helper.handle(f.begin(), requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.contains { if case .ready = $0.payload { true } else { false } } })
+        #expect(try await helper.handle(f.packet(0,0,value: 2), requestID: UUID()) == .accepted)
+        let id = UUID()
+        #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: kind)), requestID: id) == .accepted)
+        try #require(await audit.wait { $0.contains { if case .barrierCompleted(let ack,let k,1600) = $0.payload { ack == id && k == kind } else { false } } })
+        let settlements = audit.lanes.compactMap { if case .settled(let value) = $0.payload { value } else { nil } }
+        #expect(settlements.count == 1)
+        #expect(settlements.first?.kind == .gap(.unavailable))
+        #expect(settlements.first?.range.samples == .init(start: 0,end: 1600))
+        #expect(!audit.lanes.contains { if case .needsEpochReplacement = $0.payload { true } else { false } })
+        #expect(!audit.lanes.contains { if case .committed = $0.payload { true } else { false } })
+        let progress = audit.lanes.compactMap { if case .progress(let p) = $0.payload { p } else { nil } }.last
+        #expect(progress?.consumedSampleEnd == 1600 && progress?.heldSamples == 0)
+
+        if kind == .utterance {
+            // Missing recognition affects coverage, not the next decoder or
+            // outer epoch. A later successful utterance remains publishable.
+            try #require(await audit.wait { $0.filter { if case .ready = $0.payload { true } else { false } }.count == 2 })
+            #expect(try await helper.handle(f.packet(1,1600,value: 3), requestID: UUID()) == .accepted)
+            #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 2,sampleEnd: 3200,kind: .finish)), requestID: UUID()) == .accepted)
+            try #require(await audit.wait { $0.contains { if case .closed(3200) = $0.payload { true } else { false } } })
+            let commits = audit.lanes.compactMap { if case .committed(let s) = $0.payload { s } else { nil } }
+            #expect(commits.count == 1 && commits.first?.text == "Utterance 4800")
+            #expect(commits.first?.id.epochID == f.epochID && commits.first?.range.samples == .init(start: 1600,end: 3200))
+        } else if kind == .pause {
+            // Stop must preserve the gap without making a second empty result.
+            #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: .finish)), requestID: UUID()) == .accepted)
+            try #require(await audit.wait { $0.contains { if case .closed(1600) = $0.payload { true } else { false } } })
+            #expect(audit.lanes.filter { if case .settled = $0.payload { true } else { false } }.count == 1)
+        }
+        #expect(audit.events.contains(.finished(f.identity)))
+    }
+
+    @Test func anUnqualifiedEmptyResultDoesNotCutTheHealthySource() async throws {
+        let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
+        let system = f.epoch(.system,id: UUID()), systemScope = LiveLaneScope(identity: f.identity,source: .system,epochID: system.id)
+        let helper = LiveASROrchestrator(loader: { _ in factory }, emit: audit.append)
+        #expect(await helper.handle(f.begin(epochs: [f.epoch(),system]), requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.filter { if case .ready = $0.payload { true } else { false } }.count == 2 })
+        #expect(try await helper.handle(f.packet(0,0,value: 0), requestID: UUID()) == .accepted)
+        #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: .pause)), requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.contains { if case .barrierCompleted(_, .pause,1600) = $0.payload { true } else { false } } })
+        #expect(try await helper.handle(f.packet(0,0,value: 2,scope: systemScope), requestID: UUID()) == .accepted)
+        #expect(await helper.handle(.barrier(.init(scope: systemScope,nextPacketSequence: 1,sampleEnd: 1600,kind: .finish)), requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.contains { event in event.scope == systemScope && { if case .closed = event.payload { true } else { false } }() } })
+        let gaps = audit.lanes.compactMap { if case .settled(let s) = $0.payload { s } else { nil } }
+        #expect(gaps.count == 1 && gaps.first?.source == .microphone && gaps.first?.kind == .gap(.unavailable))
+        #expect(audit.lanes.contains { event in event.scope == systemScope && { if case .committed(let s) = event.payload { s.text == "Utterance 3200" } else { false } }() })
+        #expect(!audit.lanes.contains { if case .needsEpochReplacement = $0.payload { true } else { false } })
+        _ = await helper.handle(.cancel(f.identity), requestID: UUID())
+    }
+
     @Test func finalStopOfAPausedLanePreservesTheAlreadySettledPrefix() async throws {
         let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
         let helper = LiveASROrchestrator(loader: { _ in factory },emit: audit.append)
@@ -220,7 +281,7 @@ private struct LiveHelperFixture: Sendable {
         #expect(!failedAudit.lanes.contains { if case .ready = $0.payload { true } else { false } })
     }
 
-    @Test func pauseSettlesSilenceAndResumeUsesANewEpoch() async throws {
+    @Test func emptyRecognitionOfZeroPCMIsUnqualifiedAndResumeUsesANewEpoch() async throws {
         let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
         let helper = LiveASROrchestrator(loader: { _ in factory },emit: audit.append)
         #expect(await helper.handle(f.begin(),requestID: UUID()) == .accepted)
@@ -228,7 +289,7 @@ private struct LiveHelperFixture: Sendable {
         #expect(try await helper.handle(f.packet(0,0,value: 0),requestID: UUID()) == .accepted)
         #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: .pause)),requestID: UUID()) == .accepted)
         #expect(await audit.wait { $0.contains { if case .barrierCompleted(_, .pause,1600) = $0.payload { true } else { false } } })
-        #expect(audit.lanes.contains { if case .settled(let c) = $0.payload { c.kind == .processedSilence && c.range.samples == .init(start: 0,end: 1600) } else { false } })
+        #expect(audit.lanes.contains { if case .settled(let c) = $0.payload { c.kind == .gap(.unavailable) && c.range.samples == .init(start: 0,end: 1600) } else { false } })
         #expect(try await helper.handle(f.packet(1,1600),requestID: UUID()) == .rejected(.closed))
         let newID = UUID(), newScope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: newID)
         var replaced = false

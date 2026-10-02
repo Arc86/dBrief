@@ -8,6 +8,9 @@ struct LiveHelperStub {
     private var begin: LiveSessionBegin?
     private var streamID: UUID?
     private var lanes: [LiveSource: Lane] = [:]
+    private var barrierCount = 0
+    private var delayedBarrier: (UUID, LiveFinishBarrier)?
+    private var awaitingRetiredReply: UUID?
     init(mode: String) { self.mode = mode }
     private mutating func event(_ source: LiveSource, _ payload: LiveLaneEvent.Payload, send: (EventEnvelope) -> Void) {
         guard let begin, let id = streamID, let lane = lanes[source] else { return }
@@ -33,6 +36,9 @@ struct LiveHelperStub {
                     send(.init(id: envelope.id,channel: .live,event: .live(.event(.finished(.init(recordingID: UUID(),captureSessionID: begin.identity.captureSessionID)))))); return
                 }
                 event(epoch.source,.ready(generation: UUID(),originSample: 0),send: send)
+                if mode == "live-unsolicited-barrier" {
+                    event(epoch.source,.barrierCompleted(requestID: UUID(),kind: .pause,sampleEnd: 0),send: send)
+                }
             }
             if mode == "live-read-stall" { Thread.sleep(forTimeInterval: 10) }
         case .packet(let packet):
@@ -49,7 +55,34 @@ struct LiveHelperStub {
         case .barrier(let barrier):
             guard let begin, barrier.scope.identity == begin.identity, var lane = lanes[barrier.scope.source], lane.epoch.id == barrier.scope.epochID,
                   barrier.sampleEnd == lane.end, barrier.nextPacketSequence == lane.packet else { reply(.rejected(.outOfOrder)); return }
-            reply(.accepted)
+            barrierCount += 1
+            if mode == "live-terminal-admission-gate", barrierCount == 1 {
+                delayedBarrier = (envelope.id,barrier)
+                event(barrier.scope.source,.progress(.init(capturedSampleEnd: 0,admittedSampleEnd: 0,consumedSampleEnd: 0,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: Int64(begin.configuration.pendingSampleLimit))),send: send)
+                return
+            }
+            if mode.hasPrefix("live-retire-before-old-reply-"), barrierCount == 1 {
+                awaitingRetiredReply = envelope.id
+                event(barrier.scope.source,.barrierCompleted(requestID: envelope.id,kind: barrier.kind,sampleEnd: lane.end),send: send)
+                event(.system,.progress(.init(capturedSampleEnd: 0,admittedSampleEnd: 0,consumedSampleEnd: 0,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: Int64(begin.configuration.pendingSampleLimit))),send: send)
+                return
+            }
+            if mode == "live-reject-first-barrier", barrierCount == 1 { reply(.rejected(.unavailable)); return }
+            if ["live-late-barrier-after-cut","live-retired-epoch-frames","live-old-id-new-epoch"].contains(mode), barrierCount == 1 {
+                delayedBarrier = (envelope.id,barrier); reply(.accepted); return
+            }
+            if mode == "live-completion-after-rejection" {
+                reply(.rejected(.unavailable))
+                event(barrier.scope.source,.barrierCompleted(requestID: envelope.id,kind: barrier.kind,sampleEnd: lane.end),send: send)
+                return
+            }
+            let completionFirst = ["live-barrier-before-reply","live-rejected-after-completion","live-needs-before-barrier-reply","live-barrier-buffer-overflow","live-evidence-after-held-terminal","live-double-terminal-before-reply"].contains(mode)
+            if !completionFirst { reply(.accepted) }
+            if mode == "live-double-terminal-before-reply" {
+                send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(begin.identity)))))
+                send(.init(id: streamID!,channel: .live,event: .live(.event(.failed(begin.identity,.unavailable)))))
+                reply(.accepted); return
+            }
             if mode == "live-unresponsive-finish" { return }
             if lane.end > lane.settled {
                 event(barrier.scope.source,.committed(.init(id: .init(epochID: lane.epoch.id,index: lane.segment),source: barrier.scope.source,
@@ -58,20 +91,69 @@ struct LiveHelperStub {
             }
             // Retain the event counter advanced by event() above.
             lane.event = lanes[barrier.scope.source]!.event; lanes[barrier.scope.source] = lane
-            event(barrier.scope.source,.barrierCompleted(requestID: envelope.id,kind: barrier.kind,sampleEnd: lane.end),send: send)
+            if mode == "live-needs-before-barrier-reply" { event(barrier.scope.source,.needsEpochReplacement,send: send) }
+            let ackID = mode == "live-wrong-barrier-id" ? UUID() : envelope.id
+            let ackKind = mode == "live-wrong-barrier-kind" ? LiveFinishBarrier.Kind.utterance : barrier.kind
+            let ackEnd = mode == "live-wrong-barrier-end" ? lane.end + 1 : lane.end
+            event(barrier.scope.source,.barrierCompleted(requestID: ackID,kind: ackKind,sampleEnd: ackEnd),send: send)
+            if mode == "live-duplicate-barrier" {
+                event(barrier.scope.source,.barrierCompleted(requestID: envelope.id,kind: barrier.kind,sampleEnd: lane.end),send: send)
+            }
+            if mode == "live-barrier-buffer-overflow" {
+                for _ in 0..<16 { event(barrier.scope.source,.ready(generation: UUID(),originSample: lane.end),send: send) }
+            }
+            if mode == "live-evidence-after-held-terminal" {
+                send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(begin.identity)))))
+                event(barrier.scope.source,.ready(generation: UUID(),originSample: lane.end),send: send)
+            }
             if barrier.kind == .finish {
                 lanes[barrier.scope.source]?.closed = true
                 event(barrier.scope.source,.closed(sampleEnd: lane.end),send: send)
                 if lanes.values.allSatisfy(\.closed) { send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(begin.identity))))) }
             }
+            if completionFirst { reply(mode == "live-rejected-after-completion" ? .rejected(.unavailable) : .accepted) }
         case .cancel(let identity):
             guard begin?.identity == identity else { reply(.rejected(.staleScope)); return }
+            if mode == "live-terminal-admission-gate", let (id,barrier) = delayedBarrier {
+                delayedBarrier = nil
+                event(barrier.scope.source,.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd),send: send)
+                send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(identity)))))
+                // This preexisting command reply proves terminal ingestion to
+                // the caller while the earlier barrier reply is still held.
+                reply(.accepted)
+                if let path = ProcessInfo.processInfo.environment["STUB_FLAG_1"] {
+                    for _ in 0..<2000 {
+                        if FileManager.default.fileExists(atPath: path) { break }
+                        Thread.sleep(forTimeInterval: 0.005)
+                    }
+                }
+                send(.init(id: id,channel: .live,event: .live(.reply(.accepted))))
+                send(.init(id: id,channel: .live,event: .finished))
+                return
+            }
             if mode == "live-terminal-before-ack" {
                 send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(identity))))); reply(.accepted)
             } else { reply(.accepted); send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(identity))))) }
         case .replaceEpoch(let identity, let old, let epoch):
             guard begin?.identity == identity, lanes[epoch.source]?.epoch.id == old else { reply(.rejected(.staleScope)); return }
+            let oldLane = lanes[epoch.source]!
             reply(.accepted); lanes[epoch.source] = Lane(epoch: epoch); event(epoch.source,.ready(generation: UUID(),originSample: 0),send: send)
+            if let id = awaitingRetiredReply {
+                awaitingRetiredReply = nil
+                let value = mode.hasSuffix("accepted") ? LiveSessionReply.accepted : .rejected(.unavailable)
+                send(.init(id: id,channel: .live,event: .live(.reply(value))))
+                send(.init(id: id,channel: .live,event: .finished))
+            }
+            if let (id,barrier) = delayedBarrier {
+                delayedBarrier = nil
+                if mode == "live-old-id-new-epoch" {
+                    event(epoch.source,.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd),send: send)
+                } else if mode == "live-retired-epoch-frames", let streamID {
+                    for (offset,payload) in [LiveLaneEvent.Payload.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd), .ready(generation: UUID(),originSample: barrier.sampleEnd)].enumerated() {
+                        send(.init(id: streamID,channel: .live,event: .live(.event(.lane(.init(scope: barrier.scope,sequence: oldLane.event + UInt64(offset),payload: payload))))))
+                    }
+                }
+            }
         case .cut(let scope, let next, let end, let reason):
             guard begin?.identity == scope.identity, var lane = lanes[scope.source], lane.epoch.id == scope.epochID, end >= lane.end else { reply(.rejected(.staleScope)); return }
             reply(.accepted)
@@ -79,6 +161,10 @@ struct LiveHelperStub {
                 range: .init(samples: .init(start: lane.settled,end: end),meeting: nil),kind: .gap(reason))),send: send) }
             lane.event = lanes[scope.source]!.event; lane.end = end; lane.settled = end; lane.packet = next; lanes[scope.source] = lane
             event(scope.source,.needsEpochReplacement,send: send)
+            if mode == "live-late-barrier-after-cut", let (id,barrier) = delayedBarrier {
+                delayedBarrier = nil
+                event(scope.source,.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd),send: send)
+            }
         }
     }
 }
