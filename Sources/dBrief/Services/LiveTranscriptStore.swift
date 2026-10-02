@@ -44,6 +44,8 @@ actor LiveTranscriptStore {
     private var qualifiedFrontiers: [LiveSource: Int64] = [:]
     private var segments: [LiveSegmentID: CommittedLiveSegment] = [:]
     private var coverage: [LiveCoverageInterval] = []
+    private var captureLosses: [LiveCaptureRawLoss] = []
+    private var captureLossIDs: [UUID: Int] = [:]
     private var diarizers: [LiveSource: Diarizer] = [:]
     private var knownDiarizers: [LiveSource: Set<UUID>] = [:]
     private var savedFrontiers: [LiveSavedAudioSlice.Destination: LiveSavedAudioSlice] = [:]
@@ -83,6 +85,20 @@ actor LiveTranscriptStore {
     func close(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { closeWhileValid(owner: owner) } }
     func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission { mutate { publishFinalWhileValid(publication) } }
     func clearPartials(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { clearPartialsWhileValid(owner: owner) } }
+    func recordCaptureLoss(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss) -> LiveStoreAdmission {
+        mutate {
+            guard owner == identity else { return .rejected(.wrongOwner) }
+            guard !isClosed else { return .rejected(.closed) }
+            guard loss.isValid else { return .rejected(.invalidRange) }
+            if let index = captureLossIDs[loss.id] {
+                return captureLosses[index] == loss ? .duplicate : .rejected(.conflictingID)
+            }
+            guard captureLosses.count < 100000, revision < .max else { return .rejected(.invalidRange) }
+            captureLossIDs[loss.id] = captureLosses.count; captureLosses.append(loss)
+            revision += 1
+            return .accepted
+        }
+    }
 
 
     /// Read-only preflight; beginEpoch repeats this check at the actual write.
@@ -409,7 +425,7 @@ actor LiveTranscriptStore {
 
     func projection() -> LiveTranscriptProjection {
         .init(segments: ordered(Array(segments.values)), partials: lanes.values.compactMap(\.partial).sorted { $0.source.rawValue < $1.source.rawValue },
-              lanes: laneValues(), revision: revision, isClosed: isClosed, coverage: coverage)
+              lanes: laneValues(), revision: revision, isClosed: isClosed, coverage: coverage, captureLosses: captureLosses)
     }
 
     /// Preview retirement changes display only; frozen evidence is unaffected.
@@ -511,6 +527,6 @@ actor LiveTranscriptStore {
                 if $0.source != $1.source { return $0.source.rawValue < $1.source.rawValue }
                 if $0.contextID != $1.contextID { return $0.contextID.uuidString < $1.contextID.uuidString }
                 return $0.slot < $1.slot
-            })
+            }, captureLosses: isFinal || captureLosses.isEmpty ? nil : captureLosses)
     }
 }

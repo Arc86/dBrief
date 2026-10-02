@@ -1,16 +1,6 @@
 import Foundation
+import AVFoundation
 import dBriefWire
-
-/// Loss before normalization has raw-source coordinates only. A missing range
-/// does not establish normalized samples, meeting time or a saved master slice.
-struct LiveCaptureRawLoss: Codable, Sendable, Equatable {
-    let id: UUID
-    let source: LiveSource
-    let sourceEpoch: UUID?
-    let frames: LiveAudioFrameRange?
-    let reason: LiveGapReason
-    let bufferCount: Int64
-}
 
 /// Immutable receipts identify ownership; all mutable accounting is under one
 /// lock, shared by capture callbacks, normalization and the coordinator actor.
@@ -44,8 +34,10 @@ final class LiveCaptureIngress: @unchecked Sendable {
         let frames: Int64
         let rate: Int64
         let bytes: Int
+        let format: AVAudioFormat?
         var capacity: Int
         var normalized = false
+        var lossRecorded = false
     }
     private struct Normalized { let scope: LiveLaneScope; var remaining: Int }
     private struct Native {
@@ -59,6 +51,8 @@ final class LiveCaptureIngress: @unchecked Sendable {
         var consumed: Int64 = 0
         var native: [Native] = []
         var converterEpoch: UUID?
+        var converterOwner: UUID?
+        var converterLossRecorded = false
         var converterRate: Int64 = 0
         var converterFrames: Int64 = 0
         var expectedOutput: Int64 = 0
@@ -89,8 +83,63 @@ final class LiveCaptureIngress: @unchecked Sendable {
 
     func matches(_ input: LiveSessionBegin) -> Bool { valid && self.input == input }
 
+    func claimConverter(scope: LiveLaneScope, owner: UUID) -> Bool {
+        lock.withLock {
+            guard valid, !retired, var lane = lanes[scope.source], lane.scope == scope,
+                  lane.converterOwner == nil, lane.converterEpoch == nil else { return false }
+            lane.converterOwner = owner; lanes[scope.source] = lane; return true
+        }
+    }
+    func ownsConverter(scope: LiveLaneScope, owner: UUID) -> Bool {
+        lock.withLock { valid && !retired && lanes[scope.source]?.scope == scope && lanes[scope.source]?.converterOwner == owner }
+    }
+
+    /// Validate the retained PCM header against the original admission before
+    /// allocating converter output. The bound includes this input and the actual
+    /// converter's retained capacity, never another lane's native ownership.
+    func maximumOutput(_ ticket: RawReservation, scope: LiveLaneScope, metadata: LiveAudioMetadata,
+                       frames: Int, rate: Double, bytes: Int, format: AVAudioFormat, converterOwner: UUID) -> Int? {
+        lock.withLock {
+            guard ticket.owner === self, ticket.source == scope.source, !retired,
+                  let item = raw[ticket.id], !item.normalized, lanes[scope.source]?.scope == scope,
+                  lanes[scope.source]?.converterOwner == converterOwner, item.format == format,
+                  item.metadata == metadata, item.frames == Int64(frames), Double(item.rate) == rate,
+                  item.bytes == bytes else { return nil }
+            let held = statisticsWhileLocked(scope.source).converterSamples
+            return min(sampleLimit,item.capacity + held + margin)
+        }
+    }
+
+    func maximumTailOutput(scope: LiveLaneScope, sourceEpoch: UUID) -> Int? {
+        lock.withLock {
+            guard !retired, let lane = lanes[scope.source], lane.scope == scope,
+                  lane.converterEpoch == sourceEpoch else { return nil }
+            return min(sampleLimit,Int(max(0,lane.expectedOutput - lane.emittedOutput)) + margin)
+        }
+    }
+
+    /// EOF output replaces converter-held capacity with an immutable receipt.
+    /// Retirement follows only after the real converter has ended or been freed.
+    func normalizeTail(scope: LiveLaneScope, sourceEpoch: UUID, emittedSamples: Int) -> NormalizedReservation? {
+        lock.withLock {
+            guard !retired, var lane = lanes[scope.source], lane.scope == scope,
+                  lane.converterEpoch == sourceEpoch, emittedSamples >= 0, emittedSamples <= sampleLimit,
+                  normalized.values.filter({ $0.scope.source == scope.source }).count < 64 else { return nil }
+            let emitted = lane.emittedOutput.addingReportingOverflow(Int64(emittedSamples))
+            let maximum = lane.expectedOutput.addingReportingOverflow(Int64(margin))
+            guard !emitted.overflow, !maximum.overflow, emitted.partialValue <= maximum.partialValue else { return nil }
+            let oldHeld = Int(max(0,lane.expectedOutput - lane.emittedOutput))
+            let held = Int(max(0,lane.expectedOutput - emitted.partialValue))
+            guard statisticsWhileLocked(scope.source).pendingSamples - oldHeld + held + emittedSamples <= sampleLimit else { return nil }
+            lane.emittedOutput = emitted.partialValue; lanes[scope.source] = lane
+            let result = NormalizedReservation(owner: self,scope: scope)
+            normalized[result.id] = .init(scope: scope,remaining: emittedSamples)
+            return result
+        }
+    }
+
     func reserveRaw(source: LiveSource, metadata: LiveAudioMetadata, frames: Int, rate: Double, bytes: Int,
-                    closingTail: Bool = false) -> RawReservation? {
+                    closingTail: Bool = false, format: AVAudioFormat? = nil) -> RawReservation? {
         lock.withLock {
             guard valid, let lane = lanes[source], source.isCaptureSource,
                   (source == .microphone ? metadata.role == .mic : metadata.role == .system) else { return nil }
@@ -111,7 +160,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
                 addLoss(source,metadata: metadata,reason: .overload); return nil
             }
             let ticket = RawReservation(owner: self,source: source)
-            raw[ticket.id] = .init(source: source,metadata: metadata,frames: Int64(frames),rate: Int64(rate),bytes: bytes,capacity: capacity)
+            raw[ticket.id] = .init(source: source,metadata: metadata,frames: Int64(frames),rate: Int64(rate),bytes: bytes,format: format,capacity: capacity)
             return ticket
         }
     }
@@ -151,9 +200,12 @@ final class LiveCaptureIngress: @unchecked Sendable {
 
     /// Only a real converter's EOF/destruction permits returning its retained
     /// capacity. An ASR utterance replacement alone does not retire this converter.
-    func retireConverter(source: LiveSource, sourceEpoch: UUID) -> Bool {
+    func retireConverter(source: LiveSource, sourceEpoch: UUID?, owner: UUID) -> Bool {
         lock.withLock {
-            guard var lane = lanes[source], lane.converterEpoch == sourceEpoch else { return false }
+            guard var lane = lanes[source], lane.converterOwner == owner,
+                  sourceEpoch == nil || lane.converterEpoch == sourceEpoch else { return false }
+            lane.converterOwner = nil
+            lane.converterLossRecorded = false
             lane.converterEpoch = nil; lane.converterRate = 0; lane.converterFrames = 0
             lane.expectedOutput = 0; lane.emittedOutput = 0; lanes[source] = lane
             return true
@@ -215,7 +267,22 @@ final class LiveCaptureIngress: @unchecked Sendable {
     }
 
     func closeInput() { lock.withLock { closing = true } }
-    func retireInput() { lock.withLock { retired = true } }
+    func retireInput() {
+        lock.withLock {
+            guard !retired else { return }
+            retired = true
+            // Seal facts now, without returning bytes or capacity still held by
+            // a consumer. Later release cannot add an unpublishable duplicate.
+            for id in raw.keys {
+                guard var item = raw[id], !item.normalized, !item.lossRecorded else { continue }
+                item.lossRecorded = true; raw[id] = item
+                addLoss(item.source,metadata: item.metadata,reason: .stopped)
+            }
+            for source in lanes.keys {
+                if let epoch = lanes[source]?.converterEpoch { recordConverterLossWhileLocked(source,sourceEpoch: epoch,reason: .stopped) }
+            }
+        }
+    }
     /// Only the observed exit of this capture's dedicated process returns held
     /// native credit. This never frees raw buffers still owned by a consumer.
     func confirmNativeRetired() { lock.withLock { for source in lanes.keys { lanes[source]?.native.removeAll() } } }
@@ -226,6 +293,20 @@ final class LiveCaptureIngress: @unchecked Sendable {
 
     func recordLoss(source: LiveSource, metadata: LiveAudioMetadata, reason: LiveGapReason) {
         lock.withLock { addLoss(source,metadata: metadata,reason: reason) }
+    }
+    func recordConverterLoss(source: LiveSource, sourceEpoch: UUID, owner: UUID, reason: LiveGapReason) {
+        lock.withLock {
+            guard lanes[source]?.converterOwner == owner else { return }
+            recordConverterLossWhileLocked(source,sourceEpoch: sourceEpoch,reason: reason)
+        }
+    }
+
+    private func recordConverterLossWhileLocked(_ source: LiveSource, sourceEpoch: UUID, reason: LiveGapReason) {
+        guard let lane = lanes[source], lane.converterOwner != nil, lane.converterEpoch == sourceEpoch,
+              lane.converterFrames > 0, !lane.converterLossRecorded else { return }
+        lanes[source]?.converterLossRecorded = true
+        addLoss(source,metadata: .init(sourceEpoch: sourceEpoch,role: source == .microphone ? .mic : .system,
+            timestamp: .unavailable,emittedFrames: nil,writeOutcome: .failed,converter: nil),reason: reason)
     }
 
     private func hasUnclaimed(_ ticket: NormalizedReservation, count: Int) -> Bool {
@@ -241,7 +322,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
     private func releaseRaw(_ id: UUID, reason: LiveGapReason) {
         lock.withLock {
             guard let item = raw.removeValue(forKey: id) else { return }
-            if !item.normalized { addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason) }
+            if !item.normalized && !item.lossRecorded { addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason) }
         }
     }
     private func statisticsWhileLocked(_ source: LiveSource) -> Statistics {

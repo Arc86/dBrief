@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import dBriefWire
 
 enum AudioTrackWriteReceipt: Sendable, Equatable {
     enum DropReason: Sendable { case formatMismatch }
@@ -71,17 +72,7 @@ struct LiveAudioEmissionCounter {
     }
 }
 
-struct LiveAudioFrameRange: Codable, Sendable, Equatable {
-    let startFrame: Int64
-    let frameCount: Int64
-    let sampleRate: Double
-    var isValid: Bool {
-        startFrame >= 0 && frameCount > 0 &&
-            !startFrame.addingReportingOverflow(frameCount).overflow &&
-            sampleRate.isFinite && sampleRate >= 1 && sampleRate <= 384000 &&
-            sampleRate.rounded(.down) == sampleRate
-    }
-}
+typealias LiveAudioFrameRange = LiveRawFrameRange
 
 struct LiveAudioTimeRange: Codable, Sendable, Equatable {
     let startNanoseconds: Int64

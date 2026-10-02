@@ -162,6 +162,35 @@ public enum LiveGapReason: String, Codable, Sendable {
     case preparation, disabled, unavailable, overload, engineRestart, deviceInterruption, stopped, deadline, unknownClock
 }
 
+public struct LiveRawFrameRange: Codable, Sendable, Equatable {
+    public let startFrame: Int64
+    public let frameCount: Int64
+    public let sampleRate: Double
+    public init(startFrame: Int64, frameCount: Int64, sampleRate: Double) {
+        self.startFrame = startFrame; self.frameCount = frameCount; self.sampleRate = sampleRate
+    }
+    public var isValid: Bool {
+        startFrame >= 0 && frameCount > 0 && !startFrame.addingReportingOverflow(frameCount).overflow &&
+            sampleRate.isFinite && sampleRate >= 1 && sampleRate <= 384000 && sampleRate.rounded(.down) == sampleRate
+    }
+}
+
+/// Raw-source uncertainty has no established normalized, meeting or saved-audio
+/// coordinates. Even a selected snapshot cannot place it inside a time window.
+public struct LiveCaptureRawLoss: Codable, Sendable, Equatable {
+    public let id: UUID
+    public let source: LiveSource
+    public let sourceEpoch: UUID?
+    public let frames: LiveRawFrameRange?
+    public let reason: LiveGapReason
+    public let bufferCount: Int64
+    public init(id: UUID, source: LiveSource, sourceEpoch: UUID?, frames: LiveRawFrameRange?, reason: LiveGapReason, bufferCount: Int64) {
+        self.id = id; self.source = source; self.sourceEpoch = sourceEpoch; self.frames = frames
+        self.reason = reason; self.bufferCount = bufferCount
+    }
+    public var isValid: Bool { source.isCaptureSource && bufferCount > 0 && (frames?.isValid ?? true) && (frames == nil || sourceEpoch != nil) }
+}
+
 public struct LiveCoverageInterval: Codable, Sendable, Equatable {
     public enum Kind: Codable, Sendable, Equatable { case committed, processedSilence, gap(LiveGapReason) }
     /// Nil for a declared source absence with no admitted normalized samples.
@@ -276,15 +305,18 @@ public struct TranscriptSnapshot: Codable, Sendable, Equatable {
     public let annotations: [LiveSpeakerAnnotation]
     public let attributionCoverage: [LiveAttributionCoverage]
     public let speakerLegend: [SpeakerTrackKey]
+    /// Absent in older snapshots and final-source publications.
+    public let captureLosses: [LiveCaptureRawLoss]?
     public init(identity: LiveSessionIdentity, sourceVersion: SourceVersion, sourcePublicationID: UUID,
                 sourcePublicationRevision: UInt64, revision: UInt64, annotationRevision: UInt64,
                 cutoffNanoseconds: Int64?, scope: Scope, segments: [CommittedLiveSegment], lanes: [LiveLaneWatermarks],
                 excludedSources: [LiveSource], coverage: [LiveCoverageSelection], annotations: [LiveSpeakerAnnotation],
-                attributionCoverage: [LiveAttributionCoverage], speakerLegend: [SpeakerTrackKey]) {
+                attributionCoverage: [LiveAttributionCoverage], speakerLegend: [SpeakerTrackKey], captureLosses: [LiveCaptureRawLoss]? = nil) {
         self.identity = identity; self.sourceVersion = sourceVersion; self.sourcePublicationID = sourcePublicationID
         self.sourcePublicationRevision = sourcePublicationRevision; self.revision = revision
         self.annotationRevision = annotationRevision; self.cutoffNanoseconds = cutoffNanoseconds; self.scope = scope
         self.segments = segments; self.lanes = lanes; self.excludedSources = excludedSources; self.coverage = coverage
         self.annotations = annotations; self.attributionCoverage = attributionCoverage; self.speakerLegend = speakerLegend
+        self.captureLosses = captureLosses
     }
 }

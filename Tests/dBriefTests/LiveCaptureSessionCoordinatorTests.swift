@@ -56,9 +56,10 @@ private struct CaptureCoordinatorFixture {
     func input(_ tier: Int = 1120, both: Bool = false) -> LiveSessionBegin {
         .init(identity: identity,configuration: .init(language: .auto,chunkMs: tier,modelDirectory: "/fixture"),epochs: both ? [mic,system] : [mic])
     }
-    func coordinator(_ transport: CaptureTransportFixture, tier: Int = 1120, both: Bool = false) async -> (LiveCaptureSessionCoordinator,LiveTranscriptStore) {
+    func coordinator(_ transport: CaptureTransportFixture, tier: Int = 1120, both: Bool = false,
+                     drainDeadline: Duration = .seconds(3)) async -> (LiveCaptureSessionCoordinator,LiveTranscriptStore) {
         let store = LiveTranscriptStore(identity: identity)
-        return (LiveCaptureSessionCoordinator(input: input(tier,both: both),store: store,transport: await transport.transport(),drainDeadline: .milliseconds(60)),store)
+        return (LiveCaptureSessionCoordinator(input: input(tier,both: both),store: store,transport: await transport.transport(),drainDeadline: drainDeadline),store)
     }
 }
 
@@ -80,6 +81,24 @@ private actor CapturePublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func rawLossPublicationIsOrderedWithEvidenceAndRejectsAnotherOrSealedCapture() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
+        try await c.start()
+        let loss = LiveCaptureRawLoss(id: UUID(),source: .microphone,sourceEpoch: UUID(),
+            frames: .init(startFrame: 0,frameCount: 4800,sampleRate: 48000),reason: .overload,bufferCount: 1)
+        #expect(!(await c.recordCaptureLoss(owner: CaptureCoordinatorFixture().identity,loss: loss)))
+        #expect(await c.recordCaptureLoss(owner: f.identity,loss: loss))
+        await c.beginClosing()
+        #expect(await c.recordCaptureLoss(owner: f.identity,loss: .init(id: UUID(),source: .microphone,sourceEpoch: nil,frames: nil,reason: .stopped,bufferCount: 1)))
+        await c.hardwareDidClose()
+        #expect(!(await c.recordCaptureLoss(owner: f.identity,loss: loss)))
+        await c.synchronizeStore()
+        #expect(await store.projection().captureLosses.first == loss)
+        #expect(await store.projection().captureLosses.count == 2)
+        #expect(await store.projection().lanes.first?.progress.capturedSampleEnd == 0)
+        await c.retire(); try await c.waitUntilClosed()
+        #expect(await store.snapshot().captureLosses?.count == 2)
+    }
     @Test func sharedIngressTransfersActualConsumedCreditsAndRetainsCutNativeUntilReplacement() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
         let input = f.input(), ingress = LiveCaptureIngress(input: input)
@@ -265,6 +284,41 @@ private actor CapturePublicationGate {
         #expect(display.coverage.contains { $0.kind == .gap(.unavailable) && $0.range.samples == .init(start: 50,end: 200) })
     }
 
+    @Test func rejectedEvidencePublicationPreservesQueuedAndTerminalRawLossFacts() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), gate = CapturePublicationGate()
+        let store = LiveTranscriptStore(identity: f.identity), ingress = LiveCaptureIngress(input: f.input())
+        let c = LiveCaptureSessionCoordinator(input: f.input(),store: store,transport: await t.transport(),ingress: ingress,
+            storeAccess: .init(admit: { await gate.admit($0,store: store) }))
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 1 })
+        let rawEpoch = UUID(), metadata = LiveAudioMetadata(sourceEpoch: rawEpoch,role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 0,frameCount: 100,sampleRate: 16000),writeOutcome: .failed,converter: nil)
+        let raw = try #require(ingress.reserveRaw(source: .microphone,metadata: metadata,frames: 100,rate: 16000,bytes: 400))
+        let normalized = try #require(ingress.normalize(raw,scope: f.scope(f.mic),emittedSamples: 100))
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [Float](repeating: 0,count: 100),reservation: normalized) == .scheduled)
+        #expect(await captureEventually { await t.requests.count == 1 })
+        await t.emit(f.event(f.mic,1,.progress(.init(capturedSampleEnd: 100,admittedSampleEnd: 100,consumedSampleEnd: 100,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        let id = LiveSegmentID(epochID: f.mic.id,index: 0)
+        await t.emit(f.event(f.mic,2,.committed(.init(id: id,source: .microphone,range: .init(samples: .init(start: 0,end: 50),meeting: nil),text: "Accepted prefix"))))
+        #expect(await captureEventually { await store.projection().segments.count == 1 })
+        await t.emit(f.event(f.mic,3,.committed(.init(id: id,source: .microphone,range: .init(samples: .init(start: 50,end: 100),meeting: nil),text: "Conflicting ID"))))
+        #expect(await captureEventually { await gate.blocked })
+        let queued = LiveCaptureRawLoss(id: UUID(),source: .microphone,sourceEpoch: rawEpoch,frames: nil,reason: .unavailable,bufferCount: 1)
+        #expect(await c.recordCaptureLoss(owner: f.identity,loss: queued))
+        let lost = LiveAudioMetadata(sourceEpoch: rawEpoch,role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 100,frameCount: 100,sampleRate: 16000),writeOutcome: .failed,converter: nil)
+        let discarded = try #require(ingress.reserveRaw(source: .microphone,metadata: lost,frames: 100,rate: 16000,bytes: 400))
+        discarded.discard(reason: .overload)
+        await gate.release(); try await c.waitUntilClosed()
+        let facts = await store.snapshot().captureLosses ?? []
+        #expect(facts.contains(queued))
+        #expect(facts.contains { $0.frames == lost.emittedFrames && $0.sourceEpoch == rawEpoch })
+        #expect(facts.count == 2)
+        #expect(ingress.takeLosses(.microphone).isEmpty)
+    }
+
     @Test func allLaneReadinessConfirmsResidencyAndClosureDoesNotWaitOnTeardown() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture()
         let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 2,
@@ -329,7 +383,10 @@ private actor CapturePublicationGate {
 
     @Test func closedLaneZeroCreditTelemetryDoesNotDiscardTheOtherLanesTail() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture()
-        let (c,store) = await f.coordinator(t,both: true)
+        // This verifies ordered two-lane tails, not the timeout policy. Keep the
+        // production drain deadline under concurrent full-suite scheduler load.
+        let store = LiveTranscriptStore(identity: f.identity)
+        let c = LiveCaptureSessionCoordinator(input: f.input(both: true),store: store,transport: await t.transport())
         try await c.start()
         #expect(await captureEventually { await t.starts == 1 })
         for epoch in [f.mic,f.system] { await t.emit(f.event(epoch,0,.ready(generation: UUID(),originSample: 0))) }
@@ -355,10 +412,30 @@ private actor CapturePublicationGate {
         #expect(await store.projection().coverage.contains { $0.source == .microphone && $0.kind == .processedSilence })
     }
 
+    @Test func terminalClosureRecordsHeldRawOwnershipBeforeItsLaterRelease() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let ingress = LiveCaptureIngress(input: f.input())
+        let c = LiveCaptureSessionCoordinator(input: f.input(),store: store,transport: await t.transport(),ingress: ingress)
+        try await c.start()
+        let epoch = UUID(), metadata = LiveAudioMetadata(sourceEpoch: epoch,role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 4410,frameCount: 4410,sampleRate: 44100),writeOutcome: .failed,converter: nil)
+        let held = try #require(ingress.reserveRaw(source: .microphone,metadata: metadata,frames: 4410,rate: 44100,bytes: 17640))
+        await c.retire(); try await c.waitUntilClosed()
+        let frozen = await store.snapshot()
+        #expect(frozen.captureLosses?.count == 1)
+        #expect(frozen.captureLosses?.first?.frames == metadata.emittedFrames)
+        #expect(frozen.captureLosses?.first?.sourceEpoch == epoch)
+        #expect(ingress.statistics(.microphone).rawBytes == 17640)
+        held.discard(reason: .overload)
+        #expect(ingress.statistics(.microphone).rawBytes == 0)
+        #expect(ingress.takeLosses(.microphone).isEmpty)
+        #expect(await store.snapshot() == frozen)
+    }
+
     @Test func stopDoesNotJoinCancellationIgnoringPreparationOrAttachItsLateCompletion() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture()
         await t.configure(begin: true)
-        let (c,store) = await f.coordinator(t)
+        let (c,store) = await f.coordinator(t,drainDeadline: .milliseconds(60))
         try await c.start()
         #expect(await captureEventually { await t.starts == 1 })
         #expect(await c.offer(scope: f.scope(f.mic),samples: [Float](repeating: 0,count: 3200)) == .dropped)
@@ -433,7 +510,7 @@ private actor CapturePublicationGate {
     @Test func ownDrainDeadlineSettlesRemainderWithoutWaitingOnBlockedTransport() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture()
         await t.configure(command: true)
-        let (c,store) = await f.coordinator(t)
+        let (c,store) = await f.coordinator(t,drainDeadline: .milliseconds(60))
         try await c.start()
         #expect(await captureEventually { await t.starts == 1 })
         await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))

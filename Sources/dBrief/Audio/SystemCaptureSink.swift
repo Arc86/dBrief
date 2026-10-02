@@ -40,7 +40,7 @@ final class SystemCaptureSink: @unchecked Sendable {
                         liveIngress.recordLoss(source: .system,metadata: metadata,reason: .unavailable); return
                     }
                     guard let admitted = liveIngress.reserveRaw(source: .system,metadata: metadata,
-                        frames: Int(pcm.frameLength),rate: pcm.format.sampleRate,bytes: bytes) else { return }
+                        frames: Int(pcm.frameLength),rate: pcm.format.sampleRate,bytes: bytes,format: pcm.format) else { return }
                     reservation = admitted
                 }
                 liveSink.yield(LiveAudioBuffer(pcm,metadata: metadata,ingress: reservation))

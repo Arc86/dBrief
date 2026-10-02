@@ -34,4 +34,29 @@ final class LiveAudioConversion {
         isFinished = true
         return try converter?.finish() ?? []
     }
+
+    /// Strict source consumers cut on format changes instead of concatenating a
+    /// retired converter's tail with an unrelated input epoch.
+    func convertChecked(_ buffer: AVAudioPCMBuffer, maximumOutputFrames: Int) throws -> AVAudioPCMBuffer? {
+        guard !isFinished else { throw AudioConversionError.alreadyFinished }
+        guard sourceFormat == nil || sourceFormat == buffer.format else { throw AudioConversionError.unsupportedFormat }
+        if converter == nil {
+            guard let next = MicFormatConverter(from: buffer.format,to: targetFormat) else {
+                throw AudioConversionError.unsupportedFormat
+            }
+            converter = next; sourceFormat = buffer.format
+        }
+        return try converter?.convertChecked(buffer,maximumOutputFrames: maximumOutputFrames)
+    }
+
+    func finishBounded(maximumOutputFrames: Int) throws -> [AVAudioPCMBuffer] {
+        guard !isFinished else { return [] }
+        isFinished = true
+        var output: [AVAudioPCMBuffer] = [], count = 0
+        try converter?.finish { buffer in
+            guard Int(buffer.frameLength) <= maximumOutputFrames - count else { throw AudioConversionError.outputLimit }
+            count += Int(buffer.frameLength); output.append(buffer)
+        }
+        return output
+    }
 }

@@ -49,6 +49,7 @@ actor LiveCaptureSessionCoordinator {
     private enum Publication {
         case begin(LiveEpoch)
         case event(LiveEpoch, LiveTranscriptEvent.Payload)
+        case rawLoss(LiveCaptureRawLoss)
         case clearPartials
         case close
     }
@@ -173,6 +174,8 @@ actor LiveCaptureSessionCoordinator {
     /// independent deadline includes blocked IPC and cancellation-ignoring prep.
     func hardwareDidClose() {
         guard started, !terminal, closing, !sealed else { return }
+        for source in lanes.keys { publishIngressLosses(source: source) }
+        guard !terminal else { return }
         sealed = true
         armTimer(drainDeadline, reason: .deadline)
         let transport = self.transport, duration = drainDeadline
@@ -188,6 +191,19 @@ actor LiveCaptureSessionCoordinator {
     }
 
     func synchronizeStore() async { await publisher?.value }
+    func recordCaptureLoss(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss) -> Bool {
+        guard started, !sealed, !terminal, isValidOwner, owner == input.identity,
+              lanes[loss.source] != nil, loss.isValid else { return false }
+        return publish(.rawLoss(loss))
+    }
+
+    /// Drain the finite raw inbox only after reserving enough ordered outbox
+    /// space. On overload terminate drains it through the reserved terminal path.
+    func publishIngressLosses(source: LiveSource) {
+        guard started, !sealed, !terminal, isValidOwner, lanes[source] != nil, let ingress else { return }
+        guard publications.count <= 512 - 128 else { terminate(.overload); return }
+        for loss in ingress.takeLosses(source) { _ = publish(.rawLoss(loss)) }
+    }
     func retire() { terminate(.stopped) }
     /// Retry only after the control cut is acknowledged. Native retirement may
     /// still return unavailable; neither the store nor epoch advances on denial.
@@ -414,6 +430,11 @@ actor LiveCaptureSessionCoordinator {
             }
             publications.append(.event(lane.epoch,.availability(.unavailable)))
         }
+        // At most 128 raw facts per registered source, separate from normalized
+        // terminal settlement. Keep unknown loss even when the normal inbox fills.
+        for source in lanes.keys {
+            for loss in ingress?.takeLosses(source) ?? [] { publications.append(.rawLoss(loss)) }
+        }
         publications.append(.close); startPublisher()
         let transport = self.transport, resources = self.resources, lease = self.lease, ingress = self.ingress
         Task {
@@ -464,15 +485,16 @@ actor LiveCaptureSessionCoordinator {
                 let sequence = storeSequences[epoch.id] ?? 0
                 let acceptedEpoch = publishedEpochs[epoch.id] ?? epoch
                 guard let mapped = mapPublication(payload,in: acceptedEpoch) else {
-                    terminate(.unavailable); publications.removeAll(); await closeActualStore(); publisher = nil; return
+                    terminate(.unavailable); await closeActualStore(); publisher = nil; return
                 }
                 result = await storeAccess.admit(.init(identity: input.identity,epochID: epoch.id,source: epoch.source,sequence: sequence,payload: mapped))
                 if result == .accepted || result == .duplicate { storeSequences[epoch.id] = sequence + 1 }
             case .clearPartials: result = await store.clearPartials(owner: input.identity)
+            case .rawLoss(let loss): result = await store.recordCaptureLoss(owner: input.identity,loss: loss)
             case .close: result = await store.close(owner: input.identity)
             }
             if case .rejected = result {
-                terminate(.unavailable); publications.removeAll()
+                terminate(.unavailable)
                 // Recover from a failed publication using the store's actual
                 // frontier rather than advancing from an unaccepted commit.
                 await closeActualStore()
@@ -497,8 +519,16 @@ actor LiveCaptureSessionCoordinator {
     }
 
     private func closeActualStore() async {
+        let rawLosses = publications.compactMap { item -> LiveCaptureRawLoss? in
+            if case .rawLoss(let loss) = item { return loss }; return nil
+        }
+        publications.removeAll()
         let projection = await store.projection()
         var recoverySucceeded = true
+        for loss in rawLosses {
+            let result = await store.recordCaptureLoss(owner: input.identity,loss: loss)
+            if result != .accepted && result != .duplicate { recoverySucceeded = false }
+        }
         for source in input.epochs.map(\.source) {
             let observed = registeredEpochs.filter { $0.source == source }
             let actual = projection.lanes.first { $0.epoch.source == source }

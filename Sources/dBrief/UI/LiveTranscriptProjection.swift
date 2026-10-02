@@ -10,4 +10,5 @@ struct LiveTranscriptProjection: Sendable, Equatable {
     let isClosed: Bool
     /// Source-local gaps remain visible even when no common clock is qualified.
     var coverage: [LiveCoverageInterval] = []
+    var captureLosses: [LiveCaptureRawLoss] = []
 }

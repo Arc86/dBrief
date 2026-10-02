@@ -96,7 +96,7 @@ final class MicCaptureSink: @unchecked Sendable {
                     liveIngress.recordLoss(source: .microphone,metadata: metadata,reason: .unavailable); return
                 }
                 guard let admitted = liveIngress.reserveRaw(source: .microphone,metadata: metadata,
-                    frames: Int(buffer.frameLength),rate: buffer.format.sampleRate,bytes: bytes,closingTail: isDrain) else { return }
+                    frames: Int(buffer.frameLength),rate: buffer.format.sampleRate,bytes: bytes,closingTail: isDrain,format: buffer.format) else { return }
                 reservation = admitted
             }
             guard let copy = buffer.deepCopy(frameCapacity: liveIngress == nil ? nil : buffer.frameLength) else {

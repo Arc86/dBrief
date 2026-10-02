@@ -21,10 +21,21 @@ final class MicFormatConverter: @unchecked Sendable {
 
     /// Convert one input buffer to the target format. Returns nil on failure.
     func convert(_ input: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard !isFinished, input.frameLength > 0 else { return nil }
         let ratio = targetFormat.sampleRate / input.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(input.frameLength) * ratio) + 1_024
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
+        let capacity = Double(input.frameLength) * ratio + 1_024
+        guard capacity.isFinite, capacity > 0, capacity <= Double(UInt32.max) else { return nil }
+        return try? convertChecked(input,maximumOutputFrames: Int(capacity))
+    }
+
+    /// Zero output is a valid resampler delay; conversion errors are distinct.
+    func convertChecked(_ input: AVAudioPCMBuffer, maximumOutputFrames: Int) throws -> AVAudioPCMBuffer? {
+        guard !isFinished else { throw AudioConversionError.alreadyFinished }
+        guard input.frameLength > 0, maximumOutputFrames > 0, maximumOutputFrames <= Int(UInt32.max) else {
+            throw AudioConversionError.outputLimit
+        }
+        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: AVAudioFrameCount(maximumOutputFrames)) else {
+            throw AudioConversionError.cannotAllocate
+        }
 
         let source = AudioConverterInput(input)
         hasInput = true
@@ -33,10 +44,9 @@ final class MicFormatConverter: @unchecked Sendable {
             source.take(status: inputStatus)
         }
 
-        if status == .error || conversionError != nil || output.frameLength == 0 {
-            return nil
-        }
-        return output
+        if let conversionError { throw conversionError }
+        guard status != .error else { throw AudioConversionError.conversionFailed }
+        return output.frameLength == 0 ? nil : output
     }
 
     /// End the source and recover both packet batching and the resampler's filter
@@ -49,7 +59,7 @@ final class MicFormatConverter: @unchecked Sendable {
 
     /// Deliver batches as they are recovered, so a later converter failure cannot
     /// discard audio already available for the durable microphone track.
-    func finish(consume: (AVAudioPCMBuffer) -> Void) throws {
+    func finish(consume: (AVAudioPCMBuffer) throws -> Void) throws {
         guard !isFinished else { return }
         isFinished = true
         guard hasInput else { return }
@@ -64,7 +74,7 @@ final class MicFormatConverter: @unchecked Sendable {
             }
             if let error { throw error }
             guard status != .error else { throw AudioConversionError.conversionFailed }
-            if output.frameLength > 0 { consume(output) }
+            if output.frameLength > 0 { try consume(output) }
             if status == .endOfStream { return }
             // With end-of-stream supplied, a nonterminal conversion must advance.
             guard output.frameLength > 0 else { throw AudioConversionError.conversionFailed }
@@ -73,5 +83,5 @@ final class MicFormatConverter: @unchecked Sendable {
 }
 
 enum AudioConversionError: Error {
-    case cannotAllocate, conversionFailed, unsupportedFormat, alreadyFinished
+    case cannotAllocate, conversionFailed, unsupportedFormat, alreadyFinished, outputLimit
 }
