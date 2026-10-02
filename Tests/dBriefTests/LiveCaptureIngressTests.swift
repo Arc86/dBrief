@@ -6,6 +6,23 @@ import dBriefWire
 @testable import dBrief
 
 @Suite struct LiveCaptureIngressTests {
+    @Test func atomicReplacementDistinguishesNewPauseRawDrainFromStaleScopeAndKeepsItsReceipt() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        let fresh = LiveEpoch(id: UUID(),source: .microphone,engineRevision: f.epoch.engineRevision,language: "auto",meetingOriginNanoseconds: nil)
+        let raw = try #require(f.reserve(pool,count: 16))
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        #expect(pool.installReplacement(old: f.scope,new: fresh) == .blockedByPause)
+        #expect(pool.pauseReadiness(boundary) == .pending && pool.isPendingRaw(raw))
+        raw.discard(reason: .deviceInterruption)
+        #expect(pool.installReplacement(old: f.scope,new: fresh) == .accepted)
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: fresh.id)
+        #expect(pool.resumeAdmission(boundary,scope: scope))
+        #expect(pool.continuityLoss(scope: scope) == nil && pool.statistics(.microphone).rawBytes == 64)
+        #expect(pool.installReplacement(old: f.scope,new: fresh) == .stale)
+        pool.closeInput()
+        let next = LiveEpoch(id: UUID(),source: .microphone,engineRevision: f.epoch.engineRevision,language: "auto",meetingOriginNanoseconds: nil)
+        #expect(pool.installReplacement(old: scope,new: next) == .stale)
+    }
     @Test func staleConverterOwnerAndOldNormalizedLossCannotPoisonTheAcceptedFreshScope() throws {
         let f = Fixture(), pool = LiveCaptureIngress(input: f.input()), oldOwner = UUID(), freshOwner = UUID()
         #expect(pool.claimConverter(scope: f.scope,owner: oldOwner))

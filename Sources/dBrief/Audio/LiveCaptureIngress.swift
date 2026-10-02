@@ -5,6 +5,7 @@ import dBriefWire
 /// Immutable receipts identify ownership; all mutable accounting is under one
 /// lock, shared by capture callbacks, normalization and the coordinator actor.
 final class LiveCaptureIngress: @unchecked Sendable {
+    enum ReplacementInstallation: Equatable { case accepted, blockedByPause, stale }
     struct PauseBoundary: Sendable, Equatable {
         let scope: LiveLaneScope
         fileprivate let id: UUID
@@ -55,8 +56,27 @@ final class LiveCaptureIngress: @unchecked Sendable {
             guard !closing, !retired, var lane = lanes[scope.source], lane.pause == boundary,
                   lane.scope == scope, scope.epochID != boundary.scope.epochID,
                   !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil else { return false }
-            lane.pauseWake?.finish(); lane.pauseWake = nil; lane.pause = nil
+            lane.pauseWake?.finish(); lane.pauseWake = nil; lane.pause = nil; lane.resuming = false
             lanes[scope.source] = lane; return true
+        }
+    }
+    /// A rapid Pause during accepted replacement keeps admission frozen. No
+    /// raw callback can observe an open interval between the two pause scopes.
+    func rebasePause(_ boundary: PauseBoundary, scope: LiveLaneScope) -> PauseBoundary? {
+        lock.withLock {
+            guard !closing, !retired, var lane = lanes[scope.source], lane.pause == boundary,
+                  lane.scope == scope, scope.epochID != boundary.scope.epochID,
+                  !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil,
+                  !normalized.values.contains(where: { $0.scope == scope && $0.remaining > 0 }) else { return nil }
+            let next = PauseBoundary(scope: scope,id: UUID(),reservations: [])
+            lane.pauseWake?.finish(); lane.pauseWake = nil; lane.pause = next; lane.resuming = false
+            lanes[scope.source] = lane; return next
+        }
+    }
+    func setResuming(_ resuming: Bool, boundary: PauseBoundary) {
+        lock.withLock {
+            guard !closing, !retired, lanes[boundary.scope.source]?.pause == boundary else { return }
+            lanes[boundary.scope.source]?.resuming = resuming
         }
     }
     private func pendingRawWhileLocked(_ boundary: PauseBoundary) -> Bool {
@@ -129,6 +149,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
         var continuityLoss: LiveGapReason?
         var pause: PauseBoundary?
         var pauseWake: AsyncStream<Void>.Continuation?
+        var resuming = false
     }
     let input: LiveSessionBegin
     private let lock = NSLock()
@@ -153,6 +174,19 @@ final class LiveCaptureIngress: @unchecked Sendable {
     }
 
     func matches(_ input: LiveSessionBegin) -> Bool { valid && self.input == input }
+    func isPendingRaw(_ ticket: RawReservation) -> Bool {
+        lock.withLock {
+            guard !retired, ticket.owner === self, let item = raw[ticket.id] else { return false }
+            return item.source == ticket.source && !item.normalized && !item.discarded
+        }
+    }
+    func isAdmissionPaused(_ source: LiveSource) -> Bool { lock.withLock { lanes[source]?.pause != nil } }
+    func latchDiscontinuity(_ source: LiveSource, reason: LiveGapReason) {
+        lock.withLock {
+            guard !closing, !retired, lanes[source] != nil else { return }
+            lanes[source]?.continuityLoss = reason
+        }
+    }
 
     /// Loss is an admission latch, independent of draining its evidence inbox.
     /// Only an accepted native replacement clears the current source's latch.
@@ -230,6 +264,11 @@ final class LiveCaptureIngress: @unchecked Sendable {
                 if closingTail {
                     lanes[source]?.continuityLoss = .stopped
                     addLoss(source,metadata: metadata,reason: .stopped)
+                } else if lane.resuming {
+                    // This input was written while fresh native preparation
+                    // still held admission closed. It has no normalized range
+                    // and must not cut the already settled paused prefix.
+                    addLoss(source,metadata: metadata,reason: .preparation)
                 }
                 return nil
             }
@@ -347,18 +386,23 @@ final class LiveCaptureIngress: @unchecked Sendable {
     /// Invoke only after the helper accepts replacement, which proves its old
     /// native work has unwound. A cut acknowledgment alone is insufficient.
     func replaceEpoch(old: LiveLaneScope, new: LiveEpoch) -> Bool {
+        installReplacement(old: old,new: new) == .accepted
+    }
+    /// Checking drain and changing the scope share the reservation lock. Pause
+    /// cannot freeze new raw input between a readiness check and installation.
+    func installReplacement(old: LiveLaneScope, new: LiveEpoch) -> ReplacementInstallation {
         lock.withLock {
-            guard !retired, var lane = lanes[old.source], lane.scope == old,
+            guard !closing, !retired, var lane = lanes[old.source], lane.scope == old,
                   new.source == old.source, new.id != old.epochID, new.language == input.configuration.language.rawValue,
-                  input.epochs.first(where: { $0.source == new.source })?.engineRevision == new.engineRevision else { return false }
+                  input.epochs.first(where: { $0.source == new.source })?.engineRevision == new.engineRevision else { return .stale }
             if let boundary = lane.pause {
                 guard !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil,
-                      !normalized.values.contains(where: { $0.scope == old && $0.remaining > 0 }) else { return false }
+                      !normalized.values.contains(where: { $0.scope == old && $0.remaining > 0 }) else { return .blockedByPause }
             }
             lane.native.removeAll(); lane.scheduled = 0; lane.consumed = 0
             lane.scope = .init(identity: input.identity,source: new.source,epochID: new.id)
             lane.continuityLoss = nil
-            lanes[old.source] = lane; return true
+            lanes[old.source] = lane; return .accepted
         }
     }
 

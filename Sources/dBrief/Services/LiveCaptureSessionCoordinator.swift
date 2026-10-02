@@ -34,6 +34,7 @@ actor LiveCaptureSessionCoordinator {
         let ready: Bool
         let gapReason: LiveGapReason?
         let paused: Bool
+        let replacementReady: Bool
     }
     private struct Lane {
         var epoch: LiveEpoch
@@ -149,7 +150,9 @@ actor LiveCaptureSessionCoordinator {
         guard !terminal, let lane = lanes[source] else { return nil }
         return .init(epoch: lane.epoch,scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id),
             ready: lane.ready && lane.cutReason == nil && !lane.paused && lane.pauseBoundary == nil,
-            gapReason: lane.cutReason ?? (lane.ready || lane.paused ? nil : .preparation),paused: lane.paused || lane.pauseBoundary != nil)
+            gapReason: lane.cutReason ?? (lane.ready || lane.paused ? nil : .preparation),paused: lane.paused || lane.pauseBoundary != nil,
+            replacementReady: !lane.pumping && replacements[source] == nil && lane.pauseBoundary == nil &&
+                (lane.paused && lane.settled == lane.captured || lane.cutReason != nil && lane.cutAcknowledgedEnd == lane.captured))
     }
     func abandonSource(scope: LiveLaneScope) {
         guard !terminal, isValidOwner, scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return }
@@ -158,6 +161,10 @@ actor LiveCaptureSessionCoordinator {
         abandonedSources.insert(scope.source)
         lanes[scope.source]?.pumping = false
         if sealed { lanes[scope.source]?.closed = true; finishAbandonedCaptureIfSettled() }
+    }
+    func abandonCurrentSource(_ source: LiveSource) {
+        guard let lane = lanes[source] else { return }
+        abandonSource(scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id))
     }
     nonisolated func belongs(to identity: LiveSessionIdentity, store: LiveTranscriptStore, validity: RecordingDerivativeValidity) -> Bool {
         input.identity == identity && self.store === store && self.validity === validity
@@ -336,20 +343,37 @@ actor LiveCaptureSessionCoordinator {
         let reply: LiveSessionReply
         do { reply = try await transport.command(.replaceEpoch(identity: input.identity,oldEpochID: scope.epochID,epoch: epoch)) }
         catch { abandonSource(scope: scope); throw error }
-        guard !terminal, !closing, isValidOwner, let pending = replacements.removeValue(forKey: scope.source),
+        guard !terminal, !closing, isValidOwner, let pending = replacements[scope.source],
               lanes[scope.source]?.epoch.id == pending.oldEpochID else { return false }
         guard reply == .accepted else {
+            replacements[scope.source] = nil
             if !pending.events.isEmpty { terminate(.unavailable) }
             kick(scope.source)
             return false
         }
-        if let ingress, !ingress.replaceEpoch(old: scope,new: epoch) { terminate(.unavailable); return false }
+        // Pause may freeze already reserved raw input while an earlier native
+        // recovery command is in flight. Keep accepted ownership and its small
+        // event inbox until the serial consumer disposes that exact old work.
+        // Stop/source timeout can abandon this wait without joining native.
+        let deadline = ContinuousClock.now.advanced(by: preparationDeadline)
+        while true {
+            guard !terminal, !closing, isValidOwner, replacements[scope.source]?.epoch.id == epoch.id,
+                  !abandonedSources.contains(scope.source) else { return false }
+            let installation = ingress?.installReplacement(old: scope,new: epoch) ?? .accepted
+            if installation == .accepted { break }
+            guard installation == .blockedByPause else { abandonSource(scope: scope); return false }
+            guard ContinuousClock.now < deadline else { abandonSource(scope: scope); return false }
+            do { try await Task.sleep(for: .milliseconds(2)) }
+            catch { abandonSource(scope: scope); return false }
+        }
+        guard !terminal, !closing, isValidOwner, let accepted = replacements.removeValue(forKey: scope.source),
+              accepted.epoch.id == epoch.id, lanes[scope.source]?.epoch.id == scope.epochID else { return false }
         knownEpochs.insert(epoch.id); registeredEpochs.append(epoch); capturedByEpoch[epoch.id] = 0
         lanes[scope.source] = Lane(epoch: epoch)
         guard publish(.begin(epoch)) else { return false }
         // The event stream and reply reader are independent. Hold a fixed small
         // inbox until the accepted replacement has installed its outer epoch.
-        for event in pending.events { receive(.lane(event)) }
+        for event in accepted.events { receive(.lane(event)) }
         return !terminal
     }
 

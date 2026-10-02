@@ -13,6 +13,7 @@ private actor StreamNativeFixture {
     var shutdowns = 0
     var holdBegin = false
     var holdReplacement = false
+    var holdReplacementReady = false
     var holdSystemFinish = false
     var holdShutdown = false
     var holdBarrier = false
@@ -88,7 +89,7 @@ private actor StreamNativeFixture {
             epochs[epoch.source] = epoch; sequences[epoch.source] = 0; ends[epoch.source] = 0
             settled[epoch.source] = 0; segmentIndexes[epoch.source] = 0
             packetSequences[epoch.source] = 0
-            emit(epoch.source,.ready(generation: UUID(),originSample: 0))
+            if !holdReplacementReady { emit(epoch.source,.ready(generation: UUID(),originSample: 0)) }
         case .cut(let scope,let sequence,let end,_):
             guard epochs[scope.source]?.id == scope.epochID else { return .rejected(.staleScope) }
             ends[scope.source] = end; packetSequences[scope.source] = sequence
@@ -97,14 +98,19 @@ private actor StreamNativeFixture {
         return .accepted
     }
     func configure(begin: Bool = false, replacement: Bool = false, systemFinish: Bool = false,
-                   shutdown: Bool = false, consumeMicrophone: Bool = true, barrier: Bool = false) {
+                   shutdown: Bool = false, consumeMicrophone: Bool = true, barrier: Bool = false, replacementReady: Bool = false) {
         holdBegin = begin; holdReplacement = replacement; holdSystemFinish = systemFinish
         holdShutdown = shutdown; self.consumeMicrophone = consumeMicrophone
         holdBarrier = barrier
+        holdReplacementReady = replacementReady
     }
     func releaseBarrier() { holdBarrier = false; barrierWaiter?.resume(); barrierWaiter = nil }
     func release() { holdBegin = false; holdReplacement = false; beginWaiter?.resume(); beginWaiter = nil; replacementWaiter?.resume(); replacementWaiter = nil }
     func releaseReplacement() { holdReplacement = false; replacementWaiter?.resume(); replacementWaiter = nil }
+    func releaseReplacementReady() {
+        holdReplacementReady = false
+        for source in epochs.keys { emit(source,.ready(generation: UUID(),originSample: settled[source] ?? 0)) }
+    }
     func releaseSystemFinish() { holdSystemFinish = false; systemFinishWaiter?.resume(); systemFinishWaiter = nil }
     func releaseShutdown() { holdShutdown = false; shutdownWaiter?.resume(); shutdownWaiter = nil }
     func shutdown() async {
@@ -146,7 +152,248 @@ private func streamEventually(_ predicate: @Sendable () async -> Bool) async -> 
     return false
 }
 
+private actor StreamDeadlineFixture {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var entered = 0
+    private(set) var handled = 0
+    func wait() async { entered += 1; await withCheckedContinuation { waiters.append($0) } }
+    func didHandle() { handled += 1 }
+    func fireNext() { guard !waiters.isEmpty else { return }; waiters.removeFirst().resume() }
+}
+
 @Suite struct LiveCaptureStreamSessionTests {
+    @MainActor @Test func registeredPauseWaitsForLateReservedInputAndRealEOFTailBeforeFreshUnalignedResume() async throws {
+        let f = StreamFixture(), input = f.input(origin: 1_000_000_000), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        output.yield(try f.buffer(pool))
+        try #require(await streamEventually { await native.packets.count == 1 })
+        let late = try f.buffer(pool,start: 4800)
+        derivative.pause()
+        #expect(await native.barriers.isEmpty)
+        output.yield(late)
+        try #require(await streamEventually { await core.pausedSources == [.microphone] })
+        let paused = try #require(await native.barriers.last)
+        #expect(paused.kind == .pause && paused.sampleEnd == 3200)
+        #expect(await store.projection().segments.first?.range.samples == .init(start: 0,end: 3200))
+        derivative.resume()
+        try #require(await streamEventually {
+            let replacements = await native.replacements.count, ready = await core.readySources.count
+            return replacements == 1 && ready == 1 && !pool.isAdmissionPaused(.microphone)
+        })
+        let fresh = try #require(await native.replacements.first)
+        #expect(fresh.id != input.epochs[0].id && fresh.meetingOriginNanoseconds == nil)
+        output.yield(try f.buffer(pool,start: 9600))
+        try #require(await streamEventually { await native.packets.contains { $0.scope.epochID == fresh.id } })
+        session.beginClosing(); output.finish(); try await session.hardwareDidClose()
+        let display = await store.projection()
+        #expect(display.isClosed && display.segments.count == 2)
+        #expect(display.segments.last?.range.samples == .init(start: 0,end: 1600))
+        #expect(display.segments.last?.range.meeting == nil)
+        #expect(await native.barriers.map(\.kind) == [.pause,.finish])
+    }
+
+    @MainActor @Test func idleRegisteredPauseWakesWithoutAudioAndStopClosesItsSettledPrefix() async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        derivative.pause(); derivative.pause()
+        try #require(await streamEventually { await core.pausedSources == [.microphone] })
+        session.beginClosing(); output.finish(); try await session.hardwareDidClose()
+        #expect(await native.barriers.map(\.kind) == [.pause,.finish])
+        #expect(await native.barriers.allSatisfy { $0.sampleEnd == 0 && $0.nextPacketSequence == 0 })
+        #expect(await native.replacements.isEmpty)
+        #expect(await store.projection().isClosed)
+    }
+
+    @MainActor @Test func pauseDuringHeldResumeKeepsFreshEpochFrozenAndLateStopCannotReopenIt() async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        derivative.pause()
+        try #require(await streamEventually { await core.pausedSources == [.microphone] })
+        await native.configure(replacement: true)
+        derivative.resume()
+        try #require(await streamEventually { await native.replacementWaiter != nil })
+        derivative.pause()
+        await native.releaseReplacement()
+        try #require(await streamEventually { await native.barriers.filter { $0.kind == .pause }.count == 2 })
+        #expect(await native.packets.isEmpty)
+        let fresh = try #require(await native.replacements.first)
+        #expect(await native.barriers.last?.scope.epochID == fresh.id)
+        let token = try #require(pool.pauseAdmission(source: .microphone))
+        #expect(token.scope.epochID == fresh.id && pool.canSealPause(token,scope: token.scope))
+        session.beginClosing(); derivative.resume(); output.finish(); try await session.hardwareDidClose()
+        #expect(await native.replacements.count == 1)
+        #expect(await native.barriers.last?.kind == .finish)
+        #expect(await store.projection().isClosed)
+    }
+
+    @MainActor @Test(arguments: [false,true]) func heldResumeDeadlineKeepsAdmissionFrozenAndNeverAdoptsLateReadiness(holdReady: Bool) async throws {
+        let f = StreamFixture(), input = f.input(origin: 1_000_000_000), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let clock = StreamDeadlineFixture()
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,
+            retryInterval: .milliseconds(2),deadlineSleep: { _ in await clock.wait() },deadlineHandled: { await clock.didHandle() })
+        let derivative = session.derivativeSession()
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        derivative.pause()
+        try #require(await streamEventually { await core.pausedSources == [.microphone] })
+        try #require(await streamEventually { await clock.entered == 1 })
+        await native.configure(replacement: !holdReady,replacementReady: holdReady)
+        derivative.resume()
+        if holdReady {
+            try #require(await streamEventually {
+                let fresh = await native.replacements.first, lane = await core.streamState(source: .microphone)
+                return fresh != nil && lane?.epoch.id == fresh?.id && lane?.ready == false
+            })
+        } else { try #require(await streamEventually { await native.replacementWaiter != nil }) }
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16000,channels: 1))
+        let metadata = LiveAudioMetadata(sourceEpoch: f.rawEpoch,role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 0,frameCount: 16,sampleRate: 16000),writeOutcome: .failed,converter: nil)
+        #expect(pool.reserveRaw(source: .microphone,metadata: metadata,frames: 16,rate: 16000,bytes: 64,format: format) == nil)
+        // First fire only the cancelled Pause timer. The held resume owner must
+        // remain available; a stale timer cannot stand in for its real deadline.
+        await clock.fireNext()
+        try #require(await streamEventually { await clock.handled == 1 })
+        #expect(await core.streamState(source: .microphone)?.gapReason != .unavailable)
+        #expect(pool.isAdmissionPaused(.microphone))
+        #expect(!(await store.projection().isClosed))
+        try #require(await streamEventually { await clock.entered == 2 })
+        await clock.fireNext()
+        try #require(await streamEventually { await core.streamState(source: .microphone)?.gapReason == .unavailable })
+        await native.releaseReplacement(); if holdReady { await native.releaseReplacementReady() }
+        session.beginClosing(); output.finish(); try await session.hardwareDidClose()
+        let display = await store.projection()
+        #expect(display.isClosed && display.segments.isEmpty)
+        #expect(display.captureLosses.contains { $0.reason == .preparation && $0.frames?.startFrame == 0 })
+        #expect(await native.packets.isEmpty)
+        #expect(await native.replacements.count == 1)
+    }
+
+    @MainActor @Test func inputDeviceHookRetiresRealMicrophoneConverterBeforeReplacementAndKeepsSystemContinuity() async throws {
+        let f = StreamFixture(), input = f.input(both: true), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (mic,micOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        let (system,systemOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: mic,system: system,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 2 })
+        micOut.yield(try f.buffer(pool)); systemOut.yield(try f.buffer(pool,source: .system))
+        try #require(await streamEventually { await native.packets.count == 2 })
+        derivative.inputDeviceChanged()
+        try #require(await streamEventually { await native.replacements.count == 1 })
+        let fresh = try #require(await native.replacements.first)
+        try #require(await streamEventually { await core.readySources.count == 2 })
+        #expect(fresh.source == .microphone && fresh.meetingOriginNanoseconds == nil)
+        // Even a fixture reusing the raw epoch cannot rebind the old converter
+        // across the explicit device hook. New microphone EOF is exactly1600.
+        micOut.yield(try f.buffer(pool,start: 4800)); systemOut.yield(try f.buffer(pool,source: .system,start: 4800))
+        try #require(await streamEventually { await native.packets.count == 4 })
+        session.beginClosing(); micOut.finish(); systemOut.finish(); try await session.hardwareDidClose()
+        let display = await store.projection()
+        #expect(display.segments.first { $0.source == .microphone }?.range.samples == .init(start: 0,end: 1600))
+        #expect(display.segments.first { $0.source == .system }?.range.samples == .init(start: 0,end: 3200))
+        #expect(display.captureLosses.contains { $0.source == .microphone && $0.reason == .deviceInterruption })
+        #expect(!display.captureLosses.contains { $0.source == .system })
+        #expect(await native.replacements.count == 1)
+    }
+
+    @MainActor @Test func acceptedRecoveryWaitsForNewPauseRawDrainWithoutClosingHealthySystemSource() async throws {
+        let f = StreamFixture(), input = f.input(both: true), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (mic,micOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        let (system,systemOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: mic,system: system,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 2 })
+        micOut.yield(try f.buffer(pool)); systemOut.yield(try f.buffer(pool,source: .system))
+        try #require(await streamEventually { await native.packets.count == 2 })
+        await native.configure(replacement: true)
+        derivative.inputDeviceChanged()
+        try #require(await streamEventually { await native.replacementWaiter != nil })
+        let late = try f.buffer(pool,start: 4800)
+        derivative.pause()
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        #expect(pool.pauseReadiness(boundary) == .pending)
+        let fresh = try #require(await native.replacements.first)
+        await native.releaseReplacement()
+        try #require(await streamEventually { await native.epochs[.microphone]?.id == fresh.id })
+        #expect(await core.streamState(source: .system) != nil)
+        #expect(pool.pauseReadiness(boundary) == .pending)
+        micOut.yield(late)
+        try #require(await streamEventually { await core.pausedSources == [.microphone,.system] })
+        #expect(await native.barriers.contains { $0.kind == .pause && $0.scope.epochID == fresh.id && $0.sampleEnd == 0 })
+        session.beginClosing(); micOut.finish(); systemOut.finish(); try await session.hardwareDidClose()
+        let display = await store.projection()
+        #expect(display.isClosed && display.segments.first { $0.source == .system }?.range.samples == .init(start: 0,end: 1600))
+        #expect(await native.replacements.count == 1)
+    }
+
+    @MainActor @Test func immediateResumeStillSettlesTheFrozenOldPrefixBeforeReplacingIt() async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        await native.configure(barrier: true)
+        derivative.pause(); derivative.resume()
+        try #require(await streamEventually { await native.barrierWaiter != nil })
+        #expect(await native.replacements.isEmpty && pool.isAdmissionPaused(.microphone))
+        await native.releaseBarrier()
+        try #require(await streamEventually { !pool.isAdmissionPaused(.microphone) })
+        #expect(await native.barriers.map(\.kind) == [.pause])
+        #expect(await native.replacements.count == 1)
+        session.beginClosing(); output.finish(); try await session.hardwareDidClose()
+    }
+
+    @MainActor @Test func idleDeviceHookMakesSourceLossVisibleSynchronouslyBeforeAnyConsumerWake() async throws {
+        let f = StreamFixture(), input = f.input(both: true), pool = LiveCaptureIngress(input: input)
+        let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
+        await native.configure(replacement: true)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core,retryInterval: .milliseconds(2))
+        let derivative = session.derivativeSession()
+        let (mic,micOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        let (system,systemOut) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: mic,system: system,language: "auto")))
+        try #require(await streamEventually { await core.readySources.count == 2 })
+        derivative.inputDeviceChanged()
+        let micScope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: input.epochs.first { $0.source == .microphone }!.id)
+        let systemScope = LiveLaneScope(identity: f.identity,source: .system,epochID: input.epochs.first { $0.source == .system }!.id)
+        // No actual converter exists to generate a later loss. The hook itself
+        // must make a competing ordered event observe the device discontinuity.
+        #expect(pool.continuityLoss(scope: micScope) == .deviceInterruption)
+        #expect(pool.continuityLoss(scope: systemScope) == nil)
+        session.beginClosing(); micOut.finish(); systemOut.finish(); try await session.hardwareDidClose()
+        await native.releaseReplacement()
+    }
+
     @Test(arguments: ["pause","finish","utterance"]) func zeroConverterTailCannotFlushProvisionalTextAcrossFrozenRawLoss(kind: String) async throws {
         let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
         let store = LiveTranscriptStore(identity: f.identity)
