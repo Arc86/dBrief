@@ -81,6 +81,113 @@ private actor CapturePublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func utteranceBoundaryOrdersItsExactPrefixBeforeLaterPacketsAndFinalClosure() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 1 })
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [Float](repeating: 0.25,count: 100)) == .scheduled)
+        #expect(await c.requestUtteranceBoundary(scope: f.scope(f.mic)))
+        #expect(await c.requestUtteranceBoundary(scope: f.scope(f.mic)))
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [Float](repeating: 0.5,count: 100)) == .scheduled)
+        #expect(!(await c.requestUtteranceBoundary(scope: f.scope(f.mic))))
+        #expect(await captureEventually { await t.requests.contains { if case .barrier(let b) = $0 { return b.kind == .utterance }; return false } })
+        let before = await t.requests
+        let initialBarriers: [LiveFinishBarrier] = before.compactMap { if case .barrier(let b) = $0 { return b }; return nil }
+        #expect(before.count == 2)
+        #expect(initialBarriers.first == .init(scope: f.scope(f.mic),nextPacketSequence: 1,sampleEnd: 100,kind: .utterance))
+        await c.beginClosing(); await c.hardwareDidClose()
+        #expect(!(await c.requestUtteranceBoundary(scope: f.scope(f.mic))))
+        #expect(await t.requests.count == 2)
+        #expect(!(await store.projection().isClosed))
+        await t.emit(f.event(f.mic,1,.admitted(packetSequence: 0,sampleEnd: 100)))
+        await t.emit(f.event(f.mic,2,.progress(.init(capturedSampleEnd: 100,admittedSampleEnd: 100,consumedSampleEnd: 100,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        let first = CommittedLiveSegment(id: .init(epochID: f.mic.id,index: 0),source: .microphone,range: .init(samples: .init(start: 0,end: 100),meeting: nil),text: "First boundary")
+        await t.emit(f.event(f.mic,3,.committed(first)))
+        await t.emit(f.event(f.mic,4,.barrierCompleted(requestID: UUID(),kind: .utterance,sampleEnd: 100)))
+        await t.emit(f.event(f.mic,5,.ready(generation: UUID(),originSample: 100)))
+        #expect(await captureEventually { await t.requests.count == 4 })
+        let after = await t.requests
+        let packets: [LiveAudioPacket] = after.compactMap { if case .packet(let p) = $0 { return p }; return nil }
+        let barriers: [LiveFinishBarrier] = after.compactMap { if case .barrier(let b) = $0 { return b }; return nil }
+        #expect(packets.map(\.startSample) == [0,100])
+        #expect(barriers.map(\.kind) == [.utterance,.finish])
+        await t.emit(f.event(f.mic,6,.admitted(packetSequence: 1,sampleEnd: 200)))
+        await t.emit(f.event(f.mic,7,.progress(.init(capturedSampleEnd: 200,admittedSampleEnd: 200,consumedSampleEnd: 200,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        let second = CommittedLiveSegment(id: .init(epochID: f.mic.id,index: 1),source: .microphone,range: .init(samples: .init(start: 100,end: 200),meeting: nil),text: "Closing boundary")
+        await t.emit(f.event(f.mic,8,.committed(second)))
+        await t.emit(f.event(f.mic,9,.closed(sampleEnd: 200)))
+        await t.emit(.finished(f.identity)); try await c.waitUntilClosed()
+        #expect(await store.projection().segments == [first,second])
+    }
+
+    @Test func malformedUtteranceAcknowledgementCutsOnlyItsSource() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,both: true)
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        await t.emit(f.event(f.system,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 2 })
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [0.25]) == .scheduled)
+        #expect(await c.requestUtteranceBoundary(scope: f.scope(f.mic)))
+        #expect(await captureEventually { await t.requests.count == 2 })
+        await t.emit(f.event(f.mic,1,.barrierCompleted(requestID: UUID(),kind: .utterance,sampleEnd: 2)))
+        #expect(await captureEventually { await c.readySources == [.system] })
+        #expect(await c.offer(scope: f.scope(f.system),samples: [0.5]) == .scheduled)
+        await c.synchronizeStore()
+        #expect(!(await store.projection().isClosed))
+        #expect(await store.projection().coverage.first?.kind == .gap(.engineRestart))
+        await c.retire(); try await c.waitUntilClosed()
+    }
+
+    @Test func aStalledUtteranceBoundaryCannotDefeatStopDeadlineOrDiscardHealthyCommittedEvidence() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,both: true,drainDeadline: .milliseconds(60))
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        await t.emit(f.event(f.system,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 2 })
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [0.25]) == .scheduled)
+        #expect(await c.requestUtteranceBoundary(scope: f.scope(f.mic)))
+        #expect(await c.offer(scope: f.scope(f.system),samples: [0.5]) == .scheduled)
+        #expect(await captureEventually { await t.requests.count == 3 })
+        await t.emit(f.event(f.system,1,.admitted(packetSequence: 0,sampleEnd: 1)))
+        await t.emit(f.event(f.system,2,.progress(.init(capturedSampleEnd: 1,admittedSampleEnd: 1,consumedSampleEnd: 1,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        let healthy = CommittedLiveSegment(id: .init(epochID: f.system.id,index: 0),source: .system,range: .init(samples: .init(start: 0,end: 1),meeting: nil),text: "Healthy prefix")
+        await t.emit(f.event(f.system,3,.committed(healthy)))
+        #expect(await captureEventually { await store.projection().segments == [healthy] })
+        await c.beginClosing(); await c.hardwareDidClose(); try await c.waitUntilClosed()
+        let frozen = await store.projection()
+        #expect(frozen.isClosed && frozen.segments == [healthy])
+        #expect(frozen.coverage.contains { $0.source == .microphone && $0.range.samples == .init(start: 0,end: 1) && $0.kind == .gap(.deadline) })
+        await t.emit(f.event(f.mic,1,.barrierCompleted(requestID: UUID(),kind: .utterance,sampleEnd: 1)))
+        await c.synchronizeStore()
+        #expect(await store.projection() == frozen)
+    }
+
+    @Test func aSourceCutInvalidatesAnOldUtteranceAcknowledgementWithoutClosingTheHealthySource() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,both: true)
+        try await c.start()
+        #expect(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        await t.emit(f.event(f.system,0,.ready(generation: UUID(),originSample: 0)))
+        #expect(await captureEventually { await c.readySources.count == 2 })
+        #expect(!(await c.requestUtteranceBoundary(scope: f.scope(f.mic))))
+        #expect(!(await c.requestUtteranceBoundary(scope: .init(identity: f.identity,source: .microphone,epochID: UUID()))))
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [0.25]) == .scheduled)
+        #expect(await c.requestUtteranceBoundary(scope: f.scope(f.mic)))
+        #expect(await captureEventually { await t.requests.count == 2 })
+        await c.recordDiscontinuity(scope: f.scope(f.mic),reason: .deviceInterruption)
+        await t.emit(f.event(f.mic,1,.barrierCompleted(requestID: UUID(),kind: .utterance,sampleEnd: 1)))
+        #expect(await captureEventually { await c.readySources == [.system] })
+        #expect(await c.offer(scope: f.scope(f.system),samples: [0.5]) == .scheduled)
+        await c.synchronizeStore()
+        #expect(!(await store.projection().isClosed))
+        #expect(await store.projection().coverage.first?.kind == .gap(.deviceInterruption))
+        await c.retire(); try await c.waitUntilClosed()
+    }
+
     @Test func rawLossPublicationIsOrderedWithEvidenceAndRejectsAnotherOrSealedCapture() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
         try await c.start()

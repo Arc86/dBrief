@@ -12,8 +12,10 @@ import dBriefWire
         var wrongOwner = false
         var holdPreparation = false
         var holdDrain = false
+        var holdDeadline = false
         var preparationWaiter: CheckedContinuation<Void, Never>?
         var drainWaiter: CheckedContinuation<Void, Never>?
+        var deadlineWaiter: CheckedContinuation<Void, Never>?
         var preparation: Task<Void, Never>?
         var consumer: Task<Void, Never>?
         var micOutput: AsyncStream<LiveAudioBuffer>.Continuation?
@@ -65,6 +67,14 @@ import dBriefWire
             holdPreparation = false; holdDrain = false
             preparationWaiter?.resume(); preparationWaiter = nil
             drainWaiter?.resume(); drainWaiter = nil
+            releaseDeadline()
+        }
+        func releaseDeadline() {
+            holdDeadline = false; deadlineWaiter?.resume(); deadlineWaiter = nil
+        }
+        func deadline(_ duration: Duration) async throws {
+            if holdDeadline { await withCheckedContinuation { deadlineWaiter = $0 } }
+            else { try await Task.sleep(for: duration) }
         }
         func coordinator() -> CaptureCoordinator {
             .init(hardware: .init(start: { _, _ in
@@ -88,6 +98,7 @@ import dBriefWire
             },termination: { _ in },pauseResume: { _, _, _ in }),
             preview: .init(prepare: { _ in nil },make: { .init(start: { _, _ in await self.appleStarted() },stop: {}) }),
             derivative: .init(make: { request,_ in self.makeSession(request) }),derivativeDrainDeadline: .milliseconds(60),
+            sleep: { try await self.deadline($0) },
             onEvent: { event in if case .stopped = event { self.calls.append("stopped") } })
         }
         func checkpoint() { calls.append("checkpoint") }
@@ -119,11 +130,15 @@ import dBriefWire
     }
 
     @Test func independentDeadlineReleasesAudioAdmissionAndExpiresOnlyTheOldDerivative() async throws {
-        let h = Harness(), c = h.coordinator(), old = request(); h.holdDrain = true
+        let h = Harness(), c = h.coordinator(), old = request(); h.holdDrain = true; h.holdDeadline = true
+        defer { h.release() }
         try await c.start(old)
-        let clock = ContinuousClock(), start = clock.now
-        await c.stop()
-        #expect(start.duration(to: clock.now) < .seconds(1))
+        let stop = Task { await c.stop(); h.calls.append("owner-stop-returned") }
+        try await wait { h.deadlineWaiter != nil && h.drainWaiter != nil }
+        h.releaseDeadline()
+        try await wait { h.calls.contains("owner-stop-returned") }
+        await stop.value
+        #expect(h.drainWaiter != nil)
         #expect(!c.isBusy && h.calls.contains("checkpoint"))
         #expect(h.expired == [old.captureSessionID])
         h.release()

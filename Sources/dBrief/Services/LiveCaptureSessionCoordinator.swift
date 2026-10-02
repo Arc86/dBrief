@@ -25,6 +25,9 @@ struct LiveCaptureStoreAccess: Sendable {
 /// Capture owns this actor and its transport. All store writes use one serial
 /// publisher; native preparation and command tasks are never joined by Stop.
 actor LiveCaptureSessionCoordinator {
+    /// Proposed maximum is a deterministic normalized-sample policy; native
+    /// latency/quality qualification is separate from this scheduling bound.
+    static let maximumUtteranceSamples: Int64 = 240_000
     struct StreamState: Sendable {
         let epoch: LiveEpoch
         let scope: LiveLaneScope
@@ -50,6 +53,9 @@ actor LiveCaptureSessionCoordinator {
         var cutAcknowledgedEnd: Int64 = -1
         var pumping = false
         var finishSent = false
+        var utteranceBoundary: LiveFinishBarrier?
+        var utteranceBoundarySent = false
+        var utteranceOrigin: Int64 = 0
         var closed = false
     }
     private enum Publication {
@@ -162,7 +168,8 @@ actor LiveCaptureSessionCoordinator {
                reservation: LiveCaptureIngress.NormalizedReservation? = nil) -> LiveCaptureAdmission {
         guard started, !terminal, !sealed, isValidOwner, scope.identity == input.identity,
               var lane = lanes[scope.source], lane.epoch.id == scope.epochID, !lane.closed, !abandonedSources.contains(scope.source),
-              (!closing || closingTail), (1...3200).contains(samples.count), samples.allSatisfy(\.isFinite) else { return .rejected }
+              (!closing || closingTail), (1...3200).contains(samples.count), samples.allSatisfy(\.isFinite),
+              samples.count <= (maximumPacketSamples(scope: scope) ?? 0) else { return .rejected }
         if let ingress {
             guard let reservation, reservation.owner === ingress, reservation.scope == scope,
                   reservation.contains(samples.count) else { return .rejected }
@@ -203,6 +210,9 @@ actor LiveCaptureSessionCoordinator {
             lane.nextPacket += 1; lane.scheduled = lane.captured
             lane.packets.append(packet); lane.receipts[packet.sequence] = lane.captured
             guard recordCaptured(scope.source,lane) else { return .dropped }
+            if lane.captured - lane.utteranceOrigin == Self.maximumUtteranceSamples {
+                _ = enqueueUtteranceBoundary(scope: scope)
+            }
             kick(scope.source); return .scheduled
         } catch { _ = recordCaptured(scope.source,lane); _ = reservation?.discard(samples.count); terminate(.unavailable); return .rejected }
     }
@@ -247,6 +257,29 @@ actor LiveCaptureSessionCoordinator {
     }
 
     func synchronizeStore() async { await publisher?.value }
+    func maximumPacketSamples(scope: LiveLaneScope) -> Int? {
+        guard started, !sealed, !terminal, isValidOwner, scope.identity == input.identity,
+              let lane = lanes[scope.source], lane.epoch.id == scope.epochID, !lane.closed,
+              !abandonedSources.contains(scope.source) else { return nil }
+        if !lane.ready || lane.cutReason != nil { return 3200 }
+        return Int(min(3200,max(0,Self.maximumUtteranceSamples - (lane.captured - lane.utteranceOrigin))))
+    }
+    /// One exact boundary per source. Later packets retain their finite app
+    /// credits until settlement and acknowledgment release this control slot.
+    func requestUtteranceBoundary(scope: LiveLaneScope) -> Bool {
+        guard !closing else { return false }
+        return enqueueUtteranceBoundary(scope: scope)
+    }
+    private func enqueueUtteranceBoundary(scope: LiveLaneScope) -> Bool {
+        guard started, !sealed, !terminal, isValidOwner, scope.identity == input.identity,
+              let lane = lanes[scope.source], lane.epoch.id == scope.epochID, lane.ready,
+              lane.cutReason == nil, !lane.closed, !abandonedSources.contains(scope.source) else { return false }
+        if let pending = lane.utteranceBoundary { return pending.sampleEnd == lane.captured }
+        guard lane.captured > lane.settled else { return false }
+        lanes[scope.source]?.utteranceBoundary = .init(scope: scope,nextPacketSequence: lane.nextPacket,sampleEnd: lane.captured,kind: .utterance)
+        lanes[scope.source]?.utteranceOrigin = lane.captured
+        kick(scope.source); return true
+    }
     func recordCaptureLoss(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss) -> Bool {
         guard started, !sealed, !terminal, isValidOwner, owner == input.identity,
               lanes[loss.source] != nil, loss.isValid else { return false }
@@ -389,6 +422,13 @@ actor LiveCaptureSessionCoordinator {
                 if publish(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: interval.kind)))) { lanes[source]?.settled = samples.end }
             case .needsEpochReplacement: cut(source,reason: lane.cutReason ?? .engineRestart)
             case .barrierCompleted(_, let kind, let end):
+                if kind == .utterance {
+                    guard lane.cutReason == nil else { return }
+                    guard let boundary = lane.utteranceBoundary, lane.utteranceBoundarySent,
+                          end == boundary.sampleEnd, lane.settled == end else { cut(source,reason: .engineRestart); return }
+                    lanes[source]?.utteranceBoundary = nil; lanes[source]?.utteranceBoundarySent = false
+                    kick(source); return
+                }
                 guard kind == .finish, sealed, lane.finishSent, end == lane.captured else { terminate(.unavailable); return }
             case .closed(let end):
                 guard sealed, lane.finishSent, end == lane.captured, lane.settled == lane.captured else { terminate(.unavailable); return }
@@ -409,6 +449,7 @@ actor LiveCaptureSessionCoordinator {
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
         guard !terminal, var lane = lanes[source], !lane.closed else { return }
         lane.ready = false; lane.cutReason = reason; lane.packets.removeAll(); lane.receipts.removeAll()
+        lane.utteranceBoundary = nil; lane.utteranceBoundarySent = false
         ingress?.discardUndispatched(scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id))
         lanes[source] = lane
         if lane.settled < lane.captured, let range = evidence(lane.epoch,lane.settled,lane.captured) {
@@ -439,6 +480,13 @@ actor LiveCaptureSessionCoordinator {
         if let reason = lane.cutReason, lane.cutAcknowledgedEnd < lane.captured {
             return .cut(scope: scope,nextPacketSequence: lane.nextDispatchedPacket,sampleEnd: lane.captured,reason: reason)
         }
+        if let boundary = lane.utteranceBoundary {
+            if lane.utteranceBoundarySent { lanes[source]?.pumping = false; return nil }
+            guard lane.nextDispatchedPacket <= boundary.nextPacketSequence else { cut(source,reason: .engineRestart); return nil }
+            if lane.nextDispatchedPacket == boundary.nextPacketSequence {
+                lanes[source]?.utteranceBoundarySent = true; return .barrier(boundary)
+            }
+        }
         if !lane.packets.isEmpty {
             let packet = lane.packets.removeFirst(); lane.dispatched = packet.startSample + Int64(packet.sampleCount)
             if let ingress, !ingress.markDispatched(scope: scope,end: lane.dispatched) { terminate(.unavailable); return nil }
@@ -457,6 +505,7 @@ actor LiveCaptureSessionCoordinator {
             // A rejected packet has still advanced the helper capture frontier;
             // a control cut is ordered after it and preserves the exact prefix.
             if case .packet = request { cut(source,reason: .unavailable) }
+            else if case .barrier(let boundary) = request, boundary.kind == .utterance { cut(source,reason: .unavailable) }
             else { terminate(.unavailable) }
             return
         }

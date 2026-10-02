@@ -23,6 +23,9 @@ private actor StreamNativeFixture {
     var epochs: [LiveSource: LiveEpoch] = [:]
     var sequences: [LiveSource: UInt64] = [:]
     var ends: [LiveSource: Int64] = [:]
+    var settled: [LiveSource: Int64] = [:]
+    var segmentIndexes: [LiveSource: UInt64] = [:]
+    var packetSequences: [LiveSource: UInt64] = [:]
     var closed: Set<LiveSource> = []
     init(_ input: LiveSessionBegin) {
         self.input = input
@@ -47,6 +50,8 @@ private actor StreamNativeFixture {
         switch request {
         case .packet(let packet):
             guard epochs[packet.scope.source]?.id == packet.scope.epochID else { return .rejected(.staleScope) }
+            guard packet.sequence == (packetSequences[packet.scope.source] ?? 0), packet.startSample == (ends[packet.scope.source] ?? 0) else { return .rejected(.outOfOrder) }
+            packetSequences[packet.scope.source] = packet.sequence + 1
             let end = packet.startSample + Int64(packet.sampleCount)
             let consumed = packet.scope.source == .microphone && !consumeMicrophone ? Int64(0) : end
             ends[packet.scope.source] = end
@@ -57,19 +62,31 @@ private actor StreamNativeFixture {
         case .barrier(let barrier):
             let source = barrier.scope.source
             guard epochs[source]?.id == barrier.scope.epochID else { return .rejected(.staleScope) }
-            if barrier.kind == .finish {
-                if source == .system && holdSystemFinish { await withCheckedContinuation { systemFinishWaiter = $0 } }
-                if barrier.sampleEnd > 0 {
-                    emit(source,.committed(.init(id: .init(epochID: barrier.scope.epochID,index: 0),source: source,
-                        range: .init(samples: .init(start: 0,end: barrier.sampleEnd),meeting: nil),text: "Fixture closing evidence")))
+            guard barrier.sampleEnd == (ends[source] ?? 0), barrier.nextPacketSequence == (packetSequences[source] ?? 0) else { return .rejected(.outOfOrder) }
+            if barrier.kind == .finish || barrier.kind == .utterance {
+                if barrier.kind == .finish && source == .system && holdSystemFinish { await withCheckedContinuation { systemFinishWaiter = $0 } }
+                let start = settled[source] ?? 0
+                if barrier.sampleEnd > start {
+                    let index = segmentIndexes[source] ?? 0; segmentIndexes[source] = index + 1
+                    emit(source,.committed(.init(id: .init(epochID: barrier.scope.epochID,index: index),source: source,
+                        range: .init(samples: .init(start: start,end: barrier.sampleEnd),meeting: nil),text: "Fixture closing evidence")))
                 }
-                emit(source,.closed(sampleEnd: barrier.sampleEnd)); closed.insert(source)
-                if closed.count == input.epochs.count { output.yield(.finished(input.identity)) }
+                settled[source] = barrier.sampleEnd
+                emit(source,.barrierCompleted(requestID: UUID(),kind: barrier.kind,sampleEnd: barrier.sampleEnd))
+                if barrier.kind == .finish {
+                    emit(source,.closed(sampleEnd: barrier.sampleEnd)); closed.insert(source)
+                    if closed.count == input.epochs.count { output.yield(.finished(input.identity)) }
+                } else { emit(source,.ready(generation: UUID(),originSample: barrier.sampleEnd)) }
             }
         case .replaceEpoch(_,_,let epoch):
             if holdReplacement { await withCheckedContinuation { replacementWaiter = $0 } }
             epochs[epoch.source] = epoch; sequences[epoch.source] = 0; ends[epoch.source] = 0
+            settled[epoch.source] = 0; segmentIndexes[epoch.source] = 0
+            packetSequences[epoch.source] = 0
             emit(epoch.source,.ready(generation: UUID(),originSample: 0))
+        case .cut(let scope,let sequence,let end,_):
+            guard epochs[scope.source]?.id == scope.epochID else { return .rejected(.staleScope) }
+            ends[scope.source] = end; packetSequences[scope.source] = sequence
         default: break
         }
         return .accepted
@@ -123,6 +140,33 @@ private func streamEventually(_ predicate: @Sendable () async -> Bool) async -> 
 }
 
 @Suite struct LiveCaptureStreamSessionTests {
+    @Test func realStreamSplitsAtTheFifteenSecondBoundaryWithoutResettingItsConverterOrEpoch() async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        let session = try LiveCaptureStreamSession(input: input,ingress: pool,coordinator: core)
+        let (stream,output) = AsyncStream<LiveAudioBuffer>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        #expect(session.register(.init(mic: stream,system: nil,language: "auto")))
+        #expect(await streamEventually { await core.readySources.count == 1 })
+        for index in 0..<151 {
+            let packetsBefore = await native.packets.count
+            output.yield(try f.buffer(pool,start: index*4800))
+            try #require(await streamEventually { await native.packets.count > packetsBefore })
+        }
+        #expect(await streamEventually { await native.barriers.contains { $0.kind == .utterance } })
+        session.beginClosing(); output.finish(); try await session.hardwareDidClose()
+        let barriers = await native.barriers, packets = await native.packets, display = await store.projection()
+        #expect(barriers.map(\.kind) == [.utterance,.finish])
+        #expect(barriers.map(\.sampleEnd) == [240000,241600])
+        #expect(packets.contains { $0.startSample + Int64($0.sampleCount) == 240000 })
+        #expect(packets.reduce(0) { $0 + $1.sampleCount } == 241600)
+        #expect(packets.allSatisfy { $0.scope.epochID == input.epochs.first?.id && $0.sampleCount <= 3200 })
+        #expect(display.segments.map { $0.range.samples } == [.init(start: 0,end: 240000),.init(start: 240000,end: 241600)])
+        #expect(display.captureLosses.isEmpty && display.isClosed)
+        #expect(pool.statistics(.microphone).pendingSamples == 4096)
+        #expect(await native.replacements.isEmpty)
+    }
+
     @Test func rawLossBetweenConversionAndOfferCannotAdvanceTheOldQualifiedEpoch() async throws {
         let f = StreamFixture(), input = f.input(origin: 1_000_000_000), pool = LiveCaptureIngress(input: input)
         let native = StreamNativeFixture(input), store = LiveTranscriptStore(identity: f.identity)
@@ -180,9 +224,7 @@ private func streamEventually(_ predicate: @Sendable () async -> Bool) async -> 
         try await capture.start(request)
         #expect(await streamEventually { await native.begins == 1 })
         if !leaveStreamOpen { #expect(await streamEventually { await core.readySources.count == 1 }) }
-        let clock = ContinuousClock(), before = clock.now
         await capture.stop()
-        #expect(before.duration(to: clock.now) < .seconds(2))
         #expect(calls == ["hardware-close","audio-checkpoint"] && !capture.isBusy)
         #expect(await streamEventually { await store.projection().isClosed })
         let frozen = await store.snapshot()

@@ -169,13 +169,18 @@ final class LiveCaptureStreamSession: @unchecked Sendable {
 
     private func send(_ batch: LiveASRNormalizer.Batch) async -> Bool {
         var scheduled = true
-        for start in stride(from: 0,to: batch.samples.count,by: 3200) {
-            let end = min(batch.samples.count,start + 3200)
+        var start = 0
+        while start < batch.samples.count {
             guard !flags.expired, !Task.isCancelled else { batch.reservation.recordLoss(reason: .stopped); return false }
+            guard let maximum = await coordinator.maximumPacketSamples(scope: batch.reservation.scope), maximum > 0 else {
+                batch.reservation.recordLoss(reason: .unavailable); return false
+            }
+            let end = min(batch.samples.count,start + maximum)
             let admission = await coordinator.offer(scope: batch.reservation.scope,samples: Array(batch.samples[start..<end]),
                 closingTail: flags.closing,reservation: batch.reservation)
             if admission == .rejected { batch.reservation.recordLoss(reason: .unavailable); return false }
             if admission == .dropped { scheduled = false }
+            start = end
         }
         return scheduled
     }
