@@ -10,9 +10,21 @@ final class LiveRecordingSessionRegistry {
         let validity = RecordingDerivativeValidity()
         private(set) var captureClosed = false
         private(set) var isValid = true
-        fileprivate init(identity: LiveSessionIdentity) { self.identity = identity; self.store = LiveTranscriptStore(identity: identity) }
+        private(set) var coordinator: LiveCaptureSessionCoordinator?
+        fileprivate init(identity: LiveSessionIdentity) {
+            self.identity = identity; self.store = LiveTranscriptStore(identity: identity,validity: validity)
+        }
         fileprivate func closeCapture() { captureClosed = true }
-        fileprivate func invalidate() { isValid = false; validity.invalidate() }
+        fileprivate func invalidate() {
+            isValid = false; validity.invalidate()
+            let retired = coordinator; coordinator = nil
+            Task { await retired?.retire() }
+        }
+        fileprivate func install(_ owner: LiveCaptureSessionCoordinator) throws {
+            guard !captureClosed, owner.belongs(to: identity,store: store,validity: validity),
+                  coordinator == nil || coordinator === owner else { throw Failure.identityConflict }
+            coordinator = owner
+        }
     }
     private var entries: [UUID: Entry] = [:]
     private var captureOwners: [UUID: UUID] = [:]
@@ -37,6 +49,7 @@ final class LiveRecordingSessionRegistry {
     }
 
     func captureDidClose(_ identity: LiveSessionIdentity) throws { try owned(identity).closeCapture() }
+    func install(_ coordinator: LiveCaptureSessionCoordinator, for identity: LiveSessionIdentity) throws { try owned(identity).install(coordinator) }
 
     /// Retire the owner synchronously before asynchronous artifact cleanup. This
     /// removes lookup and tombstones identities without destroying other history.

@@ -60,6 +60,7 @@ actor LiveCaptureSessionCoordinator {
     private let input: LiveSessionBegin
     private let store: LiveTranscriptStore
     private let storeAccess: LiveCaptureStoreAccess
+    private let validity: RecordingDerivativeValidity?
     private let transport: LiveASRTransport
     private let drainDeadline: Duration
     private let preparationDeadline: Duration
@@ -89,17 +90,23 @@ actor LiveCaptureSessionCoordinator {
     init(input: LiveSessionBegin, store: LiveTranscriptStore, transport: LiveASRTransport,
          drainDeadline: Duration = .seconds(3), preparationDeadline: Duration = .seconds(30),
          resources: LiveModelResourcePolicy? = nil, lease: LiveResourceLease? = nil,
+         validity: RecordingDerivativeValidity? = nil,
          storeAccess: LiveCaptureStoreAccess? = nil) {
         self.input = input; self.store = store; self.transport = transport
         self.storeAccess = storeAccess ?? .live(store)
+        self.validity = validity
         self.drainDeadline = drainDeadline; self.preparationDeadline = preparationDeadline
         self.resources = resources; self.lease = lease
     }
 
     var readySources: Set<LiveSource> { Set(lanes.values.filter { $0.ready && $0.cutReason == nil && !$0.closed }.map { $0.epoch.source }) }
+    nonisolated func belongs(to identity: LiveSessionIdentity, store: LiveTranscriptStore, validity: RecordingDerivativeValidity) -> Bool {
+        input.identity == identity && self.store === store && self.validity === validity
+    }
+    private var isValidOwner: Bool { validity.map { (try? $0.withValidResult { true }) == true } ?? true }
 
     func start() throws {
-        guard !started, !terminal, input.isValid, store.identity == input.identity,
+        guard !started, !terminal, isValidOwner, input.isValid, store.identity == input.identity,
               lease.map({ $0.identity == input.identity && $0.request.chunkMs == input.configuration.chunkMs &&
                   $0.request.sourceCount == input.epochs.count && input.epochs.allSatisfy { $0.engineRevision == lease?.request.modelRevision } }) ?? true else { throw LiveProtocolError.invalidConfiguration }
         started = true
@@ -118,7 +125,7 @@ actor LiveCaptureSessionCoordinator {
     /// Only the already registered stream may use closingTail, before its EOF.
     /// Unsent frames and frames awaiting a reply stay charged until consumption.
     func offer(scope: LiveLaneScope, samples: [Float], closingTail: Bool = false) -> LiveCaptureAdmission {
-        guard started, !terminal, !sealed, scope.identity == input.identity,
+        guard started, !terminal, !sealed, isValidOwner, scope.identity == input.identity,
               var lane = lanes[scope.source], lane.epoch.id == scope.epochID, !lane.closed,
               (!closing || closingTail), (1...3200).contains(samples.count), samples.allSatisfy(\.isFinite) else { return .rejected }
         let end = lane.captured.addingReportingOverflow(Int64(samples.count))
@@ -170,7 +177,7 @@ actor LiveCaptureSessionCoordinator {
     /// still return unavailable; neither the store nor epoch advances on denial.
     func replaceEpoch(scope: LiveLaneScope, epoch: LiveEpoch) async throws -> Bool {
         await synchronizeStore()
-        guard !closing, !terminal, scope.identity == input.identity, let lane = lanes[scope.source],
+        guard !closing, !terminal, isValidOwner, scope.identity == input.identity, let lane = lanes[scope.source],
               lane.epoch.id == scope.epochID, lane.cutReason != nil, lane.cutAcknowledgedEnd == lane.captured,
               !lane.pumping, replacements[scope.source] == nil, !knownEpochs.contains(epoch.id),
               epoch.source == scope.source, epoch.language == input.configuration.language.rawValue,
@@ -178,13 +185,13 @@ actor LiveCaptureSessionCoordinator {
               epoch.meetingOriginNanoseconds.map({ $0 >= 0 }) ?? true else { return false }
         replacements[scope.source] = .init(oldEpochID: scope.epochID,epoch: epoch)
         let preflight = await store.checkEpoch(owner: input.identity,epoch: epoch)
-        guard preflight == .accepted, !closing, !terminal else {
+        guard preflight == .accepted, !closing, !terminal, isValidOwner else {
             replacements[scope.source] = nil; kick(scope.source); return false
         }
         let reply: LiveSessionReply
         do { reply = try await transport.command(.replaceEpoch(identity: input.identity,oldEpochID: scope.epochID,epoch: epoch)) }
         catch { replacements[scope.source] = nil; terminate(.unavailable); throw error }
-        guard !terminal, !closing, let pending = replacements.removeValue(forKey: scope.source),
+        guard !terminal, !closing, isValidOwner, let pending = replacements.removeValue(forKey: scope.source),
               lanes[scope.source]?.epoch.id == pending.oldEpochID else { return false }
         guard reply == .accepted else {
             if !pending.events.isEmpty { terminate(.unavailable) }
@@ -223,6 +230,7 @@ actor LiveCaptureSessionCoordinator {
 
     private func receive(_ event: LiveSessionEvent) {
         guard !terminal else { return }
+        guard isValidOwner else { terminate(.stopped); return }
         switch event {
         case .failed(let identity, _): if identity == input.identity { terminate(.unavailable) }
         case .finished(let identity):
@@ -325,6 +333,7 @@ actor LiveCaptureSessionCoordinator {
     }
 
     private func nextCommand(_ source: LiveSource) -> LiveSessionRequest? {
+        guard isValidOwner else { terminate(.stopped); return nil }
         guard !terminal, var lane = lanes[source], !lane.closed else { return nil }
         let scope = LiveLaneScope(identity: input.identity,source: source,epochID: lane.epoch.id)
         if let reason = lane.cutReason, lane.cutAcknowledgedEnd < lane.captured {

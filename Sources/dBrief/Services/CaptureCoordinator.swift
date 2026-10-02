@@ -8,6 +8,7 @@ final class CaptureCoordinator {
     struct Request: Sendable {
         let id: UUID
         let startedAt: Date
+        var captureSessionID = UUID()
         var inputDeviceUID: String? = nil
         var acousticEchoCancellation = true
         var echoSuppression = false
@@ -121,6 +122,7 @@ final class CaptureCoordinator {
         var preview: CaptureLivePreview.Session?
         var previewStart: Task<Void, Never>?
         var previewStop: Task<Void, Never>?
+        var derivative: CaptureLiveDerivative.Session?
         var statusClear: Task<Void, Never>?
         var isActive = false
         var isPaused = false
@@ -133,6 +135,8 @@ final class CaptureCoordinator {
     private let hardware: Hardware
     private let persistence: Persistence
     private let preview: CaptureLivePreview
+    private let derivative: CaptureLiveDerivative
+    private let derivativeDrainDeadline: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
     private let onEvent: (Event) -> Void
     @ObservationIgnored private var attempt: Attempt?
@@ -144,12 +148,16 @@ final class CaptureCoordinator {
 
     init(hardware: Hardware, persistence: Persistence,
          preview: CaptureLivePreview = .live(),
+         derivative: CaptureLiveDerivative = .disabled,
+         derivativeDrainDeadline: Duration = .seconds(3),
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          onEvent: @escaping (Event) -> Void) {
         self.hardware = hardware
         self.persistence = persistence
         self.onEvent = onEvent
         self.preview = preview
+        self.derivative = derivative
+        self.derivativeDrainDeadline = derivativeDrainDeadline
         self.sleep = sleep
     }
 
@@ -201,6 +209,7 @@ final class CaptureCoordinator {
 
     func pause() {
         guard let owned = controllableAttempt, !owned.isPaused else { return }
+        owned.derivative?.pause()
         hardware.pause()
         owned.isPaused = true
         enqueueCheckpoint(owned, paused: true)
@@ -210,14 +219,16 @@ final class CaptureCoordinator {
     func resume() throws {
         guard let owned = controllableAttempt, owned.isPaused else { return }
         try hardware.resume()
+        owned.derivative?.resume()
         owned.isPaused = false
         enqueueCheckpoint(owned, paused: false)
         onEvent(.resumed(owned.request.id))
     }
 
     func switchInputDevice(to uid: String?) throws {
-        guard controllableAttempt != nil else { return }
+        guard let owned = controllableAttempt else { return }
         try hardware.switchInputDevice(uid)
+        owned.derivative?.inputDeviceChanged()
     }
 
     private var controllableAttempt: Attempt? {
@@ -252,7 +263,18 @@ final class CaptureCoordinator {
         owned.isActive = true
         onEvent(.started(owned.request))
         guard !owned.wantsStop else { return }
-        if owned.request.liveTranscription, let streams { startPreview(owned, streams: streams, state: state) }
+        if owned.request.liveTranscription, let streams {
+            if let live = derivative.make(owned.request,session) {
+                let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
+                guard live.identity == identity else {
+                    live.expire(); onEvent(.status(owned.request.id,"Live transcription unavailable")); return
+                }
+                owned.derivative = live
+                live.register(.init(mic: state.microphoneEnabled ? streams.mic : nil,
+                    system: state.systemAudioEnabled ? streams.system : nil,language: owned.request.language))
+                onEvent(.liveBegan(owned.request.id))
+            } else { startPreview(owned,streams: streams,state: state) }
+        }
     }
 
     private func acceptsEvents(_ owned: Attempt) -> Bool {
@@ -308,6 +330,10 @@ final class CaptureCoordinator {
         hardware.bindEvents(nil)
         owned.statusClear?.cancel()
         owned.statusClear = nil
+        if let derivative = owned.derivative {
+            derivative.beginClosing()
+            onEvent(.liveEnded(owned.request.id))
+        }
         owned.previewStart?.cancel()
         if let preview = owned.preview {
             // Latch the service stopped promptly, even if receipt preparation is
@@ -320,6 +346,10 @@ final class CaptureCoordinator {
             _ = await owned.startup?.result
             if owned.hardwareDispatched { await self.hardware.stop() }
             let state = owned.hardwareDispatched ? self.hardware.snapshot() : .init()
+            if let derivative = owned.derivative {
+                await self.drainDerivative(derivative)
+                owned.derivative = nil
+            }
             await owned.previewStart?.value
             await owned.previewStop?.value
             owned.previewStart = nil
@@ -348,5 +378,21 @@ final class CaptureCoordinator {
         }
         owned.terminal = terminal
         return terminal
+    }
+
+    /// Unstructured tasks are intentional: a task-group race would join a
+    /// cancellation-ignoring loser and defeat the capture owner's deadline.
+    private func drainDerivative(_ session: CaptureLiveDerivative.Session) async {
+        let (completion,signal) = AsyncStream<Bool>.makeStream(bufferingPolicy: .bufferingOldest(1))
+        let drain = Task { await session.hardwareDidClose(); signal.yield(true); signal.finish() }
+        let sleep = self.sleep, deadline = derivativeDrainDeadline
+        let timer = Task {
+            do { try await sleep(deadline) } catch { return }
+            signal.yield(false); signal.finish()
+        }
+        var drained = false
+        for await result in completion { drained = result; break }
+        timer.cancel()
+        if !drained { drain.cancel(); session.expire() }
     }
 }

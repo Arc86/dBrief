@@ -37,6 +37,7 @@ actor LiveTranscriptStore {
         var lastBatch: AnnotationBatch?
     }
     let identity: LiveSessionIdentity
+    private let validity: RecordingDerivativeValidity
     private var lanes: [LiveSource: Lane] = [:]
     private var epochs: [UUID: LiveEpoch] = [:]
     private var epochOrder: [UUID: Int] = [:]
@@ -55,10 +56,37 @@ actor LiveTranscriptStore {
     private var lastKnownCutoff: Int64?
     private var isClosed = false
 
-    init(identity: LiveSessionIdentity) { self.identity = identity }
+    init(identity: LiveSessionIdentity, validity: RecordingDerivativeValidity = RecordingDerivativeValidity()) {
+        self.identity = identity; self.validity = validity
+    }
+
+    /// No mutation suspension points exist inside this shared validity lock.
+    /// Retirement therefore linearizes before every later derivative write.
+    private func mutate(_ body: () -> LiveStoreAdmission) -> LiveStoreAdmission {
+        (try? validity.withValidResult(body)) ?? .rejected(.closed)
+    }
+
+    func checkEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+        mutate { validateEpoch(owner: owner,epoch: epoch) }
+    }
+    func beginEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+        mutate { beginEpochWhileValid(owner: owner,epoch: epoch) }
+    }
+    func admit(_ event: LiveTranscriptEvent) -> LiveStoreAdmission { mutate { admitWhileValid(event) } }
+    func registerDiarizer(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID) -> LiveStoreAdmission {
+        mutate { registerDiarizerWhileValid(owner: owner,source: source,contextID: contextID) }
+    }
+    func annotate(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID, sequence: UInt64,
+                  annotations: [LiveSpeakerAnnotation], coverage: [LiveAttributionCoverage] = []) -> LiveStoreAdmission {
+        mutate { annotateWhileValid(owner: owner,source: source,contextID: contextID,sequence: sequence,annotations: annotations,coverage: coverage) }
+    }
+    func close(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { closeWhileValid(owner: owner) } }
+    func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission { mutate { publishFinalWhileValid(publication) } }
+    func clearPartials(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { clearPartialsWhileValid(owner: owner) } }
+
 
     /// Read-only preflight; beginEpoch repeats this check at the actual write.
-    func checkEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+    private func validateEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
         guard epoch.source.isCaptureSource, !epoch.engineRevision.isEmpty, epoch.engineRevision.utf8.count <= 256,
@@ -76,8 +104,8 @@ actor LiveTranscriptStore {
         return .accepted
     }
 
-    func beginEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
-        let admission = checkEpoch(owner: owner,epoch: epoch)
+    private func beginEpochWhileValid(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+        let admission = validateEpoch(owner: owner,epoch: epoch)
         guard admission == .accepted else { return admission }
         if let origin = epoch.meetingOriginNanoseconds {
             let old = lanes[epoch.source], start = qualifiedFrontiers[epoch.source] ?? 0
@@ -98,7 +126,7 @@ actor LiveTranscriptStore {
         return .accepted
     }
 
-    func admit(_ event: LiveTranscriptEvent) -> LiveStoreAdmission {
+    private func admitWhileValid(_ event: LiveTranscriptEvent) -> LiveStoreAdmission {
         guard event.identity == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
         guard var lane = lanes[event.source], lane.epoch.id == event.epochID else { return .rejected(.staleEpoch) }
@@ -218,7 +246,7 @@ actor LiveTranscriptStore {
         return true
     }
 
-    func registerDiarizer(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID) -> LiveStoreAdmission {
+    private func registerDiarizerWhileValid(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
         guard source.isCaptureSource, let lane = lanes[source] else { return .rejected(.invalidAnnotation) }
@@ -247,7 +275,7 @@ actor LiveTranscriptStore {
         }.compactMap(\.meetingOriginNanoseconds).min()
     }
 
-    func annotate(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID, sequence: UInt64,
+    private func annotateWhileValid(owner: LiveSessionIdentity, source: LiveSource, contextID: UUID, sequence: UInt64,
                   annotations updates: [LiveSpeakerAnnotation], coverage newCoverage: [LiveAttributionCoverage] = []) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
@@ -320,7 +348,7 @@ actor LiveTranscriptStore {
         }
     }
 
-    func close(owner: LiveSessionIdentity) -> LiveStoreAdmission {
+    private func closeWhileValid(owner: LiveSessionIdentity) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         if isClosed { return .duplicate }
         guard lanes.values.allSatisfy({ $0.settled == $0.progress.capturedSampleEnd }) else { return .rejected(.unsettledEpoch) }
@@ -333,7 +361,7 @@ actor LiveTranscriptStore {
 
     /// This is source publication, not persistence. The recording/pipeline owner
     /// supplies only a complete source after its durable transcription seam.
-    func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission {
+    private func publishFinalWhileValid(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission {
         guard publication.identity == identity else { return .rejected(.wrongOwner) }
         guard isClosed else { return .rejected(.unsettledEpoch) }
         if publication == finalPublication { return .duplicate }
@@ -385,7 +413,7 @@ actor LiveTranscriptStore {
     }
 
     /// Preview retirement changes display only; frozen evidence is unaffected.
-    func clearPartials(owner: LiveSessionIdentity) -> LiveStoreAdmission {
+    private func clearPartialsWhileValid(owner: LiveSessionIdentity) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .duplicate }
         for source in lanes.keys { lanes[source]?.partial = nil }
