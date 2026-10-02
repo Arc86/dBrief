@@ -45,6 +45,7 @@ final class RequestRouter: Sendable {
         let id = envelope.id
         let channel: MLChannel = {
             switch envelope.request {
+            case .live: .live
             case .parakeetTranscribe, .downloadParakeet, .isParakeetCached, .purgeParakeet: .parakeet
             default: .plugin
             }
@@ -66,6 +67,8 @@ final class RequestRouter: Sendable {
                 do {
                     try Task.checkCancellation()
                     switch envelope.request {
+                    case .live:
+                        send(.error(WireError(kind: .generic, message: "Live ASR requires the dedicated helper role")))
                     case let .transcribe(path, prompt, config, safeMode, unloadAfter):
                         let r = try await backend.transcribe(path: path, initialPrompt: prompt, config: config, safeMode: safeMode, unloadAfter: unloadAfter)
                         send(.transcriptionResult(r)); send(.finished)

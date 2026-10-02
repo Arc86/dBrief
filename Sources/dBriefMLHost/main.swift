@@ -34,6 +34,21 @@ if args.contains("--nemotron-evaluate") {
         exit(1)
     }
 }
+// Select the live role before constructing ordinary writers, diagnostics,
+// Whisper/SpeakerKit/LLM backends or their heavy-operation mutex.
+if args.contains("--nemotron-live") {
+    AppLogger.mirrorsToConsole = false
+    if Array(args.dropFirst()).sorted() == ["--help", "--nemotron-live"] {
+        FileHandle.standardOutput.write(Data("dBriefMLHost --nemotron-live --support-base <path>\nModels are explicitly selected by begin; no implicit download.\n".utf8))
+        exit(0)
+    }
+    guard args.count == 4, let i = args.firstIndex(of: "--support-base"), i + 1 < args.count,
+          args[i+1] != "--nemotron-live" else {
+        FileHandle.standardError.write(Data("Live helper: invalid arguments\n".utf8)); exit(2)
+    }
+    await LiveRequestLoop.run()
+    exit(0)
+}
 if let i = args.firstIndex(of: "--support-base"), i + 1 < args.count {
     SupportPaths.localAIPluginBase = URL(fileURLWithPath: args[i + 1])
 } else {

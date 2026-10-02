@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import dBriefWire
 
@@ -9,7 +10,10 @@ enum MLHostError: Error, Equatable {
     /// `StdoutWriter` single-consumer notes). Failing loud beats a leaked
     /// continuation that hangs the caller forever.
     case protocolViolation
+    case liveDeadline
 }
+
+enum MLHostRole: Sendable { case ordinary, live }
 
 /// Owns the child helper process, frames IO over its pipes, correlates replies
 /// by request id, demultiplexes per-channel state, and relaunches on crash.
@@ -17,6 +21,7 @@ actor MLHostConnection {
     private let binaryURL: URL
     private let supportBase: URL
     private let extraEnvironment: [String: String]
+    private let role: MLHostRole
 
     private var process: Process?
     private var stdinHandle: FileHandle?
@@ -34,7 +39,7 @@ actor MLHostConnection {
     // Per-request inboxes. A terminal event (result/error/finished) completes the call.
     private struct Pending {
         var onEvent: (MLEvent) -> Void
-        var onCrash: () -> Void
+        var onCrash: (Error) -> Void
         var privacyTrace: PrivacyMLTrace? = nil
     }
     private var pending: [UUID: Pending] = [:]
@@ -42,10 +47,87 @@ actor MLHostConnection {
     // Per-channel state stream continuations (vended to the proxies).
     private var stateContinuations: [MLChannel: AsyncStream<LocalAIPluginState>.Continuation] = [:]
 
-    init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:]) {
+    init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:], role: MLHostRole = .ordinary) {
         self.binaryURL = binaryURL
         self.supportBase = supportBase
         self.extraEnvironment = environment
+        self.role = role
+    }
+
+    private var liveReader = LiveFrameReader()
+    private var liveWriter: LivePipeWriter?
+    private var liveStream: AsyncThrowingStream<LiveSessionEvent, Error>.Continuation?
+    private var liveBegin: LiveSessionBegin?
+    private var liveRequestID: UUID?
+    private var liveGeneration = UUID()
+    private var liveUsed = false
+    private var liveEnded = false
+    private var liveDeadline: Task<Void, Never>?
+    private struct LiveEpochInbox { let source: LiveSource; var nextSequence: UInt64 = 0 }
+    private var liveEpochs: [UUID: LiveEpochInbox] = [:]
+    private var retiredEpochs: Set<UUID> = []
+
+    func beginLive(_ input: LiveSessionBegin) throws -> AsyncThrowingStream<LiveSessionEvent, Error> {
+        guard role == .live, !liveUsed, !liveEnded else { throw MLHostError.protocolViolation }
+        guard input.isValid else { throw LiveProtocolError.invalidConfiguration }
+        let id = UUID()
+        let envelope = RequestEnvelope(id: id, request: .live(.begin(input)))
+        try validateLiveFrame(envelope)
+        try ensureRunning()
+        liveUsed = true; liveBegin = input; liveRequestID = id
+        liveGeneration = UUID(); let generation = liveGeneration
+        for epoch in input.epochs { liveEpochs[epoch.id] = .init(source: epoch.source) }
+        let (stream, continuation) = AsyncThrowingStream<LiveSessionEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(512))
+        liveStream = continuation
+        continuation.onTermination = { @Sendable termination in
+            if case .cancelled = termination { Task { await self.abandonLive(generation) } }
+        }
+        write(envelope)
+        return stream
+    }
+
+    func sendLive(_ request: LiveSessionRequest) async throws -> LiveSessionReply {
+        guard role == .live, liveUsed, !liveEnded, process?.isRunning == true else { throw MLHostError.protocolViolation }
+        if case .begin = request { throw MLHostError.protocolViolation }
+        guard pending.count < 128 else { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
+        let id = UUID()
+        let envelope = RequestEnvelope(id: id, request: .live(request))
+        try validateLiveFrame(envelope)
+        var replacement: (UUID, LiveEpoch)?
+        if case .replaceEpoch(let identity, let oldID, let epoch) = request {
+            guard identity == liveBegin?.identity, liveEpochs[oldID]?.source == epoch.source,
+                  liveEpochs[epoch.id] == nil, !retiredEpochs.contains(epoch.id) else { throw LiveProtocolError.staleScope }
+            liveEpochs[epoch.id] = .init(source: epoch.source); replacement = (oldID,epoch)
+        }
+        let result: LiveSessionReply = try await withCheckedThrowingContinuation { cont in
+            let resolved = ResolveOnce()
+            pending[id] = Pending(onEvent: { event in
+                switch event {
+                case .live(.reply(let reply)): if resolved.tryResolve() { cont.resume(returning: reply) }
+                case .finished: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
+                default: if resolved.tryResolve() { cont.resume(throwing: MLHostError.protocolViolation) }
+                }
+            }, onCrash: { error in if resolved.tryResolve() { cont.resume(throwing: error) } })
+            write(.init(id: id,request: .live(request)))
+        }
+        if let (oldID, epoch) = replacement {
+            if result == .accepted { liveEpochs[oldID] = nil; retiredEpochs.insert(oldID) }
+            else {
+                // A rejected command cannot have legitimately started its decoder.
+                if liveEpochs[epoch.id]?.nextSequence != 0 { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
+                liveEpochs[epoch.id] = nil
+            }
+        }
+        return result
+    }
+
+    func armLiveDeadline(_ duration: Duration) {
+        guard role == .live, liveUsed, process != nil else { return }
+        liveDeadline?.cancel(); let generation = liveGeneration
+        liveDeadline = Task { [weak self] in
+            do { try await Task.sleep(for: duration) } catch { return }
+            await self?.expireLive(generation)
+        }
     }
 
     // MARK: state streams
@@ -61,6 +143,8 @@ actor MLHostConnection {
     /// Send a request and await its terminal event (`.error` throws the `WireError`,
     /// a process death throws `MLHostError.helperCrashed`).
     func call(_ request: MLRequest) async throws -> MLEvent {
+        guard role == .ordinary else { throw MLHostError.protocolViolation }
+        if case .live = request { throw MLHostError.protocolViolation }
         try ensureRunning()
         let expectsEvidence: Bool = switch request {
         case .transcribe: true
@@ -89,7 +173,7 @@ actor MLHostConnection {
                         default: if resolved.tryResolve() { cont.resume(returning: event) }
                         }
                     },
-                    onCrash: { if resolved.tryResolve() { cont.resume(throwing: MLHostError.helperCrashed) } },
+                    onCrash: { error in if resolved.tryResolve() { cont.resume(throwing: error) } },
                     privacyTrace: trace
                 )
                 write(RequestEnvelope(id: id, request: request))
@@ -106,6 +190,8 @@ actor MLHostConnection {
     func stream(_ request: MLRequest) -> AsyncThrowingStream<String, Error> {
         let progress = MLProgress.sink
         return AsyncThrowingStream { continuation in
+            guard role == .ordinary else { continuation.finish(throwing: MLHostError.protocolViolation); return }
+            if case .live = request { continuation.finish(throwing: MLHostError.protocolViolation); return }
             let id = UUID()
             do { try ensureRunning() } catch {
                 continuation.finish(throwing: error); return
@@ -120,7 +206,7 @@ actor MLHostConnection {
                     default: break
                     }
                 },
-                onCrash: { continuation.finish(throwing: MLHostError.helperCrashed) }
+                onCrash: { continuation.finish(throwing: $0) }
             )
             continuation.onTermination = { @Sendable _ in
                 Task { await self.send(.cancel, id: id) }
@@ -130,6 +216,7 @@ actor MLHostConnection {
     }
 
     func shutdown() {
+        if role == .live { failLive(MLHostError.helperCrashed); return }
         process?.terminate()
         process = nil
         stdinHandle = nil
@@ -138,16 +225,17 @@ actor MLHostConnection {
         // The retired process's exit is ignored below, so fail its callers here.
         let dead = pending
         pending.removeAll()
-        for (_, p) in dead { p.onCrash() }
+        for (_, p) in dead { p.onCrash(MLHostError.helperCrashed) }
     }
 
     // MARK: process lifecycle
 
     private func ensureRunning() throws {
         if process?.isRunning == true { return }
+        if role == .live, liveUsed { throw MLHostError.helperCrashed }
         let proc = Process()
         proc.executableURL = binaryURL
-        proc.arguments = ["--support-base", supportBase.path]
+        proc.arguments = (role == .live ? ["--nemotron-live"] : []) + ["--support-base", supportBase.path]
         var env = ProcessInfo.processInfo.environment
         for (k, v) in extraEnvironment { env[k] = v }
         proc.environment = env
@@ -159,15 +247,29 @@ actor MLHostConnection {
 
         // Serial consumer: chunks are ingested strictly in arrival order.
         ingestContinuation?.finish()
-        let (stream, continuation) = AsyncStream<Data>.makeStream()
+        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: role == .live ? .bufferingOldest(8) : .unbounded)
         self.ingestContinuation = continuation
         Task { [weak self] in
             for await data in stream { await self?.ingest(data) }
         }
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [continuation] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            continuation.yield(data)
+        if role == .live {
+            let latch = LiveReadFailureLatch()
+            stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self, continuation] handle in
+                do {
+                    guard let data = try LiveFrameReader.readChunk(from: handle) else { handle.readabilityHandler = nil; return }
+                    if case .dropped = continuation.yield(data), latch.claim() {
+                        continuation.finish(); Task { await self?.failLive(MLHostError.protocolViolation) }
+                    }
+                } catch {
+                    if latch.claim() { continuation.finish(); Task { await self?.failLive(MLHostError.helperCrashed) } }
+                }
+            }
+        } else {
+            stdoutPipe.fileHandleForReading.readabilityHandler = { [continuation] handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                continuation.yield(data)
+            }
         }
         proc.terminationHandler = { [weak self] exited in
             Task { await self?.handleTermination(of: exited) }
@@ -180,6 +282,12 @@ actor MLHostConnection {
         self.process = proc
         self.stdinHandle = stdinPipe.fileHandleForWriting
         self.reader = FrameReader()
+        if role == .live {
+            liveReader = LiveFrameReader()
+            liveWriter = LivePipeWriter(handle: stdinPipe.fileHandleForWriting) { [weak self] in
+                Task { await self?.failLive(MLHostError.helperCrashed) }
+            }
+        }
     }
 
     private func send(_ request: MLRequest, id: UUID) {
@@ -187,6 +295,7 @@ actor MLHostConnection {
     }
 
     private func ingest(_ data: Data) {
+        if role == .live { ingestLive(data); return }
         reader.append(data)
         for frame in reader.drainFrames() {
             guard let env = try? frameDecoder.decode(EventEnvelope.self, from: frame) else {
@@ -218,17 +327,121 @@ actor MLHostConnection {
         // A retired helper can exit after its replacement launched; only the
         // current process's exit may clear state and fail pending requests.
         guard exited === process else { return }
+        if role == .live { failLive(MLHostError.helperCrashed); return }
         let dead = pending
         pending.removeAll()
         process = nil
         stdinHandle = nil
-        for (_, p) in dead { p.onCrash() }
+        for (_, p) in dead { p.onCrash(MLHostError.helperCrashed) }
     }
 
     private func write(_ envelope: RequestEnvelope) {
+        if role == .live {
+            guard let payload = try? frameEncoder.encode(envelope), payload.count <= LiveFrameReader.maximumFrameBytes,
+                  liveWriter?.enqueue(FrameCodec.encode(payload)) == true else { failLive(MLHostError.protocolViolation); return }
+            return
+        }
         guard let stdinHandle, let payload = try? frameEncoder.encode(envelope) else { return }
         stdinHandle.write(FrameCodec.encode(payload))
     }
+
+    private func validateLiveFrame(_ envelope: RequestEnvelope) throws {
+        guard try frameEncoder.encode(envelope).count <= LiveFrameReader.maximumFrameBytes else { throw LiveProtocolError.oversizedFrame }
+    }
+
+    private func abandonLive(_ generation: UUID) {
+        guard generation == liveGeneration else { return }
+        failLive(MLHostError.helperCrashed)
+    }
+
+    private func expireLive(_ generation: UUID) {
+        guard generation == liveGeneration, process != nil else { return }
+        failLive(MLHostError.liveDeadline)
+    }
+
+    private func stopLiveProcess() {
+        liveDeadline?.cancel(); liveDeadline = nil
+        if let process, process.isRunning { _ = kill(process.processIdentifier, SIGKILL) }
+        process = nil
+        liveWriter?.retire(); liveWriter = nil; stdinHandle = nil
+        ingestContinuation?.finish(); ingestContinuation = nil
+    }
+
+    private func failLive(_ error: Error) {
+        guard role == .live else { return }
+        liveEnded = true
+        liveStream?.finish(throwing: error); liveStream = nil
+        let dead = pending; pending.removeAll()
+        stopLiveProcess()
+        for p in dead.values { p.onCrash(error) }
+    }
+
+    private func endLive(_ error: Error? = nil) {
+        liveEnded = true
+        if let error { liveStream?.finish(throwing: error) } else { liveStream?.finish() }
+        liveStream = nil
+        // A terminal session event can precede the final command's reply. Keep
+        // reading until its correlated ack/finished pair has drained.
+        if pending.isEmpty { stopLiveProcess() }
+    }
+
+    private func ingestLive(_ data: Data) {
+        guard process != nil else { return }
+        do {
+            for frame in try liveReader.feed(data) {
+                let envelope = try frameDecoder.decode(EventEnvelope.self,from: frame)
+                guard envelope.channel == .live else { throw MLHostError.protocolViolation }
+                if envelope.id == liveRequestID {
+                    guard !liveEnded else { continue }
+                    switch envelope.event {
+                    case .live(.reply(.accepted)): break
+                    case .live(.reply(.rejected(let error))): failLive(error)
+                    case .live(.event(let event)): try receiveLive(event)
+                    default: throw MLHostError.protocolViolation
+                    }
+                } else if let inbox = pending[envelope.id] {
+                    switch envelope.event {
+                    case .live(.reply), .finished: inbox.onEvent(envelope.event)
+                    default: throw MLHostError.protocolViolation
+                    }
+                    if case .finished = envelope.event { pending[envelope.id] = nil }
+                } else { throw MLHostError.protocolViolation }
+            }
+            if liveEnded, pending.isEmpty { stopLiveProcess() }
+        } catch { failLive(error is LiveProtocolError ? error : MLHostError.protocolViolation) }
+    }
+
+    private func receiveLive(_ event: LiveSessionEvent) throws {
+        guard let begin = liveBegin else { throw MLHostError.protocolViolation }
+        switch event {
+        case .lane(let lane):
+            guard lane.scope.identity == begin.identity else { throw MLHostError.protocolViolation }
+            if retiredEpochs.contains(lane.scope.epochID) { return }
+            guard var inbox = liveEpochs[lane.scope.epochID], inbox.source == lane.scope.source,
+                  lane.sequence == inbox.nextSequence, lane.sequence < .max else { throw MLHostError.protocolViolation }
+            // Embedded evidence must have the same source and epoch as its wire scope.
+            switch lane.payload {
+            case .partial(let partial):
+                guard partial.epochID == lane.scope.epochID, partial.source == lane.scope.source else { throw MLHostError.protocolViolation }
+            case .committed(let segment):
+                guard segment.id.epochID == lane.scope.epochID, segment.source == lane.scope.source else { throw MLHostError.protocolViolation }
+            case .settled(let interval):
+                guard interval.epochID == lane.scope.epochID, interval.source == lane.scope.source else { throw MLHostError.protocolViolation }
+            default: break
+            }
+            inbox.nextSequence += 1; liveEpochs[lane.scope.epochID] = inbox
+        case .finished(let identity), .failed(let identity,_):
+            guard identity == begin.identity else { throw MLHostError.protocolViolation }
+        }
+        guard let liveStream else { return }
+        if case .dropped = liveStream.yield(event) { throw MLHostError.protocolViolation }
+        switch event {
+        case .finished: endLive()
+        case .failed(_,let error): endLive(error)
+        default: break
+        }
+    }
+
 }
 
 /// Guards a continuation against double-resume across the event/crash closures.

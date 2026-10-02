@@ -25,12 +25,16 @@ var admissionClosed = false
 var interleavedProgressRequests: [RequestEnvelope] = []
 var previousProgressRequest: UUID?
 var reader = FrameReader()
+var liveStub = LiveHelperStub(mode: mode)
 while true {
     let chunk = FileHandle.standardInput.availableData
     if chunk.isEmpty { break }
     reader.append(chunk)
     for frame in reader.drainFrames() {
         guard let env = try? JSONDecoder().decode(RequestEnvelope.self, from: frame) else { continue }
+        if CommandLine.arguments.contains("--nemotron-live") || { if case .live = env.request { true } else { false } }() {
+            liveStub.handle(env,send: send); continue
+        }
         if mode == "closes-after-unload" {
             if admissionClosed {
                 send(EventEnvelope(id: env.id, channel: .plugin,
@@ -144,6 +148,13 @@ while true {
                 send(EventEnvelope(id: env.id, channel: .plugin, event: .voidResult))
                 send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
             }
+        case "chat-across-live-stop":
+            send(.init(id: env.id,channel: .plugin,event: .token("Fixture started")))
+            let completionFlag = flag("STUB_FLAG_1",default: "stub_chat_completion")
+            let deadline = Date().addingTimeInterval(10)
+            while !FileManager.default.fileExists(atPath: completionFlag.path), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            send(.init(id: env.id,channel: .plugin,event: .token("Fixture completed")))
+            send(.init(id: env.id,channel: .plugin,event: .finished))
         case "error":
             send(EventEnvelope(id: env.id, channel: .plugin,
                 event: .error(WireError(kind: .insufficientMemory, message: "no ram", model: "L", requiredGB: "9.9"))))

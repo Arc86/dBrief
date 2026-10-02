@@ -3,9 +3,11 @@ import Foundation
 public enum MLChannel: String, Sendable, Codable {
     case plugin     // WhisperKit + SpeakerKit + MLX state stream
     case parakeet   // Parakeet state stream
+    case live       // Dedicated live ASR role; never ordinary heavy operations
 }
 
 public enum MLRequest: Sendable, Codable {
+    case live(LiveSessionRequest)
     /// `unloadAfter: false` keeps the Whisper/SpeakerKit models resident for the
     /// next call — used by segmented (>30 min) recordings so each 30-min part
     /// doesn't pay a full model reload; the last part passes `true`.
@@ -37,6 +39,7 @@ public enum MLRequest: Sendable, Codable {
 }
 
 public enum MLEvent: Sendable, Codable {
+    case live(LiveSessionMessage)
     case privacy(MLPrivacyEvent)                // typed execution metadata, never a result
     case state(LocalAIPluginState)              // progress, carried per-channel
     case token(String)                          // one chunk of a streaming response

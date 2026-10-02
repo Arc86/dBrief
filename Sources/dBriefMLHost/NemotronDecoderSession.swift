@@ -91,20 +91,33 @@ actor NemotronDecoderSession {
     private var origin: Int64 = 0
     private var end: Int64 = 0
     private var consumed: Int64 = 0
+    private var retired = false
 
     init(factory: any NemotronDecoderMaking, emit: @escaping @Sendable (NemotronDecoderEvent) -> Void) {
         self.factory = factory; self.emit = emit
     }
 
-    func prepare(configuration: NemotronDecoderConfiguration, origin: Int64 = 0) async throws {
+    /// Immediate callback retirement does not await a native operation. The
+    /// owner settles its queued/unprocessed input separately and never reuses
+    /// this session. A native call may still unwind under the external deadline.
+    func retire() {
+        guard !retired else { return }
+        discardProvisional()
+        retired = true
+    }
+
+    @discardableResult
+    func prepare(configuration: NemotronDecoderConfiguration, origin: Int64 = 0) async throws -> UUID {
         try await operations.withLock { try await self.prepareLocked(configuration, origin: origin) }
     }
 
-    private func prepareLocked(_ configuration: NemotronDecoderConfiguration, origin: Int64) async throws {
+    private func prepareLocked(_ configuration: NemotronDecoderConfiguration, origin: Int64) async throws -> UUID {
+        guard !retired else { throw NemotronSessionError.unavailable }
         guard decoder == nil, origin >= end else { throw NemotronSessionError.invalidConfiguration }
         self.configuration = configuration
         self.origin = origin; end = origin; consumed = 0
         try await makeFreshDecoder()
+        return generation
     }
 
     private func makeFreshDecoder() async throws {
@@ -113,23 +126,25 @@ actor NemotronDecoderSession {
         let nextGate = NemotronPartialGate(generation: generation, emit: emit)
         do {
             let next = try await factory.makeDecoder(configuration: configuration, partial: nextGate.receive)
+            guard !retired else { throw NemotronSessionError.unavailable }
             try Task.checkCancellation()
             decoder = next; gate = nextGate
             emit(.ready(generation, origin))
             nextGate.activate()
         } catch {
             nextGate.retire()
-            decoder = nil; gate = nil
-            emit(.unavailable)
+            if !retired { decoder = nil; gate = nil; emit(.unavailable) }
             throw error
         }
     }
 
-    func append(samples: [Float], startSample: Int64) async throws {
+    @discardableResult
+    func append(samples: [Float], startSample: Int64) async throws -> NemotronDecoderProgress {
         try await operations.withLock { try await self.appendLocked(samples: samples, startSample: startSample) }
     }
 
-    private func appendLocked(samples: [Float], startSample: Int64) async throws {
+    private func appendLocked(samples: [Float], startSample: Int64) async throws -> NemotronDecoderProgress {
+        guard !retired else { throw NemotronSessionError.unavailable }
         let (nextEnd, overflow) = startSample.addingReportingOverflow(Int64(samples.count))
         guard !samples.isEmpty, samples.count <= 3200, samples.allSatisfy(\.isFinite),
               startSample == end, !overflow else { throw NemotronSessionError.invalidPacket }
@@ -140,6 +155,7 @@ actor NemotronDecoderSession {
         }
         do {
             let progress = try await decoder.process(samples: samples)
+            guard !retired else { throw NemotronSessionError.unavailable }
             try Task.checkCancellation()
             let count = end - origin
             guard progress.consumedSamples >= consumed, progress.consumedSamples <= count,
@@ -148,8 +164,9 @@ actor NemotronDecoderSession {
             }
             consumed = progress.consumedSamples
             emit(.progress(generation, progress))
+            return progress
         } catch {
-            discardProvisional()
+            if !retired { discardProvisional() }
             throw error
         }
     }
@@ -160,13 +177,14 @@ actor NemotronDecoderSession {
     }
 
     private func finishLocked(replacingDecoder: Bool) async throws -> NemotronCommittedUtterance {
-        guard let decoder else { throw NemotronSessionError.unavailable }
+        guard !retired, let decoder else { throw NemotronSessionError.unavailable }
         let output: NemotronDecoderOutput
         do {
             output = try await decoder.finish()
+            guard !retired else { throw NemotronSessionError.unavailable }
             try Task.checkCancellation()
         } catch {
-            discardProvisional()
+            if !retired { discardProvisional() }
             throw error
         }
         // Copy the result before retirement; padding must not create evidence

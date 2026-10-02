@@ -66,6 +66,21 @@ actor FixtureFactory: NemotronDecoderMaking {
 }
 
 @Suite struct NemotronDecoderLifecycleTests {
+    @Test func retirementRejectsSuspendedProcessAndItsLateCallbackWithoutFinishing() async throws {
+        let started = LifetimeSignal(), release = LifetimeSignal(), events = DecoderEvents(), factory = FixtureFactory(started: started, release: release)
+        let lane = NemotronDecoderSession(factory: factory, emit: events.append)
+        try await lane.prepare(configuration: .init(language: .nl))
+        let old = await factory.oldCallback()
+        let process = Task { try await lane.append(samples: [1, 2], startSample: 0) }
+        await started.wait()
+        await lane.retire()
+        old("Retired")
+        await release.signal()
+        await #expect(throws: NemotronSessionError.unavailable) { try await process.value }
+        #expect(events.commits.isEmpty && events.partials.isEmpty)
+        #expect(events.values.contains(.gap(0..<2)))
+        await #expect(throws: NemotronSessionError.unavailable) { try await lane.finish() }
+    }
     @Test func freshUtteranceDoesNotReuseTokensAndRejectsRetiredCallbacks() async throws {
         let factory = FixtureFactory(), events = DecoderEvents()
         let lane = NemotronDecoderSession(factory: factory, emit: events.append)
