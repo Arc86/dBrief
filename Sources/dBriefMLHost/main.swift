@@ -9,6 +9,31 @@ AppLogger.minimumLevel = .warning
 // Parse --support-base <path> so the helper resolves the SAME model cache as the
 // app (the helper's Bundle.main.bundleIdentifier differs from the app's).
 let args = CommandLine.arguments
+// The evaluation role runs before support-path checks, writers, diagnostics or
+// ordinary backends. It cannot take a normal helper's model lifetime/mutex.
+if args.contains("--nemotron-evaluate") {
+    AppLogger.mirrorsToConsole = false
+    let evaluationArgs = Array(args.dropFirst())
+    if evaluationArgs.count == 2, Set(evaluationArgs) == ["--nemotron-evaluate", "--help"] {
+        FileHandle.standardOutput.write(Data((NemotronEvaluationRunner.usage + "\n").utf8))
+        exit(0)
+    }
+    let options: NemotronEvaluationOptions
+    do { options = try NemotronEvaluationOptions.parse(evaluationArgs) }
+    catch {
+        FileHandle.standardError.write(Data("Nemotron evaluation: invalid arguments\n".utf8))
+        exit(2)
+    }
+    do {
+        let report = try await NemotronEvaluationRunner.run(options)
+        FileHandle.standardError.write(Data("Nemotron evaluation: \(report.status)\n".utf8))
+        exit(report.status == "completed" ? 0 : 1)
+    } catch {
+        // SDK/file errors may contain private paths or recognized content.
+        FileHandle.standardError.write(Data("Nemotron evaluation: failed\n".utf8))
+        exit(1)
+    }
+}
 if let i = args.firstIndex(of: "--support-base"), i + 1 < args.count {
     SupportPaths.localAIPluginBase = URL(fileURLWithPath: args[i + 1])
 } else {
