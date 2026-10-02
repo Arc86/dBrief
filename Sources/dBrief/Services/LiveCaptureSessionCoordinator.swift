@@ -33,6 +33,7 @@ actor LiveCaptureSessionCoordinator {
         let scope: LiveLaneScope
         let ready: Bool
         let gapReason: LiveGapReason?
+        let paused: Bool
     }
     private struct Lane {
         var epoch: LiveEpoch
@@ -56,13 +57,16 @@ actor LiveCaptureSessionCoordinator {
         var utteranceBoundary: LiveFinishBarrier?
         var utteranceBoundarySent = false
         var utteranceOrigin: Int64 = 0
+        var pauseBoundary: LiveFinishBarrier?
+        var pauseBoundarySent = false
+        var paused = false
         var closed = false
     }
     private enum Publication {
         case begin(LiveEpoch)
         case event(LiveEpoch, LiveTranscriptEvent.Payload)
         case rawLoss(LiveCaptureRawLoss)
-        case clearPartials
+        case clearPartials(LiveSource?)
         case close
     }
     private struct Replacement {
@@ -118,19 +122,34 @@ actor LiveCaptureSessionCoordinator {
         self.resources = resources; self.lease = lease
     }
 
-    var readySources: Set<LiveSource> { Set(lanes.values.filter { $0.ready && $0.cutReason == nil && !$0.closed }.map { $0.epoch.source }) }
+    var readySources: Set<LiveSource> { Set(lanes.values.filter { $0.ready && $0.cutReason == nil && !$0.closed && !$0.paused && $0.pauseBoundary == nil }.map { $0.epoch.source }) }
+    var pausedSources: Set<LiveSource> { Set(lanes.values.filter { $0.paused && !$0.closed }.map { $0.epoch.source }) }
+    /// The consumer has sent every frozen raw reservation and real converter
+    /// EOF output. Native settlement is ordered behind the captured frontier.
+    func requestPauseBoundary(scope: LiveLaneScope, boundary: LiveCaptureIngress.PauseBoundary? = nil) -> Bool {
+        guard scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return false }
+        observeIngressLoss(source: scope.source)
+        guard started, !closing, !terminal, !sealed, isValidOwner, scope.identity == input.identity,
+              let lane = lanes[scope.source], lane.epoch.id == scope.epochID,
+              lane.cutReason == nil, !lane.closed, !abandonedSources.contains(scope.source) else { return false }
+        if let ingress {
+            guard let boundary, ingress.canSealPause(boundary,scope: scope) else { return false }
+        } else if boundary != nil { return false }
+        if lane.paused || lane.pauseBoundary != nil { return true }
+        guard lane.ready else { return false }
+        lanes[scope.source]?.pauseBoundary = .init(scope: scope,nextPacketSequence: lane.nextPacket,sampleEnd: lane.captured,kind: .pause)
+        publish(.clearPartials(scope.source)); kick(scope.source); return true
+    }
     nonisolated func matches(input: LiveSessionBegin, ingress: LiveCaptureIngress) -> Bool {
         self.input == input && self.ingress === ingress && !invalidIngress
     }
     func streamState(source: LiveSource) -> StreamState? {
         guard started, !sealed, !terminal, isValidOwner, let current = lanes[source], !current.closed else { return nil }
-        if !abandonedSources.contains(source), current.cutReason == nil,
-           let reason = ingress?.continuityLoss(scope: .init(identity: input.identity,source: source,epochID: current.epoch.id)) {
-            cut(source,reason: reason)
-        }
+        observeIngressLoss(source: source)
         guard !terminal, let lane = lanes[source] else { return nil }
         return .init(epoch: lane.epoch,scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id),
-            ready: lane.ready && lane.cutReason == nil,gapReason: lane.cutReason ?? (lane.ready ? nil : .preparation))
+            ready: lane.ready && lane.cutReason == nil && !lane.paused && lane.pauseBoundary == nil,
+            gapReason: lane.cutReason ?? (lane.ready || lane.paused ? nil : .preparation),paused: lane.paused || lane.pauseBoundary != nil)
     }
     func abandonSource(scope: LiveLaneScope) {
         guard !terminal, isValidOwner, scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return }
@@ -224,7 +243,7 @@ actor LiveCaptureSessionCoordinator {
 
     func beginClosing() {
         guard started, !terminal, !closing else { return }
-        closing = true; publish(.clearPartials)
+        closing = true; publish(.clearPartials(nil))
         ingress?.closeInput()
         // A command may accept after cancellation. The old scope cannot then
         // receive a finish barrier; settle only that source without joining it.
@@ -259,7 +278,7 @@ actor LiveCaptureSessionCoordinator {
     func synchronizeStore() async { await publisher?.value }
     func maximumPacketSamples(scope: LiveLaneScope) -> Int? {
         guard started, !sealed, !terminal, isValidOwner, scope.identity == input.identity,
-              let lane = lanes[scope.source], lane.epoch.id == scope.epochID, !lane.closed,
+              let lane = lanes[scope.source], lane.epoch.id == scope.epochID, !lane.closed, !lane.paused, lane.pauseBoundary == nil,
               !abandonedSources.contains(scope.source) else { return nil }
         if !lane.ready || lane.cutReason != nil { return 3200 }
         return Int(min(3200,max(0,Self.maximumUtteranceSamples - (lane.captured - lane.utteranceOrigin))))
@@ -271,9 +290,12 @@ actor LiveCaptureSessionCoordinator {
         return enqueueUtteranceBoundary(scope: scope)
     }
     private func enqueueUtteranceBoundary(scope: LiveLaneScope) -> Bool {
+        guard scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return false }
+        observeIngressLoss(source: scope.source)
         guard started, !sealed, !terminal, isValidOwner, scope.identity == input.identity,
               let lane = lanes[scope.source], lane.epoch.id == scope.epochID, lane.ready,
-              lane.cutReason == nil, !lane.closed, !abandonedSources.contains(scope.source) else { return false }
+              lane.cutReason == nil, !lane.closed, !lane.paused, lane.pauseBoundary == nil,
+              !abandonedSources.contains(scope.source) else { return false }
         if let pending = lane.utteranceBoundary { return pending.sampleEnd == lane.captured }
         guard lane.captured > lane.settled else { return false }
         lanes[scope.source]?.utteranceBoundary = .init(scope: scope,nextPacketSequence: lane.nextPacket,sampleEnd: lane.captured,kind: .utterance)
@@ -290,6 +312,7 @@ actor LiveCaptureSessionCoordinator {
     /// space. On overload terminate drains it through the reserved terminal path.
     func publishIngressLosses(source: LiveSource) {
         guard started, !sealed, !terminal, isValidOwner, lanes[source] != nil, let ingress else { return }
+        observeIngressLoss(source: source)
         guard publications.count <= 512 - 128 else { terminate(.overload); return }
         for loss in ingress.takeLosses(source) { _ = publish(.rawLoss(loss)) }
     }
@@ -299,7 +322,8 @@ actor LiveCaptureSessionCoordinator {
     func replaceEpoch(scope: LiveLaneScope, epoch: LiveEpoch) async throws -> Bool {
         await synchronizeStore()
         guard !closing, !terminal, !abandonedSources.contains(scope.source), isValidOwner, scope.identity == input.identity, let lane = lanes[scope.source],
-              lane.epoch.id == scope.epochID, lane.cutReason != nil, lane.cutAcknowledgedEnd == lane.captured,
+              lane.epoch.id == scope.epochID, lane.pauseBoundary == nil,
+              (lane.paused && lane.settled == lane.captured || lane.cutReason != nil && lane.cutAcknowledgedEnd == lane.captured),
               !lane.pumping, replacements[scope.source] == nil, !knownEpochs.contains(epoch.id),
               epoch.source == scope.source, epoch.language == input.configuration.language.rawValue,
               epoch.engineRevision == lane.epoch.engineRevision, epoch.availability == .active,
@@ -369,11 +393,14 @@ actor LiveCaptureSessionCoordinator {
             guard event.sequence == lane.nextEvent, event.sequence < .max else { terminate(.unavailable); return }
             lane.nextEvent += 1; lanes[event.scope.source] = lane
             let source = event.scope.source
+            observeIngressLoss(source: source)
+            guard !terminal, let current = lanes[source] else { return }
+            lane = current
             switch event.payload {
             case .ready(_, let origin):
-                guard origin == lane.settled, !lane.closed else { cut(source,reason: .engineRestart); return }
+                guard origin == lane.settled, !lane.closed, !lane.paused else { cut(source,reason: .engineRestart); return }
                 if lane.cutReason == nil { lanes[source]?.ready = true }
-                if lanes.values.allSatisfy({ $0.ready }) {
+                if lanes.values.allSatisfy({ $0.ready || $0.paused }) {
                     if !sealed { timer?.cancel(); timerGeneration = nil }
                     if let resources, let lease { Task { await resources.confirmResident(lease) } }
                 }
@@ -394,12 +421,12 @@ actor LiveCaptureSessionCoordinator {
                       p.consumedSampleEnd >= lane.consumed, p.consumedSampleEnd <= p.admittedSampleEnd,
                       total.partialValue == p.admittedSampleEnd - p.consumedSampleEnd,
                       total.partialValue <= Int64(input.configuration.pendingSampleLimit),
-                      p.creditSamples == (lane.closed ? 0 : Int64(input.configuration.pendingSampleLimit) - total.partialValue) else { terminate(.unavailable); return }
+                      p.creditSamples == (lane.closed || lane.paused ? 0 : Int64(input.configuration.pendingSampleLimit) - total.partialValue) else { terminate(.unavailable); return }
                 if let ingress, !ingress.consume(scope: event.scope,end: p.consumedSampleEnd) { terminate(.unavailable); return }
                 lanes[source]?.admitted = p.admittedSampleEnd; lanes[source]?.consumed = p.consumedSampleEnd
                 publishProgress(source)
             case .partial(let partial):
-                guard !closing, lane.cutReason == nil else { return }
+                guard !closing, lane.cutReason == nil, !lane.paused, lane.pauseBoundary == nil else { return }
                 guard partial.epochID == lane.epoch.id, partial.source == source, partial.samples.isValid,
                       partial.samples.start >= lane.settled, partial.samples.end <= lane.admitted, partial.text.utf8.count <= 8192 else { terminate(.unavailable); return }
                 publish(.event(lane.epoch,.partial(partial)))
@@ -422,6 +449,16 @@ actor LiveCaptureSessionCoordinator {
                 if publish(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: interval.kind)))) { lanes[source]?.settled = samples.end }
             case .needsEpochReplacement: cut(source,reason: lane.cutReason ?? .engineRestart)
             case .barrierCompleted(_, let kind, let end):
+                if kind == .pause {
+                    guard lane.cutReason == nil else { return }
+                    guard let boundary = lane.pauseBoundary, lane.pauseBoundarySent,
+                          end == boundary.sampleEnd, lane.settled == end else { cut(source,reason: .engineRestart); return }
+                    lanes[source]?.pauseBoundary = nil; lanes[source]?.pauseBoundarySent = false
+                    lanes[source]?.paused = true; lanes[source]?.ready = false
+                    publish(.event(lane.epoch,.availability(.paused)))
+                    if !sealed, lanes.values.allSatisfy({ $0.ready || $0.paused }) { timer?.cancel(); timerGeneration = nil }
+                    kick(source); return
+                }
                 if kind == .utterance {
                     guard lane.cutReason == nil else { return }
                     guard let boundary = lane.utteranceBoundary, lane.utteranceBoundarySent,
@@ -446,10 +483,19 @@ actor LiveCaptureSessionCoordinator {
         terminate(nil)
     }
 
+    /// EOF can produce no output, and IPC settlement can race a later producer
+    /// loss. Neither path may flush the still provisional prefix across it.
+    private func observeIngressLoss(source: LiveSource) {
+        guard !terminal, isValidOwner, !abandonedSources.contains(source), let lane = lanes[source], !lane.closed,
+              lane.cutReason == nil, (!(sealed || lane.paused) || lane.settled < lane.captured),
+              let reason = ingress?.continuityLoss(scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id)) else { return }
+        cut(source,reason: reason)
+    }
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
         guard !terminal, var lane = lanes[source], !lane.closed else { return }
         lane.ready = false; lane.cutReason = reason; lane.packets.removeAll(); lane.receipts.removeAll()
         lane.utteranceBoundary = nil; lane.utteranceBoundarySent = false
+        lane.pauseBoundary = nil; lane.pauseBoundarySent = false; lane.paused = false
         ingress?.discardUndispatched(scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id))
         lanes[source] = lane
         if lane.settled < lane.captured, let range = evidence(lane.epoch,lane.settled,lane.captured) {
@@ -475,6 +521,7 @@ actor LiveCaptureSessionCoordinator {
 
     private func nextCommand(_ source: LiveSource) -> LiveSessionRequest? {
         guard isValidOwner else { terminate(.stopped); return nil }
+        observeIngressLoss(source: source)
         guard !terminal, !abandonedSources.contains(source), var lane = lanes[source], !lane.closed else { return nil }
         let scope = LiveLaneScope(identity: input.identity,source: source,epochID: lane.epoch.id)
         if let reason = lane.cutReason, lane.cutAcknowledgedEnd < lane.captured {
@@ -485,6 +532,13 @@ actor LiveCaptureSessionCoordinator {
             guard lane.nextDispatchedPacket <= boundary.nextPacketSequence else { cut(source,reason: .engineRestart); return nil }
             if lane.nextDispatchedPacket == boundary.nextPacketSequence {
                 lanes[source]?.utteranceBoundarySent = true; return .barrier(boundary)
+            }
+        }
+        if let boundary = lane.pauseBoundary {
+            if lane.pauseBoundarySent { lanes[source]?.pumping = false; return nil }
+            guard lane.nextDispatchedPacket <= boundary.nextPacketSequence else { cut(source,reason: .engineRestart); return nil }
+            if lane.nextDispatchedPacket == boundary.nextPacketSequence {
+                lanes[source]?.pauseBoundarySent = true; return .barrier(boundary)
             }
         }
         if !lane.packets.isEmpty {
@@ -505,7 +559,7 @@ actor LiveCaptureSessionCoordinator {
             // A rejected packet has still advanced the helper capture frontier;
             // a control cut is ordered after it and preserves the exact prefix.
             if case .packet = request { cut(source,reason: .unavailable) }
-            else if case .barrier(let boundary) = request, boundary.kind == .utterance { cut(source,reason: .unavailable) }
+            else if case .barrier(let boundary) = request, boundary.kind == .utterance || boundary.kind == .pause { cut(source,reason: .unavailable) }
             else { terminate(.unavailable) }
             return
         }
@@ -608,7 +662,7 @@ actor LiveCaptureSessionCoordinator {
                 }
                 result = await storeAccess.admit(.init(identity: input.identity,epochID: epoch.id,source: epoch.source,sequence: sequence,payload: mapped))
                 if result == .accepted || result == .duplicate { storeSequences[epoch.id] = sequence + 1 }
-            case .clearPartials: result = await store.clearPartials(owner: input.identity)
+            case .clearPartials(let source): result = await store.clearPartials(owner: input.identity,source: source)
             case .rawLoss(let loss): result = await store.recordCaptureLoss(owner: input.identity,loss: loss)
             case .close: result = await store.close(owner: input.identity)
             }

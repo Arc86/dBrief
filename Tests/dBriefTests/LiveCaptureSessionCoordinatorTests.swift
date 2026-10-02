@@ -81,6 +81,99 @@ private actor CapturePublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func oneSourcePauseRetiresOnlyItsPreviewAndMalformedAckKeepsTheHealthySource() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t,both: true)
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        for epoch in [f.mic,f.system] { await t.emit(f.event(epoch,0,.ready(generation: UUID(),originSample: 0))) }
+        try #require(await captureEventually { await c.readySources.count == 2 })
+        for epoch in [f.mic,f.system] {
+            #expect(await c.offer(scope: f.scope(epoch),samples: [1]) == .scheduled)
+        }
+        try #require(await captureEventually { await t.requests.count == 2 })
+        for epoch in [f.mic,f.system] {
+            await t.emit(f.event(epoch,1,.admitted(packetSequence: 0,sampleEnd: 1)))
+            await t.emit(f.event(epoch,2,.progress(.init(capturedSampleEnd: 1,admittedSampleEnd: 1,consumedSampleEnd: 1,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+            await t.emit(f.event(epoch,3,.partial(.init(epochID: epoch.id,source: epoch.source,revision: 0,samples: .init(start: 0,end: 1),text: epoch.source.rawValue))))
+        }
+        try #require(await captureEventually { await store.projection().partials.count == 2 })
+        #expect(await c.requestPauseBoundary(scope: f.scope(f.mic)))
+        await c.synchronizeStore()
+        #expect(await store.projection().partials.map(\.source) == [.system])
+        try #require(await captureEventually { await t.requests.count == 3 })
+        await t.emit(f.event(f.mic,4,.barrierCompleted(requestID: UUID(),kind: .pause,sampleEnd: 2)))
+        try #require(await captureEventually { await c.readySources == [.system] })
+        await c.synchronizeStore()
+        #expect(await store.projection().partials.map(\.source) == [.system])
+        #expect(!(await store.projection().isClosed))
+        await c.retire(); try await c.waitUntilClosed()
+    }
+    @Test(arguments: [false,true]) func pauseWaitsBehindAnUtteranceAndStopClosesItsExactSettledPrefix(stopDuringPause: Bool) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
+        let scope = f.scope(f.mic)
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        #expect(await c.offer(scope: scope,samples: [Float](repeating: 1,count: 100)) == .scheduled)
+        #expect(await c.requestUtteranceBoundary(scope: scope))
+        #expect(await c.offer(scope: scope,samples: [Float](repeating: 2,count: 100)) == .scheduled)
+        #expect(await c.requestPauseBoundary(scope: scope))
+        #expect(await c.requestPauseBoundary(scope: scope))
+        #expect(await c.offer(scope: scope,samples: [3]) == .rejected)
+        try #require(await captureEventually { await t.requests.count >= 2 })
+        #expect(await t.requests.count == 2)
+        await t.emit(f.event(f.mic,1,.admitted(packetSequence: 0,sampleEnd: 100)))
+        await t.emit(f.event(f.mic,2,.progress(.init(capturedSampleEnd: 100,admittedSampleEnd: 100,consumedSampleEnd: 100,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        await t.emit(f.event(f.mic,3,.committed(.init(id: .init(epochID: f.mic.id,index: 0),source: .microphone,range: .init(samples: .init(start: 0,end: 100),meeting: nil),text: "Before pause"))))
+        await t.emit(f.event(f.mic,4,.barrierCompleted(requestID: UUID(),kind: .utterance,sampleEnd: 100)))
+        await t.emit(f.event(f.mic,5,.ready(generation: UUID(),originSample: 100)))
+        try #require(await captureEventually { await t.requests.count >= 4 })
+        let requests = await t.requests
+        let barriers: [LiveFinishBarrier] = requests.compactMap { if case .barrier(let b) = $0 { b } else { nil } }
+        #expect(barriers.map(\.kind) == [.utterance,.pause])
+        #expect(barriers.map(\.sampleEnd) == [100,200])
+        if stopDuringPause { await c.beginClosing(); await c.hardwareDidClose() }
+        #expect(await t.requests.count == 4)
+        await t.emit(f.event(f.mic,6,.admitted(packetSequence: 1,sampleEnd: 200)))
+        await t.emit(f.event(f.mic,7,.progress(.init(capturedSampleEnd: 200,admittedSampleEnd: 200,consumedSampleEnd: 200,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        await t.emit(f.event(f.mic,8,.committed(.init(id: .init(epochID: f.mic.id,index: 1),source: .microphone,range: .init(samples: .init(start: 100,end: 200),meeting: nil),text: "Pause tail"))))
+        await t.emit(f.event(f.mic,9,.barrierCompleted(requestID: UUID(),kind: .pause,sampleEnd: 200)))
+        await t.emit(f.event(f.mic,10,.progress(.init(capturedSampleEnd: 200,admittedSampleEnd: 200,consumedSampleEnd: 200,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 0))))
+        try #require(await captureEventually { await c.pausedSources == [.microphone] })
+        #expect(await c.readySources.isEmpty)
+        if !stopDuringPause { await c.beginClosing(); await c.hardwareDidClose() }
+        try #require(await captureEventually { await t.requests.count >= 5 })
+        let final = await t.requests.last
+        #expect(final == .barrier(.init(scope: scope,nextPacketSequence: 2,sampleEnd: 200,kind: .finish)))
+        await t.emit(f.event(f.mic,11,.barrierCompleted(requestID: UUID(),kind: .finish,sampleEnd: 200)))
+        await t.emit(f.event(f.mic,12,.closed(sampleEnd: 200)))
+        await t.emit(.finished(f.identity)); try await c.waitUntilClosed()
+        let display = await store.projection()
+        #expect(display.isClosed && display.segments.map(\.text) == ["Before pause","Pause tail"])
+    }
+
+    @Test(arguments: [Optional<Int64>.none,Optional<Int64>.some(5_000_000_000)]) func emptyPauseResumesOnlyInAFreshEpochWithTheSuppliedOrigin(origin: Int64?) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        #expect(await c.requestPauseBoundary(scope: f.scope(f.mic)))
+        try #require(await captureEventually { await t.requests.count == 1 })
+        #expect(await t.requests.first == .barrier(.init(scope: f.scope(f.mic),nextPacketSequence: 0,sampleEnd: 0,kind: .pause)))
+        await t.emit(f.event(f.mic,1,.barrierCompleted(requestID: UUID(),kind: .pause,sampleEnd: 0)))
+        try #require(await captureEventually { await c.pausedSources == [.microphone] })
+        let fresh = LiveEpoch(id: UUID(),source: .microphone,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: origin)
+        #expect(try await c.replaceEpoch(scope: f.scope(f.mic),epoch: fresh))
+        try #require(await captureEventually { await c.readySources == [.microphone] })
+        await c.synchronizeStore()
+        let display = await store.projection()
+        #expect(display.lanes.first?.epoch == fresh)
+        #expect(await c.pausedSources.isEmpty)
+        #expect(await c.offer(scope: f.scope(f.mic),samples: [1]) == .rejected)
+        await c.retire(); try await c.waitUntilClosed()
+    }
     @Test func utteranceBoundaryOrdersItsExactPrefixBeforeLaterPacketsAndFinalClosure() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), (c,store) = await f.coordinator(t)
         try await c.start()

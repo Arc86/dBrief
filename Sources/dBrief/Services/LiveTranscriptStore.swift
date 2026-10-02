@@ -84,7 +84,9 @@ actor LiveTranscriptStore {
     }
     func close(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { closeWhileValid(owner: owner) } }
     func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission { mutate { publishFinalWhileValid(publication) } }
-    func clearPartials(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { clearPartialsWhileValid(owner: owner) } }
+    func clearPartials(owner: LiveSessionIdentity, source: LiveSource? = nil) -> LiveStoreAdmission {
+        mutate { clearPartialsWhileValid(owner: owner,source: source) }
+    }
     func recordCaptureLoss(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss) -> LiveStoreAdmission {
         mutate {
             guard owner == identity else { return .rejected(.wrongOwner) }
@@ -429,10 +431,10 @@ actor LiveTranscriptStore {
     }
 
     /// Preview retirement changes display only; frozen evidence is unaffected.
-    private func clearPartialsWhileValid(owner: LiveSessionIdentity) -> LiveStoreAdmission {
+    private func clearPartialsWhileValid(owner: LiveSessionIdentity, source: LiveSource?) -> LiveStoreAdmission {
         guard owner == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .duplicate }
-        for source in lanes.keys { lanes[source]?.partial = nil }
+        for candidate in lanes.keys where source == nil || source == candidate { lanes[candidate]?.partial = nil }
         return .accepted
     }
 

@@ -202,7 +202,7 @@ private actor LiveCaptureSourceControl {
         self.coordinator = coordinator; self.deadline = deadline; self.retryInterval = retryInterval
     }
     func ensure(_ lane: LiveCaptureSessionCoordinator.StreamState) {
-        guard !stopped, generation == nil, failedEpoch != lane.epoch.id else { return }
+        guard !stopped, !lane.paused, generation == nil, failedEpoch != lane.epoch.id else { return }
         let id = UUID(); generation = id; pendingScope = lane.scope
         let next = LiveEpoch(id: UUID(),source: lane.scope.source,engineRevision: lane.epoch.engineRevision,
             language: lane.epoch.language,meetingOriginNanoseconds: nil)

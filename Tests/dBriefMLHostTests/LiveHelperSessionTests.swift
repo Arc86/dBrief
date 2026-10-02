@@ -56,6 +56,24 @@ private struct LiveHelperFixture: Sendable {
 }
 
 @Suite struct LiveHelperSessionTests {
+    @Test func finalStopOfAPausedLanePreservesTheAlreadySettledPrefix() async throws {
+        let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
+        let helper = LiveASROrchestrator(loader: { _ in factory },emit: audit.append)
+        #expect(await helper.handle(f.begin(),requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.contains { if case .ready = $0.payload { true } else { false } } })
+        #expect(try await helper.handle(f.packet(0,0),requestID: UUID()) == .accepted)
+        #expect(await helper.handle(.barrier(.init(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: .pause)),requestID: UUID()) == .accepted)
+        try #require(await audit.wait { $0.contains { if case .barrierCompleted(_, .pause,1600) = $0.payload { true } else { false } } })
+        let committedBefore = audit.lanes.filter { if case .committed = $0.payload { true } else { false } }
+        let id = UUID(), finish = LiveFinishBarrier(scope: f.scope,nextPacketSequence: 1,sampleEnd: 1600,kind: .finish)
+        #expect(await helper.handle(.barrier(finish),requestID: id) == .accepted)
+        #expect(await audit.wait { $0.contains { if case .closed(1600) = $0.payload { true } else { false } } })
+        #expect(audit.events.contains(.finished(f.identity)))
+        #expect(audit.lanes.filter { if case .committed = $0.payload { true } else { false } } == committedBefore)
+        let beforeRetry = audit.events
+        #expect(await helper.handle(.barrier(finish),requestID: id) == .accepted)
+        #expect(audit.events == beforeRetry)
+    }
     @Test(arguments: [false,true]) func completedFinalBarrierRetriesAreIdempotent(twoLanes: Bool) async throws {
         let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
         let system = f.epoch(.system,id: UUID())

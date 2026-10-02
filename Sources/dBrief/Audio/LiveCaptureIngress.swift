@@ -5,6 +5,66 @@ import dBriefWire
 /// Immutable receipts identify ownership; all mutable accounting is under one
 /// lock, shared by capture callbacks, normalization and the coordinator actor.
 final class LiveCaptureIngress: @unchecked Sendable {
+    struct PauseBoundary: Sendable, Equatable {
+        let scope: LiveLaneScope
+        fileprivate let id: UUID
+        fileprivate let reservations: Set<UUID>
+    }
+    enum PauseReadiness: Equatable { case pending, drained, stale }
+    /// Linearizes with reservation, before hardware pause. A reserved buffer may
+    /// still be copied/yielded later; an empty consumer queue cannot prove drain.
+    func pauseAdmission(source: LiveSource) -> PauseBoundary? {
+        lock.withLock {
+            guard valid, !closing, !retired, var lane = lanes[source] else { return nil }
+            if let boundary = lane.pause { return boundary }
+            let ids = Set(raw.filter { $0.value.source == source && !$0.value.normalized && !$0.value.discarded }.keys)
+            let boundary = PauseBoundary(scope: lane.scope,id: UUID(),reservations: ids)
+            lane.pause = boundary; lanes[source] = lane; return boundary
+        }
+    }
+    /// Drained means each frozen raw reservation converted or was disposed. The
+    /// serial consumer must also finish its current send and the real converter.
+    func pauseReadiness(_ boundary: PauseBoundary) -> PauseReadiness {
+        lock.withLock {
+            guard !retired, lanes[boundary.scope.source]?.pause == boundary else { return .stale }
+            return pendingRawWhileLocked(boundary) ? .pending : .drained
+        }
+    }
+    func canSealPause(_ boundary: PauseBoundary, scope: LiveLaneScope) -> Bool {
+        lock.withLock {
+            guard !retired, let lane = lanes[scope.source], lane.scope == scope,
+                  boundary.scope == scope, lane.pause == boundary,
+                  !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil else { return false }
+            return !normalized.values.contains { $0.scope == scope && $0.remaining > 0 }
+        }
+    }
+    /// One coalesced wake slot per source, independent of native control. Its
+    /// caller rechecks readiness; wakes carry no inferred sample/time frontier.
+    func pauseUpdates(_ boundary: PauseBoundary) -> AsyncStream<Void>? {
+        lock.withLock {
+            let source = boundary.scope.source
+            guard !retired, lanes[source]?.pause == boundary, lanes[source]?.pauseWake == nil else { return nil }
+            let (stream,continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            lanes[source]?.pauseWake = continuation; continuation.yield(()); return stream
+        }
+    }
+    /// Invoke only after a fresh outer epoch is accepted and ready. The old
+    /// pause receipt cannot reopen its epoch, another source or terminal input.
+    func resumeAdmission(_ boundary: PauseBoundary, scope: LiveLaneScope) -> Bool {
+        lock.withLock {
+            guard !closing, !retired, var lane = lanes[scope.source], lane.pause == boundary,
+                  lane.scope == scope, scope.epochID != boundary.scope.epochID,
+                  !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil else { return false }
+            lane.pauseWake?.finish(); lane.pauseWake = nil; lane.pause = nil
+            lanes[scope.source] = lane; return true
+        }
+    }
+    private func pendingRawWhileLocked(_ boundary: PauseBoundary) -> Bool {
+        boundary.reservations.contains { id in
+            guard let item = raw[id] else { return false }
+            return !item.normalized && !item.discarded
+        }
+    }
     struct Statistics: Sendable {
         let pendingSamples: Int
         let rawBytes: Int
@@ -67,6 +127,8 @@ final class LiveCaptureIngress: @unchecked Sendable {
         var emittedOutput: Int64 = 0
         var losses: [LiveCaptureRawLoss] = []
         var continuityLoss: LiveGapReason?
+        var pause: PauseBoundary?
+        var pauseWake: AsyncStream<Void>.Continuation?
     }
     let input: LiveSessionBegin
     private let lock = NSLock()
@@ -162,6 +224,15 @@ final class LiveCaptureIngress: @unchecked Sendable {
                 lanes[source]?.continuityLoss = .stopped
                 addLoss(source,metadata: metadata,reason: .stopped); return nil
             }
+            if lane.pause != nil {
+                // Ordinary callbacks racing hardware pause are intentionally
+                // outside this derivative prefix; audio was already written.
+                if closingTail {
+                    lanes[source]?.continuityLoss = .stopped
+                    addLoss(source,metadata: metadata,reason: .stopped)
+                }
+                return nil
+            }
             guard frames > 0, bytes > 0, bytes <= byteLimit, rate.isFinite,
                   rate.rounded(.down) == rate, (1...384000).contains(rate),
                   let capacity = Self.capacity(frames: Int64(frames),rate: Int64(rate)),
@@ -210,6 +281,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             lane.converterFrames = frames.partialValue; lane.expectedOutput = expected; lane.emittedOutput = emitted.partialValue
             lanes[item.source] = lane
             item.capacity = 0; item.normalized = true; raw[ticket.id] = item
+            lanes[item.source]?.pauseWake?.yield(())
             let result = NormalizedReservation(owner: self,scope: scope)
             normalized[result.id] = .init(scope: scope,sourceEpoch: item.metadata.sourceEpoch,remaining: emittedSamples)
             return result
@@ -279,6 +351,10 @@ final class LiveCaptureIngress: @unchecked Sendable {
             guard !retired, var lane = lanes[old.source], lane.scope == old,
                   new.source == old.source, new.id != old.epochID, new.language == input.configuration.language.rawValue,
                   input.epochs.first(where: { $0.source == new.source })?.engineRevision == new.engineRevision else { return false }
+            if let boundary = lane.pause {
+                guard !pendingRawWhileLocked(boundary), lane.converterOwner == nil, lane.converterEpoch == nil,
+                      !normalized.values.contains(where: { $0.scope == old && $0.remaining > 0 }) else { return false }
+            }
             lane.native.removeAll(); lane.scheduled = 0; lane.consumed = 0
             lane.scope = .init(identity: input.identity,source: new.source,epochID: new.id)
             lane.continuityLoss = nil
@@ -301,6 +377,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             for id in normalized.keys { recordNormalizedLossWhileLocked(id,reason: .stopped) }
             for source in lanes.keys {
                 if let epoch = lanes[source]?.converterEpoch { recordConverterLossWhileLocked(source,sourceEpoch: epoch,reason: .stopped) }
+                lanes[source]?.pauseWake?.finish(); lanes[source]?.pauseWake = nil; lanes[source]?.pause = nil
             }
         }
     }
@@ -326,6 +403,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
         guard let lane = lanes[source], lane.converterOwner != nil, lane.converterEpoch == sourceEpoch,
               lane.converterFrames > 0, !lane.converterLossRecorded else { return }
         lanes[source]?.converterLossRecorded = true
+        lanes[source]?.continuityLoss = reason
         addLoss(source,metadata: .init(sourceEpoch: sourceEpoch,role: source == .microphone ? .mic : .system,
             timestamp: .unavailable,emittedFrames: nil,writeOutcome: .failed,converter: nil),reason: reason)
     }
@@ -346,6 +424,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
     private func recordNormalizedLossWhileLocked(_ id: UUID, reason: LiveGapReason) {
         guard var entry = normalized[id], entry.remaining > 0, !entry.lossRecorded else { return }
         entry.lossRecorded = true; normalized[id] = entry
+        if lanes[entry.scope.source]?.scope == entry.scope { lanes[entry.scope.source]?.continuityLoss = reason }
         addLoss(entry.scope.source,metadata: .init(sourceEpoch: entry.sourceEpoch,
             role: entry.scope.source == .microphone ? .mic : .system,timestamp: .unavailable,
             emittedFrames: nil,writeOutcome: .failed,converter: nil),reason: reason)
@@ -353,6 +432,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
     private func releaseRaw(_ id: UUID, reason: LiveGapReason) {
         lock.withLock {
             guard let item = raw.removeValue(forKey: id) else { return }
+            lanes[item.source]?.pauseWake?.yield(())
             if !item.normalized && !item.lossRecorded {
                 if lanes[item.source]?.scope == item.scope { lanes[item.source]?.continuityLoss = retired ? .stopped : reason }
                 addLoss(item.source,metadata: item.metadata,reason: retired ? .stopped : reason)
@@ -368,6 +448,7 @@ final class LiveCaptureIngress: @unchecked Sendable {
             // Discard ends admission, not the retained PCM allocation lifetime.
             // Its bytes and receipt slot return only on the last RAII release.
             raw[id] = item
+            lanes[item.source]?.pauseWake?.yield(())
         }
     }
     private func statisticsWhileLocked(_ source: LiveSource) -> Statistics {

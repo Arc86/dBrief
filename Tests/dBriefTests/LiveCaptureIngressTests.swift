@@ -6,6 +6,85 @@ import dBriefWire
 @testable import dBrief
 
 @Suite struct LiveCaptureIngressTests {
+    @Test func staleConverterOwnerAndOldNormalizedLossCannotPoisonTheAcceptedFreshScope() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input()), oldOwner = UUID(), freshOwner = UUID()
+        #expect(pool.claimConverter(scope: f.scope,owner: oldOwner))
+        let oldRaw = try #require(f.reserve(pool,count: 16))
+        let oldOutput = try #require(pool.normalize(oldRaw,scope: f.scope,emittedSamples: 16))
+        #expect(pool.retireConverter(source: .microphone,sourceEpoch: f.rawEpoch,owner: oldOwner))
+        let fresh = LiveEpoch(id: UUID(),source: .microphone,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: nil)
+        let freshScope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: fresh.id)
+        #expect(pool.replaceEpoch(old: f.scope,new: fresh))
+        #expect(pool.claimConverter(scope: freshScope,owner: freshOwner))
+        let freshRaw = try #require(f.reserve(pool,count: 16,start: 16))
+        let freshOutput = try #require(pool.normalize(freshRaw,scope: freshScope,emittedSamples: 16))
+        pool.recordConverterLoss(source: .microphone,sourceEpoch: f.rawEpoch,owner: oldOwner,reason: .overload)
+        oldOutput.recordLoss(reason: .overload)
+        #expect(pool.continuityLoss(scope: freshScope) == nil)
+        #expect(pool.schedule(freshOutput,start: 0,count: 16))
+        #expect(pool.ownsConverter(scope: freshScope,owner: freshOwner))
+    }
+    @Test func pauseFreezesExactReservationsIncludingALateYieldAndKeepsTheirAllocationCharged() async throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        let converterID = UUID()
+        #expect(pool.claimConverter(scope: f.scope,owner: converterID))
+        var late = f.reserve(pool,count: 16), alias = late
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        #expect(pool.pauseAdmission(source: .microphone) == boundary)
+        #expect(pool.pauseReadiness(boundary) == .pending)
+        #expect(f.reserve(pool,count: 16,start: 16) == nil)
+        #expect(pool.continuityLoss(scope: f.scope) == nil && pool.takeLosses(.microphone).isEmpty)
+        let updates = try #require(pool.pauseUpdates(boundary))
+        #expect(pool.pauseUpdates(boundary) == nil)
+        try #require(late != nil)
+        let normalized = try #require(pool.normalize(late!,scope: f.scope,emittedSamples: 16))
+        #expect(pool.pauseReadiness(boundary) == .drained)
+        #expect(!pool.canSealPause(boundary,scope: f.scope))
+        #expect(pool.statistics(.microphone).rawBytes == 64)
+        late = nil
+        withExtendedLifetime(alias) { #expect(pool.statistics(.microphone).rawBytes == 64) }
+        alias = nil
+        #expect(pool.statistics(.microphone).rawBytes == 0)
+        let fresh = LiveEpoch(id: UUID(),source: .microphone,engineRevision: f.epoch.engineRevision,language: "auto",meetingOriginNanoseconds: nil)
+        #expect(!pool.replaceEpoch(old: f.scope,new: fresh))
+        #expect(normalized.discard(16))
+        #expect(!pool.canSealPause(boundary,scope: f.scope))
+        #expect(!pool.replaceEpoch(old: f.scope,new: fresh))
+        #expect(pool.retireConverter(source: .microphone,sourceEpoch: f.rawEpoch,owner: converterID))
+        #expect(pool.canSealPause(boundary,scope: f.scope))
+        #expect(pool.replaceEpoch(old: f.scope,new: fresh))
+        #expect(f.reserve(pool,count: 16,start: 32) == nil)
+        #expect(!pool.resumeAdmission(boundary,scope: f.scope))
+        #expect(pool.resumeAdmission(boundary,scope: .init(identity: f.identity,source: .microphone,epochID: fresh.id)))
+        var iterator = updates.makeAsyncIterator()
+        #expect(await iterator.next() != nil)
+        #expect(await iterator.next() == nil)
+        #expect(pool.pauseReadiness(boundary) == .stale)
+        #expect(!pool.canSealPause(boundary,scope: f.scope))
+        #expect(f.reserve(pool,count: 16,start: 48) != nil)
+    }
+
+    @Test func pausedDisposalWakesDrainAndClosingNeverReopensAdmission() async throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        var raw = f.reserve(pool,count: 16)
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        let updates = try #require(pool.pauseUpdates(boundary))
+        raw?.discard(reason: .overload)
+        #expect(pool.pauseReadiness(boundary) == .drained)
+        #expect(pool.statistics(.microphone).rawBytes == 64)
+        raw = nil
+        #expect(pool.statistics(.microphone).rawBytes == 0)
+        pool.closeInput()
+        #expect(pool.pauseAdmission(source: .microphone) == nil)
+        #expect(!pool.resumeAdmission(boundary,scope: f.scope))
+        #expect(pool.reserveRaw(source: .microphone,metadata: f.metadata(16,count: 16),frames: 16,rate: 16000,bytes: 64,closingTail: true) == nil)
+        pool.retireInput()
+        var iterator = updates.makeAsyncIterator()
+        #expect(await iterator.next() != nil)
+        #expect(await iterator.next() == nil)
+        #expect(pool.pauseReadiness(boundary) == .stale)
+        #expect(pool.takeLosses(.microphone).contains { $0.reason == .stopped })
+    }
     @Test func discardedRawCreditCannotFreeAllocationBytesBeforeItsLastReceiptDies() throws {
         let f = Fixture(), pool = LiveCaptureIngress(input: f.input(),rawByteLimit: 64)
         var ticket = f.reserve(pool,count: 16)

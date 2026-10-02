@@ -15,6 +15,8 @@ private actor StreamNativeFixture {
     var holdReplacement = false
     var holdSystemFinish = false
     var holdShutdown = false
+    var holdBarrier = false
+    var barrierWaiter: CheckedContinuation<Void, Never>?
     var consumeMicrophone = true
     var beginWaiter: CheckedContinuation<Void, Never>?
     var replacementWaiter: CheckedContinuation<Void, Never>?
@@ -63,7 +65,8 @@ private actor StreamNativeFixture {
             let source = barrier.scope.source
             guard epochs[source]?.id == barrier.scope.epochID else { return .rejected(.staleScope) }
             guard barrier.sampleEnd == (ends[source] ?? 0), barrier.nextPacketSequence == (packetSequences[source] ?? 0) else { return .rejected(.outOfOrder) }
-            if barrier.kind == .finish || barrier.kind == .utterance {
+            if barrier.kind == .finish || barrier.kind == .utterance || barrier.kind == .pause {
+                if holdBarrier { await withCheckedContinuation { barrierWaiter = $0 } }
                 if barrier.kind == .finish && source == .system && holdSystemFinish { await withCheckedContinuation { systemFinishWaiter = $0 } }
                 let start = settled[source] ?? 0
                 if barrier.sampleEnd > start {
@@ -76,7 +79,9 @@ private actor StreamNativeFixture {
                 if barrier.kind == .finish {
                     emit(source,.closed(sampleEnd: barrier.sampleEnd)); closed.insert(source)
                     if closed.count == input.epochs.count { output.yield(.finished(input.identity)) }
-                } else { emit(source,.ready(generation: UUID(),originSample: barrier.sampleEnd)) }
+                } else if barrier.kind == .utterance { emit(source,.ready(generation: UUID(),originSample: barrier.sampleEnd)) }
+                else { emit(source,.progress(.init(capturedSampleEnd: barrier.sampleEnd,admittedSampleEnd: barrier.sampleEnd,
+                    consumedSampleEnd: barrier.sampleEnd,queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 0))) }
             }
         case .replaceEpoch(_,_,let epoch):
             if holdReplacement { await withCheckedContinuation { replacementWaiter = $0 } }
@@ -92,10 +97,12 @@ private actor StreamNativeFixture {
         return .accepted
     }
     func configure(begin: Bool = false, replacement: Bool = false, systemFinish: Bool = false,
-                   shutdown: Bool = false, consumeMicrophone: Bool = true) {
+                   shutdown: Bool = false, consumeMicrophone: Bool = true, barrier: Bool = false) {
         holdBegin = begin; holdReplacement = replacement; holdSystemFinish = systemFinish
         holdShutdown = shutdown; self.consumeMicrophone = consumeMicrophone
+        holdBarrier = barrier
     }
+    func releaseBarrier() { holdBarrier = false; barrierWaiter?.resume(); barrierWaiter = nil }
     func release() { holdBegin = false; holdReplacement = false; beginWaiter?.resume(); beginWaiter = nil; replacementWaiter?.resume(); replacementWaiter = nil }
     func releaseReplacement() { holdReplacement = false; replacementWaiter?.resume(); replacementWaiter = nil }
     func releaseSystemFinish() { holdSystemFinish = false; systemFinishWaiter?.resume(); systemFinishWaiter = nil }
@@ -140,6 +147,120 @@ private func streamEventually(_ predicate: @Sendable () async -> Bool) async -> 
 }
 
 @Suite struct LiveCaptureStreamSessionTests {
+    @Test(arguments: ["pause","finish","utterance"]) func zeroConverterTailCannotFlushProvisionalTextAcrossFrozenRawLoss(kind: String) async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        try await core.start()
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        let epoch = try #require(input.epochs.first)
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: epoch.id)
+        let normalizer = try LiveASRNormalizer(scope: scope,ingress: pool)
+        let batch = try #require(try normalizer.convert(f.buffer(pool,frames: 1600,rate: 16000)))
+        #expect(await core.offer(scope: scope,samples: batch.samples,reservation: batch.reservation) == .scheduled)
+        try #require(await streamEventually { await native.packets.count == 1 })
+        let lost = try f.buffer(pool,frames: 1600,rate: 16000,start: 1600)
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        lost.ingress?.discard(reason: .overload)
+        let tail = try normalizer.finish()
+        #expect(tail == nil && pool.canSealPause(boundary,scope: scope))
+        if kind == "pause" { #expect(!(await core.requestPauseBoundary(scope: scope,boundary: boundary))) }
+        else if kind == "utterance" { #expect(!(await core.requestUtteranceBoundary(scope: scope))) }
+        else { await core.beginClosing(); await core.hardwareDidClose(); try await core.waitUntilClosed() }
+        #expect(await streamEventually { await native.requests.contains { if case .cut(_,_,_,.overload) = $0 { true } else { false } } })
+        await core.publishIngressLosses(source: .microphone); await core.synchronizeStore()
+        let display = await store.projection()
+        #expect(display.segments.isEmpty)
+        #expect(display.coverage.contains { $0.kind == .gap(.overload) && $0.range.samples == .init(start: 0,end: 1600) })
+        if kind != "finish" { await core.retire(); try await core.waitUntilClosed() }
+    }
+
+    @Test(arguments: ["pause","finish"]) func rawLossWhileAFlushCommandIsHeldRejectsItsLateCommit(kind: String) async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
+        await native.configure(barrier: true)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        try await core.start()
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        let epoch = try #require(input.epochs.first)
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: epoch.id)
+        let normalizer = try LiveASRNormalizer(scope: scope,ingress: pool)
+        let batch = try #require(try normalizer.convert(f.buffer(pool,frames: 1600,rate: 16000)))
+        #expect(await core.offer(scope: scope,samples: batch.samples,reservation: batch.reservation) == .scheduled)
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        let tail = try normalizer.finish(); #expect(tail == nil)
+        if kind == "pause" { #expect(await core.requestPauseBoundary(scope: scope,boundary: boundary)) }
+        else { await core.beginClosing(); await core.hardwareDidClose() }
+        try #require(await streamEventually { await native.barrierWaiter != nil })
+        pool.recordLoss(source: .microphone,metadata: .init(sourceEpoch: f.rawEpoch,role: .mic,timestamp: .unavailable,
+            emittedFrames: .init(startFrame: 1600,frameCount: 1600,sampleRate: 16000),writeOutcome: .failed,converter: nil),reason: .overload)
+        await native.releaseBarrier()
+        try #require(await streamEventually {
+            if kind == "finish" { return await store.projection().isClosed }
+            if await core.pausedSources.contains(.microphone) { return true }
+            return await native.requests.contains { if case .cut = $0 { true } else { false } }
+        })
+        await core.publishIngressLosses(source: .microphone); await core.synchronizeStore()
+        let display = await store.projection()
+        #expect(display.segments.isEmpty)
+        #expect(display.coverage.contains { $0.kind == .gap(.overload) && $0.range.samples == .init(start: 0,end: 1600) })
+        await core.retire(); try await core.waitUntilClosed()
+    }
+
+    @Test(arguments: ["converter","normalized-tail"]) func converterAndUnclaimedEofLossCutOnlyTheAdmittedProvisionalPrefix(kind: String) async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        try await core.start()
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        let epoch = try #require(input.epochs.first)
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: epoch.id)
+        let normalizer = try LiveASRNormalizer(scope: scope,ingress: pool)
+        let batch = try #require(try normalizer.convert(f.buffer(pool)))
+        #expect(await core.offer(scope: scope,samples: batch.samples,reservation: batch.reservation) == .scheduled)
+        var held: LiveASRNormalizer.Batch?
+        let reason: LiveGapReason = kind == "converter" ? .deviceInterruption : .overload
+        if kind == "converter" { normalizer.cancel(reason: reason) }
+        else { held = try normalizer.finish(); try #require(held != nil); held?.reservation.recordLoss(reason: reason) }
+        #expect(pool.continuityLoss(scope: scope) == reason)
+        await core.beginClosing(); await core.hardwareDidClose(); try await core.waitUntilClosed()
+        let display = await store.projection()
+        #expect(display.segments.isEmpty)
+        #expect(display.coverage.contains { $0.kind == .gap(reason) && $0.range.samples == .init(start: 0,end: Int64(batch.samples.count)) })
+        #expect(display.captureLosses.contains { $0.reason == reason && $0.frames == nil })
+        if kind == "normalized-tail" {
+            #expect(pool.statistics(.microphone).pendingSamples == 4096 + (held?.samples.count ?? 0))
+            held = nil; #expect(pool.statistics(.microphone).pendingSamples == 4096)
+        }
+    }
+    @Test func pauseCannotSealUntilTheRealConverterTailAndOriginalReceiptAreAdmitted() async throws {
+        let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
+        let store = LiveTranscriptStore(identity: f.identity)
+        let core = LiveCaptureSessionCoordinator(input: input,store: store,transport: await native.transport(),ingress: pool)
+        try await core.start()
+        try #require(await streamEventually { await core.readySources.count == 1 })
+        let epoch = try #require(input.epochs.first)
+        let scope = LiveLaneScope(identity: f.identity,source: .microphone,epochID: epoch.id)
+        let normalizer = try LiveASRNormalizer(scope: scope,ingress: pool)
+        let batch = try #require(try normalizer.convert(f.buffer(pool)))
+        let boundary = try #require(pool.pauseAdmission(source: .microphone))
+        #expect(pool.pauseReadiness(boundary) == .drained)
+        #expect(!(await core.requestPauseBoundary(scope: scope,boundary: boundary)))
+        #expect(await core.offer(scope: scope,samples: batch.samples,reservation: batch.reservation) == .scheduled)
+        #expect(!(await core.requestPauseBoundary(scope: scope,boundary: boundary)))
+        if let tail = try normalizer.finish() {
+            #expect(!(await core.requestPauseBoundary(scope: scope,boundary: boundary)))
+            #expect(await core.offer(scope: scope,samples: tail.samples,reservation: tail.reservation) == .scheduled)
+        }
+        #expect(pool.canSealPause(boundary,scope: scope))
+        #expect(!(await core.requestPauseBoundary(scope: scope)))
+        #expect(await core.requestPauseBoundary(scope: scope,boundary: boundary))
+        try #require(await streamEventually { await native.barriers.contains { $0.kind == .pause } })
+        let barrier = await native.barriers.first
+        #expect(barrier?.sampleEnd == 1600 && barrier?.nextPacketSequence == 2)
+        #expect(await native.packets.reduce(0) { $0 + $1.sampleCount } == 1600)
+        await core.retire(); try await core.waitUntilClosed()
+    }
     @Test func realStreamSplitsAtTheFifteenSecondBoundaryWithoutResettingItsConverterOrEpoch() async throws {
         let f = StreamFixture(), input = f.input(), pool = LiveCaptureIngress(input: input), native = StreamNativeFixture(input)
         let store = LiveTranscriptStore(identity: f.identity)

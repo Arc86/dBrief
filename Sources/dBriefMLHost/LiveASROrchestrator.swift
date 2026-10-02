@@ -87,6 +87,13 @@ actor LiveASROrchestrator {
             guard !closed else { return .rejected(.closed) }
             if let prior = lane.barrier { return prior.0 == requestID && prior.1 == barrier ? .accepted : .rejected(.outOfOrder) }
             guard barrier.sampleEnd == lane.captured, barrier.nextPacketSequence == lane.nextPacket else { return .rejected(.outOfOrder) }
+            if lane.state == .paused {
+                guard barrier.kind == .finish, lane.settled == lane.captured else { return .rejected(.closed) }
+                // Pause already flushed this exact prefix. Closing it cannot
+                // call finish on the retired decoder or create another segment.
+                finishBarrier(barrier.scope.source,id: requestID,barrier: barrier)
+                return .accepted
+            }
             if lane.state == .needsReplacement || lane.state == .loading {
                 guard barrier.kind != .utterance else { return .rejected(.unavailable) }
                 cut(barrier.scope.source, reason: .stopped)
