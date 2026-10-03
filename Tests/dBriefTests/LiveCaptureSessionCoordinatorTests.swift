@@ -102,6 +102,41 @@ private actor CaptureFrontierPublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test(arguments: [false,true])
+    func unsolicitedVADStatusFailsClosedWithoutResidencyProof(configured: Bool) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let original = f.input()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "silero-r1",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let input = LiveSessionBegin(identity: original.identity,configuration: original.configuration,epochs: original.epochs,vad: configured ? vad : nil)
+        let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            qualificationID: "fixture-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: ["fixture-chat":300],backgroundWorkQualified: false,vad: configured ? vad.identity : nil,vadBytes: configured ? 120 : nil)
+        let resources = LiveModelResourcePolicy(profiles: [profile])
+        let lease = try await resources.admit(identity: f.identity,request: .init(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",
+            chunkMs: 1120,sourceCount: 1,attributionRequested: false,vad: configured ? vad : nil),measurement: .init(availableBytes: 1000,pressure: .normal))
+        let c = LiveCaptureSessionCoordinator(input: input,store: store,transport: await t.transport(),resources: resources,lease: lease)
+        await t.holdTeardown()
+        defer { Task { await t.release(); await c.retire(); await resources.release(lease) } }
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        // Isolate the pending VAD charge from ASR allocation in the configured
+        // fixture. If unsolicited VAD ready confirms residency, this job fits.
+        if configured { await resources.confirmResident(lease) }
+        #expect(await resources.decide(.localChat(model: "fixture-chat"),measurement: .init(availableBytes: 400,pressure: .normal)) == .deferred)
+        // Successful-looking module readiness must still fail closed while its
+        // native/credit/coordinator integration remains unavailable.
+        await t.emit(f.event(f.mic,0,.vad(.ready(identity: vad.identity,contextID: UUID(),originSample: 0))))
+        await t.emit(f.event(f.mic,1,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually {
+            guard await store.projection().isClosed else { return false }
+            return await t.shutdowns == 1
+        })
+        #expect(await c.readySources.isEmpty)
+        #expect(await resources.reservedBytes == (configured ? 520 : 400))
+        #expect(await resources.decide(.localChat(model: "fixture-chat"),measurement: .init(availableBytes: 400,pressure: .normal)) == .deferred)
+    }
+
     @Test func configuredVADRequiresExplicitASREvidenceInEveryProgressFrame() async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
         let original = f.input()

@@ -431,6 +431,11 @@ actor LiveCaptureSessionCoordinator {
             guard !terminal, let current = lanes[source] else { return }
             lane = current
             switch event.payload {
+            case .vad:
+                // Configured VAD is refused by the helper until its native
+                // input/credit integration is ready. Unsolicited status cannot
+                // silently certify readiness or resident allocation here.
+                terminate(.unavailable)
             case .ready(_, let origin):
                 guard origin == lane.settled, !lane.closed, !lane.paused else { cut(source,reason: .engineRestart); return }
                 if lane.cutReason == nil { lanes[source]?.ready = true }

@@ -121,6 +121,7 @@ public struct LiveHelperProgress: Codable, Sendable, Equatable {
 
 public struct LiveLaneEvent: Codable, Sendable, Equatable {
     public enum Payload: Codable, Sendable, Equatable {
+        case vad(LiveVADModuleEvent)
         case ready(generation: UUID, originSample: Int64)
         case admitted(packetSequence: UInt64, sampleEnd: Int64)
         case progress(LiveHelperProgress), partial(LivePartial), committed(CommittedLiveSegment), settled(LiveCoverageInterval)
