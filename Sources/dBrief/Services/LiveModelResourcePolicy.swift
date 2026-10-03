@@ -13,6 +13,20 @@ struct LiveResourceProfile: Sendable, Equatable {
     let headroomBytes: UInt64
     let concurrentChatModels: [String: UInt64]
     let backgroundWorkQualified: Bool
+    let vad: LiveVADIdentity?
+    /// Qualified total peak cost at this exact source count, including shared
+    /// allocation and every source's native manager/scratch. Never an estimate.
+    let vadBytes: UInt64?
+    init(id: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
+         qualificationID: String, asrBytes: UInt64, attributionBytes: UInt64?, headroomBytes: UInt64,
+         concurrentChatModels: [String: UInt64], backgroundWorkQualified: Bool,
+         vad: LiveVADIdentity? = nil, vadBytes: UInt64? = nil) {
+        self.id = id; self.hardware = hardware; self.modelRevision = modelRevision; self.chunkMs = chunkMs
+        self.sourceCount = sourceCount; self.qualificationID = qualificationID; self.asrBytes = asrBytes
+        self.attributionBytes = attributionBytes; self.headroomBytes = headroomBytes
+        self.concurrentChatModels = concurrentChatModels; self.backgroundWorkQualified = backgroundWorkQualified
+        self.vad = vad; self.vadBytes = vadBytes
+    }
 }
 struct LiveResourceRequest: Sendable, Equatable {
     let profileID: String
@@ -21,6 +35,12 @@ struct LiveResourceRequest: Sendable, Equatable {
     let chunkMs: Int
     let sourceCount: Int
     let attributionRequested: Bool
+    let vad: LiveVADConfiguration?
+    init(profileID: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
+         attributionRequested: Bool, vad: LiveVADConfiguration? = nil) {
+        self.profileID = profileID; self.hardware = hardware; self.modelRevision = modelRevision
+        self.chunkMs = chunkMs; self.sourceCount = sourceCount; self.attributionRequested = attributionRequested; self.vad = vad
+    }
 }
 struct LiveResourceMeasurement: Sendable {
     enum Pressure: Sendable { case normal, warning, critical }
@@ -59,8 +79,15 @@ actor LiveModelResourcePolicy {
         var attributionRunning: Bool
         var attributionResident = false
         var resident = false
-        var bytes: UInt64 { profile.asrBytes + (attributionRunning ? profile.attributionBytes ?? 0 : 0) }
-        var pendingAttributionBytes: UInt64 { attributionRunning && !attributionResident ? profile.attributionBytes ?? 0 : 0 }
+        var vadResident = false
+        // All sums are validated against the profile's maximum allocation
+        // before Reservation exists. VAD stays charged until helper teardown.
+        var mandatoryBytes: UInt64 { profile.asrBytes + (profile.vadBytes ?? 0) }
+        var bytes: UInt64 { mandatoryBytes + (attributionRunning ? profile.attributionBytes ?? 0 : 0) }
+        var pendingOptionalBytes: UInt64 {
+            (vadResident ? 0 : profile.vadBytes ?? 0) +
+                (attributionRunning && !attributionResident ? profile.attributionBytes ?? 0 : 0)
+        }
     }
     private let profiles: [String: [LiveResourceProfile]]
     private var active: Reservation?
@@ -86,7 +113,8 @@ actor LiveModelResourcePolicy {
         guard let candidates = profiles[request.profileID] else { throw LiveResourceRejection.unsupported }
         guard candidates.count == 1, let profile = candidates.first, Self.valid(profile) else { throw LiveResourceRejection.invalidProfile }
         guard profile.hardware == request.hardware, profile.modelRevision == request.modelRevision,
-              profile.chunkMs == request.chunkMs, profile.sourceCount == request.sourceCount else { throw LiveResourceRejection.unsupported }
+              profile.chunkMs == request.chunkMs, profile.sourceCount == request.sourceCount,
+              profile.vad == request.vad?.identity, request.vad?.isValid ?? true else { throw LiveResourceRejection.unsupported }
         // A job already queued before capture may not have allocated yet. Its
         // cost must fit as well, and the combined model must be qualified.
         guard jobs.count <= 1 else { throw LiveResourceRejection.busy }
@@ -104,7 +132,8 @@ actor LiveModelResourcePolicy {
             if !job.resident { pendingJobBytes = max(cost,job.lease.reservedBytes) }
         }
         guard measurement.pressure != .critical else { throw LiveResourceRejection.pressure }
-        let required = profile.asrBytes.addingReportingOverflow(pendingJobBytes)
+        let mandatory = profile.asrBytes + (profile.vadBytes ?? 0)
+        let required = mandatory.addingReportingOverflow(pendingJobBytes)
         guard !required.overflow, Self.fits(required.partialValue,headroom: profile.headroomBytes,available: measurement.availableBytes) else {
             throw LiveResourceRejection.insufficientMemory
         }
@@ -112,7 +141,7 @@ actor LiveModelResourcePolicy {
             let total = required.partialValue.addingReportingOverflow($0)
             return !total.overflow && Self.fits(total.partialValue,headroom: profile.headroomBytes,available: measurement.availableBytes)
         } == true
-        let reserved = profile.asrBytes + (attribution ? profile.attributionBytes! : 0)
+        let reserved = mandatory + (attribution ? profile.attributionBytes! : 0)
         let lease = LiveResourceLease(id: UUID(),identity: identity,request: request,attributionEnabled: attribution,reservedBytes: reserved)
         active = .init(lease: lease,profile: profile,attributionRunning: attribution)
         return lease
@@ -125,11 +154,22 @@ actor LiveModelResourcePolicy {
         active = nil
     }
 
+    /// Value-shaped receipts from another policy, retired owners or constructed
+    /// leases cannot authorize a configured native consumer.
+    func validateActiveLease(_ lease: LiveResourceLease) -> Bool { active?.lease == lease }
+
     /// ASR readiness confirms only its own allocation in current telemetry.
     /// An enabled but unallocated attribution model keeps its pending charge.
     func confirmResident(_ lease: LiveResourceLease) {
         guard active?.lease == lease else { return }
         active?.resident = true
+    }
+
+    /// Only actual VAD model/manager loading can certify its allocation. ASR
+    /// readiness is deliberately insufficient, including after degradation.
+    func confirmVADResident(_ lease: LiveResourceLease) {
+        guard active?.lease == lease, active?.profile.vad != nil else { return }
+        active?.vadResident = true
     }
 
     func confirmAttributionResident(_ lease: LiveResourceLease) {
@@ -179,7 +219,7 @@ actor LiveModelResourcePolicy {
         case .configuredRemote: return .admitted
         }
         guard let extra = active.profile.concurrentChatModels[model] else { return .deferred }
-        let allocation = extra.addingReportingOverflow(active.pendingAttributionBytes)
+        let allocation = extra.addingReportingOverflow(active.pendingOptionalBytes)
         guard !allocation.overflow,
               Self.fits(allocation.partialValue,headroom: active.profile.headroomBytes,available: measurement.availableBytes) else { return .deferred }
         return .admitted
@@ -210,16 +250,27 @@ actor LiveModelResourcePolicy {
         func validID(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf8.count <= 512 && !text.contains("\0") }
         guard validID(profile.id), validID(profile.hardware), validID(profile.modelRevision), validID(profile.qualificationID),
               [560,1120,2240].contains(profile.chunkMs), (1...2).contains(profile.sourceCount), profile.asrBytes > 0,
-              !profile.asrBytes.addingReportingOverflow(profile.headroomBytes).overflow,
+              (profile.vad == nil) == (profile.vadBytes == nil),
               profile.concurrentChatModels.count <= 64 else { return false }
+        if let vad = profile.vad { guard vad.isValid, (profile.vadBytes ?? 0) > 0 else { return false } }
+        guard let mandatory = sum(profile.asrBytes,profile.vadBytes ?? 0),
+              sum(mandatory,profile.headroomBytes) != nil else { return false }
         if let extra = profile.attributionBytes {
-            let total = profile.asrBytes.addingReportingOverflow(extra)
-            guard extra > 0, !total.overflow, !total.partialValue.addingReportingOverflow(profile.headroomBytes).overflow else { return false }
+            guard extra > 0, sum(mandatory,extra,profile.headroomBytes) != nil else { return false }
         }
-        let maximumASR = profile.asrBytes + (profile.attributionBytes ?? 0)
+        guard let maximum = sum(mandatory,profile.attributionBytes ?? 0) else { return false }
         return profile.concurrentChatModels.allSatisfy {
-            let combined = maximumASR.addingReportingOverflow($0.value)
-            return validID($0.key) && $0.value > 0 && !combined.overflow && !combined.partialValue.addingReportingOverflow(profile.headroomBytes).overflow
+            validID($0.key) && $0.value > 0 && sum(maximum,$0.value,profile.headroomBytes) != nil
         }
+    }
+
+    private static func sum(_ values: UInt64...) -> UInt64? {
+        var total: UInt64 = 0
+        for value in values {
+            let next = total.addingReportingOverflow(value)
+            guard !next.overflow else { return nil }
+            total = next.partialValue
+        }
+        return total
     }
 }

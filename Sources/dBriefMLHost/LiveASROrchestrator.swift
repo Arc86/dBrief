@@ -41,6 +41,9 @@ actor LiveASROrchestrator {
         case .begin(let input):
             if let begin { return begin == input && beginRequestID == requestID ? .accepted : .rejected(.closed) }
             guard !closed, input.isValid else { return .rejected(.invalidConfiguration) }
+            // Until a real VAD input consumer exists, configuration cannot be
+            // silently downgraded to ASR-only readiness or start its loader.
+            guard input.vad == nil else { return .rejected(.unavailable) }
             begin = input; beginRequestID = requestID
             for epoch in input.epochs { lanes[epoch.source] = Lane(epoch: epoch); knownEpochs.insert(epoch.id) }
             loading = Task {
@@ -57,7 +60,7 @@ actor LiveASROrchestrator {
         case .replaceEpoch(let identity, let oldID, let epoch):
             guard !closed, let begin, begin.identity == identity, let old = lanes[epoch.source], old.epoch.id == oldID else { return .rejected(.staleScope) }
             guard old.state == .needsReplacement || old.state == .paused, tasks[epoch.source] == nil, factory != nil else { return .rejected(.unavailable) }
-            guard !knownEpochs.contains(epoch.id), LiveSessionBegin(identity: identity, configuration: begin.configuration, epochs: [epoch]).isValid else { return .rejected(.invalidConfiguration) }
+            guard !knownEpochs.contains(epoch.id), LiveSessionBegin(identity: identity, configuration: begin.configuration, epochs: [epoch],vad: begin.vad).isValid else { return .rejected(.invalidConfiguration) }
             old.partialTask?.cancel(); old.partialContinuation?.finish()
             knownEpochs.insert(epoch.id); lanes[epoch.source] = Lane(epoch: epoch); kick(epoch.source)
             return .accepted

@@ -65,11 +65,12 @@ public struct LiveSessionBegin: Codable, Sendable, Equatable {
     public let identity: LiveSessionIdentity
     public let configuration: LiveASRConfiguration
     public let epochs: [LiveEpoch]
-    public init(identity: LiveSessionIdentity, configuration: LiveASRConfiguration, epochs: [LiveEpoch]) {
-        self.identity = identity; self.configuration = configuration; self.epochs = epochs
+    public let vad: LiveVADConfiguration?
+    public init(identity: LiveSessionIdentity, configuration: LiveASRConfiguration, epochs: [LiveEpoch], vad: LiveVADConfiguration? = nil) {
+        self.identity = identity; self.configuration = configuration; self.epochs = epochs; self.vad = vad
     }
     public var isValid: Bool {
-        configuration.isValid && (1...2).contains(epochs.count) && Set(epochs.map(\.id)).count == epochs.count &&
+        configuration.isValid && (vad?.isValid ?? true) && (1...2).contains(epochs.count) && Set(epochs.map(\.id)).count == epochs.count &&
             Set(epochs.map(\.source)).count == epochs.count && epochs.allSatisfy {
                 $0.source.isCaptureSource && $0.availability == .active && $0.language == configuration.language.rawValue &&
                     !$0.engineRevision.isEmpty && $0.engineRevision.utf8.count <= 256 && ($0.meetingOriginNanoseconds.map { $0 >= 0 } ?? true)

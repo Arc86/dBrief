@@ -60,6 +60,26 @@ private struct LiveHelperFixture: Sendable {
 }
 
 @Suite struct LiveHelperSessionTests {
+    @Test func configuredVADCannotStartAnASROnlyHelperOrItsLoader() async throws {
+        let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory()
+        guard case .begin(let original) = f.begin() else { return }
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        object["vad"] = ["modelPath":"/fixture/silero.mlmodelc", "identity": [
+            "modelRevision":"silero-r1", "modelFingerprint":String(repeating: "a",count: 64),
+            "runtimeRevision":"21493f8dac5a97e65742e6ff26f42f164c2fda0f", "computeUnits":"cpuAndNeuralEngine",
+            "positiveThreshold":0.85, "negativeThreshold":0.70, "minSilenceSamples":9600, "speechPaddingSamples":1600]]
+        let input = try JSONDecoder().decode(LiveSessionBegin.self,from: JSONSerialization.data(withJSONObject: object))
+        let loads = LiveHelperAudit()
+        let helper = LiveASROrchestrator(loader: { _ in loads.append(.finished(f.identity)); return factory },emit: audit.append)
+        let reply = await helper.handle(.begin(input),requestID: UUID())
+        #expect(reply == .rejected(.unavailable))
+        if reply == .accepted {
+            try #require(await audit.wait { $0.contains { if case .ready = $0.payload { true } else { false } } })
+        }
+        #expect(loads.events.isEmpty && audit.events.isEmpty)
+        _ = await helper.handle(.cancel(f.identity),requestID: UUID())
+    }
+
     @Test(arguments: [LiveFinishBarrier.Kind.utterance, .pause, .finish], ["", " \n\t "])
     func emptyRecognitionOfNonzeroPCMSettlesAnUnavailablePrefix(kind: LiveFinishBarrier.Kind, text: String) async throws {
         let f = LiveHelperFixture(), audit = LiveHelperAudit(), factory = LiveFixtureFactory(outputs: [text])

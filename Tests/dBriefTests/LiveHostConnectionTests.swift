@@ -15,6 +15,17 @@ private struct LiveHostFixture: Sendable {
 }
 
 @Suite struct LiveHostConnectionTests {
+    @Test func ASROnlyStubRejectsConfiguredVADWithoutAnyReadiness() async throws {
+        let f = LiveHostFixture(), connection = f.connection()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "fixture-silero",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let stream = try await connection.beginLive(.init(identity: f.identity,configuration: f.begin.configuration,epochs: f.begin.epochs,vad: vad))
+        defer { Task { await connection.shutdown() } }
+        await connection.armLiveDeadline(.seconds(2))
+        var iterator = stream.makeAsyncIterator()
+        await #expect(throws: LiveProtocolError.unavailable) { _ = try await iterator.next() }
+    }
+
     @Test func terminalClosesAdmissionBeforeItsBufferedCompletionCanPublish() async throws {
         let f = LiveHostFixture()
         let gate = FileManager.default.temporaryDirectory.appendingPathComponent("live-terminal-gate-\(UUID()).flag")

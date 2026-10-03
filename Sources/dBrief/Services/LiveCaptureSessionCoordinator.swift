@@ -172,10 +172,19 @@ actor LiveCaptureSessionCoordinator {
     }
     private var isValidOwner: Bool { validity.map { (try? $0.withValidResult { true }) == true } ?? true }
 
-    func start() throws {
-        guard !started, !terminal, isValidOwner, !invalidIngress, input.isValid, store.identity == input.identity,
-              lease.map({ $0.identity == input.identity && $0.request.chunkMs == input.configuration.chunkMs &&
-                  $0.request.sourceCount == input.epochs.count && input.epochs.allSatisfy { $0.engineRevision == lease?.request.modelRevision } }) ?? true else { throw LiveProtocolError.invalidConfiguration }
+    private var canStart: Bool {
+        !started && !terminal && isValidOwner && !invalidIngress && input.isValid && store.identity == input.identity &&
+            (lease.map { $0.identity == input.identity && $0.request.chunkMs == input.configuration.chunkMs &&
+                $0.request.sourceCount == input.epochs.count && $0.request.vad == input.vad &&
+                input.epochs.allSatisfy { $0.engineRevision == lease?.request.modelRevision } } ?? true)
+    }
+    func start() async throws {
+        guard canStart else { throw LiveProtocolError.invalidConfiguration }
+        if input.vad != nil {
+            guard let resources, let lease, await resources.validateActiveLease(lease), canStart else {
+                throw LiveProtocolError.invalidConfiguration
+            }
+        }
         started = true
         for epoch in input.epochs {
             lanes[epoch.source] = Lane(epoch: epoch); knownEpochs.insert(epoch.id)
@@ -440,7 +449,8 @@ actor LiveCaptureSessionCoordinator {
                 guard lane.cutReason == nil else { return }
                 let pending = p.queuedSamples.addingReportingOverflow(p.inFlightSamples)
                 let total = pending.partialValue.addingReportingOverflow(p.heldSamples)
-                guard !pending.overflow, !total.overflow, p.queuedSamples >= 0, p.inFlightSamples >= 0, p.heldSamples >= 0,
+                guard (input.vad == nil || p.asrConsumedSampleEnd != nil),
+                      !pending.overflow, !total.overflow, p.queuedSamples >= 0, p.inFlightSamples >= 0, p.heldSamples >= 0,
                       p.capturedSampleEnd >= p.admittedSampleEnd, p.capturedSampleEnd <= lane.dispatched,
                       p.admittedSampleEnd >= lane.admitted, p.admittedSampleEnd <= lane.dispatched,
                       p.consumedSampleEnd >= lane.consumed, p.consumedSampleEnd <= p.effectiveASRConsumedSampleEnd,

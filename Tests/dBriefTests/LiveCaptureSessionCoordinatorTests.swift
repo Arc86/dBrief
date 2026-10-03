@@ -102,6 +102,96 @@ private actor CaptureFrontierPublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func configuredVADRequiresExplicitASREvidenceInEveryProgressFrame() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let original = f.input()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "silero-r1",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let input = LiveSessionBegin(identity: original.identity,configuration: original.configuration,epochs: original.epochs,vad: vad)
+        let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            qualificationID: "fixture-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: [:],backgroundWorkQualified: false,vad: vad.identity,vadBytes: 120)
+        let resources = LiveModelResourcePolicy(profiles: [profile])
+        let lease = try await resources.admit(identity: f.identity,request: .init(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",
+            chunkMs: 1120,sourceCount: 1,attributionRequested: false,vad: vad),measurement: .init(availableBytes: 1000,pressure: .normal))
+        let c = LiveCaptureSessionCoordinator(input: input,store: store,transport: await t.transport(),resources: resources,lease: lease)
+        defer { Task { await c.retire() } }
+        try await c.start()
+        try #require(await captureEventually { await t.starts == 1 })
+        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        try #require(await captureEventually { await c.readySources.count == 1 })
+        // A legacy fallback at zero passes all ordinary monotonic accounting.
+        // It still cannot prove ASR evidence in a configured multi-consumer lane.
+        await t.emit(f.event(f.mic,1,.progress(.init(capturedSampleEnd: 0,admittedSampleEnd: 0,consumedSampleEnd: 0,
+            queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
+        #expect(await captureEventually { await store.projection().isClosed })
+        #expect(await c.readySources.isEmpty)
+    }
+
+    @Test(arguments: ["missing", "foreign", "released", "forged"])
+    func configuredVADCannotBypassItsResourceOwner(mode: String) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), original = f.input()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "silero-r1",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            qualificationID: "fixture-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: [:],backgroundWorkQualified: false,vad: vad.identity,vadBytes: 120)
+        let owner = LiveModelResourcePolicy(profiles: [profile])
+        let lease = try await owner.admit(identity: f.identity,request: .init(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",
+            chunkMs: 1120,sourceCount: 1,attributionRequested: false,vad: vad),measurement: .init(availableBytes: 1000,pressure: .normal))
+        if mode == "released" { await owner.release(lease) }
+        let receipt = mode == "forged" ? LiveResourceLease(id: UUID(),identity: lease.identity,request: lease.request,
+            attributionEnabled: lease.attributionEnabled,reservedBytes: lease.reservedBytes) : lease
+        let c = LiveCaptureSessionCoordinator(input: .init(identity: original.identity,configuration: original.configuration,epochs: original.epochs,vad: vad),
+            store: .init(identity: f.identity),transport: await t.transport(),resources: mode == "foreign" ? .init() : owner,
+            lease: mode == "missing" ? nil : receipt)
+        defer { Task { await c.retire(); await owner.release(lease) } }
+        await #expect(throws: LiveProtocolError.invalidConfiguration) { try await c.start() }
+        #expect(await t.starts == 0)
+    }
+
+    @Test(arguments: [false,true])
+    func configuredVADMustMatchTheExactFrozenLease(mismatchedPath: Bool) async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), original = f.input()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "silero-r1",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            qualificationID: "fixture-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: [:],backgroundWorkQualified: false,vad: mismatchedPath ? vad.identity : nil,vadBytes: mismatchedPath ? 120 : nil)
+        let resources = LiveModelResourcePolicy(profiles: [profile])
+        let request = LiveResourceRequest(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            attributionRequested: false,vad: mismatchedPath ? .init(identity: vad.identity,modelPath: "/other/silero.mlmodelc") : nil)
+        let lease = try await resources.admit(identity: f.identity,request: request,measurement: .init(availableBytes: 1000,pressure: .normal))
+        let c = LiveCaptureSessionCoordinator(input: .init(identity: original.identity,configuration: original.configuration,epochs: original.epochs,vad: vad),
+            store: .init(identity: f.identity),transport: await t.transport(),resources: resources,lease: lease)
+        defer { Task { await c.retire(); await resources.release(lease) } }
+        await #expect(throws: LiveProtocolError.invalidConfiguration) { try await c.start() }
+        #expect(await t.starts == 0)
+    }
+
+    @Test func concurrentVADStartRechecksLifecycleAfterResourceProof() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), original = f.input()
+        let vad = LiveVADConfiguration(identity: .init(modelRevision: "silero-r1",modelFingerprint: String(repeating: "a",count: 64),
+            runtimeRevision: "21493f8dac5a97e65742e6ff26f42f164c2fda0f"),modelPath: "/fixture/silero.mlmodelc")
+        let profile = LiveResourceProfile(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,
+            qualificationID: "fixture-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: [:],backgroundWorkQualified: false,vad: vad.identity,vadBytes: 120)
+        let resources = LiveModelResourcePolicy(profiles: [profile])
+        let lease = try await resources.admit(identity: f.identity,request: .init(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",
+            chunkMs: 1120,sourceCount: 1,attributionRequested: false,vad: vad),measurement: .init(availableBytes: 1000,pressure: .normal))
+        let c = LiveCaptureSessionCoordinator(input: .init(identity: original.identity,configuration: original.configuration,epochs: original.epochs,vad: vad),
+            store: .init(identity: f.identity),transport: await t.transport(),resources: resources,lease: lease)
+        defer { Task { await c.retire() } }
+        let admitted = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<2 { group.addTask { do { try await c.start(); return true } catch { return false } } }
+            var count = 0
+            for await result in group { if result { count += 1 } }
+            return count
+        }
+        #expect(admitted == 1)
+        try #require(await captureEventually { await t.starts == 1 })
+    }
+
     @Test(arguments: [false,true])
     func splitASREvidenceRetainsNativeRemainderThroughCommitAndClosure(invalidNextCredit: Bool) async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)

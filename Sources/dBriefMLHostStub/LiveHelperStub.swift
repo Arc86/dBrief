@@ -26,6 +26,7 @@ struct LiveHelperStub {
         switch request {
         case .begin(let begin):
             guard self.begin == nil, begin.isValid else { reply(.rejected(.invalidConfiguration)); return }
+            guard begin.vad == nil else { reply(.rejected(.unavailable)); return }
             self.begin = begin; streamID = envelope.id
             reply(.accepted,terminal: false)
             if mode == "live-init-failure" { send(.init(id: envelope.id,channel: .live,event: .live(.event(.failed(begin.identity,.unavailable))))); return }
