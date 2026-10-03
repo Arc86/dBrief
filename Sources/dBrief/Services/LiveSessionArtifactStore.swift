@@ -504,6 +504,25 @@ actor LiveSessionArtifactStore {
         guard Set(paths).count == paths.count, paths.allSatisfy({
             $0.path != sessionURL.path && !$0.path.hasPrefix(sessionURL.path + "/")
         }) else { throw LiveArtifactError.unsafePath }
+        try requireSafeParents(audio)
+        // APFS can give a directory another spelling through case folding or
+        // the fixed system aliases. String prefixes cannot prove disjointness.
+        var managed = stat()
+        guard stat(sessionURL.path, &managed) == 0 else {
+            if errno == ENOENT { return }
+            throw LiveArtifactError.unsafePath
+        }
+        guard (managed.st_mode & S_IFMT) == S_IFDIR else { throw LiveArtifactError.unsafePath }
+        var parent = audio.deletingLastPathComponent()
+        while true {
+            var ancestor = stat()
+            if stat(parent.path, &ancestor) == 0 {
+                guard (ancestor.st_mode & S_IFMT) == S_IFDIR,
+                      ancestor.st_dev != managed.st_dev || ancestor.st_ino != managed.st_ino else { throw LiveArtifactError.unsafePath }
+            } else if errno != ENOENT { throw LiveArtifactError.unsafePath }
+            if parent.path == "/" { break }
+            parent.deleteLastPathComponent()
+        }
     }
     private func verifyBindingLedger(_ value: Journal) throws {
         guard value.phase == .committed, let bytes = try read(bindingTarget(value.audioURL)) else {

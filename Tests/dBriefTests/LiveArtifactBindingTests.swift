@@ -52,22 +52,35 @@ struct LiveArtifactBindingTests {
         }
     }
 
-    @Test(arguments: ["polyglot-chat", "managed-audio", "unsupported-media"])
+    @Test(arguments: ["polyglot-chat", "managed-audio", "unsupported-media", "system-alias-managed-audio", "case-alias-managed-audio"])
     func bindingRejectsManagedOrUnsupportedMasterPathsBeforeEffects(kind: String) async throws {
         let f = try LiveArtifactFixture(); defer { f.remove() }
         let stages = LiveArtifactBindingStageProbe()
         let writer = LiveSessionArtifactStore(identity: f.identity, rootURL: f.root, beforeStage: { await stages.record($0) })
         try await writer.saveChat(f.history("Preserve"), revision: 1)
         let source = f.session.appendingPathComponent("chat.json")
-        let audio = kind == "polyglot-chat" ? source : kind == "managed-audio" ? f.session.appendingPathComponent("recording.wav") : f.root.appendingPathComponent("recording.txt")
+        let aliased = kind == "system-alias-managed-audio" || kind == "case-alias-managed-audio"
+        let audio: URL
+        if kind == "system-alias-managed-audio" {
+            // Foundation's system temporary path can name the same directory
+            // through either /var or /private/var.
+            let path = f.session.path.hasPrefix("/private/var/") ? String(f.session.path.dropFirst(8)) : "/private" + f.session.path
+            audio = URL(fileURLWithPath: path).appendingPathComponent("chat.wav")
+        } else if kind == "case-alias-managed-audio" {
+            audio = f.root.appendingPathComponent(f.identity.captureSessionID.uuidString.lowercased()).appendingPathComponent("chat.wav")
+        } else {
+            audio = kind == "polyglot-chat" ? source : kind == "managed-audio" ? f.session.appendingPathComponent("recording.wav") : f.root.appendingPathComponent("recording.txt")
+        }
         let metadata = RecordingMetadataPayload(recordingID: f.identity.recordingID, dateISO8601: "fixture", durationSeconds: 1,
             meetingTitle: "fixture", masterFileName: audio.lastPathComponent, segmentFileNames: [], warnings: [])
-        if kind == "polyglot-chat" {
+        let aliasExists = FileManager.default.fileExists(atPath: audio.deletingLastPathComponent().path)
+        if kind == "polyglot-chat" || aliased && aliasExists {
+            if aliased { try Data("Model-free master through directory alias".utf8).write(to: audio) }
             var combined = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
             let fields = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(metadata)) as? [String: Any])
             combined.merge(fields, uniquingKeysWith: { _, value in value })
             try JSONSerialization.data(withJSONObject: combined, options: .sortedKeys).write(to: source)
-        } else {
+        } else if !aliased {
             try Data("Model-free master".utf8).write(to: audio)
             try JSONEncoder().encode(metadata).write(to: audio.deletingPathExtension().appendingPathExtension("json"))
         }
