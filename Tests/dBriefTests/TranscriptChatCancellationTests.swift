@@ -16,6 +16,52 @@ struct TranscriptChatCancellationTests {
         try #require(condition())
     }
 
+    @Test func aStreamingPartialIsSavedBeforeCompletionOrStop() async throws {
+        let settings = AppSettings()
+        let engine = settings.aiEngine, endpoints = settings.aiEndpoints
+        let endpoint = settings.defaultAIEndpointId, profiles = settings.profiles
+        defer {
+            settings.aiEngine = engine; settings.aiEndpoints = endpoints
+            settings.defaultAIEndpointId = endpoint; settings.profiles = profiles
+        }
+        settings.aiEngine = .remoteEndpoint
+        settings.aiEndpoints = [.init(name: "Partial durability fixture", baseURL: "https://chat-partial.invalid", modelName: "fixture")]
+        settings.defaultAIEndpointId = settings.aiEndpoints[0].id
+        for index in settings.profiles.indices {
+            settings.profiles[index].overrides.aiEngine = nil
+            settings.profiles[index].overrides.aiEndpointId = nil
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CancellableChatProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let service = TranscriptChatService(transcriptText: "Committed meeting evidence", speakerLabels: [],
+            appSettings: settings, localPlugin: nil, aiService: AIService(session: session))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("chat-partial-\(UUID()).chat.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = ChatStore()
+        service.enablePersistence(store: store, url: url)
+        let send = Task { await service.send("Question") }
+        do {
+            try await waitUntil { service.messages.last?.content == "Partial answer." }
+            let deadline = ContinuousClock.now + .seconds(2)
+            var saved: ChatHistory?
+            while ContinuousClock.now < deadline {
+                saved = try await store.load(from: url)
+                if saved?.messages.last?.content == "Partial answer." { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(service.isStreaming)
+            #expect(saved?.messages.last?.content == "Partial answer.")
+            #expect(saved?.messages.last?.basis == service.messages.last?.basis)
+            service.stopGenerating(); _ = await send.value
+            await service.flushPendingSave()
+        } catch {
+            service.stopGenerating(); send.cancel(); _ = await send.value
+            service.invalidateForReprocessing(); throw error
+        }
+    }
+
     @Test("Stopping cancels HTTP and preserves a usable conversation", arguments: ["manual", "task", "repetition", "length", "waiting", "view"])
     func stopAndRestart(mode: String) async throws {
         let settings = AppSettings()

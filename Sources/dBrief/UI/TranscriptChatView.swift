@@ -32,6 +32,18 @@ struct TranscriptChatView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 6)
             }
+            if let notice = chatService.historySaveNotice {
+                HStack(spacing: 8) {
+                    Text(notice).font(.caption).foregroundStyle(.secondary)
+                    if chatService.canRetryHistorySave {
+                        Button("Retry save") { Task { await chatService.retryHistorySave() } }
+                            .font(.caption)
+                            .accessibilityLabel("Retry saving this conversation")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.bottom, 6)
+            }
         }
         .onExitCommand {
             chatService.stopGenerating()

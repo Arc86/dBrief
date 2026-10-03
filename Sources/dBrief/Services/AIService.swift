@@ -3,7 +3,10 @@ import dBriefWire
 
 actor AIService {
     private nonisolated let session: URLSession
-    init(session: URLSession = .shared) { self.session = session }
+    private nonisolated let beforeChatProducerReturn: @Sendable () async -> Void
+    init(session: URLSession = .shared, beforeChatProducerReturn: @escaping @Sendable () async -> Void = {}) {
+        self.session = session; self.beforeChatProducerReturn = beforeChatProducerReturn
+    }
 
     /// Plain completion for editor tasks, without recording analysis or chat history.
     func completeText(systemPrompt: String, userMessage: String, endpoint: Endpoint, stage: PrivacyOperation.Stage) async throws -> String {
@@ -132,47 +135,80 @@ actor AIService {
         endpoint: Endpoint,
         stage: PrivacyOperation.Stage = .chat
     ) -> AsyncThrowingStream<String, Error> {
+        startChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: stage).stream
+    }
+
+    nonisolated func startChat(systemPrompt: String, userMessage: String, endpoint: Endpoint,
+        stage: PrivacyOperation.Stage = .chat, bounded: Bool = false) -> ChatStreamRun {
         let isAnthropic = endpoint.provider == .anthropic
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                var trace: PrivacyHTTPTrace?
-                do {
-                    let request: URLRequest = try {
-                        isAnthropic
-                            ? try Self.anthropicStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
-                            : try Self.openAIStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
-                    }()
+        let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
+        let task = Task {
+            var trace: PrivacyHTTPTrace?
+            do {
+                let request: URLRequest = try {
+                    isAnthropic
+                        ? try Self.anthropicStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+                        : try Self.openAIStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
+                }()
 
-                    let (asyncBytes, response, requestTrace) = try await PrivacyHTTPTrace.bytes(for: request,
-                        operation: .init(stage: stage, data: [.text, .metadata],
-                            destination: .remote(url: request.url!, provider: isAnthropic ? .anthropic : .openAICompatible,
-                                model: endpoint.modelName)), session: self.session)
-                    trace = requestTrace
-                    guard let httpResponse = response as? HTTPURLResponse,
-                          (200...299).contains(httpResponse.statusCode)
-                    else {
-                        await trace?.finish(response: response)
-                        throw AIServiceError.invalidResponse
-                    }
-
-                    var parser = ChatSSEParser(anthropic: isAnthropic)
-                    for try await line in asyncBytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
-                        let jsonStr = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                        if jsonStr.trimmingCharacters(in: .whitespaces) == "[DONE]" { break }
-                        if let content = try parser.consume(jsonStr) { continuation.yield(content) }
-                    }
-                    try Task.checkCancellation()
-                    try parser.finish()
+                let (asyncBytes, response, requestTrace) = try await PrivacyHTTPTrace.bytes(for: request,
+                    operation: .init(stage: stage, data: [.text, .metadata],
+                        destination: .remote(url: request.url!, provider: isAnthropic ? .anthropic : .openAICompatible,
+                            model: endpoint.modelName)), session: self.session)
+                defer { asyncBytes.task.cancel() }
+                trace = requestTrace
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode)
+                else {
                     await trace?.finish(response: response)
-                    continuation.finish()
-                } catch {
-                    await trace?.finish(error: error)
-                    continuation.finish(throwing: error)
+                    throw AIServiceError.invalidResponse
                 }
+
+                var parser = ChatSSEParser(anthropic: isAnthropic)
+                func consume(_ line: String) throws -> Bool {
+                    guard line.hasPrefix("data:") else { return true }
+                    let jsonStr = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                    if jsonStr == "[DONE]" { return false }
+                    if let content = try parser.consume(jsonStr) { try buffer.yield(content) }
+                    return true
+                }
+                if bounded {
+                    // URLSession.lines assembles unbounded strings before the
+                    // parser can reject them. Assemble this owned SSE input as
+                    // at most64KiB raw bytes before allocating JSON/strings.
+                    func consumeBytes(_ bytes: Data) throws -> Bool {
+                        guard let line = String(data: bytes, encoding: .utf8) else { throw ChatStreamEndError.unconfirmed }
+                        return try consume(line)
+                    }
+                    var line = Data(), stopped = false, skipLF = false
+                    for try await byte in asyncBytes {
+                        if byte == 10, skipLF { skipLF = false; continue }
+                        skipLF = false
+                        if byte == 10 || byte == 13 {
+                            if try !consumeBytes(line) { stopped = true; break }
+                            line.removeAll(keepingCapacity: true)
+                            skipLF = byte == 13
+                        } else {
+                            guard line.count < ChatStreamBuffer.lineLimit else { throw ChatStreamEndError.limited }
+                            line.append(byte)
+                        }
+                    }
+                    if !stopped, !line.isEmpty { _ = try consumeBytes(line) }
+                } else {
+                    for try await line in asyncBytes.lines { if try !consume(line) { break } }
+                }
+                try Task.checkCancellation()
+                try parser.finish()
+                await trace?.finish(response: response)
+                continuation.finish()
+            } catch {
+                await trace?.finish(error: error)
+                continuation.finish(throwing: error)
             }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
+            await self.beforeChatProducerReturn()
         }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+        return ChatStreamRun(stream: buffer.stream, producer: task)
     }
 
     private nonisolated static func openAIStreamRequest(

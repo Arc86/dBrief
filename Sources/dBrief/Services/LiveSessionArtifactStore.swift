@@ -4,6 +4,7 @@ import Foundation
 import dBriefWire
 
 enum LiveArtifactStage: Sendable {
+    case historyLoad
     case sourceChat, sourceTranscript, journalPrepared, targetChat, targetTranscript, journalCommitted
     case sourceCleanup, deletionIntent, deletionCleanup
 }
@@ -123,6 +124,7 @@ actor LiveSessionArtifactStore {
     private let payloadReservation: LiveRecordingPayloadBudget.Lease?
     private let payloadLimit: Int
     private let queueByteLimit: Int
+    private let chatPayloadLimit: Int
     private let fm = FileManager.default
     private var queue: [Job] = []
     private var inFlight: Job?
@@ -137,11 +139,13 @@ actor LiveSessionArtifactStore {
          validity: RecordingDerivativeValidity = RecordingDerivativeValidity(),
          payloadReservation: LiveRecordingPayloadBudget.Lease? = nil,
          payloadLimit: Int = maxArtifactBytes, queueByteLimit: Int = maxQueuedBytes,
+         chatPayloadLimit: Int = maxArtifactBytes,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) {
         self.identity = identity; self.rootURL = rootURL.standardizedFileURL; self.beforeStage = beforeStage
         self.validity = validity
         self.payloadReservation = payloadReservation
         self.payloadLimit = min(Self.maxArtifactBytes, max(1, payloadLimit))
+        self.chatPayloadLimit = min(self.payloadLimit, max(1, chatPayloadLimit))
         self.queueByteLimit = min(Self.maxQueuedBytes, max(1, queueByteLimit))
     }
 
@@ -150,7 +154,7 @@ actor LiveSessionArtifactStore {
         try history.validateVersion()
         guard history.identity == nil || history.identity == identity else { throw LiveArtifactError.wrongOwner }
         history.version = ChatHistory.currentVersion; history.identity = identity; history.revision = revision; history.bindingGeneration = nil
-        try await submitWrite(.init(kind: .chat, revision: revision, data: encode(history)))
+        try await submitWrite(.init(kind: .chat, revision: revision, data: LiveArtifactEncoding.encode(history, limit: chatPayloadLimit)))
     }
     func saveTranscript(_ checkpoint: LiveTranscriptCheckpoint) async throws {
         try checkpoint.validate()
@@ -292,6 +296,7 @@ actor LiveSessionArtifactStore {
         if case .deletionCleanup(let receipt) = operation {
             try await cleanupDeleted(receipt); return nil
         }
+        if case .recover = operation { try await beforeStage(.historyLoad) }
         try inspectDisk()
         switch operation {
         case .delete:
@@ -637,13 +642,15 @@ actor LiveSessionArtifactStore {
         }
     }
     private func readPayload(_ kind: Kind, from url: URL, generation: UUID?) throws -> Payload? {
-        guard let bytes = try read(url) else { return nil }
+        let maximum = kind == .chat ? chatPayloadLimit : payloadLimit
+        guard let bytes = try read(url, maximum: maximum) else { return nil }
         switch kind {
         case .chat:
             var value: ChatHistory = try decode(bytes)
             guard value.version == ChatHistory.currentVersion else { throw LiveArtifactError.unsupportedVersion }
             guard value.identity == identity, let revision = value.revision, value.bindingGeneration == generation else { throw LiveArtifactError.wrongOwner }
             value.bindingGeneration = nil
+            _ = try LiveArtifactEncoding.estimatedBytes(value, limit: chatPayloadLimit)
             return .init(kind: kind, revision: revision, data: try encode(value))
         case .transcript:
             let value = try LiveTranscriptArtifactCodec.decode(bytes)

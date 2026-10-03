@@ -87,29 +87,41 @@ enum PrivacyTrace {
         _ operation: PrivacyOperation,
         makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<String, Error>
     ) -> AsyncThrowingStream<String, Error> {
+        streamRun(operation) { .init(stream: try await makeStream()) }.stream
+    }
+
+    static func streamRun(_ operation: PrivacyOperation,
+        bounded: Bool = false,
+        makeStream: @escaping @Sendable () async throws -> ChatStreamRun) -> ChatStreamRun {
         let originatingContext = context
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    try await $context.withValue(originatingContext) {
-                        try await perform(operation) {
-                            let upstream = try await makeStream()
-                            for try await chunk in upstream {
+        let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
+        let task = Task {
+            do {
+                try await $context.withValue(originatingContext) {
+                    try await perform(operation) {
+                        let upstream = try await makeStream()
+                        var failure: (any Error)?
+                        do {
+                            for try await chunk in upstream.stream {
                                 try Task.checkCancellation()
-                                continuation.yield(chunk)
+                                try buffer.yield(chunk)
                             }
-                            // AsyncThrowingStream can end iteration normally on
-                            // cancellation; that is not a successful completion.
-                            try Task.checkCancellation()
-                        }
+                        } catch { failure = error }
+                        upstream.cancel()
+                        await upstream.waitForReturn()
+                        if let failure { throw failure }
+                        // AsyncThrowingStream can end iteration normally on
+                        // cancellation; that is not a successful completion.
+                        try Task.checkCancellation()
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
                 }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
             }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+        return .init(stream: buffer.stream, producer: task)
     }
 
     static func outcome(for error: Error) -> PrivacyAttempt.Outcome {

@@ -19,6 +19,10 @@ func flag(_ key: String, default name: String) -> URL {
     return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
 }
 let crashFlag = flag("STUB_FLAG_1", default: "stub_crashed")
+if mode == "chat-natural-exit-reader" {
+    let count = (Int((try? String(contentsOf: crashFlag, encoding: .utf8)) ?? "") ?? 0) + 1
+    try? Data(String(count).utf8).write(to: crashFlag, options: .atomic)
+}
 
 // The retirement regression controls physical exit separately from SIGTERM
 // and pipe EOF, so an obsolete wait cannot masquerade as a current receipt.
@@ -32,6 +36,16 @@ if mode == "retirement-phases" {
     retirementExit = exitFlag
     // Failed fixture control-file writes must not leave an immortal child.
     // The normal held-exit assertions finish well before this safety bound.
+    let watchdog = Date().addingTimeInterval(30)
+    Thread.detachNewThread {
+        while !FileManager.default.fileExists(atPath: exitFlag.path), Date() < watchdog { Thread.sleep(forTimeInterval: 0.01) }
+        exit(0)
+    }
+}
+if mode == "chat-prefix-bound" || mode == "chat-pipe-flood" {
+    signal(SIGTERM, SIG_IGN)
+    let exitFlag = flag("STUB_FLAG_1", default: "stub_raw_chat_exit")
+    retirementExit = exitFlag
     let watchdog = Date().addingTimeInterval(30)
     Thread.detachNewThread {
         while !FileManager.default.fileExists(atPath: exitFlag.path), Date() < watchdog { Thread.sleep(forTimeInterval: 0.01) }
@@ -192,9 +206,11 @@ while true {
                 send(EventEnvelope(id: env.id, channel: .plugin, event: .voidResult))
                 send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
             }
-        case "chat-across-live-stop":
+        case "chat-across-live-stop", "chat-background-serialization":
             guard case .chatStream = env.request else {
-                send(.init(id: env.id,channel: .plugin,event: .voidResult))
+                if mode == "chat-background-serialization" {
+                    send(.init(id: env.id, channel: .plugin, event: .transcriptionResult(.init(text: "Background finalized transcript"))))
+                } else { send(.init(id: env.id,channel: .plugin,event: .voidResult)) }
                 send(.init(id: env.id,channel: .plugin,event: .finished))
                 continue
             }
@@ -204,6 +220,29 @@ while true {
             while !FileManager.default.fileExists(atPath: completionFlag.path), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
             send(.init(id: env.id,channel: .plugin,event: .token("Fixture completed")))
             send(.init(id: env.id,channel: .plugin,event: .finished))
+        case "chat-prefix-bound", "chat-pipe-flood":
+            guard case .chatStream = env.request else { continue }
+            if mode == "chat-prefix-bound" {
+                // A40MiB advertised frame, without allocating its payload.
+                var length = UInt32(40 * 1_024 * 1_024).bigEndian
+                withUnsafeBytes(of: &length) { out.write(Data($0)) }
+            } else {
+                for _ in 0..<64 { send(.init(id: env.id, channel: .plugin, event: .token(String(repeating: "x", count: 32_768)))) }
+            }
+        case "chat-transport-compatibility":
+            if case .chatStream = env.request {
+                send(.init(id: env.id, channel: .plugin, event: .token("Bounded answer")))
+            } else {
+                send(.init(id: env.id, channel: .plugin, event: .transcriptionResult(.init(text: String(repeating: "x", count: 70_000)))))
+            }
+            send(.init(id: env.id, channel: .plugin, event: .finished))
+        case "chat-natural-exit-reader":
+            if case .chatStream = env.request {
+                send(.init(id: env.id, channel: .plugin, event: .token("Undecoded before exit")))
+                exit(0)
+            }
+            send(.init(id: env.id, channel: .plugin, event: .transcriptionResult(.init(text: "Legacy replacement"))))
+            send(.init(id: env.id, channel: .plugin, event: .finished))
         case "error":
             send(EventEnvelope(id: env.id, channel: .plugin,
                 event: .error(WireError(kind: .insufficientMemory, message: "no ram", model: "L", requiredGB: "9.9"))))

@@ -248,9 +248,15 @@ struct TranscriptDetailView: View {
             // final text.
             guard !live else { return }
             showLiveChat = false
-            let liveChat = chatStore.session(for: recording.fileURL)
+            let liveChat = chatStore.session(for: recording.id, url: recording.fileURL)
+            if liveChat?.usesRecordingPersistence == true {
+                // Durable publication belongs to the recording pipeline. The
+                // window keeps the original provider/writer through Stop.
+                Task { await loadTranscript() }
+                return
+            }
             if liveChat?.hasHistory != true, liveChat?.isStreaming != true {
-                chatStore.remove(for: recording.fileURL)
+                chatStore.remove(for: recording.id)
             }
             Task {
                 await loadTranscript()
@@ -1367,13 +1373,21 @@ struct TranscriptDetailView: View {
         guard !isReprocessing else { return }
         // Reuse an existing session for this recording so the conversation
         // survives switching recordings and coming back.
-        if let existing = chatStore.session(for: recording.fileURL), !existing.isInvalidatedForReprocessing {
+        if let existing = chatStore.session(for: recording.id, url: recording.fileURL), !existing.isInvalidatedForReprocessing {
             chatService = existing
             return
         }
-        chatStore.remove(for: recording.fileURL)
+        chatStore.remove(for: recording.id)
         let service: TranscriptChatService
-        if isLive {
+        let registry = context.appState.liveRecordingSessions
+        if registry.owns(recordingID: recording.id) {
+            service = TranscriptChatService(contextProvider: .recording(recordingID: recording.id,
+                registry: registry, legacy: { .legacy(text: "", recordingID: recording.id, speakerLabels: []) }),
+                appSettings: context.appSettings, localPlugin: context.recordingManager.localPlugin, recording: recording)
+            if let entry = registry.entry(recordingID: recording.id), entry.isValid {
+                service.enableRecordingPersistence(owner: entry.artifacts)
+            }
+        } else if isLive {
             // Freeze committed evidence for this recording, excluding UI partials and processing previews.
             let appState = context.appState
             let recordingID = recording.id
@@ -1402,7 +1416,7 @@ struct TranscriptDetailView: View {
                 service.startLoadingPersisted()
             }
         }
-        chatStore.set(service, for: recording.fileURL)
+        chatStore.set(service, for: recording.id, url: recording.fileURL)
         chatService = service
         service.prewarm()
     }
@@ -1644,7 +1658,7 @@ struct TranscriptDetailView: View {
         // Live recording: nothing on disk yet — the view renders from the
         // in-memory live segments, and chat uses the live provider.
         if isLive {
-            chatService = chatStore.session(for: recording.fileURL)
+            chatService = chatStore.session(for: recording.id, url: recording.fileURL)
             return
         }
 
@@ -1654,7 +1668,7 @@ struct TranscriptDetailView: View {
 
         // Restore any in-progress chat session for this recording.
         var resumedChat = false
-        if let existing = chatStore.session(for: recording.fileURL), !existing.isInvalidatedForReprocessing {
+        if let existing = chatStore.session(for: recording.id, url: recording.fileURL), !existing.isInvalidatedForReprocessing {
             chatService = existing
             if !existing.messages.isEmpty { resumedChat = true }
         } else {
@@ -1688,8 +1702,8 @@ struct TranscriptDetailView: View {
     private func invalidateDerivedWork() {
         customRenameTurn = nil
         chatService?.invalidateForReprocessing()
-        chatStore.session(for: recording.fileURL)?.invalidateForReprocessing()
-        chatStore.remove(for: recording.fileURL)
+        chatStore.session(for: recording.id, url: recording.fileURL)?.invalidateForReprocessing()
+        chatStore.remove(for: recording.id)
         chatService = nil
         spokenSummaryTask?.cancel()
         spokenSummaryTask = nil

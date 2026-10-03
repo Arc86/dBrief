@@ -7,7 +7,9 @@ import dBriefWire
 @MainActor @Observable final class LiveRecordingArtifactOwner {
     nonisolated static let reservationBytes = 32 * 1_024 * 1_024
     nonisolated static let evidenceLimit = 1 * 1_024 * 1_024
-    private static let pendingValueLimit = 2 * 1_024 * 1_024
+    nonisolated static let chatHistoryLimit = 512 * 1_024
+    nonisolated static let chatHeaderReserve = 2_048
+    private static let pendingValueLimit = 3 * 1_024 * 1_024
     private static let envelopeLimit = 3 * 1_024 * 1_024
     final class Pin: @unchecked Sendable {
         private let lock = NSLock()
@@ -19,16 +21,31 @@ import dBriefWire
         func release() { lock.withLock { if owner != nil { counter.remove(); owner = nil } } }
         deinit { release() }
     }
+    final class ChatRequest: @unchecked Sendable {
+        private let lock = NSLock()
+        private var pin: Pin?
+        private let counter: LiveArtifactPinCounter
+        @MainActor fileprivate init(_ owner: LiveRecordingArtifactOwner) {
+            pin = owner.pin(); counter = owner.chatRequests; counter.add()
+        }
+        func release() {
+            lock.withLock { if let pin { counter.remove(); pin.release(); self.pin = nil } }
+        }
+        deinit { release() }
+    }
     private final class Interval {
         var revision: UInt64
         var legacy: [LiveLegacyTranscriptValue]?
         var legacyBytes: Int
         var captureClosed: Bool
+        var hasTranscript = true
+        var chat: ChatHistory?
+        var chatBytes = 0
         init(revision: UInt64, legacy: [LiveLegacyTranscriptValue]?, bytes: Int, closed: Bool) {
             self.revision = revision; self.legacy = legacy; legacyBytes = bytes; captureClosed = closed
         }
     }
-    private enum Work { case checkpoint(Interval), bind(URL) }
+    private enum Work { case checkpoint(Interval), clear(ChatHistory, Int), bind(URL) }
     let identity: LiveSessionIdentity
     let writer: LiveSessionArtifactStore
     let isNative: Bool
@@ -39,22 +56,32 @@ import dBriefWire
     @ObservationIgnored private var observer: Task<Void, Never>?
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var drain: Task<Void, Never>?
+    @ObservationIgnored private var chatLoad: Task<ChatHistory?, any Error>?
+    @ObservationIgnored private var chatLoadID: UUID?
+    @ObservationIgnored private var currentChat: ChatHistory?
+    @ObservationIgnored private var retryWriter = false
     @ObservationIgnored var onFailure: ((String?) -> Void)?
     @ObservationIgnored var onLimit: (() -> Void)?
     @ObservationIgnored private var legacy: [LiveLegacyTranscriptValue] = []
     @ObservationIgnored private var legacyByID: [UUID: LiveLegacyTranscriptValue] = [:]
     private var legacyBytes = 0
     @ObservationIgnored private let pinCounter = LiveArtifactPinCounter()
+    @ObservationIgnored private let chatRequests = LiveArtifactPinCounter()
+    @ObservationIgnored private weak var chatService: TranscriptChatService?
     private var started = false
     private var retired = false
     private var nativeClosureDurable = false
     private(set) var captureClosed = false
     private(set) var acceptedRevision: UInt64 = 0
     private(set) var durableRevision: UInt64 = 0
+    private(set) var acceptedChatRevision: UInt64 = 0
+    private(set) var durableChatRevision: UInt64 = 0
+    private(set) var chatReady = false
     private(set) var failure: String?
     private(set) var growthRetired = false
     var isDurable: Bool {
         started && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
+            && durableChatRevision == acceptedChatRevision && chatLoad == nil
             && (!captureClosed || !isNative || nativeClosureDurable)
     }
     var canEvict: Bool { captureClosed && pinCounter.count == 0 && isDurable }
@@ -67,9 +94,117 @@ import dBriefWire
         self.identity = identity; self.store = store; self.validity = validity; isNative = native
         self.afterCheckpoint = afterCheckpoint
         writer = LiveSessionArtifactStore(identity: identity, rootURL: rootURL, validity: validity,
-            payloadReservation: payloadReservation, payloadLimit: Self.envelopeLimit, queueByteLimit: Self.envelopeLimit, beforeStage: beforeStage)
+            payloadReservation: payloadReservation, payloadLimit: Self.envelopeLimit, queueByteLimit: Self.envelopeLimit,
+            chatPayloadLimit: Self.chatHistoryLimit, beforeStage: beforeStage)
     }
     func pin() -> Pin { Pin(self) }
+    func attachChatService(_ service: TranscriptChatService) -> Bool {
+        guard !retired, (try? validity.withValidResult {}) != nil,
+              chatService == nil || chatService === service else { return false }
+        chatService = service; return true
+    }
+    func beginChatRequest() throws -> ChatRequest {
+        try validity.withValidResult {}
+        guard !retired else { throw LiveArtifactError.deleted }
+        guard chatRequests.count == 0 else { throw LiveArtifactError.queueFull }
+        return ChatRequest(self)
+    }
+
+    /// Initialization is shared, but subsequent callers get the latest owned
+    /// history rather than replaying an obsolete initial load task result.
+    func loadChat() async throws -> ChatHistory? {
+        try validity.withValidResult {}
+        guard !retired else { throw LiveArtifactError.deleted }
+        if chatReady { return currentChat }
+        let task: Task<ChatHistory?, any Error>
+        let loadID: UUID
+        if let chatLoad, let chatLoadID { task = chatLoad; loadID = chatLoadID }
+        else {
+            loadID = UUID()
+            let pin = pin(), writer = writer
+            task = Task {
+                defer { pin.release() }
+                let restored = try await writer.recover()
+                guard !restored.deleted else { throw LiveArtifactError.deleted }
+                if let history = restored.chat {
+                    _ = try LiveArtifactEncoding.estimatedBytes(history, limit: Self.chatHistoryLimit)
+                }
+                return restored.chat
+            }
+            chatLoad = task; chatLoadID = loadID
+        }
+        do {
+            let history = try await task.value
+            try validity.withValidResult {}
+            guard !retired else { throw LiveArtifactError.deleted }
+            if !chatReady {
+                currentChat = history
+                acceptedChatRevision = history?.revision ?? 0; durableChatRevision = acceptedChatRevision
+                chatReady = true
+            }
+            if chatLoadID == loadID { chatLoad = nil; chatLoadID = nil }
+            return currentChat
+        } catch {
+            if chatLoadID == loadID { chatLoad = nil; chatLoadID = nil }
+            throw error
+        }
+    }
+
+    /// Includes worst-case bound-header space; callers can reserve terminal
+    /// metadata once and charge response text incrementally before publication.
+    func remainingChatBytes(_ history: ChatHistory) throws -> Int {
+        let value = normalizedChat(history, revision: acceptedChatRevision)
+        return Self.chatHistoryLimit - Self.chatHeaderReserve
+            - (try LiveArtifactEncoding.estimatedBytes(value, limit: Self.chatHistoryLimit - Self.chatHeaderReserve))
+    }
+
+    @discardableResult
+    func saveChat(_ history: ChatHistory, urgent: Bool) throws -> UInt64 {
+        try requireChatAdmission()
+        guard acceptedChatRevision < .max else { throw LiveArtifactError.staleRevision }
+        let value = normalizedChat(history, revision: acceptedChatRevision + 1)
+        _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.chatHistoryLimit - Self.chatHeaderReserve)
+        // Reserve the whole admitted response slot up front. Later streaming
+        // growth cannot lose capacity to controls accepted after Send.
+        let bytes = Self.chatHistoryLimit * 2
+        let tail = tailInterval
+        try requireCapacity(legacyBytes: tail?.legacyBytes ?? 0, chatBytes: bytes)
+        acceptedChatRevision += 1; currentChat = value
+        let interval: Interval
+        if let tail { interval = tail }
+        else {
+            interval = .init(revision: 0, legacy: nil, bytes: 0, closed: captureClosed)
+            interval.hasTranscript = false; queue.append(.checkpoint(interval))
+        }
+        interval.chat = value; interval.chatBytes = bytes
+        startDrain(urgent: urgent)
+        return acceptedChatRevision
+    }
+
+    @discardableResult
+    func clearChat() throws -> UInt64 {
+        try requireChatAdmission()
+        guard controlCount < 8 else { throw LiveArtifactError.queueFull }
+        guard acceptedChatRevision < .max else { throw LiveArtifactError.staleRevision }
+        let value = normalizedChat(.init(messages: []), revision: acceptedChatRevision + 1)
+        let bytes = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.chatHistoryLimit) * 2
+        guard bytes <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+        acceptedChatRevision += 1; currentChat = value
+        queue.append(.clear(value, bytes)); startDrain(urgent: true)
+        return acceptedChatRevision
+    }
+
+    private func normalizedChat(_ history: ChatHistory, revision: UInt64) -> ChatHistory {
+        var value = history
+        value.version = ChatHistory.currentVersion; value.identity = identity
+        value.revision = revision; value.bindingGeneration = nil
+        return value
+    }
+    private func requireChatAdmission() throws {
+        try validity.withValidResult {}
+        guard !retired else { throw LiveArtifactError.deleted }
+        guard chatReady else { throw LiveArtifactError.bindingPending }
+    }
 
     func start() {
         guard !started, !retired else { return }
@@ -124,7 +259,8 @@ import dBriefWire
     func bind(to audioURL: URL) throws {
         try validity.withValidResult {}
         guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
-        guard queue.filter({ if case .bind = $0 { true } else { false } }).count < 8 else { throw LiveArtifactError.queueFull }
+        guard controlCount < 8 else { throw LiveArtifactError.queueFull }
+        _ = try LiveArtifactEncoding.estimatedBytes(audioURL, limit: 4_096)
         try checkpoint(urgent: false)
         queue.append(.bind(audioURL.standardizedFileURL))
         startDrain(urgent: true)
@@ -133,7 +269,7 @@ import dBriefWire
     func retry() throws {
         try validity.withValidResult {}
         guard !retired else { throw LiveArtifactError.deleted }
-        failure = nil; onFailure?(nil)
+        retryWriter = true; failure = nil; onFailure?(nil)
         startDrain(urgent: true)
     }
 
@@ -152,6 +288,7 @@ import dBriefWire
     /// Cleanup can join the already submitted drain without new write authority.
     func waitForSubmittedWrites() async {
         while let task = drain { await task.value }
+        if let task = chatLoad { _ = try? await task.value }
     }
 
     func legacyContext() throws -> TranscriptContextSnapshot {
@@ -167,13 +304,21 @@ import dBriefWire
         // shared validity rejects the effect after synchronous retirement.
     }
 
-    private func requireCheckpointCapacity(bytes: Int) throws {
-        let tail = queue.last.flatMap { if case .checkpoint(let value) = $0 { value } else { nil } }
+    private var tailInterval: Interval? { queue.last.flatMap { if case .checkpoint(let value) = $0 { value } else { nil } } }
+    private var controlCount: Int { queue.filter { if case .checkpoint = $0 { false } else { true } }.count }
+    private func requireCapacity(legacyBytes: Int, chatBytes: Int, replacingTail: Bool = true) throws {
+        let tail = replacingTail ? tailInterval : nil
         let pending = queue.reduce(0) { count, work in
-            if case .checkpoint(let value) = work, value !== tail { return count + value.legacyBytes }
-            return count
+            switch work {
+            case .checkpoint(let value): return count + (value === tail ? 0 : value.legacyBytes + value.chatBytes)
+            case .clear: return count // Separately reserved: at most 8 × 4KiB.
+            case .bind: return count
+            }
         }
-        guard bytes <= Self.pendingValueLimit - pending else { throw LiveArtifactError.queueFull }
+        guard legacyBytes + chatBytes <= Self.pendingValueLimit - pending else { throw LiveArtifactError.queueFull }
+    }
+    private func requireCheckpointCapacity(bytes: Int) throws {
+        try requireCapacity(legacyBytes: bytes, chatBytes: tailInterval?.chatBytes ?? 0)
     }
     private func checkpoint(urgent: Bool) throws {
         guard !retired else { throw LiveArtifactError.deleted }
@@ -181,6 +326,7 @@ import dBriefWire
         guard acceptedRevision < .max else { throw LiveArtifactError.staleRevision }
         acceptedRevision += 1
         if let last = queue.last, case .checkpoint(let value) = last {
+            value.hasTranscript = true
             value.revision = acceptedRevision; value.legacy = isNative ? nil : legacy
             value.legacyBytes = legacyBytes; value.captureClosed = captureClosed
         } else {
@@ -191,7 +337,7 @@ import dBriefWire
     }
 
     private func startDrain(urgent: Bool) {
-        guard started, !retired, failure == nil, drain == nil, !queue.isEmpty else { return }
+        guard started, !retired, failure == nil, drain == nil, !queue.isEmpty || retryWriter else { return }
         if urgent {
             timer?.cancel(); timer = nil
             drain = Task { [weak self] in await self?.drainQueue() }
@@ -204,30 +350,42 @@ import dBriefWire
     }
 
     private func drainQueue() async {
+        if retryWriter {
+            do { try await writer.retry(); retryWriter = false }
+            catch { report(error); drain = nil; return }
+        }
         while !queue.isEmpty, !retired {
             do {
                 switch queue[0] {
                 case .checkpoint(let interval):
                     // No full checkpoint is requested while an earlier write
                     // is held. Notifications retain only a revision signal.
-                    let revision = interval.revision, closed = interval.captureClosed, legacy = interval.legacy
-                    let state = isNative ? await store.checkpointState() : nil
-                    if isNative { await afterCheckpoint() }
-                    if state?.growthRetired == true, !growthRetired {
-                        growthRetired = true
-                        onLimit?()
-                    }
-                    let value = LiveTranscriptArtifact(identity: identity, revision: revision, native: state?.checkpoint,
-                        legacy: legacy, captureClosed: closed && (state?.isClosed ?? true))
-                    _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.envelopeLimit)
-                    try await writer.saveTranscript(value)
-                    durableRevision = revision
-                    if interval.revision == revision {
-                        queue.removeFirst()
-                        if closed, state?.isClosed == true {
-                            nativeClosureDurable = true; observer?.cancel(); observer = nil
+                    let hasTranscript = interval.hasTranscript, revision = interval.revision
+                    let closed = interval.captureClosed, legacy = interval.legacy, chat = interval.chat
+                    if hasTranscript {
+                        let state = isNative ? await store.checkpointState() : nil
+                        if isNative { await afterCheckpoint() }
+                        if state?.growthRetired == true, !growthRetired { growthRetired = true; onLimit?() }
+                        let value = LiveTranscriptArtifact(identity: identity, revision: revision, native: state?.checkpoint,
+                            legacy: legacy, captureClosed: closed && (state?.isClosed ?? true))
+                        _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.envelopeLimit)
+                        try await writer.saveTranscript(value)
+                        durableRevision = revision
+                        if interval.revision == revision {
+                            interval.hasTranscript = false; interval.legacy = nil; interval.legacyBytes = 0
+                            if closed, state?.isClosed == true {
+                                nativeClosureDurable = true; observer?.cancel(); observer = nil
+                            }
                         }
                     }
+                    if let chat, let revision = chat.revision {
+                        try await writer.saveChat(chat, revision: revision); durableChatRevision = revision
+                        if interval.chat?.revision == revision { interval.chat = nil; interval.chatBytes = 0 }
+                    }
+                    if !interval.hasTranscript && interval.chat == nil { queue.removeFirst() }
+                case .clear(let history, _):
+                    let revision = history.revision!
+                    try await writer.clearChat(revision: revision); durableChatRevision = revision; queue.removeFirst()
                 case .bind(let url):
                     try await writer.bind(to: url); queue.removeFirst()
                 }

@@ -88,8 +88,13 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     }
 
     func chatStream(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
-        PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
-            await connection.stream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage))
+        await startChat(systemPrompt: systemPrompt, userMessage: userMessage, stage: stage).stream
+    }
+
+    func startChat(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage = .chat,
+        bounded: Bool = false) async -> ChatStreamRun {
+        PrivacyTrace.streamRun(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel)), bounded: bounded) { [connection] in
+            await connection.startStream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage), bounded: bounded)
         }
     }
 

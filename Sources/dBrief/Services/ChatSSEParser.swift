@@ -2,11 +2,12 @@ import Foundation
 import dBriefWire
 
 enum ChatStreamEndError: Error, Equatable, LocalizedError {
-    case truncated, unconfirmed
+    case truncated, unconfirmed, limited
     var errorDescription: String? {
         switch self {
         case .truncated: "The provider reached its output limit. The answer is incomplete; try a narrower question."
         case .unconfirmed: "Answer preserved; the provider did not confirm complete generation."
+        case .limited: "Stopped because the provider exceeded the supported streaming size. The answer is incomplete."
         }
     }
     static func classify(_ error: any Error) -> Self? {
