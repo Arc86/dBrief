@@ -75,7 +75,9 @@ private final class PrivacyAIProtocol: URLProtocol, @unchecked Sendable {
         if host == "streamfailure.invalid" {
             client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
         } else {
-            if stream { client?.urlProtocol(self, didLoad: Data("data: [DONE]\n\n".utf8)) }
+            if stream {
+                client?.urlProtocol(self, didLoad: Data("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n".utf8))
+            }
             client?.urlProtocolDidFinishLoading(self)
         }
     }

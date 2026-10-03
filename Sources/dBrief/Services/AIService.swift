@@ -155,30 +155,15 @@ actor AIService {
                         throw AIServiceError.invalidResponse
                     }
 
+                    var parser = ChatSSEParser(anthropic: isAnthropic)
                     for try await line in asyncBytes.lines {
-                        guard line.hasPrefix("data: ") else { continue }
-                        let jsonStr = String(line.dropFirst(6))
+                        guard line.hasPrefix("data:") else { continue }
+                        let jsonStr = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                         if jsonStr.trimmingCharacters(in: .whitespaces) == "[DONE]" { break }
-                        guard let data = jsonStr.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                        else { continue }
-
-                        if isAnthropic {
-                            // Anthropic SSE: text arrives in content_block_delta events.
-                            guard (json["type"] as? String) == "content_block_delta",
-                                  let delta = json["delta"] as? [String: Any],
-                                  let text = delta["text"] as? String
-                            else { continue }
-                            continuation.yield(text)
-                        } else {
-                            guard let choices = json["choices"] as? [[String: Any]],
-                                  let delta = choices.first?["delta"] as? [String: Any],
-                                  let content = delta["content"] as? String
-                            else { continue }
-                            continuation.yield(content)
-                        }
+                        if let content = try parser.consume(jsonStr) { continuation.yield(content) }
                     }
                     try Task.checkCancellation()
+                    try parser.finish()
                     await trace?.finish(response: response)
                     continuation.finish()
                 } catch {

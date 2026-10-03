@@ -94,13 +94,8 @@ final class TranscriptChatService {
         spokenMessageID = nil
     }
 
-    /// Provides the transcript text at send-time. A closure (rather than a stored
-    /// string) so the chat can read a *live, growing* transcript during recording —
-    /// each `send()` rebuilds the prompt from the current snapshot. Mutable so a live
-    /// chat can be re-pointed at the authoritative transcript when recording finishes
-    /// (see `rebindTranscript`).
-    private var transcriptProvider: @MainActor () -> String
-    private var speakerLabels: [SpeakerLabel]
+    /// Captured synchronously for each immutable evidence request.
+    private var contextProvider: TranscriptContextProvider
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService: AIService
@@ -116,13 +111,14 @@ final class TranscriptChatService {
     /// The in-flight initial load from disk. `send()` awaits it so a fast typist
     /// can't append to an empty conversation before persisted history arrives
     /// (which would no-op the load and overwrite the saved file).
-    private var loadTask: Task<Void, Never>?
+    private var loadTask: Task<ChatHistory?, Never>?
+    private var conversationGeneration: UInt64 = 0
     /// True when `messages` has changed since the last successful write — lets
     /// `flushPendingSave()` skip a redundant write on quit when nothing is dirty.
     private var hasUnsavedChanges = false
     private var invalidated = false
     private let validity = RecordingDerivativeValidity()
-    private var sendTask: Task<Void, Never>?
+    private var sendTask: Task<TranscriptChatSendResult, Never>?
     private var activeSendID: UUID?
 
     /// Retire this session without deleting the currently published conversation.
@@ -130,6 +126,7 @@ final class TranscriptChatService {
     func invalidateForReprocessing() {
         stopReading()
         invalidated = true
+        conversationGeneration &+= 1
         validity.invalidate()
         sendTask?.cancel()
         saveTask?.cancel()
@@ -145,15 +142,13 @@ final class TranscriptChatService {
     }
 
     init(
-        transcriptProvider: @escaping @MainActor () -> String,
-        speakerLabels: [SpeakerLabel],
+        contextProvider: TranscriptContextProvider,
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?,
         recording: Recording? = nil,
         aiService: AIService = AIService()
     ) {
-        self.transcriptProvider = transcriptProvider
-        self.speakerLabels = speakerLabels
+        self.contextProvider = contextProvider
         self.appSettings = appSettings
         self.localPlugin = localPlugin
         self.resourceAdmission = localPlugin?.connection.resourceAdmission
@@ -161,6 +156,17 @@ final class TranscriptChatService {
         self.aiService = aiService
         Self.activeServices.removeAll { $0.value == nil }
         Self.activeServices.append(WeakService(self))
+    }
+
+    convenience init(
+        transcriptProvider: @escaping @MainActor () -> String,
+        speakerLabels: [SpeakerLabel], appSettings: AppSettings,
+        localPlugin: LocalAIPluginService?, recording: Recording? = nil, aiService: AIService = AIService()
+    ) {
+        let recordingID = recording?.id
+        self.init(contextProvider: .value {
+            .legacy(text: transcriptProvider(), recordingID: recordingID, speakerLabels: speakerLabels)
+        }, appSettings: appSettings, localPlugin: localPlugin, recording: recording, aiService: aiService)
     }
 
     /// Convenience init for a fixed (completed-recording) transcript.
@@ -182,76 +188,129 @@ final class TranscriptChatService {
         )
     }
 
-    func send(_ userText: String) async {
+    @discardableResult
+    func send(_ userText: String, onAccepted: (@MainActor () -> Void)? = nil) async -> TranscriptChatSendResult {
         guard !invalidated, !Task.isCancelled, sendTask == nil,
-              !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
+              !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return .notAccepted }
+        // Capture mutable owners and settings before the first suspension.
+        let frozenProvider = contextProvider.freeze()
+        let route = FrozenChatRoute(settings: appSettings)
+        let language = appSettings.outputLanguage
+        let question = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let priorMessages = messages, initialLoad = loadTask, generation = conversationGeneration
         let sendID = UUID()
         activeSendID = sendID
         isStreaming = true
         streamingError = nil
         streamingNotice = nil
-        let task = Task { [weak self] in
-            guard let self, !self.invalidated, self.activeSendID == sendID else { return }
-            let context = await self.privacyRecording?.privacyContext()
-            guard !self.invalidated, !Task.isCancelled, self.activeSendID == sendID else { return }
-            await PrivacyTrace.$context.withValue(context) { await self.sendInRecordingContext(userText, sendID: sendID) }
+        let task = Task { [weak self] () -> TranscriptChatSendResult in
+            guard let self, self.accepts(sendID, generation: generation) else { return .notAccepted }
+            do {
+                // The captured provider's atomic snapshot is the first evidence operation.
+                let snapshot = try await frozenProvider.snapshot()
+                guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
+                if let owner = self.privacyRecording?.id, snapshot.source.recordingID != owner {
+                    throw TranscriptContextError.recordingMismatch
+                }
+                guard !snapshot.segments.isEmpty else {
+                    self.streamingNotice = "Waiting for transcript"
+                    return .waitingForTranscript
+                }
+                let loaded = await initialLoad?.value
+                guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
+                let history = priorMessages.isEmpty ? (loaded?.messages ?? []) : priorMessages
+                let assistantID = UUID()
+                let build = Task.detached(priority: .userInitiated) {
+                    try TranscriptContextBuilder.build(snapshot: snapshot, route: route.basis, budget: route.budget,
+                        language: language, question: question, history: history, answerID: assistantID)
+                }
+                let prepared = try await withTaskCancellationHandler { try await build.value } onCancel: { build.cancel() }
+                let context = await self.privacyRecording?.privacyContext()
+                guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
+                return await PrivacyTrace.$context.withValue(context) {
+                    await self.sendInRecordingContext(question, prepared: prepared, route: route,
+                        history: history, assistantID: assistantID, sendID: sendID, generation: generation, onAccepted: onAccepted)
+                }
+            } catch {
+                guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
+                if (error as? TranscriptContextError) == .waitingForTranscript {
+                    self.streamingNotice = "Waiting for transcript"; return .waitingForTranscript
+                }
+                self.streamingError = error.localizedDescription
+                return .notAccepted
+            }
         }
         sendTask = task
-        await withTaskCancellationHandler {
+        let result = await withTaskCancellationHandler {
             await task.value
         } onCancel: { task.cancel() }
         // A stopped request may unwind after the user has already sent another.
-        guard activeSendID == sendID else { return }
+        guard activeSendID == sendID else { return result }
         sendTask = nil
         activeSendID = nil
         isStreaming = false
         scheduleSave()
+        return result
     }
 
-    private func sendInRecordingContext(_ userText: String, sendID: UUID) async {
-        let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, activeSendID == sendID else { return }
+    private func accepts(_ sendID: UUID, generation: UInt64) -> Bool {
+        !invalidated && activeSendID == sendID && conversationGeneration == generation
+    }
 
-        // Make sure any persisted history has been adopted before we append, so
-        // sending before the disk load finishes can't drop the saved conversation.
-        await loadTask?.value
-        guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
-
-        messages.append(ChatMessage(role: .user, content: trimmed))
-
-        var assistantMessage = ChatMessage(role: .assistant, content: "")
+    private func sendInRecordingContext(_ question: String, prepared: PreparedTranscriptChat, route: FrozenChatRoute,
+        history: [ChatMessage], assistantID: UUID, sendID: UUID, generation: UInt64,
+        onAccepted: (@MainActor () -> Void)?) async -> TranscriptChatSendResult {
+        guard accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
+        messages = history
+        messages.append(ChatMessage(role: .user, content: question))
+        var assistantMessage = ChatMessage(id: assistantID, role: .assistant, content: "", basis: prepared.basis, outcome: .streaming)
         messages.append(assistantMessage)
         let assistantIdx = messages.count - 1
-
-        let systemPrompt = buildSystemPrompt()
-        let fullUserMessage = buildContextualUserMessage(currentMessage: trimmed)
+        onAccepted?()
+        guard accepts(sendID, generation: generation), !Task.isCancelled else { return .accepted }
         var limiter = ChatResponseLimiter()
 
         do {
-            let stream = await buildStream(systemPrompt: systemPrompt, userMessage: fullUserMessage)
+            let stream = await buildStream(prepared: prepared, route: route)
             for try await chunk in stream {
-                guard !invalidated, !Task.isCancelled, activeSendID == sendID,
-                      messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
+                guard accepts(sendID, generation: generation),
+                      messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return .accepted }
+                if Task.isCancelled { assistantMessage.outcome = .interrupted; break }
                 assistantMessage.content += limiter.append(chunk)
                 messages[assistantIdx] = assistantMessage
                 if let reason = limiter.stopReason {
                     streamingNotice = reason.message
+                    assistantMessage.outcome = .limited
                     sendTask?.cancel()
-                    return
+                    break
                 }
                 // Buffered tokens must not monopolize the main actor and starve Stop.
                 await Task.yield()
             }
+            if assistantMessage.outcome == .streaming {
+                assistantMessage.outcome = Task.isCancelled ? .interrupted : .completed
+            }
         } catch {
-            guard !invalidated, !Task.isCancelled, activeSendID == sendID,
-                  messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
-            streamingError = error.localizedDescription
-            if assistantMessage.content.isEmpty {
-                messages[assistantIdx].content = "Error: \(error.localizedDescription)"
+            guard accepts(sendID, generation: generation),
+                  messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return .accepted }
+            if Task.isCancelled || error is CancellationError {
+                assistantMessage.outcome = .interrupted
+                streamingNotice = "Stopped generating."
+            } else if let end = ChatStreamEndError.classify(error) {
+                assistantMessage.outcome = end == .truncated ? .truncated : .unconfirmed
+                streamingNotice = end.localizedDescription
             } else {
-                streamingNotice = "Response interrupted: \(error.localizedDescription)"
+                assistantMessage.outcome = .failed
+                streamingError = error.localizedDescription
+                if assistantMessage.content.isEmpty { assistantMessage.content = "Error: \(error.localizedDescription)" }
+                else { streamingNotice = "Response interrupted: \(error.localizedDescription)" }
             }
         }
+        guard accepts(sendID, generation: generation),
+              messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return .accepted }
+        assistantMessage.referenceResolution = ChatReferenceParser.resolve(assistantMessage.rawAnswerText, basis: prepared.basis)
+        messages[assistantIdx] = assistantMessage
+        return .accepted
     }
 
     func stopGenerating() {
@@ -261,6 +320,13 @@ final class TranscriptChatService {
         isStreaming = false
         task.cancel()
         streamingNotice = "Stopped generating."
+        if let index = messages.indices.last, messages[index].role == .assistant,
+           messages[index].outcome == .streaming {
+            messages[index].outcome = .interrupted
+            if let basis = messages[index].basis {
+                messages[index].referenceResolution = ChatReferenceParser.resolve(messages[index].rawAnswerText, basis: basis)
+            }
+        }
         if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
             messages.removeLast()
         }
@@ -271,6 +337,9 @@ final class TranscriptChatService {
     func clearMessages() {
         guard !invalidated, !isStreaming else { return }
         stopReading()
+        conversationGeneration &+= 1
+        loadTask?.cancel()
+        loadTask = nil
         messages = []
         streamingError = nil
         streamingNotice = nil
@@ -299,19 +368,29 @@ final class TranscriptChatService {
     /// Begin adopting a previously-saved conversation from disk. Tracks the work
     /// in `loadTask` so `send()` can await it before appending. Call after
     /// `enablePersistence`.
-    func startLoadingPersisted() {
+    func startLoadingPersisted(load: (@Sendable () async throws -> ChatHistory?)? = nil) {
         guard !invalidated else { return }
-        loadTask = Task { await loadPersisted() }
+        loadTask?.cancel()
+        let generation = conversationGeneration
+        let store = chatStore, url = persistenceURL
+        loadTask = Task { [weak self] in
+            let history: ChatHistory?
+            if let load { history = try? await load() }
+            else if let store, let url { history = try? await store.load(from: url) }
+            else { history = nil }
+            guard let self, !self.invalidated, !Task.isCancelled, self.conversationGeneration == generation else { return nil }
+            if self.messages.isEmpty, let history { self.messages = history.messages }
+            return history
+        }
     }
 
     /// Adopt a previously-saved conversation from disk. No-op if persistence
     /// isn't enabled, the sidecar is absent/empty, or this session already has
     /// messages (an in-progress live chat must not be clobbered by an old file).
     func loadPersisted() async {
-        guard let chatStore, let persistenceURL, messages.isEmpty else { return }
-        guard let history = try? await chatStore.load(from: persistenceURL),
-              !history.messages.isEmpty, !invalidated, !Task.isCancelled else { return }
-        messages = history.messages
+        guard !invalidated, messages.isEmpty else { return }
+        startLoadingPersisted()
+        _ = await loadTask?.value
     }
 
     /// Request a save of the current conversation (e.g. after a live chat is
@@ -324,7 +403,7 @@ final class TranscriptChatService {
     func flushPendingSave() async {
         saveTask?.cancel()
         guard !invalidated, !Task.isCancelled, hasUnsavedChanges, let chatStore, let persistenceURL, !messages.isEmpty else { return }
-        let history = ChatHistory(messages: messages, engine: appSettings.effectiveAIEngine.rawValue)
+        let history = ChatHistory(messages: messages, engine: lastAnswerEngine)
         try? await chatStore.save(history, to: persistenceURL, validity: validity)
         hasUnsavedChanges = false
     }
@@ -333,10 +412,10 @@ final class TranscriptChatService {
     /// into a single atomic save and snapshots `messages` on the main actor so
     /// the actor write sees a consistent value.
     private func scheduleSave() {
-        guard !invalidated, !Task.isCancelled, let chatStore, let persistenceURL, !messages.isEmpty else { return }
+        guard !invalidated, let chatStore, let persistenceURL, !messages.isEmpty else { return }
         hasUnsavedChanges = true
         let snapshot = messages
-        let engine = appSettings.effectiveAIEngine.rawValue
+        let engine = lastAnswerEngine
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
@@ -352,9 +431,13 @@ final class TranscriptChatService {
     /// chat switches to the authoritative on-disk transcript, but the live Q&A history
     /// is preserved (those earlier answers were grounded in the rough live preview).
     func rebindTranscript(text: String, speakerLabels: [SpeakerLabel]) {
-        transcriptProvider = { text }
-        self.speakerLabels = speakerLabels
+        let recordingID = privacyRecording?.id
+        contextProvider = .value { .legacy(text: text, recordingID: recordingID, speakerLabels: speakerLabels) }
     }
+
+    func rebindContextProvider(_ provider: TranscriptContextProvider) { contextProvider = provider }
+
+    private var lastAnswerEngine: String? { messages.last(where: { $0.basis != nil })?.basis?.route.engine }
 
     /// True once the conversation has at least one exchange — used to decide whether a
     /// finished recording should preserve and reopen the carried-over live chat.
@@ -386,111 +469,97 @@ final class TranscriptChatService {
 
     // MARK: - Private
 
-    private func buildStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
-        // The Local CLI is one-shot and can't stream chat, so route to the
-        // user-selected fallback engine instead.
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
-
-        switch engine {
-
+    private func buildStream(prepared: PreparedTranscriptChat, route: FrozenChatRoute) async -> AsyncThrowingStream<String, Error> {
+        let systemPrompt = prepared.systemPrompt, userMessage = prepared.userMessage
+        switch route.engine {
         case .localCLI:
             return errorStream("Local CLI does not support chat. Choose a chat fallback engine in Settings → AI Analysis.")
-
         case .qwenLocal:
-            guard let plugin = localPlugin else {
-                return errorStream("Local AI plugin not available")
-            }
+            guard let plugin = localPlugin else { return errorStream("Local AI plugin not available") }
             return await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage)
-
         case .appleIntelligence:
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
                 let permit: LiveResourceJobLease?
-                do { permit = try await resourceAdmission?.acquire(owner: UUID(),job: .localChat(model: "apple-intelligence"),wait: false) }
+                do { permit = try await resourceAdmission?.acquire(owner: UUID(), job: .localChat(model: "apple-intelligence"), wait: false) }
                 catch { return AsyncThrowingStream { $0.finish(throwing: error) } }
                 let resources = resourceAdmission?.policy
                 return AsyncThrowingStream { continuation in
                     let task = Task {
-                        // The producer owns admission through actual respond return,
-                        // even when the consumer cancels or the view disappears.
+                        // Admission lasts through actual native return, including cancellation.
                         defer { if let permit { Task { await resources?.releaseJob(permit) } } }
                         do {
                             try Task.checkCancellation()
+                            if #available(macOS 26.4, *) {
+                                let model = SystemLanguageModel.default
+                                let instructions = try await model.tokenCount(for: Instructions(systemPrompt))
+                                let prompt = try await model.tokenCount(for: userMessage)
+                                guard instructions <= route.budget.inputAllowance,
+                                      prompt <= route.budget.inputAllowance - instructions,
+                                      instructions + prompt + route.budget.outputTokens + route.budget.templateReserve <= model.contextSize else {
+                                    throw TranscriptContextError.noEvidenceFits
+                                }
+                            }
                             let session = LanguageModelSession(instructions: systemPrompt)
-                            let options = GenerationOptions(temperature: 0.5)
+                            let options = GenerationOptions(temperature: 0.5, maximumResponseTokens: route.budget.outputTokens)
                             let response = try await PrivacyTrace.perform(.init(stage: .chat, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
                                 try await session.respond(to: userMessage, options: options)
                             }
+                            try Task.checkCancellation()
                             continuation.yield(response.content)
-                            continuation.finish()
-                        } catch {
-                            continuation.finish(throwing: error)
-                        }
+                            // This SDK's response has no stop-vs-length terminal fact.
+                            // Preserve output but never manufacture a completed-history fact.
+                            continuation.finish(throwing: ChatStreamEndError.unconfirmed)
+                        } catch { continuation.finish(throwing: error) }
                     }
                     continuation.onTermination = { @Sendable _ in task.cancel() }
                 }
             }
             #endif
             return errorStream("Apple Intelligence requires macOS 26 or later")
-
         case .remoteEndpoint:
-            guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
-                return errorStream("No AI endpoint configured. Add one in Settings → AI.")
-            }
+            guard let endpoint = route.endpoint else { return errorStream("No AI endpoint configured. Add one in Settings → AI.") }
             return aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
         }
     }
 
     private func errorStream(_ message: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            continuation.finish(throwing: NSError(
-                domain: "TranscriptChatService",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: message]
-            ))
+            continuation.finish(throwing: NSError(domain: "TranscriptChatService", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: message]))
         }
     }
+}
 
-    private func buildSystemPrompt() -> String {
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
-        // Apple Intelligence (FoundationModels) has a ~4096-token context window — a full
-        // transcript in the instructions overflows it and chat errors out immediately.
-        // Truncate for that engine; Gemma (128K) and remote endpoints keep the full text.
-        let transcriptText = transcriptProvider()
-        let transcript = engine == .appleIntelligence
-            ? UnifiedInsightsPrompt.truncateForFoundationModels(transcriptText)
-            : transcriptText
+enum TranscriptChatSendResult: Equatable { case accepted, waitingForTranscript, notAccepted }
 
-        var prompt = "You are an assistant analyzing a meeting transcript. The complete "
-        prompt += "transcript is included in full below — you already have it. Never ask the "
-        prompt += "user to provide the transcript; always answer from the text between the markers.\n\n"
-        prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n"
-        if !speakerLabels.isEmpty {
-            prompt += "\nSPEAKER LEGEND:\n"
-            for label in speakerLabels {
-                prompt += "- \(label.id): \(label.displayName)\n"
-            }
+/// Transient request routing holds credentials only for dispatch. Basis is nonsecret.
+private struct FrozenChatRoute: Sendable {
+    let engine: AppSettings.AIEngine
+    let endpoint: Endpoint?
+    let basis: ChatRouteBasis
+    let budget: ChatContextBudget
+
+    @MainActor init(settings: AppSettings) {
+        engine = settings.effectiveAIEngine == .localCLI ? settings.chatFallbackEngine : settings.effectiveAIEngine
+        var selected = engine == .remoteEndpoint ? settings.effectiveDefaultAIEndpoint : nil
+        let output: Int, context: Int
+        switch engine {
+        case .appleIntelligence: output = 512; context = 4_096
+        case .qwenLocal: output = ChatGenerationPolicy.maximumOutputTokens; context = ChatGenerationPolicy.applicationContextTokens
+        case .remoteEndpoint:
+            output = min(selected?.resolvedMaxOutputTokens ?? 4_096, 4_096); context = 16_384
+            selected?.maxOutputTokens = output
+        case .localCLI: output = 512; context = 4_096
         }
-        prompt += "\nAnswer concisely in the transcript's language. When asked to summarize, list "
-        prompt += "action items, or transform the transcript, do so directly from the text above — "
-        prompt += "without preamble and without asking for more information."
-        return prompt
-    }
-
-    private func buildContextualUserMessage(currentMessage: String) -> String {
-        let history = messages.dropLast()  // exclude the assistant placeholder we just added
-        guard !history.isEmpty else { return currentMessage }
-
-        // Include conversation history as plain text for backends that are single-turn
-        var context = "Previous conversation:\n"
-        for msg in history {
-            let prefix = msg.role == .user ? "User: " : "Assistant: "
-            context += "\(prefix)\(msg.content)\n\n"
+        endpoint = selected
+        budget = .init(contextTokens: context, outputTokens: output, templateReserve: 256)
+        var origin: String?
+        if let selected, let url = URLComponents(string: selected.baseURL), let scheme = url.scheme, let host = url.host {
+            var sanitized = URLComponents(); sanitized.scheme = scheme; sanitized.host = host; sanitized.port = url.port
+            origin = sanitized.string
         }
-        return "\(context)Current question: \(currentMessage)"
+        basis = .init(engine: engine.rawValue, endpointID: selected?.id, provider: selected?.provider.rawValue,
+                      origin: origin, model: selected?.modelName ?? (engine == .qwenLocal ? ChatGenerationPolicy.modelID : nil))
     }
 }

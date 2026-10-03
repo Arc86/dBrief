@@ -16,7 +16,7 @@ struct TranscriptChatCancellationTests {
         try #require(condition())
     }
 
-    @Test("Stopping cancels HTTP and preserves a usable conversation", arguments: ["manual", "repetition", "length", "waiting", "view"])
+    @Test("Stopping cancels HTTP and preserves a usable conversation", arguments: ["manual", "task", "repetition", "length", "waiting", "view"])
     func stopAndRestart(mode: String) async throws {
         let settings = AppSettings()
         let oldEngine = settings.aiEngine
@@ -89,10 +89,12 @@ struct TranscriptChatCancellationTests {
         }
         try await waitUntil { service.messages.last?.content == reply }
         chatWindow?.contentView?.layoutSubtreeIfNeeded()
-        service.stopGenerating()
+        if mode == "task" { first.cancel(); await first.value }
+        else { service.stopGenerating() }
         chatWindow?.contentView?.layoutSubtreeIfNeeded()
         #expect(!service.isStreaming)
         #expect(service.messages.last?.content == reply)
+        #expect(service.messages.last?.outcome == .interrupted)
         #expect(service.streamingError == nil)
         // Queue the new request immediately, before persistence or old-task cleanup.
         let second = Task { await service.send("Second question") }

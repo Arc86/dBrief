@@ -98,6 +98,8 @@ public struct WireError: Sendable, Codable, Error {
         case insufficientMemory
         case audioLoadFailed
         case diarizationFailed
+        case chatTruncated
+        case chatUnconfirmed
         case generic
     }
     public let kind: Kind

@@ -5,20 +5,28 @@ struct ChatMessage: Identifiable, Sendable, Codable, Equatable {
     let role: Role
     var content: String
     let timestamp: Date
+    let basis: ChatAnswerBasis?
+    var outcome: ChatAnswerOutcome?
+    var referenceResolution: ChatReferenceResolution?
 
     enum Role: String, Sendable, Codable {
         case user, assistant
     }
 
-    init(id: UUID = UUID(), role: Role, content: String, timestamp: Date = Date()) {
+    init(id: UUID = UUID(), role: Role, content: String, timestamp: Date = Date(),
+         basis: ChatAnswerBasis? = nil, outcome: ChatAnswerOutcome? = nil,
+         referenceResolution: ChatReferenceResolution? = nil) {
         self.id = id
         self.role = role
         self.content = content
         self.timestamp = timestamp
+        self.basis = basis
+        self.outcome = outcome
+        self.referenceResolution = referenceResolution
     }
 
     /// Share the same visible answer between rendering, copying and speech.
-    var displayParts: (reasoning: String?, answer: String) {
+    private var rawDisplayParts: (reasoning: String?, answer: String) {
         guard role == .assistant, let open = content.range(of: "<think>") else {
             return (nil, content)
         }
@@ -30,6 +38,13 @@ struct ChatMessage: Identifiable, Sendable, Codable, Equatable {
         let answer = before + (close.map { String(after[$0.upperBound...]) } ?? "")
         return (reasoning.isEmpty ? nil : reasoning,
                 answer.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var rawAnswerText: String { rawDisplayParts.answer }
+    var displayParts: (reasoning: String?, answer: String) {
+        let parts = rawDisplayParts
+        guard role == .assistant, let basis, referenceResolution != nil else { return parts }
+        return (parts.reasoning, ChatReferenceParser.display(parts.answer, basis: basis))
     }
 
     var speechText: String { SpokenSummaryScript.clean(displayParts.answer) }

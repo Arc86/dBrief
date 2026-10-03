@@ -115,8 +115,8 @@ private final class OutputLimitProtocol: URLProtocol, @unchecked Sendable {
             let payload: String
             if streaming {
                 payload = anthropic
-                    ? "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"\(text)\"}}\n\n"
-                    : "data: {\"choices\":[{\"delta\":{\"content\":\"\(text)\"}}]}\n\ndata: [DONE]\n\n"
+                    ? "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"\(text)\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+                    : "data: {\"choices\":[{\"delta\":{\"content\":\"\(text)\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
             } else {
                 payload = anthropic
                     ? "{\"content\":[{\"type\":\"text\",\"text\":\"\(text)\"}],\"stop_reason\":\"end_turn\"}"

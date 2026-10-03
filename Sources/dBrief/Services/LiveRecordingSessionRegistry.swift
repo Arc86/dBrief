@@ -43,6 +43,7 @@ final class LiveRecordingSessionRegistry {
     }
 
     func entry(recordingID: UUID) -> Entry? { entries[recordingID] }
+    func isRetired(recordingID: UUID) -> Bool { retiredRecordings.contains(recordingID) }
     func entry(identity: LiveSessionIdentity) -> Entry? {
         guard let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
         return entry

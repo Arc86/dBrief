@@ -10,7 +10,7 @@ import MLX
 #endif
 
 actor MLXInsightsService {
-    private static let modelID = "mlx-community/gemma-4-e4b-it-4bit"
+    private static let modelID = ChatGenerationPolicy.modelID
     // Transcript truncation budget lives in `UnifiedInsightsPrompt` (shared with
     // the Local CLI engine).
 
@@ -173,20 +173,19 @@ actor MLXInsightsService {
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
                     self.stateHandler(.analyzing)
-                    let session = ChatSession(
-                        container,
-                        instructions: systemPrompt,
-                        generateParameters: self.generationParameters()
-                    )
-                    do {
-                        for try await chunk in session.streamResponse(to: userMessage) {
-                            continuation.yield(chunk)
-                        }
-                    } catch {
-                        await session.synchronize()
-                        throw error
+                    let parameters = self.generationParameters()
+                    let (events, producer) = try await container.perform { context in
+                        try Task.checkCancellation()
+                        let input = try await context.processor.prepare(input: UserInput(chat: [.system(systemPrompt), .user(userMessage)]))
+                        try ChatGenerationPolicy.validatePromptTokenCount(input.text.tokens.size)
+                        try Task.checkCancellation()
+                        let iterator = try TokenIterator(input: input, model: context.model, parameters: parameters)
+                        // Unlike ChatSession.synchronize, this handle joins the actual
+                        // producer even if consumer cancellation precedes its startup.
+                        return MLXLMCommon.generateTask(promptTokenCount: input.text.tokens.size,
+                            modelConfiguration: context.configuration, tokenizer: context.tokenizer, iterator: iterator)
                     }
-                    await session.synchronize()
+                    try await Self.consumeChatGeneration(stream: events, producer: producer, emit: { continuation.yield($0) })
                     self.isInferencing = false
                     await self.unload()
                     continuation.finish()
@@ -200,6 +199,39 @@ actor MLXInsightsService {
             continuation.onTermination = { @Sendable _ in
                 task.cancel()
             }
+        }
+    }
+
+    static func consumeChatGeneration(stream: AsyncStream<Generation>, producer: Task<Void, Never>,
+                                      emit: @Sendable (String) -> Void) async throws {
+        do {
+            try await withTaskCancellationHandler {
+                var stopReason: GenerateStopReason?
+                for await event in stream {
+                    try Task.checkCancellation()
+                    switch event {
+                    case .chunk(let text):
+                        guard stopReason == nil else { throw WireError(kind: .chatUnconfirmed, message: "Text arrived after a native terminal.") }
+                        emit(text)
+                    case .info(let info):
+                        guard stopReason == nil else { throw WireError(kind: .chatUnconfirmed, message: "Conflicting native terminal facts.") }
+                        stopReason = info.stopReason
+                    case .toolCall: throw WireError(kind: .chatUnconfirmed, message: "Chat does not execute generated tool calls.")
+                    }
+                }
+                await producer.value
+                try Task.checkCancellation()
+                switch stopReason {
+                case .stop: return
+                case .length: throw WireError(kind: .chatTruncated, message: "The local provider reached its output limit.")
+                case .cancelled: throw CancellationError()
+                case nil: throw WireError(kind: .chatUnconfirmed, message: "The local provider did not confirm complete generation.")
+                }
+            } onCancel: { producer.cancel() }
+        } catch {
+            producer.cancel()
+            await producer.value
+            throw error
         }
     }
 
@@ -324,7 +356,7 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 8192,
+            maxTokens: ChatGenerationPolicy.maximumOutputTokens,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,

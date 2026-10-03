@@ -249,15 +249,19 @@ struct TranscriptDetailView: View {
             guard !live else { return }
             showLiveChat = false
             let liveChat = chatStore.session(for: recording.fileURL)
-            if liveChat?.hasHistory != true {
+            if liveChat?.hasHistory != true, liveChat?.isStreaming != true {
                 chatStore.remove(for: recording.fileURL)
             }
             Task {
                 await loadTranscript()
                 if let liveChat, liveChat.hasHistory {
-                    let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-                        ?? recording.transcription?.text ?? ""
-                    liveChat.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                    // Rendering fallbacks and early manager assignments do not
+                    // prove final publication. Keep live evidence if no durable file exists.
+                    if let url = recording.transcriptSidecarURL,
+                       (try? await context.transcriptStore.load(from: url)) != nil {
+                        liveChat.rebindContextProvider(.completed(recordingID: recording.id,
+                            transcriptURL: url, store: context.transcriptStore))
+                    }
                     // The recording is finalized now, so a stable sidecar exists:
                     // bind persistence and flush the carried-over conversation.
                     if let url = recording.chatSidecarURL {
@@ -987,7 +991,14 @@ struct TranscriptDetailView: View {
         if isReprocessing {
             ContentUnavailableView("Chat paused", systemImage: "clock", description: Text("Finish or discard the pending reprocessing attempt to use chat."))
         } else if let chatService {
-            TranscriptChatView(chatService: chatService)
+            TranscriptChatView(chatService: chatService, referencePlayback: { reference, basis in
+                guard let audioURL = recording.finalizedAudioURL,
+                      FileManager.default.fileExists(atPath: audioURL.path) else { return nil }
+                // Task 7 owns durable capture binding. Without that proof live
+                // track references remain readable and explicitly have no audio.
+                return ChatReferencePlayback.seekSeconds(reference: reference, basis: basis,
+                    binding: .init(recordingID: recording.id, captureSessionID: nil, mappingRevision: nil, mapping: nil))
+            }, onSeekReference: { seek(to: $0) })
         } else {
             VStack(spacing: 12) {
                 Spacer()
@@ -1361,26 +1372,25 @@ struct TranscriptDetailView: View {
             return
         }
         chatStore.remove(for: recording.fileURL)
-        let labels = richTranscript?.speakerLabels ?? []
         let service: TranscriptChatService
         if isLive {
-            // Chat against the live, growing transcript: the provider re-reads the
-            // current segments + volatile lines on each send().
+            // Freeze committed evidence for this recording, excluding UI partials and processing previews.
             let appState = context.appState
             let recordingID = recording.id
+            let legacy = LegacyLiveChatContext(recordingID: recordingID)
             service = TranscriptChatService(
-                transcriptProvider: { Self.liveTranscriptText(appState: appState, recordingID: recordingID) },
-                speakerLabels: labels,
+                contextProvider: .recording(recordingID: recordingID, registry: appState.liveRecordingSessions, legacy: {
+                    let current = appState.currentRecording?.id == recordingID && appState.recordingState != .idle
+                    return legacy.capture(committed: current ? appState.liveTranscriptSegments : nil)
+                }),
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin,
                 recording: recording
             )
         } else {
-            let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-                ?? recording.transcription?.text ?? ""
             service = TranscriptChatService(
-                transcriptText: text,
-                speakerLabels: labels,
+                contextProvider: .completed(recordingID: recording.id, transcriptURL: recording.transcriptSidecarURL,
+                                            store: context.transcriptStore),
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin,
                 recording: recording
@@ -1395,33 +1405,6 @@ struct TranscriptDetailView: View {
         chatStore.set(service, for: recording.fileURL)
         chatService = service
         service.prewarm()
-    }
-
-    /// Snapshot of the live transcript (finalized segments + in-progress lines),
-    /// speaker-prefixed, for the live chat provider.
-    @MainActor
-    private static func liveTranscriptText(appState: AppState, recordingID: UUID) -> String {
-        // Resolve the source for THIS recording specifically, so a concurrent capture can't
-        // feed its transcript into a processing recording's chat (or vice versa).
-        let isCapture = appState.currentRecording?.id == recordingID && appState.recordingState != .idle
-        let segments: [LiveTranscriptSegment]
-        if isCapture {
-            segments = appState.liveTranscriptSegments
-        } else if appState.processingJob?.recording.id == recordingID {
-            segments = appState.processingJob?.transcriptPreviewSegments ?? []
-        } else {
-            segments = []
-        }
-        var lines: [String] = segments.map { seg in
-            if let speaker = seg.speaker { return "\(speaker): \(seg.text)" }
-            return seg.text
-        }
-        // Volatile partials are a capture-only preview.
-        if isCapture {
-            if !appState.liveVolatileMic.isEmpty { lines.append("You: \(appState.liveVolatileMic)") }
-            if !appState.liveVolatileSystem.isEmpty { lines.append("Participant: \(appState.liveVolatileSystem)") }
-        }
-        return lines.joined(separator: "\n")
     }
 
     private func deleteRecording() {

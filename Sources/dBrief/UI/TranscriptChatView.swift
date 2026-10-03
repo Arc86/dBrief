@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TranscriptChatView: View {
     let chatService: TranscriptChatService
+    var referencePlayback: (ChatEvidenceReference, ChatAnswerBasis) -> Double? = { _, _ in nil }
+    var onSeekReference: (Double) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var inputText = ""
@@ -19,15 +21,16 @@ struct TranscriptChatView: View {
                 promptTemplates
             } else {
                 messageList
-                if let notice = chatService.streamingNotice {
-                    Text(notice)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                }
                 promptChipsRow
                 inputBar
+            }
+            if let notice = chatService.streamingNotice ?? chatService.streamingError {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
             }
         }
         .onExitCommand {
@@ -154,6 +157,8 @@ struct TranscriptChatView: View {
                         MessageBubble(
                             message: message,
                             chatService: chatService,
+                            referencePlayback: referencePlayback,
+                            onSeekReference: onSeekReference,
                             isStreaming: chatService.isStreaming && message.id == chatService.messages.last?.id
                         )
                         .id(message.id)
@@ -268,8 +273,13 @@ struct TranscriptChatView: View {
         let text = inputText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty, !chatService.isStreaming else { return }
         scrollFollow.resumeFollowing()
-        inputText = ""
-        Task { await chatService.send(text) }
+        let draft = inputText
+        Task {
+            await chatService.send(text, onAccepted: {
+                // Do not erase an edited draft while snapshot/history acquisition waits.
+                if inputText == draft { inputText = "" }
+            })
+        }
     }
 }
 
@@ -278,6 +288,8 @@ struct TranscriptChatView: View {
 private struct MessageBubble: View {
     let message: ChatMessage
     let chatService: TranscriptChatService
+    let referencePlayback: (ChatEvidenceReference, ChatAnswerBasis) -> Double?
+    let onSeekReference: (Double) -> Void
     /// True only for the assistant reply currently streaming — render plain
     /// text while true, then Markdown once the reply completes.
     var isStreaming: Bool = false
@@ -294,6 +306,10 @@ private struct MessageBubble: View {
                     .font(.caption2.bold())
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
+                if let basis = message.basis {
+                    ChatEvidencePresentation(message: message, basis: basis,
+                        referencePlayback: referencePlayback, onSeekReference: onSeekReference)
+                }
 
                 if let reasoning = parts.reasoning {
                     reasoningView(reasoning)
@@ -386,6 +402,79 @@ private struct MessageBubble: View {
     }
 }
 
+
+private struct ChatEvidencePresentation: View {
+    let message: ChatMessage
+    let basis: ChatAnswerBasis
+    let referencePlayback: (ChatEvidenceReference, ChatAnswerBasis) -> Double?
+    let onSeekReference: (Double) -> Void
+    @State private var showBasis = false
+    @State private var selectedReference: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Button(basis.label) { showBasis.toggle() }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .popover(isPresented: $showBasis) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(basis.label).font(.headline)
+                        Text(basis.source.coverageDescription)
+                        Text("\(basis.evidence.count) supplied excerpts from \(basis.eligibleSegmentCount) eligible turns.")
+                        if basis.scanLimited { Text("Some transcript regions were not searched.") }
+                        if basis.historyLimited { Text("Earlier conversation was limited to fit.") }
+                        Text("Answer route: \(basis.route.origin ?? basis.route.engine)")
+                        Text("Output language: \(basis.language.displayName)")
+                        Text("Context uses an application estimate; the provider can still reject an oversized request.")
+                    }
+                    .font(.caption)
+                    .textSelection(.enabled)
+                    .padding()
+                    .frame(width: 320)
+                }
+            if let qualification = message.outcome?.qualification {
+                Text(qualification).font(.caption).foregroundStyle(.secondary)
+            }
+            if let resolution = message.referenceResolution {
+                if let qualification = resolution.qualification {
+                    Text(qualification).font(.caption2).foregroundStyle(.secondary)
+                }
+                ForEach(Array(resolution.references.enumerated()), id: \.element.id) { index, reference in
+                    Button("Reference \(index + 1) · \(reference.source)") { selectedReference = reference.id }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                        .popover(isPresented: Binding(
+                            get: { selectedReference == reference.id },
+                            set: { if !$0 { selectedReference = nil } }
+                        )) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(basis.source.label).font(.headline)
+                                if let meeting = reference.meeting {
+                                    Text("Original turn: \(ChatTranscriptSource.time(meeting.startNanoseconds))–\(ChatTranscriptSource.time(meeting.endNanoseconds))")
+                                }
+                                if reference.isFragment { Text("Excerpt from the original turn; precise excerpt audio timing is unavailable.") }
+                                ScrollView { Text(reference.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                                    .frame(maxHeight: 240)
+                                if let seconds = referencePlayback(reference, basis) {
+                                    Button("Play saved audio from \(ChatTranscriptSource.time(Int64(seconds * 1_000_000_000)))") {
+                                        onSeekReference(seconds)
+                                    }
+                                } else {
+                                    Text("No saved audio is mapped to this evidence.").foregroundStyle(.secondary)
+                                }
+                            }
+                            .font(.callout)
+                            .padding()
+                            .frame(width: 360)
+                        }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+}
 
 /// Kept below the answer so actions remain reachable without hovering.
 private struct MessageActions: View {
