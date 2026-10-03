@@ -156,7 +156,14 @@ private actor StreamDeadlineFixture {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private(set) var entered = 0
     private(set) var handled = 0
-    func wait() async { entered += 1; await withCheckedContinuation { waiters.append($0) } }
+    private(set) var cancelled = 0
+    func wait() async {
+        entered += 1
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { waiters.append($0) }
+        } onCancel: { Task { await self.didCancel() } }
+    }
+    private func didCancel() { cancelled += 1 }
     func didHandle() { handled += 1 }
     func fireNext() { guard !waiters.isEmpty else { return }; waiters.removeFirst().resume() }
 }
@@ -258,6 +265,9 @@ private actor StreamDeadlineFixture {
         derivative.pause()
         try #require(await streamEventually { await core.pausedSources == [.microphone] })
         try #require(await streamEventually { await clock.entered == 1 })
+        // Coordinator Pause settlement can precede the stream driver's timer
+        // retirement. Resume needs that actual cancellation, not just paused UI.
+        try #require(await streamEventually { await clock.cancelled == 1 })
         await native.configure(replacement: !holdReady,replacementReady: holdReady)
         derivative.resume()
         if holdReady {
