@@ -141,6 +141,19 @@ private func preparationEventually(_ predicate: () async -> Bool) async -> Bool 
 }
 
 @Suite struct LiveCaptureStartPreparationTests {
+    @Test func unqualifiedProfileCannotInspectCacheBeforeRejection() async throws {
+        let f = try StartPreparationFixture(), gate = StartPreparationGate()
+        defer { f.remove() }
+        let request = LiveResourceRequest(profileID: "not-qualified",hardware: "fixture-mac",modelRevision: "fixture-asr",
+            chunkMs: 1120,sourceCount: 2,attributionRequested: false)
+        let preparation = f.preparation(gate,request: request)
+        await #expect(throws: LiveResourceRejection.unsupported) { _ = try await preparation.prepare() }
+        #expect(await gate.inspected.isEmpty)
+        #expect(await gate.samples == 0)
+        #expect(await f.policy.reservedBytes == 0)
+        #expect(await f.outcome() == nil)
+    }
+
     @Test func preparedReceiptUsesFrozenInputScopeAndRunAndCannotBePreparedTwice() async throws {
         let f = try StartPreparationFixture(), gate = StartPreparationGate(), preparation = f.preparation(gate)
         defer { f.remove() }

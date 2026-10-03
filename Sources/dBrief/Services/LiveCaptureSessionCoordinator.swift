@@ -119,6 +119,7 @@ actor LiveCaptureSessionCoordinator {
     private var closureFailed = false
     private var beginTask: Task<Void, Never>?
     private var nativeBeginRequested = false
+    private var nativeOwnership: LiveNativeSessionOwnership?
     private var eventsTask: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var timerGeneration: UUID?
@@ -151,10 +152,10 @@ actor LiveCaptureSessionCoordinator {
         let preparationOwner = UUID()
         self.preparationOwner = preparationOwner
         invalidIngress = ingress.map { !$0.matches(input) } ?? false
-        let preparationMatches = preparation.map {
+        let preparationMatches = (input.configuration.identity == nil || preparation != nil) && (preparation.map {
             $0.input == input && $0.ingress === ingress && (resources == nil || $0.resources === resources) &&
                 lease == nil
-        } ?? true
+        } ?? true)
         let boundIngress = ingress.flatMap { $0.matches(input) ? $0 : nil }
         let ownsCapture = preparationMatches && store.identity == input.identity && store.bindCaptureOwner(preparationOwner) {
             guard preparation?.bind(to: preparationOwner) ?? true else { return false }
@@ -168,6 +169,11 @@ actor LiveCaptureSessionCoordinator {
         self.resources = resources ?? preparation?.resources; self.lease = ownsCapture ? lease : nil
         self.epochHistoryLimit = min(4096,max(1,epochHistoryLimit))
         moduleLedger = input.vad.flatMap { _ in try? LiveVADModuleLedger(input: input) }
+    }
+
+    deinit {
+        timer?.cancel(); eventsTask?.cancel(); beginTask?.cancel()
+        nativeOwnership?.shutdown(ownerLost: true)
     }
 
     var readySources: Set<LiveSource> { Set(lanes.values.filter { $0.ready && $0.cutReason == nil && !$0.closed && !$0.paused && $0.pauseBoundary == nil }.map { $0.epoch.source }) }
@@ -221,8 +227,10 @@ actor LiveCaptureSessionCoordinator {
     private var canStart: Bool {
         !started && !terminal && isValidOwner && !invalidIngress && !invalidOwnerBinding && input.isValid && input.epochs.count <= epochHistoryLimit &&
             (input.vad == nil || moduleLedger != nil) && store.identity == input.identity &&
+            (input.configuration.identity == nil || preparation != nil) &&
             (lease.map { $0.identity == input.identity && $0.request.chunkMs == input.configuration.chunkMs &&
                 $0.request.sourceCount == input.epochs.count && $0.request.vad == input.vad &&
+                $0.request.asr == input.configuration.identity &&
                 input.epochs.allSatisfy { $0.engineRevision == lease?.request.modelRevision } } ?? true)
     }
     func start() async throws {
@@ -259,8 +267,12 @@ actor LiveCaptureSessionCoordinator {
             // No await between the exact ingress claim, receipt adoption and
             // dispatch latch. Subsequent Stop owns actual native shutdown.
             nativeBeginRequested = true
-            let stream = try await transport.begin(input); attach(stream)
+            nativeOwnership = LiveNativeSessionOwnership(owner: preparationOwner,input: input,transport: transport,ingress: ingress,
+                resources: resources,lease: lease,preparation: preparation,store: store)
+            let stream = try await transport.begin(input)
+            nativeOwnership?.beginReturned(); attach(stream)
         } catch {
+            nativeOwnership?.beginReturned()
             guard !terminal else { return }
             if !nativeBeginRequested && (closing || !(ingress?.nativeStartAvailable ?? true)) { beginClosing(); return }
             terminate(isValidOwner ? .unavailable : .stopped)
@@ -518,7 +530,11 @@ actor LiveCaptureSessionCoordinator {
     }
 
     private func attach(_ stream: AsyncThrowingStream<LiveSessionEvent, Error>) {
-        guard !terminal else { let transport = self.transport; Task { await transport.shutdown() }; return }
+        guard !terminal else {
+            if let nativeOwnership { nativeOwnership.shutdown() }
+            else { let transport = self.transport; Task { await transport.shutdown() } }
+            return
+        }
         eventsTask = Task { [weak self] in
             do {
                 for try await event in stream { guard let self else { return }; await self.receive(event) }
@@ -819,6 +835,11 @@ actor LiveCaptureSessionCoordinator {
             for loss in ingress?.takeLosses(source) ?? [] { publications.append(.rawLoss(loss)) }
         }
         publications.append(.close); startPublisher()
+        if let nativeOwnership {
+            let shutdown = nativeOwnership.shutdown()
+            Task { [weak self] in await shutdown.value; await self?.helperDidExit() }
+            return
+        }
         let transport = self.transport, resources = self.resources, ingress = self.ingress, owner = preparationOwner
         let lease = self.lease.flatMap { $0.identity == input.identity ? $0 : nil }
         Task { [weak self] in

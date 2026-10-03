@@ -10,14 +10,16 @@ public struct LiveASRConfiguration: Codable, Sendable, Equatable {
     public let language: Language
     public let chunkMs: Int
     public let modelDirectory: String
+    public let identity: LiveASRIdentity?
     public var chunkSamples: Int { [560,1120,2240].contains(chunkMs) ? chunkMs * 16 : 0 }
     public var pendingSampleLimit: Int { chunkSamples + 32000 }
-    public init(language: Language, chunkMs: Int = 1120, modelDirectory: String) {
-        self.language = language; self.chunkMs = chunkMs; self.modelDirectory = modelDirectory
+    public init(language: Language, chunkMs: Int = 1120, modelDirectory: String, identity: LiveASRIdentity? = nil) {
+        self.language = language; self.chunkMs = chunkMs; self.modelDirectory = modelDirectory; self.identity = identity
     }
     public var isValid: Bool {
         [560,1120,2240].contains(chunkMs) && modelDirectory.hasPrefix("/") &&
-            modelDirectory.utf8.count <= 4096 && !modelDirectory.contains("\0")
+            modelDirectory.utf8.count <= 4096 && !modelDirectory.contains("\0") &&
+            (identity.map { $0.isValid && LiveASRIdentity.validPath(modelDirectory) } ?? true)
     }
 }
 
@@ -71,9 +73,10 @@ public struct LiveSessionBegin: Codable, Sendable, Equatable {
     }
     public var isValid: Bool {
         configuration.isValid && (vad?.isValid ?? true) && (1...2).contains(epochs.count) && Set(epochs.map(\.id)).count == epochs.count &&
-            Set(epochs.map(\.source)).count == epochs.count && epochs.allSatisfy {
-                $0.source.isCaptureSource && $0.availability == .active && $0.language == configuration.language.rawValue &&
-                    !$0.engineRevision.isEmpty && $0.engineRevision.utf8.count <= 256 && ($0.meetingOriginNanoseconds.map { $0 >= 0 } ?? true)
+            Set(epochs.map(\.source)).count == epochs.count && epochs.allSatisfy { epoch in
+                epoch.source.isCaptureSource && epoch.availability == .active && epoch.language == configuration.language.rawValue &&
+                    !epoch.engineRevision.isEmpty && epoch.engineRevision.utf8.count <= 256 && (epoch.meetingOriginNanoseconds.map { $0 >= 0 } ?? true)
+                    && (configuration.identity.map { $0.modelRevision == epoch.engineRevision } ?? true)
             }
     }
 }

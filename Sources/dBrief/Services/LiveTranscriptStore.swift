@@ -22,6 +22,7 @@ actor LiveTranscriptStore {
                 owner = value; return true
             }
         }
+        func owns(_ value: UUID) -> Bool { lock.withLock { owner == value } }
     }
     private nonisolated let captureBinding = CaptureBinding()
     /// One core can publish/retire this capture. Binding precedes async startup,
@@ -101,6 +102,35 @@ actor LiveTranscriptStore {
         mutate { annotateWhileValid(owner: owner,source: source,contextID: contextID,sequence: sequence,annotations: annotations,coverage: coverage) }
     }
     func close(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { closeWhileValid(owner: owner) } }
+    /// Unexpected loss of the accepted core cannot leave an open preview or
+    /// invent committed text. Settle only the already published captured prefix.
+    @discardableResult func abandonCaptureOwner(_ owner: UUID, losses: [LiveCaptureRawLoss]) -> LiveStoreAdmission {
+        mutate {
+            guard captureBinding.owns(owner) else { return .rejected(.wrongOwner) }
+            if isClosed { return .duplicate }
+            guard revision < .max else { return .rejected(.invalidRange) }
+            for source in lanes.keys {
+                guard var lane = lanes[source] else { continue }
+                if lane.settled < lane.progress.capturedSampleEnd {
+                    let first = meetingTime(lane.settled,in: lane.epoch), last = meetingTime(lane.progress.capturedSampleEnd,in: lane.epoch)
+                    let meeting = first.flatMap { first in last.map { LiveMeetingRange(startNanoseconds: first,endNanoseconds: $0) } }
+                    let range = LiveEvidenceRange(samples: .init(start: lane.settled,end: lane.progress.capturedSampleEnd),meeting: meeting)
+                    coverage.append(.init(epochID: lane.epoch.id,source: source,range: range,kind: .gap(.unavailable)))
+                    lane.settled = lane.progress.capturedSampleEnd; lane.meeting = last
+                }
+                lane.partial = nil; lanes[source] = lane
+                if let meeting = lane.meeting { qualifiedFrontiers[source] = meeting }
+            }
+            // Freeze the newly settled participating frontier before retiring
+            // every lane. Otherwise the unavailable lanes hide the terminal gap.
+            refreshCutoff()
+            for source in lanes.keys { lanes[source]?.availability = .unavailable }
+            for loss in losses where loss.isValid && captureLossIDs[loss.id] == nil && captureLosses.count < 100000 {
+                captureLossIDs[loss.id] = captureLosses.count; captureLosses.append(loss)
+            }
+            isClosed = true; revision += 1; return .accepted
+        }
+    }
     func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission { mutate { publishFinalWhileValid(publication) } }
     func clearPartials(owner: LiveSessionIdentity, source: LiveSource? = nil) -> LiveStoreAdmission {
         mutate { clearPartialsWhileValid(owner: owner,source: source) }

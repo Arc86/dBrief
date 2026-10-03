@@ -17,15 +17,17 @@ struct LiveResourceProfile: Sendable, Equatable {
     /// Qualified total peak cost at this exact source count, including shared
     /// allocation and every source's native manager/scratch. Never an estimate.
     let vadBytes: UInt64?
+    let asr: LiveASRIdentity?
     init(id: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
          qualificationID: String, asrBytes: UInt64, attributionBytes: UInt64?, headroomBytes: UInt64,
          concurrentChatModels: [String: UInt64], backgroundWorkQualified: Bool,
-         vad: LiveVADIdentity? = nil, vadBytes: UInt64? = nil) {
+         vad: LiveVADIdentity? = nil, vadBytes: UInt64? = nil, asr: LiveASRIdentity? = nil) {
         self.id = id; self.hardware = hardware; self.modelRevision = modelRevision; self.chunkMs = chunkMs
         self.sourceCount = sourceCount; self.qualificationID = qualificationID; self.asrBytes = asrBytes
         self.attributionBytes = attributionBytes; self.headroomBytes = headroomBytes
         self.concurrentChatModels = concurrentChatModels; self.backgroundWorkQualified = backgroundWorkQualified
         self.vad = vad; self.vadBytes = vadBytes
+        self.asr = asr
     }
 }
 struct LiveResourceRequest: Sendable, Equatable {
@@ -36,10 +38,12 @@ struct LiveResourceRequest: Sendable, Equatable {
     let sourceCount: Int
     let attributionRequested: Bool
     let vad: LiveVADConfiguration?
+    let asr: LiveASRIdentity?
     init(profileID: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
-         attributionRequested: Bool, vad: LiveVADConfiguration? = nil) {
+         attributionRequested: Bool, vad: LiveVADConfiguration? = nil, asr: LiveASRIdentity? = nil) {
         self.profileID = profileID; self.hardware = hardware; self.modelRevision = modelRevision
         self.chunkMs = chunkMs; self.sourceCount = sourceCount; self.attributionRequested = attributionRequested; self.vad = vad
+        self.asr = asr
     }
 }
 struct LiveResourceMeasurement: Sendable {
@@ -136,11 +140,7 @@ actor LiveModelResourcePolicy {
 
     private func createReservation(identity: LiveSessionIdentity, request: LiveResourceRequest,
                                    measurement: LiveResourceMeasurement, exclusive: Bool) throws -> LiveResourceLease {
-        guard let candidates = profiles[request.profileID] else { throw LiveResourceRejection.unsupported }
-        guard candidates.count == 1, let profile = candidates.first, Self.valid(profile) else { throw LiveResourceRejection.invalidProfile }
-        guard profile.hardware == request.hardware, profile.modelRevision == request.modelRevision,
-              profile.chunkMs == request.chunkMs, profile.sourceCount == request.sourceCount,
-              profile.vad == request.vad?.identity, request.vad?.isValid ?? true else { throw LiveResourceRejection.unsupported }
+        let profile = try profile(matching: request)
         // A job already queued before capture may not have allocated yet. Its
         // cost must fit as well, and the combined model must be qualified.
         let pendingJobBytes = try pendingJobBytes(profile)
@@ -159,6 +159,20 @@ actor LiveModelResourcePolicy {
         active = .init(lease: lease,profile: profile,exclusive: exclusive,attributionRunning: attribution)
         generation = UUID()
         return lease
+    }
+
+    /// Read-only shape/identity gate before cache copying. It grants no lease,
+    /// residency or memory authority; admission still samples current memory.
+    func validateProfile(_ request: LiveResourceRequest) throws { _ = try profile(matching: request) }
+
+    private func profile(matching request: LiveResourceRequest) throws -> LiveResourceProfile {
+        guard let candidates = profiles[request.profileID] else { throw LiveResourceRejection.unsupported }
+        guard candidates.count == 1, let profile = candidates.first, Self.valid(profile) else { throw LiveResourceRejection.invalidProfile }
+        guard profile.hardware == request.hardware, profile.modelRevision == request.modelRevision,
+              profile.chunkMs == request.chunkMs, profile.sourceCount == request.sourceCount,
+              profile.vad == request.vad?.identity, request.vad?.isValid ?? true,
+              profile.asr == request.asr, request.asr?.isSupported ?? true else { throw LiveResourceRejection.unsupported }
+        return profile
     }
 
     /// Revalidation grants no residency or resource-release authority. A job
@@ -310,6 +324,7 @@ actor LiveModelResourcePolicy {
               (profile.vad == nil) == (profile.vadBytes == nil),
               profile.concurrentChatModels.count <= 64 else { return false }
         if let vad = profile.vad { guard vad.isValid, (profile.vadBytes ?? 0) > 0 else { return false } }
+        if let asr = profile.asr { guard asr.isSupported, asr.modelRevision == profile.modelRevision else { return false } }
         guard let mandatory = sum(profile.asrBytes,profile.vadBytes ?? 0),
               sum(mandatory,profile.headroomBytes) != nil else { return false }
         if let extra = profile.attributionBytes {

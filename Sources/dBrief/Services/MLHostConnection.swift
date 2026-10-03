@@ -255,9 +255,7 @@ actor MLHostConnection {
         let proc = Process()
         proc.executableURL = binaryURL
         proc.arguments = (role == .live ? ["--nemotron-live"] : []) + ["--support-base", supportBase.path]
-        var env = ProcessInfo.processInfo.environment
-        for (k, v) in extraEnvironment { env[k] = v }
-        proc.environment = env
+        proc.environment = LiveASRIdentity.environment(inherited: ProcessInfo.processInfo.environment,extra: extraEnvironment,live: role == .live)
 
         let stdinPipe = Pipe(), stdoutPipe = Pipe()
         proc.standardInput = stdinPipe

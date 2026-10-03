@@ -29,8 +29,7 @@ enum LiveRequestLoop {
     static func run(input: FileHandle = .standardInput, output: FileHandle = .standardOutput) async {
         let writer = LiveStdoutWriter(output)
         let helper = LiveASROrchestrator(loader: { configuration in
-            let config = try NemotronDecoderConfiguration(language: .init(rawValue: configuration.language.rawValue)!,chunkMs: configuration.chunkMs)
-            return try await NemotronDecoderFactory.load(from: URL(fileURLWithPath: configuration.modelDirectory),configuration: config)
+            try await LiveASRNativeLoader.load(configuration)
         },emit: writer.event)
         var reader = LiveFrameReader(), identity: LiveSessionIdentity?
         do {
