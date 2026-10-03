@@ -12,6 +12,24 @@ enum LiveSnapshotSelection: Sendable {
 /// Validation, mutation and snapshot publication have no suspension points.
 /// Native consumption never substitutes for contiguous settled evidence.
 actor LiveTranscriptStore {
+    private final class CaptureBinding: @unchecked Sendable {
+        private let lock = NSLock()
+        private var owner: UUID?
+        func bind(_ value: UUID, accepting: () -> Bool) -> Bool {
+            lock.withLock {
+                guard owner == nil else { return owner == value }
+                guard accepting() else { return false }
+                owner = value; return true
+            }
+        }
+    }
+    private nonisolated let captureBinding = CaptureBinding()
+    /// One core can publish/retire this capture. Binding precedes async startup,
+    /// even when a second factory supplied another ingress/preparation object.
+    nonisolated func bindCaptureOwner(_ owner: UUID, accepting: () -> Bool) -> Bool {
+        captureBinding.bind(owner,accepting: accepting)
+    }
+
     private struct Lane {
         let epoch: LiveEpoch
         var availability: LiveSourceAvailability

@@ -102,6 +102,19 @@ private actor CaptureFrontierPublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func closingBeforeCoreStartCannotLaunchNativeAndStillClosesTheStoreAtEOF() async throws {
+        let f = CaptureCoordinatorFixture(), transport = CaptureTransportFixture()
+        let (core,store) = await f.coordinator(transport)
+        defer { Task { await core.retire(); await transport.release() } }
+        // Registered startup and the user's Stop are independent tasks. The
+        // close intent must survive the ordering where startup runs second.
+        await core.beginClosing()
+        try await core.start()
+        await core.hardwareDidClose()
+        #expect(await captureEventually { await store.projection().isClosed })
+        #expect(await transport.starts == 0)
+    }
+
     @Test(arguments: [false,true])
     func unsolicitedVADStatusFailsClosedWithoutResidencyProof(configured: Bool) async throws {
         let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)

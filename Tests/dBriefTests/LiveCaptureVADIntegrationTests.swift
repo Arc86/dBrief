@@ -577,6 +577,10 @@ private func appModuleEventually(_ condition: () async -> Bool) async -> Bool {
         let (c,store,_) = try await f.coordinator(t)
         defer { Task { await c.retire() } }
         try await c.start()
+        // This case exercises Finish after Begin was actually invoked, while
+        // VAD remains unready. Stop winning before invocation has no helper
+        // stream to finish and is covered by the undispatched EOF regression.
+        try #require(await appModuleEventually { await t.starts == 1 })
         await c.beginClosing(); await c.hardwareDidClose()
         try #require(await appModuleEventually { await t.requests.count == 1 })
         let finish = try #require(await t.requests.compactMap { if case .barrier(let b) = $0 { return b }; return nil }.first)

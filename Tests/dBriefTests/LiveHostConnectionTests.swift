@@ -15,6 +15,22 @@ private struct LiveHostFixture: Sendable {
 }
 
 @Suite struct LiveHostConnectionTests {
+    @Test func shuttingDownNeverUsedLiveConnectionPreventsDelayedBeginBeforeAnyLaunch() async throws {
+        let f = LiveHostFixture()
+        // If the terminal role guard permits launch, this nonexistent binary
+        // would fail differently from the required protocolViolation.
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("never-launch-live-\(UUID())")
+        let live = MLHostConnection(binaryURL: missing,supportBase: FileManager.default.temporaryDirectory,role: .live)
+        await live.shutdownLiveAndWaitForExit()
+        await #expect(throws: MLHostError.protocolViolation) { _ = try await live.beginLive(f.begin) }
+        let ordinary = f.connection("echo",role: .ordinary)
+        do {
+            let event = try await ordinary.call(.transcribe(path: "/fixture/synthetic.m4a",initialPrompt: nil,config: .default,safeMode: false,unloadAfter: true))
+            #expect({ if case .transcriptionResult(let result) = event { result.text == "echo" } else { false } }())
+        } catch { await ordinary.shutdown(); throw error }
+        await ordinary.shutdown()
+    }
+
     @Test func ASROnlyStubRejectsConfiguredVADWithoutAnyReadiness() async throws {
         let f = LiveHostFixture(), connection = f.connection()
         let vad = LiveVADConfiguration(identity: .init(modelRevision: "fixture-silero",modelFingerprint: String(repeating: "a",count: 64),

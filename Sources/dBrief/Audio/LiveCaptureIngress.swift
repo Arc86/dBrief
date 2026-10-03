@@ -162,6 +162,8 @@ final class LiveCaptureIngress: @unchecked Sendable {
     private var normalized: [UUID: Normalized] = [:]
     private var closing = false
     private var retired = false
+    private var nativeBeginClaimed = false
+    private var coreOwner: UUID?
 
     init(input: LiveSessionBegin, rawByteLimit: Int = 4 * 1024 * 1024, converterMargin: Int = 4096) {
         self.input = input; sampleLimit = input.configuration.pendingSampleLimit
@@ -174,6 +176,27 @@ final class LiveCaptureIngress: @unchecked Sendable {
     }
 
     func matches(_ input: LiveSessionBegin) -> Bool { valid && self.input == input }
+
+    /// An observation avoids obsolete preflight effects but cannot authorize
+    /// dispatch. Stop can run on another executor immediately after this read.
+    var nativeStartAvailable: Bool { lock.withLock { valid && !closing && !retired && !nativeBeginClaimed } }
+
+    /// The one-use dispatch transition linearizes against synchronous Stop.
+    /// A successful claim owns native cleanup even if Stop follows at once.
+    func bindCoreOwner(_ owner: UUID) -> Bool {
+        lock.withLock {
+            guard !closing, !retired, !nativeBeginClaimed else { return false }
+            if let coreOwner { return coreOwner == owner }
+            coreOwner = owner; return true
+        }
+    }
+    func claimNativeBegin(owner: UUID? = nil) -> Bool {
+        lock.withLock {
+            guard coreOwner == owner, valid, !closing, !retired, !nativeBeginClaimed else { return false }
+            nativeBeginClaimed = true
+            return true
+        }
+    }
     func isPendingRaw(_ ticket: RawReservation) -> Bool {
         lock.withLock {
             guard !retired, ticket.owner === self, let item = raw[ticket.id] else { return false }
@@ -427,7 +450,12 @@ final class LiveCaptureIngress: @unchecked Sendable {
     }
     /// Only the observed exit of this capture's dedicated process returns held
     /// native credit. This never frees raw buffers still owned by a consumer.
-    func confirmNativeRetired() { lock.withLock { for source in lanes.keys { lanes[source]?.native.removeAll() } } }
+    func confirmNativeRetired(owner: UUID? = nil) {
+        lock.withLock {
+            guard coreOwner == owner else { return }
+            for source in lanes.keys { lanes[source]?.native.removeAll() }
+        }
+    }
     func statistics(_ source: LiveSource) -> Statistics { lock.withLock { statisticsWhileLocked(source) } }
     func takeLosses(_ source: LiveSource) -> [LiveCaptureRawLoss] {
         lock.withLock { let losses = lanes[source]?.losses ?? []; lanes[source]?.losses.removeAll(); return losses }

@@ -47,7 +47,13 @@ struct LiveResourceMeasurement: Sendable {
     let availableBytes: UInt64
     let pressure: Pressure
 }
-enum LiveResourceRejection: Error, Equatable { case unsupported, invalidProfile, insufficientMemory, pressure, ownerConflict, configurationChanged, busy }
+enum LiveResourceRejection: Error, Equatable { case unsupported, invalidProfile, insufficientMemory, pressure, ownerConflict, configurationChanged, busy, measurementChanged }
+/// An async memory sample is meaningful only while allocation/residency state
+/// remains the same. Values from another policy cannot certify this owner.
+struct LiveResourceMeasurementToken: Sendable, Equatable {
+    fileprivate let policyID: UUID
+    fileprivate let generation: UUID
+}
 struct LiveResourceLease: Sendable, Equatable {
     let id: UUID
     let identity: LiveSessionIdentity
@@ -76,6 +82,7 @@ actor LiveModelResourcePolicy {
     private struct Reservation {
         let lease: LiveResourceLease
         let profile: LiveResourceProfile
+        let exclusive: Bool
         var attributionRunning: Bool
         var attributionResident = false
         var resident = false
@@ -90,6 +97,8 @@ actor LiveModelResourcePolicy {
         }
     }
     private let profiles: [String: [LiveResourceProfile]]
+    private let policyID = UUID()
+    private var generation = UUID()
     private var active: Reservation?
     private struct JobReservation { let lease: LiveResourceJobLease; var resident = false }
     private var jobs: [UUID: JobReservation] = [:]
@@ -100,6 +109,7 @@ actor LiveModelResourcePolicy {
 
     func admit(identity: LiveSessionIdentity, request: LiveResourceRequest, measurement: LiveResourceMeasurement) throws -> LiveResourceLease {
         if let active {
+            guard !active.exclusive else { throw LiveResourceRejection.busy }
             if active.lease.identity == identity {
                 guard active.lease.request == request else { throw LiveResourceRejection.configurationChanged }
                 return active.lease
@@ -110,6 +120,22 @@ actor LiveModelResourcePolicy {
             // A profile qualifies one capture, not two simultaneous live models.
             throw LiveResourceRejection.busy
         }
+        return try createReservation(identity: identity,request: request,measurement: measurement,exclusive: false)
+    }
+
+    func measurementToken() -> LiveResourceMeasurementToken { .init(policyID: policyID,generation: generation) }
+
+    /// Preparation receives a new exclusive receipt. Neither a duplicate
+    /// preparation nor the legacy idempotent API may borrow it.
+    func admitNew(identity: LiveSessionIdentity, request: LiveResourceRequest, measurement: LiveResourceMeasurement,
+                  token: LiveResourceMeasurementToken) throws -> LiveResourceLease {
+        guard active == nil else { throw LiveResourceRejection.busy }
+        try validateToken(token)
+        return try createReservation(identity: identity,request: request,measurement: measurement,exclusive: true)
+    }
+
+    private func createReservation(identity: LiveSessionIdentity, request: LiveResourceRequest,
+                                   measurement: LiveResourceMeasurement, exclusive: Bool) throws -> LiveResourceLease {
         guard let candidates = profiles[request.profileID] else { throw LiveResourceRejection.unsupported }
         guard candidates.count == 1, let profile = candidates.first, Self.valid(profile) else { throw LiveResourceRejection.invalidProfile }
         guard profile.hardware == request.hardware, profile.modelRevision == request.modelRevision,
@@ -117,20 +143,7 @@ actor LiveModelResourcePolicy {
               profile.vad == request.vad?.identity, request.vad?.isValid ?? true else { throw LiveResourceRejection.unsupported }
         // A job already queued before capture may not have allocated yet. Its
         // cost must fit as well, and the combined model must be qualified.
-        guard jobs.count <= 1 else { throw LiveResourceRejection.busy }
-        var pendingJobBytes: UInt64 = 0
-        if let job = jobs.values.first {
-            let model: String
-            switch job.lease.job {
-            case .localChat(let value): model = value
-            case .background(let value):
-                guard profile.backgroundWorkQualified else { throw LiveResourceRejection.busy }
-                model = value
-            case .configuredRemote: throw LiveResourceRejection.busy
-            }
-            guard let cost = profile.concurrentChatModels[model] else { throw LiveResourceRejection.busy }
-            if !job.resident { pendingJobBytes = max(cost,job.lease.reservedBytes) }
-        }
+        let pendingJobBytes = try pendingJobBytes(profile)
         guard measurement.pressure != .critical else { throw LiveResourceRejection.pressure }
         let mandatory = profile.asrBytes + (profile.vadBytes ?? 0)
         let required = mandatory.addingReportingOverflow(pendingJobBytes)
@@ -143,8 +156,44 @@ actor LiveModelResourcePolicy {
         } == true
         let reserved = mandatory + (attribution ? profile.attributionBytes! : 0)
         let lease = LiveResourceLease(id: UUID(),identity: identity,request: request,attributionEnabled: attribution,reservedBytes: reserved)
-        active = .init(lease: lease,profile: profile,attributionRunning: attribution)
+        active = .init(lease: lease,profile: profile,exclusive: exclusive,attributionRunning: attribution)
+        generation = UUID()
         return lease
+    }
+
+    /// Revalidation grants no residency or resource-release authority. A job
+    /// allocated during sampling invalidates the token, rather than appearing
+    /// resident in memory telemetry captured before its allocation.
+    func validatePreparedStart(_ lease: LiveResourceLease, measurement: LiveResourceMeasurement,
+                               token: LiveResourceMeasurementToken) throws {
+        guard let active, active.lease == lease, active.exclusive else { throw LiveResourceRejection.ownerConflict }
+        try validateToken(token)
+        guard !active.resident, !active.vadResident, !active.attributionResident else { throw LiveResourceRejection.configurationChanged }
+        guard measurement.pressure != .critical,
+              measurement.pressure == .normal || !active.attributionRunning else { throw LiveResourceRejection.pressure }
+        let required = active.bytes.addingReportingOverflow(try pendingJobBytes(active.profile))
+        guard !required.overflow, Self.fits(required.partialValue,headroom: active.profile.headroomBytes,available: measurement.availableBytes) else {
+            throw LiveResourceRejection.insufficientMemory
+        }
+    }
+
+    private func validateToken(_ token: LiveResourceMeasurementToken) throws {
+        guard token.policyID == policyID, token.generation == generation else { throw LiveResourceRejection.measurementChanged }
+    }
+
+    private func pendingJobBytes(_ profile: LiveResourceProfile) throws -> UInt64 {
+        guard jobs.count <= 1 else { throw LiveResourceRejection.busy }
+        guard let job = jobs.values.first else { return 0 }
+        let model: String
+        switch job.lease.job {
+        case .localChat(let value): model = value
+        case .background(let value):
+            guard profile.backgroundWorkQualified else { throw LiveResourceRejection.busy }
+            model = value
+        case .configuredRemote: throw LiveResourceRejection.busy
+        }
+        guard let cost = profile.concurrentChatModels[model] else { throw LiveResourceRejection.busy }
+        return job.resident ? 0 : max(cost,job.lease.reservedBytes)
     }
 
     /// Exact receipts prevent a stale owner or forged lease from releasing a
@@ -152,6 +201,7 @@ actor LiveModelResourcePolicy {
     func release(_ lease: LiveResourceLease) {
         guard active?.lease == lease else { return }
         active = nil
+        generation = UUID()
     }
 
     /// Value-shaped receipts from another policy, retired owners or constructed
@@ -161,20 +211,23 @@ actor LiveModelResourcePolicy {
     /// ASR readiness confirms only its own allocation in current telemetry.
     /// An enabled but unallocated attribution model keeps its pending charge.
     func confirmResident(_ lease: LiveResourceLease) {
-        guard active?.lease == lease else { return }
+        guard active?.lease == lease, active?.resident == false else { return }
         active?.resident = true
+        generation = UUID()
     }
 
     /// Only actual VAD model/manager loading can certify its allocation. ASR
     /// readiness is deliberately insufficient, including after degradation.
     func confirmVADResident(_ lease: LiveResourceLease) {
-        guard active?.lease == lease, active?.profile.vad != nil else { return }
+        guard active?.lease == lease, active?.profile.vad != nil, active?.vadResident == false else { return }
         active?.vadResident = true
+        generation = UUID()
     }
 
     func confirmAttributionResident(_ lease: LiveResourceLease) {
-        guard active?.lease == lease, active?.attributionRunning == true else { return }
+        guard active?.lease == lease, active?.attributionRunning == true, active?.attributionResident == false else { return }
         active?.attributionResident = true
+        generation = UUID()
     }
 
     /// A preview decision never reserves memory. Execution uses this atomic
@@ -193,17 +246,20 @@ actor LiveModelResourcePolicy {
         }
         let lease = LiveResourceJobLease(id: UUID(),owner: owner,job: job,reservedBytes: bytes)
         jobs[owner] = .init(lease: lease)
+        generation = UUID()
         return lease
     }
 
     func confirmJobResident(_ lease: LiveResourceJobLease) {
-        guard jobs[lease.owner]?.lease == lease else { return }
+        guard jobs[lease.owner]?.lease == lease, jobs[lease.owner]?.resident == false else { return }
         jobs[lease.owner]?.resident = true
+        generation = UUID()
     }
 
     func releaseJob(_ lease: LiveResourceJobLease) {
         guard jobs[lease.owner]?.lease == lease else { return }
         jobs[lease.owner] = nil
+        generation = UUID()
     }
 
     func decide(_ job: LiveResourceJob, measurement: LiveResourceMeasurement) -> LiveResourceJobDecision {
@@ -235,8 +291,9 @@ actor LiveModelResourcePolicy {
     }
 
     func confirmAttributionRetired(_ lease: LiveResourceLease) {
-        guard active?.lease == lease else { return }
+        guard active?.lease == lease, active?.attributionRunning == true else { return }
         active?.attributionRunning = false
+        generation = UUID()
     }
 
     var reservedBytes: UInt64 { active?.bytes ?? 0 }

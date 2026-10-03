@@ -6,6 +6,29 @@ import dBriefWire
 @testable import dBrief
 
 @Suite struct LiveCaptureIngressTests {
+    @Test func aStaleOpenObservationCannotClaimNativeAfterSynchronousClose() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        let heldRaw = try #require(f.reserve(pool,count: 16))
+        #expect(pool.nativeStartAvailable)
+        // The core may have observed eligibility before another executor ran
+        // Stop. Only the claim under closeInput's lock grants dispatch.
+        pool.closeInput()
+        #expect(!pool.claimNativeBegin())
+        #expect(pool.statistics(.microphone).rawBytes == 64)
+        withExtendedLifetime(heldRaw) {}
+    }
+
+    @Test func winningNativeClaimIsOneUseAndStopCannotReturnItsRawAllocation() throws {
+        let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
+        let heldRaw = try #require(f.reserve(pool,count: 16))
+        #expect(pool.claimNativeBegin())
+        #expect(!pool.claimNativeBegin())
+        pool.closeInput(); pool.retireInput()
+        #expect(!pool.claimNativeBegin())
+        #expect(pool.statistics(.microphone).rawBytes == 64)
+        withExtendedLifetime(heldRaw) {}
+    }
+
     @Test func atomicReplacementDistinguishesNewPauseRawDrainFromStaleScopeAndKeepsItsReceipt() throws {
         let f = Fixture(), pool = LiveCaptureIngress(input: f.input())
         let fresh = LiveEpoch(id: UUID(),source: .microphone,engineRevision: f.epoch.engineRevision,language: "auto",meetingOriginNanoseconds: nil)

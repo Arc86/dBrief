@@ -46,6 +46,23 @@ private actor PreparationNativeFixture {
     }
 }
 
+private actor CaptureStartPrivacyGate {
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var entered = false
+    private(set) var returned = false
+    func context(_ scope: RecordingPrivacyScope, runID: UUID) async -> PrivacyTrace.Context {
+        let context = await scope.context(runID: runID)
+        if !released {
+            entered = true
+            await withCheckedContinuation { waiter = $0 }
+            returned = true
+        }
+        return context
+    }
+    func release() { released = true; waiter?.resume(); waiter = nil }
+}
+
 @Suite("Prepared capture derivative ownership") @MainActor
 struct CaptureLivePreparationTests {
     @MainActor private final class Harness {
@@ -536,6 +553,41 @@ struct CaptureLivePreparationTests {
         #expect(await asynchronously { await native.beginReturned })
         #expect(await asynchronously { await native.shutdownReturned })
         #expect((await store.projection()).isClosed && c.recordingID == nil)
+    }
+
+    @Test func realPreparedStartedObserverStopCannotDispatchHeldPreflightOrBlockAudioCheckpoint() async throws {
+        let h = Harness(), capture = h.coordinator(), native = PreparationNativeFixture(), gate = CaptureStartPrivacyGate()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("capture-started-stop-\(UUID())")
+        try FileManager.default.createDirectory(at: folder,withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var original = request(language: "auto")
+        let receiptStore = PrivacyReceiptStore(gapDirectoryURL: folder.appendingPathComponent("gaps"))
+        let scope = RecordingPrivacyScope(recordingID: original.id,store: receiptStore,pendingRootURL: folder.appendingPathComponent("pending"))
+        original.privacyScope = scope
+        let begin = input(.init(recordingID: original.id,captureSessionID: original.captureSessionID),language: .auto)
+        let ingress = LiveCaptureIngress(input: begin), store = LiveTranscriptStore(identity: begin.identity)
+        let resources = LiveModelResourcePolicy(profiles: [.init(id: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,
+            sourceCount: 1,qualificationID: "test-only",asrBytes: 400,attributionBytes: nil,headroomBytes: 100,
+            concurrentChatModels: [:],backgroundWorkQualified: false)])
+        let preparation = LiveCaptureStartPreparation(input: begin,ingress: ingress,resources: resources,privacyScope: scope,runID: UUID(),
+            request: .init(profileID: "fixture",hardware: "fixture",modelRevision: "fixture",chunkMs: 1120,sourceCount: 1,attributionRequested: false),
+            cacheCheck: { _ in },currentMemory: { .init(availableBytes: 1000,pressure: .normal) },
+            context: { await gate.context($0,runID: $1) })
+        let core = LiveCaptureSessionCoordinator(input: begin,store: store,transport: native.transport,resources: resources,ingress: ingress,
+            preparation: preparation)
+        let actual = try LiveCaptureStreamSession(input: begin,ingress: ingress,coordinator: core)
+        h.override = .init(ingress: ingress,session: actual.derivativeSession()); h.stopPoint = "started"
+        do { try await capture.start(original) }
+        catch { await gate.release(); actual.expire(); await capture.stop(); throw error }
+        await capture.stop()
+        #expect(h.observedSynchronousStop && !capture.isBusy)
+        #expect(h.calls.filter { $0 == "hardware-stop" }.count == 1 && h.calls.filter { $0 == "checkpoint" }.count == 1)
+        #expect((await store.projection()).isClosed)
+        #expect(await native.begins == 0)
+        await gate.release()
+        if await gate.entered { #expect(await asynchronously { await gate.returned }) }
+        #expect(await resources.reservedBytes == 0)
+        actual.expire()
     }
 
     @Test(arguments: [false,true])
