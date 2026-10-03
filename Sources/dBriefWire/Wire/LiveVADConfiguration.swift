@@ -6,9 +6,11 @@ public struct LiveVADIdentity: Codable, Sendable, Equatable {
     public enum ComputeUnits: String, Codable, Sendable { case cpuOnly, cpuAndGPU, cpuAndNeuralEngine, all }
     public static let sampleRate = 16_000
     public static let windowSamples = 4096
+    public static let currentImplementationRevision = "dbrief-vad-indexed-v1"
     public let modelRevision: String
     public let modelFingerprint: String
     public let runtimeRevision: String
+    public let implementationRevision: String
     public let computeUnits: ComputeUnits
     public let positiveThreshold: Float
     public let negativeThreshold: Float
@@ -17,10 +19,12 @@ public struct LiveVADIdentity: Codable, Sendable, Equatable {
 
     public init(modelRevision: String, modelFingerprint: String, runtimeRevision: String,
                 computeUnits: ComputeUnits = .cpuAndNeuralEngine, positiveThreshold: Float = 0.85,
-                negativeThreshold: Float = 0.70, minSilenceSamples: Int = 9600, speechPaddingSamples: Int = 1600) {
+                negativeThreshold: Float = 0.70, minSilenceSamples: Int = 9600, speechPaddingSamples: Int = 1600,
+                implementationRevision: String = Self.currentImplementationRevision) {
         self.modelRevision = modelRevision; self.modelFingerprint = modelFingerprint; self.runtimeRevision = runtimeRevision
         self.computeUnits = computeUnits; self.positiveThreshold = positiveThreshold; self.negativeThreshold = negativeThreshold
         self.minSilenceSamples = minSilenceSamples; self.speechPaddingSamples = speechPaddingSamples
+        self.implementationRevision = implementationRevision
     }
 
     public var isValid: Bool {
@@ -28,7 +32,7 @@ public struct LiveVADIdentity: Codable, Sendable, Equatable {
             !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value.utf8.count <= 256 &&
                 !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
         }
-        return validID(modelRevision) && validID(runtimeRevision) && modelFingerprint.utf8.count == 64 &&
+        return validID(modelRevision) && validID(runtimeRevision) && validID(implementationRevision) && modelFingerprint.utf8.count == 64 &&
             modelFingerprint.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } &&
             positiveThreshold.isFinite && negativeThreshold.isFinite && positiveThreshold > 0 && positiveThreshold <= 1 &&
             negativeThreshold >= 0 && negativeThreshold < positiveThreshold &&

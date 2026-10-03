@@ -12,7 +12,8 @@ struct LiveVADNativeConfiguration: Sendable {
 
     init(_ configuration: LiveVADConfiguration) throws {
         let policy = configuration.identity
-        guard configuration.isValid, policy.runtimeRevision == Self.runtimeRevision else { throw LiveProtocolError.invalidConfiguration }
+        guard configuration.isValid, policy.runtimeRevision == Self.runtimeRevision,
+              policy.implementationRevision == LiveVADIdentity.currentImplementationRevision else { throw LiveProtocolError.invalidConfiguration }
         let silence = (Double(policy.minSilenceSamples) / 16000).nextUp
         let padding = policy.speechPaddingSamples == 0 ? 0 : (Double(policy.speechPaddingSamples) / 16000).nextUp
         guard Int(silence * 16000) == policy.minSilenceSamples, Int(padding * 16000) == policy.speechPaddingSamples else {

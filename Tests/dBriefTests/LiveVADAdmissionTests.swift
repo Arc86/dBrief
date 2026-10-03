@@ -11,6 +11,7 @@ private struct VADWireFixture {
     var vad: [String: Any] { ["modelPath":"/fixture/silero.mlmodelc", "identity": [
         "modelRevision":"silero-r1", "modelFingerprint":String(repeating: "a",count: 64),
         "runtimeRevision":"21493f8dac5a97e65742e6ff26f42f164c2fda0f", "computeUnits":"cpuAndNeuralEngine",
+        "implementationRevision":"dbrief-vad-indexed-v1",
         "positiveThreshold":0.85, "negativeThreshold":0.70, "minSilenceSamples":9600, "speechPaddingSamples":1600]] }
     func decode(_ vad: Any?) throws -> LiveSessionBegin {
         var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(begin)) as? [String: Any])
@@ -28,6 +29,15 @@ private struct VADWireFixture {
         #expect(try JSONDecoder().decode(LiveSessionBegin.self,from: JSONEncoder().encode(begin)) == begin)
         #expect(begin.vad?.modelPath == "/fixture/silero.mlmodelc")
         #expect(begin.vad?.identity.modelFingerprint == String(repeating: "a",count: 64))
+        let vad = try #require(reencoded["vad"] as? [String: Any]), identity = try #require(vad["identity"] as? [String: Any])
+        #expect(identity["implementationRevision"] as? String == "dbrief-vad-indexed-v1")
+    }
+
+    @Test func configuredVADWithoutImplementationIdentityCannotSilentlyUseNewAdapter() throws {
+        let f = VADWireFixture()
+        var vad = f.vad, identity = try #require(vad["identity"] as? [String: Any])
+        identity.removeValue(forKey: "implementationRevision"); vad["identity"] = identity
+        #expect(throws: DecodingError.self) { _ = try f.decode(vad) }
     }
 
     @Test func malformedVADRejectsBeforeAnySDKPreconditionOrModelLoad() throws {
@@ -72,6 +82,15 @@ private struct VADResourceFixture {
 }
 
 @Suite struct LiveVADResourceAdmissionTests {
+    @Test func measuredSDKProfileCannotQualifyAnotherHelperImplementation() async throws {
+        let f = VADResourceFixture()
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(VADResourceFixture.vadIdentity)) as? [String: Any])
+        object["implementationRevision"] = "another-vad-adapter"
+        let identity = try JSONDecoder().decode(LiveVADIdentity.self,from: JSONSerialization.data(withJSONObject: object))
+        let request = f.request(vad: identity)
+        let policy = LiveModelResourcePolicy(profiles: [f.profile()])
+        await #expect(throws: LiveResourceRejection.unsupported) { try await policy.admit(identity: f.identity,request: request,measurement: f.measurement()) }
+    }
     @Test func ASROnlyAndVADProfilesCannotSubstituteForOneAnother() async {
         let f = VADResourceFixture()
         let asr = LiveModelResourcePolicy(profiles: [f.profile(vad: nil,vadBytes: nil)])

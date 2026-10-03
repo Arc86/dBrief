@@ -65,6 +65,7 @@ private struct LiveHelperFixture: Sendable {
         guard case .begin(let original) = f.begin() else { return }
         var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
         object["vad"] = ["modelPath":"/fixture/silero.mlmodelc", "identity": [
+            "implementationRevision":"dbrief-vad-indexed-v1",
             "modelRevision":"silero-r1", "modelFingerprint":String(repeating: "a",count: 64),
             "runtimeRevision":"21493f8dac5a97e65742e6ff26f42f164c2fda0f", "computeUnits":"cpuAndNeuralEngine",
             "positiveThreshold":0.85, "negativeThreshold":0.70, "minSilenceSamples":9600, "speechPaddingSamples":1600]]

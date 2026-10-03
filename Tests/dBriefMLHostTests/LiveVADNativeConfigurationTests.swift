@@ -6,6 +6,13 @@ import dBriefWire
 @testable import dBriefMLHost
 
 @Suite struct LiveVADNativeConfigurationTests {
+    @Test func unknownHelperImplementationRefusesBeforeNativeConstruction() throws {
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration())) as? [String: Any])
+        var identity = try #require(object["identity"] as? [String: Any])
+        identity["implementationRevision"] = "another-vad-adapter"; object["identity"] = identity
+        let config = try JSONDecoder().decode(LiveVADConfiguration.self,from: JSONSerialization.data(withJSONObject: object))
+        #expect(throws: LiveProtocolError.invalidConfiguration) { _ = try LiveVADNativeConfiguration(config) }
+    }
     private func configuration(silence: Int = 9600, padding: Int = 1600, positive: Float = 0.85, negative: Float = 0.70,
                                runtime: String = "21493f8dac5a97e65742e6ff26f42f164c2fda0f",
                                compute: LiveVADIdentity.ComputeUnits = .cpuAndNeuralEngine) -> LiveVADConfiguration {

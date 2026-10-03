@@ -99,6 +99,7 @@ final class LiveVADModelAssets: Sendable {
     static func prepare(_ configuration: LiveVADConfiguration, testingStagingDirectory: URL? = nil,
                         limits: Limits = .init(), probe: Probe? = nil) async throws -> LiveVADModelAssets {
         guard configuration.isValid, configuration.identity.runtimeRevision == LiveVADNativeConfiguration.runtimeRevision,
+              configuration.identity.implementationRevision == LiveVADIdentity.currentImplementationRevision,
               configuration.identity.modelRevision == supportedRevision, limits.isValid else { throw LiveVADAssetError.invalidConfiguration }
         try Task.checkCancellation()
         let source = try Directory(taking: directory(path: configuration.modelPath))
