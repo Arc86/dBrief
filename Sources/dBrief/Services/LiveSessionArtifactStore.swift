@@ -41,7 +41,9 @@ actor LiveSessionArtifactStore {
     }
     struct Restored: Sendable {
         let chat: ChatHistory?
-        let transcript: LiveTranscriptCheckpoint?
+        let transcriptValue: LiveTranscriptArtifactCodec.Value?
+        var transcript: LiveTranscriptCheckpoint? { transcriptValue?.native }
+        var appTranscript: LiveTranscriptArtifact? { transcriptValue?.app }
         let audioURL: URL?
         let deleted: Bool
     }
@@ -118,6 +120,9 @@ actor LiveSessionArtifactStore {
     private var deletionURL: URL { sessionURL.appendingPathComponent("deletion.json") }
     private let beforeStage: @Sendable (LiveArtifactStage) async throws -> Void
     private let validity: RecordingDerivativeValidity
+    private let payloadReservation: LiveRecordingPayloadBudget.Lease?
+    private let payloadLimit: Int
+    private let queueByteLimit: Int
     private let fm = FileManager.default
     private var queue: [Job] = []
     private var inFlight: Job?
@@ -130,9 +135,14 @@ actor LiveSessionArtifactStore {
 
     init(identity: LiveSessionIdentity, rootURL: URL = AppSupportPaths.subdirectory("LiveSessions"),
          validity: RecordingDerivativeValidity = RecordingDerivativeValidity(),
+         payloadReservation: LiveRecordingPayloadBudget.Lease? = nil,
+         payloadLimit: Int = maxArtifactBytes, queueByteLimit: Int = maxQueuedBytes,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) {
         self.identity = identity; self.rootURL = rootURL.standardizedFileURL; self.beforeStage = beforeStage
         self.validity = validity
+        self.payloadReservation = payloadReservation
+        self.payloadLimit = min(Self.maxArtifactBytes, max(1, payloadLimit))
+        self.queueByteLimit = min(Self.maxQueuedBytes, max(1, queueByteLimit))
     }
 
     func saveChat(_ history: ChatHistory, revision: UInt64) async throws {
@@ -147,6 +157,12 @@ actor LiveSessionArtifactStore {
         guard checkpoint.identity == identity else { throw LiveArtifactError.wrongOwner }
         var copy = checkpoint; copy.bindingGeneration = nil
         try await submitWrite(.init(kind: .transcript, revision: copy.revision, data: encode(copy)))
+    }
+    func saveTranscript(_ artifact: LiveTranscriptArtifact) async throws {
+        try artifact.validate()
+        guard artifact.identity == identity else { throw LiveArtifactError.wrongOwner }
+        let bytes = try LiveTranscriptArtifactCodec.Value.app(artifact).encoded(generation: nil, limit: payloadLimit)
+        try await submitWrite(.init(kind: .transcript, revision: artifact.revision, data: bytes))
     }
     func clearChat(revision: UInt64) async throws {
         let history = ChatHistory(messages: [], identity: identity, revision: revision)
@@ -212,14 +228,14 @@ actor LiveSessionArtifactStore {
     private func validateAdmission(_ payload: Payload, control: Bool) throws {
         try validity.withValidResult {}
         guard !isDeleted else { throw LiveArtifactError.deleted }
-        guard payload.data.count <= Self.maxArtifactBytes else { throw LiveArtifactError.artifactTooLarge }
+        guard payload.data.count <= payloadLimit else { throw LiveArtifactError.artifactTooLarge }
         let prior = payload.kind == .chat ? acceptedChat : acceptedTranscript
         if let prior {
             guard payload.revision >= prior.revision else { throw LiveArtifactError.staleRevision }
             guard payload.revision != prior.revision || payload.data == prior.data else { throw LiveArtifactError.revisionConflict }
         }
         guard (control ? controls < 8 : writeWaiters < 64),
-              retainedPayloads(replacing: payload, control: control).reduce(0, { $0 + $1.data.count }) <= Self.maxQueuedBytes else {
+              retainedPayloads(replacing: payload, control: control).reduce(0, { $0 + $1.data.count }) <= queueByteLimit else {
             throw LiveArtifactError.queueFull
         }
     }
@@ -241,7 +257,7 @@ actor LiveSessionArtifactStore {
     private func submitControl(_ operation: Operation, allowingDeleted: Bool = false, allowingRetiredCleanup: Bool = false) async throws -> Outcome? {
         if !allowingRetiredCleanup { try validity.withValidResult {} }
         guard allowingDeleted || !isDeleted else { throw LiveArtifactError.deleted }
-        guard controls < 8, retainedPayloads().reduce(0, { $0 + $1.data.count }) <= Self.maxQueuedBytes else { throw LiveArtifactError.queueFull }
+        guard controls < 8, retainedPayloads().reduce(0, { $0 + $1.data.count }) <= queueByteLimit else { throw LiveArtifactError.queueFull }
         return try await withCheckedThrowingContinuation { continuation in
             queue.append(.init(operation: operation, continuation: continuation)); startPump()
         }
@@ -285,7 +301,7 @@ actor LiveSessionArtifactStore {
         case .recover:
             if isDeleted {
                 try await cleanupDeleted(currentDeletionReceipt())
-                return .restored(.init(chat: nil, transcript: nil, audioURL: nil, deleted: true))
+                return .restored(.init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true))
             }
             if let journal { try await finishBinding(journal) }
             return .restored(try restoreDisk())
@@ -447,14 +463,14 @@ actor LiveSessionArtifactStore {
     private func restoreDisk() throws -> Restored {
         try derivativeTransaction {
             try inspectDiskWhileValid()
-            guard !isDeleted else { return .init(chat: nil, transcript: nil, audioURL: nil, deleted: true) }
+            guard !isDeleted else { return .init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true) }
             let audio = journal?.phase == .committed ? journal?.audioURL : nil
             if let audio { try requireOwner(audio) }
             let generation = audio == nil ? nil : journal?.generation
             let chat = try readPayload(.chat, from: audio.map { targetURL(.chat, audio: $0) } ?? sourceURL(.chat), generation: generation)
             let transcript = try readPayload(.transcript, from: audio.map { targetURL(.transcript, audio: $0) } ?? sourceURL(.transcript), generation: generation)
             return .init(chat: try chat.map { try decode($0.data, as: ChatHistory.self).interruptedAfterRestart },
-                transcript: try transcript.map { try decode($0.data, as: LiveTranscriptCheckpoint.self) }, audioURL: audio, deleted: false)
+                transcriptValue: try transcript.map { try LiveTranscriptArtifactCodec.decode($0.data) }, audioURL: audio, deleted: false)
         }
     }
 
@@ -630,11 +646,9 @@ actor LiveSessionArtifactStore {
             value.bindingGeneration = nil
             return .init(kind: kind, revision: revision, data: try encode(value))
         case .transcript:
-            var value: LiveTranscriptCheckpoint = try decode(bytes)
-            try value.validate()
+            let value = try LiveTranscriptArtifactCodec.decode(bytes)
             guard value.identity == identity, value.bindingGeneration == generation else { throw LiveArtifactError.wrongOwner }
-            value.bindingGeneration = nil
-            return .init(kind: kind, revision: value.revision, data: try encode(value))
+            return .init(kind: kind, revision: value.revision, data: try value.encoded(generation: nil, limit: payloadLimit))
         }
     }
     private func boundBytes(_ payload: Payload, generation: UUID?) throws -> Data {
@@ -642,11 +656,11 @@ actor LiveSessionArtifactStore {
         case .chat:
             var value: ChatHistory = try decode(payload.data); value.bindingGeneration = generation; return try encode(value)
         case .transcript:
-            var value: LiveTranscriptCheckpoint = try decode(payload.data); value.bindingGeneration = generation; return try encode(value)
+            return try LiveTranscriptArtifactCodec.decode(payload.data).encoded(generation: generation, limit: payloadLimit)
         }
     }
     private func encode<T: Encodable>(_ value: T) throws -> Data {
-        try LiveArtifactEncoding.encode(value, limit: Self.maxArtifactBytes)
+        try LiveArtifactEncoding.encode(value, limit: payloadLimit)
     }
     private func decode<T: Decodable>(_ bytes: Data, as: T.Type = T.self) throws -> T {
         do { return try JSONDecoder().decode(T.self, from: bytes) }
@@ -683,6 +697,7 @@ actor LiveSessionArtifactStore {
         var info = stat()
         guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw LiveArtifactError.unsafePath }
         guard contents else { return Data() }
+        let maximum = min(maximum, payloadLimit)
         guard info.st_size >= 0 && info.st_size <= maximum else { throw LiveArtifactError.artifactTooLarge }
         let bytes = try handle.read(upToCount: maximum + 1) ?? Data()
         guard bytes.count <= maximum, bytes.count == info.st_size else { throw LiveArtifactError.verificationFailed }

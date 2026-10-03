@@ -29,7 +29,8 @@ struct LiveNemotronSelection: Sendable {
          makeASRAssets: (@MainActor @Sendable (LiveNemotronSelection) throws -> LiveASRModelAssets)? = nil) {
         self.registry = registry; self.admission = admission; self.beforeAdmission = beforeAdmission
         self.makeTransport = makeTransport ?? { _ in
-            .live(MLHostConnection(binaryURL: MLHostLocator.binaryURL(),supportBase: MLHostLocator.supportBase(),role: .live))
+            .live(MLHostConnection(binaryURL: MLHostLocator.binaryURL(),supportBase: MLHostLocator.supportBase(),role: .live,
+                liveEventLimits: .recording))
         }
         self.makeASRAssets = makeASRAssets ?? { selection in
             try .init(sourceDirectory: selection.sourceDirectory,identity: selection.identity,
@@ -70,7 +71,8 @@ struct LiveNemotronSelection: Sendable {
                 currentMemory: admission.measurement,asrAssets: asr,vadAssets: vad)
             let registered = try registry.register(identity); entry = registered
             let core = LiveCaptureSessionCoordinator(input: input,store: registered.store,transport: makeTransport(input),
-                resources: admission.policy,validity: registered.validity,ingress: ingress,preparation: preparation)
+                resources: admission.policy,validity: registered.validity,ingress: ingress,epochHistoryLimit: 64,
+                publicationByteLimit: 2 * 1_024 * 1_024,preparation: preparation)
             let streams = try LiveCaptureStreamSession(input: input,ingress: ingress,coordinator: core)
             try registry.install(core,for: identity)
             let adapter = streams.derivativeSession(), registry = registry

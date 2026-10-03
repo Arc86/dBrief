@@ -2,7 +2,7 @@ import Foundation
 import dBriefWire
 
 enum LiveStoreRejection: Error, Equatable {
-    case wrongOwner, staleEpoch, outOfOrder, invalidRange, conflictingID, unsettledEpoch, closed, invalidAnnotation, stalePublication
+    case wrongOwner, staleEpoch, outOfOrder, invalidRange, conflictingID, unsettledEpoch, closed, invalidAnnotation, stalePublication, capacity
 }
 enum LiveStoreAdmission: Equatable { case accepted, duplicate, rejected(LiveStoreRejection) }
 enum LiveSnapshotSelection: Sendable {
@@ -77,15 +77,25 @@ actor LiveTranscriptStore {
     private var lastKnownCutoff: Int64?
     private var isClosed = false
     private var observers: [UUID: AsyncStream<UInt64>.Continuation] = [:]
+    private let retainedEvidenceLimit: Int?
+    private let payloadReservation: LiveRecordingPayloadBudget.Lease?
+    private(set) var retainedEvidenceBytes = 0
+    private(set) var evidenceGrowthRetired = false
+    private var terminalEvidenceBytes = 0
+    private static let terminalReserve = 8 * 1_024 * 1_024
 
-    init(identity: LiveSessionIdentity, validity: RecordingDerivativeValidity = RecordingDerivativeValidity()) {
-        self.identity = identity; self.validity = validity
+    init(identity: LiveSessionIdentity, validity: RecordingDerivativeValidity = RecordingDerivativeValidity(), retainedEvidenceLimit: Int? = nil,
+         payloadReservation: LiveRecordingPayloadBudget.Lease? = nil) {
+        self.identity = identity; self.validity = validity; self.retainedEvidenceLimit = retainedEvidenceLimit
+        self.payloadReservation = payloadReservation
     }
 
     /// Recovery is read-only. A checkpoint never resumes decoder/diarizer state.
     init(restoring checkpoint: LiveTranscriptCheckpoint) throws {
         try checkpoint.validate()
         identity = checkpoint.identity; validity = RecordingDerivativeValidity(); isClosed = true
+        retainedEvidenceLimit = nil
+        payloadReservation = nil
         revision = checkpoint.revision; annotationRevision = checkpoint.annotationRevision
         lastKnownCutoff = checkpoint.cutoffNanoseconds
         epochs = Dictionary(uniqueKeysWithValues: checkpoint.epochs.map { ($0.id, $0) })
@@ -103,6 +113,24 @@ actor LiveTranscriptStore {
         finalPublication = checkpoint.finalPublication; retiredPublications = Set(checkpoint.retiredPublicationIDs)
     }
 
+    /// Charge new retained values before their mutation. The conservative
+    /// fourfold charge includes indexes, last-event/batch and split coverage;
+    /// replaced values never return credit during a capture. Partials and lane
+    /// watermarks have a separate fixed reservation in the recording owner.
+    private func reserveEvidence(_ value: Any, terminal: Bool = false) -> Bool {
+        guard let limit = retainedEvidenceLimit else { return true }
+        if evidenceGrowthRetired && !terminal { return false }
+        let available = terminal ? Self.terminalReserve - terminalEvidenceBytes : limit - retainedEvidenceBytes
+        guard available >= 4, let estimate = try? LiveArtifactEncoding.estimatedBytes(value, limit: min(available / 4, 32 * 1_024 * 1_024)),
+              estimate <= available / 4 else {
+            if !terminal { evidenceGrowthRetired = true }
+            return false
+        }
+        if terminal { terminalEvidenceBytes += estimate * 4 }
+        else { retainedEvidenceBytes += estimate * 4 }
+        return true
+    }
+
     func checkpoint() -> LiveTranscriptCheckpoint {
         .init(identity: identity, revision: revision, annotationRevision: annotationRevision,
             epochs: epochs.values.sorted { (epochOrder[$0.id] ?? 0) < (epochOrder[$1.id] ?? 0) }, lanes: laneValues(),
@@ -113,6 +141,12 @@ actor LiveTranscriptStore {
             }, attributionCoverage: attributionCoverage, cutoffNanoseconds: lastKnownCutoff,
             finalPublication: finalPublication, retiredPublicationIDs: retiredPublications.sorted { $0.uuidString < $1.uuidString })
     }
+    struct CheckpointState: Sendable {
+        let checkpoint: LiveTranscriptCheckpoint
+        let isClosed: Bool
+        let growthRetired: Bool
+    }
+    func checkpointState() -> CheckpointState { .init(checkpoint: checkpoint(), isClosed: isClosed, growthRetired: evidenceGrowthRetired) }
 
     /// Constant-size, coalesced notifications. The recording owner requests a full
     /// checkpoint only after its preceding submission has returned.
@@ -173,7 +207,7 @@ actor LiveTranscriptStore {
             // every lane. Otherwise the unavailable lanes hide the terminal gap.
             refreshCutoff()
             for source in lanes.keys { lanes[source]?.availability = .unavailable }
-            for loss in losses where loss.isValid && captureLossIDs[loss.id] == nil && captureLosses.count < 100000 {
+            for loss in losses where loss.isValid && captureLossIDs[loss.id] == nil && captureLosses.count < 100000 && reserveEvidence(loss, terminal: true) {
                 captureLossIDs[loss.id] = captureLosses.count; captureLosses.append(loss)
             }
             isClosed = true; revision += 1; return .accepted
@@ -184,7 +218,35 @@ actor LiveTranscriptStore {
         mutate { clearPartialsWhileValid(owner: owner,source: source) }
     }
     func recordCaptureLoss(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss) -> LiveStoreAdmission {
+        mutate { recordCaptureLossWhileValid(owner: owner, loss: loss, terminal: false) }
+    }
+    /// The bound capture core alone may spend reserved room while reconciling
+    /// its finite already-owned terminal inventory. This cannot commit text.
+    func recordTerminalCaptureLoss(owner: UUID, loss: LiveCaptureRawLoss) -> LiveStoreAdmission {
         mutate {
+            guard captureBinding.owns(owner) else { return .rejected(.wrongOwner) }
+            return recordCaptureLossWhileValid(owner: identity, loss: loss, terminal: true)
+        }
+    }
+    func beginTerminalEpoch(owner: UUID, epoch: LiveEpoch) -> LiveStoreAdmission {
+        mutate {
+            guard captureBinding.owns(owner) else { return .rejected(.wrongOwner) }
+            return beginEpochWhileValid(owner: identity, epoch: epoch, terminal: true)
+        }
+    }
+    func admitTerminal(owner: UUID, event: LiveTranscriptEvent) -> LiveStoreAdmission {
+        mutate {
+            guard captureBinding.owns(owner) else { return .rejected(.wrongOwner) }
+            switch event.payload {
+            case .progress: break
+            case .settled(let interval):
+                guard interval.kind == .gap(.unavailable) else { return .rejected(.invalidRange) }
+            default: return .rejected(.invalidRange)
+            }
+            return admitWhileValid(event, terminal: true)
+        }
+    }
+    private func recordCaptureLossWhileValid(owner: LiveSessionIdentity, loss: LiveCaptureRawLoss, terminal: Bool) -> LiveStoreAdmission {
             guard owner == identity else { return .rejected(.wrongOwner) }
             guard !isClosed else { return .rejected(.closed) }
             guard loss.isValid else { return .rejected(.invalidRange) }
@@ -192,10 +254,10 @@ actor LiveTranscriptStore {
                 return captureLosses[index] == loss ? .duplicate : .rejected(.conflictingID)
             }
             guard captureLosses.count < 100000, revision < .max else { return .rejected(.invalidRange) }
+            guard reserveEvidence(loss, terminal: terminal) else { return .rejected(.capacity) }
             captureLossIDs[loss.id] = captureLosses.count; captureLosses.append(loss)
             revision += 1
             return .accepted
-        }
     }
 
 
@@ -218,9 +280,10 @@ actor LiveTranscriptStore {
         return .accepted
     }
 
-    private func beginEpochWhileValid(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
+    private func beginEpochWhileValid(owner: LiveSessionIdentity, epoch: LiveEpoch, terminal: Bool = false) -> LiveStoreAdmission {
         let admission = validateEpoch(owner: owner,epoch: epoch)
         guard admission == .accepted else { return admission }
+        guard reserveEvidence(epoch, terminal: terminal) else { return .rejected(.capacity) }
         if let origin = epoch.meetingOriginNanoseconds {
             let old = lanes[epoch.source], start = qualifiedFrontiers[epoch.source] ?? 0
             if origin > start {
@@ -240,7 +303,7 @@ actor LiveTranscriptStore {
         return .accepted
     }
 
-    private func admitWhileValid(_ event: LiveTranscriptEvent) -> LiveStoreAdmission {
+    private func admitWhileValid(_ event: LiveTranscriptEvent, terminal: Bool = false) -> LiveStoreAdmission {
         guard event.identity == identity else { return .rejected(.wrongOwner) }
         guard !isClosed else { return .rejected(.closed) }
         guard var lane = lanes[event.source], lane.epoch.id == event.epochID else { return .rejected(.staleEpoch) }
@@ -319,6 +382,10 @@ actor LiveTranscriptStore {
             changed = availability != lane.availability
             lane.availability = availability
         }
+        if let inserted, !reserveEvidence(inserted) { return .rejected(.capacity) }
+        if inserted == nil, let settled, !reserveEvidence(settled, terminal: terminal || (evidenceGrowthRetired && settled.kind == .gap(.unavailable))) {
+            return .rejected(.capacity)
+        }
         if let inserted { segments[inserted.id] = inserted }
         if let settled {
             coverage.append(settled)
@@ -368,6 +435,7 @@ actor LiveTranscriptStore {
         guard source.isCaptureSource, let lane = lanes[source] else { return .rejected(.invalidAnnotation) }
         if diarizers[source]?.id == contextID { return .duplicate }
         guard knownDiarizers[source]?.contains(contextID) != true else { return .rejected(.invalidAnnotation) }
+        guard reserveEvidence(contextID) else { return .rejected(.capacity) }
         knownDiarizers[source, default: []].insert(contextID)
         diarizers[source] = Diarizer(id: contextID, meetingStart: meetingTime(lane.progress.capturedSampleEnd, in: lane.epoch),
             firstEpochOrder: epochOrder[lane.epoch.id]!, firstSample: lane.progress.capturedSampleEnd)
@@ -419,6 +487,7 @@ actor LiveTranscriptStore {
                       }) else { return .rejected(.invalidAnnotation) }
             } else if interval.status == .resolved || interval.status == .overlap { return .rejected(.invalidAnnotation) }
         }
+        guard reserveEvidence(batch) else { return .rejected(.capacity) }
         for annotation in updates { annotations[.init(segment: annotation.segmentID, word: annotation.wordIndex)] = annotation }
         for interval in newCoverage { replaceAttributionCoverage(interval) }
         diarizer.nextSequence += 1; diarizer.lastBatch = batch; diarizers[source] = diarizer
@@ -488,6 +557,7 @@ actor LiveTranscriptStore {
             guard let segment = byID[annotation.segmentID], validAnnotation(annotation, segment: segment),
                   keys.insert(.init(segment: annotation.segmentID, word: annotation.wordIndex)).inserted else { return .rejected(.invalidAnnotation) }
         }
+        guard reserveEvidence(publication) else { return .rejected(.capacity) }
         if let prior = finalPublication, prior.id != publication.id { retiredPublications.insert(prior.id) }
         finalPublication = publication
         revision += 1; annotationRevision += 1

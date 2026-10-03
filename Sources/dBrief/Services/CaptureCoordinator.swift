@@ -127,6 +127,7 @@ final class CaptureCoordinator {
         var preview: CaptureLivePreview.Session?
         var previewStart: Task<Void, Never>?
         var previewStop: Task<Void, Never>?
+        var previewRetired = false
         var derivative: CaptureLiveDerivative.Session?
         var preparedDerivative: CaptureLiveDerivative.Prepared?
         var derivativeUnavailable = false
@@ -147,6 +148,7 @@ final class CaptureCoordinator {
     private let derivativeDrainDeadline: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
     private let onEvent: (Event) -> Void
+    private let admitLiveOwner: (Request) -> Bool
     @ObservationIgnored private var attempt: Attempt?
     private(set) var recordingID: UUID?
     private(set) var isStopping = false
@@ -157,12 +159,14 @@ final class CaptureCoordinator {
     init(hardware: Hardware, persistence: Persistence,
          preview: CaptureLivePreview = .live(),
          derivative: CaptureLiveDerivative = .disabled,
+         admitLiveOwner: @escaping (Request) -> Bool = { _ in true },
          derivativeDrainDeadline: Duration = .seconds(3),
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          onEvent: @escaping (Event) -> Void) {
         self.hardware = hardware
         self.persistence = persistence
         self.onEvent = onEvent
+        self.admitLiveOwner = admitLiveOwner
         self.preview = preview
         self.derivative = derivative
         self.derivativeDrainDeadline = derivativeDrainDeadline
@@ -263,7 +267,10 @@ final class CaptureCoordinator {
     private func startOwned(_ owned: Attempt) async throws {
         let session = try await persistence.create(owned.request.id, owned.request.startedAt)
         owned.session = session
-        if !owned.wantsStop { prepareDerivative(owned) }
+        if !owned.wantsStop {
+            if owned.request.liveTranscription, !admitLiveOwner(owned.request) { owned.derivativeUnavailable = true }
+            else { prepareDerivative(owned) }
+        }
         onEvent(.prepared(owned.request, session))
         guard !owned.wantsStop else { return }
         hardware.bindEvents { [weak self, weak owned] event in
@@ -392,19 +399,28 @@ final class CaptureCoordinator {
         let input = CaptureLivePreview.Inputs(mic: state.microphoneEnabled ? streams.mic : nil,
             system: state.systemAudioEnabled ? streams.system : nil, language: owned.request.language)
         owned.previewStart = Task { @MainActor [weak self, weak owned] in
-            guard !Task.isCancelled, let self, let owned, self.acceptsEvents(owned) else { return }
+            guard !Task.isCancelled, let self, let owned, !owned.previewRetired, self.acceptsEvents(owned) else { return }
             let context = await prepare(owned.request)
-            guard !Task.isCancelled, self.acceptsEvents(owned) else { return }
+            guard !Task.isCancelled, !owned.previewRetired, self.acceptsEvents(owned) else { return }
             await PrivacyTrace.$context.withValue(context) {
                 await session.start(input) { [weak self, weak owned] event in
                     Task { @MainActor [weak self, weak owned] in
-                        guard let self, let owned, self.acceptsEvents(owned) else { return }
+                        guard let self, let owned, !owned.previewRetired, self.acceptsEvents(owned) else { return }
                         self.onEvent(.live(owned.request.id, event))
                     }
                 }
             }
         }
         onEvent(.liveBegan(owned.request.id))
+    }
+
+    /// Retires derivative growth while hardware keeps recording. A preview
+    /// producer cannot keep filling UI/history after its ownership budget ends.
+    func retireLivePreview(recordingID: UUID) {
+        guard let owned = attempt, owned.request.id == recordingID, !owned.previewRetired else { return }
+        owned.previewRetired = true; owned.previewStart?.cancel()
+        if let session = owned.preview { owned.previewStop = Task { await session.stop() } }
+        onEvent(.liveEnded(recordingID))
     }
 
     /// Installed synchronously before any await. All callers await this same task;

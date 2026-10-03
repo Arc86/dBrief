@@ -5,6 +5,12 @@ import Foundation
 /// cardinality and nesting; rejection preserves the caller's recoverable value.
 /// This is internal to these concrete schemas, not a generic custom-Encoder API.
 enum LiveArtifactEncoding {
+    static func estimatedBytes(_ value: Any, limit: Int) throws -> Int {
+        guard limit > 0 && limit <= 32 * 1_024 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
+        var remaining = limit
+        try measure(value, depth: 0, remaining: &remaining)
+        return limit - remaining
+    }
     static func encode<T: Encodable>(_ value: T, limit: Int, beforeEncoding: () -> Void = {}) throws -> Data {
         guard limit > 0 && limit <= 32 * 1_024 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
         var remaining = limit

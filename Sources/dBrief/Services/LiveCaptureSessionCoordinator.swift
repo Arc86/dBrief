@@ -80,12 +80,17 @@ actor LiveCaptureSessionCoordinator {
         case clearPartials(LiveSource?)
         case close
     }
+    private struct PendingPublication {
+        let value: Publication
+        let bytes: Int
+    }
     private struct Replacement {
         let attemptID: UUID
         let oldScope: LiveLaneScope
         let controlID: UUID
         let epoch: LiveEpoch
         var events: [LiveLaneEvent] = []
+        var bytes = 0
         var oldEpochID: UUID { oldScope.epochID }
     }
     private struct ReplacementCapacity {
@@ -109,6 +114,8 @@ actor LiveCaptureSessionCoordinator {
     private let preparationOwner: UUID
     private let invalidOwnerBinding: Bool
     private let epochHistoryLimit: Int
+    private let publicationByteLimit: Int?
+    private(set) var pendingPublicationBytes = 0
     private var lanes: [LiveSource: Lane] = [:]
     private var moduleLedger: LiveVADModuleLedger?
     private var started = false
@@ -123,7 +130,7 @@ actor LiveCaptureSessionCoordinator {
     private var eventsTask: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var timerGeneration: UUID?
-    private var publications: [Publication] = []
+    private var publications: [PendingPublication] = []
     private var publisher: Task<Void, Never>?
     private var storeSequences: [UUID: UInt64] = [:]
     private var publishedEpochs: [UUID: LiveEpoch] = [:]
@@ -143,7 +150,7 @@ actor LiveCaptureSessionCoordinator {
          resources: LiveModelResourcePolicy? = nil, lease: LiveResourceLease? = nil,
          validity: RecordingDerivativeValidity? = nil,
          ingress: LiveCaptureIngress? = nil,
-         storeAccess: LiveCaptureStoreAccess? = nil, epochHistoryLimit: Int = 4096,
+         storeAccess: LiveCaptureStoreAccess? = nil, epochHistoryLimit: Int = 4096, publicationByteLimit: Int? = nil,
          preparation: LiveCaptureStartPreparation? = nil,
          deadlineSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.input = input; self.store = store; self.transport = transport
@@ -168,6 +175,7 @@ actor LiveCaptureSessionCoordinator {
         self.deadlineSleep = deadlineSleep
         self.resources = resources ?? preparation?.resources; self.lease = ownsCapture ? lease : nil
         self.epochHistoryLimit = min(4096,max(1,epochHistoryLimit))
+        self.publicationByteLimit = publicationByteLimit.map { min(2 * 1_024 * 1_024, max(1, $0)) }
         moduleLedger = input.vad.flatMap { _ in try? LiveVADModuleLedger(input: input) }
     }
 
@@ -209,7 +217,7 @@ actor LiveCaptureSessionCoordinator {
     }
     func abandonSource(scope: LiveLaneScope) {
         guard !terminal, isValidOwner, scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return }
-        replacements[scope.source] = nil
+        removeReplacement(scope.source)
         cut(scope.source,reason: .unavailable)
         abandonedSources.insert(scope.source)
         lanes[scope.source]?.pumping = false
@@ -419,7 +427,21 @@ actor LiveCaptureSessionCoordinator {
         guard started, !sealed, !terminal, isValidOwner, lanes[source] != nil, let ingress else { return }
         observeIngressLoss(source: source)
         guard publications.count <= 512 - 128 else { terminate(.overload); return }
-        for loss in ingress.takeLosses(source) { _ = publish(.rawLoss(loss)) }
+        let losses = ingress.takeLosses(source)
+        // Once taken, every raw fact belongs to this core. Reserve the entire
+        // batch before appending, or move all of it into terminal recovery.
+        do {
+            let batch = try losses.map { PendingPublication(value: .rawLoss($0), bytes: try publicationCharge(.rawLoss($0))) }
+            let bytes = batch.reduce(0) { $0 + $1.bytes }
+            guard publicationByteLimit.map({ bytes <= $0 - pendingPublicationBytes }) ?? true else {
+                for loss in losses { appendTerminal(.rawLoss(loss)) }
+                terminate(.overload); return
+            }
+            pendingPublicationBytes += bytes; publications.append(contentsOf: batch); startPublisher()
+        } catch {
+            for loss in losses { appendTerminal(.rawLoss(loss)) }
+            terminate(.overload)
+        }
     }
     func retire() { terminate(.stopped) }
     /// Retry only after the control cut is acknowledged. Native retirement may
@@ -481,6 +503,9 @@ actor LiveCaptureSessionCoordinator {
         }
         guard replacementIsCurrent(pending), knownEpochs.contains(epoch.id),
               let accepted = replacements.removeValue(forKey: scope.source), accepted.attemptID == pending.attemptID else { return false }
+        // The detached inbox remains resident through synchronous replay. New
+        // publications acquire their own charge before this one returns.
+        defer { pendingPublicationBytes -= accepted.bytes }
         if var ledger = moduleLedger {
             do { try ledger.installAcceptedReplacement(oldScope: scope,newScope: .init(identity: input.identity,source: epoch.source,epochID: epoch.id)) }
             catch { terminate(.unavailable); return false }
@@ -517,9 +542,13 @@ actor LiveCaptureSessionCoordinator {
 
     private func discardReplacement(_ pending: Replacement, releaseCapacity: Bool) {
         let source = pending.oldScope.source
-        if replacements[source]?.attemptID == pending.attemptID { replacements[source] = nil }
+        if replacements[source]?.attemptID == pending.attemptID { removeReplacement(source) }
         if releaseCapacity, replacementCapacity[source]?.attemptID == pending.attemptID { replacementCapacity[source] = nil }
         kick(source)
+    }
+
+    private func removeReplacement(_ source: LiveSource) {
+        if let value = replacements.removeValue(forKey: source) { pendingPublicationBytes -= value.bytes }
     }
 
     /// Device/stream discontinuity retires only this source's provisional work.
@@ -560,6 +589,9 @@ actor LiveCaptureSessionCoordinator {
             guard event.scope.identity == input.identity else { return }
             if var pending = replacements[event.scope.source], pending.epoch.id == event.scope.epochID {
                 guard pending.events.count < 16, event.sequence == UInt64(pending.events.count) else { terminate(.unavailable); return }
+                guard let bytes = try? retainedPublicationCharge(event),
+                      publicationByteLimit.map({ bytes <= $0 - pendingPublicationBytes }) ?? true else { terminate(.overload); return }
+                pendingPublicationBytes += bytes; pending.bytes += bytes
                 pending.events.append(event); replacements[event.scope.source] = pending; return
             }
             guard !abandonedSources.contains(event.scope.source), var lane = lanes[event.scope.source], lane.epoch.id == event.scope.epochID else { return }
@@ -815,6 +847,7 @@ actor LiveCaptureSessionCoordinator {
         terminal = true; closing = true; sealed = true
         preparation?.complete(privacyOutcome ?? (reason == .stopped ? .cancelled : .failed),owner: preparationOwner)
         ingress?.retireInput()
+        pendingPublicationBytes -= replacements.values.reduce(0) { $0 + $1.bytes }
         replacements.removeAll()
         timer?.cancel(); timerGeneration = nil; beginTask?.cancel(); eventsTask?.cancel()
         for source in lanes.keys {
@@ -822,19 +855,19 @@ actor LiveCaptureSessionCoordinator {
             lanes[source]?.packets.removeAll(); lanes[source]?.receipts.removeAll(); lanes[source]?.ready = false
             // At most three terminal publications per source beyond the fixed
             // normal inbox. Never discard an already queued evidence commit.
-            publications.append(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed,asrConsumedSampleEnd: lane.asrConsumed))))
+            appendTerminal(.event(lane.epoch,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: lane.admitted,consumedSampleEnd: lane.consumed,asrConsumedSampleEnd: lane.asrConsumed))))
             if lane.settled < lane.captured, let range = evidence(lane.epoch,lane.settled,lane.captured) {
-                publications.append(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: .gap(reason ?? .unavailable)))))
+                appendTerminal(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: .gap(reason ?? .unavailable)))))
                 lanes[source]?.settled = lane.captured
             }
-            publications.append(.event(lane.epoch,.availability(.unavailable)))
+            appendTerminal(.event(lane.epoch,.availability(.unavailable)))
         }
         // At most 128 raw facts per registered source, separate from normalized
         // terminal settlement. Keep unknown loss even when the normal inbox fills.
         for source in input.epochs.map(\.source) {
-            for loss in ingress?.takeLosses(source) ?? [] { publications.append(.rawLoss(loss)) }
+            for loss in ingress?.takeLosses(source) ?? [] { appendTerminal(.rawLoss(loss)) }
         }
-        publications.append(.close); startPublisher()
+        appendTerminal(.close); startPublisher()
         if let nativeOwnership {
             let shutdown = nativeOwnership.shutdown()
             Task { [weak self] in await shutdown.value; await self?.helperDidExit() }
@@ -862,11 +895,39 @@ actor LiveCaptureSessionCoordinator {
     @discardableResult private func publish(_ item: Publication) -> Bool {
         guard !invalidOwnerBinding, !terminal else { return false }
         // Coalesce telemetry/preview only; evidence and boundaries retain order.
-        if case .event(let epoch, .progress(let p)) = item, case .event(let prior, .progress) = publications.last, epoch == prior {
-            publications[publications.count-1] = .event(epoch,.progress(p)); return true
+        let prior = publications.last
+        let replacesProgress: Bool
+        if case .event(let epoch, .progress) = item, case .event(let previous, .progress) = prior?.value, epoch == previous {
+            replacesProgress = true
+        } else { replacesProgress = false }
+        guard let bytes = try? publicationCharge(item),
+              publicationByteLimit.map({ bytes <= $0 - pendingPublicationBytes + (replacesProgress ? prior?.bytes ?? 0 : 0) }) ?? true,
+              replacesProgress || publications.count < 512 else {
+            // This fact caused overload before normal enqueue. It still belongs
+            // in the bounded terminal inventory, including a removed ingress fact.
+            if case .rawLoss = item { appendTerminal(item) }
+            terminate(.overload); return false
         }
-        guard publications.count < 512 else { terminate(.overload); return false }
-        publications.append(item); startPublisher(); return true
+        let pending = PendingPublication(value: item, bytes: bytes)
+        if replacesProgress {
+            pendingPublicationBytes += bytes - (prior?.bytes ?? 0)
+            publications[publications.count - 1] = pending; return true
+        }
+        pendingPublicationBytes += bytes
+        publications.append(pending); startPublisher(); return true
+    }
+
+    private func publicationCharge(_ item: Publication) throws -> Int {
+        try retainedPublicationCharge(item)
+    }
+    private func retainedPublicationCharge(_ value: Any) throws -> Int {
+        guard let limit = publicationByteLimit else { return 0 }
+        return try LiveArtifactEncoding.estimatedBytes(value, limit: max(1, limit / 4)) * 4
+    }
+    private func appendTerminal(_ item: Publication) {
+        // Terminal controls/raw facts are separately reserved by the recording
+        // owner and finite ingress/epoch inventory. They cannot carry new text.
+        publications.append(.init(value: item, bytes: 0))
     }
 
     private func startPublisher() {
@@ -876,7 +937,9 @@ actor LiveCaptureSessionCoordinator {
 
     private func publishStore() async {
         while !publications.isEmpty {
-            let item = publications.removeFirst()
+            let pending = publications.removeFirst(), item = pending.value
+            // Removed work is still resident through the actual awaited return.
+            defer { pendingPublicationBytes -= pending.bytes }
             var result: LiveStoreAdmission
             switch item {
             case .begin(let epoch):
@@ -901,10 +964,13 @@ actor LiveCaptureSessionCoordinator {
                 result = await storeAccess.admit(.init(identity: input.identity,epochID: epoch.id,source: epoch.source,sequence: sequence,payload: mapped))
                 if result == .accepted || result == .duplicate { storeSequences[epoch.id] = sequence + 1 }
             case .clearPartials(let source): result = await store.clearPartials(owner: input.identity,source: source)
-            case .rawLoss(let loss): result = await store.recordCaptureLoss(owner: input.identity,loss: loss)
+            case .rawLoss(let loss):
+                result = terminal ? await store.recordTerminalCaptureLoss(owner: preparationOwner, loss: loss)
+                    : await store.recordCaptureLoss(owner: input.identity,loss: loss)
             case .close: result = await store.close(owner: input.identity)
             }
             if case .rejected = result {
+                if case .rawLoss = item { publications.insert(.init(value: item, bytes: 0), at: 0) }
                 terminate(.unavailable)
                 // Recover from a failed publication using the store's actual
                 // frontier rather than advancing from an unaccepted commit.
@@ -930,14 +996,16 @@ actor LiveCaptureSessionCoordinator {
     }
 
     private func closeActualStore() async {
-        let rawLosses = publications.compactMap { item -> LiveCaptureRawLoss? in
-            if case .rawLoss(let loss) = item { return loss }; return nil
+        let recovery = publications
+        let rawLosses = recovery.compactMap { item -> LiveCaptureRawLoss? in
+            if case .rawLoss(let loss) = item.value { return loss }; return nil
         }
         publications.removeAll()
+        defer { pendingPublicationBytes -= recovery.reduce(0) { $0 + $1.bytes } }
         let projection = await store.projection()
         var recoverySucceeded = true
         for loss in rawLosses {
-            let result = await store.recordCaptureLoss(owner: input.identity,loss: loss)
+            let result = await store.recordTerminalCaptureLoss(owner: preparationOwner,loss: loss)
             if result != .accepted && result != .duplicate { recoverySucceeded = false }
         }
         for source in input.epochs.map(\.source) {
@@ -949,13 +1017,13 @@ actor LiveCaptureSessionCoordinator {
                 let existing = actual?.epoch.id == epoch.id ? actual : nil
                 if let existing { epoch = existing.epoch }
                 else {
-                    var result = await store.beginEpoch(owner: input.identity,epoch: epoch)
+                    var result = await store.beginTerminalEpoch(owner: preparationOwner,epoch: epoch)
                     if result == .rejected(.invalidRange) {
                         // An unaccepted clock anchor cannot establish chronology.
                         // Preserve this source's captured samples as unaligned gaps.
                         epoch = .init(id: epoch.id,source: source,engineRevision: epoch.engineRevision,language: epoch.language,
                             meetingOriginNanoseconds: nil,availability: .unavailable)
-                        result = await store.beginEpoch(owner: input.identity,epoch: epoch)
+                        result = await store.beginTerminalEpoch(owner: preparationOwner,epoch: epoch)
                     }
                     guard result == .accepted || result == .duplicate else { recoverySucceeded = false; break }
                     storeSequences[epoch.id] = 0
@@ -965,11 +1033,11 @@ actor LiveCaptureSessionCoordinator {
                 let progress = LiveLaneProgress(capturedSampleEnd: captured,
                     admittedSampleEnd: existing?.progress.admittedSampleEnd ?? 0,consumedSampleEnd: existing?.progress.consumedSampleEnd ?? 0,
                     asrConsumedSampleEnd: existing?.progress.effectiveASRConsumedSampleEnd ?? 0)
-                let advanced = await store.admit(.init(identity: input.identity,epochID: epoch.id,source: source,sequence: sequence,payload: .progress(progress)))
+                let advanced = await store.admitTerminal(owner: preparationOwner, event: .init(identity: input.identity,epochID: epoch.id,source: source,sequence: sequence,payload: .progress(progress)))
                 guard advanced == .accepted || advanced == .duplicate else { recoverySucceeded = false; break }
                 sequence += 1
                 if let range = evidence(epoch,existing?.settledSampleEnd ?? 0,captured) {
-                    let settled = await store.admit(.init(identity: input.identity,epochID: epoch.id,source: source,sequence: sequence,
+                    let settled = await store.admitTerminal(owner: preparationOwner, event: .init(identity: input.identity,epochID: epoch.id,source: source,sequence: sequence,
                         payload: .settled(.init(epochID: epoch.id,source: source,range: range,kind: .gap(.unavailable)))))
                     guard settled == .accepted || settled == .duplicate else { recoverySucceeded = false; break }
                     sequence += 1

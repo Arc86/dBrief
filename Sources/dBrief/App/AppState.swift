@@ -5,10 +5,17 @@ import dBriefWire
 @Observable
 final class AppState {
     /// Transcript/model owners outlive windows, selection and post-processing.
-    @ObservationIgnored let liveRecordingSessions = LiveRecordingSessionRegistry()
+    @ObservationIgnored let liveRecordingSessions: LiveRecordingSessionRegistry
     @ObservationIgnored let liveModelResources: LiveModelResourcePolicy
-    init(liveResourceProfiles: [LiveResourceProfile] = []) {
+    /// Enabled by integration fixtures until deletion, recovery and chat
+    /// lifecycle seams are wired and verified together.
+    @ObservationIgnored let liveArtifactCaptureEnabled: Bool
+    init(liveResourceProfiles: [LiveResourceProfile] = [], liveArtifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"),
+         liveArtifactCaptureEnabled: Bool = false,
+         liveArtifactStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) {
         liveModelResources = LiveModelResourcePolicy(profiles: liveResourceProfiles)
+        self.liveArtifactCaptureEnabled = liveArtifactCaptureEnabled
+        liveRecordingSessions = LiveRecordingSessionRegistry(artifactRoot: liveArtifactRoot, beforeStage: liveArtifactStage)
     }
     /// Capture-only state machine. Processing is tracked separately via `processingJob`
     /// so a new recording can start (capture `.idle`) while a previous recording is still

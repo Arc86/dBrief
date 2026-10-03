@@ -15,6 +15,56 @@ private struct LiveHostFixture: Sendable {
 }
 
 @Suite struct LiveHostConnectionTests {
+    @Test func configuredDeferredLimitRejectsABoundedPreReplySuffix() async throws {
+        let f = LiveHostFixture()
+        let connection = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
+            supportBase: URL(fileURLWithPath: "/private/tmp"), environment: ["STUB_MODE": "live-barrier-buffer-overflow"], role: .live,
+            liveEventLimits: .init(queued: 8, deferred: 1, accountedBytes: 256 * 1_024))
+        do {
+            let stream = try await connection.beginLive(f.begin)
+            await connection.armLiveDeadline(.seconds(2))
+            var iterator = stream.makeAsyncIterator()
+            try #require(try await iterator.next() != nil)
+            do { _ = try await connection.sendLive(.barrier(.init(scope: f.scope, nextPacketSequence: 0, sampleEnd: 0, kind: .pause))) }
+            catch { #expect(error as? MLHostError == .protocolViolation) }
+            await #expect(throws: MLHostError.protocolViolation) { while try await iterator.next() != nil {} }
+            await connection.shutdownLiveAndWaitForExit()
+        } catch { await connection.shutdownLiveAndWaitForExit(); throw error }
+    }
+
+    @Test func configuredStreamCountLimitRejectsAnUnconsumedTwoSourceBurst() async throws {
+        let f = LiveHostFixture()
+        let connection = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
+            supportBase: URL(fileURLWithPath: "/private/tmp"), environment: ["STUB_MODE": "live-tail"], role: .live,
+            liveEventLimits: .init(queued: 1, deferred: 8, accountedBytes: 256 * 1_024))
+        do {
+            let second = LiveEpoch(id: UUID(), source: .system, engineRevision: "nemotron", language: "auto", meetingOriginNanoseconds: nil)
+            let stream = try await connection.beginLive(.init(identity: f.identity, configuration: f.begin.configuration, epochs: f.begin.epochs + [second]))
+            await connection.armLiveDeadline(.seconds(2))
+            do { _ = try await connection.sendLive(.cancel(f.identity)) }
+            catch { #expect(error as? MLHostError == .protocolViolation) }
+            var iterator = stream.makeAsyncIterator()
+            var count = 0
+            await #expect(throws: MLHostError.protocolViolation) {
+                while try await iterator.next() != nil { count += 1 }
+            }
+            #expect(count == 1)
+            await connection.shutdownLiveAndWaitForExit()
+        } catch { await connection.shutdownLiveAndWaitForExit(); throw error }
+    }
+    @Test func configuredDecodedEventLimitRejectsBeforePublishingOrDeferringTheValue() async throws {
+        let f = LiveHostFixture()
+        let connection = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
+            supportBase: URL(fileURLWithPath: "/private/tmp"), environment: ["STUB_MODE": "live-tail"], role: .live,
+            liveEventLimits: .init(queued: 8, deferred: 8, accountedBytes: 1))
+        do {
+            let stream = try await connection.beginLive(f.begin)
+            await connection.armLiveDeadline(.seconds(2))
+            var iterator = stream.makeAsyncIterator()
+            await #expect(throws: MLHostError.protocolViolation) { _ = try await iterator.next() }
+            await connection.shutdownLiveAndWaitForExit()
+        } catch { await connection.shutdownLiveAndWaitForExit(); throw error }
+    }
     @Test func shuttingDownNeverUsedLiveConnectionPreventsDelayedBeginBeforeAnyLaunch() async throws {
         let f = LiveHostFixture()
         // If the terminal role guard permits launch, this nonexistent binary

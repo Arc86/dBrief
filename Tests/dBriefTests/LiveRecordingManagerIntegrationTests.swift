@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import Testing
 @testable import dBriefWire
 @testable import dBrief
@@ -7,6 +8,8 @@ import Testing
     var createEntered = false
     var request: CaptureCoordinator.Request?
     var input: LiveSessionBegin?
+    var liveSink: (@Sendable (CaptureLivePreview.Event) -> Void)?
+    var previewStops = 0
     private var createWaiter: CheckedContinuation<Void,Never>?
     func holdCreate() async { createEntered = true; await withCheckedContinuation { createWaiter = $0 } }
     func releaseCreate() { createWaiter?.resume(); createWaiter = nil }
@@ -21,32 +24,51 @@ import Testing
     let probe = LiveManagerProbe()
     let copyGate = ASRCopyGate()
     let stagingBudget = LiveASRStagingBudget()
+    let capturedTrack: URL?
     private let restore: () -> Void
 
-    init(holdCopy: Bool = false) throws {
+    init(holdCopy: Bool = false, engine: LiveTranscriptionEngine = .nemotron, syntheticAudio: Bool = false,
+         stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) throws {
         files = try ASRAssetsFixture()
+        let captureDirectory = files.root.appendingPathComponent("CaptureSession")
+        try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+        if syntheticAudio {
+            let track = captureDirectory.appendingPathComponent("capture.mic.caf")
+            let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false))
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000))
+            buffer.frameLength = 16_000
+            let samples = try #require(buffer.floatChannelData)[0]
+            for index in 0..<16_000 { samples[index] = 0 }
+            let writer = AudioTrackWriter(url: track, role: .mic)
+            try writer.write(buffer); writer.close(); capturedTrack = track
+        } else { capturedTrack = nil }
         let settings = settings, files = files, probe = probe, copyGate = copyGate, stagingBudget = stagingBudget
+        let capturedTrack = capturedTrack
         let oldLive = settings.liveTranscriptionEnabled, oldEngine = settings.liveTranscriptionEngine
         let oldLanguage = settings.nemotronLiveLanguage, oldChunk = settings.nemotronLiveChunkMs
         let oldFinal = settings.transcriptionEngine, oldMini = settings.showMiniRecordingView
         let oldProfiles = settings.profiles, oldActive = settings.activeProfileId
         let oldAutomatic = settings.automaticProfileId, oldAutomaticOwner = settings.automaticProfileRecordingID
+        let oldFolder = settings.recordingFolderURL
         restore = {
             settings.liveTranscriptionEnabled = oldLive; settings.liveTranscriptionEngine = oldEngine
             settings.nemotronLiveLanguage = oldLanguage; settings.nemotronLiveChunkMs = oldChunk
             settings.transcriptionEngine = oldFinal; settings.showMiniRecordingView = oldMini
             settings.profiles = oldProfiles; settings.activeProfileId = oldActive
             settings.automaticProfileId = oldAutomatic; settings.automaticProfileRecordingID = oldAutomaticOwner
+            settings.recordingFolderURL = oldFolder
         }
         let profile = MeetingProfile(name: "Model-free capture")
         settings.profiles = [profile]; settings.activeProfileId = profile.id
         settings.automaticProfileId = nil; settings.automaticProfileRecordingID = nil
-        settings.liveTranscriptionEnabled = true; settings.liveTranscriptionEngine = .nemotron
+        settings.liveTranscriptionEnabled = true; settings.liveTranscriptionEngine = engine
         settings.nemotronLiveLanguage = .auto; settings.nemotronLiveChunkMs = 1120
         settings.transcriptionEngine = .localWhisper; settings.showMiniRecordingView = false
+        settings.recordingFolderURL = files.root.appendingPathComponent("Recordings")
         state = AppState(liveResourceProfiles: [.init(id: "fixture",hardware: "fixture",modelRevision: "fixture-asr",
             chunkMs: 1120,sourceCount: 1,qualificationID: "model-free",asrBytes: 500,attributionBytes: nil,headroomBytes: 100,
-            concurrentChatModels: [:],backgroundWorkQualified: false,asr: ASRAssetsFixture.identity())])
+            concurrentChatModels: [:],backgroundWorkQualified: false,asr: ASRAssetsFixture.identity())],
+            liveArtifactRoot: files.root.appendingPathComponent("LiveSessions"), liveArtifactCaptureEnabled: true, liveArtifactStage: stage)
         let state = state
         let admission = LiveModelJobAdmission(policy: state.liveModelResources,measurement: { .init(availableBytes: 2000,pressure: .normal) })
         ordinary = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),supportBase: files.root,
@@ -64,20 +86,26 @@ import Testing
         let (mic,micOutput) = AsyncStream<LiveAudioBuffer>.makeStream(), (system,systemOutput) = AsyncStream<LiveAudioBuffer>.makeStream()
         let hardware = CaptureCoordinator.Hardware(start: { request,_ in
             probe.request = request; return .init(mic: mic,system: system)
-        },stop: { micOutput.finish(); systemOutput.finish() },snapshot: { .init(microphoneEnabled: true) },
+        },stop: { micOutput.finish(); systemOutput.finish() },snapshot: {
+            .init(tracks: capturedTrack.map { .init(systemURL: nil, micURL: $0) }, duration: capturedTrack == nil ? 0 : 1, microphoneEnabled: true)
+        },
             pause: {},resume: {},switchInputDevice: { _ in },permissions: .init(microphone: { true },systemAudio: { false }))
         let persistence = CaptureCoordinator.Persistence(create: { id,date in
             await probe.holdCreate()
-            return .init(id: id,startedAt: date,files: .init(directoryURL: files.root,
-                manifestURL: files.root.appendingPathComponent("session.json"),captureBaseURL: files.root.appendingPathComponent("capture")))
+            return .init(id: id,startedAt: date,files: .init(directoryURL: captureDirectory,
+                manifestURL: captureDirectory.appendingPathComponent("session.json"),captureBaseURL: captureDirectory.appendingPathComponent("capture")))
         },began: { _,_ in },failedStart: { _,_,_ in },stopped: { session,state,_ in
-            .init(session: session,state: state,fileSize: 0,duration: 0)
+            .init(session: session,state: state,fileSize: capturedTrack == nil ? 0 : 64_000,duration: state.duration)
         },termination: { _ in },pauseResume: { _,_,_ in })
         manager = RecordingManager(appState: state,appSettings: settings,transcriptStore: .init(),insightsStore: .init(),
             voiceLibraryStore: .init(url: files.root.appendingPathComponent("voices.json")),
             modelPerformanceStore: .init(url: files.root.appendingPathComponent("performance.json")),
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")),microsoftAuthService: .init(),
-            captureHardware: hardware,capturePersistence: persistence,liveFactory: factory,mlHost: ordinary,
+            recordingFinalizer: .init(resolveFFmpeg: { nil }), captureHardware: hardware,capturePersistence: persistence,liveFactory: factory,
+            capturePreview: .init(prepare: { _ in nil }, make: {
+                .init(start: { _, emit in await MainActor.run { probe.liveSink = emit } },
+                    stop: { await MainActor.run { probe.previewStops += 1 } })
+            }), mlHost: ordinary,
             liveSelectionProvider: { language,chunk,sources in
                 .init(profileID: "fixture",hardware: "fixture",sourceDirectory: files.source,identity: ASRAssetsFixture.identity(),
                     language: language,chunkMs: chunk,sources: sources,captureQualified: true)
@@ -86,6 +114,9 @@ import Testing
     func clean() async {
         probe.releaseCreate(); await copyGate.release()
         await manager.prepareForTermination(); await ordinary.shutdown()
+        if let id = probe.request?.id, let entry = state.liveRecordingSessions.entry(recordingID: id) {
+            try? await entry.artifacts.flush(); try? state.liveRecordingSessions.retire(entry.identity)
+        }
         await ordinary.prepareForLiveCapture()
         let end = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while ContinuousClock.now < end {
@@ -110,6 +141,128 @@ import Testing
         let end = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while ContinuousClock.now < end { if await condition() { return true }; try? await Task.sleep(for: .milliseconds(2)) }
         return await condition()
+    }
+
+    @Test func actualManagerAdoptsFinalAudioAndBindsWithoutAWindowOrJoiningHeldTranscriptIO() async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await gate.enter($0) })
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            try #require(await eventually { f.probe.liveSink != nil })
+            f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Owned before finalization")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.stopRecording()
+            let recording = try #require(f.state.currentRecording)
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+            try await gate.waitForArrival()
+            #expect(f.state.showPostRecordingSheet && !entry.artifacts.isDurable)
+            await f.manager.skipProcessing()
+            let audio = try #require(recording.finalizedAudioURL)
+            #expect(recording.fileURL == audio && FileManager.default.fileExists(atPath: audio.path))
+            let metadata = try JSONDecoder().decode(RecordingMetadataPayload.self,
+                from: Data(contentsOf: try #require(recording.metadataURL)))
+            #expect(metadata.recordingID == recording.id)
+            #expect(!entry.artifacts.isDurable)
+            await gate.release(); try await entry.artifacts.flush()
+            let restart = LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions"))
+            let recovered = try await restart.recover()
+            #expect(recovered.audioURL == audio.standardizedFileURL)
+            #expect(recovered.appTranscript?.captureClosed == true)
+            #expect(recovered.appTranscript?.legacy?.first?.text == "Owned before finalization")
+            let source = f.files.root.appendingPathComponent("LiveSessions").appendingPathComponent(entry.identity.captureSessionID.uuidString)
+            #expect(!FileManager.default.fileExists(atPath: source.appendingPathComponent("live-transcript.json").path))
+            await f.clean()
+        } catch { await gate.release(); await f.clean(); throw error }
+    }
+
+    @Test func actualManagerClosesNativeCheckpointWithoutJoiningHeldDiskIOOrOpeningAWindow() async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript)
+        let f = try LiveManagerFixture(stage: { try await gate.enter($0) })
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            let input = try #require(f.probe.input), entry = try #require(f.state.liveRecordingSessions.entry(identity: input.identity))
+            try await gate.waitForArrival()
+            let stop = Task { await f.manager.prepareForTermination() }
+            try #require(await eventually { f.state.recordingState == .idle })
+            #expect(entry.captureClosed && !entry.artifacts.isDurable)
+            await stop.value
+            await gate.release(); try await entry.artifacts.flush()
+            let restart = LiveSessionArtifactStore(identity: input.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions"))
+            let value = try #require(try await restart.recover().appTranscript)
+            #expect(value.identity == input.identity && value.captureClosed && value.native != nil && value.legacy == nil)
+            #expect(await entry.store.projection().isClosed)
+            await f.clean()
+        } catch { await gate.release(); await f.clean(); throw error }
+    }
+
+    @Test func actualManagerRetainsAppleCaptionsThroughStopWithoutAWindow() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech)
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            try #require(await eventually { f.probe.liveSink != nil })
+            let request = try #require(f.probe.request)
+            let segment = LiveTranscriptSegment(start: 0, end: 1, text: "Apple evidence owned by recording", speaker: "You")
+            f.probe.liveSink?(.finalized([segment]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.prepareForTermination()
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: request.id))
+            try await entry.artifacts.flush()
+            f.state.liveTranscriptSegments = [] // A new view/capture cannot own the only retained copy.
+            let context = try await TranscriptContextProvider.recording(recordingID: request.id, registry: f.state.liveRecordingSessions,
+                legacy: { .legacy(text: "", recordingID: request.id, speakerLabels: []) }).freeze().snapshot()
+            #expect(context.segments.first?.id == segment.id.uuidString.lowercased())
+            #expect(context.segments.first?.text == segment.text && context.segments.first?.finalPlayback == nil)
+            let restart = LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions"))
+            #expect(try await restart.recover().appTranscript?.legacy?.first?.id == segment.id)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualManagerDefersSaturatedDerivativeOwnershipBeforeHardwareAndKeepsAudioRunning() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech)
+        do {
+            for _ in 0..<4 {
+                _ = try f.state.liveRecordingSessions.registerLegacy(.init(recordingID: UUID(), captureSessionID: UUID()))
+            }
+            #expect(f.state.liveRecordingSessions.reservedPayloadBytes == 128 * 1_024 * 1_024)
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            #expect(f.state.recordingState == .recording && f.probe.request != nil)
+            #expect(f.probe.liveSink == nil && !f.state.isLiveTranscribing)
+            #expect(f.state.durabilityNoticeIsWarning)
+            let request = try #require(f.probe.request)
+            #expect(f.state.liveRecordingSessions.entry(recordingID: request.id) == nil)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualAppleProducerRetiresAtHistoryLimitWhileAudioContinuesAndLateCaptionsAreRefused() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech)
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            try #require(await eventually { f.probe.liveSink != nil })
+            let sink = try #require(f.probe.liveSink)
+            sink(.finalized([.init(start: 0, end: 1, text: "Accepted")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            sink(.finalized((0..<4).map { .init(start: Double($0), end: Double($0 + 1), text: String(repeating: "x", count: 65_536)) }))
+            try #require(await eventually { f.probe.previewStops > 0 })
+            #expect(f.state.recordingState == .recording && !f.state.isLiveTranscribing)
+            sink(.finalized([.init(start: 1, end: 2, text: "Late")]))
+            await Task.yield()
+            #expect(f.state.liveTranscriptSegments.map(\.text) == ["Accepted"])
+            let request = try #require(f.probe.request)
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: request.id))
+            #expect(try entry.artifacts.legacyContext().segments.map(\.text) == ["Accepted"])
+            #expect(entry.artifacts.failure == nil && f.state.durabilityNotice?.contains("history limit") == true)
+            try await entry.artifacts.flush()
+            let restored = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(restored.appTranscript?.legacy?.map(\.text) == ["Accepted"])
+            await f.clean()
+        } catch { await f.clean(); throw error }
     }
 
     @Test func actualManagerFreezesSelectionBeforePersistenceAndStartsTheExistingLiveHelper() async throws {

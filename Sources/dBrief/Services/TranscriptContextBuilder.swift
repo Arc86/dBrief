@@ -85,6 +85,12 @@ struct TranscriptContextProvider {
         .init {
             if registry.isRetired(recordingID: recordingID) { return .init(snapshot: { throw CancellationError() }) }
             if let entry = registry.entry(recordingID: recordingID), entry.isValid {
+                if !entry.artifacts.isNative {
+                    do {
+                        let value = try entry.artifacts.legacyContext(), validity = entry.validity
+                        return .init(snapshot: { try validity.withValidResult {}; return value })
+                    } catch { return .init(snapshot: { throw error }) }
+                }
                 let store = entry.store, identity = entry.identity, validity = entry.validity
                 return .init(snapshot: {
                     try Task.checkCancellation()
@@ -94,6 +100,7 @@ struct TranscriptContextProvider {
                     return .live(value)
                 })
             }
+            if registry.owns(recordingID: recordingID) { return .init(snapshot: { throw LiveArtifactError.wrongOwner }) }
             let value = legacy()
             guard value.segments.isEmpty || value.source.recordingID == recordingID else {
                 return .init(snapshot: { throw TranscriptContextError.recordingMismatch })

@@ -80,6 +80,19 @@ private actor CapturePublicationGate {
     func release() { waiter?.resume(); waiter = nil }
 }
 
+private actor CaptureCapacityPublicationGate {
+    var blocked = false
+    private var released = false
+    var waiter: CheckedContinuation<Void, Never>?
+    func admit(_ event: LiveTranscriptEvent, store: LiveTranscriptStore) async -> LiveStoreAdmission {
+        if !released, case .committed(let segment) = event.payload, segment.text.hasPrefix("Exceed") {
+            blocked = true; await withCheckedContinuation { waiter = $0 }
+        }
+        return await store.admit(event)
+    }
+    func release() { released = true; waiter?.resume(); waiter = nil }
+}
+
 private actor CaptureFrontierPublicationGate {
     let rejectProgress: Bool
     var blocked = false
@@ -102,6 +115,131 @@ private actor CaptureFrontierPublicationGate {
 }
 
 @Suite struct LiveCaptureSessionCoordinatorTests {
+    @Test func replacementPreReplyInboxSharesThePublicationByteBudget() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), store = LiveTranscriptStore(identity: f.identity)
+        let c = LiveCaptureSessionCoordinator(input: f.input(), store: store, transport: await t.transport(), publicationByteLimit: 32_000)
+        var replacementTask: Task<Bool, Error>?
+        do {
+            try await c.start()
+            try #require(await captureEventually { await t.starts == 1 })
+            await t.emit(f.event(f.mic, 0, .ready(generation: UUID(), originSample: 0)))
+            try #require(await captureEventually { await c.readySources.count == 1 })
+            #expect(await c.requestPauseBoundary(scope: f.scope(f.mic)))
+            try #require(await captureEventually { await t.requests.count == 1 })
+            await t.emit(f.event(f.mic, 1, .barrierCompleted(requestID: UUID(), kind: .pause, sampleEnd: 0)))
+            try #require(await captureEventually { await c.pausedSources == [.microphone] })
+            await c.synchronizeStore(); await t.configure(command: true)
+            let epoch = LiveEpoch(id: UUID(), source: .microphone, engineRevision: "fixture", language: "auto", meetingOriginNanoseconds: nil)
+            replacementTask = Task { try await c.replaceEpoch(scope: f.scope(f.mic), epoch: epoch) }
+            try #require(await captureEventually { await t.requests.count == 2 })
+            await t.emit(f.event(epoch, 0, .ready(generation: UUID(), originSample: 0)))
+            try #require(await captureEventually { await c.pendingPublicationBytes > 0 })
+            await t.emit(f.event(epoch, 1, .partial(.init(epochID: epoch.id, source: .microphone, revision: 0,
+                samples: .init(start: 0, end: 1), text: String(repeating: "x", count: 5_000)))))
+            try await c.waitUntilClosed(); await c.synchronizeStore()
+            #expect(await c.pendingPublicationBytes == 0)
+            await t.release()
+            #expect(try await replacementTask?.value == false)
+        } catch { await t.release(); await c.retire(); try? await replacementTask?.value; await c.synchronizeStore(); throw error }
+    }
+    @Test func publicationBudgetIncludesACommitHeldOutsideTheOutboxUntilItsActualReturn() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), gate = CaptureCapacityPublicationGate()
+        let store = LiveTranscriptStore(identity: f.identity)
+        let c = LiveCaptureSessionCoordinator(input: f.input(), store: store, transport: await t.transport(),
+            storeAccess: .init(admit: { await gate.admit($0, store: store) }), publicationByteLimit: 128_000)
+        do {
+            try await c.start()
+            try #require(await captureEventually { await t.starts == 1 })
+            await t.emit(f.event(f.mic, 0, .ready(generation: UUID(), originSample: 0)))
+            try #require(await captureEventually { await c.readySources.count == 1 })
+            #expect(await c.offer(scope: f.scope(f.mic), samples: [0]) == .scheduled)
+            try #require(await captureEventually { await t.requests.count == 1 })
+            await t.emit(f.event(f.mic, 1, .progress(.init(capturedSampleEnd: 1, admittedSampleEnd: 1, consumedSampleEnd: 1,
+                queuedSamples: 0, inFlightSamples: 0, heldSamples: 0, creditSamples: 49_920))))
+            await t.emit(f.event(f.mic, 2, .committed(.init(id: .init(epochID: f.mic.id, index: 0), source: .microphone,
+                range: .init(samples: .init(start: 0, end: 1), meeting: nil), text: "Exceed " + String(repeating: "x", count: 200)))))
+            try #require(await captureEventually { await gate.blocked })
+            #expect(await c.pendingPublicationBytes > 0)
+            var allAdmitted = true
+            for _ in 0..<32 {
+                allAdmitted = await c.recordCaptureLoss(owner: f.identity,
+                    loss: .init(id: UUID(), source: .microphone, sourceEpoch: UUID(), frames: nil, reason: .unavailable, bufferCount: 1))
+                if !allAdmitted { break }
+            }
+            #expect(!allAdmitted)
+            let charged = await c.pendingPublicationBytes
+            #expect(charged <= 128_000 && charged > 0)
+            await gate.release(); await c.retire(); try await c.waitUntilClosed(); await c.synchronizeStore()
+            #expect(await c.pendingPublicationBytes == 0)
+        } catch { await gate.release(); await t.release(); await c.retire(); await c.synchronizeStore(); throw error }
+    }
+    @Test func exhaustedHistoryStillRetiresTheRealCoreWithQueuedAndIngressRawLossEvidence() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture(), gate = CaptureCapacityPublicationGate()
+        let store = LiveTranscriptStore(identity: f.identity, retainedEvidenceLimit: 64_000), ingress = LiveCaptureIngress(input: f.input())
+        let c = LiveCaptureSessionCoordinator(input: f.input(), store: store, transport: await t.transport(), ingress: ingress,
+            storeAccess: .init(admit: { await gate.admit($0, store: store) }))
+        do {
+            try await c.start()
+            try #require(await captureEventually { await t.starts == 1 })
+            await t.emit(f.event(f.mic, 0, .ready(generation: UUID(), originSample: 0)))
+            try #require(await captureEventually { await c.readySources.count == 1 })
+            let rawEpoch = UUID(), metadata = LiveAudioMetadata(sourceEpoch: rawEpoch, role: .mic, timestamp: .unavailable,
+                emittedFrames: .init(startFrame: 0, frameCount: 100, sampleRate: 16_000), writeOutcome: .failed, converter: nil)
+            let raw = try #require(ingress.reserveRaw(source: .microphone, metadata: metadata, frames: 100, rate: 16_000, bytes: 400))
+            let normalized = try #require(ingress.normalize(raw, scope: f.scope(f.mic), emittedSamples: 100))
+            #expect(await c.offer(scope: f.scope(f.mic), samples: [Float](repeating: 0, count: 100), reservation: normalized) == .scheduled)
+            try #require(await captureEventually { await t.requests.count == 1 })
+            await t.emit(f.event(f.mic, 1, .progress(.init(capturedSampleEnd: 100, admittedSampleEnd: 100, consumedSampleEnd: 100,
+                queuedSamples: 0, inFlightSamples: 0, heldSamples: 0, creditSamples: 49_920))))
+            let kept = CommittedLiveSegment(id: .init(epochID: f.mic.id, index: 0), source: .microphone,
+                range: .init(samples: .init(start: 0, end: 50), meeting: nil), text: "Accepted prefix")
+            await t.emit(f.event(f.mic, 2, .committed(kept)))
+            try #require(await captureEventually { await store.projection().segments == [kept] })
+            await t.emit(f.event(f.mic, 3, .committed(.init(id: .init(epochID: f.mic.id, index: 1), source: .microphone,
+                range: .init(samples: .init(start: 50, end: 100), meeting: nil), text: "Exceed" + String(repeating: "x", count: 10_000)))))
+            try #require(await captureEventually { await gate.blocked })
+            let queued = LiveCaptureRawLoss(id: UUID(), source: .microphone, sourceEpoch: rawEpoch, frames: nil, reason: .unavailable, bufferCount: 1)
+            #expect(await c.recordCaptureLoss(owner: f.identity, loss: queued))
+            let lost = LiveAudioMetadata(sourceEpoch: rawEpoch, role: .mic, timestamp: .unavailable,
+                emittedFrames: .init(startFrame: 100, frameCount: 100, sampleRate: 16_000), writeOutcome: .failed, converter: nil)
+            let discarded = try #require(ingress.reserveRaw(source: .microphone, metadata: lost, frames: 100, rate: 16_000, bytes: 400))
+            discarded.discard(reason: .overload)
+            await gate.release(); try await c.waitUntilClosed()
+            let checkpoint = await store.checkpoint(); try checkpoint.validate()
+            #expect(checkpoint.segments == [kept] && checkpoint.captureLosses.contains(queued))
+            #expect(checkpoint.captureLosses.contains { $0.frames == lost.emittedFrames && $0.sourceEpoch == rawEpoch })
+            #expect(checkpoint.coverage.contains { $0.kind == .gap(.unavailable) && $0.range.samples == .init(start: 50, end: 100) })
+        } catch { await gate.release(); await t.release(); await c.retire(); throw error }
+    }
+
+    @Test func anAcceptedReplacementCanBeReconciledAfterItsNormalHistoryAdmissionExpires() async throws {
+        let f = CaptureCoordinatorFixture(), t = CaptureTransportFixture()
+        let store = LiveTranscriptStore(identity: f.identity, retainedEvidenceLimit: 16_000)
+        let c = LiveCaptureSessionCoordinator(input: f.input(), store: store, transport: await t.transport(),
+            storeAccess: .init(admit: { await store.admit($0) }, checkEpoch: { identity, epoch in
+                let admission = await store.checkEpoch(owner: identity, epoch: epoch)
+                for _ in 0..<128 {
+                    if await store.registerDiarizer(owner: identity, source: .microphone, contextID: UUID()) == .rejected(.capacity) { break }
+                }
+                return admission
+            }))
+        do {
+            try await c.start()
+            try #require(await captureEventually { await t.starts == 1 })
+            await t.emit(f.event(f.mic, 0, .ready(generation: UUID(), originSample: 0)))
+            try #require(await captureEventually { await c.readySources.count == 1 })
+            #expect(await c.requestPauseBoundary(scope: f.scope(f.mic)))
+            try #require(await captureEventually { await t.requests.count == 1 })
+            await t.emit(f.event(f.mic, 1, .barrierCompleted(requestID: UUID(), kind: .pause, sampleEnd: 0)))
+            try #require(await captureEventually { await c.pausedSources == [.microphone] })
+            let replacement = LiveEpoch(id: UUID(), source: .microphone, engineRevision: "fixture", language: "auto", meetingOriginNanoseconds: nil)
+            #expect(try await c.replaceEpoch(scope: f.scope(f.mic), epoch: replacement))
+            try await c.waitUntilClosed()
+            let checkpoint = await store.checkpoint(); try checkpoint.validate()
+            #expect(checkpoint.epochs.contains(replacement))
+            #expect(checkpoint.lanes.first?.epoch == replacement)
+        } catch { await t.release(); await c.retire(); throw error }
+    }
     @Test func closingBeforeCoreStartCannotLaunchNativeAndStillClosesTheStoreAtEOF() async throws {
         let f = CaptureCoordinatorFixture(), transport = CaptureTransportFixture()
         let (core,store) = await f.coordinator(transport)

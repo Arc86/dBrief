@@ -19,7 +19,18 @@ final class RecordingManager {
             beforeAdmission: { [mlHost] in await mlHost.prepareForLiveCapture() })
         return CaptureCoordinator(hardware: captureHardwareOverride ?? .live(AudioCaptureManager()),
             persistence: capturePersistenceOverride ?? .live(captureSessionStore),
-            derivative: factory.derivative,onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
+            preview: capturePreviewOverride ?? .live(), derivative: factory.derivative,
+            admitLiveOwner: { [weak self] request in
+                guard let self else { return false }
+                guard self.appState.liveArtifactCaptureEnabled else { return true }
+                guard request.liveEngine == .appleSpeech else { return true }
+                let identity = LiveSessionIdentity(recordingID: request.id, captureSessionID: request.captureSessionID)
+                do { _ = try self.appState.liveRecordingSessions.registerLegacy(identity); return true }
+                catch {
+                    self.appState.liveRecordingSessions.noteUnavailable(identity)
+                    self.reportLiveArtifactFailure(error.localizedDescription); return false
+                }
+            }, onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
     }
     @ObservationIgnored private lazy var recordingReviewSlot = RecordingReviewSlot(
         appState: appState, action: postRecordingAction,
@@ -35,6 +46,7 @@ final class RecordingManager {
     private let captureHardwareOverride: CaptureCoordinator.Hardware?
     private let capturePersistenceOverride: CaptureCoordinator.Persistence?
     private let liveFactoryOverride: LiveRecordingFactory?
+    private let capturePreviewOverride: CaptureLivePreview?
     let localAIPluginService: LocalAIPluginService
     let parakeetService: ParakeetTranscriptionService
     /// Exposed for TranscriptChatService — read-only reference; access serialized by the helper's AsyncMutex.
@@ -80,7 +92,7 @@ final class RecordingManager {
     private let integrationDeliveryStore: IntegrationDeliveryStore
     @ObservationIgnored private lazy var integrationDeliveryCoordinator = IntegrationDeliveryCoordinator(store: integrationDeliveryStore)
     var reviewingIntegrationDeliveries = false
-    private let recordingFinalizer = RecordingFinalizer()
+    private let recordingFinalizer: RecordingFinalizer
     let transcriptStore: TranscriptStore
     let insightsStore: InsightsStore
     private let markdownOutputStore = MarkdownOutputStore()
@@ -123,6 +135,7 @@ final class RecordingManager {
         importCoordinator: ImportCoordinator = ImportCoordinator(),
         modelDownloadCoordinator: ModelDownloadCoordinator? = nil,
         processingPipeline: ProcessingPipeline = ProcessingPipeline(),
+        recordingFinalizer: RecordingFinalizer = RecordingFinalizer(),
         captureSessionStore: CaptureSessionStore = CaptureSessionStore(),
         reprocessingStore: ReprocessingStore = ReprocessingStore(),
         queueScheduleStore: QueueScheduleStore = QueueScheduleStore(),
@@ -131,6 +144,7 @@ final class RecordingManager {
         captureHardware: CaptureCoordinator.Hardware? = nil,
         capturePersistence: CaptureCoordinator.Persistence? = nil,
         liveFactory: LiveRecordingFactory? = nil,
+        capturePreview: CaptureLivePreview? = nil,
         mlHost: MLHostConnection? = nil,
         liveSelectionProvider: @escaping @MainActor @Sendable (LiveASRConfiguration.Language,Int,[LiveSource]) -> LiveNemotronSelection? = { _,_,_ in nil }
     ) {
@@ -138,6 +152,7 @@ final class RecordingManager {
         self.integrationDeliveryStore = integrationDeliveryStore
         self.reprocessingStore = reprocessingStore
         self.processingPipeline = processingPipeline
+        self.recordingFinalizer = recordingFinalizer
         self.captureSessionStore = captureSessionStore
         self.importCoordinator = importCoordinator
         self.appState = appState
@@ -159,6 +174,7 @@ final class RecordingManager {
         self.liveSelectionProvider = liveSelectionProvider
         self.captureHardwareOverride = captureHardware; self.capturePersistenceOverride = capturePersistence
         self.liveFactoryOverride = liveFactory
+        self.capturePreviewOverride = capturePreview
         self.mlHost = mlHost ?? MLHostConnection(binaryURL: MLHostLocator.binaryURL(),supportBase: MLHostLocator.supportBase(),resourceAdmission: admission)
         self.localAIPluginService = LocalAIPluginService(connection: self.mlHost, diagnostics: LocalAIPluginService.defaultDiagnostics())
         self.parakeetService = ParakeetTranscriptionService(connection: self.mlHost)
@@ -457,6 +473,20 @@ final class RecordingManager {
     private func applyCaptureEvent(_ event: CaptureCoordinator.Event) {
         switch event {
         case .prepared(let request, let session):
+            if request.liveTranscription, appState.liveArtifactCaptureEnabled {
+                let identity = LiveSessionIdentity(recordingID: request.id, captureSessionID: request.captureSessionID)
+                do {
+                    let entry = request.liveEngine == .nemotron
+                        ? try appState.liveRecordingSessions.register(identity)
+                        : try appState.liveRecordingSessions.registerLegacy(identity)
+                    entry.artifacts.onFailure = { [weak self] message in self?.reportLiveArtifactFailure(message) }
+                    entry.artifacts.onLimit = { [weak self] in self?.reportLiveArtifactLimit() }
+                    appState.liveRecordingSessions.startPersistence(identity)
+                } catch {
+                    appState.liveRecordingSessions.noteUnavailable(identity)
+                    reportLiveArtifactFailure(error.localizedDescription)
+                }
+            }
             let recording = Recording(id: request.id, date: request.startedAt, fileURL: session.files.captureBaseURL,
                 associatedApp: request.associatedApp, meetingTitleDraft: defaultMeetingTitle(from: request.associatedApp))
             recording.recoveryManifestURL = session.files.manifestURL
@@ -505,6 +535,17 @@ final class RecordingManager {
             guard appState.currentRecording?.id == id else { return }
             switch event {
             case .finalized(let segments):
+                if appState.liveArtifactCaptureEnabled {
+                    guard let owner = appState.liveRecordingSessions.entry(recordingID: id)?.artifacts, !owner.isNative else { return }
+                    do { try owner.appendLegacy(segments) }
+                    catch {
+                        captureCoordinator.retireLivePreview(recordingID: id)
+                        owner.closeCapture()
+                        if owner.growthRetired { reportLiveArtifactLimit() }
+                        else { reportLiveArtifactFailure(error.localizedDescription) }
+                        return
+                    }
+                }
                 appState.liveStatusMessage = ""
                 appState.liveTranscriptSegments = LiveSegmentMerge.insert(segments, into: appState.liveTranscriptSegments)
             case .volatile(let speaker, let text):
@@ -514,6 +555,9 @@ final class RecordingManager {
             case .status(let message): appState.liveStatusMessage = message
             }
         case .stopped(let result, let terminating):
+            if let entry = appState.liveRecordingSessions.entry(recordingID: result.session.id) {
+                try? appState.liveRecordingSessions.captureDidClose(entry.identity)
+            }
             appState.recordingStatusNote = nil
             guard let recording = appState.currentRecording, recording.id == result.session.id else { return }
             recording.capturedTracks = result.state.tracks
@@ -542,6 +586,9 @@ final class RecordingManager {
             appState.showPostRecordingSheet = true
             schedulePostRecordingProfileSelection()
         case .failed(let id):
+            if let entry = appState.liveRecordingSessions.entry(recordingID: id) {
+                try? appState.liveRecordingSessions.captureDidClose(entry.identity)
+            }
             guard appState.currentRecording?.id == id else { return }
             appState.recordingStatusNote = nil
             appState.currentRecording = nil
@@ -3116,6 +3163,11 @@ final class RecordingManager {
                 recording.segmentAudioURLs = result.segmentAudioURLs
                 recording.metadataURL = result.metadataURL
                 recording.finalizationWarnings = result.warnings
+                if self.appState.liveArtifactCaptureEnabled,
+                   let owner = self.appState.liveRecordingSessions.entry(recordingID: recording.id)?.artifacts {
+                    do { try owner.bind(to: result.masterAudioURL) }
+                    catch { self.reportLiveArtifactFailure(error.localizedDescription) }
+                }
             }, measured: { @MainActor facts in
                 guard recording.finalizedAudioURL == facts.url else { return }
                 if let size = facts.fileSize { recording.fileSize = size }
@@ -3129,6 +3181,17 @@ final class RecordingManager {
         let candidate = associatedApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if candidate.isEmpty { return "meeting" }
         return candidate
+    }
+
+    private func reportLiveArtifactFailure(_ message: String?) {
+        guard let message else { return }
+        appState.durabilityNotice = "Live transcript history is unsaved. \(message)"
+        appState.durabilityNoticeIsWarning = true
+    }
+
+    private func reportLiveArtifactLimit() {
+        appState.durabilityNotice = "Live transcription stopped because its history limit was reached."
+        appState.durabilityNoticeIsWarning = true
     }
 
     private func sendCompletionNotification(fileName: String, failed: Int) {

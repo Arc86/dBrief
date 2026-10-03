@@ -28,6 +28,13 @@ enum MLHostRole: Sendable { case ordinary, live }
 /// Owns the child helper process, frames IO over its pipes, correlates replies
 /// by request id, demultiplexes per-channel state, and relaunches on crash.
 actor MLHostConnection {
+    struct LiveEventLimits: Sendable {
+        var queued = 512
+        var deferred: Int? = nil
+        var accountedBytes: Int? = nil
+        static let recording = Self(queued: 8, deferred: 8, accountedBytes: 256 * 1_024)
+    }
+    private let liveEventLimits: LiveEventLimits
     private let binaryURL: URL
     private let supportBase: URL
     private let extraEnvironment: [String: String]
@@ -69,13 +76,16 @@ actor MLHostConnection {
 
     init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:], role: MLHostRole = .ordinary,
          resourceAdmission: LiveModelJobAdmission? = nil, terminationDelivery: @escaping @Sendable () async -> Void = {},
-         retirementWaitDelivery: (@Sendable () async -> Void)? = nil) {
+         retirementWaitDelivery: (@Sendable () async -> Void)? = nil, liveEventLimits: LiveEventLimits = .init()) {
         self.binaryURL = binaryURL
         self.supportBase = supportBase
         self.extraEnvironment = environment
         self.role = role; self.resourceAdmission = role == .ordinary ? resourceAdmission : nil
         self.terminationDelivery = terminationDelivery
         self.retirementWaitDelivery = retirementWaitDelivery
+        self.liveEventLimits = .init(queued: min(512, max(1, liveEventLimits.queued)),
+            deferred: liveEventLimits.deferred.map { min(32, max(1, $0)) },
+            accountedBytes: liveEventLimits.accountedBytes.map { min(512 * 1_024, max(1, $0)) })
     }
 
     private var liveReader = LiveFrameReader()
@@ -109,7 +119,7 @@ actor MLHostConnection {
         liveUsed = true; liveBegin = input; liveRequestID = id
         liveGeneration = UUID(); let generation = liveGeneration
         for epoch in input.epochs { liveEpochs[epoch.id] = .init(source: epoch.source) }
-        let (stream, continuation) = AsyncThrowingStream<LiveSessionEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(512))
+        let (stream, continuation) = AsyncThrowingStream<LiveSessionEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(liveEventLimits.queued))
         liveStream = continuation
         continuation.onTermination = { @Sendable termination in
             if case .cancelled = termination { Task { await self.abandonLive(generation) } }
@@ -556,6 +566,13 @@ actor MLHostConnection {
 
     private func receiveLive(_ event: LiveSessionEvent) throws {
         guard let begin = liveBegin else { throw MLHostError.protocolViolation }
+        // Check decoded size before any stream or pre-reply inbox can retain it.
+        // One transient decoded frame is separately bounded by the wire limit.
+        if let limit = liveEventLimits.accountedBytes {
+            guard (try? LiveArtifactEncoding.estimatedBytes(event, limit: max(1, limit / 4))) != nil else {
+                throw MLHostError.protocolViolation
+            }
+        }
         switch event {
         case .lane(let lane):
             guard lane.scope.identity == begin.identity else { throw MLHostError.protocolViolation }
@@ -583,6 +600,9 @@ actor MLHostConnection {
             // suffix until acceptance; the other source keeps publishing.
             if !inbox.deferred.isEmpty || { if case .barrierCompleted(let id,_,_) = lane.payload { !liveBarriers.canPublish(id) } else { false } }() {
                 guard inbox.deferred.count < 16 else { throw MLHostError.protocolViolation }
+                if let limit = liveEventLimits.deferred {
+                    guard liveEpochs.values.reduce(0, { $0 + $1.deferred.count }) < limit else { throw MLHostError.protocolViolation }
+                }
                 inbox.deferred.append(lane); liveEpochs[lane.scope.epochID] = inbox
                 try drainLiveEpoch(lane.scope.epochID)
                 return
