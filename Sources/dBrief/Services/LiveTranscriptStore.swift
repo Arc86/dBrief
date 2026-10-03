@@ -76,15 +76,63 @@ actor LiveTranscriptStore {
     private var annotationRevision: UInt64 = 0
     private var lastKnownCutoff: Int64?
     private var isClosed = false
+    private var observers: [UUID: AsyncStream<UInt64>.Continuation] = [:]
 
     init(identity: LiveSessionIdentity, validity: RecordingDerivativeValidity = RecordingDerivativeValidity()) {
         self.identity = identity; self.validity = validity
     }
 
+    /// Recovery is read-only. A checkpoint never resumes decoder/diarizer state.
+    init(restoring checkpoint: LiveTranscriptCheckpoint) throws {
+        try checkpoint.validate()
+        identity = checkpoint.identity; validity = RecordingDerivativeValidity(); isClosed = true
+        revision = checkpoint.revision; annotationRevision = checkpoint.annotationRevision
+        lastKnownCutoff = checkpoint.cutoffNanoseconds
+        epochs = Dictionary(uniqueKeysWithValues: checkpoint.epochs.map { ($0.id, $0) })
+        epochOrder = Dictionary(uniqueKeysWithValues: checkpoint.epochs.enumerated().map { ($0.element.id, $0.offset) })
+        for value in checkpoint.lanes {
+            var lane = Lane(epoch: value.epoch, availability: value.availability)
+            lane.progress = value.progress; lane.settled = value.settledSampleEnd; lane.meeting = value.settledMeetingNanoseconds
+            lanes[value.epoch.source] = lane
+        }
+        segments = Dictionary(uniqueKeysWithValues: checkpoint.segments.map { ($0.id, $0) })
+        coverage = checkpoint.coverage; captureLosses = checkpoint.captureLosses
+        captureLossIDs = Dictionary(uniqueKeysWithValues: checkpoint.captureLosses.enumerated().map { ($0.element.id, $0.offset) })
+        annotations = Dictionary(uniqueKeysWithValues: checkpoint.annotations.map { (.init(segment: $0.segmentID, word: $0.wordIndex), $0) })
+        attributionCoverage = checkpoint.attributionCoverage
+        finalPublication = checkpoint.finalPublication; retiredPublications = Set(checkpoint.retiredPublicationIDs)
+    }
+
+    func checkpoint() -> LiveTranscriptCheckpoint {
+        .init(identity: identity, revision: revision, annotationRevision: annotationRevision,
+            epochs: epochs.values.sorted { (epochOrder[$0.id] ?? 0) < (epochOrder[$1.id] ?? 0) }, lanes: laneValues(),
+            segments: ordered(Array(segments.values)), coverage: coverage, captureLosses: captureLosses,
+            annotations: annotations.values.sorted {
+                if $0.segmentID.description != $1.segmentID.description { return $0.segmentID.description < $1.segmentID.description }
+                return ($0.wordIndex ?? -1) < ($1.wordIndex ?? -1)
+            }, attributionCoverage: attributionCoverage, cutoffNanoseconds: lastKnownCutoff,
+            finalPublication: finalPublication, retiredPublicationIDs: retiredPublications.sorted { $0.uuidString < $1.uuidString })
+    }
+
+    /// Constant-size, coalesced notifications. The recording owner requests a full
+    /// checkpoint only after its preceding submission has returned.
+    func changes() throws -> AsyncStream<UInt64> {
+        guard observers.count < 8 else { throw LiveTranscriptCheckpoint.Failure.tooManyObservers }
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<UInt64>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        observers[id] = continuation; continuation.yield(revision)
+        continuation.onTermination = { [weak self] _ in Task { await self?.removeObserver(id) } }
+        return stream
+    }
+    private func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
+
     /// No mutation suspension points exist inside this shared validity lock.
     /// Retirement therefore linearizes before every later derivative write.
     private func mutate(_ body: () -> LiveStoreAdmission) -> LiveStoreAdmission {
-        (try? validity.withValidResult(body)) ?? .rejected(.closed)
+        let before = revision
+        let result = (try? validity.withValidResult(body)) ?? .rejected(.closed)
+        if revision != before { for observer in observers.values { observer.yield(revision) } }
+        return result
     }
 
     func checkEpoch(owner: LiveSessionIdentity, epoch: LiveEpoch) -> LiveStoreAdmission {
@@ -404,16 +452,7 @@ actor LiveTranscriptStore {
     }
 
     private func validAnnotation(_ annotation: LiveSpeakerAnnotation, segment: CommittedLiveSegment) -> Bool {
-        if let word = annotation.wordIndex, word < 0 || word >= segment.words.count { return false }
-        func valid(_ key: SpeakerTrackKey) -> Bool {
-            key.captureSessionID == identity.captureSessionID && key.source == segment.source &&
-                key.contextID == segment.diarizerContextID && key.slot >= 0 && key.slot < (segment.source.isCaptureSource ? 8 : 256)
-        }
-        switch annotation.assignment {
-        case .unknown: return true
-        case .track(let key): return valid(key)
-        case .overlap(let tracks): return (2...8).contains(tracks.count) && Set(tracks).count == tracks.count && tracks.allSatisfy(valid)
-        }
+        LiveTranscriptCheckpoint.validAnnotation(annotation, segment: segment, identity: identity)
     }
 
     private func closeWhileValid(owner: LiveSessionIdentity) -> LiveStoreAdmission {

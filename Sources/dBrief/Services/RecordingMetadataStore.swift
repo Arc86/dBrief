@@ -20,6 +20,17 @@ actor RecordingMetadataStore {
     /// Finalization owns a newly selected output path. A failed/cancelled write
     /// throws before the caller is allowed to consume its original capture/input.
     func create(_ payload: RecordingMetadataPayload, at url: URL) throws {
+        try RecordingResultMutation.withTransaction {
+            // A final path already carrying another stable owner is never a new
+            // recording merely because finalization selected the same filename.
+            if FileManager.default.fileExists(atPath: url.path) {
+                let old = try JSONDecoder().decode(RecordingMetadataPayload.self, from: files.read(url))
+                guard old.recordingID == payload.recordingID, old.masterFileName == payload.masterFileName else { throw Failure.invalidMetadata }
+            }
+            try createWhileLocked(payload, at: url)
+        }
+    }
+    private func createWhileLocked(_ payload: RecordingMetadataPayload, at url: URL) throws {
         try Task.checkCancellation()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
@@ -29,6 +40,9 @@ actor RecordingMetadataStore {
     /// Optional descriptive edits retain the prior missing/corrupt-file no-op
     /// behavior. Modify only named fields, preserving completion and future keys.
     func update(_ update: Update, audioURL: URL) throws {
+        try RecordingResultMutation.withTransaction { try updateWhileLocked(update, audioURL: audioURL) }
+    }
+    private func updateWhileLocked(_ update: Update, audioURL: URL) throws {
         try Task.checkCancellation()
         let url = audioURL.deletingPathExtension().appendingPathExtension("json")
         let data = try? files.read(url)
@@ -58,6 +72,12 @@ actor RecordingMetadataStore {
     /// Mutate only owned fields to retain processing stamps and future keys.
     func linkCalendar(_ event: CalendarEvent, audioURL: URL,
                       updateTitle: Bool, updateParticipants: Bool) throws {
+        try RecordingResultMutation.withTransaction {
+            try linkCalendarWhileLocked(event, audioURL: audioURL, updateTitle: updateTitle, updateParticipants: updateParticipants)
+        }
+    }
+    private func linkCalendarWhileLocked(_ event: CalendarEvent, audioURL: URL,
+                                         updateTitle: Bool, updateParticipants: Bool) throws {
         try Task.checkCancellation()
         let url = audioURL.deletingPathExtension().appendingPathExtension("json")
         let bytes = try files.read(url)
@@ -98,6 +118,10 @@ actor RecordingMetadataStore {
 
     func record(_ completion: ProcessingCompletionStamp, audioURL: URL,
                        fallback: RecordingMetadataPayload) throws {
+        try RecordingResultMutation.withTransaction { try recordWhileLocked(completion, audioURL: audioURL, fallback: fallback) }
+    }
+    private func recordWhileLocked(_ completion: ProcessingCompletionStamp, audioURL: URL,
+                                   fallback: RecordingMetadataPayload) throws {
         try Task.checkCancellation()
         let fm = FileManager.default
         let audioType = try fm.attributesOfItem(atPath: audioURL.path)[.type] as? FileAttributeType

@@ -565,6 +565,9 @@ actor ReprocessingStore {
 /// recursive lock drains already-running writes before the baseline is captured.
 /// The closure must contain the actual disk mutation, not enqueue another task.
 enum RecordingResultMutation {
+    /// Live ledgers share reprocessing admission without changing the persisted
+    /// attempt inventory or making old capture evidence a replacement result.
+    private static let guardedSuffixes = ReprocessingStore.allowedSuffixes.union(["live-transcript.json", "live-binding.json"])
     private final class State: @unchecked Sendable {
         let lock = NSRecursiveLock()
         var owners: [String: UUID] = [:]
@@ -591,7 +594,7 @@ enum RecordingResultMutation {
     static func withWrite<T>(to url: URL, _ body: () throws -> T) throws -> T {
         try withTransaction {
             let path = url.standardizedFileURL.resolvingSymlinksInPath().path
-            if let suffix = ReprocessingStore.allowedSuffixes.first(where: { path.hasSuffix("." + $0) }),
+            if let suffix = guardedSuffixes.first(where: { path.hasSuffix("." + $0) }),
                state.owners[String(path.dropLast(suffix.count + 1))] != nil {
                 throw ReprocessingStore.StoreError.alreadyPending
             }

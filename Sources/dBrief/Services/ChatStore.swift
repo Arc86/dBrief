@@ -10,10 +10,13 @@ actor ChatStore {
     func load(from url: URL) async throws -> ChatHistory? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(ChatHistory.self, from: data)
+        let history = try JSONDecoder().decode(ChatHistory.self, from: data)
+        try history.validateVersion()
+        return history.interruptedAfterRestart
     }
 
     func save(_ history: ChatHistory, to url: URL, validity: RecordingDerivativeValidity? = nil) async throws {
+        try history.validateVersion()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(history)
@@ -53,5 +56,5 @@ actor ChatStore {
 }
 
 enum ChatStoreError: Error {
-    case noSidecarURL
+    case noSidecarURL, unsupportedVersion
 }
