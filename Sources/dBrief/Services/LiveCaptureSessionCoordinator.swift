@@ -19,6 +19,7 @@ enum LiveCaptureAdmission: Equatable { case scheduled, dropped, rejected }
 /// capture admission. Ordered disk checkpoints are a separate persistence owner.
 struct LiveCaptureStoreAccess: Sendable {
     var admit: @Sendable (LiveTranscriptEvent) async -> LiveStoreAdmission
+    var checkEpoch: (@Sendable (LiveSessionIdentity, LiveEpoch) async -> LiveStoreAdmission)? = nil
     static func live(_ store: LiveTranscriptStore) -> Self { .init(admit: { await store.admit($0) }) }
 }
 
@@ -42,6 +43,13 @@ actor LiveCaptureSessionCoordinator {
         var scheduled: Int64 = 0
         var dispatched: Int64 = 0
         var admitted: Int64 = 0
+        /// Only original dispatched packet acknowledgments advance this
+        /// module bound. Ordinary progress is a separate accounting fact.
+        var moduleAdmittedEnd: Int64 = 0
+        var nextModuleAcknowledgment: UInt64 = 0
+        /// Only dispatched receipts survive a local cut. This bounded debt is
+        /// independent of the ordinary receipt map cleared by that cut.
+        var moduleReceipts: [UInt64: Int64] = [:]
         var consumed: Int64 = 0
         var asrConsumed: Int64 = 0
         var settled: Int64 = 0
@@ -63,6 +71,7 @@ actor LiveCaptureSessionCoordinator {
         var pauseBoundarySent = false
         var paused = false
         var closed = false
+        var controlID = UUID()
     }
     private enum Publication {
         case begin(LiveEpoch)
@@ -72,9 +81,17 @@ actor LiveCaptureSessionCoordinator {
         case close
     }
     private struct Replacement {
-        let oldEpochID: UUID
+        let attemptID: UUID
+        let oldScope: LiveLaneScope
+        let controlID: UUID
         let epoch: LiveEpoch
         var events: [LiveLaneEvent] = []
+        var oldEpochID: UUID { oldScope.epochID }
+    }
+    private struct ReplacementCapacity {
+        let attemptID: UUID
+        let oldScope: LiveLaneScope
+        let proposedID: UUID
     }
     private let input: LiveSessionBegin
     private let store: LiveTranscriptStore
@@ -87,7 +104,9 @@ actor LiveCaptureSessionCoordinator {
     private let preparationDeadline: Duration
     private let resources: LiveModelResourcePolicy?
     private let lease: LiveResourceLease?
+    private let epochHistoryLimit: Int
     private var lanes: [LiveSource: Lane] = [:]
+    private var moduleLedger: LiveVADModuleLedger?
     private var started = false
     private var closing = false
     private var sealed = false
@@ -103,6 +122,10 @@ actor LiveCaptureSessionCoordinator {
     private var storeSequences: [UUID: UInt64] = [:]
     private var publishedEpochs: [UUID: LiveEpoch] = [:]
     private var replacements: [LiveSource: Replacement] = [:]
+    /// An abandoned operational inbox cannot release an unresolved command.
+    /// Accepted identities transfer permanently into knownEpochs on reply.
+    private var replacementCapacity: [LiveSource: ReplacementCapacity] = [:]
+    private var helperExited = false
     private var abandonedSources: Set<LiveSource> = []
     private var knownEpochs: Set<UUID> = []
     private var registeredEpochs: [LiveEpoch] = []
@@ -114,7 +137,7 @@ actor LiveCaptureSessionCoordinator {
          resources: LiveModelResourcePolicy? = nil, lease: LiveResourceLease? = nil,
          validity: RecordingDerivativeValidity? = nil,
          ingress: LiveCaptureIngress? = nil,
-         storeAccess: LiveCaptureStoreAccess? = nil) {
+         storeAccess: LiveCaptureStoreAccess? = nil, epochHistoryLimit: Int = 4096) {
         self.input = input; self.store = store; self.transport = transport
         self.storeAccess = storeAccess ?? .live(store)
         self.validity = validity
@@ -122,6 +145,8 @@ actor LiveCaptureSessionCoordinator {
         self.ingress = ingress.flatMap { $0.matches(input) ? $0 : nil }
         self.drainDeadline = drainDeadline; self.preparationDeadline = preparationDeadline
         self.resources = resources; self.lease = lease
+        self.epochHistoryLimit = min(4096,max(1,epochHistoryLimit))
+        moduleLedger = input.vad.flatMap { _ in try? LiveVADModuleLedger(input: input) }
     }
 
     var readySources: Set<LiveSource> { Set(lanes.values.filter { $0.ready && $0.cutReason == nil && !$0.closed && !$0.paused && $0.pauseBoundary == nil }.map { $0.epoch.source }) }
@@ -152,7 +177,7 @@ actor LiveCaptureSessionCoordinator {
         return .init(epoch: lane.epoch,scope: .init(identity: input.identity,source: source,epochID: lane.epoch.id),
             ready: lane.ready && lane.cutReason == nil && !lane.paused && lane.pauseBoundary == nil,
             gapReason: lane.cutReason ?? (lane.ready || lane.paused ? nil : .preparation),paused: lane.paused || lane.pauseBoundary != nil,
-            replacementReady: !lane.pumping && replacements[source] == nil && lane.pauseBoundary == nil &&
+            replacementReady: !lane.pumping && replacements[source] == nil && replacementCapacity[source] == nil && lane.pauseBoundary == nil && moduleRetired(source) &&
                 (lane.paused && lane.settled == lane.captured || lane.cutReason != nil && lane.cutAcknowledgedEnd == lane.captured))
     }
     func abandonSource(scope: LiveLaneScope) {
@@ -173,7 +198,8 @@ actor LiveCaptureSessionCoordinator {
     private var isValidOwner: Bool { validity.map { (try? $0.withValidResult { true }) == true } ?? true }
 
     private var canStart: Bool {
-        !started && !terminal && isValidOwner && !invalidIngress && input.isValid && store.identity == input.identity &&
+        !started && !terminal && isValidOwner && !invalidIngress && input.isValid && input.epochs.count <= epochHistoryLimit &&
+            (input.vad == nil || moduleLedger != nil) && store.identity == input.identity &&
             (lease.map { $0.identity == input.identity && $0.request.chunkMs == input.configuration.chunkMs &&
                 $0.request.sourceCount == input.epochs.count && $0.request.vad == input.vad &&
                 input.epochs.allSatisfy { $0.engineRevision == lease?.request.modelRevision } } ?? true)
@@ -337,38 +363,53 @@ actor LiveCaptureSessionCoordinator {
     /// Retry only after the control cut is acknowledged. Native retirement may
     /// still return unavailable; neither the store nor epoch advances on denial.
     func replaceEpoch(scope: LiveLaneScope, epoch: LiveEpoch) async throws -> Bool {
-        await synchronizeStore()
-        guard !closing, !terminal, !abandonedSources.contains(scope.source), isValidOwner, scope.identity == input.identity, let lane = lanes[scope.source],
-              lane.epoch.id == scope.epochID, lane.pauseBoundary == nil,
-              (lane.paused && lane.settled == lane.captured || lane.cutReason != nil && lane.cutAcknowledgedEnd == lane.captured),
-              !lane.pumping, replacements[scope.source] == nil, !knownEpochs.contains(epoch.id),
+        guard let lane = replacementLane(scope), replacements[scope.source] == nil, replacementCapacity[scope.source] == nil,
+              knownEpochs.count + replacementCapacity.count < epochHistoryLimit,
+              !knownEpochs.contains(epoch.id), !replacementCapacity.values.contains(where: { $0.proposedID == epoch.id }),
               epoch.source == scope.source, epoch.language == input.configuration.language.rawValue,
               epoch.engineRevision == lane.epoch.engineRevision, epoch.availability == .active,
               epoch.meetingOriginNanoseconds.map({ $0 >= 0 }) ?? true else { return false }
-        replacements[scope.source] = .init(oldEpochID: scope.epochID,epoch: epoch)
-        let preflight = await store.checkEpoch(owner: input.identity,epoch: epoch)
-        guard preflight == .accepted, !closing, !terminal, isValidOwner else {
-            replacements[scope.source] = nil; kick(scope.source); return false
+        let pending = Replacement(attemptID: UUID(),oldScope: scope,controlID: lane.controlID,epoch: epoch)
+        replacements[scope.source] = pending
+        replacementCapacity[scope.source] = .init(attemptID: pending.attemptID,oldScope: scope,proposedID: epoch.id)
+        await synchronizeStore()
+        guard replacementIsCurrent(pending,beforeDispatch: true), !Task.isCancelled else {
+            discardReplacement(pending,releaseCapacity: true); return false
+        }
+        let preflight: LiveStoreAdmission
+        if let check = storeAccess.checkEpoch { preflight = await check(input.identity,epoch) }
+        else { preflight = await store.checkEpoch(owner: input.identity,epoch: epoch) }
+        guard preflight == .accepted, replacementIsCurrent(pending,beforeDispatch: true), !Task.isCancelled,
+              replacementCapacity[scope.source]?.attemptID == pending.attemptID else {
+            discardReplacement(pending,releaseCapacity: true); return false
         }
         let reply: LiveSessionReply
         do { reply = try await transport.command(.replaceEpoch(identity: input.identity,oldEpochID: scope.epochID,epoch: epoch)) }
+        // The helper may have accepted before transport failed. Retain this
+        // exact unresolved capacity/UUID until observed process exit.
         catch { abandonSource(scope: scope); throw error }
-        guard !terminal, !closing, isValidOwner, let pending = replacements[scope.source],
-              lanes[scope.source]?.epoch.id == pending.oldEpochID else { return false }
-        guard reply == .accepted else {
-            replacements[scope.source] = nil
-            if !pending.events.isEmpty { terminate(.unavailable) }
-            kick(scope.source)
+        if reply == .accepted {
+            guard !helperExited else { return false }
+            guard let capacity = replacementCapacity[scope.source], capacity.attemptID == pending.attemptID,
+                  capacity.oldScope == scope, capacity.proposedID == epoch.id else { terminate(.unavailable); return false }
+            replacementCapacity[scope.source] = nil
+            guard knownEpochs.insert(epoch.id).inserted else { terminate(.unavailable); return false }
+        } else {
+            let emitted = replacements[scope.source]?.attemptID == pending.attemptID && !(replacements[scope.source]?.events.isEmpty ?? true)
+            discardReplacement(pending,releaseCapacity: true)
+            if emitted { terminate(.unavailable) }
             return false
         }
+        guard replacementIsCurrent(pending), !Task.isCancelled else { abandonSource(scope: scope); return false }
         // Pause may freeze already reserved raw input while an earlier native
         // recovery command is in flight. Keep accepted ownership and its small
         // event inbox until the serial consumer disposes that exact old work.
         // Stop/source timeout can abandon this wait without joining native.
         let deadline = ContinuousClock.now.advanced(by: preparationDeadline)
         while true {
-            guard !terminal, !closing, isValidOwner, replacements[scope.source]?.epoch.id == epoch.id,
-                  !abandonedSources.contains(scope.source) else { return false }
+            guard replacementIsCurrent(pending), knownEpochs.contains(epoch.id), !Task.isCancelled else {
+                abandonSource(scope: scope); return false
+            }
             let installation = ingress?.installReplacement(old: scope,new: epoch) ?? .accepted
             if installation == .accepted { break }
             guard installation == .blockedByPause else { abandonSource(scope: scope); return false }
@@ -376,15 +417,47 @@ actor LiveCaptureSessionCoordinator {
             do { try await Task.sleep(for: .milliseconds(2)) }
             catch { abandonSource(scope: scope); return false }
         }
-        guard !terminal, !closing, isValidOwner, let accepted = replacements.removeValue(forKey: scope.source),
-              accepted.epoch.id == epoch.id, lanes[scope.source]?.epoch.id == scope.epochID else { return false }
-        knownEpochs.insert(epoch.id); registeredEpochs.append(epoch); capturedByEpoch[epoch.id] = 0
+        guard replacementIsCurrent(pending), knownEpochs.contains(epoch.id),
+              let accepted = replacements.removeValue(forKey: scope.source), accepted.attemptID == pending.attemptID else { return false }
+        if var ledger = moduleLedger {
+            do { try ledger.installAcceptedReplacement(oldScope: scope,newScope: .init(identity: input.identity,source: epoch.source,epochID: epoch.id)) }
+            catch { terminate(.unavailable); return false }
+            moduleLedger = ledger
+        }
+        registeredEpochs.append(epoch); capturedByEpoch[epoch.id] = 0
         lanes[scope.source] = Lane(epoch: epoch)
         guard publish(.begin(epoch)) else { return false }
         // The event stream and reply reader are independent. Hold a fixed small
         // inbox until the accepted replacement has installed its outer epoch.
         for event in accepted.events { receive(.lane(event)) }
         return !terminal
+    }
+
+    private func replacementLane(_ scope: LiveLaneScope) -> Lane? {
+        guard started, !closing, !terminal, isValidOwner, scope.identity == input.identity,
+              !abandonedSources.contains(scope.source), let lane = lanes[scope.source], lane.epoch.id == scope.epochID,
+              !lane.closed, !lane.pumping, lane.pauseBoundary == nil, moduleRetired(scope.source),
+              (lane.paused && lane.settled == lane.captured || lane.cutReason != nil && lane.cutAcknowledgedEnd == lane.captured) else { return nil }
+        return lane
+    }
+
+    private func replacementIsCurrent(_ pending: Replacement, beforeDispatch: Bool = false) -> Bool {
+        let scope = pending.oldScope
+        guard !closing, !terminal, isValidOwner, !abandonedSources.contains(scope.source),
+              replacements[scope.source]?.attemptID == pending.attemptID,
+              scope.identity == input.identity, lanes[scope.source]?.epoch.id == scope.epochID else { return false }
+        // Before native dispatch a new cut invalidates preflight. After actual
+        // acceptance, dropped old capture may advance its gap/clock frontier;
+        // exact operational ownership still permits the established clock-only
+        // degradation at publication, without losing the accepted native owner.
+        return !beforeDispatch || replacementLane(scope)?.controlID == pending.controlID
+    }
+
+    private func discardReplacement(_ pending: Replacement, releaseCapacity: Bool) {
+        let source = pending.oldScope.source
+        if replacements[source]?.attemptID == pending.attemptID { replacements[source] = nil }
+        if releaseCapacity, replacementCapacity[source]?.attemptID == pending.attemptID { replacementCapacity[source] = nil }
+        kick(source)
     }
 
     /// Device/stream discontinuity retires only this source's provisional work.
@@ -431,26 +504,45 @@ actor LiveCaptureSessionCoordinator {
             guard !terminal, let current = lanes[source] else { return }
             lane = current
             switch event.payload {
-            case .vad:
-                // Configured VAD is refused by the helper until its native
-                // input/credit integration is ready. Unsolicited status cannot
-                // silently certify readiness or resident allocation here.
-                terminate(.unavailable)
+            case .vad(let status):
+                guard var ledger = moduleLedger else { terminate(.unavailable); return }
+                do { try ledger.observe(scope: event.scope,event: status,admittedEnd: lane.moduleAdmittedEnd) }
+                catch { terminate(.unavailable); return }
+                moduleLedger = ledger
+                if ledger.allModelsReady { Task { [weak self] in await self?.confirmVADResidency() } }
             case .ready(_, let origin):
+                if let ledger = moduleLedger {
+                    guard let module = ledger.status(for: source), module.scope == event.scope,
+                          module.phase == .active || module.phase == .degraded else { terminate(.unavailable); return }
+                }
                 guard origin == lane.settled, !lane.closed, !lane.paused else { cut(source,reason: .engineRestart); return }
-                if lane.cutReason == nil { lanes[source]?.ready = true }
+                if lane.cutReason == nil {
+                    lanes[source]?.ready = true
+                    if lane.utteranceBoundary == nil { lanes[source]?.utteranceOrigin = origin }
+                }
                 if lanes.values.allSatisfy({ $0.ready || $0.paused }) {
                     if !sealed { timer?.cancel(); timerGeneration = nil }
                     if let resources, let lease { Task { await resources.confirmResident(lease) } }
                 }
                 kick(source)
             case .admitted(let sequence, let end):
+                if moduleLedger != nil {
+                    guard sequence == lane.nextModuleAcknowledgment, lane.moduleReceipts[sequence] == end,
+                          end > lane.moduleAdmittedEnd, end <= lane.dispatched else { terminate(.unavailable); return }
+                    lanes[source]?.nextModuleAcknowledgment += 1; lanes[source]?.moduleReceipts[sequence] = nil
+                    lanes[source]?.moduleAdmittedEnd = end
+                }
                 guard lane.cutReason == nil else { return }
                 guard sequence == lane.nextAcknowledgedPacket, lane.receipts[sequence] == end, end <= lane.dispatched,
                       end >= lane.admitted else { terminate(.unavailable); return }
                 lanes[source]?.nextAcknowledgedPacket += 1; lanes[source]?.receipts[sequence] = nil
                 lanes[source]?.admitted = end; publishProgress(source)
             case .progress(let p):
+                if let ledger = moduleLedger {
+                    guard let module = ledger.status(for: source), module.scope == event.scope,
+                          p.asrConsumedSampleEnd != nil, p.admittedSampleEnd == lane.moduleAdmittedEnd,
+                          (module.nativeFailureSeen || p.consumedSampleEnd <= module.processedEnd) else { terminate(.unavailable); return }
+                }
                 guard lane.cutReason == nil else { return }
                 let pending = p.queuedSamples.addingReportingOverflow(p.inFlightSamples)
                 let total = pending.partialValue.addingReportingOverflow(p.heldSamples)
@@ -491,6 +583,9 @@ actor LiveCaptureSessionCoordinator {
                 if publish(.event(lane.epoch,.settled(.init(epochID: lane.epoch.id,source: source,range: range,kind: interval.kind)))) { lanes[source]?.settled = samples.end }
             case .needsEpochReplacement: cut(source,reason: lane.cutReason ?? .engineRestart)
             case .barrierCompleted(_, let kind, let end):
+                if kind == .pause || kind == .finish {
+                    guard moduleRetired(source) else { terminate(.unavailable); return }
+                }
                 if kind == .pause {
                     guard lane.cutReason == nil else { return }
                     guard let boundary = lane.pauseBoundary, lane.pauseBoundarySent,
@@ -510,11 +605,22 @@ actor LiveCaptureSessionCoordinator {
                 }
                 guard kind == .finish, sealed, lane.finishSent, end == lane.captured else { terminate(.unavailable); return }
             case .closed(let end):
-                guard sealed, lane.finishSent, end == lane.captured, lane.settled == lane.captured else { terminate(.unavailable); return }
+                guard moduleRetired(source), sealed, lane.finishSent, end == lane.captured, lane.settled == lane.captured else { terminate(.unavailable); return }
                 lanes[source]?.closed = true; lanes[source]?.ready = false
                 finishAbandonedCaptureIfSettled()
             }
         }
+    }
+
+    private func confirmVADResidency() async {
+        guard !terminal, isValidOwner, moduleLedger?.allModelsReady == true, let resources, let lease else { return }
+        await resources.confirmVADResident(lease)
+    }
+
+    private func moduleRetired(_ source: LiveSource) -> Bool {
+        guard let ledger = moduleLedger else { return true }
+        guard let module = ledger.status(for: source), let lane = lanes[source] else { return false }
+        return module.scope == .init(identity: input.identity,source: source,epochID: lane.epoch.id) && module.phase == .retired
     }
 
     private func finishAbandonedCaptureIfSettled() {
@@ -535,6 +641,7 @@ actor LiveCaptureSessionCoordinator {
     }
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
         guard !terminal, var lane = lanes[source], !lane.closed else { return }
+        lane.controlID = UUID()
         lane.ready = false; lane.cutReason = reason; lane.packets.removeAll(); lane.receipts.removeAll()
         lane.utteranceBoundary = nil; lane.utteranceBoundarySent = false
         lane.pauseBoundary = nil; lane.pauseBoundarySent = false; lane.paused = false
@@ -586,6 +693,7 @@ actor LiveCaptureSessionCoordinator {
         if !lane.packets.isEmpty {
             let packet = lane.packets.removeFirst(); lane.dispatched = packet.startSample + Int64(packet.sampleCount)
             if let ingress, !ingress.markDispatched(scope: scope,end: lane.dispatched) { terminate(.unavailable); return nil }
+            if moduleLedger != nil { lane.moduleReceipts[packet.sequence] = lane.dispatched }
             lane.nextDispatchedPacket = packet.sequence + 1; lanes[source] = lane; return .packet(packet)
         }
         if sealed && !lane.finishSent {
@@ -652,10 +760,16 @@ actor LiveCaptureSessionCoordinator {
         }
         publications.append(.close); startPublisher()
         let transport = self.transport, resources = self.resources, lease = self.lease, ingress = self.ingress
-        Task {
+        Task { [weak self] in
             await transport.shutdown(); ingress?.confirmNativeRetired()
+            await self?.helperDidExit()
             if let resources, let lease { await resources.release(lease) }
         }
+    }
+
+    private func helperDidExit() {
+        helperExited = true
+        replacementCapacity.removeAll(); knownEpochs.removeAll()
     }
 
     @discardableResult private func publishProgress(_ source: LiveSource) -> Bool {

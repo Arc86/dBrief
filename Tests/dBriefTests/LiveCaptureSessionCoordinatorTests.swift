@@ -124,8 +124,8 @@ private actor CaptureFrontierPublicationGate {
         // fixture. If unsolicited VAD ready confirms residency, this job fits.
         if configured { await resources.confirmResident(lease) }
         #expect(await resources.decide(.localChat(model: "fixture-chat"),measurement: .init(availableBytes: 400,pressure: .normal)) == .deferred)
-        // Successful-looking module readiness must still fail closed while its
-        // native/credit/coordinator integration remains unavailable.
+        // A successful-looking ready frame without its ordered preparing
+        // transition must fail before it certifies residency or opens audio.
         await t.emit(f.event(f.mic,0,.vad(.ready(identity: vad.identity,contextID: UUID(),originSample: 0))))
         await t.emit(f.event(f.mic,1,.ready(generation: UUID(),originSample: 0)))
         try #require(await captureEventually {
@@ -153,11 +153,13 @@ private actor CaptureFrontierPublicationGate {
         defer { Task { await c.retire() } }
         try await c.start()
         try #require(await captureEventually { await t.starts == 1 })
-        await t.emit(f.event(f.mic,0,.ready(generation: UUID(),originSample: 0)))
+        await t.emit(f.event(f.mic,0,.vad(.preparing(identity: vad.identity))))
+        await t.emit(f.event(f.mic,1,.vad(.degraded(identity: vad.identity,contextID: nil,sampleEnd: 0))))
+        await t.emit(f.event(f.mic,2,.ready(generation: UUID(),originSample: 0)))
         try #require(await captureEventually { await c.readySources.count == 1 })
         // A legacy fallback at zero passes all ordinary monotonic accounting.
         // It still cannot prove ASR evidence in a configured multi-consumer lane.
-        await t.emit(f.event(f.mic,1,.progress(.init(capturedSampleEnd: 0,admittedSampleEnd: 0,consumedSampleEnd: 0,
+        await t.emit(f.event(f.mic,3,.progress(.init(capturedSampleEnd: 0,admittedSampleEnd: 0,consumedSampleEnd: 0,
             queuedSamples: 0,inFlightSamples: 0,heldSamples: 0,creditSamples: 49920))))
         #expect(await captureEventually { await store.projection().isClosed })
         #expect(await c.readySources.isEmpty)
