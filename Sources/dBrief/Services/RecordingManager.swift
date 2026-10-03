@@ -12,9 +12,15 @@ import OSLog
 final class RecordingManager {
     let appState: AppState
     let appSettings: AppSettings
-    @ObservationIgnored private lazy var captureCoordinator = CaptureCoordinator(
-        hardware: .live(AudioCaptureManager()), persistence: .live(captureSessionStore),
-        onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
+    @ObservationIgnored private lazy var captureCoordinator = makeCaptureCoordinator()
+
+    private func makeCaptureCoordinator() -> CaptureCoordinator {
+        let factory = liveFactoryOverride ?? LiveRecordingFactory(registry: appState.liveRecordingSessions,admission: liveJobAdmission,
+            beforeAdmission: { [mlHost] in await mlHost.prepareForLiveCapture() })
+        return CaptureCoordinator(hardware: captureHardwareOverride ?? .live(AudioCaptureManager()),
+            persistence: capturePersistenceOverride ?? .live(captureSessionStore),
+            derivative: factory.derivative,onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
+    }
     @ObservationIgnored private lazy var recordingReviewSlot = RecordingReviewSlot(
         appState: appState, action: postRecordingAction,
         captureBusy: { [weak self] in self?.captureCoordinator.isBusy ?? true },
@@ -23,9 +29,12 @@ final class RecordingManager {
     private let localTranscriptionService = LocalTranscriptionService()
     /// One supervised helper process backs both local-ML proxies, so they share
     /// the GPU-serializing orchestrator inside dBriefMLHost.
-    private let mlHost = MLHostConnection(
-        binaryURL: MLHostLocator.binaryURL(),
-        supportBase: MLHostLocator.supportBase())
+    private let mlHost: MLHostConnection
+    private let liveJobAdmission: LiveModelJobAdmission
+    private let liveSelectionProvider: @MainActor @Sendable (LiveASRConfiguration.Language,Int,[LiveSource]) -> LiveNemotronSelection?
+    private let captureHardwareOverride: CaptureCoordinator.Hardware?
+    private let capturePersistenceOverride: CaptureCoordinator.Persistence?
+    private let liveFactoryOverride: LiveRecordingFactory?
     let localAIPluginService: LocalAIPluginService
     let parakeetService: ParakeetTranscriptionService
     /// Exposed for TranscriptChatService — read-only reference; access serialized by the helper's AsyncMutex.
@@ -66,7 +75,7 @@ final class RecordingManager {
     var modelDownloads: [LocalModelKind: ModelDownloadPhase] { modelDownloadCoordinator.phases }
     private let modelDownloadCoordinator: ModelDownloadCoordinator
     let aiService = AIService()
-    let localCLIService = LocalCLIService()
+    let localCLIService: LocalCLIService
     private let integrationDispatchService = IntegrationDispatchService()
     private let integrationDeliveryStore: IntegrationDeliveryStore
     @ObservationIgnored private lazy var integrationDeliveryCoordinator = IntegrationDeliveryCoordinator(store: integrationDeliveryStore)
@@ -118,7 +127,12 @@ final class RecordingManager {
         reprocessingStore: ReprocessingStore = ReprocessingStore(),
         queueScheduleStore: QueueScheduleStore = QueueScheduleStore(),
         integrationDeliveryStore: IntegrationDeliveryStore = IntegrationDeliveryStore(),
-        calendarCLIService: CalendarCLIService? = nil
+        calendarCLIService: CalendarCLIService? = nil,
+        captureHardware: CaptureCoordinator.Hardware? = nil,
+        capturePersistence: CaptureCoordinator.Persistence? = nil,
+        liveFactory: LiveRecordingFactory? = nil,
+        mlHost: MLHostConnection? = nil,
+        liveSelectionProvider: @escaping @MainActor @Sendable (LiveASRConfiguration.Language,Int,[LiveSource]) -> LiveNemotronSelection? = { _,_,_ in nil }
     ) {
         self.queueScheduleStore = queueScheduleStore
         self.integrationDeliveryStore = integrationDeliveryStore
@@ -139,8 +153,15 @@ final class RecordingManager {
             transport: CalendarCLITransport(),
             store: CalendarCLICacheStore()
         )
-        self.localAIPluginService = LocalAIPluginService(connection: mlHost, diagnostics: LocalAIPluginService.defaultDiagnostics())
-        self.parakeetService = ParakeetTranscriptionService(connection: mlHost)
+        let admission = LiveModelJobAdmission.live(policy: appState.liveModelResources,state: appState)
+        self.liveJobAdmission = admission
+        self.localCLIService = LocalCLIService(resourceAdmission: admission)
+        self.liveSelectionProvider = liveSelectionProvider
+        self.captureHardwareOverride = captureHardware; self.capturePersistenceOverride = capturePersistence
+        self.liveFactoryOverride = liveFactory
+        self.mlHost = mlHost ?? MLHostConnection(binaryURL: MLHostLocator.binaryURL(),supportBase: MLHostLocator.supportBase(),resourceAdmission: admission)
+        self.localAIPluginService = LocalAIPluginService(connection: self.mlHost, diagnostics: LocalAIPluginService.defaultDiagnostics())
+        self.parakeetService = ParakeetTranscriptionService(connection: self.mlHost)
         self.modelDownloadCoordinator = modelDownloadCoordinator ?? ModelDownloadCoordinator(
             dependencies: .live(plugin: self.localAIPluginService, parakeet: self.parakeetService))
     }
@@ -410,13 +431,23 @@ final class RecordingManager {
         }
         cancelAllActiveDownloads()
         let recordingID = UUID()
+        let liveEngine = appSettings.liveTranscriptionEngine
+        let liveEnabled = appSettings.liveTranscriptionEnabled
+        let liveLanguage = appSettings.nemotronLiveLanguage
+        let sources: [LiveSource] = [captureCoordinator.hasMicrophonePermission ? .microphone : nil,
+            captureCoordinator.hasSystemAudioPermission ? .system : nil].compactMap { $0 }
+        let selected = liveEngine == .nemotron && liveEnabled
+            ? liveSelectionProvider(liveLanguage,appSettings.nemotronLiveChunkMs,sources) : nil
+        let prewarmWhisper = liveEngine == .nemotron && liveEnabled ? nil
+            : (appSettings.effectiveTranscriptionEngine == .localWhisper ? appSettings.whisperRuntimeConfig : nil)
         let request = CaptureCoordinator.Request(id: recordingID, startedAt: Date(),
             inputDeviceUID: appSettings.audioInputDeviceUID,
             acousticEchoCancellation: appSettings.acousticEchoCancellation,
             echoSuppression: appSettings.acousticEchoCancellation && AudioOutputRoute.currentOutputHasEchoPath(),
-            liveTranscription: appSettings.liveTranscriptionEnabled, language: appSettings.effectiveTranscriptionLanguage,
+            liveTranscription: liveEnabled, liveEngine: liveEngine,nemotronSelection: selected,
+            language: liveEngine == .nemotron ? liveLanguage.rawValue : appSettings.effectiveTranscriptionLanguage,
             associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
-            prewarmWhisper: appSettings.effectiveTranscriptionEngine == .localWhisper ? appSettings.whisperRuntimeConfig : nil,
+            prewarmWhisper: prewarmWhisper,
             privacyScope: RecordingPrivacyScope(recordingID: recordingID))
         try await captureCoordinator.start(request)
     }
@@ -437,7 +468,7 @@ final class RecordingManager {
         case .started(let request):
             guard appState.currentRecording?.id == request.id else { return }
             appState.recordingState = .recording
-            if let config = request.prewarmWhisper {
+            if let config = request.prewarmWhisper, request.liveEngine != .nemotron || !request.liveTranscription {
                 Task { await localAIPluginService.prewarmWhisper(config: config, refresh: false) }
             }
             if request.showMiniPlayer { miniPlayer?.show() }
@@ -990,7 +1021,17 @@ final class RecordingManager {
     private func prewarmPreparationModel() {
         guard appSettings.effectiveAIProcessingEnabled, appSettings.effectiveAIEngine == .appleIntelligence else { return }
         #if canImport(FoundationModels)
-        if #available(macOS 26, *) { Task { await LocalAIService().prewarm() } }
+        // This API starts unjoinable prewarming; skip it for a selected live
+        // Nemotron configuration instead of claiming an invented exit receipt.
+        guard appSettings.liveTranscriptionEngine != .nemotron || !appSettings.liveTranscriptionEnabled else { return }
+        if #available(macOS 26, *) {
+            let resources = appState.liveModelResources
+            Task {
+                // The profile set is immutable. With an eligible live profile,
+                // unjoinable OS prewarming has no safe residency receipt.
+                if !(await resources.hasProfiles) { await LocalAIService().prewarm() }
+            }
+        }
         #endif
     }
 
@@ -2529,6 +2570,7 @@ final class RecordingManager {
     /// Called by MemoryPressureMonitor when system memory pressure is detected.
     /// Unloads all local AI models to free memory.
     func handleMemoryPressure() async {
+        await appState.liveModelResources.measurementDidChange()
         await localAIPluginService.purgeModelsOnMemoryPressure()
         try? await parakeetService.purgeModels()
     }

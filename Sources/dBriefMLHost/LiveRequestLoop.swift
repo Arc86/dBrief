@@ -26,11 +26,19 @@ private final class LiveStdoutWriter: @unchecked Sendable {
 }
 
 enum LiveRequestLoop {
+    static func loadVAD(_ input: LiveSessionBegin,loader: LiveVADModelFactory.Loader? = nil) async throws -> LiveVADModelFactory {
+        guard let configuration = input.vad else { throw LiveProtocolError.invalidConfiguration }
+        let work = Task.detached { try LiveVADModelAssets.openReadOnly(configuration) }
+        let assets = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        return try await LiveVADModelFactory.load(configuration: configuration,sources: input.epochs.map(\.source),assets: assets,loader: loader)
+    }
+
     static func run(input: FileHandle = .standardInput, output: FileHandle = .standardOutput) async {
         let writer = LiveStdoutWriter(output)
         let helper = LiveASROrchestrator(loader: { configuration in
             try await LiveASRNativeLoader.load(configuration)
-        },emit: writer.event)
+        },vadLoader: { try await loadVAD($0) },emit: writer.event)
         var reader = LiveFrameReader(), identity: LiveSessionIdentity?
         do {
             while let data = try LiveFrameReader.readChunk(from: input) {

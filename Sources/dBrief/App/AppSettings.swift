@@ -88,6 +88,9 @@ final class AppSettings {
         static let diarizationEnabled = "diarizationEnabled"
         static let speakerIdMode = "speakerIdMode"
         static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
+        static let liveTranscriptionEngine = "liveTranscriptionEngine"
+        static let nemotronLiveLanguage = "nemotronLiveLanguage"
+        static let nemotronLiveChunkMs = "nemotronLiveChunkMs"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
         static let showMiniRecordingView = "showMiniRecordingView"
@@ -509,6 +512,16 @@ final class AppSettings {
     /// still produced post-recording.
     var liveTranscriptionEnabled: Bool {
         didSet { UserDefaults.standard.set(liveTranscriptionEnabled, forKey: Keys.liveTranscriptionEnabled) }
+    }
+
+    var liveTranscriptionEngine: LiveTranscriptionEngine {
+        didSet { UserDefaults.standard.set(liveTranscriptionEngine.rawValue,forKey: Keys.liveTranscriptionEngine) }
+    }
+    var nemotronLiveLanguage: LiveASRConfiguration.Language {
+        didSet { UserDefaults.standard.set(nemotronLiveLanguage.rawValue,forKey: Keys.nemotronLiveLanguage) }
+    }
+    var nemotronLiveChunkMs: Int {
+        didSet { UserDefaults.standard.set(nemotronLiveChunkMs,forKey: Keys.nemotronLiveChunkMs) }
     }
 
     /// Enable Acoustic Echo Cancellation on the microphone input.
@@ -1035,6 +1048,10 @@ final class AppSettings {
         self.speakerIdMode = defaults.string(forKey: Keys.speakerIdMode)
             .flatMap(SpeakerIdMode.init(rawValue:)) ?? .optimistic
         self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
+        self.liveTranscriptionEngine = LiveTranscriptionEngine(rawValue: defaults.string(forKey: Keys.liveTranscriptionEngine) ?? "") ?? .appleSpeech
+        self.nemotronLiveLanguage = LiveASRConfiguration.Language(rawValue: defaults.string(forKey: Keys.nemotronLiveLanguage) ?? "") ?? .auto
+        let liveChunk = defaults.integer(forKey: Keys.nemotronLiveChunkMs)
+        self.nemotronLiveChunkMs = [560,1120,2240].contains(liveChunk) ? liveChunk : 1120
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
         self.showMiniRecordingView = defaults.object(forKey: Keys.showMiniRecordingView) as? Bool ?? true

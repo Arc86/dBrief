@@ -80,7 +80,9 @@ final class AppContext {
             await recordingManager?.handleMemoryPressure()
         }
         memoryMonitor.registerPressureHandler { [weak self] level in
-            self?.appState.memoryPressureLevel = level
+            guard let self else { return }
+            self.appState.memoryPressureLevel = level
+            await self.appState.liveModelResources.measurementDidChange()
         }
 
         Task { await self.ensureReady() }

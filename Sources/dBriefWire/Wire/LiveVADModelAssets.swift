@@ -1,22 +1,24 @@
 import CryptoKit
 import Darwin
 import Foundation
-import dBriefWire
 
-enum LiveVADAssetError: Error, Equatable { case invalidConfiguration, invalidAsset, oversized, fingerprintMismatch }
+package enum LiveVADModelError: Error, Equatable { case invalidModel, invalidInput, invalidOutput }
+
+package enum LiveVADAssetError: Error, Equatable { case invalidConfiguration, invalidAsset, oversized, fingerprintMismatch }
 
 /// Private copies outside app/SDK cache purge domains. Cooperating code must
 /// never rename/purge this namespace while any native work retains the owner.
 /// Checks detect existing substitutions, not arbitrary later same-user writes.
 /// This preparation invokes no CoreML, ModelHub or downloader operation.
-final class LiveVADModelAssets: Sendable {
-    struct Limits: Sendable {
-        var maximumFileBytes: UInt64 = 16 * 1024 * 1024
-        var maximumTotalBytes: UInt64 = 32 * 1024 * 1024
+package final class LiveVADModelAssets: Sendable {
+    package struct Limits: Sendable {
+        package var maximumFileBytes: UInt64 = 16 * 1024 * 1024
+        package var maximumTotalBytes: UInt64 = 32 * 1024 * 1024
+        package init() {}
         var isValid: Bool { (1...16 * 1024 * 1024).contains(maximumFileBytes) && (1...32 * 1024 * 1024).contains(maximumTotalBytes) }
     }
-    enum CopyPoint: Sendable { case beforeOpenFile, afterOpenFile, afterCreateDirectory }
-    typealias Probe = @Sendable (CopyPoint, String) async throws -> Void
+    package enum CopyPoint: Sendable { case beforeOpenFile, afterOpenFile, afterCreateDirectory }
+    package typealias Probe = @Sendable (CopyPoint, String) async throws -> Void
     private struct Entry: Sendable { let path: String; let size: UInt64; let hash: Data? }
     private struct Fingerprint { let value: String; let metadata: Entry }
     private struct Identity: Sendable, Equatable {
@@ -49,8 +51,8 @@ final class LiveVADModelAssets: Sendable {
     private static let files = ["analytics/coremldata.bin","coremldata.bin","metadata.json","model.mil","weights/weight.bin"]
     private static let directories = ["analytics","weights"]
     private static let supportedRevision = "silero-vad-unified-256ms-v6.2.1"
-    let fingerprint: String
-    let configuration: LiveVADConfiguration
+    package let fingerprint: String
+    package let configuration: LiveVADConfiguration
     private let metadata: Entry
     private let parentURL: URL
     private let rootName: String
@@ -61,10 +63,13 @@ final class LiveVADModelAssets: Sendable {
     private let leaves: [FileEntry]
     private let created: [DirectoryEntry]
     private let opened: [Directory]
+    private let ownsCopy: Bool
+    private let budget: LiveASRStagingBudget?
+    private let ticket: UUID?
 
     /// The native loader must keep this asset owner strongly alive through the
     /// load, every returned model/manager and actual cancellation unwind.
-    var modelDirectory: URL {
+    package var modelDirectory: URL {
         get throws {
             let rootURL = parentURL.appendingPathComponent(rootName,isDirectory: true)
             guard try Self.path(parent.fd) == parentURL.path, try Self.path(root.fd) == rootURL.path,
@@ -91,20 +96,26 @@ final class LiveVADModelAssets: Sendable {
     }
     private init(parentURL: URL, rootName: String, parent: Directory, root: Directory, model: Directory,
                  children: [String: Directory], leaves: [FileEntry], created: [DirectoryEntry], opened: [Directory],
-                 configuration: LiveVADConfiguration, fingerprint: Fingerprint) {
+                 configuration: LiveVADConfiguration, fingerprint: Fingerprint, ownsCopy: Bool = true, budget: LiveASRStagingBudget? = nil, ticket: UUID? = nil) {
         self.parentURL = parentURL; self.rootName = rootName; self.parent = parent; self.root = root; self.model = model
         self.children = children; self.leaves = leaves; self.fingerprint = fingerprint.value
         self.configuration = configuration; metadata = fingerprint.metadata
         self.created = created; self.opened = opened
+        self.ownsCopy = ownsCopy; self.budget = budget; self.ticket = ticket
     }
-    deinit { Self.cleanup(created: created,opened: opened,leaves: leaves) }
+    deinit {
+        if ownsCopy {
+            let removed = Self.cleanup(created: created,opened: opened,leaves: leaves)
+            if let ticket { budget?.rootDeleted(ticket,proven: removed) }
+        }
+    }
 
     /// Only the copied, descriptor-owned leaf can supply the schema witness.
     /// Its length/digest were captured in the final snapshot hashing pass.
-    func readMetadata(testingAfterOpen: (@Sendable () throws -> Void)? = nil) throws -> Data {
+    package func readMetadata(testingAfterOpen: (@Sendable () throws -> Void)? = nil) throws -> Data {
         try Task.checkCancellation()
         _ = try modelDirectory
-        guard metadata.size <= LiveVADModelContract.maximumMetadataBytes else { throw LiveVADModelError.invalidModel }
+        guard metadata.size <= 65_536 else { throw LiveVADModelError.invalidModel }
         guard let leaf = leaves.first(where: { $0.path == "metadata.json" }) else { throw LiveVADAssetError.invalidAsset }
         let fd = openat(leaf.parent.fd,leaf.name,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else { throw LiveVADAssetError.invalidAsset }
@@ -117,14 +128,14 @@ final class LiveVADModelAssets: Sendable {
         }
         try validateLeaf()
         try testingAfterOpen?()
-        var data = Data(), buffer = [UInt8](repeating: 0,count: LiveVADModelContract.maximumMetadataBytes)
+        var data = Data(), buffer = [UInt8](repeating: 0,count: 65_536)
         data.reserveCapacity(Int(metadata.size))
         while true {
             try Task.checkCancellation()
             let count = buffer.withUnsafeMutableBytes { Darwin.read(fd,$0.baseAddress!, $0.count) }
             if count < 0 { if errno == EINTR { continue }; throw LiveVADAssetError.invalidAsset }
             if count == 0 { break }
-            guard count <= LiveVADModelContract.maximumMetadataBytes-data.count else { throw LiveVADModelError.invalidModel }
+            guard count <= 65_536-data.count else { throw LiveVADModelError.invalidModel }
             data.append(contentsOf: buffer.prefix(count))
         }
         try validateLeaf(); try Task.checkCancellation()
@@ -136,9 +147,9 @@ final class LiveVADModelAssets: Sendable {
 
     /// The staging URL/probe are explicit trusted-owner test seams. Production
     /// callers omit both; configuration can never select a staging namespace.
-    static func prepare(_ configuration: LiveVADConfiguration, testingStagingDirectory: URL? = nil,
-                        limits: Limits = .init(), probe: Probe? = nil) async throws -> LiveVADModelAssets {
-        guard configuration.isValid, configuration.identity.runtimeRevision == LiveVADNativeConfiguration.runtimeRevision,
+    package static func prepare(_ configuration: LiveVADConfiguration, testingStagingDirectory: URL? = nil,
+                        limits: Limits = .init(), probe: Probe? = nil, destination destinationConfiguration: LiveVADConfiguration? = nil, budget: LiveASRStagingBudget? = nil) async throws -> LiveVADModelAssets {
+        guard configuration.isValid, configuration.identity.runtimeRevision == LiveASRIdentity.currentRuntimeRevision,
               configuration.identity.implementationRevision == LiveVADIdentity.currentImplementationRevision,
               configuration.identity.modelRevision == supportedRevision, limits.isValid else { throw LiveVADAssetError.invalidConfiguration }
         try Task.checkCancellation()
@@ -150,15 +161,47 @@ final class LiveVADModelAssets: Sendable {
             try exactNames(child.fd,expected: [name == "analytics" ? "coremldata.bin" : "weight.bin"])
         }
         let parentURL = try testingStagingDirectory ?? systemTemporaryDirectory()
+        if let destination = destinationConfiguration {
+            guard destination.identity == configuration.identity, destination.isValid else { throw LiveVADAssetError.invalidConfiguration }
+        }
         let parent = try Directory(taking: directory(path: parentURL.path,rejecting: source.identity))
         var parentInfo = stat()
         guard fstat(parent.fd,&parentInfo) == 0, parentInfo.st_uid == geteuid(), parentInfo.st_mode & 0o077 == 0 else {
             throw LiveVADAssetError.invalidAsset
         }
-        let name = "dbrief-vad-\(UUID())"
+        let name = destinationConfiguration.map { URL(fileURLWithPath: $0.modelPath).deletingLastPathComponent().lastPathComponent } ?? "dbrief-vad-\(UUID())"
+        guard name.hasPrefix("dbrief-vad-"), UUID(uuidString: String(name.dropFirst(11))) != nil,
+              destinationConfiguration == nil || destinationConfiguration?.modelPath == parentURL.path + "/" + name + "/model.mlmodelc" else { throw LiveVADAssetError.invalidConfiguration }
+        let ticket = try budget?.beginWorker()
+        defer { if let ticket { budget?.finishWorker(ticket) } }
+        var expected: [String:UInt64] = [:], expectedTotal: UInt64 = 0
+        for path in files {
+            let parts = path.split(separator: "/").map(String.init)
+            let directory = parts.count == 1 ? source : sourceDirectories[parts[0]]!
+            var info = stat()
+            guard fstatat(directory.fd,parts.last!,&info,AT_SYMLINK_NOFOLLOW) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size > 0 else {
+                if let ticket { budget?.rootDeleted(ticket,proven: true) }; throw LiveVADAssetError.invalidAsset
+            }
+            let count = UInt64(info.st_size)
+            guard count <= limits.maximumFileBytes, count <= limits.maximumTotalBytes, expectedTotal <= limits.maximumTotalBytes-count else {
+                if let ticket { budget?.rootDeleted(ticket,proven: true) }; throw LiveVADAssetError.oversized
+            }
+            expected[path] = count; expectedTotal += count
+        }
+        if let ticket {
+            do { try budget?.allocate(ticket,bytes: expectedTotal,parent: parent.fd) }
+            catch { budget?.rootDeleted(ticket,proven: true); throw error }
+        }
         var created: [DirectoryEntry] = [], opened: [Directory] = [], children: [String: Directory] = [:], leaves: [FileEntry] = []
         var transferred = false
-        defer { if !transferred { cleanup(created: created,opened: opened,leaves: leaves) } }
+        defer {
+            if !transferred {
+                let removed = cleanup(created: created,opened: opened,leaves: leaves)
+                var info = stat()
+                let absent = fstatat(parent.fd,name,&info,AT_SYMLINK_NOFOLLOW) < 0 && errno == ENOENT
+                if let ticket { budget?.rootDeleted(ticket,proven: removed && absent) }
+            }
+        }
         let root = try await createDirectory(parent,name: name,created: &created,opened: &opened,probe: probe)
         let destination = try await createDirectory(root,name: "model.mlmodelc",created: &created,opened: &opened,probe: probe)
         for directoryName in directories {
@@ -190,10 +233,12 @@ final class LiveVADModelAssets: Sendable {
                 let count = buffer.withUnsafeMutableBytes { Darwin.read(file,$0.baseAddress!, $0.count) }
                 if count < 0 { if errno == EINTR { continue }; throw LiveVADAssetError.invalidAsset }
                 if count == 0 { break }
+                guard UInt64(count) <= expected[path]!-size else { throw LiveVADAssetError.oversized }
+                if let ticket { try budget?.checkDisk(ticket,parent: parent.fd) }
                 try account(count,size: &size,total: &total,limits: limits)
                 try buffer.withUnsafeBytes { bytes in try write(UnsafeRawBufferPointer(start: bytes.baseAddress,count: count),to: output) }
             }
-            guard size > 0, fsync(output) == 0, fchmod(output,0o444) == 0 else { throw LiveVADAssetError.invalidAsset }
+            guard size == expected[path], fsync(output) == 0, fchmod(output,0o444) == 0 else { throw LiveVADAssetError.invalidAsset }
         }
         // Read the final copied tree, not a manifest of earlier source reads.
         // This also catches mutation of an already copied leaf at a later probe.
@@ -203,10 +248,47 @@ final class LiveVADModelAssets: Sendable {
         guard fchmod(destination.fd,0o555) == 0 else { throw LiveVADAssetError.invalidAsset }
         try Task.checkCancellation()
         let assets = LiveVADModelAssets(parentURL: parentURL,rootName: name,parent: parent,root: root,model: destination,
-            children: children,leaves: leaves,created: created,opened: opened,configuration: configuration,fingerprint: fingerprint)
+            children: children,leaves: leaves,created: created,opened: opened,configuration: destinationConfiguration ?? configuration,fingerprint: fingerprint,budget: budget,ticket: ticket)
         transferred = true // This owner now cleans failures during publication too.
         _ = try assets.modelDirectory
         return assets
+    }
+
+
+    package static func futureConfiguration(source: LiveVADConfiguration, testingStagingDirectory: URL? = nil) throws -> LiveVADConfiguration {
+        guard source.isValid else { throw LiveVADAssetError.invalidConfiguration }
+        let parentURL = try testingStagingDirectory ?? systemTemporaryDirectory()
+        return .init(identity: source.identity,modelPath: parentURL.path + "/dbrief-vad-\(UUID())/model.mlmodelc")
+    }
+
+    /// No copy or deletion authority is transferred to the helper.
+    package static func openReadOnly(_ configuration: LiveVADConfiguration, testingStagingDirectory: URL? = nil) throws -> LiveVADModelAssets {
+        guard configuration.isValid, configuration.identity.runtimeRevision == LiveASRIdentity.currentRuntimeRevision,
+              configuration.identity.modelRevision == supportedRevision,
+              configuration.identity.implementationRevision == LiveVADIdentity.currentImplementationRevision else { throw LiveVADAssetError.invalidConfiguration }
+        let parentURL = try testingStagingDirectory ?? systemTemporaryDirectory()
+        let rootURL = URL(fileURLWithPath: configuration.modelPath).deletingLastPathComponent(), name = rootURL.lastPathComponent
+        guard name.hasPrefix("dbrief-vad-"), UUID(uuidString: String(name.dropFirst(11))) != nil,
+              configuration.modelPath == parentURL.path + "/" + name + "/model.mlmodelc" else { throw LiveVADAssetError.invalidAsset }
+        let parent = try Directory(taking: directory(path: parentURL.path))
+        var info = stat()
+        guard fstat(parent.fd,&info) == 0, info.st_uid == geteuid(), info.st_mode & 0o077 == 0 else { throw LiveVADAssetError.invalidAsset }
+        let root = try Directory(taking: childDirectory(parent.fd,name: name))
+        let model = try Directory(taking: childDirectory(root.fd,name: "model.mlmodelc"))
+        var children: [String:Directory] = [:], leaves: [FileEntry] = []
+        for name in directories { children[name] = try Directory(taking: childDirectory(model.fd,name: name)) }
+        for path in files {
+            let parts = path.split(separator: "/").map(String.init), directory = parts.count == 1 ? model : children[parts[0]]!
+            var info = stat()
+            guard fstatat(directory.fd,parts.last!,&info,AT_SYMLINK_NOFOLLOW) == 0 else { throw LiveVADAssetError.invalidAsset }
+            leaves.append(.init(path: path,parent: directory,name: parts.last!,identity: Identity(info)))
+        }
+        let fingerprint = try fingerprintCopiedTree(leaves,limits: .init())
+        guard fingerprint.value == configuration.identity.modelFingerprint else { throw LiveVADAssetError.fingerprintMismatch }
+        let result = LiveVADModelAssets(parentURL: parentURL,rootName: name,parent: parent,root: root,model: model,children: children,
+            leaves: leaves,created: [],opened: [],configuration: configuration,fingerprint: fingerprint,ownsCopy: false)
+        _ = try result.modelDirectory
+        return result
     }
 
     private static func systemTemporaryDirectory() throws -> URL {
@@ -346,11 +428,15 @@ final class LiveVADModelAssets: Sendable {
     }
     /// Never follow cleanup paths. Deliberate replacement leaves that external
     /// link untouched and can leave an empty owned orphan; no recursive reaper.
-    private static func cleanup(created: [DirectoryEntry], opened: [Directory], leaves: [FileEntry]) {
+    private static func cleanup(created: [DirectoryEntry], opened: [Directory], leaves: [FileEntry]) -> Bool {
+        var removed = true
         for directory in opened { _ = fchmod(directory.fd,0o700) }
-        for leaf in leaves where matches(leaf.parent.fd,name: leaf.name,identity: leaf.identity) { _ = unlinkat(leaf.parent.fd,leaf.name,0) }
-        for entry in created.reversed() where matches(entry.parent.fd,name: entry.name,identity: entry.identity) {
-            _ = unlinkat(entry.parent.fd,entry.name,AT_REMOVEDIR)
+        for leaf in leaves {
+            guard matches(leaf.parent.fd,name: leaf.name,identity: leaf.identity), unlinkat(leaf.parent.fd,leaf.name,0) == 0 else { removed = false; continue }
         }
+        for entry in created.reversed() {
+            guard matches(entry.parent.fd,name: entry.name,identity: entry.identity), unlinkat(entry.parent.fd,entry.name,AT_REMOVEDIR) == 0 else { removed = false; continue }
+        }
+        return removed
     }
 }

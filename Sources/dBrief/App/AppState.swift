@@ -6,7 +6,10 @@ import dBriefWire
 final class AppState {
     /// Transcript/model owners outlive windows, selection and post-processing.
     @ObservationIgnored let liveRecordingSessions = LiveRecordingSessionRegistry()
-    @ObservationIgnored let liveModelResources = LiveModelResourcePolicy()
+    @ObservationIgnored let liveModelResources: LiveModelResourcePolicy
+    init(liveResourceProfiles: [LiveResourceProfile] = []) {
+        liveModelResources = LiveModelResourcePolicy(profiles: liveResourceProfiles)
+    }
     /// Capture-only state machine. Processing is tracked separately via `processingJob`
     /// so a new recording can start (capture `.idle`) while a previous recording is still
     /// being processed in the background.

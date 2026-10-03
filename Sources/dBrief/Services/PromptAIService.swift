@@ -49,7 +49,7 @@ actor PromptAIService: PromptTextCompleting {
         apple = { system, user, stage in
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
-                return try await LocalAIService().completeText(systemPrompt: system, userMessage: user, stage: stage)
+                return try await LocalAIService(resourceAdmission: localPlugin?.connection.resourceAdmission).completeText(systemPrompt: system, userMessage: user, stage: stage)
             }
             #endif
             throw PromptAIError.appleUnavailable

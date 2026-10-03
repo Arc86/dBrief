@@ -24,7 +24,7 @@ final class MemoryPressureMonitor {
         guard !isMonitoring else { return }
         isMonitoring = true
 
-        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
 
         source.setEventHandler { [weak self] in
             guard let self else { return }
@@ -37,6 +37,8 @@ final class MemoryPressureMonitor {
                 } else if event.contains(.warning) {
                     log.warning("⚠️ Memory pressure warning - triggering cleanup")
                     await self.triggerCleanup()
+                } else if event.contains(.normal) {
+                    await self.triggerRecovery()
                 }
             }
         }
@@ -144,6 +146,11 @@ final class MemoryPressureMonitor {
 
     // MARK: - Private
 
+    private func triggerRecovery() async {
+        currentLevel = .normal
+        for handler in pressureHandlers { await handler(.normal) }
+    }
+
     private func triggerCleanup() async {
         diagnostics.record(.memoryWarning)
         currentLevel = .warning
@@ -181,8 +188,10 @@ final class MemoryPressureMonitor {
     func testTrigger(_ level: MemoryPressureLevel) async {
         if level == .critical {
             await triggerAggressiveCleanup()
-        } else {
+        } else if level == .warning {
             await triggerCleanup()
+        } else {
+            await triggerRecovery()
         }
     }
     #endif

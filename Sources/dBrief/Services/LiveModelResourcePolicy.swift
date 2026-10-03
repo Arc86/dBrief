@@ -65,7 +65,7 @@ struct LiveResourceLease: Sendable, Equatable {
     let attributionEnabled: Bool
     let reservedBytes: UInt64
 }
-enum LiveResourceJob: Sendable, Equatable { case localChat(model: String), background(model: String), configuredRemote }
+enum LiveResourceJob: Sendable, Equatable { case localChat(model: String), background(model: String), externallyManagedCLI, configuredRemote }
 struct LiveResourceJobLease: Sendable, Equatable {
     let id: UUID
     let owner: UUID
@@ -102,7 +102,10 @@ actor LiveModelResourcePolicy {
     }
     private let profiles: [String: [LiveResourceProfile]]
     private let policyID = UUID()
-    private var generation = UUID()
+    private var generation = UUID() {
+        didSet { for continuation in updateContinuations.values { continuation.yield(()) } }
+    }
+    private var updateContinuations: [UUID:AsyncStream<Void>.Continuation] = [:]
     private var active: Reservation?
     private struct JobReservation { let lease: LiveResourceJobLease; var resident = false }
     private var jobs: [UUID: JobReservation] = [:]
@@ -125,6 +128,27 @@ actor LiveModelResourcePolicy {
             throw LiveResourceRejection.busy
         }
         return try createReservation(identity: identity,request: request,measurement: measurement,exclusive: false)
+    }
+
+    // Profiles are immutable for this policy's lifetime. A false result cannot
+    // race future eligible live admission in the same app owner.
+    var hasProfiles: Bool { !profiles.isEmpty }
+    var hasCaptureReservation: Bool { active != nil }
+    var jobCount: Int { jobs.count }
+    func measurementDidChange() { generation = UUID() }
+    func updates(since token: LiveResourceMeasurementToken) -> AsyncStream<Void> {
+        let (stream,continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        guard updateContinuations.count < 128, token.policyID == policyID else { continuation.finish(); return stream }
+        let id = UUID(); updateContinuations[id] = continuation
+        continuation.onTermination = { @Sendable _ in Task { await self.removeUpdate(id) } }
+        if token.generation != generation { continuation.yield(()) }
+        return stream
+    }
+    private func removeUpdate(_ id: UUID) { updateContinuations[id] = nil }
+    func reserveJob(owner: UUID,job: LiveResourceJob,measurement: LiveResourceMeasurement,
+                    token: LiveResourceMeasurementToken) throws -> LiveResourceJobLease? {
+        try validateToken(token)
+        return reserveJob(owner: owner,job: job,measurement: measurement)
     }
 
     func measurementToken() -> LiveResourceMeasurementToken { .init(policyID: policyID,generation: generation) }
@@ -204,7 +228,7 @@ actor LiveModelResourcePolicy {
         case .background(let value):
             guard profile.backgroundWorkQualified else { throw LiveResourceRejection.busy }
             model = value
-        case .configuredRemote: throw LiveResourceRejection.busy
+        case .externallyManagedCLI, .configuredRemote: throw LiveResourceRejection.busy
         }
         guard let cost = profile.concurrentChatModels[model] else { throw LiveResourceRejection.busy }
         return job.resident ? 0 : max(cost,job.lease.reservedBytes)
@@ -255,7 +279,7 @@ actor LiveModelResourcePolicy {
         if let active {
             switch job {
             case .localChat(let model), .background(let model): bytes = active.profile.concurrentChatModels[model]!
-            case .configuredRemote: break
+            case .externallyManagedCLI, .configuredRemote: break
             }
         }
         let lease = LiveResourceJobLease(id: UUID(),owner: owner,job: job,reservedBytes: bytes)
@@ -286,6 +310,7 @@ actor LiveModelResourcePolicy {
         case .background(let value):
             guard active.profile.backgroundWorkQualified else { return .deferred }
             model = value
+        case .externallyManagedCLI: return .deferred
         case .configuredRemote: return .admitted
         }
         guard let extra = active.profile.concurrentChatModels[model] else { return .deferred }

@@ -95,6 +95,45 @@ private final class VADLoadHandle: LiveVADModelHandle, Sendable {
 }
 
 @Suite struct LiveVADModelFactoryTests {
+    @Test func actualLiveLoaderReopensTheParentSnapshotAndHasNoDeletionAuthority() async throws {
+        let f = try VADLoadFixture(); defer { f.cleanup() }
+        let budget = LiveASRStagingBudget(), preparation = try LiveVADAssetPreparation(source: f.configuration,budget: budget)
+        let owner = UUID(), configuration = preparation.configuration, audit = VADLoadAudit()
+        try #require(preparation.bind(to: owner)); try await preparation.prepare(owner: owner)
+        do {
+            let identity = LiveSessionIdentity(recordingID: UUID(),captureSessionID: UUID())
+            let input = LiveSessionBegin(identity: identity,configuration: .init(language: .auto,modelDirectory: "/unused"),
+                epochs: [LiveSource.microphone,.system].map {
+                    .init(id: UUID(),source: $0,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: nil)
+                },vad: configuration)
+            let factory = try await LiveRequestLoop.loadVAD(input,loader: { assets,native in
+                _ = audit.call()
+                #expect(assets.configuration == configuration && native.configuration == configuration)
+                return VADLoadHandle(assets)
+            })
+            #expect(factory.handles.count == 2 && audit.calls == 2)
+            try FileManager.default.removeItem(at: f.source)
+            for handle in factory.handles.values { #expect(try handle.assets.readMetadata() == f.metadata) }
+        } catch { await preparation.retire(owner: owner)?.value; throw error }
+        #expect(FileManager.default.fileExists(atPath: configuration.modelPath))
+        #expect(budget.usage.roots == 1)
+        await preparation.retire(owner: owner)?.value
+        #expect(!FileManager.default.fileExists(atPath: configuration.modelPath) && budget.usage.roots == 0)
+    }
+
+    @Test func actualLiveLoaderCannotFallBackToTheCallerCacheAfterOptionalPreparationLoss() async throws {
+        let f = try VADLoadFixture(); defer { f.cleanup() }
+        let preparation = try LiveVADAssetPreparation(source: f.configuration,budget: .init()), audit = VADLoadAudit()
+        let input = LiveSessionBegin(identity: .init(recordingID: UUID(),captureSessionID: UUID()),
+            configuration: .init(language: .auto,modelDirectory: "/unused"),epochs: [
+                .init(id: UUID(),source: .microphone,engineRevision: "fixture",language: "auto",meetingOriginNanoseconds: nil)
+            ],vad: preparation.configuration)
+        await #expect(throws: LiveVADAssetError.invalidAsset) {
+            _ = try await LiveRequestLoop.loadVAD(input,loader: { assets,_ in _ = audit.call(); return VADLoadHandle(assets) })
+        }
+        #expect(audit.calls == 0 && FileManager.default.fileExists(atPath: f.source.path))
+    }
+
     @Test func copiedMetadataAndCompleteFrozenConfigurationAreRetained() async throws {
         let f = try VADLoadFixture(); defer { f.cleanup() }
         let assets = try await f.assets()

@@ -1,7 +1,7 @@
+import dBriefWire
 @preconcurrency import CoreML
 import Foundation
 
-enum LiveVADModelError: Error, Equatable { case invalidModel, invalidInput, invalidOutput }
 
 struct LiveVADNativeInput: Sendable, Equatable {
     let audio: [Float]

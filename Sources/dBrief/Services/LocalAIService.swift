@@ -14,6 +14,9 @@ private let log = Logger.localAI
 /// previously dropped tags / action items on malformed free-form output.
 @available(macOS 26, *)
 actor LocalAIService {
+    private let resourceAdmission: LiveModelJobAdmission?
+    init(resourceAdmission: LiveModelJobAdmission? = nil) { self.resourceAdmission = resourceAdmission }
+
 
     // MARK: Guided-generation schema
 
@@ -67,6 +70,20 @@ actor LocalAIService {
         actionItemsGuidance: String? = nil,
         tagsGuidance: String? = nil
     ) async throws -> LocalInsightsResult {
+        let permit = try await resourceAdmission?.acquire(owner: UUID(),job: .background(model: "apple-intelligence"),wait: true)
+        do {
+            let result = try await analyzeAdmitted(transcription,outputLanguage: outputLanguage,customVocabulary: customVocabulary,
+                summaryGuidance: summaryGuidance,actionItemsGuidance: actionItemsGuidance,tagsGuidance: tagsGuidance)
+            if let permit { await resourceAdmission?.policy.releaseJob(permit) }
+            return result
+        } catch {
+            if let permit { await resourceAdmission?.policy.releaseJob(permit) }
+            throw error
+        }
+    }
+    private func analyzeAdmitted(_ transcription: String,outputLanguage: OutputLanguage,customVocabulary: String,
+                                summaryGuidance: String?,actionItemsGuidance: String?,tagsGuidance: String?) async throws -> LocalInsightsResult {
+        try Task.checkCancellation()
         try Self.ensureAvailable()
 
         let truncated = UnifiedInsightsPrompt.truncateForFoundationModels(transcription)
@@ -106,6 +123,17 @@ actor LocalAIService {
 
     /// A fresh session for a standalone prompt task; never uses recording history.
     func completeText(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage) async throws -> String {
+        let permit = try await resourceAdmission?.acquire(owner: UUID(),job: .background(model: "apple-intelligence"),wait: true)
+        do {
+            let result = try await completeAdmitted(systemPrompt: systemPrompt,userMessage: userMessage,stage: stage)
+            if let permit { await resourceAdmission?.policy.releaseJob(permit) }
+            return result
+        } catch {
+            if let permit { await resourceAdmission?.policy.releaseJob(permit) }
+            throw error
+        }
+    }
+    private func completeAdmitted(systemPrompt: String,userMessage: String,stage: PrivacyOperation.Stage) async throws -> String {
         try Task.checkCancellation()
         try Self.ensureAvailable()
         let session = LanguageModelSession(instructions: systemPrompt)

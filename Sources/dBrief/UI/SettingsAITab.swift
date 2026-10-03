@@ -353,7 +353,7 @@ struct SettingsAITab: View {
         let config = appSettings.localCLIConfig
         Task {
             do {
-                let output = try await LocalCLIService().runTest(config: config)
+                let output = try await recordingManager.localCLIService.runTest(config: config)
                 cliTestSuccess = String(output.prefix(500))
             } catch {
                 cliTestError = error.localizedDescription

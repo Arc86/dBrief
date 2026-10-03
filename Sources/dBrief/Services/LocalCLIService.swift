@@ -7,6 +7,12 @@ import dBriefWire
 /// unified JSON insights. The command is invoked once per recording and must
 /// print a JSON object matching the `UnifiedInsightsPrompt` contract to stdout.
 actor LocalCLIService {
+    typealias CommandRunner = @Sendable (LocalCLIConfig,String,String) async throws -> String
+    private let resourceAdmission: LiveModelJobAdmission?
+    private let commandRunner: CommandRunner?
+    init(resourceAdmission: LiveModelJobAdmission? = nil,commandRunner: CommandRunner? = nil) {
+        self.resourceAdmission = resourceAdmission; self.commandRunner = commandRunner
+    }
 
     /// Run the configured command against a transcript and return parsed insights.
     func analyze(
@@ -85,9 +91,29 @@ actor LocalCLIService {
     private func runPrompt(config: LocalCLIConfig, system: String, user: String, stage: PrivacyOperation.Stage = .analysis) async throws -> String {
         try Task.checkCancellation()
         return try await PrivacyTrace.perform(.init(stage: stage, data: [.text, .metadata], destination: .externallyManaged(provider: .localCLI))) {
-            try await Self.runShellCommand(config.executionCommand, systemPrompt: system, userPrompt: user,
-                fullPrompt: system + "\n\n" + user, timeoutSeconds: config.timeoutSeconds,
-                effort: config.effort, effortProvider: config.effortProvider)
+            try await self.executeCommand(config: config,system: system,user: user)
+        }
+    }
+
+    /// The command's model/daemon is externally managed. Exclude its invocation
+    /// during capture rather than guessing a measured model identity. The runner
+    /// joins its shell on cancellation; return is not proof a daemon unloaded.
+    private func executeCommand(config: LocalCLIConfig,system: String,user: String,fullPrompt: String? = nil) async throws -> String {
+        let lease = try await resourceAdmission?.acquire(owner: UUID(),job: .externallyManagedCLI,wait: true)
+        do {
+            try Task.checkCancellation()
+            let output: String
+            if let commandRunner { output = try await commandRunner(config,system,user) }
+            else {
+                output = try await Self.runShellCommand(config.executionCommand,systemPrompt: system,userPrompt: user,
+                    fullPrompt: fullPrompt ?? system + "\n\n" + user,timeoutSeconds: config.timeoutSeconds,
+                    effort: config.effort,effortProvider: config.effortProvider)
+            }
+            if let lease { await resourceAdmission?.policy.releaseJob(lease) }
+            return output
+        } catch {
+            if let lease { await resourceAdmission?.policy.releaseJob(lease) }
+            throw error
         }
     }
 
@@ -108,15 +134,7 @@ actor LocalCLIService {
     /// button. Returns trimmed stdout (or throws a safe status diagnostic).
     func runTest(config: LocalCLIConfig) async throws -> String {
         let sample = "Reply with a short confirmation that you received this prompt."
-        let output = try await Self.runShellCommand(
-            config.executionCommand,
-            systemPrompt: sample,
-            userPrompt: sample,
-            fullPrompt: sample,
-            timeoutSeconds: config.timeoutSeconds,
-            effort: config.effort,
-            effortProvider: config.effortProvider
-        )
+        let output = try await executeCommand(config: config,system: sample,user: sample,fullPrompt: sample)
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

@@ -98,7 +98,7 @@ actor LiveASROrchestrator {
         case .begin(let input):
             if let begin { return begin == input && beginRequestID == requestID ? .accepted : .rejected(.closed) }
             guard !closed, input.isValid, input.epochs.count <= epochLimit else { return .rejected(.invalidConfiguration) }
-            // Production does not supply this trusted configured consumer.
+            // Configured sessions require the trusted read-only native consumer.
             guard input.vad == nil || vadLoader != nil else { return .rejected(.unavailable) }
             begin = input; beginRequestID = requestID
             for epoch in input.epochs {

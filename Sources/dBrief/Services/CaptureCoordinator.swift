@@ -14,6 +14,8 @@ final class CaptureCoordinator {
         var acousticEchoCancellation = true
         var echoSuppression = false
         var liveTranscription = false
+        var liveEngine: LiveTranscriptionEngine = .appleSpeech
+        var nemotronSelection: LiveNemotronSelection? = nil
         var language = ""
         var associatedApp: String? = nil
         var callBundleID: String? = nil
@@ -309,7 +311,11 @@ final class CaptureCoordinator {
     }
 
     private func prepareDerivative(_ owned: Attempt) {
-        guard owned.request.liveTranscription, let prepared = derivative.prepare(owned.request) else { return }
+        guard owned.request.liveTranscription else { return }
+        guard let prepared = derivative.prepare(owned.request) else {
+            if owned.request.liveEngine == .nemotron { owned.derivativeUnavailable = true }
+            return
+        }
         let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
         let ingress = prepared.ingress
         let language = LiveASRConfiguration.Language(rawValue: owned.request.language.isEmpty ? "auto" : owned.request.language)

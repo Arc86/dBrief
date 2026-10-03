@@ -104,6 +104,7 @@ final class TranscriptChatService {
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService: AIService
+    private let resourceAdmission: LiveModelJobAdmission?
     private let privacyRecording: Recording?
 
     /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
@@ -155,6 +156,7 @@ final class TranscriptChatService {
         self.speakerLabels = speakerLabels
         self.appSettings = appSettings
         self.localPlugin = localPlugin
+        self.resourceAdmission = localPlugin?.connection.resourceAdmission
         self.privacyRecording = recording
         self.aiService = aiService
         Self.activeServices.removeAll { $0.value == nil }
@@ -372,8 +374,12 @@ final class TranscriptChatService {
             : appSettings.effectiveAIEngine
         guard engine == .appleIntelligence else { return }
         #if canImport(FoundationModels)
-        if #available(macOS 26, *) {
-            LanguageModelSession().prewarm()
+        let resources = resourceAdmission?.policy
+        Task { @MainActor in
+            // prewarm has no awaitable native-return receipt. An immutable
+            // eligible live catalog therefore disables this optional operation.
+            guard await resources?.hasProfiles != true else { return }
+            if #available(macOS 26, *) { LanguageModelSession().prewarm() }
         }
         #endif
     }
@@ -401,9 +407,17 @@ final class TranscriptChatService {
         case .appleIntelligence:
             #if canImport(FoundationModels)
             if #available(macOS 26, *) {
+                let permit: LiveResourceJobLease?
+                do { permit = try await resourceAdmission?.acquire(owner: UUID(),job: .localChat(model: "apple-intelligence"),wait: false) }
+                catch { return AsyncThrowingStream { $0.finish(throwing: error) } }
+                let resources = resourceAdmission?.policy
                 return AsyncThrowingStream { continuation in
                     let task = Task {
+                        // The producer owns admission through actual respond return,
+                        // even when the consumer cancels or the view disappears.
+                        defer { if let permit { Task { await resources?.releaseJob(permit) } } }
                         do {
+                            try Task.checkCancellation()
                             let session = LanguageModelSession(instructions: systemPrompt)
                             let options = GenerationOptions(temperature: 0.5)
                             let response = try await PrivacyTrace.perform(.init(stage: .chat, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {

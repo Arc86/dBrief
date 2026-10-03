@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import dBriefWire
 
 // Test-only helper that speaks the frame protocol with canned behavior.
@@ -19,16 +20,41 @@ func flag(_ key: String, default name: String) -> URL {
 }
 let crashFlag = flag("STUB_FLAG_1", default: "stub_crashed")
 
+// The retirement regression controls physical exit separately from SIGTERM
+// and pipe EOF, so an obsolete wait cannot masquerade as a current receipt.
+var retirementExit: URL?
+if mode == "retirement-phases" {
+    signal(SIGTERM,SIG_IGN)
+    let counter = flag("STUB_FLAG_1",default: "stub_retirement_phase")
+    let phase = (Int((try? String(contentsOf: counter,encoding: .utf8)) ?? "") ?? 0) + 1
+    try? Data(String(phase).utf8).write(to: counter,options: .atomic)
+    let exitFlag = URL(fileURLWithPath: flag("STUB_FLAG_2",default: "stub_retirement_exit").path + String(phase))
+    retirementExit = exitFlag
+    // Failed fixture control-file writes must not leave an immortal child.
+    // The normal held-exit assertions finish well before this safety bound.
+    let watchdog = Date().addingTimeInterval(30)
+    Thread.detachNewThread {
+        while !FileManager.default.fileExists(atPath: exitFlag.path), Date() < watchdog { Thread.sleep(forTimeInterval: 0.01) }
+        exit(0)
+    }
+}
+
 // closes-after-unload: like the real helper, `.forceUnload` drains and closes
 // admission, but the process stays alive and rejects every later request.
 var admissionClosed = false
 var interleavedProgressRequests: [RequestEnvelope] = []
 var previousProgressRequest: UUID?
+var dispatchBatch: [RequestEnvelope] = []
 var reader = FrameReader()
 var liveStub = LiveHelperStub(mode: mode)
 while true {
     let chunk = FileHandle.standardInput.availableData
-    if chunk.isEmpty { break }
+    if chunk.isEmpty {
+        if let retirementExit {
+            while !FileManager.default.fileExists(atPath: retirementExit.path) { Thread.sleep(forTimeInterval: 0.01) }
+        }
+        break
+    }
     reader.append(chunk)
     for frame in reader.drainFrames() {
         guard let env = try? JSONDecoder().decode(RequestEnvelope.self, from: frame) else { continue }
@@ -49,6 +75,24 @@ while true {
             }
         }
         switch mode {
+        case "dispatch-batch":
+            if case .cancel = env.request { continue }
+            let released = flag("STUB_FLAG_1",default: "stub_batch_released")
+            if !FileManager.default.fileExists(atPath: released.path) {
+                dispatchBatch.append(env)
+                guard dispatchBatch.count == 128 else { continue }
+                try? Data().write(to: flag("STUB_FLAG_2",default: "stub_batch_waiting"))
+                let deadline = Date().addingTimeInterval(15)
+                while !FileManager.default.fileExists(atPath: released.path), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+                for request in dispatchBatch {
+                    send(.init(id: request.id,channel: .plugin,event: .voidResult))
+                    send(.init(id: request.id,channel: .plugin,event: .finished))
+                }
+                dispatchBatch.removeAll()
+            } else {
+                send(.init(id: env.id,channel: .plugin,event: .voidResult))
+                send(.init(id: env.id,channel: .plugin,event: .finished))
+            }
         case "interleaved-progress":
             if case .cancel = env.request { continue }
             interleavedProgressRequests.append(env)
@@ -149,6 +193,11 @@ while true {
                 send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
             }
         case "chat-across-live-stop":
+            guard case .chatStream = env.request else {
+                send(.init(id: env.id,channel: .plugin,event: .voidResult))
+                send(.init(id: env.id,channel: .plugin,event: .finished))
+                continue
+            }
             send(.init(id: env.id,channel: .plugin,event: .token("Fixture started")))
             let completionFlag = flag("STUB_FLAG_1",default: "stub_chat_completion")
             let deadline = Date().addingTimeInterval(10)

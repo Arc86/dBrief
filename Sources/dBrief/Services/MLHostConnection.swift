@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import dBriefWire
 
-enum MLHostError: Error, Equatable {
+enum MLHostError: Error, Equatable, LocalizedError {
     case helperCrashed
     case helperUnavailable
     /// A request's terminal `.finished` arrived before any value-bearing event —
@@ -11,6 +11,16 @@ enum MLHostError: Error, Equatable {
     /// continuation that hangs the caller forever.
     case protocolViolation
     case liveDeadline
+    case resourceDeferred
+    var errorDescription: String? {
+        switch self {
+        case .resourceDeferred: "Local chat is waiting for live transcription to free memory. Try again after recording stops."
+        case .helperCrashed: "The local AI helper stopped unexpectedly."
+        case .helperUnavailable: "The local AI helper is unavailable."
+        case .protocolViolation: "The local AI helper returned an invalid response."
+        case .liveDeadline: "Live transcription did not finish before its deadline."
+        }
+    }
 }
 
 enum MLHostRole: Sendable { case ordinary, live }
@@ -22,6 +32,13 @@ actor MLHostConnection {
     private let supportBase: URL
     private let extraEnvironment: [String: String]
     private let role: MLHostRole
+    private let terminationDelivery: @Sendable () async -> Void
+    private let retirementWaitDelivery: (@Sendable () async -> Void)?
+    nonisolated let resourceAdmission: LiveModelJobAdmission?
+    private var ordinaryGeneration = UUID()
+    private var nativeJobs: [UUID:MLNativeJobOwnership] = [:]
+    private var activeNativeJobs: Set<UUID> = []
+    private var ordinaryRetirement: Task<Void,Never>?
 
     private var process: Process?
     private var stdinHandle: FileHandle?
@@ -50,11 +67,15 @@ actor MLHostConnection {
     // Per-channel state stream continuations (vended to the proxies).
     private var stateContinuations: [MLChannel: AsyncStream<LocalAIPluginState>.Continuation] = [:]
 
-    init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:], role: MLHostRole = .ordinary) {
+    init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:], role: MLHostRole = .ordinary,
+         resourceAdmission: LiveModelJobAdmission? = nil, terminationDelivery: @escaping @Sendable () async -> Void = {},
+         retirementWaitDelivery: (@Sendable () async -> Void)? = nil) {
         self.binaryURL = binaryURL
         self.supportBase = supportBase
         self.extraEnvironment = environment
-        self.role = role
+        self.role = role; self.resourceAdmission = role == .ordinary ? resourceAdmission : nil
+        self.terminationDelivery = terminationDelivery
+        self.retirementWaitDelivery = retirementWaitDelivery
     }
 
     private var liveReader = LiveFrameReader()
@@ -153,7 +174,8 @@ actor MLHostConnection {
     func call(_ request: MLRequest) async throws -> MLEvent {
         guard role == .ordinary else { throw MLHostError.protocolViolation }
         if case .live = request { throw MLHostError.protocolViolation }
-        try ensureRunning()
+        let id = UUID()
+        try await admitOrdinary(request,id: id)
         let expectsEvidence: Bool = switch request {
         case .transcribe: true
         case .diarize, .diarizeWithEmbeddings: true
@@ -163,7 +185,6 @@ actor MLHostConnection {
         let trace = expectsEvidence ? PrivacyTrace.context.map { PrivacyMLTrace(context: $0) } : nil
         let progress = MLProgress.sink
         do {
-            let id = UUID()
             let result = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MLEvent, Error>) in
                 let resolved = ResolveOnce()
                 pending[id] = Pending(
@@ -195,15 +216,17 @@ actor MLHostConnection {
     }
 
     /// Stream tokens for `analyzeStream`/`chatStream`.
-    func stream(_ request: MLRequest) -> AsyncThrowingStream<String, Error> {
+    func stream(_ request: MLRequest) async -> AsyncThrowingStream<String, Error> {
+        let id = UUID()
+        do {
+            guard role == .ordinary else { throw MLHostError.protocolViolation }
+            if case .live = request { throw MLHostError.protocolViolation }
+            try await admitOrdinary(request,id: id)
+        } catch { return AsyncThrowingStream { $0.finish(throwing: error) } }
         let progress = MLProgress.sink
         return AsyncThrowingStream { continuation in
             guard role == .ordinary else { continuation.finish(throwing: MLHostError.protocolViolation); return }
             if case .live = request { continuation.finish(throwing: MLHostError.protocolViolation); return }
-            let id = UUID()
-            do { try ensureRunning() } catch {
-                continuation.finish(throwing: error); return
-            }
             pending[id] = Pending(
                 onEvent: { event in
                     switch event {
@@ -225,8 +248,7 @@ actor MLHostConnection {
 
     func shutdown() {
         if role == .live { failLive(MLHostError.helperCrashed); return }
-        process?.terminate()
-        process = nil
+        retireOrdinaryProcess()
         stdinHandle = nil
         ingestContinuation?.finish()
         ingestContinuation = nil
@@ -247,11 +269,96 @@ actor MLHostConnection {
         retiredLiveProcesses.removeAll { child in retired.contains { $0 === child } }
     }
 
+    /// Freeze process generation around the policy await. A late reservation
+    /// cannot dispatch into a child whose idle retirement has already begun.
+    private func admitOrdinary(_ request: MLRequest,id: UUID) async throws {
+        while true {
+            try Task.checkCancellation()
+            if let child = process, !child.isRunning { handleTermination(of: child) }
+            if nativeJobs.count >= 96, pending.isEmpty, activeNativeJobs.isEmpty { retireOrdinaryProcess() }
+            let generation = ordinaryGeneration
+            if let retirement = ordinaryRetirement {
+                await retirement.value
+                await retirementWaitDelivery?()
+            }
+            guard generation == ordinaryGeneration else { continue }
+            let lease = try await resourceAdmission?.acquire(owner: id,request: request)
+            guard generation == ordinaryGeneration, !Task.isCancelled else {
+                if let lease { await resourceAdmission?.policy.releaseJob(lease) }
+                try Task.checkCancellation(); continue
+            }
+            do { try ensureRunning() }
+            catch { if let lease { await resourceAdmission?.policy.releaseJob(lease) }; throw error }
+            if let lease, let process, let resourceAdmission {
+                nativeJobs[id] = .init(lease: lease,process: process,policy: resourceAdmission.policy)
+                activeNativeJobs.insert(id)
+            }
+            return
+        }
+    }
+
+    func prepareForLiveCapture() async {
+        guard role == .ordinary else { return }
+        while true {
+            guard pending.isEmpty, activeNativeJobs.isEmpty else { return }
+            if process != nil { retireOrdinaryProcess() }
+            let generation = ordinaryGeneration
+            if let retirement = ordinaryRetirement {
+                await retirement.value
+                await retirementWaitDelivery?()
+            }
+            guard generation == ordinaryGeneration else { continue }
+            // Another waiter may have used the same completed retirement to
+            // launch a child. Recheck its actual work and residency before return.
+            guard pending.isEmpty, activeNativeJobs.isEmpty else { return }
+            if process != nil { continue }
+            return
+        }
+    }
+
+    private func ordinaryRequestFinished(_ id: UUID) {
+        activeNativeJobs.remove(id)
+        // Already-waiting successors cannot return to the admission threshold
+        // check until these retained permits are released. Rotate on the last
+        // actual completion as well as on a later, newly arriving request.
+        if nativeJobs.count >= 96, pending.isEmpty, activeNativeJobs.isEmpty {
+            retireOrdinaryProcess(); return
+        }
+        guard let admission = resourceAdmission else { return }
+        let generation = ordinaryGeneration
+        Task { [weak self] in
+            guard await admission.policy.hasCaptureReservation else { return }
+            await self?.retireOrdinaryIfIdle(generation: generation)
+        }
+    }
+    private func retireOrdinaryIfIdle(generation: UUID) {
+        guard generation == ordinaryGeneration, pending.isEmpty, activeNativeJobs.isEmpty else { return }
+        retireOrdinaryProcess()
+    }
+    private func retireOrdinaryProcess() {
+        ordinaryGeneration = UUID()
+        let child = process; process = nil
+        stdinHandle = nil
+        ingestContinuation?.finish(); ingestContinuation = nil
+        let receipts = nativeJobs.values.filter { child == nil || $0.process === child }
+        for receipt in receipts { nativeJobs[receipt.lease.owner] = nil; activeNativeJobs.remove(receipt.lease.owner) }
+        if let child, child.isRunning { child.terminate() }
+        let previous = ordinaryRetirement
+        ordinaryRetirement = Task {
+            await previous?.value
+            for receipt in receipts { await receipt.retire().value }
+            if let child { await Task.detached { child.waitUntilExit() }.value }
+        }
+    }
+
     // MARK: process lifecycle
 
     private func ensureRunning() throws {
         if process?.isRunning == true { return }
         if role == .live, liveUsed { throw MLHostError.helperCrashed }
+        // Foundation's termination callback may still be queued. Settle the
+        // exited owner's callers before replacing the process dictionary owner.
+        if let exited = process, role == .ordinary { handleTermination(of: exited) }
         let proc = Process()
         proc.executableURL = binaryURL
         proc.arguments = (role == .live ? ["--nemotron-live"] : []) + ["--support-base", supportBase.path]
@@ -267,7 +374,7 @@ actor MLHostConnection {
         let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: role == .live ? .bufferingOldest(8) : .unbounded)
         self.ingestContinuation = continuation
         Task { [weak self] in
-            for await data in stream { await self?.ingest(data) }
+            for await data in stream { await self?.ingest(data,from: proc) }
         }
         if role == .live {
             let latch = LiveReadFailureLatch()
@@ -288,12 +395,15 @@ actor MLHostConnection {
                 continuation.yield(data)
             }
         }
+        let terminationDelivery = terminationDelivery
         proc.terminationHandler = { [weak self] exited in
-            Task { await self?.handleTermination(of: exited) }
+            Task { await terminationDelivery(); await self?.handleTermination(of: exited) }
         }
         do {
             try proc.run()
         } catch {
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            continuation.finish(); ingestContinuation = nil
             throw MLHostError.helperUnavailable
         }
         self.process = proc
@@ -311,7 +421,8 @@ actor MLHostConnection {
         write(RequestEnvelope(id: id, request: request))
     }
 
-    private func ingest(_ data: Data) {
+    private func ingest(_ data: Data,from child: Process) {
+        guard child === process else { return }
         if role == .live { ingestLive(data); return }
         reader.append(data)
         for frame in reader.drainFrames() {
@@ -333,7 +444,9 @@ actor MLHostConnection {
             if let p = pending[env.id] {
                 p.onEvent(env.event)
                 switch env.event {
-                case .finished, .error: pending[env.id] = nil
+                case .finished, .error:
+                    pending[env.id] = nil
+                    ordinaryRequestFinished(env.id)
                 default: break
                 }
             }
@@ -341,14 +454,18 @@ actor MLHostConnection {
     }
 
     private func handleTermination(of exited: Process) {
+        let owned = nativeJobs.filter { $0.value.process === exited }
+        for (id,receipt) in owned { activeNativeJobs.remove(id); nativeJobs[id] = nil; receipt.retire() }
         // A retired helper can exit after its replacement launched; only the
         // current process's exit may clear state and fail pending requests.
         guard exited === process else { return }
         if role == .live { failLive(MLHostError.helperCrashed); return }
+        ordinaryGeneration = UUID()
         let dead = pending
         pending.removeAll()
         process = nil
         stdinHandle = nil
+        ingestContinuation?.finish(); ingestContinuation = nil
         for (_, p) in dead { p.onCrash(MLHostError.helperCrashed) }
     }
 

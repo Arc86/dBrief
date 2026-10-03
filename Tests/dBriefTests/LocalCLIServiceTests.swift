@@ -6,6 +6,11 @@ import Foundation
 /// stdin delivery, stdout capture, timeout, and non-zero-exit handling.
 struct LocalCLIServiceTests {
 
+    @Test func settingsTestPreservesItsOriginalSingleSamplePayload() async throws {
+        let output = try await LocalCLIService().runTest(config: .init(command: "printf '%s' \"$DBRIEF_FULL_PROMPT\"",timeoutSeconds: 10))
+        #expect(output == "Reply with a short confirmation that you received this prompt.")
+    }
+
     @Test("Full prompt is exported as an environment variable")
     func fullPromptInEnvironment() async throws {
         let output = try await LocalCLIService.runShellCommand(

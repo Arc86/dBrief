@@ -80,6 +80,7 @@ actor LiveCaptureStartPreparation {
     nonisolated let resources: LiveModelResourcePolicy
     private nonisolated let state = State()
     private nonisolated let id = UUID()
+    private nonisolated let vadAssets: LiveVADAssetPreparation?
     private nonisolated let asrAssets: LiveASRModelAssets?
     private nonisolated let validASRBinding: Bool
     private let privacyScope: RecordingPrivacyScope
@@ -96,25 +97,26 @@ actor LiveCaptureStartPreparation {
          currentMemory: @escaping @Sendable () async throws -> LiveResourceMeasurement,
          context: @escaping @Sendable (RecordingPrivacyScope,UUID) async -> PrivacyTrace.Context = { await $0.context(runID: $1) },
          beginReceipt: @escaping @Sendable (PrivacyOperation,PrivacyTrace.Context) async -> PrivacyTrace.Token? = { await PrivacyTrace.begin($0,in: $1) },
-         asrAssets: LiveASRModelAssets? = nil) {
+         asrAssets: LiveASRModelAssets? = nil, vadAssets: LiveVADAssetPreparation? = nil) {
         self.input = input; self.ingress = ingress; self.resources = resources
         self.privacyScope = privacyScope; self.runID = runID; self.request = request
         self.cacheCheck = cacheCheck; self.currentMemory = currentMemory
         self.context = context; self.beginReceipt = beginReceipt
-        self.asrAssets = asrAssets
+        self.asrAssets = asrAssets; self.vadAssets = vadAssets
         validASRBinding = request.asr == input.configuration.identity &&
-            (input.configuration.identity == nil ? asrAssets == nil : asrAssets?.configuration == input.configuration)
+            (input.configuration.identity == nil ? asrAssets == nil : asrAssets?.configuration == input.configuration) &&
+            (input.vad == nil ? vadAssets == nil : vadAssets?.configuration == input.vad)
     }
 
     nonisolated func bind(to owner: UUID) -> Bool {
-        validASRBinding && state.bind(owner) && (asrAssets?.bind(to: id) ?? true)
+        validASRBinding && state.bind(owner) && (asrAssets?.bind(to: id) ?? true) && (vadAssets?.bind(to: id) ?? true)
     }
 
     /// Terminal reservation is synchronous; resource return and persistence are
     /// independent of cancellation-ignoring preflight and late token arrival.
     @discardableResult nonisolated func complete(_ outcome: PrivacyAttempt.Outcome, owner: UUID? = nil) -> Task<Void, Never>? {
         guard let (lease,completion,first,retirePendingAssets) = state.complete(outcome,owner: owner) else { return nil }
-        if retirePendingAssets { asrAssets?.retire(owner: id) }
+        if retirePendingAssets { asrAssets?.retire(owner: id); vadAssets?.retire(owner: id) }
         let resources = self.resources
         return Task {
             if let lease { await resources.release(lease) }
@@ -127,7 +129,7 @@ actor LiveCaptureStartPreparation {
               request.chunkMs == input.configuration.chunkMs, request.sourceCount == input.epochs.count,
               request.vad == input.vad, !request.attributionRequested,
               input.epochs.allSatisfy({ $0.engineRevision == request.modelRevision }),
-              state.begin(owner), asrAssets?.bind(to: id) ?? true else { throw LiveProtocolError.invalidConfiguration }
+              state.begin(owner), asrAssets?.bind(to: id) ?? true, vadAssets?.bind(to: id) ?? true else { throw LiveProtocolError.invalidConfiguration }
         var admitted: LiveResourceLease?
         do {
             try check(owner)
@@ -136,6 +138,12 @@ actor LiveCaptureStartPreparation {
             try check(owner)
             guard matches(context) else { throw LiveProtocolError.invalidConfiguration }
             if let asrAssets { try await asrAssets.prepare(owner: id); try check(owner) }
+            if let vadAssets {
+                do { try await vadAssets.prepare(owner: id) }
+                catch is CancellationError { throw CancellationError() }
+                catch { vadAssets.markUnavailable(owner: id) }
+                try check(owner)
+            }
             try await cacheCheck(input); try check(owner)
             let token = await resources.measurementToken(); try check(owner)
             let measurement = try await currentMemory(); try check(owner)
@@ -164,6 +172,7 @@ actor LiveCaptureStartPreparation {
         guard matches(prepared,owner: owner) else { throw LiveProtocolError.invalidConfiguration }
         try check(owner)
         if let asrAssets { _ = try asrAssets.snapshot(owner: id).validateCurrentPath(); try check(owner) }
+        try vadAssets?.validate(owner: id); try check(owner)
         let token = await resources.measurementToken(); try check(owner)
         let measurement = try await currentMemory(); try check(owner)
         try await resources.validatePreparedStart(prepared.lease,measurement: measurement,token: token)
@@ -174,6 +183,7 @@ actor LiveCaptureStartPreparation {
     /// cleanup authority out of pending state; only native shutdown returns it.
     nonisolated func claimTransfer(_ prepared: Prepared, owner: UUID) -> Bool {
         matches(prepared,owner: owner) && (asrAssets.map { (try? $0.snapshot(owner: id)) != nil } ?? true) &&
+            ((try? vadAssets?.validate(owner: id)) != nil || vadAssets == nil) &&
             state.claim(prepared.lease,owner: owner,ingress: ingress)
     }
 
@@ -181,7 +191,9 @@ actor LiveCaptureStartPreparation {
     /// retire native assets. Privacy completion has no such authority.
     @discardableResult nonisolated func retireNativeAssets(owner: UUID) -> Task<Void,Never>? {
         guard state.retireNativeAssets(owner: owner) else { return nil }
-        return asrAssets?.retire(owner: id)
+        let asr = asrAssets?.retire(owner: id), vad = vadAssets?.retire(owner: id)
+        guard asr != nil || vad != nil else { return nil }
+        return Task { await asr?.value; await vad?.value }
     }
 
     private nonisolated func matches(_ prepared: Prepared, owner: UUID?) -> Bool {
