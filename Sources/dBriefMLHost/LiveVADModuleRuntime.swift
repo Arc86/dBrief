@@ -60,10 +60,26 @@ struct LiveVADRuntimeSeal: Sendable {
     let receipt: LiveVADRuntimeRetirement
 }
 
+/// Created only after the runtime's matching cleanup actually returns. This
+/// proves VAD-owned input, excluding the original packet, ASR and fixed pool.
+struct LiveVADInputRetiredProof: Sendable, Equatable {
+    let scope: LiveLaneScope
+    let runtimeOwnerID: UUID
+    fileprivate let phaseID: UUID
+    let processedEnd: Int64
+    let nativeFailureSeen: Bool
+    fileprivate init(scope: LiveLaneScope, runtimeOwnerID: UUID, phaseID: UUID,
+                     processedEnd: Int64, nativeFailureSeen: Bool) {
+        self.scope = scope; self.runtimeOwnerID = runtimeOwnerID; self.phaseID = phaseID
+        self.processedEnd = processedEnd; self.nativeFailureSeen = nativeFailureSeen
+    }
+}
+
 /// One fixed pool per helper lifetime. Source input has separate continuity and
 /// retirement; no model is unloaded/reloaded when a source fails or is replaced.
 /// These private results neither sequence wire frames nor release common credit.
 actor LiveVADModuleRuntime {
+    nonisolated let ownerID = UUID()
     private struct Work: Sendable {
         let token: LiveVADRuntimeToken
         let task: Task<LiveVADNativeWorkOutcome, Never>
@@ -236,18 +252,24 @@ actor LiveVADModuleRuntime {
         let receipt = retirement(for: &source); sources[scope.source] = source
         return .init(contextID: source.contextID,processedEnd: source.processedEnd,firstSeal: first,receipt: receipt)
     }
-    func settleRetirement(_ receipt: LiveVADRuntimeRetirement) async throws {
+    @discardableResult
+    func settleRetirement(_ receipt: LiveVADRuntimeRetirement) async throws -> LiveVADInputRetiredProof {
         guard try source(receipt.scope).retirement === receipt else { throw LiveProtocolError.staleScope }
         await receipt.wait() // Cancellation never substitutes for actual return.
         var source = try source(receipt.scope)
         guard source.retirement === receipt else { throw LiveProtocolError.staleScope }
-        if source.inputRetired { return }
+        if source.inputRetired { return inputProof(source,receipt: receipt) }
         if let work = source.work {
             guard work.token.id == receipt.workID else { throw LiveProtocolError.staleScope }
         }
         source.window = nil; source.policy = nil; source.work = nil; source.remainder = []
         source.bufferedEnd = source.processedEnd; source.inputRetired = true
         sources[receipt.scope.source] = source
+        return inputProof(source,receipt: receipt)
+    }
+    private func inputProof(_ source: Source, receipt: LiveVADRuntimeRetirement) -> LiveVADInputRetiredProof {
+        .init(scope: source.scope,runtimeOwnerID: ownerID,phaseID: receipt.id,
+              processedEnd: source.processedEnd,nativeFailureSeen: source.nativeFailureSeen)
     }
     /// The enclosing owner must separately join actual ASR/original-packet
     /// Work before accepting a wire replacement; this checks VAD input only.
