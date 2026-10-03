@@ -117,7 +117,7 @@ final class CaptureCoordinator {
         }
     }
     @MainActor private final class Attempt {
-        let request: Request
+        var request: Request
         var session: CaptureSessionStore.Session?
         var startup: Task<Void, Error>?
         var terminal: Task<Void, Never>?
@@ -126,6 +126,9 @@ final class CaptureCoordinator {
         var previewStart: Task<Void, Never>?
         var previewStop: Task<Void, Never>?
         var derivative: CaptureLiveDerivative.Session?
+        var preparedDerivative: CaptureLiveDerivative.Prepared?
+        var derivativeUnavailable = false
+        var derivativeBegan = false
         var statusClear: Task<Void, Never>?
         var isActive = false
         var isPaused = false
@@ -204,10 +207,17 @@ final class CaptureCoordinator {
         }
     }
 
-    func stop(terminating: Bool = false) async {
+    /// Latch intent synchronously from controls or an injected callback. The
+    /// shared terminal owner performs hardware/storage work independently.
+    func requestStop(terminating: Bool = false) {
         if terminating { isTerminating = true }
         guard let owned = attempt else { return }
-        await terminalTask(owned).value
+        _ = terminalTask(owned)
+    }
+
+    func stop(terminating: Bool = false) async {
+        requestStop(terminating: terminating)
+        await attempt?.terminal?.value
     }
 
     func pause() {
@@ -251,32 +261,94 @@ final class CaptureCoordinator {
     private func startOwned(_ owned: Attempt) async throws {
         let session = try await persistence.create(owned.request.id, owned.request.startedAt)
         owned.session = session
+        if !owned.wantsStop { prepareDerivative(owned) }
         onEvent(.prepared(owned.request, session))
         guard !owned.wantsStop else { return }
         hardware.bindEvents { [weak self, weak owned] event in
             guard let self, let owned else { return }
             self.receiveHardware(event, owned: owned)
         }
+        guard !owned.wantsStop else { return }
         owned.hardwareDispatched = true
         let streams = try await hardware.start(owned.request, session.files.captureBaseURL)
         guard !owned.wantsStop else { return }
         let state = hardware.snapshot()
         try await persistence.began(session, state)
         guard !owned.wantsStop else { return }
+        if let prepared = owned.preparedDerivative {
+            registerPrepared(prepared,owned: owned,streams: streams,state: state)
+            guard !owned.wantsStop else { return }
+        }
         owned.isActive = true
         onEvent(.started(owned.request))
         guard !owned.wantsStop else { return }
+        if owned.request.liveTranscription, owned.derivativeUnavailable {
+            onEvent(.status(owned.request.id,"Live transcription unavailable")); return
+        }
+        if owned.preparedDerivative != nil {
+            owned.derivativeBegan = true
+            onEvent(.liveBegan(owned.request.id)); return
+        }
         if owned.request.liveTranscription, let streams {
             if let live = derivative.make(owned.request,session) {
                 let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
                 guard live.identity == identity else {
-                    live.expire(); onEvent(.status(owned.request.id,"Live transcription unavailable")); return
+                    live.expire()
+                    if !owned.wantsStop { onEvent(.status(owned.request.id,"Live transcription unavailable")) }
+                    return
                 }
-                owned.derivative = live
+                adoptDerivative(live,owned: owned)
+                guard !owned.wantsStop else { return }
                 live.register(.init(mic: state.microphoneEnabled ? streams.mic : nil,
                     system: state.systemAudioEnabled ? streams.system : nil,language: owned.request.language))
+                guard !owned.wantsStop else { return }
+                owned.derivativeBegan = true
                 onEvent(.liveBegan(owned.request.id))
-            } else { startPreview(owned,streams: streams,state: state) }
+            } else if !owned.wantsStop { startPreview(owned,streams: streams,state: state) }
+        }
+    }
+
+    private func prepareDerivative(_ owned: Attempt) {
+        guard owned.request.liveTranscription, let prepared = derivative.prepare(owned.request) else { return }
+        let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
+        let ingress = prepared.ingress
+        let language = LiveASRConfiguration.Language(rawValue: owned.request.language.isEmpty ? "auto" : owned.request.language)
+        guard prepared.session.identity == identity, ingress.input.identity == identity,
+              ingress.matches(ingress.input), prepared.session.ingress === ingress,
+              prepared.session.registerPrepared != nil, language == ingress.input.configuration.language,
+              owned.request.liveIngress == nil || owned.request.liveIngress === ingress else {
+            // A foreign return is never permission to retire its owner.
+            owned.derivativeUnavailable = true; return
+        }
+        owned.preparedDerivative = prepared
+        owned.request.liveIngress = ingress
+        adoptDerivative(prepared.session,owned: owned)
+    }
+
+    private func adoptDerivative(_ session: CaptureLiveDerivative.Session, owned: Attempt) {
+        owned.derivative = session
+        // A synchronous factory can latch Stop before returning. The cached
+        // terminal task saw no derivative, so adopt only for exact cleanup.
+        if owned.wantsStop {
+            let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
+            if owned.request.liveIngress?.input.identity == identity { owned.request.liveIngress?.closeInput() }
+            session.beginClosing()
+        }
+    }
+
+    private func registerPrepared(_ prepared: CaptureLiveDerivative.Prepared, owned: Attempt,
+                                  streams: LiveStreams?, state: CaptureSessionStore.CaptureState) {
+        let inputs = CaptureLivePreview.Inputs(mic: state.microphoneEnabled ? streams?.mic : nil,
+            system: state.systemAudioEnabled ? streams?.system : nil,language: prepared.ingress.input.configuration.language.rawValue)
+        var sources: Set<LiveSource> = []
+        if inputs.mic != nil { sources.insert(.microphone) }
+        if inputs.system != nil { sources.insert(.system) }
+        let accepted = sources == Set(prepared.ingress.input.epochs.map(\.source)) &&
+            prepared.session.registerPrepared?(inputs) == true
+        guard !owned.wantsStop else { return }
+        if !accepted {
+            owned.derivativeUnavailable = true
+            prepared.session.expire()
         }
     }
 
@@ -304,9 +376,15 @@ final class CaptureCoordinator {
 
     private func startPreview(_ owned: Attempt, streams: LiveStreams, state: CaptureSessionStore.CaptureState) {
         let session = preview.make(), prepare = preview.prepare
+        owned.preview = session
+        // A synchronous factory may latch Stop before returning its session.
+        // Its late return still belongs to the cached terminal cleanup.
+        if owned.wantsStop {
+            owned.previewStop = Task { await session.stop() }
+            return
+        }
         let input = CaptureLivePreview.Inputs(mic: state.microphoneEnabled ? streams.mic : nil,
             system: state.systemAudioEnabled ? streams.system : nil, language: owned.request.language)
-        owned.preview = session
         owned.previewStart = Task { @MainActor [weak self, weak owned] in
             guard !Task.isCancelled, let self, let owned, self.acceptsEvents(owned) else { return }
             let context = await prepare(owned.request)
@@ -330,23 +408,6 @@ final class CaptureCoordinator {
         guard attempt === owned else { return Task {} }
         owned.wantsStop = true
         isStopping = true
-        hardware.bindEvents(nil)
-        let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
-        if owned.request.liveIngress?.input.identity == identity { owned.request.liveIngress?.closeInput() }
-        owned.statusClear?.cancel()
-        owned.statusClear = nil
-        if let derivative = owned.derivative {
-            derivative.beginClosing()
-            onEvent(.liveEnded(owned.request.id))
-        }
-        owned.previewStart?.cancel()
-        if let preview = owned.preview {
-            // Latch the service stopped promptly, even if receipt preparation is
-            // cancellation-ignoring. Join both below before releasing admission.
-            owned.previewStop = Task { await preview.stop() }
-            onEvent(.liveEnded(owned.request.id))
-        }
-        onEvent(.status(owned.request.id, nil))
         let terminal = Task { @MainActor in
             _ = await owned.startup?.result
             if owned.hardwareDispatched { await self.hardware.stop() }
@@ -381,7 +442,26 @@ final class CaptureCoordinator {
                 self.isStopping = false
             }
         }
+        // Publish the shared owner before any callback can synchronously ask
+        // for Stop again. Its MainActor body starts after this call yields.
         owned.terminal = terminal
+        hardware.bindEvents(nil)
+        let identity = LiveSessionIdentity(recordingID: owned.request.id,captureSessionID: owned.request.captureSessionID)
+        if owned.request.liveIngress?.input.identity == identity { owned.request.liveIngress?.closeInput() }
+        owned.statusClear?.cancel()
+        owned.statusClear = nil
+        if let derivative = owned.derivative {
+            derivative.beginClosing()
+            if owned.derivativeBegan { onEvent(.liveEnded(owned.request.id)) }
+        }
+        owned.previewStart?.cancel()
+        if let preview = owned.preview {
+            // Latch the service stopped promptly, even if receipt preparation is
+            // cancellation-ignoring. Join both below before releasing admission.
+            owned.previewStop = Task { await preview.stop() }
+            onEvent(.liveEnded(owned.request.id))
+        }
+        onEvent(.status(owned.request.id, nil))
         return terminal
     }
 

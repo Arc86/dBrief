@@ -755,11 +755,12 @@ actor LiveCaptureSessionCoordinator {
         }
         // At most 128 raw facts per registered source, separate from normalized
         // terminal settlement. Keep unknown loss even when the normal inbox fills.
-        for source in lanes.keys {
+        for source in input.epochs.map(\.source) {
             for loss in ingress?.takeLosses(source) ?? [] { publications.append(.rawLoss(loss)) }
         }
         publications.append(.close); startPublisher()
-        let transport = self.transport, resources = self.resources, lease = self.lease, ingress = self.ingress
+        let transport = self.transport, resources = self.resources, ingress = self.ingress
+        let lease = self.lease.flatMap { $0.identity == input.identity ? $0 : nil }
         Task { [weak self] in
             await transport.shutdown(); ingress?.confirmNativeRetired()
             await self?.helperDidExit()

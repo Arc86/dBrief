@@ -248,8 +248,14 @@ final class LiveCaptureStreamSession: @unchecked Sendable {
         beginClosing()
         let finalizer = lock.withLock { () -> Task<Void, Error> in
             if let finalizer = state.finalizer { return finalizer }
-            let start = state.start, consumers = state.consumers
+            let start = state.start, consumers = state.consumers, registered = state.registered
             let finalizer = Task { [self] in
+                if !registered {
+                    ingress.retireInput()
+                    await coordinator.retire()
+                    try await coordinator.waitUntilClosed()
+                    return
+                }
                 await start?.value
                 await coordinator.beginClosing()
                 for consumer in consumers { await consumer.value }
@@ -284,7 +290,8 @@ final class LiveCaptureStreamSession: @unchecked Sendable {
         },beginClosing: { [self] in beginClosing() },hardwareDidClose: { [self] in
             try? await hardwareDidClose()
         },expire: { [self] in expire() },pause: { [self] in pause() },resume: { [self] in resume() },
-          inputDeviceChanged: { [self] in inputDeviceChanged() })
+          inputDeviceChanged: { [self] in inputDeviceChanged() },ingress: ingress,
+          registerPrepared: { [self] in register($0) })
     }
 
     private func consume(source: LiveSource, mailbox: LiveCaptureSourceMailbox) async {
