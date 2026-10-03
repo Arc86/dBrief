@@ -4,10 +4,32 @@ import dBriefWire
 /// A dedicated process owns one shared immutable factory and a serial pump per
 /// source. Admission never awaits native work; no ordinary backend mutex is used.
 actor LiveASROrchestrator {
+    static let maximumEpochsPerHelper = 4096
     typealias Loader = @Sendable (LiveASRConfiguration) async throws -> any NemotronDecoderMaking
+    typealias VADLoader = @Sendable (LiveSessionBegin) async throws -> LiveVADModelFactory
     private enum State { case loading, active, retiring, paused, needsReplacement, closed }
-    private enum Command { case packet([Float], Int64), barrier(UUID, LiveFinishBarrier) }
-    private struct Work: Sendable { let scope: LiveLaneScope; let id: UUID; let task: Task<Void, Never> }
+    private final class OriginalPacket: Sendable {
+        let samples: [Float], start: Int64, receipt: LiveSharedPacketReceipt
+        let disposed: @Sendable (LiveLaneScope) -> Void
+        init(samples: [Float],start: Int64,receipt: LiveSharedPacketReceipt,disposed: @escaping @Sendable (LiveLaneScope) -> Void) {
+            self.samples = samples; self.start = start; self.receipt = receipt; self.disposed = disposed
+        }
+        deinit { disposed(receipt.scope) }
+    }
+    private enum Command { case packet([Float], Int64), configuredPacket(OriginalPacket), barrier(UUID, LiveFinishBarrier) }
+    private struct Work: Sendable {
+        let scope: LiveLaneScope; let id: UUID; let task: Task<Void, Never>; let packet: LiveSharedPacketToken?
+        init(scope: LiveLaneScope,id: UUID,task: Task<Void,Never>,packet: LiveSharedPacketToken? = nil) {
+            self.scope = scope; self.id = id; self.task = task; self.packet = packet
+        }
+    }
+    private struct RetirementResult: Sendable { let vadRetired: Bool }
+    private struct Retirement: Sendable {
+        let scope: LiveLaneScope; let id: UUID; let task: Task<RetirementResult,Never>
+    }
+    private struct Installation: Sendable {
+        let id: UUID, wireOld: LiveLaneScope, nativeFrom: LiveLaneScope, new: LiveLaneScope
+    }
     private struct Lane {
         let epoch: LiveEpoch
         var state = State.loading
@@ -22,44 +44,90 @@ actor LiveASROrchestrator {
         var generation: UUID?
         var session: NemotronDecoderSession?
         var asrInputRetired = false
+        var vadInputRetired = false, runtimeSetupPending = false
+        var nativeScope: LiveLaneScope?
+        var sharedInput: LiveSharedInputLedger?
+        var vadContext: UUID?, vadEnd: Int64 = 0
+        var vadPreparing = false, vadRetired = false, vadActivated = false
         var partialTask: Task<Void, Never>?
         var partialContinuation: AsyncStream<(UUID, String)>.Continuation?
     }
     private let loader: Loader
+    private let vadLoader: VADLoader?
     private let emit: @Sendable (LiveSessionEvent) -> Void
     private let testingBeforeRetirement: @Sendable (LiveLaneScope) async -> Void
     private let testingBeforeWorkReturn: @Sendable (LiveLaneScope) async -> Void
+    private let testingBeforeVADActivation: @Sendable (LiveLaneScope) async -> Void
+    private let testingAfterLoadingReturn: @Sendable () -> Void
+    private let epochLimit: Int
+    private let testingPacketDisposed: @Sendable (LiveLaneScope) -> Void
+    private let testingBeforeInstall: @Sendable (LiveLaneScope,LiveLaneScope) async -> Void
+    private let testingAfterInstall: @Sendable (LiveLaneScope,LiveLaneScope) async -> Void
     private var begin: LiveSessionBegin?
     private var beginRequestID: UUID?
     private var factory: (any NemotronDecoderMaking)?
     private var loading: Task<Void, Never>?
+    private var vadRuntime: LiveVADModuleRuntime?
     private var lanes: [LiveSource: Lane] = [:]
     private var works: [LiveSource: Work] = [:]
-    private var retirements: [LiveSource: Work] = [:]
+    private var retirements: [LiveSource: Retirement] = [:]
+    private var installations: [LiveSource: Installation] = [:]
     private var knownEpochs: Set<UUID> = []
     private var closed = false
 
-    init(loader: @escaping Loader, emit: @escaping @Sendable (LiveSessionEvent) -> Void,
+    init(loader: @escaping Loader, vadLoader: VADLoader? = nil, emit: @escaping @Sendable (LiveSessionEvent) -> Void,
          testingBeforeRetirement: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
-         testingBeforeWorkReturn: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in }) {
-        self.loader = loader; self.emit = emit
+         testingBeforeWorkReturn: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
+         testingBeforeVADActivation: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
+         testingAfterLoadingReturn: @escaping @Sendable () -> Void = {},
+         testingEpochLimit: Int = maximumEpochsPerHelper,
+         testingPacketDisposed: @escaping @Sendable (LiveLaneScope) -> Void = { _ in },
+         testingBeforeInstall: @escaping @Sendable (LiveLaneScope,LiveLaneScope) async -> Void = { _,_ in },
+         testingAfterInstall: @escaping @Sendable (LiveLaneScope,LiveLaneScope) async -> Void = { _,_ in }) {
+        self.loader = loader; self.vadLoader = vadLoader; self.emit = emit
         self.testingBeforeRetirement = testingBeforeRetirement; self.testingBeforeWorkReturn = testingBeforeWorkReturn
+        self.testingBeforeVADActivation = testingBeforeVADActivation
+        self.testingAfterLoadingReturn = testingAfterLoadingReturn
+        self.epochLimit = min(max(0,testingEpochLimit),Self.maximumEpochsPerHelper)
+        self.testingPacketDisposed = testingPacketDisposed
+        self.testingBeforeInstall = testingBeforeInstall; self.testingAfterInstall = testingAfterInstall
     }
 
-    func handle(_ request: LiveSessionRequest, requestID: UUID) -> LiveSessionReply {
+    func handle(_ request: LiveSessionRequest, requestID: UUID) async -> LiveSessionReply {
         switch request {
         case .begin(let input):
             if let begin { return begin == input && beginRequestID == requestID ? .accepted : .rejected(.closed) }
-            guard !closed, input.isValid else { return .rejected(.invalidConfiguration) }
-            // Until a real VAD input consumer exists, configuration cannot be
-            // silently downgraded to ASR-only readiness or start its loader.
-            guard input.vad == nil else { return .rejected(.unavailable) }
+            guard !closed, input.isValid, input.epochs.count <= epochLimit else { return .rejected(.invalidConfiguration) }
+            // Production does not supply this trusted configured consumer.
+            guard input.vad == nil || vadLoader != nil else { return .rejected(.unavailable) }
             begin = input; beginRequestID = requestID
-            for epoch in input.epochs { lanes[epoch.source] = Lane(epoch: epoch); knownEpochs.insert(epoch.id) }
-            loading = Task {
-                do { let factory = try await loader(input.configuration); self.loaded(factory) }
+            for epoch in input.epochs {
+                var lane = Lane(epoch: epoch); lane.runtimeSetupPending = input.vad != nil
+                lanes[epoch.source] = lane; knownEpochs.insert(epoch.id)
+                if let vad = input.vad { send(epoch.source,.vad(.preparing(identity: vad.identity))); lanes[epoch.source]?.vadPreparing = true }
+            }
+            let task = Task {
+                do {
+                    try Task.checkCancellation()
+                    guard !self.closed else { return }
+                    let factory = try await loader(input.configuration)
+                    try Task.checkCancellation()
+                    guard !self.closed else { return }
+                    if let vadLoader, input.vad != nil {
+                        let pool: LiveVADModelFactory?
+                        do { pool = try await vadLoader(input) } catch { pool = nil }
+                        try Task.checkCancellation()
+                        guard !self.closed else { return }
+                        let runtime: LiveVADModuleRuntime
+                        do { runtime = try LiveVADModuleRuntime(input: input,factory: pool) }
+                        catch { runtime = try LiveVADModuleRuntime(input: input,factory: nil) }
+                        await self.loadedConfigured(factory,runtime: runtime)
+                    } else { self.loaded(factory) }
+                }
                 catch { self.loadFailed() }
             }
+            loading = task
+            Task { await task.value; self.testingAfterLoadingReturn() }
             return .accepted
         case .cancel(let identity):
             guard begin?.identity == identity else { return .rejected(.staleScope) }
@@ -71,10 +139,12 @@ actor LiveASROrchestrator {
             }
             closed = true; emit(.finished(identity)); return .accepted
         case .replaceEpoch(let identity, let oldID, let epoch):
+            if begin?.vad != nil { return await replaceConfigured(identity: identity,oldID: oldID,epoch: epoch) }
             guard !closed, let begin, begin.identity == identity, let old = lanes[epoch.source], old.epoch.id == oldID else { return .rejected(.staleScope) }
             guard old.state == .needsReplacement || old.state == .paused, old.asrInputRetired,
                   works[epoch.source] == nil, retirements[epoch.source] == nil, factory != nil else { return .rejected(.unavailable) }
             guard !knownEpochs.contains(epoch.id), LiveSessionBegin(identity: identity, configuration: begin.configuration, epochs: [epoch],vad: begin.vad).isValid else { return .rejected(.invalidConfiguration) }
+            guard knownEpochs.count < epochLimit else { return .rejected(.unavailable) }
             old.partialTask?.cancel(); old.partialContinuation?.finish()
             knownEpochs.insert(epoch.id); lanes[epoch.source] = Lane(epoch: epoch); kick(epoch.source)
             return .accepted
@@ -87,10 +157,18 @@ actor LiveASROrchestrator {
             let source = packet.scope.source, end = packet.startSample + Int64(samples.count)
             lanes[source]?.captured = end; lanes[source]?.nextPacket += 1
             guard current.state == .active else { cut(source, reason: current.gapReason); return .rejected(.unavailable) }
-            guard current.admitted - current.consumed + Int64(samples.count) <= Int64(begin!.configuration.pendingSampleLimit),
+            let common = current.sharedInput?.progress.consumedEnd ?? current.consumed
+            guard current.admitted - common + Int64(samples.count) <= Int64(begin!.configuration.pendingSampleLimit),
                   current.commands.count < 64 else { cut(source, reason: .overload); return .rejected(.unavailable) }
+            if begin?.vad != nil {
+                guard var ledger = lanes[source]?.sharedInput else { cut(source,reason: .engineRestart); return .rejected(.unavailable) }
+                do {
+                    let receipt = try ledger.admit(scope: packet.scope,startSample: packet.startSample,sampleCount: samples.count)
+                    lanes[source]?.sharedInput = ledger
+                    lanes[source]?.commands.append(.configuredPacket(.init(samples: samples,start: packet.startSample,receipt: receipt,disposed: testingPacketDisposed)))
+                } catch { cut(source,reason: .overload); return .rejected(.unavailable) }
+            } else { lanes[source]?.commands.append(.packet(samples, packet.startSample)) }
             lanes[source]?.admitted = end; lanes[source]?.queued += Int64(samples.count)
-            lanes[source]?.commands.append(.packet(samples, packet.startSample))
             send(source, .admitted(packetSequence: packet.sequence, sampleEnd: end)); progress(source); kick(source)
             return .accepted
         case .cut(let scope, let nextSequence, let end, let reason):
@@ -108,7 +186,7 @@ actor LiveASROrchestrator {
             if let prior = lane.barrier { return prior.0 == requestID && prior.1 == barrier ? .accepted : .rejected(.outOfOrder) }
             guard barrier.sampleEnd == lane.captured, barrier.nextPacketSequence == lane.nextPacket else { return .rejected(.outOfOrder) }
             if lane.state == .paused {
-                guard barrier.kind == .finish, lane.settled == lane.captured, lane.asrInputRetired else { return .rejected(.closed) }
+                guard barrier.kind == .finish, lane.settled == lane.captured, inputRetired(lane) else { return .rejected(.closed) }
                 // Pause already flushed this exact prefix. Closing it cannot
                 // call finish on the retired decoder or create another segment.
                 finishBarrier(barrier.scope.source,id: requestID,barrier: barrier)
@@ -119,7 +197,7 @@ actor LiveASROrchestrator {
                 cut(barrier.scope.source, reason: .stopped)
                 lanes[barrier.scope.source]?.barrier = (requestID,barrier)
                 lanes[barrier.scope.source]?.closing = true
-                if lanes[barrier.scope.source]?.asrInputRetired == true {
+                if let current = lanes[barrier.scope.source], inputRetired(current) {
                     finishBarrier(barrier.scope.source,id: requestID,barrier: barrier)
                 }
                 return .accepted
@@ -154,6 +232,14 @@ actor LiveASROrchestrator {
     }
     private func progress(_ source: LiveSource) {
         guard !closed, let lane = lanes[source], let begin, lane.state != .retiring, lane.state != .closed else { return }
+        if let ledger = lane.sharedInput {
+            let p = ledger.progress
+            send(source,.progress(.init(capturedSampleEnd: lane.captured,admittedSampleEnd: p.admittedEnd,
+                consumedSampleEnd: p.consumedEnd,queuedSamples: p.queuedSamples,inFlightSamples: p.inFlightSamples,
+                heldSamples: p.heldSamples,creditSamples: lane.state == .active ? p.creditSamples : 0,
+                asrConsumedSampleEnd: p.asrConsumedEnd)))
+            return
+        }
         let held = max(0, lane.processed - lane.consumed)
         let pending = lane.queued + lane.inFlight + held
         send(source, .progress(.init(capturedSampleEnd: lane.captured, admittedSampleEnd: lane.admitted,
@@ -170,6 +256,7 @@ actor LiveASROrchestrator {
         lane.closing = lane.barrier != nil
         lane.partialContinuation?.finish(); lane.partialTask?.cancel()
         let gap = lane.settled..<lane.captured; lane.settled = lane.captured; lanes[source] = lane
+        logicalVADSeal(source)
         if first {
             works[source]?.task.cancel()
             startRetirement(source)
@@ -181,6 +268,7 @@ actor LiveASROrchestrator {
     }
 
     private func kick(_ source: LiveSource) {
+        if begin?.vad != nil { kickConfigured(source); return }
         guard works[source] == nil, retirements[source] == nil, let factory, let begin, var lane = lanes[source], lane.state == .active || lane.state == .loading else { return }
         guard lane.generation == nil || !lane.commands.isEmpty else { return }
         let scope = self.scope(source), config = begin.configuration, workID = UUID()
@@ -219,6 +307,7 @@ actor LiveASROrchestrator {
             while let command = self.next(scope,workID: workID) {
                 try Task.checkCancellation()
                 switch command {
+                case .configuredPacket: throw LiveProtocolError.invalidPacket
                 case .packet(let samples, let start):
                     let native = try await session.append(samples: samples, startSample: start)
                     guard self.processed(scope, workID: workID, generation: generation!, end: start + Int64(samples.count), progress: native) else { return }
@@ -257,11 +346,13 @@ actor LiveASROrchestrator {
         lanes[scope.source] = lane; progress(scope.source); return true
     }
     private func partial(_ scope: LiveLaneScope, generation: UUID, text: String) {
+        let end = lanes[scope.source]?.sharedInput?.progress.asrSubmittedEnd ??
+            ((lanes[scope.source]?.processed ?? 0)+(lanes[scope.source]?.inFlight ?? 0))
         guard !closed, matches(scope), var lane = lanes[scope.source], lane.state == .active, lane.generation == generation,
-              lane.partialRevision < .max, lane.processed + lane.inFlight > lane.settled else { return }
+              lane.partialRevision < .max, end > lane.settled else { return }
         lane.partialRevision += 1; lanes[scope.source] = lane
         send(scope.source,.partial(.init(epochID: scope.epochID,source: scope.source,revision: lane.partialRevision,
-            samples: .init(start: lane.settled,end: lane.processed + lane.inFlight),text: text)))
+            samples: .init(start: lane.settled,end: end),text: text)))
     }
     private func commit(_ scope: LiveLaneScope, workID: UUID, generation: UUID, result: NemotronCommittedUtterance, barrier: LiveFinishBarrier) -> Bool {
         guard !closed, matchesWork(scope,workID), var lane = lanes[scope.source], lane.state == .active, lane.generation == generation,
@@ -311,36 +402,337 @@ actor LiveASROrchestrator {
     }
     private func workReturned(_ scope: LiveLaneScope, workID: UUID) {
         guard matchesWork(scope,workID) else { return }
+        if let packet = works[scope.source]?.packet {
+            do { try lanes[scope.source]?.sharedInput?.recordActualPacketReturn(packet) }
+            catch { cut(scope.source,reason: .engineRestart); return }
+        }
         works[scope.source] = nil
         if !closed { progress(scope.source); kick(scope.source) }
     }
     private func startRetirement(_ source: LiveSource) {
-        guard let lane = lanes[source], !lane.asrInputRetired, retirements[source] == nil else { return }
+        guard let lane = lanes[source], !inputRetired(lane), retirements[source] == nil else { return }
         let scope = self.scope(source), id = UUID(), work = works[source], session = lane.session
+        let runtime = vadRuntime, nativeScope = lane.nativeScope, configured = begin?.vad != nil
+        let noVADInput = lane.admitted == 0 && lane.sharedInput == nil
         let task = Task {
             await self.testingBeforeRetirement(scope)
             await session?.retire()
+            // A later source can be unbound while a peer awaits activation.
+            // Zero input is already retired; model setup still gates replacement.
+            var vadRetired = !configured || ((runtime == nil || nativeScope == nil) && noVADInput)
+            if let runtime, let nativeScope {
+                do {
+                    let seal = try await runtime.retireInput(scope: nativeScope)
+                    _ = try await runtime.settleRetirement(seal.receipt)
+                    vadRetired = true
+                } catch { vadRetired = false }
+            }
             if let work { await work.task.value }
-            self.retirementCompleted(scope,id: id,workID: work?.id)
+            return RetirementResult(vadRetired: vadRetired)
         }
         retirements[source] = .init(scope: scope,id: id,task: task)
+        Task { let result = await task.value; self.retirementCompleted(scope,id: id,workID: work?.id,result: result) }
     }
-    private func retirementCompleted(_ scope: LiveLaneScope, id: UUID, workID: UUID?) {
+    private func retirementCompleted(_ scope: LiveLaneScope, id: UUID, workID: UUID?, result: RetirementResult) {
         guard matches(scope), retirements[scope.source]?.scope == scope, retirements[scope.source]?.id == id,
               var lane = lanes[scope.source] else { return }
         // This phase awaited actual return too. Clear only its exact record
         // before ACK so immediate Resume cannot race the independent observer.
         if let current = works[scope.source] {
             guard current.id == workID, current.scope == scope else { return }
+            if let packet = current.packet {
+                do { try lane.sharedInput?.recordActualPacketReturn(packet) } catch { return }
+            }
             works[scope.source] = nil
         }
         lane.session = nil; lane.inFlight = 0; lane.processed = lane.consumed; lane.asrInputRetired = true
+        lane.vadInputRetired = result.vadRetired
         lanes[scope.source] = lane; retirements[scope.source] = nil
         guard !closed, lane.state != .closed else { return }
-        if let pending = lane.barrier, pending.1.kind != .utterance {
+        if inputRetired(lane), let pending = lane.barrier, pending.1.kind != .utterance {
             finishBarrier(scope.source,id: pending.0,barrier: pending.1)
         }
         // Closed/retiring progress is suppressed; allocation is never refunded.
         progress(scope.source)
+    }
+
+    private func inputRetired(_ lane: Lane) -> Bool {
+        lane.asrInputRetired && (begin?.vad == nil || lane.vadInputRetired)
+    }
+    private func logicalVADSeal(_ source: LiveSource) {
+        guard let identity = begin?.vad?.identity, let lane = lanes[source], !lane.vadRetired else { return }
+        if var ledger = lane.sharedInput {
+            do { try ledger.seal(scope: scope(source)); lanes[source]?.sharedInput = ledger }
+            catch { closed = true; emit(.failed(scope(source).identity,.unavailable)); return }
+        }
+        lanes[source]?.vadRetired = true
+        send(source,.vad(.retired(identity: identity,contextID: lane.vadContext,sampleEnd: lane.vadEnd)))
+    }
+
+    private func loadedConfigured(_ factory: any NemotronDecoderMaking,runtime: LiveVADModuleRuntime) async {
+        guard !closed, let begin else { return }
+        vadRuntime = runtime
+        for source in begin.epochs.map(\.source) {
+            guard !closed, lanes[source] != nil else { return }
+            let scope = self.scope(source)
+            lanes[source]?.nativeScope = scope
+            do {
+                if lanes[source]?.state == .loading {
+                    lanes[source]?.sharedInput = try .init(scope: scope,configuration: begin.configuration,vadOwnerID: runtime.ownerID)
+                    await testingBeforeVADActivation(scope)
+                    guard !closed, matches(scope) else { return }
+                    let event = try await runtime.activate(scope: scope)
+                    guard !closed, matches(scope) else { return }
+                    if lanes[source]?.state == .loading {
+                        publishVAD(source,event)
+                        lanes[source]?.vadActivated = true
+                        if case .degraded = event {
+                            let seal = try await runtime.retireInput(scope: scope)
+                            let proof = try await runtime.settleRetirement(seal.receipt)
+                            guard !closed, matches(scope) else { return }
+                            if lanes[source]?.state == .loading { try lanes[source]?.sharedInput?.recordFailedVADRetirement(proof) }
+                        }
+                        lanes[source]?.runtimeSetupPending = false
+                    }
+                }
+                if lanes[source]?.state != .loading {
+                    let seal = try await runtime.retireInput(scope: scope)
+                    _ = try await runtime.settleRetirement(seal.receipt)
+                    guard matches(scope) else { continue }
+                    lanes[source]?.vadInputRetired = true; lanes[source]?.runtimeSetupPending = false
+                }
+            } catch {
+                // A source can retire while activate is waiting for the runtime
+                // actor. Keep its wire state sealed and settle that exact binding
+                // before clearing setup debt; a second cut would reopen recovery.
+                if !closed, matches(scope), lanes[source]?.state == .loading { cut(source,reason: .preparation) }
+                do {
+                    let seal = try await runtime.retireInput(scope: scope)
+                    _ = try await runtime.settleRetirement(seal.receipt)
+                    guard matches(scope) else { continue }
+                    lanes[source]?.vadInputRetired = true; lanes[source]?.runtimeSetupPending = false
+                } catch { /* An uncertain native binding must keep setup debt. */ }
+            }
+        }
+        guard !closed else { return }
+        self.factory = factory; loading = nil
+        for source in lanes.keys where lanes[source]?.state == .loading { kick(source) }
+    }
+    private func publishVAD(_ source: LiveSource,_ event: LiveVADModuleEvent) {
+        guard !closed, let lane = lanes[source], !lane.vadRetired else { return }
+        if case .ready(_,let context,_) = event {
+            if !lane.vadPreparing { send(source,.vad(.preparing(identity: event.identity))); lanes[source]?.vadPreparing = true }
+            lanes[source]?.vadContext = context
+        }
+        if case .processed(_,_,let end) = event { lanes[source]?.vadEnd = end }
+        send(source,.vad(event))
+    }
+    private func configuredSession(_ source: LiveSource) -> NemotronDecoderSession? {
+        if let existing = lanes[source]?.session { return existing }
+        guard let factory else { return nil }
+        let scope = self.scope(source)
+        let (partials,continuation) = AsyncStream<(UUID,String)>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let session = NemotronDecoderSession(factory: factory) { event in
+            if case .partial(let generation,let text) = event, text.utf8.count <= 8192 { continuation.yield((generation,text)) }
+        }
+        lanes[source]?.session = session; lanes[source]?.partialContinuation = continuation
+        lanes[source]?.partialTask = Task { for await (generation,text) in partials { self.partial(scope,generation: generation,text: text) } }
+        return session
+    }
+    private func kickConfigured(_ source: LiveSource) {
+        guard !closed, works[source] == nil, retirements[source] == nil, installations[source] == nil,
+              factory != nil, vadRuntime != nil, let begin, let lane = lanes[source], !lane.runtimeSetupPending,
+              lane.state == .loading || lane.state == .active, lane.nativeScope == scope(source),
+              let session = configuredSession(source) else { return }
+        let scope = self.scope(source), workID = UUID(), config = begin.configuration
+        let command = lane.commands.first
+        let alreadyFinishedBarrier: Bool
+        if case .barrier(_,let barrier) = command { alreadyFinishedBarrier = barrier.sampleEnd == lane.settled }
+        else { alreadyFinishedBarrier = false }
+        let task: Task<Void,Never>, token: LiveSharedPacketToken?
+        if lane.generation == nil && !alreadyFinishedBarrier {
+            token = nil
+            task = Task {
+                do {
+                    guard try await self.prepareConfiguredModule(scope,workID: workID) else { return }
+                    let native = try NemotronDecoderConfiguration(language: .init(rawValue: config.language.rawValue)!,chunkMs: config.chunkMs)
+                    let generation = try await session.prepare(configuration: native,origin: lane.settled)
+                    _ = self.ready(scope,workID: workID,generation: generation,origin: lane.settled)
+                } catch { self.failed(scope,workID: workID) }
+                await self.testingBeforeWorkReturn(scope)
+            }
+        } else if let command {
+            lanes[source]?.commands.removeFirst()
+            switch command {
+            case .configuredPacket(let original):
+                guard let generation = lane.generation else { cut(source,reason: .engineRestart); return }
+                do { token = try lanes[source]?.sharedInput?.startPacket(original.receipt,startSample: original.start,sampleCount: original.samples.count) }
+                catch { cut(source,reason: .engineRestart); return }
+                guard let token else { cut(source,reason: .engineRestart); return }
+                lanes[source]?.queued -= Int64(original.samples.count); lanes[source]?.inFlight = Int64(original.samples.count)
+                task = Task {
+                    defer { withExtendedLifetime(original) {} }
+                    await self.runConfiguredPacket(scope,workID: workID,session: session,config: config,generation: generation,original: original,token: token)
+                    await self.testingBeforeWorkReturn(scope)
+                }
+            case .barrier(let id,let barrier):
+                token = nil
+                task = Task {
+                    await self.runConfiguredBarrier(scope,workID: workID,session: session,config: config,id: id,barrier: barrier)
+                    await self.testingBeforeWorkReturn(scope)
+                }
+            case .packet: cut(source,reason: .engineRestart); return
+            }
+        } else { return }
+        works[source] = .init(scope: scope,id: workID,task: task,packet: token)
+        progress(source)
+        Task { await task.value; self.workReturned(scope,workID: workID) }
+    }
+    private func currentConfiguredWork(_ scope: LiveLaneScope,workID: UUID) -> Bool {
+        !closed && matchesWork(scope,workID) && lanes[scope.source]?.nativeScope == scope &&
+            (lanes[scope.source]?.state == .loading || lanes[scope.source]?.state == .active)
+    }
+    private func prepareConfiguredModule(_ scope: LiveLaneScope,workID: UUID) async throws -> Bool {
+        guard currentConfiguredWork(scope,workID: workID), let runtime = vadRuntime else { return false }
+        if lanes[scope.source]?.vadActivated == true { return true }
+        let event = try await runtime.activate(scope: scope)
+        guard currentConfiguredWork(scope,workID: workID) else { return false }
+        publishVAD(scope.source,event)
+        if case .degraded = event {
+            let seal = try await runtime.retireInput(scope: scope)
+            let proof = try await runtime.settleRetirement(seal.receipt)
+            guard currentConfiguredWork(scope,workID: workID) else { return false }
+            try lanes[scope.source]?.sharedInput?.recordFailedVADRetirement(proof)
+        }
+        lanes[scope.source]?.vadActivated = true; return true
+    }
+    private func runConfiguredPacket(_ scope: LiveLaneScope,workID: UUID,session: NemotronDecoderSession,
+                                     config: LiveASRConfiguration,generation: UUID,original: OriginalPacket,
+                                     token: LiveSharedPacketToken) async {
+        do {
+            guard let runtime = vadRuntime else { throw LiveProtocolError.unavailable }
+            var generation: UUID? = generation, cursor = LivePacketSliceCursor(token: token)
+            while !cursor.isComplete {
+                try Task.checkCancellation()
+                guard currentConfiguredWork(scope,workID: workID), let active = generation else { return }
+                let vadActive = lanes[scope.source]?.sharedInput?.progress.vadInputActive == true
+                let capacity = vadActive ? try await runtime.sliceCapacity(scope: scope) : 3200
+                guard currentConfiguredWork(scope,workID: workID) else { return }
+                let range = try cursor.nextRange(vadCapacity: capacity)
+                let samples = Array(original.samples[Int(range.lowerBound-original.start)..<Int(range.upperBound-original.start)])
+                try lanes[scope.source]?.sharedInput?.submitSlice(token,range: range)
+                let native = try await session.append(samples: samples,startSample: range.lowerBound)
+                guard currentConfiguredWork(scope,workID: workID) else { return }
+                let absolute = lanes[scope.source]!.settled.addingReportingOverflow(native.consumedSamples)
+                guard !absolute.overflow else { throw LiveProtocolError.outOfOrder }
+                try lanes[scope.source]?.sharedInput?.recordASRAppend(token,processedEnd: range.upperBound,consumedEnd: absolute.partialValue)
+                guard processed(scope,workID: workID,generation: active,end: range.upperBound,progress: native) else { return }
+                if vadActive {
+                    let admission = try await runtime.admitSlice(scope: scope,samples: samples,startSample: range.lowerBound)
+                    guard currentConfiguredWork(scope,workID: workID) else { return }
+                    if case .window(let windowToken) = admission {
+                        let result = try await runtime.complete(windowToken)
+                        guard currentConfiguredWork(scope,workID: workID) else { return }
+                        switch result {
+                        case .processed(let event,let decision):
+                            try lanes[scope.source]?.sharedInput?.recordVADProcessed(token,sampleEnd: decision.range.end)
+                            publishVAD(scope.source,event); progress(scope.source)
+                            if let end = decision.flushEnd {
+                                let barrier = LiveFinishBarrier(scope: scope,nextPacketSequence: lanes[scope.source]!.nextPacket,sampleEnd: end,kind: .utterance)
+                                guard try await configuredFlush(scope,workID: workID,session: session,generation: active,barrier: barrier) else { return }
+                                if let pending = lanes[scope.source]?.barrier, pending.1.kind != .utterance,
+                                   pending.1.sampleEnd == end, end == original.receipt.sampleEnd {
+                                    generation = nil
+                                } else { generation = try await configuredPrepareASR(scope,workID: workID,session: session,config: config,origin: end) }
+                            }
+                        case .degraded(let event,let receipt):
+                            publishVAD(scope.source,event)
+                            let proof = try await runtime.settleRetirement(receipt)
+                            guard currentConfiguredWork(scope,workID: workID) else { return }
+                            try lanes[scope.source]?.sharedInput?.recordFailedVADRetirement(proof)
+                            progress(scope.source)
+                        }
+                    }
+                }
+                try cursor.commit(range)
+            }
+        } catch { failed(scope,workID: workID) }
+    }
+    private func configuredPrepareASR(_ scope: LiveLaneScope,workID: UUID,session: NemotronDecoderSession,
+                                      config: LiveASRConfiguration,origin: Int64) async throws -> UUID? {
+        try Task.checkCancellation()
+        guard currentConfiguredWork(scope,workID: workID) else { return nil }
+        let native = try NemotronDecoderConfiguration(language: .init(rawValue: config.language.rawValue)!,chunkMs: config.chunkMs)
+        let generation = try await session.prepare(configuration: native,origin: origin)
+        return ready(scope,workID: workID,generation: generation,origin: origin) ? generation : nil
+    }
+    private func configuredFlush(_ scope: LiveLaneScope,workID: UUID,session: NemotronDecoderSession,
+                                 generation: UUID,barrier: LiveFinishBarrier) async throws -> Bool {
+        let result = try await session.finish(replacingDecoder: false)
+        guard currentConfiguredWork(scope,workID: workID) else { return false }
+        if !result.range.isEmpty { try lanes[scope.source]?.sharedInput?.recordASRFlush(scope: scope,sampleEnd: barrier.sampleEnd) }
+        return commit(scope,workID: workID,generation: generation,result: result,barrier: barrier)
+    }
+    private func runConfiguredBarrier(_ scope: LiveLaneScope,workID: UUID,session: NemotronDecoderSession,
+                                      config: LiveASRConfiguration,id: UUID,barrier: LiveFinishBarrier) async {
+        do {
+            try Task.checkCancellation()
+            guard currentConfiguredWork(scope,workID: workID), let lane = lanes[scope.source] else { return }
+            if lane.settled != barrier.sampleEnd {
+                guard let generation = lane.generation,
+                      try await configuredFlush(scope,workID: workID,session: session,generation: generation,barrier: barrier) else { return }
+            }
+            guard currentConfiguredWork(scope,workID: workID) else { return }
+            if barrier.kind != .utterance {
+                logicalVADSeal(scope.source); lanes[scope.source]?.state = .retiring
+                startRetirement(scope.source); return
+            }
+            finishBarrier(scope.source,id: id,barrier: barrier)
+            if lanes[scope.source]?.generation == nil {
+                _ = try await configuredPrepareASR(scope,workID: workID,session: session,config: config,origin: barrier.sampleEnd)
+            }
+        } catch { failed(scope,workID: workID) }
+    }
+    private func replaceConfigured(identity: LiveSessionIdentity,oldID: UUID,epoch: LiveEpoch) async -> LiveSessionReply {
+        guard !Task.isCancelled, !closed, let begin, begin.identity == identity, let old = lanes[epoch.source], old.epoch.id == oldID else { return .rejected(.staleScope) }
+        guard old.state == .needsReplacement || old.state == .paused, inputRetired(old), !old.runtimeSetupPending,
+              works[epoch.source] == nil, retirements[epoch.source] == nil, installations[epoch.source] == nil,
+              factory != nil, let runtime = vadRuntime, let nativeFrom = old.nativeScope else { return .rejected(.unavailable) }
+        guard !knownEpochs.contains(epoch.id), LiveSessionBegin(identity: identity,configuration: begin.configuration,epochs: [epoch],vad: begin.vad).isValid else { return .rejected(.invalidConfiguration) }
+        // Retain every burned UUID. Exhaustion cannot mutate a native binding
+        // or grow replay history beyond this helper's fixed lifetime budget.
+        guard knownEpochs.count < epochLimit else { return .rejected(.unavailable) }
+        let wireOld = scope(epoch.source), new = LiveLaneScope(identity: identity,source: epoch.source,epochID: epoch.id)
+        let reservation = Installation(id: UUID(),wireOld: wireOld,nativeFrom: nativeFrom,new: new)
+        installations[epoch.source] = reservation; knownEpochs.insert(epoch.id)
+        var mutated = false
+        do {
+            await testingBeforeInstall(wireOld,new); try Task.checkCancellation()
+            guard !closed, matches(wireOld), installations[epoch.source]?.id == reservation.id,
+                  lanes[epoch.source]?.state == .paused || lanes[epoch.source]?.state == .needsReplacement else { throw LiveProtocolError.closed }
+            try await runtime.installAfterRetirement(oldScope: nativeFrom,newScope: new); mutated = true
+            try Task.checkCancellation()
+            await testingAfterInstall(wireOld,new); try Task.checkCancellation()
+            guard !closed, matches(wireOld), installations[epoch.source]?.id == reservation.id,
+                  lanes[epoch.source]?.state == .paused || lanes[epoch.source]?.state == .needsReplacement else { throw LiveProtocolError.closed }
+            var fresh = Lane(epoch: epoch); fresh.nativeScope = new
+            fresh.sharedInput = try .init(scope: new,configuration: begin.configuration,vadOwnerID: runtime.ownerID)
+            old.partialTask?.cancel(); old.partialContinuation?.finish()
+            lanes[epoch.source] = fresh; installations[epoch.source] = nil; kick(epoch.source)
+            return .accepted // No suspension after the final cancellation gate.
+        } catch {
+            if mutated {
+                let abort = Task {
+                    do { let seal = try await runtime.retireInput(scope: new); _ = try await runtime.settleRetirement(seal.receipt); return true }
+                    catch { return false }
+                }
+                let settled = await abort.value
+                guard matches(wireOld), installations[epoch.source]?.id == reservation.id else { return .rejected(.closed) }
+                guard settled else { return .rejected(.unavailable) } // Keep reservation if binding is uncertain.
+                lanes[epoch.source]?.nativeScope = new
+            }
+            if installations[epoch.source]?.id == reservation.id { installations[epoch.source] = nil }
+            return .rejected(closed ? .closed : .unavailable)
+        }
     }
 }
