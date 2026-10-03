@@ -6,6 +6,8 @@ protocol LiveVADPredicting: Sendable {
 }
 enum LiveVADWindowError: Error, Equatable { case invalidWindow, overlap, inactive }
 struct LiveVADWindowResult: Sendable, Equatable {
+    let source: LiveSource
+    let continuityID: UUID
     let sampleStart: Int64
     let sampleEnd: Int64
     let probability: Float
@@ -20,6 +22,7 @@ struct LiveVADWindowProgress: Sendable, Equatable {
 /// Fresh source continuity creates a fresh actor; ASR flushes do not reset it.
 actor LiveVADWindowSession {
     nonisolated let source: LiveSource
+    nonisolated let continuityID = UUID()
     private let predictor: any LiveVADPredicting
     private var context = [Float](repeating: 0,count: 64)
     private var hidden = [Float](repeating: 0,count: 128)
@@ -56,6 +59,6 @@ actor LiveVADWindowSession {
         guard active else { throw LiveVADWindowError.inactive }
         // No await between these checks and the whole successful state commit.
         context = Array(samples.suffix(64)); hidden = output.hiddenState; cell = output.cellState; processedEnd = end.partialValue
-        return .init(sampleStart: startSample,sampleEnd: end.partialValue,probability: output.probability)
+        return .init(source: source,continuityID: continuityID,sampleStart: startSample,sampleEnd: end.partialValue,probability: output.probability)
     }
 }
