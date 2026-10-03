@@ -7,6 +7,7 @@ import dBriefWire
 /// constructs validated configuration; native cache/model loading is separate.
 struct LiveVADNativeConfiguration: Sendable {
     static let runtimeRevision = "21493f8dac5a97e65742e6ff26f42f164c2fda0f"
+    let configuration: LiveVADConfiguration
     let vad: VadConfig
     let segmentation: VadSegmentationConfig
 
@@ -14,6 +15,7 @@ struct LiveVADNativeConfiguration: Sendable {
         let policy = configuration.identity
         guard configuration.isValid, policy.runtimeRevision == Self.runtimeRevision,
               policy.implementationRevision == LiveVADIdentity.currentImplementationRevision else { throw LiveProtocolError.invalidConfiguration }
+        self.configuration = configuration
         let silence = (Double(policy.minSilenceSamples) / 16000).nextUp
         let padding = policy.speechPaddingSamples == 0 ? 0 : (Double(policy.speechPaddingSamples) / 16000).nextUp
         guard Int(silence * 16000) == policy.minSilenceSamples, Int(padding * 16000) == policy.speechPaddingSamples else {

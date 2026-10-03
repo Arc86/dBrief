@@ -17,7 +17,8 @@ final class LiveVADModelAssets: Sendable {
     }
     enum CopyPoint: Sendable { case beforeOpenFile, afterOpenFile, afterCreateDirectory }
     typealias Probe = @Sendable (CopyPoint, String) async throws -> Void
-    private struct Entry { let path: String; let size: UInt64; let hash: Data? }
+    private struct Entry: Sendable { let path: String; let size: UInt64; let hash: Data? }
+    private struct Fingerprint { let value: String; let metadata: Entry }
     private struct Identity: Sendable, Equatable {
         let device: dev_t
         let inode: ino_t
@@ -49,6 +50,8 @@ final class LiveVADModelAssets: Sendable {
     private static let directories = ["analytics","weights"]
     private static let supportedRevision = "silero-vad-unified-256ms-v6.2.1"
     let fingerprint: String
+    let configuration: LiveVADConfiguration
+    private let metadata: Entry
     private let parentURL: URL
     private let rootName: String
     private let parent: Directory
@@ -87,12 +90,49 @@ final class LiveVADModelAssets: Sendable {
         }
     }
     private init(parentURL: URL, rootName: String, parent: Directory, root: Directory, model: Directory,
-                 children: [String: Directory], leaves: [FileEntry], created: [DirectoryEntry], opened: [Directory], fingerprint: String) {
+                 children: [String: Directory], leaves: [FileEntry], created: [DirectoryEntry], opened: [Directory],
+                 configuration: LiveVADConfiguration, fingerprint: Fingerprint) {
         self.parentURL = parentURL; self.rootName = rootName; self.parent = parent; self.root = root; self.model = model
-        self.children = children; self.leaves = leaves; self.fingerprint = fingerprint
+        self.children = children; self.leaves = leaves; self.fingerprint = fingerprint.value
+        self.configuration = configuration; metadata = fingerprint.metadata
         self.created = created; self.opened = opened
     }
     deinit { Self.cleanup(created: created,opened: opened,leaves: leaves) }
+
+    /// Only the copied, descriptor-owned leaf can supply the schema witness.
+    /// Its length/digest were captured in the final snapshot hashing pass.
+    func readMetadata(testingAfterOpen: (@Sendable () throws -> Void)? = nil) throws -> Data {
+        try Task.checkCancellation()
+        _ = try modelDirectory
+        guard metadata.size <= LiveVADModelContract.maximumMetadataBytes else { throw LiveVADModelError.invalidModel }
+        guard let leaf = leaves.first(where: { $0.path == "metadata.json" }) else { throw LiveVADAssetError.invalidAsset }
+        let fd = openat(leaf.parent.fd,leaf.name,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw LiveVADAssetError.invalidAsset }
+        defer { close(fd) }
+        func validateLeaf() throws {
+            var info = stat()
+            guard fstat(fd,&info) == 0, Identity(info) == leaf.identity, info.st_size > 0,
+                  UInt64(info.st_size) == metadata.size, info.st_mode & 0o777 == 0o444, info.st_nlink == 1,
+                  Self.matches(leaf.parent.fd,name: leaf.name,identity: leaf.identity) else { throw LiveVADAssetError.invalidAsset }
+        }
+        try validateLeaf()
+        try testingAfterOpen?()
+        var data = Data(), buffer = [UInt8](repeating: 0,count: LiveVADModelContract.maximumMetadataBytes)
+        data.reserveCapacity(Int(metadata.size))
+        while true {
+            try Task.checkCancellation()
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd,$0.baseAddress!, $0.count) }
+            if count < 0 { if errno == EINTR { continue }; throw LiveVADAssetError.invalidAsset }
+            if count == 0 { break }
+            guard count <= LiveVADModelContract.maximumMetadataBytes-data.count else { throw LiveVADModelError.invalidModel }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        try validateLeaf(); try Task.checkCancellation()
+        guard UInt64(data.count) == metadata.size, Data(SHA256.hash(data: data)) == metadata.hash else {
+            throw LiveVADAssetError.fingerprintMismatch
+        }
+        return data
+    }
 
     /// The staging URL/probe are explicit trusted-owner test seams. Production
     /// callers omit both; configuration can never select a staging namespace.
@@ -158,12 +198,12 @@ final class LiveVADModelAssets: Sendable {
         // Read the final copied tree, not a manifest of earlier source reads.
         // This also catches mutation of an already copied leaf at a later probe.
         let fingerprint = try fingerprintCopiedTree(leaves,limits: limits)
-        guard fingerprint == configuration.identity.modelFingerprint else { throw LiveVADAssetError.fingerprintMismatch }
+        guard fingerprint.value == configuration.identity.modelFingerprint else { throw LiveVADAssetError.fingerprintMismatch }
         for directory in children.values { guard fchmod(directory.fd,0o555) == 0 else { throw LiveVADAssetError.invalidAsset } }
         guard fchmod(destination.fd,0o555) == 0 else { throw LiveVADAssetError.invalidAsset }
         try Task.checkCancellation()
         let assets = LiveVADModelAssets(parentURL: parentURL,rootName: name,parent: parent,root: root,model: destination,
-            children: children,leaves: leaves,created: created,opened: opened,fingerprint: fingerprint)
+            children: children,leaves: leaves,created: created,opened: opened,configuration: configuration,fingerprint: fingerprint)
         transferred = true // This owner now cleans failures during publication too.
         _ = try assets.modelDirectory
         return assets
@@ -258,7 +298,7 @@ final class LiveVADModelAssets: Sendable {
               nextTotal.partialValue <= limits.maximumTotalBytes else { throw LiveVADAssetError.oversized }
         size = nextSize.partialValue; total = nextTotal.partialValue
     }
-    private static func fingerprintCopiedTree(_ leaves: [FileEntry], limits: Limits) throws -> String {
+    private static func fingerprintCopiedTree(_ leaves: [FileEntry], limits: Limits) throws -> Fingerprint {
         var entries = directories.map { Entry(path: $0,size: 0,hash: nil) }, total: UInt64 = 0
         for leaf in leaves {
             let file = openat(leaf.parent.fd,leaf.name,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
@@ -288,7 +328,8 @@ final class LiveVADModelAssets: Sendable {
             withUnsafeBytes(of: &size) { tree.update(bufferPointer: $0) }
             if let hash = entry.hash { tree.update(data: hash) }
         }
-        return tree.finalize().map { String(format: "%02x",$0) }.joined()
+        guard let metadata = entries.first(where: { $0.path == "metadata.json" }), metadata.hash != nil else { throw LiveVADAssetError.invalidAsset }
+        return .init(value: tree.finalize().map { String(format: "%02x",$0) }.joined(),metadata: metadata)
     }
     private static func matches(_ parent: Int32, name: String, identity: Identity) -> Bool {
         var info = stat()
