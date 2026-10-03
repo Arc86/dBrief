@@ -1,12 +1,30 @@
 @preconcurrency import CoreML
 import Foundation
 
-enum LiveVADModelError: Error, Equatable { case invalidModel, invalidOutput }
+enum LiveVADModelError: Error, Equatable { case invalidModel, invalidInput, invalidOutput }
+
+struct LiveVADNativeInput: Sendable, Equatable {
+    let audio: [Float]
+    let hiddenState: [Float]
+    let cellState: [Float]
+    init(audio: [Float], hiddenState: [Float], cellState: [Float]) throws {
+        guard audio.count == 4160, hiddenState.count == 128, cellState.count == 128,
+              audio.allSatisfy(\.isFinite), hiddenState.allSatisfy(\.isFinite), cellState.allSatisfy(\.isFinite) else {
+            throw LiveVADModelError.invalidInput
+        }
+        self.audio = audio; self.hiddenState = hiddenState; self.cellState = cellState
+    }
+}
 
 struct LiveVADNativeOutput: Sendable, Equatable {
     let probability: Float
     let hiddenState: [Float]
     let cellState: [Float]
+    init(probability: Float, hiddenState: [Float], cellState: [Float]) throws {
+        guard probability.isFinite, (0...1).contains(probability), hiddenState.count == 128, cellState.count == 128,
+              hiddenState.allSatisfy(\.isFinite), cellState.allSatisfy(\.isFinite) else { throw LiveVADModelError.invalidOutput }
+        self.probability = probability; self.hiddenState = hiddenState; self.cellState = cellState
+    }
 }
 
 /// A witness from the verified snapshot's bounded pinned metadata. CoreML's
@@ -146,6 +164,6 @@ struct LiveVADModelContract: Sendable {
             }
         }
         let hidden = try state("new_hidden_state"), cell = try state("new_cell_state")
-        return .init(probability: probability,hiddenState: hidden,cellState: cell)
+        return try .init(probability: probability,hiddenState: hidden,cellState: cell)
     }
 }

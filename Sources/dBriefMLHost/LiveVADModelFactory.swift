@@ -3,7 +3,7 @@ import Foundation
 import dBriefWire
 
 /// No native tensors/models cross this actor-facing validation boundary.
-protocol LiveVADModelHandle: AnyObject, Sendable {
+protocol LiveVADModelHandle: LiveVADPredicting, AnyObject, Sendable {
     var assets: LiveVADModelAssets { get }
     func validate(_ contract: LiveVADModelContract) async throws
 }
@@ -13,6 +13,7 @@ protocol LiveVADModelHandle: AnyObject, Sendable {
 protocol LiveVADModelObject: AnyObject, Sendable {
     var assets: LiveVADModelAssets { get }
     func validate(_ contract: LiveVADModelContract) throws
+    func predict(_ input: LiveVADNativeInput) throws -> LiveVADNativeOutput
 }
 
 struct LiveVADModelFactory: Sendable {
@@ -47,14 +48,29 @@ struct LiveVADModelFactory: Sendable {
 actor LiveVADOwnedModelHandle: LiveVADModelHandle {
     nonisolated let assets: LiveVADModelAssets
     private var model: (any LiveVADModelObject)?
+    private var schemaValidated = false
     init(assets: LiveVADModelAssets, model: any LiveVADModelObject) { self.assets = assets; self.model = model }
     deinit {
         model = nil
         withExtendedLifetime(assets) {}
     }
     func validate(_ contract: LiveVADModelContract) throws {
+        schemaValidated = false
+        try Task.checkCancellation()
         guard let model, model.assets === assets else { throw LiveVADModelError.invalidModel }
         try model.validate(contract)
+        try Task.checkCancellation()
+        schemaValidated = true
+    }
+    func predict(_ input: LiveVADNativeInput) throws -> LiveVADNativeOutput {
+        try Task.checkCancellation()
+        guard schemaValidated, let model, model.assets === assets else { throw LiveVADModelError.invalidModel }
+        // The immutable throwing input/output constructors seal this boundary
+        // even for typed test objects. No await occurs inside native prediction.
+        defer { withExtendedLifetime(input) {} }
+        let output = try model.predict(input)
+        try Task.checkCancellation()
+        return output
     }
 
     /// Trusted test seams cannot be selected by wire configuration. Cancellation
@@ -103,5 +119,17 @@ private final class CoreMLVADModel: LiveVADModelObject, @unchecked Sendable {
     func validate(_ contract: LiveVADModelContract) throws {
         guard let model else { throw LiveVADModelError.invalidModel }
         try contract.validate(model.modelDescription)
+    }
+    func predict(_ input: LiveVADNativeInput) throws -> LiveVADNativeOutput {
+        guard let model else { throw LiveVADModelError.invalidModel }
+        func array(_ values: [Float]) throws -> MLMultiArray {
+            let array = try MLMultiArray(shape: [1,NSNumber(value: values.count)],dataType: .float32)
+            for (index,value) in values.enumerated() { array[[NSNumber(value: 0),NSNumber(value: index)]] = NSNumber(value: value) }
+            return array
+        }
+        let arrays = ["audio_input":try array(input.audio),"hidden_state":try array(input.hiddenState),"cell_state":try array(input.cellState)]
+        let provider = try MLDictionaryFeatureProvider(dictionary: arrays.mapValues { $0 as Any })
+        defer { withExtendedLifetime(arrays) {}; withExtendedLifetime(provider) {}; withExtendedLifetime(input) {} }
+        return try LiveVADModelContract.readOutput(model.prediction(from: provider))
     }
 }

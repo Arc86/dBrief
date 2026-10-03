@@ -6,7 +6,7 @@ import Testing
 import dBriefWire
 @testable import dBriefMLHost
 
-private struct VADLoadFixture: Sendable {
+struct VADLoadFixture: Sendable {
     static let inputs = ["audio_input":[1,4160],"hidden_state":[1,128],"cell_state":[1,128]]
     static let outputs = ["vad_output":[1,1,1],"new_hidden_state":[1,128],"new_cell_state":[1,128]]
     let root: URL
@@ -75,6 +75,7 @@ private final class VADLoadModel: LiveVADModelObject, Sendable {
     let path: URL
     init(assets: LiveVADModelAssets, audit: VADLoadAudit, path: URL) { self.assets = assets; self.audit = audit; self.path = path }
     func validate(_ contract: LiveVADModelContract) throws { try contract.validate(VADLoadFixture.description) }
+    func predict(_ input: LiveVADNativeInput) throws -> LiveVADNativeOutput { throw LiveVADModelError.invalidModel }
     deinit { audit.released(path: path) }
 }
 private final class VADLoadHandle: LiveVADModelHandle, Sendable {
@@ -90,6 +91,7 @@ private final class VADLoadHandle: LiveVADModelHandle, Sendable {
         await entered?.signal(); await release?.wait()
         try contract.validate(description)
     }
+    func predict(_ input: LiveVADNativeInput) async throws -> LiveVADNativeOutput { throw LiveVADModelError.invalidModel }
 }
 
 @Suite struct LiveVADModelFactoryTests {
