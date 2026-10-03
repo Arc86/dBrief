@@ -46,8 +46,12 @@ public struct LiveVADConfiguration: Codable, Sendable, Equatable {
     public let modelPath: String
     public init(identity: LiveVADIdentity, modelPath: String) { self.identity = identity; self.modelPath = modelPath }
     public var isValid: Bool {
-        identity.isValid && modelPath.hasPrefix("/") && modelPath.hasSuffix(".mlmodelc") && modelPath.utf8.count <= 4096 &&
+        // Foundation's standardizedFileURL can consult existing filesystem
+        // aliases (for example /private/tmp -> /tmp). Admission is lexical and
+        // must have the same result before and after assets are created.
+        let components = modelPath.split(separator: "/",omittingEmptySubsequences: false)
+        return identity.isValid && modelPath.hasPrefix("/") && modelPath.hasSuffix(".mlmodelc") && modelPath.utf8.count <= 4096 &&
             !modelPath.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) } &&
-            URL(fileURLWithPath: modelPath).standardizedFileURL.path == modelPath
+            components.dropFirst().allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
 }
