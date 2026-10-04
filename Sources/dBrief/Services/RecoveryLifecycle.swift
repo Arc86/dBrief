@@ -3,6 +3,12 @@ import Foundation
 /// Deletes only app-owned, validated recovery records, never arbitrary paths
 /// embedded in their payloads. Callers serialize this with processing/capture.
 struct RecoveryLifecycle: Sendable {
+    struct DeletionSnapshot: Sendable {
+        var jobs: [UUID: UUID] = [:]
+        var deliveries: [UUID: UUID] = [:]
+        var recordingIDs: Set<UUID> { Set(jobs.values).union(deliveries.values) }
+        var charge: Int { (jobs.count + deliveries.count) * 160 }
+    }
     let jobs: ProcessingJobStore
     let deliveries: IntegrationDeliveryStore
 
@@ -12,17 +18,37 @@ struct RecoveryLifecycle: Sendable {
         return (discovery.jobs, try await deliveries.discover())
     }
 
-    func removeSnapshots(for audioURL: URL) async throws {
+    func deletionSnapshot(for audioURL: URL, byteLimit: Int) async throws -> DeletionSnapshot {
+        let jobIDs = try await jobs.deletionOwners(for: audioURL, byteLimit: byteLimit)
+        let batches = try await deliveries.deletionOwners(for: audioURL, alsoIDs: Set(jobIDs.keys), byteLimit: byteLimit - jobIDs.count * 160)
+        guard jobIDs.count + batches.count <= 128 else { throw LiveArtifactError.artifactTooLarge }
+        return .init(jobs: jobIDs, deliveries: batches)
+    }
+
+    func removeSnapshots(for audioURL: URL, expected: DeletionSnapshot? = nil, authority: RecordingDeletionAuthority? = nil) async throws {
+        if let expected, let authority {
+            let current = try await deletionSnapshot(for: audioURL, byteLimit: RecordingDeletionAuthority.ticketLimit)
+            guard current.jobs.allSatisfy({ expected.jobs[$0.key] == $0.value }),
+                  current.deliveries.allSatisfy({ expected.deliveries[$0.key] == $0.value }) else { throw LiveArtifactError.wrongOwner }
+            for (id, owner) in current.deliveries { try await deliveries.remove(id: id, expectedRecordingID: owner, authority: authority) }
+            for (id, owner) in current.jobs { try await jobs.remove(id: id, expectedRecordingID: owner, authority: authority) }
+            return
+        }
         let (records, batches) = try await inventory()
         let path = audioURL.resolvingSymlinksInPath().standardizedFileURL.path
         let matching = records.filter {
             $0.source.finalizedAudioPath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path } == path
         }
         let ids = Set(matching.map(\.id))
-        for batch in batches where ids.contains(batch.id) || batch.bundle.audioFileURL.resolvingSymlinksInPath().standardizedFileURL.path == path {
-            try await deliveries.remove(id: batch.id)
+        let matchingBatches = batches.filter { ids.contains($0.id) || $0.bundle.audioFileURL.resolvingSymlinksInPath().standardizedFileURL.path == path }
+        if let expected {
+            guard matching.allSatisfy({ expected.jobs[$0.id] == $0.recordingID }),
+                  matchingBatches.allSatisfy({ expected.deliveries[$0.id] == $0.recordingID }) else { throw LiveArtifactError.wrongOwner }
         }
-        for record in matching { try await jobs.remove(id: record.id) }
+        for batch in matchingBatches {
+            try await deliveries.remove(id: batch.id, expectedRecordingID: expected?.deliveries[batch.id], authority: authority)
+        }
+        for record in matching { try await jobs.remove(id: record.id, expectedRecordingID: expected?.jobs[record.id], authority: authority) }
     }
 
     /// Read before retention/deletion retires durable recovery ownership.

@@ -48,7 +48,12 @@ import dBriefWire
             self.revision = revision; self.legacy = legacy; legacyBytes = bytes; captureClosed = closed
         }
     }
-    private enum Work { case checkpoint(Interval), clear(ChatHistory, Int), bind(URL) }
+    private final class Delete {
+        let continuation: CheckedContinuation<LiveSessionArtifactStore.DeletionReceipt, any Error>
+        var executing = false
+        init(_ continuation: CheckedContinuation<LiveSessionArtifactStore.DeletionReceipt, any Error>) { self.continuation = continuation }
+    }
+    private enum Work { case checkpoint(Interval), clear(ChatHistory, Int), bind(URL), delete(Delete) }
     let identity: LiveSessionIdentity
     let writer: LiveSessionArtifactStore
     let isNative: Bool
@@ -75,7 +80,10 @@ import dBriefWire
     @ObservationIgnored private let chatRequests = LiveArtifactPinCounter()
     @ObservationIgnored private weak var chatService: TranscriptChatService?
     private var started = false
+    var persistenceStarted: Bool { started }
     private var retired = false
+    private(set) var deletionPending = false
+    private(set) var admittedAudioURL: URL?
     private var nativeClosureDurable = false
     private(set) var captureClosed = false
     private(set) var acceptedRevision: UInt64 = 0
@@ -86,7 +94,7 @@ import dBriefWire
     private(set) var failure: String?
     private(set) var growthRetired = false
     var isDurable: Bool {
-        started && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
+        started && !deletionPending && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
             && durableChatRevision == acceptedChatRevision && chatLoad == nil
             && (!captureClosed || !isNative || nativeClosureDurable)
     }
@@ -105,13 +113,13 @@ import dBriefWire
     }
     func pin() -> Pin { Pin(self) }
     func attachChatService(_ service: TranscriptChatService) -> Bool {
-        guard !retired, (try? validity.withValidResult {}) != nil,
+        guard !retired, !deletionPending, (try? validity.withValidResult {}) != nil,
               chatService == nil || chatService === service else { return false }
         chatService = service; return true
     }
     func beginChatRequest() throws -> ChatRequest {
         try validity.withValidResult {}
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
         guard chatRequests.count == 0 else { throw LiveArtifactError.queueFull }
         return ChatRequest(self)
     }
@@ -120,7 +128,7 @@ import dBriefWire
     /// history rather than replaying an obsolete initial load task result.
     func loadChat() async throws -> ChatHistory? {
         try validity.withValidResult {}
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
         if chatReady { return currentChat }
         let task: Task<ChatHistory?, any Error>
         let loadID: UUID
@@ -208,7 +216,7 @@ import dBriefWire
     }
     private func requireChatAdmission() throws {
         try validity.withValidResult {}
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
         guard chatReady else { throw LiveArtifactError.bindingPending }
     }
 
@@ -221,6 +229,7 @@ import dBriefWire
                     let changes = try await store.changes()
                     for await _ in changes {
                         guard !Task.isCancelled, let self, !self.retired else { return }
+                        if self.deletionPending { continue }
                         try self.checkpoint(urgent: self.captureClosed)
                     }
                 } catch { self?.report(error) }
@@ -232,7 +241,7 @@ import dBriefWire
 
     func appendLegacy(_ values: [LiveTranscriptSegment]) throws {
         try validity.withValidResult {}
-        guard !isNative, !captureClosed, !growthRetired, !retired else { throw LiveArtifactError.deleted }
+        guard !isNative, !captureClosed, !growthRetired, !retired, !deletionPending else { throw LiveArtifactError.deleted }
         guard values.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
         var unique: [UUID: LiveLegacyTranscriptValue] = [:], added: [LiveLegacyTranscriptValue] = []
         for segment in values {
@@ -264,19 +273,35 @@ import dBriefWire
 
     func bind(to audioURL: URL) throws {
         try validity.withValidResult {}
-        guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
+        guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         guard controlCount < 8 else { throw LiveArtifactError.queueFull }
         _ = try LiveArtifactEncoding.estimatedBytes(audioURL, limit: 4_096)
         try checkpoint(urgent: false)
         queue.append(.bind(audioURL.standardizedFileURL))
+        admittedAudioURL = audioURL
         startDrain(urgent: true)
     }
 
     func retry() throws {
         try validity.withValidResult {}
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
         retryWriter = true; failure = nil; onFailure?(nil)
         startDrain(urgent: true)
+    }
+
+    /// One admitted control follows earlier writes/Bind. Caller cancellation
+    /// does not abandon a physical intent or its verified return value.
+    func commitDeletionIntent() async throws -> LiveSessionArtifactStore.DeletionReceipt {
+        try validity.withValidResult {}
+        guard started, captureClosed, !retired, !deletionPending else { throw LiveArtifactError.deleted }
+        guard controlCount < 8 else { throw LiveArtifactError.queueFull }
+        guard failure == nil else { throw LiveArtifactError.verificationFailed }
+        let pin = pin(); defer { pin.release() }
+        deletionPending = true
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.append(.delete(Delete(continuation)))
+            startDrain(urgent: true)
+        }
     }
 
     /// Intended for a closed capture or an explicitly bounded lifecycle drain.
@@ -314,7 +339,7 @@ import dBriefWire
     /// Later resume of that generation must not replace saved rich user edits.
     func publishFinal(_ result: TranscriptionResult) throws {
         try validity.withValidResult {}
-        guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
+        guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         finalCommitted = true
         guard finalPublication == nil else { return }
         needsTextOnlyFallback = result.segments.isEmpty && !result.text.isEmpty
@@ -345,7 +370,7 @@ import dBriefWire
     }
 
     private func publishFinal(transcript: RichTranscript, fallbackText: String?) throws {
-        guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
+        guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         guard acceptedRevision < .max, (finalPublication?.revision ?? 0) < .max else { throw LiveArtifactError.staleRevision }
         let value = try LiveAppFinalPublication.bounded(id: finalPublication?.id ?? UUID(),
             revision: (finalPublication?.revision ?? 0) + 1, transcript: transcript, fallbackText: fallbackText,
@@ -360,6 +385,8 @@ import dBriefWire
 
     func retire() {
         retired = true; observer?.cancel(); observer = nil; timer?.cancel(); timer = nil
+        chatService?.invalidateForReprocessing()
+        settleQueuedDeletion(LiveArtifactError.deleted)
         // A held physical write is still charged until its actual return. Its
         // shared validity rejects the effect after synchronous retirement.
     }
@@ -372,7 +399,7 @@ import dBriefWire
             switch work {
             case .checkpoint(let value): return count + (value === tail ? 0 : value.legacyBytes + value.chatBytes + value.finalBytes)
             case .clear: return count // Separately reserved: at most 8 × 4KiB.
-            case .bind: return count
+            case .bind, .delete: return count
             }
         }
         guard legacyBytes + chatBytes + (finalBytes ?? tail?.finalBytes ?? 0) <= Self.pendingValueLimit - pending else { throw LiveArtifactError.queueFull }
@@ -382,7 +409,7 @@ import dBriefWire
             finalBytes: finalPublication == nil ? 0 : Self.finalPublicationLimit)
     }
     private func checkpoint(urgent: Bool) throws {
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
         try requireCheckpointCapacity(bytes: legacyBytes)
         guard acceptedRevision < .max else { throw LiveArtifactError.staleRevision }
         acceptedRevision += 1
@@ -416,7 +443,7 @@ import dBriefWire
     private func drainQueue() async {
         if retryWriter {
             do { try await writer.retry(); retryWriter = false }
-            catch { report(error); drain = nil; return }
+            catch { report(error); settleQueuedDeletion(error); drain = nil; return }
         }
         while !queue.isEmpty, !retired {
             do {
@@ -455,10 +482,32 @@ import dBriefWire
                     try await writer.clearChat(revision: revision); durableChatRevision = revision; queue.removeFirst()
                 case .bind(let url):
                     try await writer.bind(to: url); queue.removeFirst()
+                case .delete(let request):
+                    request.executing = true
+                    do {
+                        // A prior load was admitted outside this queue. Join it
+                        // before intent, so recover cannot run deletion cleanup.
+                        if let task = chatLoad { _ = try await task.value }
+                        let receipt = try await writer.commitDeletionIntent()
+                        queue.removeFirst()
+                        request.continuation.resume(returning: receipt)
+                    } catch {
+                        queue.removeFirst(); deletionPending = false
+                        // Notifications coalesced while Delete was pending may
+                        // include actual native closure. Catch up after failure.
+                        if isNative { do { try checkpoint(urgent: true) } catch { report(error) } }
+                        request.continuation.resume(throwing: error)
+                    }
                 }
-            } catch { report(error); break }
+            } catch { report(error); settleQueuedDeletion(error); break }
         }
         drain = nil
+    }
+    private func settleQueuedDeletion(_ error: any Error) {
+        queue.removeAll { work in
+            guard case .delete(let request) = work, !request.executing else { return false }
+            request.continuation.resume(throwing: error); deletionPending = false; return true
+        }
     }
     private func report(_ error: any Error) { failure = error.localizedDescription; onFailure?(failure) }
 }

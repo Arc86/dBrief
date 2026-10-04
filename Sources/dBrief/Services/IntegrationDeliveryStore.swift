@@ -65,8 +65,47 @@ actor IntegrationDeliveryStore: IntegrationDeliveryPersistence {
         return matches.sorted { $0.createdAt < $1.createdAt }
     }
 
-    func remove(id: UUID) throws {
-        guard try load(id: id) != nil else { return }
+    func remove(id: UUID, expectedRecordingID: UUID? = nil, authority: RecordingDeletionAuthority? = nil) throws {
+        if let authority {
+            try RecordingResultMutation.withDeletion(of: authority.audioURL) {
+                try authority.validate()
+                guard let header = try deletionHeader(id: id) else { return }
+                guard header.recordingID == expectedRecordingID,
+                      try RecordingDeletionAuthority.canonical(header.bundle.audioFileURL).path == authority.audioURL.path else { throw LiveArtifactError.wrongOwner }
+                try FileManager.default.removeItem(at: url(id)); RecordingLibraryChange.notify()
+            }
+        } else { try removeVerified(id: id, expectedRecordingID: expectedRecordingID) }
+    }
+
+    private struct DeletionHeader: Decodable {
+        struct Bundle: Decodable { let audioFileURL: URL }
+        let version: Int, id: UUID, recordingID: UUID
+        let bundle: Bundle
+    }
+    private func deletionHeader(id: UUID) throws -> DeletionHeader? {
+        guard let header: DeletionHeader = try RecordingDeletionAuthority.readHeader(url(id)) else { return nil }
+        guard header.version == IntegrationDeliveryBatch.currentVersion, header.id == id else { throw StoreError.invalidRecord }
+        guard header.bundle.audioFileURL.isFileURL, header.bundle.audioFileURL.absoluteString.utf8.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+        return header
+    }
+    func deletionOwners(for audioURL: URL, alsoIDs: Set<UUID>, byteLimit: Int) throws -> [UUID: UUID] {
+        let path = try RecordingDeletionAuthority.canonical(audioURL).path
+        var result: [UUID: UUID] = [:]
+        try RecordingDeletionAuthority.scanChildren(rootURL) { file in
+            guard file.pathExtension == "json" else { return }
+            guard let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                  let header = try deletionHeader(id: id) else { throw StoreError.invalidRecord }
+            let ownedAudio = try RecordingDeletionAuthority.canonical(header.bundle.audioFileURL).path == path
+            guard !alsoIDs.contains(id) || ownedAudio else { throw LiveArtifactError.wrongOwner }
+            guard alsoIDs.contains(id) || ownedAudio else { return }
+            guard result.count < 128, (result.count + 1) * 160 <= byteLimit else { throw LiveArtifactError.artifactTooLarge }
+            result[id] = header.recordingID
+        }
+        return result
+    }
+    private func removeVerified(id: UUID, expectedRecordingID: UUID?) throws {
+        guard let current = try load(id: id) else { return }
+        guard expectedRecordingID == nil || current.recordingID == expectedRecordingID else { throw LiveArtifactError.wrongOwner }
         try FileManager.default.removeItem(at: url(id))
         RecordingLibraryChange.notify()
     }

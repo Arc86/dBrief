@@ -10,24 +10,29 @@ actor TranscriptStore {
     }
 
     func loadOwned(from url: URL, order: LiveSavedTranscriptOrder, validity: RecordingDerivativeValidity,
-                   generation: RecordingDerivativeValidity) async throws -> (RichTranscript, LiveSavedTranscriptOrder.Receipt) {
+                   generation: RecordingDerivativeValidity, deletionAdmission: RecordingDerivativeValidity? = nil) async throws -> (RichTranscript, LiveSavedTranscriptOrder.Receipt) {
         try RecordingResultMutation.withTransaction {
-            try order.read(at: url) { try generation.withValidResult { try validity.withValidResult { try loadValue(from: url) } } }
+            let read = { try order.read(at: url) { try generation.withValidResult { try validity.withValidResult { try self.loadValue(from: url) } } } }
+            if let deletionAdmission { return try deletionAdmission.withValidResult(read) }
+            return try read()
         }
     }
     func saveOwned(_ transcript: RichTranscript, to url: URL, order: LiveSavedTranscriptOrder,
                    validity: RecordingDerivativeValidity, generation: RecordingDerivativeValidity,
+                   deletionAdmission: RecordingDerivativeValidity? = nil,
                    replacing expected: RichTranscript? = nil) async throws -> LiveSavedTranscriptOrder.Receipt {
         await beforeOwnedSave()
         let receipt = try RecordingResultMutation.withWrite(to: url) {
-            try order.save(at: url) {
+            let write = { try order.save(at: url) {
                 try generation.withValidResult {
                     try validity.withValidResult {
-                        if let expected, try loadValue(from: url) != expected { throw TranscriptStoreError.changedDuringReview }
-                        try saveValue(transcript, to: url)
+                        if let expected, try self.loadValue(from: url) != expected { throw TranscriptStoreError.changedDuringReview }
+                        try self.saveValue(transcript, to: url)
                     }
                 }
-            }
+            } }
+            if let deletionAdmission { return try deletionAdmission.withValidResult(write) }
+            return try write()
         }
         await afterOwnedSave()
         return receipt

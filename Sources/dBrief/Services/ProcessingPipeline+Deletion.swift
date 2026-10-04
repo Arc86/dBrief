@@ -13,6 +13,10 @@ extension ProcessingPipeline {
     struct DeletionFiles: Sendable {
         var fileManager: @Sendable () -> FileManager = { .default }
         var record: @Sendable (DurabilityEvent) -> Void = { DurabilityJournal.shared.record($0) }
+        var beforeRemoval: @Sendable () async throws -> Void = {}
+        var removeEvidence: @Sendable (PrivacyReceiptStore, FileDeletionTicket) async throws -> Void = { store, ticket in
+            try await store.removeEvidence(afterDeletion: ticket)
+        }
     }
 
     /// Capture/post-recording ownership remains with the manager across this

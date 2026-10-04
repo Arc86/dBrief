@@ -608,6 +608,13 @@ enum RecordingResultMutation {
         return try body()
     }
 
+    static func withDeletion<T>(of audioURL: URL, _ body: () throws -> T) throws -> T {
+        try withTransaction {
+            guard state.owners[basePath(audioURL)] == nil else { throw ReprocessingStore.StoreError.alreadyPending }
+            return try body()
+        }
+    }
+
     private static func basePath(_ audioURL: URL) -> String {
         audioURL.standardizedFileURL.resolvingSymlinksInPath().deletingPathExtension().path
     }

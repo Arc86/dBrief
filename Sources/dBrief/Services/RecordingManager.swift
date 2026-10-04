@@ -94,6 +94,24 @@ final class RecordingManager {
     @ObservationIgnored private lazy var integrationDeliveryCoordinator = IntegrationDeliveryCoordinator(store: integrationDeliveryStore)
     var reviewingIntegrationDeliveries = false
     private let recordingFinalizer: RecordingFinalizer
+    @MainActor private final class DeletionState {
+        let frozen: ProcessingPipeline.FileDeletionTicket
+        let store: PrivacyReceiptStore
+        let owner: LiveRecordingSessionRegistry.Entry?
+        let pin: LiveRecordingArtifactOwner.Pin?
+        let maintenance: LiveRecordingPayloadBudget.Lease?
+        let requestedAudioURL: URL
+        var prepared: ProcessingPipeline.FileDeletionTicket?
+        var destructiveStarted = false
+        init(frozen: ProcessingPipeline.FileDeletionTicket, store: PrivacyReceiptStore,
+             owner: LiveRecordingSessionRegistry.Entry?, maintenance: LiveRecordingPayloadBudget.Lease?, requestedAudioURL: URL) {
+            self.frozen = frozen; self.store = store; self.owner = owner; pin = owner?.artifacts.pin(); self.maintenance = maintenance
+            self.requestedAudioURL = requestedAudioURL
+        }
+    }
+    @ObservationIgnored private var pendingFileDeletions: [String: DeletionState] = [:]
+    private let deletionFiles: ProcessingPipeline.DeletionFiles
+    private let deletionPrivacyStore: PrivacyReceiptStore
     let transcriptStore: TranscriptStore
     let insightsStore: InsightsStore
     private let markdownOutputStore = MarkdownOutputStore()
@@ -136,6 +154,8 @@ final class RecordingManager {
         importCoordinator: ImportCoordinator = ImportCoordinator(),
         modelDownloadCoordinator: ModelDownloadCoordinator? = nil,
         processingPipeline: ProcessingPipeline = ProcessingPipeline(),
+        deletionFiles: ProcessingPipeline.DeletionFiles = .init(),
+        deletionPrivacyStore: PrivacyReceiptStore = .shared,
         recordingFinalizer: RecordingFinalizer = RecordingFinalizer(),
         captureSessionStore: CaptureSessionStore = CaptureSessionStore(),
         reprocessingStore: ReprocessingStore = ReprocessingStore(),
@@ -153,6 +173,8 @@ final class RecordingManager {
         self.integrationDeliveryStore = integrationDeliveryStore
         self.reprocessingStore = reprocessingStore
         self.processingPipeline = processingPipeline
+        self.deletionFiles = deletionFiles
+        self.deletionPrivacyStore = deletionPrivacyStore
         self.recordingFinalizer = recordingFinalizer
         self.captureSessionStore = captureSessionStore
         self.importCoordinator = importCoordinator
@@ -1139,7 +1161,7 @@ final class RecordingManager {
                 if exists || required {
                     if let entry = publication.entry {
                         let (rich, receipt) = try await richStore.loadOwned(from: sidecarURL, order: entry.savedTranscriptOrder,
-                            validity: entry.validity, generation: publication.generation)
+                            validity: entry.validity, generation: publication.generation, deletionAdmission: publication.deletionAdmission)
                         publication.receipt = receipt; return rich
                     }
                     return try await richStore.load(from: sidecarURL)
@@ -1149,7 +1171,7 @@ final class RecordingManager {
                 guard let sidecarURL else { throw TranscriptStoreError.noSidecarURL }
                 if let entry = publication.entry {
                     publication.receipt = try await richStore.saveOwned(rich, to: sidecarURL, order: entry.savedTranscriptOrder,
-                        validity: entry.validity, generation: publication.generation)
+                        validity: entry.validity, generation: publication.generation, deletionAdmission: publication.deletionAdmission)
                 } else { try await richStore.save(rich, to: sidecarURL, generation: publication.generation) }
             }, publishTranscript: { @MainActor rich in
                 try self.requireProcessingOwnership(job)
@@ -1925,7 +1947,7 @@ final class RecordingManager {
                     guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
                     if let entry = publication.entry {
                         publication.receipt = try await store.saveOwned(rich, to: url, order: entry.savedTranscriptOrder,
-                            validity: entry.validity, generation: publication.generation, replacing: original)
+                            validity: entry.validity, generation: publication.generation, deletionAdmission: publication.deletionAdmission, replacing: original)
                     } else { try await store.save(rich, to: url, replacing: original) }
                     try self.requireReviewOwnership(operation, recording: recording)
                 }, publish: { @MainActor rich in
@@ -2062,7 +2084,7 @@ final class RecordingManager {
                 guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
                 if let entry = publication.entry {
                     publication.receipt = try await store.saveOwned(rich, to: url, order: entry.savedTranscriptOrder,
-                        validity: entry.validity, generation: publication.generation, replacing: baseTranscript)
+                        validity: entry.validity, generation: publication.generation, deletionAdmission: publication.deletionAdmission, replacing: baseTranscript)
                 } else { try await store.save(rich, to: url, replacing: baseTranscript) }
                 try self.requireReviewOwnership(operation, recording: recording)
                 try validateSource()
@@ -2468,13 +2490,22 @@ final class RecordingManager {
         }
         if let finalized = recording.finalizedAudioURL { urls.append(finalized) }
         if let metadata = recording.metadataURL { urls.append(metadata) }
+        guard recording.segmentAudioURLs.count <= 128 else { appState.lastError = LiveArtifactError.artifactTooLarge.localizedDescription; return }
         urls.append(contentsOf: recording.segmentAudioURLs)
         let input = ProcessingPipeline.DiscardRequest(recordingID: recording.id,
             recoveryManifestURL: recording.recoveryManifestURL,
             audioURL: recording.finalizedAudioURL ?? recording.fileURL,
             finalized: recording.finalizedAudioURL != nil, knownFiles: urls,
             pendingReceiptURL: recording.privacyScope?.pendingReceiptURL)
-        await processingPipeline.discardRecordingFiles(input, store: recording.privacyScope?.store ?? .shared)
+        do {
+            let deletion = try freezeDeletion(audioURL: input.audioURL, recordingID: recording.id,
+                discard: input, store: recording.privacyScope?.store ?? .shared)
+            try await finishDeletion(deletion, lifecycle: nil)
+        } catch {
+            appState.lastError = error.localizedDescription
+            postRecordingAction.finish(token: token, error: error.localizedDescription)
+            return
+        }
         guard postRecordingAction.token == token, postRecordingAction.recordingID == recording.id,
               appState.currentRecording === recording else { return }
         if recording.recoveryManifestURL == input.recoveryManifestURL { recording.recoveryManifestURL = nil }
@@ -3107,6 +3138,8 @@ final class RecordingManager {
         recording: Recording,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws {
+        guard !appState.liveRecordingSessions.isRetired(recordingID: recording.id),
+              !pendingFileDeletions.values.contains(where: { $0.frozen.recordingID == recording.id }) else { throw LiveArtifactError.deleted }
         let context: PrivacyTrace.Context
         if let current = PrivacyTrace.context, current.recordingID == recording.id { context = current }
         else { context = await recording.privacyContext() }
@@ -3217,10 +3250,11 @@ final class RecordingManager {
     @MainActor private final class RichPublication {
         let entry: LiveRecordingSessionRegistry.Entry?
         let generation: RecordingDerivativeValidity
+        let deletionAdmission: RecordingDerivativeValidity?
         let pin: LiveRecordingArtifactOwner.Pin?
         var receipt: LiveSavedTranscriptOrder.Receipt?
         init(entry: LiveRecordingSessionRegistry.Entry?, generation: RecordingDerivativeValidity) {
-            self.entry = entry; self.generation = generation; pin = entry?.artifacts.pin()
+            self.entry = entry; self.generation = generation; deletionAdmission = entry?.richDeletionAdmission; pin = entry?.artifacts.pin()
         }
         deinit { pin?.release() }
     }
@@ -3248,7 +3282,9 @@ final class RecordingManager {
             }
             if let entry = publication.entry {
                 guard let receipt = publication.receipt else { throw CancellationError() }
-                try entry.savedTranscriptOrder.withCurrent(receipt, publish)
+                try entry.savedTranscriptOrder.withCurrent(receipt) {
+                    try publication.deletionAdmission!.withValidResult(publish)
+                }
             } else { try publish() }
         }
     }
@@ -3263,7 +3299,7 @@ final class RecordingManager {
         let publication = try richPublication(for: recording, editor: true)
         if let entry = publication.entry {
             publication.receipt = try await transcriptStore.saveOwned(transcript, to: url, order: entry.savedTranscriptOrder,
-                validity: entry.validity, generation: publication.generation)
+                validity: entry.validity, generation: publication.generation, deletionAdmission: publication.deletionAdmission)
         } else { try await transcriptStore.save(transcript, to: url, generation: publication.generation) }
         try Task.checkCancellation()
         guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, expectedRevision == reprocessingResultsRevision,
@@ -3482,8 +3518,6 @@ final class RecordingManager {
     }
 
     func deleteRecording(_ audioURL: URL) async throws {
-        await refreshReprocessingAttempts()
-        guard reprocessingRecoveryReady, !isReprocessing(audioURL), !reprocessingAdmissionBusy else { throw ReprocessingError.pendingAttempt }
         defer { RecordingLibraryChange.notify() }
         guard !captureCoordinator.isBusy, appState.isIdle, !appState.showPostRecordingSheet, !postRecordingAction.isBusy,
               !queueEnqueueInProgress, appState.processingJob == nil,
@@ -3492,15 +3526,92 @@ final class RecordingManager {
         }
         recoveryMaintenanceInProgress = true
         defer { recoveryMaintenanceInProgress = false }
+        // Freeze before the first refresh/storage await. Retry keeps the exact
+        // original ticket, even after metadata and snapshots have disappeared.
+        let deletion = try freezeDeletion(audioURL: audioURL, store: deletionPrivacyStore)
+        await refreshReprocessingAttempts()
+        guard reprocessingRecoveryReady, !isReprocessing(audioURL), !reprocessingAdmissionBusy else {
+            abandonUncommittedDeletion(deletion); throw ReprocessingError.pendingAttempt
+        }
         let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)
         do {
-            try await processingPipeline.deleteRecordingFiles(audioURL, lifecycle: lifecycle)
+            try await finishDeletion(deletion, lifecycle: lifecycle)
             try await reprocessingStore.purgeCompleted(audioURL: audioURL)
         } catch {
             await refreshWorkQueue()
             throw error
         }
         await refreshWorkQueue()
+    }
+
+    private func freezeDeletion(audioURL: URL, recordingID: UUID? = nil,
+                                discard: ProcessingPipeline.DiscardRequest? = nil, store: PrivacyReceiptStore) throws -> DeletionState {
+        if let retained = pendingFileDeletions.values.first(where: { $0.requestedAudioURL.standardizedFileURL == audioURL.standardizedFileURL }) {
+            guard recordingID == nil || retained.frozen.recordingID == recordingID else { throw LiveArtifactError.wrongOwner }
+            return retained
+        }
+        let key = try RecordingDeletionAuthority.canonical(audioURL).path
+        if let retained = pendingFileDeletions[key] {
+            guard recordingID == nil || retained.frozen.recordingID == recordingID else { throw LiveArtifactError.wrongOwner }
+            return retained
+        }
+        guard pendingFileDeletions.count < 8 else { throw LiveArtifactError.queueFull }
+        let registry = appState.liveRecordingSessions
+        let candidate = recordingID.flatMap { registry.entry(recordingID: $0) } ?? registry.entry(audioURL: audioURL)
+        // The synchronous owned Bind association avoids reading metadata before
+        // admission. Legacy collection reserves its full three-ticket allowance.
+        let maintenance = candidate == nil ? try registry.reserveDeletionMaintenance() : nil
+        let authority = try RecordingResultMutation.withDeletion(of: audioURL) {
+            try RecordingDeletionAuthority(audioURL: audioURL, expectedRecordingID: recordingID ?? candidate?.identity.recordingID)
+        }
+        let owner = authority.recordingID.flatMap { registry.entry(recordingID: $0) }
+        if let id = authority.recordingID, registry.owns(recordingID: id), owner == nil { throw LiveRecordingSessionRegistry.Failure.unavailable }
+        let base = audioURL.deletingPathExtension()
+        if owner == nil, try ["live-binding.json", "live-transcript.json"].contains(where: {
+            try RecordingDeletionAuthority.Stamp.read(base.appendingPathExtension($0)) != nil
+        }) { throw LiveRecordingSessionRegistry.Failure.unavailable }
+        do {
+            let frozen = try RecordingResultMutation.withDeletion(of: audioURL) {
+                owner?.sealRichWritesForDeletion()
+                return try ProcessingPipeline.FileDeletionTicket.freeze(audioURL: audioURL, recordingID: authority.recordingID,
+                    discard: discard, manifestID: authority.recordingID, originalAuthority: authority)
+            }
+            let value = DeletionState(frozen: frozen, store: store, owner: owner, maintenance: maintenance, requestedAudioURL: audioURL)
+            pendingFileDeletions[key] = value
+            return value
+        } catch { owner?.resumeRichWritesAfterFailedIntent(); throw error }
+    }
+
+    private func abandonUncommittedDeletion(_ state: DeletionState) {
+        let registry = appState.liveRecordingSessions
+        guard !state.destructiveStarted,
+              state.frozen.recordingID.map({ !registry.hasPendingDeletion(recordingID: $0) && !registry.isRetired(recordingID: $0) }) ?? true else { return }
+        state.owner?.resumeRichWritesAfterFailedIntent()
+        if pendingFileDeletions[state.frozen.authority.audioURL.path] === state {
+            pendingFileDeletions[state.frozen.authority.audioURL.path] = nil
+        }
+    }
+
+    private func finishDeletion(_ state: DeletionState, lifecycle: RecoveryLifecycle?) async throws {
+        do {
+            if state.prepared == nil { state.prepared = try await processingPipeline.prepareDeletion(state.frozen, lifecycle: lifecycle, store: state.store) }
+            let ticket = state.prepared!
+            try RecordingResultMutation.withDeletion(of: ticket.authority.audioURL) { try ticket.validateFiles() }
+            let registry = appState.liveRecordingSessions
+            if let owner = state.owner {
+                if owner.artifacts.persistenceStarted { try await registry.deleteArtifacts(recordingID: owner.identity.recordingID) }
+                else if !registry.isRetired(recordingID: owner.identity.recordingID) { try registry.retire(owner.identity) }
+                state.destructiveStarted = true
+                transcriptChatStore?.remove(for: owner.identity.recordingID)
+            } else {
+                state.destructiveStarted = true
+                TranscriptChatService.invalidateForReprocessing(audioURL: ticket.authority.audioURL)
+                transcriptChatStore?.remove(for: ticket.authority.audioURL)
+            }
+            try await processingPipeline.removeDeletionFiles(ticket, lifecycle: lifecycle, store: state.store, files: deletionFiles)
+            if let id = ticket.recordingID { registry.completeDeletion(recordingID: id) }
+            pendingFileDeletions[ticket.authority.audioURL.path] = nil
+        } catch { abandonUncommittedDeletion(state); throw error }
     }
 
     private static func queueURL(for recording: Recording) -> URL? {

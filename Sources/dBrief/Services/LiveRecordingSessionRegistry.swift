@@ -11,6 +11,9 @@ final class LiveRecordingSessionRegistry {
         let artifacts: LiveRecordingArtifactOwner
         let savedTranscriptOrder = LiveSavedTranscriptOrder()
         let richWriteValidity = RecordingDerivativeValidity()
+        private(set) var richDeletionAdmission = RecordingDerivativeValidity()
+        func sealRichWritesForDeletion() { richDeletionAdmission.invalidate() }
+        func resumeRichWritesAfterFailedIntent() { if isValid { richDeletionAdmission = .init() } }
         private(set) var captureClosed = false
         private(set) var isValid = true
         private(set) var coordinator: LiveCaptureSessionCoordinator?
@@ -28,6 +31,7 @@ final class LiveRecordingSessionRegistry {
         fileprivate func invalidate() {
             isValid = false; validity.invalidate()
             richWriteValidity.invalidate()
+            richDeletionAdmission.invalidate()
             artifacts.retire()
             let retired = coordinator; coordinator = nil
             Task { await retired?.retire() }
@@ -39,6 +43,11 @@ final class LiveRecordingSessionRegistry {
         }
     }
     private var entries: [UUID: Entry] = [:]
+    private struct DeletionTicket {
+        let entry: Entry
+        let receipt: LiveSessionArtifactStore.DeletionReceipt
+    }
+    private var deletions: [UUID: DeletionTicket] = [:]
     private var captureOwners: [UUID: UUID] = [:]
     private var retiredRecordings: Set<UUID> = []
     private var unavailableRecordings: Set<UUID> = []
@@ -48,6 +57,8 @@ final class LiveRecordingSessionRegistry {
     private let afterCheckpoint: @Sendable () async -> Void
     private let budget: LiveRecordingPayloadBudget
     var reservedPayloadBytes: Int { budget.reservedBytes }
+    func reserveDeletionMaintenance() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveMaintenance() }
+    func hasPendingDeletion(recordingID: UUID) -> Bool { deletions[recordingID] != nil }
     init(artifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"), ownerLimit: Int = 8,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
          afterCheckpoint: @escaping @Sendable () async -> Void = {}) {
@@ -90,6 +101,12 @@ final class LiveRecordingSessionRegistry {
     }
 
     func entry(recordingID: UUID) -> Entry? { entries[recordingID] }
+    func entry(audioURL: URL) -> Entry? {
+        guard let path = try? RecordingDeletionAuthority.canonical(audioURL) else { return nil }
+        return entries.values.first {
+            $0.artifacts.admittedAudioURL.flatMap { try? RecordingDeletionAuthority.canonical($0) } == path
+        }
+    }
     func isRetired(recordingID: UUID) -> Bool { retiredRecordings.contains(recordingID) }
     func entry(identity: LiveSessionIdentity) -> Entry? {
         guard let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
@@ -107,6 +124,26 @@ final class LiveRecordingSessionRegistry {
         retiredRecordings.insert(identity.recordingID)
         // Retain the capture namespace tombstone; a late attach cannot alias it.
     }
+
+    /// Intent failure leaves the entry valid. A verified receipt retires its
+    /// exact producers before cleanup, and remains available across retries.
+    func deleteArtifacts(recordingID: UUID) async throws {
+        let ticket: DeletionTicket
+        if let retained = deletions[recordingID] { ticket = retained }
+        else {
+            guard deletions.count < 8 else { throw Failure.capacity }
+            guard let entry = entries[recordingID] else { throw Failure.unavailable }
+            let receipt = try await entry.artifacts.commitDeletionIntent()
+            ticket = .init(entry: entry, receipt: receipt)
+            deletions[recordingID] = ticket
+            entry.invalidate()
+            if entries[recordingID] === entry { entries[recordingID] = nil }
+            retiredRecordings.insert(recordingID)
+        }
+        try await ticket.entry.artifacts.writer.cleanupDeletion(ticket.receipt)
+    }
+    /// The manager releases the ticket only after audio and privacy cleanup.
+    func completeDeletion(recordingID: UUID) { deletions[recordingID] = nil }
 
     private func owned(_ identity: LiveSessionIdentity) throws -> Entry {
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }

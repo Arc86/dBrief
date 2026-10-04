@@ -313,9 +313,66 @@ actor PrivacyReceiptStore {
         return Array(Set(urls))
     }
 
+    /// Manager tickets reserve before this scan and preflight each retained URL.
+    /// No directory-wide array or receipt contents enter the cleanup inventory.
+    func boundedDeletionTargets(for audioURL: URL, recordingIDs: Set<UUID>,
+                                extra: URL? = nil, byteLimit: Int) throws -> [URL] {
+        guard pendingRoots.count <= 32, recordingIDs.count <= 128, aliases.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+        let target = PrivacyReceiptLifecycle.receiptURL(for: audioURL)
+        let hash = Data(keyHash(target).utf8)
+        var urls: [URL] = [], seen = Set<URL>(), bytes = 0
+        func append(_ url: URL) throws {
+            guard !seen.contains(url) else { return }
+            let cost = try RecordingDeletionAuthority.charge(url)
+            guard urls.count < 128, cost <= byteLimit - bytes else { throw LiveArtifactError.artifactTooLarge }
+            bytes += cost; seen.insert(url); urls.append(url)
+        }
+        try append(target)
+        if let extra { try append(extra) }
+        for root in pendingRoots {
+            for id in recordingIDs { try append(root.appendingPathComponent(id.uuidString + ".privacy.json")) }
+            guard try RecordingDeletionAuthority.Stamp.read(root, directory: true) != nil else { continue }
+            var scanError: (any Error)?
+            guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil,
+                options: [.skipsSubdirectoryDescendants], errorHandler: { _, error in scanError = error; return false }) else { throw LiveArtifactError.unsafePath }
+            var visited = 0
+            for case let file as URL in iterator {
+                visited += 1; guard visited <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+                guard file.pathExtension == "binding", pendingID(file.deletingPathExtension()) != nil else { continue }
+                guard try RecordingDeletionAuthority.Stamp.read(file) != nil else { continue }
+                let descriptor = open(file.path, O_RDONLY | O_NOFOLLOW)
+                guard descriptor >= 0 else { throw StoreError.unsafeFile }
+                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+                defer { try? handle.close() }
+                if try handle.read(upToCount: 65) == hash { try append(file.deletingPathExtension()) }
+            }
+            if let scanError { throw scanError }
+        }
+        for key in aliases.keys where receiptKey(resolvedURL(URL(fileURLWithPath: key))) == receiptKey(target) {
+            try append(URL(fileURLWithPath: key))
+        }
+        return urls
+    }
+
     /// Caller must first verify that all owned audio is gone. Suppression is
     /// durable before deleting files and remains even if cleanup partly fails.
     /// A retry can finish cleanup without any completion callback recreating it.
+    func removeEvidence(afterDeletion ticket: ProcessingPipeline.FileDeletionTicket) throws {
+        // Run at the actual actor-side mutation, after any injected await. A
+        // newly reused audio/metadata path cannot inherit old privacy cleanup.
+        try RecordingResultMutation.withDeletion(of: ticket.authority.audioURL) {
+            try ticket.validateFiles()
+            guard ticket.items.allSatisfy({ !FileManager.default.fileExists(atPath: $0.url.path) }) else { throw LiveArtifactError.verificationFailed }
+            let original = Set(ticket.privacyTargets.map(receiptKey))
+            guard ticket.privacyTargets.allSatisfy({ original.contains(receiptKey(resolvedURL($0))) }) else { throw LiveArtifactError.wrongOwner }
+            if ticket.discard == nil,
+               try PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: ticket.authority.audioURL)) {
+                throw LiveArtifactError.verificationFailed
+            }
+            try removeEvidence(at: ticket.privacyTargets)
+        }
+    }
+
     func removeEvidence(at urls: [URL]) throws {
         let all = Set(urls + urls.map(resolvedURL))
         for url in all { suppressedKeys.insert(receiptKey(url)) }

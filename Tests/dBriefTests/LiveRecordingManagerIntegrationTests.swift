@@ -25,12 +25,16 @@ import Testing
     let copyGate = ASRCopyGate()
     let stagingBudget = LiveASRStagingBudget()
     let capturedTrack: URL?
+    let privacyStore: PrivacyReceiptStore
     private let restore: () -> Void
 
-    init(holdCopy: Bool = false, engine: LiveTranscriptionEngine = .nemotron, syntheticAudio: Bool = false,
+    init(holdCopy: Bool = false, engine: LiveTranscriptionEngine = .nemotron, syntheticAudio: Bool = false, realManifest: Bool = false,
          stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
+         deletionFiles: ProcessingPipeline.DeletionFiles = .init(),
          richStore: TranscriptStore = .init()) throws {
         files = try ASRAssetsFixture()
+        privacyStore = PrivacyReceiptStore(gapDirectoryURL: files.root.appendingPathComponent("gaps"),
+            pendingDirectoryURL: files.root.appendingPathComponent("pending"))
         let captureDirectory = files.root.appendingPathComponent("CaptureSession")
         try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
         if syntheticAudio {
@@ -94,6 +98,11 @@ import Testing
             pause: {},resume: {},switchInputDevice: { _ in },permissions: .init(microphone: { true },systemAudio: { false }))
         let persistence = CaptureCoordinator.Persistence(create: { id,date in
             await probe.holdCreate()
+            if realManifest {
+                try InterruptedSessionStore.write(.init(id: id, startedAt: date, state: .capturing,
+                    tracks: [.init(kind: .microphone, relativePath: "capture.mic.caf")]),
+                    to: captureDirectory.appendingPathComponent("session.json"))
+            }
             return .init(id: id,startedAt: date,files: .init(directoryURL: captureDirectory,
                 manifestURL: captureDirectory.appendingPathComponent("session.json"),captureBaseURL: captureDirectory.appendingPathComponent("capture")))
         },began: { _,_ in },failedStart: { _,_,_ in },stopped: { session,state,_ in
@@ -103,7 +112,10 @@ import Testing
             voiceLibraryStore: .init(url: files.root.appendingPathComponent("voices.json")),
             modelPerformanceStore: .init(url: files.root.appendingPathComponent("performance.json")),
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")),microsoftAuthService: .init(),
-            recordingFinalizer: .init(resolveFFmpeg: { nil }), captureHardware: hardware,capturePersistence: persistence,liveFactory: factory,
+            deletionFiles: deletionFiles, deletionPrivacyStore: privacyStore,
+            recordingFinalizer: .init(resolveFFmpeg: { nil }), reprocessingStore: .init(root: files.root.appendingPathComponent("reprocessing")),
+            integrationDeliveryStore: .init(rootURL: files.root.appendingPathComponent("deliveries")),
+            captureHardware: hardware,capturePersistence: persistence,liveFactory: factory,
             capturePreview: .init(prepare: { _ in nil }, make: {
                 .init(start: { _, emit in await MainActor.run { probe.liveSink = emit } },
                     stop: { await MainActor.run { probe.previewStops += 1 } })
@@ -145,6 +157,170 @@ import Testing
         return await condition()
     }
 
+    private func prepareForDeletion(_ f: LiveManagerFixture, bound: Bool) async throws -> (Recording, LiveRecordingSessionRegistry.Entry, URL, URL) {
+        let start = Task { try await f.manager.startRecording() }
+        try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+        let recording = try #require(f.state.currentRecording)
+        try #require(await eventually { f.probe.liveSink != nil })
+        f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Preserve owned evidence", speaker: "You")]))
+        try #require(await eventually { !f.state.liveTranscriptSegments.isEmpty })
+        await f.manager.stopRecording()
+        if bound { await f.manager.skipProcessing() }
+        let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+        _ = try await entry.artifacts.loadChat()
+        try entry.artifacts.saveChat(.init(messages: [.init(role: .user, content: "Preserve the conversation")]), urgent: true)
+        try await entry.artifacts.flush()
+        let audio = try #require(bound ? recording.finalizedAudioURL : f.capturedTrack)
+        let history = bound ? audio.deletingPathExtension().appendingPathExtension("chat.json")
+            : f.files.root.appendingPathComponent("LiveSessions/\(entry.identity.captureSessionID.uuidString)/chat.json")
+        return (recording, entry, audio, history)
+    }
+
+    @Test(arguments: [false, true])
+    func failedDeletionIntentKeepsTheActualManagerOwnerHistoryAndAudio(bound: Bool) async throws {
+        let fault = LiveArtifactFault(stage: .deletionIntent)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await fault.check($0) })
+        do {
+            let (recording, entry, audio, history) = try await prepareForDeletion(f, bound: bound)
+            let savedAudio = try Data(contentsOf: audio), savedHistory = try Data(contentsOf: history)
+            if bound { await #expect(throws: (any Error).self) { try await f.manager.deleteRecording(audio) } }
+            else { await f.manager.discardRecording() }
+            #expect(f.state.liveRecordingSessions.entry(recordingID: recording.id) === entry)
+            #expect(entry.isValid && !f.state.liveRecordingSessions.isRetired(recordingID: recording.id))
+            #expect(FileManager.default.fileExists(atPath: audio.path))
+            #expect(FileManager.default.fileExists(atPath: history.path))
+            #expect(try Data(contentsOf: audio) == savedAudio)
+            #expect(try Data(contentsOf: history) == savedHistory)
+            if !bound { #expect(f.state.currentRecording === recording && f.state.showPostRecordingSheet) }
+            #expect(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().deleted == false)
+            // A failed intent is directly retryable, without invalidating the
+            // valid history or falsely treating it as a failed chat save.
+            if bound { try await f.manager.deleteRecording(audio) } else { await f.manager.discardRecording() }
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            #expect(!FileManager.default.fileExists(atPath: history.path))
+            #expect(f.state.liveRecordingSessions.isRetired(recordingID: recording.id))
+            #expect(!f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            if !bound { #expect(f.state.currentRecording == nil && !f.state.showPostRecordingSheet) }
+            #expect(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().deleted)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true])
+    func verifiedIntentRetiresTheActualManagerOwnerBeforeHeldCleanupAndRetry(bound: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .deletionCleanup), fault = LiveArtifactFault(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: {
+            try await gate.enter($0); try await fault.check($0)
+        })
+        var heldDeletion: Task<Bool, Never>?
+        do {
+            let (recording, entry, audio, history) = try await prepareForDeletion(f, bound: bound)
+            let audioBytes = try Data(contentsOf: audio), historyBytes = try Data(contentsOf: history)
+            let unrelated = f.files.root.appendingPathComponent("unrelated.m4a")
+            try Data([8, 9]).write(to: unrelated)
+            let deletion = Task { () -> Bool in
+                if bound { do { try await f.manager.deleteRecording(audio); return true } catch { return false } }
+                await f.manager.discardRecording(); return !f.state.showPostRecordingSheet
+            }
+            heldDeletion = deletion
+            try await gate.waitForArrival()
+            #expect(!entry.isValid && f.state.liveRecordingSessions.isRetired(recordingID: recording.id))
+            #expect(f.state.liveRecordingSessions.entry(recordingID: recording.id) == nil)
+            #expect(f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            #expect(try Data(contentsOf: audio) == audioBytes && Data(contentsOf: history) == historyBytes)
+            #expect(throws: (any Error).self) { try entry.artifacts.saveChat(.init(messages: []), urgent: true) }
+            deletion.cancel(); await gate.release()
+            #expect(await deletion.value == false)
+            #expect(try Data(contentsOf: audio) == audioBytes)
+            #expect(f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            if !bound { #expect(f.state.currentRecording === recording && f.state.showPostRecordingSheet) }
+            if bound { try await f.manager.deleteRecording(audio) } else { await f.manager.discardRecording() }
+            #expect(!FileManager.default.fileExists(atPath: audio.path) && !FileManager.default.fileExists(atPath: history.path))
+            #expect(!f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            #expect(try Data(contentsOf: unrelated) == Data([8, 9]))
+            #expect(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().deleted)
+            await f.clean()
+        } catch { await gate.release(); _ = await heldDeletion?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["master", "metadata", "snapshot"])
+    func actualLibraryDeletionRejectsAForeignOwnerAtThePhysicalRemovalBoundary(replace: String) async throws {
+        let gate = LiveArtifactGate(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { try await gate.enter(.deletionCleanup) }))
+        var heldDeletion: Task<Bool, Never>?
+        do {
+            let (recording, _, audio, history) = try await prepareForDeletion(f, bound: true)
+            let date = Date()
+            let job = PersistedProcessingJob(id: UUID(), recordingID: recording.id, createdAt: date, updatedAt: date, status: .completed,
+                request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: false),
+                source: .init(recordingDate: date, duration: 1, fileSize: 3, meetingTitle: "Fixture", participants: [],
+                    echoSuppressionApplied: false, finalizedAudioPath: audio.path, segmentAudioPaths: []))
+            try await f.manager.processingJobStore.save(job)
+            let deletion = Task { do { try await f.manager.deleteRecording(audio); return true } catch { return false } }
+            heldDeletion = deletion
+            try await gate.waitForArrival()
+            #expect(f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            #expect(!FileManager.default.fileExists(atPath: history.path))
+            let replacedURL = replace == "snapshot" ? f.files.root.appendingPathComponent("jobs/\(job.id.uuidString.lowercased())/job.json")
+                : replace == "metadata" ? audio.deletingPathExtension().appendingPathExtension("json") : audio
+            let replacement: Data
+            if replace != "master" {
+                var metadata = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: replacedURL)) as? [String: Any])
+                metadata["recordingID"] = UUID().uuidString
+                replacement = try JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys])
+            } else { replacement = Data("A different recording at the same name".utf8) }
+            try replacement.write(to: replacedURL, options: .atomic)
+            await gate.release(); #expect(await deletion.value == false)
+            #expect(try Data(contentsOf: replacedURL) == replacement)
+            await #expect(throws: (any Error).self) { try await f.manager.deleteRecording(audio) }
+            #expect(try Data(contentsOf: replacedURL) == replacement)
+            #expect(try await f.manager.processingJobStore.load(id: job.id) != nil)
+            #expect(f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            await f.clean()
+        } catch { await gate.release(); _ = await heldDeletion?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true])
+    func actualLibraryRetryRetainsPendingPrivacyTargetsAfterMetadataAndSnapshotsAreGone(bound: Bool) async throws {
+        let fault = LiveArtifactFault(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, realManifest: !bound,
+            deletionFiles: .init(removeEvidence: { store, ticket in
+                try await fault.check(.deletionCleanup); try await store.removeEvidence(afterDeletion: ticket)
+            }))
+        do {
+            let (recording, _, audio, _) = try await prepareForDeletion(f, bound: bound)
+            let scope = RecordingPrivacyScope(recordingID: recording.id, store: f.privacyStore,
+                pendingRootURL: f.files.root.appendingPathComponent("pending"))
+            let operation = PrivacyOperation(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper))
+            let token = await PrivacyTrace.begin(operation, in: await scope.context())
+            if !bound { recording.privacyScope = scope }
+            let date = Date()
+            let job = PersistedProcessingJob(id: UUID(), recordingID: recording.id, createdAt: date, updatedAt: date, status: .completed,
+                request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: false),
+                source: .init(recordingDate: date, duration: 1, fileSize: 3, meetingTitle: "Fixture", participants: [],
+                    echoSuppressionApplied: false, finalizedAudioPath: bound ? audio.path : nil, segmentAudioPaths: []))
+            if bound { try await f.manager.processingJobStore.save(job) }
+            if bound { await #expect(throws: (any Error).self) { try await f.manager.deleteRecording(audio) } }
+            else { await f.manager.discardRecording(); #expect(f.state.showPostRecordingSheet) }
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            #expect(!FileManager.default.fileExists(atPath: audio.deletingPathExtension().appendingPathExtension("json").path))
+            #expect(FileManager.default.fileExists(atPath: scope.pendingReceiptURL.path))
+            #expect(f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            if bound { #expect(try await f.manager.processingJobStore.load(id: job.id) == nil) }
+            if bound { try await f.manager.deleteRecording(audio) } else { await f.manager.discardRecording() }
+            #expect(!f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            #expect(!FileManager.default.fileExists(atPath: scope.pendingReceiptURL.path))
+            await PrivacyTrace.finish(token, outcome: .succeeded)
+            #expect(!FileManager.default.fileExists(atPath: scope.pendingReceiptURL.path))
+            #expect(try await f.privacyStore.begin(operation, runID: UUID(), at: scope.pendingReceiptURL) == nil)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
     private func prepareFinalForEdits(_ f: LiveManagerFixture) async throws -> (Recording, LiveRecordingSessionRegistry.Entry) {
         let start = Task { try await f.manager.startRecording() }
         try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
@@ -162,6 +338,157 @@ import Testing
         let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
         try await entry.artifacts.flush()
         return (recording, entry)
+    }
+
+    @Test func failedUnboundDeleteAllowsTheActualManagerToSkipAndBindItsHealthyOwner() async throws {
+        let fault = LiveArtifactFault(stage: .deletionIntent)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await fault.check($0) })
+        do {
+            let (recording, entry, _, _) = try await prepareForDeletion(f, bound: false)
+            await f.manager.discardRecording()
+            #expect(f.state.currentRecording === recording && f.state.showPostRecordingSheet && entry.isValid)
+            await f.manager.skipProcessing()
+            #expect(!f.state.showPostRecordingSheet)
+            let audio = try #require(recording.finalizedAudioURL)
+            #expect(FileManager.default.fileExists(atPath: audio.path))
+            #expect(f.state.liveRecordingSessions.entry(recordingID: recording.id) === entry && entry.isValid)
+            try await entry.artifacts.flush()
+            #expect(await entry.artifacts.writer.status().audioURL != nil)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["metadata", "unrelatedDelivery"])
+    func oversizedDeletionInputsPreserveTheActualManagerOwnerAndFilesBeforeIntent(kind: String) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, entry, audio, history) = try await prepareForDeletion(f, bound: true)
+            let audioBytes = try Data(contentsOf: audio), historyBytes = try Data(contentsOf: history)
+            let largeURL: URL
+            if kind == "metadata" {
+                largeURL = audio.deletingPathExtension().appendingPathExtension("json")
+                var value = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: largeURL)) as? [String: Any])
+                value["participants"] = [String](repeating: "", count: 20_000)
+                let bytes = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+                #expect(bytes.count < 65_536)
+                try bytes.write(to: largeURL, options: .atomic)
+            } else {
+                let batch = IntegrationDeliveryBatch(id: UUID(), recordingID: UUID(), createdAt: Date(),
+                    bundle: .init(title: "Unrelated", createdAt: Date(), durationSeconds: 60,
+                        audioFileURL: f.files.root.appendingPathComponent("unrelated.m4a"), transcript: "Transcript", summary: "Summary",
+                        actionItems: [], tags: [], sentiment: nil, markdown: String(repeating: "x", count: 2 * 1_024 * 1_024), calendarEvent: nil),
+                    deliveries: [])
+                let directory = f.files.root.appendingPathComponent("deliveries")
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                largeURL = directory.appendingPathComponent(batch.id.uuidString.lowercased() + ".json")
+                try JSONEncoder().encode(batch).write(to: largeURL)
+            }
+            let original = try Data(contentsOf: largeURL)
+            await #expect(throws: LiveArtifactError.artifactTooLarge) { try await f.manager.deleteRecording(audio) }
+            #expect(entry.isValid && f.state.liveRecordingSessions.entry(recordingID: recording.id) === entry)
+            #expect(!f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            #expect(try Data(contentsOf: largeURL) == original)
+            #expect(try Data(contentsOf: audio) == audioBytes && Data(contentsOf: history) == historyBytes)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualDeleteSealsAHeldEditorBeforeFreezingFilesAndWaitingForIntent() async throws {
+        let editGate = LiveArtifactGate(stage: .sourceTranscript, initiallyEnabled: false)
+        let intentGate = LiveArtifactGate(stage: .deletionIntent)
+        let store = TranscriptStore(beforeOwnedSave: { try? await editGate.enter(.sourceTranscript) })
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            stage: { try await intentGate.enter($0) }, richStore: store)
+        var heldEdit: Task<Void, any Error>?, heldDeletion: Task<Void, any Error>?
+        do {
+            let (recording, entry) = try await prepareFinalForEdits(f)
+            let audio = try #require(recording.finalizedAudioURL), richURL = try #require(recording.transcriptSidecarURL)
+            let original = try Data(contentsOf: richURL)
+            var edit = try await store.load(from: richURL); edit.segments[0].text = "Held old edit"
+            let value = edit, revision = f.manager.reprocessingResultsRevision
+            await editGate.arm()
+            let save = Task { try await f.manager.saveEditedTranscript(value, for: recording, expectedRevision: revision) }; heldEdit = save
+            try await editGate.waitForArrival()
+            let deletion = Task { try await f.manager.deleteRecording(audio) }; heldDeletion = deletion
+            try await intentGate.waitForArrival()
+            #expect(entry.isValid && !f.state.liveRecordingSessions.isRetired(recordingID: recording.id))
+            await editGate.release()
+            await #expect(throws: CancellationError.self) { try await save.value }
+            #expect(try Data(contentsOf: richURL) == original)
+            await intentGate.release(); try await deletion.value
+            #expect(!FileManager.default.fileExists(atPath: audio.path) && !FileManager.default.fileExists(atPath: richURL.path))
+            #expect(!f.state.liveRecordingSessions.hasPendingDeletion(recordingID: recording.id))
+            await f.clean()
+        } catch {
+            await editGate.release(); await intentGate.release()
+            _ = try? await heldEdit?.value; _ = try? await heldDeletion?.value
+            await f.clean(); throw error
+        }
+    }
+
+    @Test func actualManagerDeletionSaturationKeepsSnapshotsAndTheHealthyOwner() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, entry, audio, history) = try await prepareForDeletion(f, bound: true)
+            let date = Date()
+            var ids: [UUID] = []
+            for _ in 0..<129 {
+                let job = PersistedProcessingJob(id: UUID(), recordingID: recording.id, createdAt: date, updatedAt: date, status: .completed,
+                    request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: false),
+                    source: .init(recordingDate: date, duration: 1, fileSize: 3, meetingTitle: "Fixture", participants: [],
+                        echoSuppressionApplied: false, finalizedAudioPath: audio.path, segmentAudioPaths: []))
+                try await f.manager.processingJobStore.save(job); ids.append(job.id)
+            }
+            await #expect(throws: LiveArtifactError.artifactTooLarge) { try await f.manager.deleteRecording(audio) }
+            #expect(entry.isValid && f.state.liveRecordingSessions.entry(recordingID: recording.id) === entry)
+            #expect(FileManager.default.fileExists(atPath: audio.path) && FileManager.default.fileExists(atPath: history.path))
+            for id in ids { #expect(try await f.manager.processingJobStore.load(id: id) != nil) }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualOwnedDeleteUsesItsLeaseAtCapacityWhileLegacyDefersBeforeInspection() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, entry, audio, _) = try await prepareForDeletion(f, bound: true)
+            let registry = f.state.liveRecordingSessions
+            for _ in 0..<3 { _ = try registry.registerLegacy(.init(recordingID: UUID(), captureSessionID: UUID())) }
+            #expect(registry.reservedPayloadBytes == 128 * 1_024 * 1_024)
+            let legacy = f.files.root.appendingPathComponent("legacy.m4a")
+            try Data([1]).write(to: legacy)
+            // An unsafe header would fail differently if inspection preceded
+            // admission; it must never be opened at aggregate capacity.
+            let metadata = legacy.deletingPathExtension().appendingPathExtension("json")
+            try FileManager.default.createSymbolicLink(at: metadata, withDestinationURL: audio)
+            await #expect(throws: LiveRecordingSessionRegistry.Failure.capacity) { try await f.manager.deleteRecording(legacy) }
+            #expect(FileManager.default.fileExists(atPath: legacy.path) && entry.isValid)
+            try await f.manager.deleteRecording(audio)
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualDeleteRetryKeepsItsOriginalReceiptWhenTheRequestedDirectoryAliasChanges() async throws {
+        let fault = LiveArtifactFault(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { try await fault.check(.deletionCleanup) }))
+        do {
+            let (_, _, audio, _) = try await prepareForDeletion(f, bound: true)
+            let alias = f.files.root.appendingPathComponent("library-alias")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: audio.deletingLastPathComponent())
+            let requested = alias.appendingPathComponent(audio.lastPathComponent)
+            await #expect(throws: LiveArtifactFixtureFailure.injected) { try await f.manager.deleteRecording(requested) }
+            let otherDirectory = f.files.root.appendingPathComponent("other-library")
+            try FileManager.default.createDirectory(at: otherDirectory, withIntermediateDirectories: true)
+            let foreign = otherDirectory.appendingPathComponent(audio.lastPathComponent), bytes = Data("Foreign recording".utf8)
+            try bytes.write(to: foreign)
+            try FileManager.default.removeItem(at: alias)
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: otherDirectory)
+            try await f.manager.deleteRecording(requested)
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            #expect(try Data(contentsOf: foreign) == bytes)
+            await f.clean()
+        } catch { await f.clean(); throw error }
     }
 
     @Test func reprocessingAdmissionForAnotherRecordingDoesNotRetireAHealthyPreparationWrite() async throws {
