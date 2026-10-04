@@ -6,6 +6,8 @@ import SwiftUI
 /// while its observation-driven body was refreshed during device switching.
 struct MicrophoneInputMenu: NSViewRepresentable {
     let selectedUID: String
+    /// The device actually recording, shown as the chip title.
+    let activeName: String?
     let enabled: Bool
     let select: @MainActor (String?) -> Void
 
@@ -26,17 +28,22 @@ struct MicrophoneInputMenu: NSViewRepresentable {
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         context.coordinator.parent = self
         button.contentTintColor = enabled ? .systemGreen : .secondaryLabelColor
+        // A pull-down button shows its first item as the title.
+        button.menu?.item(at: 0)?.title = context.coordinator.chipTitle
+        button.setAccessibilityValue(activeName)
     }
 
     @MainActor final class Coordinator: NSObject, NSMenuDelegate {
         var parent: MicrophoneInputMenu
         init(parent: MicrophoneInputMenu) { self.parent = parent }
 
+        var chipTitle: String { parent.activeName ?? "Mic" }
+
         func menuNeedsUpdate(_ menu: NSMenu) { rebuild(menu) }
 
         func rebuild(_ menu: NSMenu) {
             menu.removeAllItems()
-            let title = NSMenuItem(title: "Mic", action: nil, keyEquivalent: "")
+            let title = NSMenuItem(title: chipTitle, action: nil, keyEquivalent: "")
             title.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
             menu.addItem(title)
             add("System Default", uid: "", to: menu)

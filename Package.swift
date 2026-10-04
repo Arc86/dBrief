@@ -14,6 +14,9 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.9.6"),
     ],
     targets: [
+        // Typed Objective-C wrappers around AVAudioEngine / AVCaptureSession mic
+        // operations, so a native NSException never unwinds through Swift frames.
+        .target(name: "NativeMic"),
         .target(
             name: "dBriefWire"
         ),
@@ -39,6 +42,7 @@ let package = Package(
             name: "dBrief",
             dependencies: [
                 "dBriefWire",
+                "NativeMic",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             exclude: ["Resources"],
