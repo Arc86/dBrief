@@ -55,6 +55,11 @@ final class TranscriptChatStore {
         sessions[key] = service; addAlias(url, for: key); touch(key); evictIfNeeded()
     }
     func remove(for recordingID: UUID) { remove(.recording(recordingID)) }
+    func remove(for recordingID: UUID, owner: LiveRecordingArtifactOwner) {
+        let key = Key.recording(recordingID)
+        guard sessions[key]?.usesRecordingOwner(owner) == true else { return }
+        remove(key)
+    }
 
     private func addAlias(_ url: URL, for key: Key) {
         let url = url.standardizedFileURL

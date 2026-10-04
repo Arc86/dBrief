@@ -96,6 +96,7 @@ final class AppContext {
         log.info("Permissions — mic: \(self.recordingManager.hasMicrophonePermission), system audio: \(self.recordingManager.hasSystemAudioPermission)")
         await recordingManager.recoverReprocessingAttempts()
         if recordingManager.reprocessingRecoveryReady {
+            await recordingManager.discoverLiveHistory()
             await recordingManager.recoverInterruptedSessions()
             await recordingManager.resumeInterruptedProcessingJob()
         }

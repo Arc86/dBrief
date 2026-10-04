@@ -44,6 +44,14 @@ struct RecordingDeletionAuthority: Sendable {
     let metadata: Item
     let recordingID: UUID?
     var audioURL: URL { audio.url }
+    private init(audio: Item, metadata: Item, recordingID: UUID) {
+        self.audio = audio; self.metadata = metadata; self.recordingID = recordingID
+    }
+    func adoptingVerifiedRecordingID(_ id: UUID) throws -> Self {
+        try validate()
+        guard recordingID == nil || recordingID == id else { throw LiveArtifactError.wrongOwner }
+        return .init(audio: audio, metadata: metadata, recordingID: id)
+    }
     static func canonical(_ url: URL) throws -> URL {
         guard url.isFileURL, url.absoluteString.utf8.count <= 4_096 else { throw LiveArtifactError.unsafePath }
         var directory = url.deletingLastPathComponent(), missing: [String] = []

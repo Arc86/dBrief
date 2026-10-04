@@ -50,6 +50,9 @@ struct TranscriptDetailView: View {
     @State private var loadFailed = false
     @State private var currentTime: TimeInterval = 0
     @State private var chatService: TranscriptChatService?
+    @State private var chatBuildTask: Task<Void, Never>?
+    @State private var chatBuildID: UUID?
+    @State private var chatPreparationNotice: String?
     @State private var insights: RecordingInsights?
     @State private var spokenSummaryService: SpokenSummaryService?
     /// Dedicated player for the spoken-summary sheet so it never commandeers the
@@ -212,6 +215,9 @@ struct TranscriptDetailView: View {
         }
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
+        }
+        .onDisappear {
+            chatBuildTask?.cancel(); chatBuildTask = nil; chatBuildID = nil
         }
         .onChange(of: context.recordingManager.reprocessingRecoveryReady) { _, ready in
             if !ready { invalidateDerivedWork(); richTranscript = nil; insights = nil }
@@ -1005,6 +1011,14 @@ struct TranscriptDetailView: View {
                 return ChatReferencePlayback.seekSeconds(reference: reference, basis: basis,
                     binding: .init(recordingID: recording.id, captureSessionID: nil, mappingRevision: nil, mapping: nil))
             }, onSeekReference: { seek(to: $0) })
+        } else if let chatPreparationNotice {
+            VStack(spacing: 12) {
+                Text("Saved history unavailable").font(.headline)
+                Text(chatPreparationNotice).foregroundStyle(.secondary)
+                Button("Retry") { buildChatService() }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 12) {
                 Spacer()
@@ -1370,6 +1384,24 @@ struct TranscriptDetailView: View {
     }
 
     private func buildChatService() {
+        guard !isReprocessing, chatBuildTask == nil else { return }
+        let buildID = UUID(), recordingID = recording.id
+        chatBuildID = buildID; chatPreparationNotice = nil
+        chatBuildTask = Task {
+            defer { if chatBuildID == buildID { chatBuildTask = nil; chatBuildID = nil } }
+            do {
+                _ = try await context.recordingManager.prepareLiveHistory(recordingID: recordingID,
+                    audioURL: recording.finalizedAudioURL ?? (isLive ? nil : recording.fileURL))
+                guard !Task.isCancelled, chatBuildID == buildID, recording.id == recordingID, !isReprocessing else { return }
+                installChatService()
+            } catch {
+                guard !Task.isCancelled, chatBuildID == buildID, recording.id == recordingID else { return }
+                chatPreparationNotice = error.localizedDescription
+            }
+        }
+    }
+
+    private func installChatService() {
         guard !isReprocessing else { return }
         // Reuse an existing session for this recording so the conversation
         // survives switching recordings and coming back.
@@ -1701,6 +1733,7 @@ struct TranscriptDetailView: View {
     }
 
     private func invalidateDerivedWork() {
+        chatBuildTask?.cancel(); chatBuildTask = nil; chatBuildID = nil; chatPreparationNotice = nil
         customRenameTurn = nil
         chatService?.invalidateForReprocessing()
         chatStore.session(for: recording.id, url: recording.fileURL)?.invalidateForReprocessing()

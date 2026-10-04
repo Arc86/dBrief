@@ -614,6 +614,7 @@ final class TranscriptChatService {
     }
     var canRetryHistorySave: Bool { !isRetryingHistory && (persistenceError != nil || recordingOwner?.failure != nil) }
     var usesRecordingPersistence: Bool { recordingOwner != nil }
+    func usesRecordingOwner(_ owner: LiveRecordingArtifactOwner) -> Bool { recordingOwner === owner }
     var recordingIdentity: UUID? { recordingOwner?.identity.recordingID ?? privacyRecording?.id }
     var canEvictFromCache: Bool {
         !isStreaming && ownedProducerCount == 0 && !isLoadingHistory && !hasUnsavedChanges

@@ -4,13 +4,17 @@ import Foundation
 import dBriefWire
 
 enum LiveArtifactStage: Sendable {
+    case catalogueRead
+    case cataloguePublication
+    case registryResolution
+    case ownerHydration
     case historyLoad
     case sourceChat, sourceTranscript, journalPrepared, targetChat, targetTranscript, journalCommitted
     case sourceCleanup, deletionIntent, deletionCleanup
 }
 enum LiveArtifactError: Error, Equatable, LocalizedError {
     case staleRevision, revisionConflict, bindingPending, deleted, queueFull, artifactTooLarge
-    case wrongOwner, unsupportedVersion, corruptArtifact, unsafePath, verificationFailed
+    case wrongOwner, unsupportedVersion, corruptArtifact, unsafePath, verificationFailed, missingEvidence
     var errorDescription: String? {
         switch self {
         case .staleRevision: "A newer live history revision has already been accepted."
@@ -24,6 +28,7 @@ enum LiveArtifactError: Error, Equatable, LocalizedError {
         case .corruptArtifact: "The history could not be read and has been kept."
         case .unsafePath: "The history path is unavailable or unsafe."
         case .verificationFailed: "The history save could not be verified."
+        case .missingEvidence: "The conversation is saved, but its transcript evidence is unavailable."
         }
     }
 }
@@ -47,6 +52,13 @@ actor LiveSessionArtifactStore {
         var appTranscript: LiveTranscriptArtifact? { transcriptValue?.app }
         let audioURL: URL?
         let deleted: Bool
+        var authority: [RecordingDeletionAuthority.Item] = []
+        func validateAuthority() throws {
+            for item in authority {
+                try LiveSessionArtifactStore.requireSafeParents(item.url)
+                guard try RecordingDeletionAuthority.Stamp.read(item.url) == item.stamp else { throw LiveArtifactError.wrongOwner }
+            }
+        }
     }
     struct Status: Sendable {
         let acceptedChatRevision: UInt64
@@ -104,7 +116,7 @@ actor LiveSessionArtifactStore {
         var waiters: [CheckedContinuation<Outcome?, any Error>] = []
     }
     private enum Operation {
-        case writes(Batch), clear(Payload), bind(URL), recover, retry(chat: Payload?, transcript: Payload?), delete
+        case writes(Batch), clear(Payload), bind(URL), recover, recoverOwner, retry(chat: Payload?, transcript: Payload?), delete
         case deletionIntent, deletionCleanup(DeletionReceipt)
         var isControl: Bool { if case .writes = self { false } else { true } }
     }
@@ -176,8 +188,8 @@ actor LiveSessionArtifactStore {
         _ = try await submitControl(.clear(payload))
     }
     func bind(to audioURL: URL) async throws { _ = try await submitControl(.bind(audioURL.standardizedFileURL)) }
-    func recover() async throws -> Restored {
-        guard case .restored(let restored) = try await submitControl(.recover, allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
+    func recover(cleanupDeletedArtifacts: Bool = true) async throws -> Restored {
+        guard case .restored(let restored) = try await submitControl(cleanupDeletedArtifacts ? .recover : .recoverOwner, allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
         return restored
     }
     func retry() async throws {
@@ -296,16 +308,16 @@ actor LiveSessionArtifactStore {
         if case .deletionCleanup(let receipt) = operation {
             try await cleanupDeleted(receipt); return nil
         }
-        if case .recover = operation { try await beforeStage(.historyLoad) }
+        switch operation { case .recover, .recoverOwner: try await beforeStage(.historyLoad); default: break }
         try inspectDisk()
         switch operation {
         case .delete:
             try await cleanupDeleted(commitIntent()); return nil
         case .deletionIntent:
             return .deletion(try await commitIntent())
-        case .recover:
+        case .recover, .recoverOwner:
             if isDeleted {
-                try await cleanupDeleted(currentDeletionReceipt())
+                if case .recover = operation { try await cleanupDeleted(currentDeletionReceipt()) }
                 return .restored(.init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true))
             }
             if let journal { try await finishBinding(journal) }
@@ -322,7 +334,7 @@ actor LiveSessionArtifactStore {
             if let journal { try await finishBinding(journal) }
             if let transcript, durableTranscript?.fingerprint != transcript.fingerprint { try await write(transcript) }
             if let chat, durableChat?.fingerprint != chat.fingerprint { try await write(chat) }
-        case .delete, .recover, .deletionIntent, .deletionCleanup: break
+        case .delete, .recover, .recoverOwner, .deletionIntent, .deletionCleanup: break
         }
         return nil
     }
@@ -470,12 +482,21 @@ actor LiveSessionArtifactStore {
             try inspectDiskWhileValid()
             guard !isDeleted else { return .init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true) }
             let audio = journal?.phase == .committed ? journal?.audioURL : nil
+            var paths = [journalURL, deletionURL, sourceURL(.chat), sourceURL(.transcript)]
+            if let audio {
+                paths += [audio, audio.deletingPathExtension().appendingPathExtension("json"), bindingTarget(audio),
+                          targetURL(.chat, audio: audio), targetURL(.transcript, audio: audio)]
+            }
+            let authority = try paths.map { try RecordingDeletionAuthority.Item($0) }
+            if let journal { try requireCurrentJournal(journal) }
             if let audio { try requireOwner(audio) }
             let generation = audio == nil ? nil : journal?.generation
             let chat = try readPayload(.chat, from: audio.map { targetURL(.chat, audio: $0) } ?? sourceURL(.chat), generation: generation)
             let transcript = try readPayload(.transcript, from: audio.map { targetURL(.transcript, audio: $0) } ?? sourceURL(.transcript), generation: generation)
-            return .init(chat: try chat.map { try decode($0.data, as: ChatHistory.self).interruptedAfterRestart },
-                transcriptValue: try transcript.map { try LiveTranscriptArtifactCodec.decode($0.data) }, audioURL: audio, deleted: false)
+            let restored = Restored(chat: try chat.map { try decode($0.data, as: ChatHistory.self).interruptedAfterRestart },
+                transcriptValue: try transcript.map { try LiveTranscriptArtifactCodec.decode($0.data) }, audioURL: audio, deleted: false, authority: authority)
+            try restored.validateAuthority()
+            return restored
         }
     }
 
@@ -584,12 +605,15 @@ actor LiveSessionArtifactStore {
         if let bytes = try read(deletionURL) { let intent: Deletion = try decode(bytes); try validate(intent); isDeleted = true; throw LiveArtifactError.deleted }
     }
     private func requireOwner(_ audio: URL) throws {
-        try validateBindingPaths(audio)
-        try requireSafeParents(audio)
-        guard try read(audio, maximum: 0, contents: false) != nil,
-              let bytes = try read(audio.deletingPathExtension().appendingPathExtension("json")),
-              let metadata = try? JSONDecoder().decode(RecordingMetadataPayload.self, from: bytes),
-              metadata.recordingID == identity.recordingID && metadata.masterFileName == audio.lastPathComponent else { throw LiveArtifactError.wrongOwner }
+        try RecordingResultMutation.withDeletion(of: audio) {
+            struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }
+            try validateBindingPaths(audio)
+            try requireSafeParents(audio)
+            guard try read(audio, maximum: 0, contents: false) != nil,
+                  let metadata: Owner = try RecordingDeletionAuthority.readHeader(audio.deletingPathExtension().appendingPathExtension("json"),
+                    maximumBytes: min(payloadLimit, 3 * 1_024 * 1_024), tokenLimit: 1_048_576),
+                  metadata.recordingID == identity.recordingID && metadata.masterFileName == audio.lastPathComponent else { throw LiveArtifactError.wrongOwner }
+        }
     }
     private func validateBindingPaths(_ audio: URL) throws {
         guard audio.isFileURL, audio == audio.standardizedFileURL,
@@ -674,7 +698,9 @@ actor LiveSessionArtifactStore {
         catch { throw LiveArtifactError.corruptArtifact }
     }
 
-    private func requireSafeParents(_ url: URL) throws {
+    private func requireSafeParents(_ url: URL) throws { try Self.requireSafeParents(url) }
+    nonisolated static func requireSafeParents(_ url: URL) throws {
+        let fm = FileManager.default
         guard url.isFileURL else { throw LiveArtifactError.unsafePath }
         var parent = url.deletingLastPathComponent().standardizedFileURL
         while parent.path != "/" {
@@ -694,6 +720,7 @@ actor LiveSessionArtifactStore {
     }
     private func read(_ url: URL, maximum: Int = maxArtifactBytes, contents: Bool = true) throws -> Data? {
         try requireSafeParents(url)
+        let stamp = try RecordingDeletionAuthority.Stamp.read(url)
         let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         if descriptor < 0 {
             if errno == ENOENT { return nil }
@@ -708,6 +735,8 @@ actor LiveSessionArtifactStore {
         guard info.st_size >= 0 && info.st_size <= maximum else { throw LiveArtifactError.artifactTooLarge }
         let bytes = try handle.read(upToCount: maximum + 1) ?? Data()
         guard bytes.count <= maximum, bytes.count == info.st_size else { throw LiveArtifactError.verificationFailed }
+        try RecordingDeletionAuthority.validateJSON(bytes, tokenLimit: 1_048_576)
+        guard try RecordingDeletionAuthority.Stamp.read(url) == stamp else { throw LiveArtifactError.wrongOwner }
         return bytes
     }
     private func createSessionDirectory() throws {

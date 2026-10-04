@@ -12,6 +12,13 @@ extension ProcessingPipeline {
         var snapshots = RecoveryLifecycle.DeletionSnapshot()
         var privacyTargets: [URL] = []
         var recordingID: UUID? { authority.recordingID }
+        func adoptingVerifiedRecordingID(_ id: UUID) throws -> Self {
+            try validateFiles()
+            var value = Self(authority: try authority.adoptingVerifiedRecordingID(id), items: items,
+                recoveryDirectory: recoveryDirectory, discard: discard, bytes: bytes)
+            value.snapshots = snapshots; value.privacyTargets = privacyTargets
+            return value
+        }
 
         static func freeze(audioURL: URL, recordingID: UUID? = nil, discard: DiscardRequest? = nil,
                            manifestID: UUID? = nil, originalAuthority: RecordingDeletionAuthority? = nil) throws -> Self {

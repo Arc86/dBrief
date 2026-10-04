@@ -7,6 +7,44 @@ struct FinalizedRecordingMatch: Equatable, Sendable {
 }
 
 extension ProcessingPipeline {
+    /// The live-history caller reserves inspection memory before this bounded
+    /// projection scan. It shares stable UUID/master matching with recovery.
+    nonisolated func findFinalizedRecording(recordingID: UUID, in folders: [URL], scanLimit: Int = 4_096) throws -> FinalizedRecordingMatch? {
+        struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }
+        guard folders.count <= 32 else { throw LiveArtifactError.artifactTooLarge }
+        var visited = 0, result: FinalizedRecordingMatch?
+        for folder in folders {
+            try LiveSessionArtifactStore.requireSafeParents(folder.appendingPathComponent("probe"))
+            guard try RecordingDeletionAuthority.Stamp.read(folder, directory: true) != nil else { continue }
+            var failure: (any Error)?
+            guard let iterator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles], errorHandler: { _, error in failure = error; return false }) else { throw LiveArtifactError.unsafePath }
+            for case let url as URL in iterator {
+                visited += 1
+                guard visited <= min(4_096, max(1, scanLimit)), url.absoluteString.utf8.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+                let attributes = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard attributes.isSymbolicLink != true else { throw LiveArtifactError.unsafePath }
+                if attributes.isDirectory == true { continue }
+                guard url.pathExtension.lowercased() == "json" else { continue }
+                let owner: Owner
+                do {
+                    guard let header: Owner = try RecordingDeletionAuthority.readHeader(url, maximumBytes: 3 * 1_024 * 1_024, tokenLimit: 1_048_576) else { continue }
+                    owner = header
+                } catch is DecodingError { continue }
+                guard owner.recordingID == recordingID else { continue }
+                guard owner.masterFileName.utf8.count <= 256, owner.masterFileName == URL(fileURLWithPath: owner.masterFileName).lastPathComponent else { throw LiveArtifactError.wrongOwner }
+                let audio = url.deletingLastPathComponent().appendingPathComponent(owner.masterFileName)
+                guard url == audio.deletingPathExtension().appendingPathExtension("json"),
+                      RetentionCleanup.audioExtensions.contains(audio.pathExtension.lowercased()),
+                      try RecordingDeletionAuthority.Stamp.read(audio) != nil else { throw LiveArtifactError.wrongOwner }
+                let match = FinalizedRecordingMatch(audioURL: audio, metadataURL: url, segmentURLs: [])
+                guard result == nil || result == match else { throw LiveArtifactError.wrongOwner }
+                result = match
+            }
+            if let failure { throw failure }
+        }
+        return result
+    }
     struct RecoveredRecordingSource: Sendable {
         let fileURL: URL
         let duration: Double

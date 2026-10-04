@@ -7,7 +7,7 @@ final class LiveRecordingSessionRegistry {
     @MainActor final class Entry {
         let identity: LiveSessionIdentity
         let store: LiveTranscriptStore
-        let validity = RecordingDerivativeValidity()
+        let validity: RecordingDerivativeValidity
         let artifacts: LiveRecordingArtifactOwner
         let savedTranscriptOrder = LiveSavedTranscriptOrder()
         let richWriteValidity = RecordingDerivativeValidity()
@@ -21,11 +21,26 @@ final class LiveRecordingSessionRegistry {
                          reservation: LiveRecordingPayloadBudget.Lease,
                          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
                          afterCheckpoint: @escaping @Sendable () async -> Void) {
-            self.identity = identity
+            self.identity = identity; validity = RecordingDerivativeValidity()
             self.store = LiveTranscriptStore(identity: identity,validity: validity,
                 retainedEvidenceLimit: LiveRecordingArtifactOwner.evidenceLimit, payloadReservation: reservation)
             artifacts = LiveRecordingArtifactOwner(identity: identity, store: store, validity: validity,
                 native: native, rootURL: root, payloadReservation: reservation, beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+        }
+        fileprivate init(identity: LiveSessionIdentity, restored: LiveSessionArtifactStore.Restored,
+                         writer: LiveSessionArtifactStore, validity: RecordingDerivativeValidity,
+                         root: URL, reservation: LiveRecordingPayloadBudget.Lease,
+                         beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void) throws {
+            self.identity = identity; self.validity = validity
+            if let checkpoint = restored.transcript {
+                store = try LiveTranscriptStore(restoring: checkpoint, validity: validity, payloadReservation: reservation)
+            } else {
+                store = LiveTranscriptStore(identity: identity, validity: validity, payloadReservation: reservation)
+            }
+            artifacts = LiveRecordingArtifactOwner(identity: identity, store: store, validity: validity,
+                native: restored.transcript != nil, rootURL: root, payloadReservation: reservation,
+                beforeStage: beforeStage, recoveredWriter: writer)
+            try artifacts.hydrate(restored); captureClosed = true
         }
         fileprivate func closeCapture() { captureClosed = true; artifacts.closeCapture() }
         fileprivate func invalidate() {
@@ -44,9 +59,36 @@ final class LiveRecordingSessionRegistry {
     }
     private var entries: [UUID: Entry] = [:]
     private struct DeletionTicket {
-        let entry: Entry
+        let entry: Entry?
+        let writer: LiveSessionArtifactStore
         let receipt: LiveSessionArtifactStore.DeletionReceipt
     }
+    private final class Load {
+        let identity: LiveSessionIdentity
+        let validity = RecordingDerivativeValidity()
+        let reservation: LiveRecordingPayloadBudget.Lease
+        var task: Task<Entry?, any Error>?
+        var waiters = 0
+        init(_ identity: LiveSessionIdentity, reservation: LiveRecordingPayloadBudget.Lease) {
+            self.identity = identity; self.reservation = reservation
+        }
+    }
+    private final class CatalogueSnapshot: Sendable {
+        let values: [UUID: LiveManagedArtifactCatalogue.Hint]
+        let reservation: LiveRecordingPayloadBudget.Lease
+        init(values: [UUID: LiveManagedArtifactCatalogue.Hint], reservation: LiveRecordingPayloadBudget.Lease) {
+            self.values = values; self.reservation = reservation
+        }
+    }
+    private var loads: [UUID: Load] = [:]
+    private var hints: [UUID: LiveManagedArtifactCatalogue.Hint] = [:]
+    private var namespaceReservation: LiveRecordingPayloadBudget.Lease?
+    private var catalogueTask: Task<CatalogueSnapshot, any Error>?
+    private var catalogueID: UUID?
+    private var catalogueWaiters = 0
+    private var catalogueComplete = false
+    private(set) var discoveryFailure: String?
+    var onEviction: ((Entry) -> Void)?
     private var deletions: [UUID: DeletionTicket] = [:]
     private var captureOwners: [UUID: UUID] = [:]
     private var retiredRecordings: Set<UUID> = []
@@ -58,13 +100,16 @@ final class LiveRecordingSessionRegistry {
     private let budget: LiveRecordingPayloadBudget
     var reservedPayloadBytes: Int { budget.reservedBytes }
     func reserveDeletionMaintenance() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveMaintenance() }
+    func reserveInspection() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.inspectionBytes) }
+    var pendingLoads: Int { loads.count }
+    var pendingLoadWaiters: Int { loads.values.reduce(0) { $0 + $1.waiters } }
     func hasPendingDeletion(recordingID: UUID) -> Bool { deletions[recordingID] != nil }
     init(artifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"), ownerLimit: Int = 8,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
-         afterCheckpoint: @escaping @Sendable () async -> Void = {}) {
+         afterCheckpoint: @escaping @Sendable () async -> Void = {}, payloadBudget: LiveRecordingPayloadBudget? = nil) {
         self.artifactRoot = artifactRoot; self.ownerLimit = min(8, max(1, ownerLimit)); self.beforeStage = beforeStage
         self.afterCheckpoint = afterCheckpoint
-        budget = LiveRecordingPayloadBudget(ownerLimit: ownerLimit)
+        budget = payloadBudget ?? LiveRecordingPayloadBudget(ownerLimit: ownerLimit)
     }
 
     func register(_ identity: LiveSessionIdentity) throws -> Entry {
@@ -75,6 +120,7 @@ final class LiveRecordingSessionRegistry {
     func owns(recordingID: UUID) -> Bool { captureOwners.values.contains(recordingID) }
     func noteUnavailable(_ identity: LiveSessionIdentity) {
         guard entries[identity.recordingID] == nil, captureOwners[identity.captureSessionID] == nil else { return }
+        guard (try? admitNamespace(identity)) != nil else { discoveryFailure = LiveArtifactError.artifactTooLarge.localizedDescription; catalogueComplete = false; return }
         captureOwners[identity.captureSessionID] = identity.recordingID
         unavailableRecordings.insert(identity.recordingID)
     }
@@ -86,6 +132,9 @@ final class LiveRecordingSessionRegistry {
             return entry
         }
         guard captureOwners[identity.captureSessionID] == nil else { throw Failure.identityConflict }
+        try admitNamespace(identity)
+        guard hints[identity.recordingID] == nil,
+              !FileManager.default.fileExists(atPath: artifactRoot.appendingPathComponent(identity.captureSessionID.uuidString).path) else { throw Failure.unavailable }
         if !budget.canReserve { evictOneDurableOwner() }
         guard entries.count < ownerLimit else { throw Failure.capacity }
         let reservation = try budget.reserve()
@@ -96,8 +145,10 @@ final class LiveRecordingSessionRegistry {
     }
     private func evictOneDurableOwner() {
         guard let evictable = entries.values.first(where: { $0.artifacts.canEvict }) else { return }
+        let hint = LiveManagedArtifactCatalogue.Hint(identity: evictable.identity, audioURL: evictable.artifacts.admittedAudioURL, deleted: false)
+        guard (try? admitHint(hint)) != nil else { return }
+        onEviction?(evictable)
         evictable.invalidate(); entries[evictable.identity.recordingID] = nil
-        unavailableRecordings.insert(evictable.identity.recordingID)
     }
 
     func entry(recordingID: UUID) -> Entry? { entries[recordingID] }
@@ -108,6 +159,9 @@ final class LiveRecordingSessionRegistry {
         }
     }
     func isRetired(recordingID: UUID) -> Bool { retiredRecordings.contains(recordingID) }
+    func isKnownDeleted(recordingID: UUID) -> Bool {
+        retiredRecordings.contains(recordingID) || hints[recordingID]?.deleted == true || deletions[recordingID] != nil
+    }
     func entry(identity: LiveSessionIdentity) -> Entry? {
         guard let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
         return entry
@@ -119,6 +173,9 @@ final class LiveRecordingSessionRegistry {
     /// Retire the owner synchronously before asynchronous artifact cleanup. This
     /// removes lookup and tombstones identities without destroying other history.
     func retire(_ identity: LiveSessionIdentity) throws {
+        if let load = loads[identity.recordingID], load.identity == identity {
+            load.validity.invalidate(); retiredRecordings.insert(identity.recordingID); return
+        }
         let entry = try owned(identity)
         entry.invalidate(); entries[identity.recordingID] = nil
         retiredRecordings.insert(identity.recordingID)
@@ -134,13 +191,13 @@ final class LiveRecordingSessionRegistry {
             guard deletions.count < 8 else { throw Failure.capacity }
             guard let entry = entries[recordingID] else { throw Failure.unavailable }
             let receipt = try await entry.artifacts.commitDeletionIntent()
-            ticket = .init(entry: entry, receipt: receipt)
+            ticket = .init(entry: entry, writer: entry.artifacts.writer, receipt: receipt)
             deletions[recordingID] = ticket
             entry.invalidate()
             if entries[recordingID] === entry { entries[recordingID] = nil }
             retiredRecordings.insert(recordingID)
         }
-        try await ticket.entry.artifacts.writer.cleanupDeletion(ticket.receipt)
+        try await ticket.writer.cleanupDeletion(ticket.receipt)
     }
     /// The manager releases the ticket only after audio and privacy cleanup.
     func completeDeletion(recordingID: UUID) { deletions[recordingID] = nil }
@@ -149,5 +206,214 @@ final class LiveRecordingSessionRegistry {
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }
         guard let entry = entry(identity: identity) else { throw Failure.identityConflict }
         return entry
+    }
+
+    private func admitNamespace(_ identity: LiveSessionIdentity) throws {
+        try reserveNamespace()
+        guard captureOwners[identity.captureSessionID] == nil || captureOwners[identity.captureSessionID] == identity.recordingID else { throw Failure.identityConflict }
+        guard captureOwners[identity.captureSessionID] != nil || captureOwners.count < LiveManagedArtifactCatalogue.hintLimit else { throw Failure.capacity }
+    }
+    private func reserveNamespace() throws {
+        if namespaceReservation == nil { namespaceReservation = try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.metadataBytes) }
+    }
+    private func admitHint(_ hint: LiveManagedArtifactCatalogue.Hint) throws {
+        try admitNamespace(hint.identity)
+        guard hints[hint.identity.recordingID] == nil || hints[hint.identity.recordingID]?.identity == hint.identity else { throw Failure.identityConflict }
+        let bytes = hints.values.reduce(0) { $0 + $1.charge } - (hints[hint.identity.recordingID]?.charge ?? 0) + hint.charge
+        guard hints.count < LiveManagedArtifactCatalogue.hintLimit || hints[hint.identity.recordingID] != nil,
+              bytes <= LiveManagedArtifactCatalogue.hintByteLimit else { throw Failure.capacity }
+        try validateHintAudio(hint, among: hints.values)
+        hints[hint.identity.recordingID] = hint
+        captureOwners[hint.identity.captureSessionID] = hint.identity.recordingID
+    }
+
+    /// One scan, bounded waiters and a reservation before raw header reads.
+    /// The scan's reservation is released before a full owner is admitted.
+    func discover(refresh: Bool = false) async throws {
+        if catalogueComplete, !refresh { return }
+        guard catalogueWaiters < 8 else { throw Failure.capacity }
+        try reserveNamespace()
+        catalogueWaiters += 1; defer { catalogueWaiters -= 1 }
+        let task: Task<CatalogueSnapshot, any Error>
+        let scanID: UUID
+        if let existing = catalogueTask, let id = catalogueID { task = existing; scanID = id }
+        else {
+            let resultReservation = try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.hintByteLimit)
+            let inspection = try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.inspectionBytes)
+            catalogueComplete = false
+            let root = artifactRoot, stage = beforeStage
+            task = Task.detached {
+                defer { withExtendedLifetime(inspection) {} }
+                try await stage(.catalogueRead)
+                return try CatalogueSnapshot(values: LiveManagedArtifactCatalogue.inspect(root: root), reservation: resultReservation)
+            }
+            scanID = UUID(); catalogueTask = task; catalogueID = scanID
+        }
+        do {
+            let snapshot = try await task.value
+            defer { withExtendedLifetime(snapshot) {} }
+            let values = snapshot.values
+            try await beforeStage(.cataloguePublication)
+            if catalogueID == scanID {
+                // Validate the whole proposal before installing any hint. A
+                // capture admitted during inspection remains authoritative.
+                let newCaptures = values.values.reduce(0) { $0 + (captureOwners[$1.identity.captureSessionID] == nil ? 1 : 0) }
+                guard captureOwners.count + newCaptures <= LiveManagedArtifactCatalogue.hintLimit else { throw Failure.capacity }
+                for hint in values.values {
+                    guard captureOwners[hint.identity.captureSessionID] == nil || captureOwners[hint.identity.captureSessionID] == hint.identity.recordingID,
+                          entries[hint.identity.recordingID] == nil || entries[hint.identity.recordingID]?.identity == hint.identity,
+                          hints[hint.identity.recordingID] == nil || hints[hint.identity.recordingID]?.identity == hint.identity else { throw Failure.identityConflict }
+                }
+                let newIDs = values.keys.reduce(0) { $0 + (hints[$1] == nil ? 1 : 0) }
+                func effective(_ proposed: LiveManagedArtifactCatalogue.Hint) -> LiveManagedArtifactCatalogue.Hint {
+                    if let prior = hints[proposed.identity.recordingID], prior.deleted { return prior }
+                    return proposed
+                }
+                let bytes = hints.values.reduce(0) { $0 + $1.charge } + values.values.reduce(0) {
+                    $0 + effective($1).charge - (hints[$1.identity.recordingID]?.charge ?? 0)
+                }
+                guard hints.count + newIDs <= LiveManagedArtifactCatalogue.hintLimit,
+                      bytes <= LiveManagedArtifactCatalogue.hintByteLimit else { throw Failure.capacity }
+                // No third hint map: one temporary alias index fits the fixed
+                // 64KiB remainder in the 1MiB metadata reservation.
+                var audioOwners: [URL: UUID] = [:]
+                func checkAudio(_ hint: LiveManagedArtifactCatalogue.Hint) throws {
+                    guard let audio = hint.audioURL else { return }
+                    let path = try RecordingDeletionAuthority.canonical(audio)
+                    guard audioOwners[path] == nil || audioOwners[path] == hint.identity.recordingID else { throw Failure.identityConflict }
+                    audioOwners[path] = hint.identity.recordingID
+                }
+                for hint in values.values { try checkAudio(effective(hint)) }
+                for hint in hints.values where values[hint.identity.recordingID] == nil { try checkAudio(hint) }
+                for (id, hint) in values { hints[id] = effective(hint) }
+                for hint in values.values { captureOwners[hint.identity.captureSessionID] = hint.identity.recordingID }
+                for hint in hints.values where hint.deleted {
+                    if let entry = entries[hint.identity.recordingID], entry.identity == hint.identity {
+                        onEviction?(entry)
+                        entry.invalidate(); entries[hint.identity.recordingID] = nil
+                    }
+                }
+                // Hints revoke provider admission, but only full recovery may
+                // verify a receipt and grant cleanup authority.
+                catalogueComplete = true; discoveryFailure = nil
+            } else { guard catalogueComplete, catalogueTask == nil else { throw Failure.unavailable } }
+            if catalogueID == scanID { catalogueTask = nil; catalogueID = nil }
+        } catch {
+            if catalogueID == scanID {
+                catalogueTask = nil; catalogueID = nil; catalogueComplete = false
+                discoveryFailure = "Saved live history could not be inspected. Retry after checking storage."
+            }
+            throw error
+        }
+        try Task.checkCancellation()
+    }
+
+    func knownRecordingID(audioURL: URL) -> UUID? {
+        guard let path = try? RecordingDeletionAuthority.canonical(audioURL) else { return nil }
+        return entry(audioURL: audioURL)?.identity.recordingID ?? hints.values.first {
+            $0.audioURL.flatMap { try? RecordingDeletionAuthority.canonical($0) } == path
+        }?.identity.recordingID
+    }
+
+    /// Nil means confirmed legacy only after complete safe discovery. Owned
+    /// but missing/corrupt/deleted evidence never selects the legacy provider.
+    func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false) async throws -> Entry? {
+        if hints[recordingID]?.deleted == true, !forDeletion { throw LiveArtifactError.deleted }
+        if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
+        if forDeletion, deletions[recordingID] != nil { return nil }
+        guard !retiredRecordings.contains(recordingID) else { throw Failure.retired }
+        try await discover(refresh: catalogueComplete && hints[recordingID] == nil && loads[recordingID] == nil)
+        try await beforeStage(.registryResolution)
+        try Task.checkCancellation()
+        if hints[recordingID]?.deleted == true, !forDeletion { throw LiveArtifactError.deleted }
+        if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
+        if forDeletion, deletions[recordingID] != nil { return nil }
+        guard !retiredRecordings.contains(recordingID) else { throw Failure.retired }
+        guard !unavailableRecordings.contains(recordingID) else { throw Failure.unavailable }
+        guard let hint = hints[recordingID] else {
+            guard !owns(recordingID: recordingID) else { throw Failure.unavailable }
+            if let audioURL {
+                let inspection = try reserveInspection()
+                try await Task.detached {
+                    defer { withExtendedLifetime(inspection) {} }
+                    for suffix in ["live-binding.json", "live-transcript.json"] {
+                        guard try RecordingDeletionAuthority.Stamp.read(audioURL.deletingPathExtension().appendingPathExtension(suffix)) == nil else { throw Failure.unavailable }
+                    }
+                    struct ChatOwner: Decodable {
+                        let version: Int
+                        let identity: LiveSessionIdentity?
+                        let revision: UInt64?
+                        let bindingGeneration: UUID?
+                    }
+                    let url = audioURL.deletingPathExtension().appendingPathExtension("chat.json")
+                    try LiveSessionArtifactStore.requireSafeParents(url)
+                    let owner: ChatOwner? = try RecordingDeletionAuthority.readHeader(url, maximumBytes: 3 * 1_024 * 1_024, tokenLimit: 1_048_576)
+                    guard owner == nil || (1...ChatHistory.currentVersion).contains(owner!.version) else { throw LiveArtifactError.unsupportedVersion }
+                    guard owner?.identity == nil, owner?.revision == nil, owner?.bindingGeneration == nil else { throw Failure.unavailable }
+                }.value
+                try Task.checkCancellation()
+                if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
+                guard !owns(recordingID: recordingID), !retiredRecordings.contains(recordingID) else { throw Failure.unavailable }
+            }
+            return nil
+        }
+        if hint.deleted, !forDeletion { throw LiveArtifactError.deleted }
+        let phase: Load
+        if let existing = loads[recordingID] { phase = existing }
+        else {
+            guard loads.count < 8 else { throw Failure.capacity }
+            if !budget.canReserve || entries.count >= ownerLimit { evictOneDurableOwner() }
+            guard entries.count + loads.count < ownerLimit else { throw Failure.capacity }
+            phase = Load(hint.identity, reservation: try budget.reserve())
+            loads[recordingID] = phase
+            let writer = LiveSessionArtifactStore(identity: hint.identity, rootURL: artifactRoot, validity: phase.validity,
+                payloadReservation: phase.reservation, payloadLimit: 3 * 1_024 * 1_024, queueByteLimit: 3 * 1_024 * 1_024,
+                chatPayloadLimit: LiveRecordingArtifactOwner.chatHistoryLimit, beforeStage: beforeStage)
+            phase.task = Task { [self, phase] in
+                defer { if loads[recordingID] === phase { loads[recordingID] = nil }; phase.task = nil }
+                let restored = try await writer.recover(cleanupDeletedArtifacts: false)
+                try await beforeStage(.ownerHydration)
+                try phase.validity.withValidResult {}
+                guard !retiredRecordings.contains(recordingID), entries[recordingID] == nil else { throw Failure.retired }
+                if restored.deleted {
+                    guard deletions.count < 8 else { throw Failure.capacity }
+                    let receipt = try await writer.commitDeletionIntent()
+                    deletions[recordingID] = .init(entry: nil, writer: writer, receipt: receipt)
+                    phase.validity.invalidate(); retiredRecordings.insert(recordingID)
+                    return nil
+                }
+                guard !hint.deleted, hints[recordingID]?.deleted != true else { throw LiveArtifactError.deleted }
+                guard restored.transcriptValue != nil || restored.chat != nil else { throw LiveArtifactError.missingEvidence }
+                return try RecordingResultMutation.withTransaction {
+                    try phase.validity.withValidResult {
+                        try restored.validateAuthority()
+                        let entry = try Entry(identity: phase.identity, restored: restored, writer: writer, validity: phase.validity,
+                            root: artifactRoot, reservation: phase.reservation, beforeStage: beforeStage)
+                        entries[recordingID] = entry
+                        return entry
+                    }
+                }
+            }
+        }
+        guard phase.waiters < 8, let task = phase.task else { throw Failure.capacity }
+        phase.waiters += 1; defer { phase.waiters -= 1 }
+        let entry = try await task.value
+        try Task.checkCancellation()
+        if entry == nil, !forDeletion { throw LiveArtifactError.deleted }
+        guard entry == nil || entry?.isValid == true else { throw Failure.retired }
+        if let entry { try validateAudioAssociation(entry, audioURL) }
+        return entry
+    }
+    private func validateAudioAssociation(_ entry: Entry, _ requested: URL?) throws {
+        if let requested, let admitted = entry.artifacts.admittedAudioURL {
+            guard try RecordingDeletionAuthority.canonical(requested) == RecordingDeletionAuthority.canonical(admitted) else { throw LiveArtifactError.wrongOwner }
+        }
+    }
+    private func validateHintAudio(_ hint: LiveManagedArtifactCatalogue.Hint, among values: Dictionary<UUID, LiveManagedArtifactCatalogue.Hint>.Values) throws {
+        guard let audio = hint.audioURL else { return }
+        let path = try RecordingDeletionAuthority.canonical(audio)
+        for other in values where other.identity.recordingID != hint.identity.recordingID {
+            if let candidate = other.audioURL, try RecordingDeletionAuthority.canonical(candidate) == path { throw Failure.identityConflict }
+        }
     }
 }

@@ -84,13 +84,13 @@ import dBriefWire
             try await gate.waitForArrival()
             try registry.retire(f.identity); entry = nil
             let next = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())
-            #expect(registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes)
+            #expect(registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
             #expect(throws: LiveRecordingSessionRegistry.Failure.capacity) { _ = try registry.registerLegacy(next) }
             await gate.release()
             await #expect(throws: (any Error).self) { try await flush?.value }
             flush = nil
             try await f.eventually { await MainActor.run { (try? registry.registerLegacy(next)) != nil } }
-            #expect(registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes)
+            #expect(registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
             #expect(!FileManager.default.fileExists(atPath: f.session.appendingPathComponent("live-transcript.json").path))
         } catch {
             await gate.release(); try? registry.retire(f.identity); try? await flush?.value
@@ -146,7 +146,7 @@ import dBriefWire
         _ = try registry.registerLegacy(secondID)
         let thirdID = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())
         #expect(throws: LiveRecordingSessionRegistry.Failure.capacity) { try registry.registerLegacy(thirdID) }
-        #expect(registry.reservedPayloadBytes == 2 * LiveRecordingArtifactOwner.reservationBytes)
+        #expect(registry.reservedPayloadBytes == 2 * LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
         try registry.captureDidClose(f.identity)
         var pin = first?.artifacts.pin()
         try await first?.artifacts.flush()
@@ -177,8 +177,9 @@ import dBriefWire
 }
 
 @Suite struct LiveTranscriptArtifactSchemaTests {
-    @Test func fullOwnedTerminalInventoryFitsReservedEvidenceAndTheDurableEnvelopeAfterNormalGrowthRetires() async throws {
-        let identity = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID()), owner = UUID()
+    @MainActor @Test func fullOwnedTerminalInventoryFitsReservedEvidenceAndTheDurableEnvelopeAfterNormalGrowthRetires() async throws {
+        let fixture = try LiveArtifactFixture(); defer { fixture.remove() }
+        let identity = fixture.identity, owner = UUID()
         let store = LiveTranscriptStore(identity: identity, retainedEvidenceLimit: LiveRecordingArtifactOwner.evidenceLimit)
         try #require(store.bindCaptureOwner(owner, accepting: { true }))
         let first = LiveEpoch(id: UUID(), source: .microphone, engineRevision: String(repeating: "r", count: 256),
@@ -220,6 +221,16 @@ import dBriefWire
         let artifact = LiveTranscriptArtifact(identity: identity, revision: checkpoint.revision + 1, native: checkpoint, captureClosed: true)
         let bytes = try LiveArtifactEncoding.encode(artifact, limit: 3 * 1_024 * 1_024)
         #expect(try LiveTranscriptArtifactCodec.decode(bytes).app == artifact)
+        let writer = LiveSessionArtifactStore(identity: identity, rootURL: fixture.root)
+        try await writer.saveTranscript(artifact)
+        let registry = LiveRecordingSessionRegistry(artifactRoot: fixture.root)
+        let restored = try #require(try await registry.resolve(recordingID: identity.recordingID))
+        #expect(await restored.store.checkpoint() == checkpoint)
+        #expect(restored.artifacts.isDurable && restored.artifacts.acceptedRevision == artifact.revision)
+        try await restored.artifacts.flush()
+        try restored.artifacts.bind(to: fixture.audio); try await restored.artifacts.flush()
+        let bound = try LiveTranscriptArtifactCodec.decode(Data(contentsOf: fixture.audio.deletingPathExtension().appendingPathExtension("live-transcript.json")))
+        #expect(try bound.encoded(generation: nil, limit: 3 * 1_024 * 1_024) == bytes)
     }
     @Test func finalRawTextAndStableRichIDsRoundTripWithoutInventedClocks() throws {
         let identity = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())

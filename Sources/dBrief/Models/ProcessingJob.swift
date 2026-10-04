@@ -77,6 +77,11 @@ final class ProcessingJob {
     var persistedRecord: PersistedProcessingJob?
     /// Retained across a held speaker-review task and independent of capture.
     var privacyContext: PrivacyTrace.Context?
+    /// The exact restored owner stays resident across processing and a held
+    /// speaker review. Physical tasks retain their own reference to this pin.
+    @ObservationIgnored var liveArtifactOwner: LiveRecordingSessionRegistry.Entry?
+    @ObservationIgnored var liveArtifactPin: LiveRecordingArtifactOwner.Pin?
+    func releaseLiveArtifactOwner() { liveArtifactOwner = nil; liveArtifactPin = nil }
     /// A resumed partial journal cannot establish whether skipped earlier work
     /// had warnings. A saved delivery batch may carry its own clean provenance.
     var observesProcessingFromStart = true

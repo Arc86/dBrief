@@ -91,11 +91,13 @@ actor LiveTranscriptStore {
     }
 
     /// Recovery is read-only. A checkpoint never resumes decoder/diarizer state.
-    init(restoring checkpoint: LiveTranscriptCheckpoint) throws {
+    init(restoring checkpoint: LiveTranscriptCheckpoint, validity: RecordingDerivativeValidity = RecordingDerivativeValidity(),
+         payloadReservation: LiveRecordingPayloadBudget.Lease? = nil) throws {
+        if payloadReservation != nil { _ = try LiveArtifactEncoding.estimatedBytes(checkpoint, limit: 3 * 1_024 * 1_024) }
         try checkpoint.validate()
-        identity = checkpoint.identity; validity = RecordingDerivativeValidity(); isClosed = true
+        identity = checkpoint.identity; self.validity = validity; isClosed = true
         retainedEvidenceLimit = nil
-        payloadReservation = nil
+        self.payloadReservation = payloadReservation
         revision = checkpoint.revision; annotationRevision = checkpoint.annotationRevision
         lastKnownCutoff = checkpoint.cutoffNanoseconds
         epochs = Dictionary(uniqueKeysWithValues: checkpoint.epochs.map { ($0.id, $0) })

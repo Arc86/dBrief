@@ -84,7 +84,7 @@ struct LiveAppFinalPublication: Codable, Sendable, Equatable {
 }
 
 /// Version 2 is an app envelope; the qualified native checkpoint stays v1.
-/// Exactly one captured source is present, even when it contains no text.
+/// Exactly one captured source or explicit missing-source marker is present.
 struct LiveTranscriptArtifact: Codable, Sendable, Equatable {
     static let currentVersion = 2
     var version = Self.currentVersion
@@ -95,10 +95,12 @@ struct LiveTranscriptArtifact: Codable, Sendable, Equatable {
     var captureClosed = false
     var finalPublication: LiveAppFinalPublication? = nil
     var bindingGeneration: UUID? = nil
+    var sourceUnavailable: Bool? = nil
 
     func validate() throws {
         guard version == Self.currentVersion else { throw LiveArtifactError.unsupportedVersion }
-        guard (native == nil) != (legacy == nil) else { throw LiveArtifactError.corruptArtifact }
+        guard (native == nil ? 0 : 1) + (legacy == nil ? 0 : 1) + (sourceUnavailable == true ? 1 : 0) == 1,
+              sourceUnavailable != false else { throw LiveArtifactError.corruptArtifact }
         if let native {
             try native.validate()
             guard native.identity == identity, native.bindingGeneration == nil else { throw LiveArtifactError.wrongOwner }

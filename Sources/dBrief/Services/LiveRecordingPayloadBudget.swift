@@ -28,8 +28,11 @@ final class LiveRecordingPayloadBudget: @unchecked Sendable {
         }
     }
     func reserveMaintenance() throws -> Lease {
+        try reserveAuxiliary(bytes: 3 * RecordingDeletionAuthority.ticketLimit + RecordingDeletionAuthority.inspectionAllowance)
+    }
+    func reserveAuxiliary(bytes charge: Int) throws -> Lease {
         try lock.withLock {
-            let charge = 3 * RecordingDeletionAuthority.ticketLimit + RecordingDeletionAuthority.inspectionAllowance
+            guard charge > 0, charge <= limit else { throw LiveRecordingSessionRegistry.Failure.capacity }
             guard bytes <= limit - charge else { throw LiveRecordingSessionRegistry.Failure.capacity }
             bytes += charge; return Lease(self, bytes: charge, owner: false)
         }

@@ -12,10 +12,11 @@ final class AppState {
     @ObservationIgnored let liveArtifactCaptureEnabled: Bool
     init(liveResourceProfiles: [LiveResourceProfile] = [], liveArtifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"),
          liveArtifactCaptureEnabled: Bool = false,
-         liveArtifactStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) {
+         liveArtifactStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
+         livePayloadBudget: LiveRecordingPayloadBudget? = nil) {
         liveModelResources = LiveModelResourcePolicy(profiles: liveResourceProfiles)
         self.liveArtifactCaptureEnabled = liveArtifactCaptureEnabled
-        liveRecordingSessions = LiveRecordingSessionRegistry(artifactRoot: liveArtifactRoot, beforeStage: liveArtifactStage)
+        liveRecordingSessions = LiveRecordingSessionRegistry(artifactRoot: liveArtifactRoot, beforeStage: liveArtifactStage, payloadBudget: livePayloadBudget)
     }
     /// Capture-only state machine. Processing is tracked separately via `processingJob`
     /// so a new recording can start (capture `.idle`) while a previous recording is still

@@ -73,6 +73,7 @@ import dBriefWire
     @ObservationIgnored private var legacy: [LiveLegacyTranscriptValue] = []
     @ObservationIgnored private var legacyByID: [UUID: LiveLegacyTranscriptValue] = [:]
     @ObservationIgnored private var finalPublication: LiveAppFinalPublication?
+    private var nativeFinalAnchor: (id: UUID, revision: UInt64)?
     private var finalCommitted = false
     private var needsTextOnlyFallback = false
     private var legacyBytes = 0
@@ -85,6 +86,9 @@ import dBriefWire
     private(set) var deletionPending = false
     private(set) var admittedAudioURL: URL?
     private var nativeClosureDurable = false
+    private var hydratedReadOnly = false
+    private var recoveredOwner = false
+    private var sourceUnavailable = false
     private(set) var captureClosed = false
     private(set) var acceptedRevision: UInt64 = 0
     private(set) var durableRevision: UInt64 = 0
@@ -96,20 +100,43 @@ import dBriefWire
     var isDurable: Bool {
         started && !deletionPending && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
             && durableChatRevision == acceptedChatRevision && chatLoad == nil
-            && (!captureClosed || !isNative || nativeClosureDurable)
+            && (!captureClosed || !isNative || nativeClosureDurable || hydratedReadOnly)
     }
     var canEvict: Bool { captureClosed && pinCounter.count == 0 && isDurable }
+    var isRecoveredOwner: Bool { recoveredOwner }
     var pendingIntervals: Int { queue.filter { if case .checkpoint = $0 { true } else { false } }.count }
 
     init(identity: LiveSessionIdentity, store: LiveTranscriptStore, validity: RecordingDerivativeValidity,
          native: Bool, rootURL: URL, payloadReservation: LiveRecordingPayloadBudget.Lease,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
-         afterCheckpoint: @escaping @Sendable () async -> Void = {}) {
+         afterCheckpoint: @escaping @Sendable () async -> Void = {}, recoveredWriter: LiveSessionArtifactStore? = nil) {
         self.identity = identity; self.store = store; self.validity = validity; isNative = native
         self.afterCheckpoint = afterCheckpoint
-        writer = LiveSessionArtifactStore(identity: identity, rootURL: rootURL, validity: validity,
+        writer = recoveredWriter ?? LiveSessionArtifactStore(identity: identity, rootURL: rootURL, validity: validity,
             payloadReservation: payloadReservation, payloadLimit: Self.envelopeLimit, queueByteLimit: Self.envelopeLimit,
             chatPayloadLimit: Self.chatHistoryLimit, beforeStage: beforeStage)
+    }
+    /// The recovered writer already verified the persisted prefix. Hydration
+    /// starts no observer and writes no closure or schema migration.
+    func hydrate(_ restored: LiveSessionArtifactStore.Restored) throws {
+        guard !started, !restored.deleted, (restored.transcriptValue?.identity ?? identity) == identity else { throw LiveArtifactError.wrongOwner }
+        if let value = restored.transcriptValue {
+            _ = try value.encoded(generation: nil, limit: Self.envelopeLimit)
+            acceptedRevision = value.revision; durableRevision = value.revision
+        }
+        if let chat = restored.chat { _ = try LiveArtifactEncoding.estimatedBytes(chat, limit: Self.chatHistoryLimit) }
+        legacy = restored.appTranscript?.legacy ?? []
+        legacyBytes = try LiveArtifactEncoding.estimatedBytes(legacy, limit: Self.envelopeLimit) * 2
+        legacyByID = Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, $0) })
+        sourceUnavailable = restored.transcriptValue == nil || restored.appTranscript?.sourceUnavailable == true
+        finalPublication = restored.appTranscript?.finalPublication
+        nativeFinalAnchor = restored.transcript?.finalPublication.map { ($0.id, $0.revision) }
+        finalCommitted = finalPublication != nil || nativeFinalAnchor != nil
+        needsTextOnlyFallback = finalPublication?.fallbackText != nil && finalPublication?.segments.isEmpty == true
+        currentChat = restored.chat; chatReady = true
+        acceptedChatRevision = restored.chat?.revision ?? 0; durableChatRevision = acceptedChatRevision
+        admittedAudioURL = restored.audioURL
+        started = true; captureClosed = true; hydratedReadOnly = true; recoveredOwner = true
     }
     func pin() -> Pin { Pin(self) }
     func attachChatService(_ service: TranscriptChatService) -> Bool {
@@ -276,7 +303,7 @@ import dBriefWire
         guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         guard controlCount < 8 else { throw LiveArtifactError.queueFull }
         _ = try LiveArtifactEncoding.estimatedBytes(audioURL, limit: 4_096)
-        try checkpoint(urgent: false)
+        if !recoveredOwner { try checkpoint(urgent: false) }
         queue.append(.bind(audioURL.standardizedFileURL))
         admittedAudioURL = audioURL
         startDrain(urgent: true)
@@ -309,7 +336,8 @@ import dBriefWire
     func flush() async throws {
         try validity.withValidResult {}
         if !started { start() }
-        if failure == nil { try checkpoint(urgent: true) }
+        if failure == nil, !recoveredOwner { try checkpoint(urgent: true) }
+        if failure == nil { startDrain(urgent: true) }
         await waitForSubmittedWrites()
         if failure != nil { throw LiveArtifactError.verificationFailed }
         guard isDurable else { throw LiveArtifactError.verificationFailed }
@@ -325,6 +353,7 @@ import dBriefWire
     func legacyContext() throws -> TranscriptContextSnapshot {
         try validity.withValidResult {}
         guard !isNative, !retired else { throw LiveArtifactError.deleted }
+        guard !sourceUnavailable else { throw LiveArtifactError.missingEvidence }
         return try LiveTranscriptArtifact(identity: identity, revision: acceptedRevision, legacy: legacy,
             captureClosed: captureClosed).legacyContext()
     }
@@ -341,7 +370,7 @@ import dBriefWire
         try validity.withValidResult {}
         guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         finalCommitted = true
-        guard finalPublication == nil else { return }
+        guard finalPublication == nil, nativeFinalAnchor == nil else { return }
         needsTextOnlyFallback = result.segments.isEmpty && !result.text.isEmpty
         var text = result.text
         if text.isEmpty {
@@ -371,9 +400,10 @@ import dBriefWire
 
     private func publishFinal(transcript: RichTranscript, fallbackText: String?) throws {
         guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
-        guard acceptedRevision < .max, (finalPublication?.revision ?? 0) < .max else { throw LiveArtifactError.staleRevision }
-        let value = try LiveAppFinalPublication.bounded(id: finalPublication?.id ?? UUID(),
-            revision: (finalPublication?.revision ?? 0) + 1, transcript: transcript, fallbackText: fallbackText,
+        let priorRevision = max(finalPublication?.revision ?? 0, nativeFinalAnchor?.revision ?? 0)
+        guard acceptedRevision < .max, priorRevision < .max else { throw LiveArtifactError.staleRevision }
+        let value = try LiveAppFinalPublication.bounded(id: finalPublication?.id ?? nativeFinalAnchor?.id ?? UUID(),
+            revision: priorRevision + 1, transcript: transcript, fallbackText: fallbackText,
             limit: Self.finalPublicationLimit)
         if let old = finalPublication, old.segments == value.segments,
            old.speakerLabels == value.speakerLabels, old.fallbackText == value.fallbackText { return }
@@ -413,6 +443,7 @@ import dBriefWire
         try requireCheckpointCapacity(bytes: legacyBytes)
         guard acceptedRevision < .max else { throw LiveArtifactError.staleRevision }
         acceptedRevision += 1
+        hydratedReadOnly = false
         if let last = queue.last, case .checkpoint(let value) = last {
             value.hasTranscript = true
             value.revision = acceptedRevision; value.legacy = isNative ? nil : legacy
@@ -459,8 +490,8 @@ import dBriefWire
                         if isNative { await afterCheckpoint() }
                         if state?.growthRetired == true, !growthRetired { growthRetired = true; onLimit?() }
                         let value = LiveTranscriptArtifact(identity: identity, revision: revision, native: state?.checkpoint,
-                            legacy: legacy, captureClosed: closed && (publication != nil || (state?.isClosed ?? true)),
-                            finalPublication: publication)
+                            legacy: sourceUnavailable ? nil : legacy, captureClosed: closed && (publication != nil || (state?.isClosed ?? true)),
+                            finalPublication: publication, sourceUnavailable: sourceUnavailable ? true : nil)
                         _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.envelopeLimit)
                         try await writer.saveTranscript(value)
                         durableRevision = revision
@@ -495,7 +526,7 @@ import dBriefWire
                         queue.removeFirst(); deletionPending = false
                         // Notifications coalesced while Delete was pending may
                         // include actual native closure. Catch up after failure.
-                        if isNative { do { try checkpoint(urgent: true) } catch { report(error) } }
+                        if isNative, !hydratedReadOnly { do { try checkpoint(urgent: true) } catch { report(error) } }
                         request.continuation.resume(throwing: error)
                     }
                 }
