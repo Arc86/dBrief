@@ -43,6 +43,9 @@ final class LiveRecordingSessionRegistry {
             try artifacts.hydrate(restored); captureClosed = true
         }
         fileprivate func closeCapture() { captureClosed = true; artifacts.closeCapture() }
+        fileprivate func configureNonpersistingFinalOnly(audioURL: URL, anchor: (id: UUID, revision: UInt64)?) {
+            captureClosed = true; artifacts.configureNonpersistingFinalOnly(audioURL: audioURL, anchor: anchor)
+        }
         fileprivate func invalidate() {
             isValid = false; validity.invalidate()
             richWriteValidity.invalidate()
@@ -81,6 +84,27 @@ final class LiveRecordingSessionRegistry {
         }
     }
     private var loads: [UUID: Load] = [:]
+    @MainActor final class Replacement {
+        let recordingID: UUID
+        let authority: RecordingDeletionAuthority
+        fileprivate var original: Entry?
+        fileprivate var pin: LiveRecordingArtifactOwner.Pin?
+        fileprivate(set) var identity: LiveSessionIdentity?
+        fileprivate(set) var attemptID: UUID?
+        fileprivate var retiredOriginal = false
+        fileprivate(set) var discardCompleted = false
+        fileprivate var nonpersisting = false
+        fileprivate var finishTask: Task<Entry?, any Error>?
+        fileprivate var finishWaiters = 0
+        fileprivate let finalAnchor: (id: UUID, revision: UInt64)?
+        fileprivate init(recordingID: UUID, authority: RecordingDeletionAuthority, original: Entry?) {
+            self.recordingID = recordingID; self.authority = authority; self.original = original
+            identity = original?.identity; pin = original?.artifacts.pin()
+            nonpersisting = original.map { !$0.artifacts.persistenceStarted } ?? false
+            finalAnchor = original?.artifacts.finalAnchor
+        }
+    }
+    private var replacements: [UUID: Replacement] = [:]
     private var hints: [UUID: LiveManagedArtifactCatalogue.Hint] = [:]
     private var namespaceReservation: LiveRecordingPayloadBudget.Lease?
     private var catalogueTask: Task<CatalogueSnapshot, any Error>?
@@ -89,6 +113,8 @@ final class LiveRecordingSessionRegistry {
     private var catalogueComplete = false
     private(set) var discoveryFailure: String?
     var onEviction: ((Entry) -> Void)?
+    var onHydration: ((Entry) async throws -> Void)?
+    var onReplacementRetry: ((Replacement) async throws -> Void)?
     private var deletions: [UUID: DeletionTicket] = [:]
     private var captureOwners: [UUID: UUID] = [:]
     private var retiredRecordings: Set<UUID> = []
@@ -101,6 +127,7 @@ final class LiveRecordingSessionRegistry {
     var reservedPayloadBytes: Int { budget.reservedBytes }
     func reserveDeletionMaintenance() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveMaintenance() }
     func reserveInspection() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.inspectionBytes) }
+    func reserveReprocessingInspection() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveAuxiliary(bytes: 32 * 1_024 * 1_024) }
     var pendingLoads: Int { loads.count }
     var pendingLoadWaiters: Int { loads.values.reduce(0) { $0 + $1.waiters } }
     func hasPendingDeletion(recordingID: UUID) -> Bool { deletions[recordingID] != nil }
@@ -144,17 +171,18 @@ final class LiveRecordingSessionRegistry {
         return entry
     }
     private func evictOneDurableOwner() {
-        guard let evictable = entries.values.first(where: { $0.artifacts.canEvict }) else { return }
+        guard let evictable = entries.values.first(where: { replacements[$0.identity.recordingID] == nil && $0.artifacts.canEvict }) else { return }
         let hint = LiveManagedArtifactCatalogue.Hint(identity: evictable.identity, audioURL: evictable.artifacts.admittedAudioURL, deleted: false)
         guard (try? admitHint(hint)) != nil else { return }
         onEviction?(evictable)
         evictable.invalidate(); entries[evictable.identity.recordingID] = nil
     }
 
-    func entry(recordingID: UUID) -> Entry? { entries[recordingID] }
+    func entry(recordingID: UUID) -> Entry? { replacements[recordingID] == nil ? entries[recordingID] : nil }
     func entry(audioURL: URL) -> Entry? {
         guard let path = try? RecordingDeletionAuthority.canonical(audioURL) else { return nil }
         return entries.values.first {
+            replacements[$0.identity.recordingID] == nil &&
             $0.artifacts.admittedAudioURL.flatMap { try? RecordingDeletionAuthority.canonical($0) } == path
         }
     }
@@ -163,12 +191,139 @@ final class LiveRecordingSessionRegistry {
         retiredRecordings.contains(recordingID) || hints[recordingID]?.deleted == true || deletions[recordingID] != nil
     }
     func entry(identity: LiveSessionIdentity) -> Entry? {
-        guard let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
+        guard replacements[identity.recordingID] == nil, let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
         return entry
     }
 
     func captureDidClose(_ identity: LiveSessionIdentity) throws { try owned(identity).closeCapture() }
     func install(_ coordinator: LiveCaptureSessionCoordinator, for identity: LiveSessionIdentity) throws { try owned(identity).install(coordinator) }
+
+    /// Reserve and pin before the first await. This is replacement admission,
+    /// never a deletion tombstone, and public resolution cannot bypass it.
+    func beginReplacement(recordingID: UUID, audioURL: URL, attemptID: UUID? = nil) throws -> Replacement {
+        guard !isKnownDeleted(recordingID: recordingID) else { throw LiveArtifactError.deleted }
+        if let phase = replacements[recordingID] {
+            guard attemptID != nil, phase.attemptID == attemptID,
+                  try RecordingDeletionAuthority.canonical(audioURL) == phase.authority.audioURL else { throw Failure.unavailable }
+            try phase.authority.validateExact(); return phase
+        }
+        try reserveNamespace()
+        guard replacements.count < 8 else { throw Failure.capacity }
+        let original = entries[recordingID]
+        guard original == nil || original?.captureClosed == true else { throw Failure.unavailable }
+        let authority = try RecordingDeletionAuthority(audioURL: audioURL, expectedRecordingID: recordingID)
+        guard authority.audio.stamp != nil else { throw ReprocessingError.missingAudio }
+        let phase = Replacement(recordingID: recordingID, authority: authority, original: original)
+        phase.attemptID = attemptID
+        replacements[recordingID] = phase
+        // Cancel an already-started public load. Its reservation still follows
+        // its actual task/waiter lifetime and it cannot install across this phase.
+        loads[recordingID]?.validity.invalidate()
+        do { try original?.artifacts.sealForReplacement() }
+        catch { replacements[recordingID] = nil; phase.pin?.release(); throw error }
+        return phase
+    }
+
+    func resolveForReplacement(_ phase: Replacement) async throws -> Entry? {
+        try requireReplacement(phase)
+        if phase.retiredOriginal { return nil }
+        let entry: Entry?
+        if let original = phase.original { entry = original }
+        else {
+            // Join obsolete public loading before admitting a new private load.
+            if let task = loads[phase.recordingID]?.task { _ = try? await task.value }
+            entry = try await resolve(recordingID: phase.recordingID, audioURL: phase.authority.audioURL, replacement: phase)
+            try requireReplacement(phase)
+            phase.original = entry; phase.identity = entry?.identity; phase.pin = entry?.artifacts.pin()
+            phase.nonpersisting = entry.map { !$0.artifacts.persistenceStarted } ?? false
+            try entry?.artifacts.sealForReplacement()
+        }
+        try requireReplacement(phase)
+        return entry
+    }
+
+    func adoptReplacement(_ phase: Replacement, attemptID: UUID) throws {
+        // The returned journal already owns the result claim. Retire the exact
+        // original even if an external replacement changed physical authority
+        // while the actor return was pending; no file effects occur here.
+        guard replacements[phase.recordingID] === phase,
+              phase.attemptID == nil || phase.attemptID == attemptID else { throw Failure.unavailable }
+        phase.attemptID = attemptID
+        if let original = phase.original {
+            RecordingResultMutation.withTransaction {
+                onEviction?(original); original.invalidate()
+                if entries[phase.recordingID] === original { entries[phase.recordingID] = nil }
+            }
+        }
+        phase.retiredOriginal = true
+        phase.original = nil; phase.pin?.release(); phase.pin = nil
+        try requireReplacement(phase)
+    }
+
+    func abandonReplacement(_ phase: Replacement) {
+        guard replacements[phase.recordingID] === phase, !phase.retiredOriginal, phase.attemptID == nil else { return }
+        phase.original?.artifacts.reopenAfterFailedReplacement()
+        phase.pin?.release(); phase.pin = nil; replacements[phase.recordingID] = nil
+    }
+
+    func finishReplacement(_ phase: Replacement,
+                           prepare: @escaping @MainActor () async throws -> Void = {}) async throws -> Entry? {
+        try requireReplacement(phase)
+        guard phase.finishWaiters < 8 else { throw Failure.capacity }
+        let task: Task<Entry?, any Error>
+        if let existing = phase.finishTask { task = existing }
+        else {
+            task = Task {
+                defer { phase.finishTask = nil }
+                try await prepare()
+                return try await self.installReplacement(phase)
+            }
+            phase.finishTask = task
+        }
+        phase.finishWaiters += 1; defer { phase.finishWaiters -= 1 }
+        let entry = try await task.value
+        try Task.checkCancellation()
+        guard entry == nil || entry?.isValid == true else { throw Failure.retired }
+        return entry
+    }
+
+    private func installReplacement(_ phase: Replacement) async throws -> Entry? {
+        try requireReplacement(phase)
+        if phase.nonpersisting, let identity = phase.identity {
+            guard entries[phase.recordingID] == nil else { throw Failure.identityConflict }
+            if !budget.canReserve { evictOneDurableOwner() }
+            let entry = Entry(identity: identity, native: false, root: artifactRoot, reservation: try budget.reserve(),
+                beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+            entry.configureNonpersistingFinalOnly(audioURL: phase.authority.audioURL, anchor: phase.finalAnchor)
+            try await onHydration?(entry)
+            try requireReplacement(phase)
+            entries[phase.recordingID] = entry; replacements[phase.recordingID] = nil
+            return entry
+        }
+        // Private resolution and the hydration callback run before admission
+        // reopens. Cancellation/failed hydration keeps the phase visibly pending.
+        let entry = try await resolve(recordingID: phase.recordingID, audioURL: phase.authority.audioURL, replacement: phase)
+        try requireReplacement(phase)
+        replacements[phase.recordingID] = nil
+        return entry
+    }
+
+    func replacement(attemptID: UUID) -> Replacement? { replacements.values.first { $0.attemptID == attemptID } }
+    func permitsProcessing(recordingID: UUID, attemptID: UUID?) -> Bool {
+        guard let phase = replacements[recordingID] else { return true }
+        return attemptID != nil && phase.attemptID == attemptID
+    }
+    var pendingReplacements: [Replacement] { Array(replacements.values) }
+    func noteCompletedDiscard(_ phase: Replacement, attemptID: UUID) throws {
+        guard replacements[phase.recordingID] === phase, phase.attemptID == attemptID, phase.retiredOriginal else { throw Failure.unavailable }
+        phase.discardCompleted = true
+    }
+
+    private func requireReplacement(_ phase: Replacement) throws {
+        guard replacements[phase.recordingID] === phase else { throw Failure.unavailable }
+        guard !isKnownDeleted(recordingID: phase.recordingID) else { throw LiveArtifactError.deleted }
+        try phase.authority.validateExact()
+    }
 
     /// Retire the owner synchronously before asynchronous artifact cleanup. This
     /// removes lookup and tombstones identities without destroying other history.
@@ -318,6 +473,17 @@ final class LiveRecordingSessionRegistry {
     /// Nil means confirmed legacy only after complete safe discovery. Owned
     /// but missing/corrupt/deleted evidence never selects the legacy provider.
     func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false) async throws -> Entry? {
+        if let phase = replacements[recordingID], !forDeletion {
+            if let audioURL, try RecordingDeletionAuthority.canonical(audioURL) != phase.authority.audioURL { throw LiveArtifactError.wrongOwner }
+            try await onReplacementRetry?(phase)
+        }
+        return try await resolve(recordingID: recordingID, audioURL: audioURL, forDeletion: forDeletion, replacement: nil)
+    }
+    private func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false, replacement: Replacement?) async throws -> Entry? {
+        func requireAdmission() throws {
+            guard replacements[recordingID] == nil || replacements[recordingID] === replacement else { throw Failure.unavailable }
+        }
+        try requireAdmission()
         if hints[recordingID]?.deleted == true, !forDeletion { throw LiveArtifactError.deleted }
         if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
         if forDeletion, deletions[recordingID] != nil { return nil }
@@ -325,6 +491,7 @@ final class LiveRecordingSessionRegistry {
         try await discover(refresh: catalogueComplete && hints[recordingID] == nil && loads[recordingID] == nil)
         try await beforeStage(.registryResolution)
         try Task.checkCancellation()
+        try requireAdmission()
         if hints[recordingID]?.deleted == true, !forDeletion { throw LiveArtifactError.deleted }
         if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
         if forDeletion, deletions[recordingID] != nil { return nil }
@@ -371,9 +538,13 @@ final class LiveRecordingSessionRegistry {
                 chatPayloadLimit: LiveRecordingArtifactOwner.chatHistoryLimit, beforeStage: beforeStage)
             phase.task = Task { [self, phase] in
                 defer { if loads[recordingID] === phase { loads[recordingID] = nil }; phase.task = nil }
-                let restored = try await writer.recover(cleanupDeletedArtifacts: false)
+                let restored: LiveSessionArtifactStore.Restored
+                if let attemptID = replacement?.attemptID, replacement?.retiredOriginal == false {
+                    restored = try await writer.inspectForReprocessing(attemptID: attemptID)
+                } else { restored = try await writer.recover(cleanupDeletedArtifacts: false) }
                 try await beforeStage(.ownerHydration)
                 try phase.validity.withValidResult {}
+                try requireAdmission()
                 guard !retiredRecordings.contains(recordingID), entries[recordingID] == nil else { throw Failure.retired }
                 if restored.deleted {
                     guard deletions.count < 8 else { throw Failure.capacity }
@@ -384,11 +555,29 @@ final class LiveRecordingSessionRegistry {
                 }
                 guard !hint.deleted, hints[recordingID]?.deleted != true else { throw LiveArtifactError.deleted }
                 guard restored.transcriptValue != nil || restored.chat != nil else { throw LiveArtifactError.missingEvidence }
-                return try RecordingResultMutation.withTransaction {
+                let entry = try RecordingResultMutation.withTransaction {
                     try phase.validity.withValidResult {
                         try restored.validateAuthority()
                         let entry = try Entry(identity: phase.identity, restored: restored, writer: writer, validity: phase.validity,
                             root: artifactRoot, reservation: phase.reservation, beforeStage: beforeStage)
+                        return entry
+                    }
+                }
+                if replacement == nil || replacement?.retiredOriginal == true { try await onHydration?(entry) }
+                try requireAdmission()
+                try phase.validity.withValidResult {}
+                guard !isKnownDeleted(recordingID: recordingID), entries[recordingID] == nil else { throw Failure.retired }
+                // The callback can advance our own ledger. Recover its new
+                // authority rather than validating obsolete pre-write stamps.
+                let current: LiveSessionArtifactStore.Restored
+                if let attemptID = replacement?.attemptID, replacement?.retiredOriginal == false {
+                    current = try await writer.inspectForReprocessing(attemptID: attemptID)
+                } else { current = try await writer.recover(cleanupDeletedArtifacts: false) }
+                return try RecordingResultMutation.withTransaction {
+                    try phase.validity.withValidResult {
+                        try requireAdmission()
+                        guard !current.deleted, !isKnownDeleted(recordingID: recordingID) else { throw LiveArtifactError.deleted }
+                        try current.validateAuthority()
                         entries[recordingID] = entry
                         return entry
                     }
@@ -399,6 +588,7 @@ final class LiveRecordingSessionRegistry {
         phase.waiters += 1; defer { phase.waiters -= 1 }
         let entry = try await task.value
         try Task.checkCancellation()
+        try requireAdmission()
         if entry == nil, !forDeletion { throw LiveArtifactError.deleted }
         guard entry == nil || entry?.isValid == true else { throw Failure.retired }
         if let entry { try validateAudioAssociation(entry, audioURL) }

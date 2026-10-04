@@ -211,6 +211,13 @@ final class RecordingManager {
         self.parakeetService = ParakeetTranscriptionService(connection: self.mlHost)
         self.modelDownloadCoordinator = modelDownloadCoordinator ?? ModelDownloadCoordinator(
             dependencies: .live(plugin: self.localAIPluginService, parakeet: self.parakeetService))
+        appState.liveRecordingSessions.onHydration = { [weak self] entry in
+            try await self?.reconcileManagedReprocessing(entry)
+        }
+        appState.liveRecordingSessions.onReplacementRetry = { [weak self] phase in
+            guard let self else { throw LiveRecordingSessionRegistry.Failure.unavailable }
+            try await self.retryManagedReprocessing(phase)
+        }
     }
 
     /// Returns a PreflightWarning if the given engine requires more memory than is available.
@@ -1589,6 +1596,7 @@ final class RecordingManager {
 
     func canLaunchProcessing(for recording: Recording, reprocessingAttemptID: UUID? = nil) -> Bool {
         !appState.liveRecordingSessions.isKnownDeleted(recordingID: recording.id)
+            && appState.liveRecordingSessions.permitsProcessing(recordingID: recording.id, attemptID: reprocessingAttemptID)
             && reprocessingRecoveryReady && (reprocessingAttemptID != nil || !isReprocessing(recording.finalizedAudioURL ?? recording.fileURL))
             && !reprocessingAdmissionBusy && !queueMutationInProgress && !queuePauseWriteInProgress && !queueEnqueueInProgress
             && !recoveryMaintenanceInProgress && !processingCancellationInProgress && appState.processingJob == nil
@@ -3370,7 +3378,8 @@ final class RecordingManager {
                 try publication.generation.withValidResult {
                     if let entry = publication.entry { try entry.validity.withValidResult {} }
                     recording.richTranscript = transcript
-                    if self.appState.liveArtifactCaptureEnabled, let owner = publication.entry?.artifacts {
+                    if let owner = publication.entry?.artifacts,
+                       self.appState.liveArtifactCaptureEnabled || owner.persistenceStarted || owner.isNonpersistingFinalOnly {
                         do { try owner.publishSavedFinal(transcript) }
                         catch { self.reportLiveArtifactFailure(error.localizedDescription) }
                     }

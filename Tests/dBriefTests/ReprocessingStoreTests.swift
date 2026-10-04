@@ -27,6 +27,16 @@ struct ReprocessingStoreTests {
     }
     private enum SimulatedCrash: Error { case interrupted }
 
+    @Test func oversizedConfigurationCannotCreateAnUnreadableManifestOrRetainAClaim() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let store = ReprocessingStore(root: f.storeRoot)
+        await #expect(throws: (any Error).self) {
+            _ = try await store.prepare(audioURL: f.audio, configuration: Data(repeating: 65, count: 1_024 * 1_024))
+        }
+        #expect(try await store.discover().isEmpty)
+        #expect(throws: Never.self) { try RecordingResultMutation.withWrite(to: f.sidecar("richtranscript.json")) {} }
+    }
+
     @Test func stagesRemainPrivateAndRestoreEntirePreviousResultSet() async throws {
         let f = try Fixture(); defer { f.clean() }
         let audioBefore = try Data(contentsOf: f.audio)

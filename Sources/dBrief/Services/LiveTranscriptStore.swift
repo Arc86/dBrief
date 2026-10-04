@@ -216,6 +216,18 @@ actor LiveTranscriptStore {
         }
     }
     func publishFinal(_ publication: TranscriptSourcePublication) -> LiveStoreAdmission { mutate { publishFinalWhileValid(publication) } }
+    /// Restore may remove the complete final result while retaining captured
+    /// evidence. A native-v1 final must no longer win the provider's fallback.
+    func clearFinalForReprocessing() -> LiveStoreAdmission {
+        mutate {
+            guard isClosed else { return .rejected(.unsettledEpoch) }
+            guard let publication = finalPublication else { return .duplicate }
+            guard revision < .max, annotationRevision < .max, retiredPublications.count < 100_000 else { return .rejected(.capacity) }
+            retiredPublications.insert(publication.id); finalPublication = nil
+            revision += 1; annotationRevision += 1
+            return .accepted
+        }
+    }
     func clearPartials(owner: LiveSessionIdentity, source: LiveSource? = nil) -> LiveStoreAdmission {
         mutate { clearPartialsWhileValid(owner: owner,source: source) }
     }

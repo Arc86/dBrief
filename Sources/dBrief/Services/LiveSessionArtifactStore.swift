@@ -79,8 +79,10 @@ actor LiveSessionArtifactStore {
         let revision: UInt64
         let data: Data // Canonical, unbound content; target headers are derived.
         let fingerprint: Fingerprint
-        init(kind: Kind, revision: UInt64, data: Data) {
+        let publicationAuthority: [RecordingDeletionAuthority.Item]
+        init(kind: Kind, revision: UInt64, data: Data, publicationAuthority: [RecordingDeletionAuthority.Item] = []) {
             self.kind = kind; self.revision = revision; self.data = data
+            self.publicationAuthority = publicationAuthority
             fingerprint = .init(revision: revision, count: data.count, sha256: Self.digest(data))
         }
         static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
@@ -118,6 +120,7 @@ actor LiveSessionArtifactStore {
     private enum Operation {
         case writes(Batch), clear(Payload), bind(URL), recover, recoverOwner, retry(chat: Payload?, transcript: Payload?), delete
         case deletionIntent, deletionCleanup(DeletionReceipt)
+        case inspectClaimedOwner(UUID)
         var isControl: Bool { if case .writes = self { false } else { true } }
     }
     private struct Job {
@@ -174,11 +177,11 @@ actor LiveSessionArtifactStore {
         var copy = checkpoint; copy.bindingGeneration = nil
         try await submitWrite(.init(kind: .transcript, revision: copy.revision, data: encode(copy)))
     }
-    func saveTranscript(_ artifact: LiveTranscriptArtifact) async throws {
+    func saveTranscript(_ artifact: LiveTranscriptArtifact, validating authority: [RecordingDeletionAuthority.Item] = []) async throws {
         try artifact.validate()
         guard artifact.identity == identity else { throw LiveArtifactError.wrongOwner }
         let bytes = try LiveTranscriptArtifactCodec.Value.app(artifact).encoded(generation: nil, limit: payloadLimit)
-        try await submitWrite(.init(kind: .transcript, revision: artifact.revision, data: bytes))
+        try await submitWrite(.init(kind: .transcript, revision: artifact.revision, data: bytes, publicationAuthority: authority))
     }
     func clearChat(revision: UInt64) async throws {
         let history = ChatHistory(messages: [], identity: identity, revision: revision)
@@ -190,6 +193,12 @@ actor LiveSessionArtifactStore {
     func bind(to audioURL: URL) async throws { _ = try await submitControl(.bind(audioURL.standardizedFileURL)) }
     func recover(cleanupDeletedArtifacts: Bool = true) async throws -> Restored {
         guard case .restored(let restored) = try await submitControl(cleanupDeletedArtifacts ? .recover : .recoverOwner, allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
+        return restored
+    }
+    /// Read-only qualification under this exact reprocessing claim. It cannot
+    /// roll forward Bind, clean sources, publish content, or authorize deletion.
+    func inspectForReprocessing(attemptID: UUID) async throws -> Restored {
+        guard case .restored(let restored) = try await submitControl(.inspectClaimedOwner(attemptID)) else { throw LiveArtifactError.verificationFailed }
         return restored
     }
     func retry() async throws {
@@ -308,9 +317,12 @@ actor LiveSessionArtifactStore {
         if case .deletionCleanup(let receipt) = operation {
             try await cleanupDeleted(receipt); return nil
         }
-        switch operation { case .recover, .recoverOwner: try await beforeStage(.historyLoad); default: break }
+        switch operation { case .recover, .recoverOwner, .inspectClaimedOwner: try await beforeStage(.historyLoad); default: break }
         try inspectDisk()
         switch operation {
+        case .inspectClaimedOwner(let attemptID):
+            guard !isDeleted, journal?.phase != .prepared else { throw LiveArtifactError.bindingPending }
+            return .restored(try restoreDisk(inspectionClaim: attemptID))
         case .delete:
             try await cleanupDeleted(commitIntent()); return nil
         case .deletionIntent:
@@ -334,7 +346,7 @@ actor LiveSessionArtifactStore {
             if let journal { try await finishBinding(journal) }
             if let transcript, durableTranscript?.fingerprint != transcript.fingerprint { try await write(transcript) }
             if let chat, durableChat?.fingerprint != chat.fingerprint { try await write(chat) }
-        case .delete, .recover, .recoverOwner, .deletionIntent, .deletionCleanup: break
+        case .delete, .recover, .recoverOwner, .deletionIntent, .deletionCleanup, .inspectClaimedOwner: break
         }
         return nil
     }
@@ -387,6 +399,10 @@ actor LiveSessionArtifactStore {
             let generation = journal?.generation
             let url = journal.map { targetURL(payload.kind, audio: $0.audioURL) } ?? sourceURL(payload.kind)
             try RecordingResultMutation.withWrite(to: url) {
+                for item in payload.publicationAuthority {
+                    try Self.requireSafeParents(item.url)
+                    guard try RecordingDeletionAuthority.Stamp.read(item.url) == item.stamp else { throw LiveArtifactError.wrongOwner }
+                }
                 if let journal { try requireOwner(journal.audioURL) }
                 let old = try readPayload(payload.kind, from: url, generation: generation)
                 if let old {
@@ -477,7 +493,7 @@ actor LiveSessionArtifactStore {
             }
         }
     }
-    private func restoreDisk() throws -> Restored {
+    private func restoreDisk(inspectionClaim: UUID? = nil) throws -> Restored {
         try derivativeTransaction {
             try inspectDiskWhileValid()
             guard !isDeleted else { return .init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true) }
@@ -489,7 +505,7 @@ actor LiveSessionArtifactStore {
             }
             let authority = try paths.map { try RecordingDeletionAuthority.Item($0) }
             if let journal { try requireCurrentJournal(journal) }
-            if let audio { try requireOwner(audio) }
+            if let audio { try requireOwner(audio, inspectionClaim: inspectionClaim) }
             let generation = audio == nil ? nil : journal?.generation
             let chat = try readPayload(.chat, from: audio.map { targetURL(.chat, audio: $0) } ?? sourceURL(.chat), generation: generation)
             let transcript = try readPayload(.transcript, from: audio.map { targetURL(.transcript, audio: $0) } ?? sourceURL(.transcript), generation: generation)
@@ -604,8 +620,8 @@ actor LiveSessionArtifactStore {
     private func requireNotDeleted() throws {
         if let bytes = try read(deletionURL) { let intent: Deletion = try decode(bytes); try validate(intent); isDeleted = true; throw LiveArtifactError.deleted }
     }
-    private func requireOwner(_ audio: URL) throws {
-        try RecordingResultMutation.withDeletion(of: audio) {
+    private func requireOwner(_ audio: URL, inspectionClaim: UUID? = nil) throws {
+        func inspect() throws {
             struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }
             try validateBindingPaths(audio)
             try requireSafeParents(audio)
@@ -614,6 +630,8 @@ actor LiveSessionArtifactStore {
                     maximumBytes: min(payloadLimit, 3 * 1_024 * 1_024), tokenLimit: 1_048_576),
                   metadata.recordingID == identity.recordingID && metadata.masterFileName == audio.lastPathComponent else { throw LiveArtifactError.wrongOwner }
         }
+        if let inspectionClaim { try RecordingResultMutation.withClaimedInspection(of: audio, attemptID: inspectionClaim, inspect) }
+        else { try RecordingResultMutation.withDeletion(of: audio, inspect) }
     }
     private func validateBindingPaths(_ audio: URL) throws {
         guard audio.isFileURL, audio == audio.standardizedFileURL,

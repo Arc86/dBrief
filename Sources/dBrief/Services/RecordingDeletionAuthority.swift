@@ -3,7 +3,7 @@ import Foundation
 
 /// Content-free physical ownership frozen before deletion awaits. A missing
 /// original is idempotent; a replacement at its name never inherits authority.
-struct RecordingDeletionAuthority: Sendable {
+struct RecordingDeletionAuthority: Codable, Sendable {
     static let ticketLimit = 32 * 1_024
     static let inspectionAllowance = 128 * 1_024
     static func charge(_ url: URL) throws -> Int {
@@ -76,6 +76,15 @@ struct RecordingDeletionAuthority: Sendable {
     func validate() throws {
         try audio.validate(); try metadata.validate()
         if let owner = try Self.metadataOwner(at: metadata.url, audioURL: audio.url), owner != recordingID { throw LiveArtifactError.wrongOwner }
+    }
+    /// Cleanup allows already removed originals. Admission and publication
+    /// require their frozen physical identities, including absence, to agree.
+    func validateExact() throws {
+        for item in [audio, metadata] {
+            try LiveSessionArtifactStore.requireSafeParents(item.url)
+            guard try Stamp.read(item.url) == item.stamp else { throw LiveArtifactError.wrongOwner }
+        }
+        try validate()
     }
     private static func metadataOwner(at url: URL, audioURL: URL) throws -> UUID? {
         struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }

@@ -150,6 +150,20 @@ final class TranscriptChatService {
         isStreaming = false
     }
 
+    /// Snapshot an interrupted owned answer synchronously before sealing the
+    /// owner's admission. A debounce must not be cancelled before its value is
+    /// submitted. The owner's ordered drain reports physical save failure.
+    func sealOwnedHistoryForReplacement(_ owner: LiveRecordingArtifactOwner) throws {
+        guard !invalidated, recordingOwner === owner else { return }
+        stopGenerating()
+        saveTask?.cancel(); saveTask = nil
+        if hasUnsavedChanges {
+            try owner.saveChat(.init(messages: messages, engine: lastAnswerEngine), urgent: true)
+            hasUnsavedChanges = false; persistenceError = nil
+        }
+        invalidateForReprocessing()
+    }
+
     init(
         contextProvider: TranscriptContextProvider,
         appSettings: AppSettings,

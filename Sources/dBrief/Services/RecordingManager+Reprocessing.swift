@@ -12,6 +12,10 @@ struct ReprocessingRequest: Codable, Sendable {
     var calendarParticipantSelection: CalendarParticipantSelection? = nil
     var calendarParticipantConfiguration: CalendarParticipantRequestConfiguration? = nil
     var calendarProfileID: UUID? = nil
+    /// Optional in older requests. Qualifies preserved owned chat and restart
+    /// reconciliation without adding a new result suffix or journal format.
+    var liveSessionIdentity: LiveSessionIdentity? = nil
+    var liveHistoryPersisted: Bool? = nil
 }
 
 enum ReprocessingError: LocalizedError {
@@ -100,6 +104,9 @@ extension RecordingManager {
         if options.requiresAnalysis { _ = try options.analysisConfiguration(settings: appSettings) }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
+        let frozen = try RecordingDeletionAuthority(audioURL: audio)
+        let phase = try appState.liveRecordingSessions.beginReplacement(recordingID: frozen.recordingID ?? recording.id, audioURL: audio)
+        defer { appState.liveRecordingSessions.abandonReplacement(phase) }
         guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
         let existingJobs = await processingJobStore.discover()
         guard existingJobs.issues.isEmpty, !existingJobs.jobs.contains(where: {
@@ -124,9 +131,16 @@ extension RecordingManager {
             request.calendarParticipantConfiguration = priorCalendar?.source.calendarParticipantConfiguration
             request.calendarProfileID = priorCalendar?.source.profileID
         }
-        let attempt = try await reprocessingStore.prepare(audioURL: audio, configuration: JSONEncoder().encode(request))
+        try await prepareManagedReprocessing(phase, request: &request)
+        let attempt = try await prepareManagedAttempt(phase, request: request)
         invalidateReprocessingChat(audio)
         reprocessingAttempts.append(attempt)
+        if Task.isCancelled {
+            try? await reprocessingStore.checkpoint(attemptID: attempt.id, status: .stopped,
+                message: "Stopped — current results have been kept.")
+            await refreshReprocessingAttempts()
+            throw CancellationError()
+        }
         reprocessingAdmissionBusy = false
         if appState.processingJob == nil { await resumeReprocessing(attempt.id) }
     }
@@ -138,6 +152,11 @@ extension RecordingManager {
         defer { reprocessingAdmissionBusy = false }
         do {
             let attempts = try await reprocessingStore.recover()
+            for phase in appState.liveRecordingSessions.pendingReplacements {
+                if phase.discardCompleted || attempts.contains(where: { $0.id == phase.attemptID && $0.status == .completed }) {
+                    try await retryManagedReprocessing(phase)
+                }
+            }
             // An interrupted stage is offered explicitly, never silently repeated.
             for attempt in attempts where attempt.status != .completed && attempt.status != .queued
                 && attempt.status != .stopped && attempt.status != .failed {
@@ -177,9 +196,13 @@ extension RecordingManager {
         defer { reprocessingAdmissionBusy = false }
         do {
             let attempt = try await reprocessingStore.load(attemptID: id)
-            guard attempt.status != .completed else { return }
+            if attempt.status == .completed { try await finishManagedReprocessing(id); return }
+            var request = try JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration)
+            let phase = try appState.liveRecordingSessions.beginReplacement(recordingID: request.recordingID, audioURL: attempt.audioURL, attemptID: id)
+            defer { appState.liveRecordingSessions.abandonReplacement(phase) }
             try await reprocessingStore.validate(attemptID: id)
-            let request = try JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration)
+            try await prepareManagedReprocessing(phase, request: &request, attempt: attempt)
+            try appState.liveRecordingSessions.adoptReplacement(phase, attemptID: id)
             if request.options.requiresTranscription && !attempt.completedStages.contains("transcription") { _ = try request.options.transcriptionSettings(settings: appSettings) }
             if request.options.requiresAnalysis && !attempt.completedStages.contains("analysis") { _ = try request.options.analysisConfiguration(settings: appSettings) }
             let working = Recording(id: request.recordingID, date: request.date, fileURL: attempt.audioURL,
@@ -244,7 +267,9 @@ extension RecordingManager {
                             try await store.stage(JSONEncoder().encode(insights), suffix: "insights.json", attemptID: job.id)
                         }
                     }
-                    for suffix in ["chat.json", "spokensummary.json", "spokensummary.m4a"] {
+                    let derivatives = request.liveSessionIdentity == nil
+                        ? ["chat.json", "spokensummary.json", "spokensummary.m4a"] : ["spokensummary.json", "spokensummary.m4a"]
+                    for suffix in derivatives {
                         try await store.stageRemoval(suffix: suffix, attemptID: job.id)
                     }
                     var provenance = options
@@ -255,6 +280,7 @@ extension RecordingManager {
                     try await store.commit(attemptID: job.id)
                     self.reprocessingRecoveryReady = true
                     self.reprocessingResultsRevision += 1
+                    try await self.finishManagedReprocessing(job.id)
                     RecordingLibraryChange.notify()
                 }, validate: { @MainActor in try self.requireProcessingOwnership(job) })
             if result == .held { await refreshReprocessingAttempts(); return }
@@ -267,6 +293,7 @@ extension RecordingManager {
                     _ = try await store.recover()
                     reprocessingRecoveryReady = true
                     reprocessingResultsRevision += 1
+                    try await finishManagedReprocessing(job.id)
                     RecordingLibraryChange.notify()
                 } catch { appState.lastError = "Reprocessing recovery needs attention: \(error.localizedDescription)" }
             }
@@ -311,9 +338,27 @@ extension RecordingManager {
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
         do {
+            let attempt = try await reprocessingStore.load(attemptID: id)
+            guard var request = try? JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration) else {
+                // Older ordinary workspaces can have no saved app request.
+                // Explicit Discard still removes only that private candidate.
+                guard appState.liveRecordingSessions.knownRecordingID(audioURL: attempt.audioURL) == nil else { throw ReprocessingStore.StoreError.invalidManifest }
+                try await reprocessingStore.discard(attemptID: id)
+                reprocessingResultsRevision += 1
+                await refreshWorkQueue()
+                return
+            }
+            let phase = try appState.liveRecordingSessions.beginReplacement(recordingID: request.recordingID,
+                audioURL: attempt.audioURL, attemptID: id)
+            defer { appState.liveRecordingSessions.abandonReplacement(phase) }
+            try await prepareManagedReprocessing(phase, request: &request, attempt: attempt)
+            try appState.liveRecordingSessions.adoptReplacement(phase, attemptID: id)
+            invalidateReprocessingChat(attempt.audioURL)
             try await reprocessingStore.discard(attemptID: id)
+            try appState.liveRecordingSessions.noteCompletedDiscard(phase, attemptID: id)
             reprocessingResultsRevision += 1
             await refreshWorkQueue()
+            try await finishManagedReprocessing(id)
         }
         catch { appState.lastError = error.localizedDescription }
     }
@@ -325,13 +370,28 @@ extension RecordingManager {
         }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
-        invalidateReprocessingChat(audio)
+        let frozen = try RecordingDeletionAuthority(audioURL: audio)
+        let phase = try appState.liveRecordingSessions.beginReplacement(recordingID: frozen.recordingID ?? recording.id, audioURL: audio)
+        defer { appState.liveRecordingSessions.abandonReplacement(phase) }
         reprocessingRecoveryReady = false
+        var restorationID: UUID?
         do {
-            try await reprocessingStore.restore(audioURL: audio)
+            let restoration = try await prepareManagedRestoration(phase)
+            restorationID = restoration.id
+            invalidateReprocessingChat(audio)
+            try await reprocessingStore.commit(attemptID: restoration.id)
             reprocessingRecoveryReady = true
+            try await finishManagedReprocessing(restoration.id)
         } catch {
-            do { _ = try await reprocessingStore.recover(); reprocessingRecoveryReady = true }
+            do {
+                restorationID = restorationID ?? phase.attemptID
+                if let restorationID {
+                    try phase.authority.validateExact()
+                    try await reprocessingStore.commit(attemptID: restorationID)
+                    reprocessingRecoveryReady = true
+                    try await finishManagedReprocessing(restorationID)
+                } else { reprocessingRecoveryReady = true }
+            }
             catch { appState.lastError = "Reprocessing recovery needs attention: \(error.localizedDescription)" }
             reprocessingResultsRevision += 1
             throw error

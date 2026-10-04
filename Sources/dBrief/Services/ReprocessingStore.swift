@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import dBriefWire
 
 /// Owns only recording result sidecars. Audio, recording metadata, privacy receipts,
 /// integration journals, and external notes are never publication targets.
@@ -33,7 +34,7 @@ actor ReprocessingStore {
     struct Attempt: Codable, Identifiable, Sendable {
         let id: UUID
         let audioURL: URL
-        let configuration: Data
+        var configuration: Data
         let createdAt: Date
         var updatedAt: Date
         var status: Status
@@ -46,6 +47,9 @@ actor ReprocessingStore {
         /// Full target set persisted BEFORE the first canonical mutation. Kept after
         /// completion so Restore can reject changes made since publication.
         var publishedFingerprints: [String: Fingerprint]?
+        /// Optional for legacy journals. Managed preparation freezes this before
+        /// effects, and recovery never transfers it to a replaced master/owner.
+        var authority: RecordingDeletionAuthority? = nil
     }
 
     enum StoreError: LocalizedError {
@@ -67,18 +71,26 @@ actor ReprocessingStore {
 
     private let root: URL
     private let publicationStep: (@Sendable (String) throws -> Void)?
+    enum PreparationStage: Sendable { case snapshotAdmission, snapshotPrepared, restorationPrepared, publicationAdmission }
+    private let preparationStage: @Sendable (PreparationStage) async -> Void
     private let fm = FileManager.default
 
     init(root: URL = AppSupportPaths.subdirectory("Reprocessing"),
-         publicationStep: (@Sendable (String) throws -> Void)? = nil) {
+         publicationStep: (@Sendable (String) throws -> Void)? = nil,
+         preparationStage: @escaping @Sendable (PreparationStage) async -> Void = { _ in }) {
         self.root = root.standardizedFileURL
         self.publicationStep = publicationStep
+        self.preparationStage = preparationStage
     }
 
-    func prepare(audioURL: URL, configuration: Data) throws -> Attempt {
-        try withStoreLock {
-            try prepareUnlocked(audioURL: audioURL, configuration: configuration)
+    func prepare(audioURL: URL, configuration: Data, authority: RecordingDeletionAuthority? = nil) async throws -> Attempt {
+        await preparationStage(.snapshotAdmission)
+        try Task.checkCancellation()
+        let attempt = try withStoreLock {
+            try prepareUnlocked(audioURL: audioURL, configuration: configuration, authority: authority)
         }
+        await preparationStage(.snapshotPrepared)
+        return attempt
     }
 
     func load(attemptID: UUID) throws -> Attempt {
@@ -92,7 +104,125 @@ actor ReprocessingStore {
     func pendingAttempt(audioURL: URL) throws -> Attempt? {
         try withStoreLock {
             let source = canonicalAudio(audioURL)
-            return try discoverUnlocked().first { $0.audioURL == source && $0.status != .completed }
+            return try attemptsForAudioUnlocked(source).pending
+        }
+    }
+
+    /// A finite per-recording selection for hydration. It retains at most one
+    /// pending and one completed manifest, never all historical attempts.
+    func latestCompleted(audioURL: URL) throws -> Attempt? {
+        try withStoreLock { try attemptsForAudioUnlocked(canonicalAudio(audioURL)).completed }
+    }
+
+    struct ManagedFinal: Sendable {
+        let transcript: RichTranscript?
+        let fallbackText: String?
+        let matchesReceipt: Bool
+        let authority: [RecordingDeletionAuthority.Item]
+        var hasFinal: Bool { transcript != nil || fallbackText != nil }
+        func validateAuthority() throws {
+            for item in authority {
+                try LiveSessionArtifactStore.requireSafeParents(item.url)
+                guard try RecordingDeletionAuthority.Stamp.read(item.url) == item.stamp else { throw LiveArtifactError.wrongOwner }
+            }
+        }
+    }
+
+    /// Read only the final facts used by chat. Voice embeddings, edit tokens and
+    /// original-text copies are omitted before decoding/retention. The caller
+    /// holds a separate inspection lease through the actual actor return.
+    func managedFinal(audioURL: URL, identity: LiveSessionIdentity, nonpersistingReplacement: Bool = false) throws -> ManagedFinal? {
+        try withStoreLock {
+            let audio = canonicalAudio(audioURL)
+            let attempts = try attemptsForAudioUnlocked(audio)
+            guard attempts.pending == nil else { throw StoreError.alreadyPending }
+            var targets: [String: Fingerprint]?
+            if let receipt = attempts.completed {
+                let request = try JSONDecoder().decode(ReprocessingRequest.self, from: receipt.configuration)
+                if let managed = request.liveSessionIdentity {
+                    guard managed == identity, request.recordingID == identity.recordingID else { throw StoreError.invalidManifest }
+                    try validateSource(receipt)
+                    guard let published = receipt.publishedFingerprints else { throw StoreError.invalidManifest }
+                    targets = published
+                } else if !nonpersistingReplacement { return nil }
+            } else if !nonpersistingReplacement { return nil }
+            let source = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: identity.recordingID)
+            let rawURL = sidecar(audio, "transcript.json"), richURL = sidecar(audio, "richtranscript.json")
+            let authority = [source.audio, source.metadata, try .init(rawURL), try .init(richURL)]
+            struct Raw: Decodable {
+                struct Segment: Decodable { let text: String }
+                let text: String
+                let segments: [Segment]
+            }
+            struct Rich: Decodable {
+                struct Segment: Decodable {
+                    let id: UUID
+                    let start: Double
+                    let end: Double
+                    let text: String
+                    let speakerId: String?
+                }
+                let version: Int?
+                let segments: [Segment]
+                let speakerLabels: [SpeakerLabel]?
+            }
+            let raw: Raw? = try RecordingDeletionAuthority.readHeader(rawURL, maximumBytes: 3 * 1_024 * 1_024, tokenLimit: 1_048_576)
+            let rich: Rich? = try RecordingDeletionAuthority.readHeader(richURL, maximumBytes: 3 * 1_024 * 1_024, tokenLimit: 1_048_576)
+            guard raw?.segments.count ?? 0 <= 100_000, rich?.segments.count ?? 0 <= 100_000,
+                  rich?.version ?? RichTranscript.currentVersion == RichTranscript.currentVersion else { throw LiveArtifactError.corruptArtifact }
+            var fallback: String?
+            if (rich?.segments.isEmpty ?? true), let raw {
+                var text = raw.text
+                if text.isEmpty {
+                    for segment in raw.segments {
+                        guard text.utf8.count + segment.text.utf8.count + 1 <= LiveRecordingArtifactOwner.finalPublicationLimit / 6 else {
+                            throw LiveArtifactError.artifactTooLarge
+                        }
+                        if !text.isEmpty { text.append("\n") }; text.append(segment.text)
+                    }
+                }
+                guard text.utf8.count <= LiveRecordingArtifactOwner.finalPublicationLimit / 6 else { throw LiveArtifactError.artifactTooLarge }
+                fallback = text
+            }
+            let transcript = rich.map { value in RichTranscript(segments: value.segments.map {
+                .init(id: $0.id, start: $0.start, end: $0.end, text: $0.text, originalText: $0.text, speakerId: $0.speakerId)
+            }, speakerLabels: value.speakerLabels ?? []) }
+            _ = try LiveAppFinalPublication.bounded(id: UUID(), revision: 1, transcript: transcript ?? .init(segments: []),
+                fallbackText: fallback, limit: LiveRecordingArtifactOwner.finalPublicationLimit)
+            // A final-only RAM replacement has no durable capture ledger to
+            // reconcile. Its exact terminal phase authorizes a fresh projection
+            // of the preserved current canonical result, also after Discard.
+            let matches = try nonpersistingReplacement || (fingerprint(at: rawURL) == targets?["transcript.json"] && fingerprint(at: richURL) == targets?["richtranscript.json"])
+            let result = ManagedFinal(transcript: transcript, fallbackText: fallback, matchesReceipt: matches, authority: authority)
+            try result.validateAuthority()
+            return result
+        }
+    }
+
+    func qualifyManaged(attemptID: UUID, expectedConfiguration: Data, configuration: Data,
+                        identity: LiveSessionIdentity, authority: RecordingDeletionAuthority) throws {
+        try withStoreLock {
+            var attempt = try mutableAttempt(attemptID)
+            try attempt.authority?.validateExact()
+            guard attempt.configuration == expectedConfiguration,
+                  try RecordingDeletionAuthority.canonical(attempt.audioURL) == authority.audioURL,
+                  authority.recordingID == identity.recordingID else {
+                throw StoreError.changedInput("Reprocessing configuration")
+            }
+            try authority.validateExact()
+            try validateSource(attempt)
+            try validateResults(attempt, expected: attempt.resultFingerprints)
+            let request = try JSONDecoder().decode(ReprocessingRequest.self, from: configuration)
+            guard request.recordingID == identity.recordingID, request.liveSessionIdentity == identity else {
+                throw StoreError.invalidManifest
+            }
+            try RecordingResultMutation.claim(audioURL: attempt.audioURL, attemptID: attempt.id)
+            attempt.configuration = configuration
+            // Only a legacy nil journal gains authority. A stopped managed
+            // journal cannot inherit byte-identical replacement files.
+            attempt.authority = attempt.authority ?? authority
+            try authority.validateExact()
+            try save(&attempt)
         }
     }
 
@@ -153,15 +283,18 @@ actor ReprocessingStore {
     func validate(attemptID: UUID) throws {
         try withStoreLock {
             let attempt = try readAttempt(attemptID)
+            try attempt.authority?.validateExact()
             try validateSource(attempt)
             try validateResults(attempt, expected: attempt.resultFingerprints)
         }
     }
 
-    func commit(attemptID: UUID) throws {
+    func commit(attemptID: UUID) async throws {
+        await preparationStage(.publicationAdmission)
         try withStoreLock {
             var attempt = try readAttempt(attemptID)
             if attempt.status == .completed { return }
+            try attempt.authority?.validateExact()
             if attempt.status != .publishing {
                 try validateSource(attempt)
                 try validateResults(attempt, expected: attempt.resultFingerprints)
@@ -169,10 +302,11 @@ actor ReprocessingStore {
                 // Verify every candidate BEFORE committing the journal, so corruption
                 // can never strand a partially replaced set that cannot roll forward.
                 for (suffix, expected) in attempt.stagedFingerprints {
-                    _ = try readPayload(attempt.id, "staged", suffix, expected: expected)
+                    try validatePayload(attempt.id, "staged", suffix, expected: expected)
                 }
                 attempt.publishedFingerprints = attempt.resultFingerprints.merging(attempt.stagedFingerprints) { _, new in new }
                 attempt.status = .publishing
+                try attempt.authority?.validateExact()
                 try save(&attempt)
             }
             try finishPublication(&attempt)
@@ -194,50 +328,88 @@ actor ReprocessingStore {
     func canRestore(audioURL: URL) throws -> Bool {
         try withStoreLock {
             let source = canonicalAudio(audioURL)
-            let attempts = try discoverUnlocked().filter { $0.audioURL == source }
-            return !attempts.contains { $0.status != .completed }
-                && attempts.contains { $0.status == .completed && $0.publishedFingerprints != nil }
+            let attempts = try attemptsForAudioUnlocked(source)
+            return attempts.pending == nil && attempts.completed?.publishedFingerprints != nil
         }
     }
 
-    func restore(audioURL: URL) throws {
+    func restore(audioURL: URL, managedIdentity: LiveSessionIdentity? = nil, configuration: Data? = nil) throws {
         try withStoreLock {
+            var restoration = try prepareRestorationUnlocked(audioURL: audioURL, managedIdentity: managedIdentity, configuration: configuration)
+            try finishPublication(&restoration)
+        }
+    }
+
+    /// Publish the restoration journal and retain its claim, but perform no
+    /// canonical mutation until the manager has retired the original generation.
+    func prepareRestoration(audioURL: URL, managedIdentity: LiveSessionIdentity? = nil,
+                            configuration: Data? = nil, preserveChat: Bool = false,
+                            authority: RecordingDeletionAuthority? = nil) async throws -> Attempt {
+        let attempt = try withStoreLock { try prepareRestorationUnlocked(audioURL: audioURL, managedIdentity: managedIdentity,
+            configuration: configuration, preserveChat: preserveChat, authority: authority) }
+        await preparationStage(.restorationPrepared)
+        return attempt
+    }
+
+    private func prepareRestorationUnlocked(audioURL: URL, managedIdentity: LiveSessionIdentity?,
+                                           configuration: Data?, preserveChat: Bool = false,
+                                           authority: RecordingDeletionAuthority? = nil) throws -> Attempt {
+            try authority?.validateExact()
+            let keepChat = managedIdentity != nil || preserveChat
             let source = canonicalAudio(audioURL)
-            let attempts = try discoverUnlocked().filter { $0.audioURL == source }
-            guard !attempts.contains(where: { $0.status != .completed }) else { throw StoreError.alreadyPending }
-            guard let previous = attempts.first(where: { $0.status == .completed }),
+            let attempts = try attemptsForAudioUnlocked(source)
+            guard attempts.pending == nil else { throw StoreError.alreadyPending }
+            guard let previous = attempts.completed,
                   let expected = previous.publishedFingerprints else { throw StoreError.noPreviousResults }
+            if let managedIdentity {
+                let request = try JSONDecoder().decode(ReprocessingRequest.self, from: configuration ?? previous.configuration)
+                guard request.liveSessionIdentity == managedIdentity,
+                      request.recordingID == managedIdentity.recordingID else { throw StoreError.invalidManifest }
+                struct ChatOwner: Decodable { let identity: LiveSessionIdentity? }
+                let chat: ChatOwner? = try RecordingDeletionAuthority.readHeader(sidecar(source, "chat.json"),
+                    maximumBytes: LiveRecordingArtifactOwner.chatHistoryLimit, tokenLimit: 262_144)
+                guard chat == nil || chat?.identity == managedIdentity else { throw StoreError.invalidManifest }
+            }
             try validateSource(previous)
             // Chat and spoken summaries can legitimately be recreated after a
             // successful commit. Restore invalidates them for the restored text;
             // they neither block restoring results nor return from old backups.
             try validateResults(previous, expected: expected, excluding: Self.derivativeSuffixes)
-            // Read all backup bytes before creating the new attempt. Originals are
-            // immutable, and remain available even if this restore is interrupted.
-            var originals: [String: Data] = [:]
+            // Verify immutable originals before the new claim; subsequent copies
+            // stream fixed chunks and verify the same frozen content.
             for suffix in Self.allowedSuffixes.subtracting(Self.derivativeSuffixes) {
                 guard let fingerprint = previous.resultFingerprints[suffix] else { throw StoreError.invalidManifest }
-                originals[suffix] = try readPayload(previous.id, "original", suffix, expected: fingerprint)
+                try validatePayload(previous.id, "original", suffix, expected: fingerprint)
             }
             var restoreTargets = previous.resultFingerprints
             for suffix in Self.derivativeSuffixes { restoreTargets[suffix] = .missing }
             // Do not advertise a queued processing attempt during restore staging:
             // interruption before the journal is durable leaves canonical files intact.
-            var restoration = try prepareUnlocked(audioURL: source, configuration: previous.configuration, persist: false)
+            var restoration = try prepareUnlocked(audioURL: source, configuration: configuration ?? previous.configuration, persist: false, authority: authority)
+            if keepChat { restoreTargets["chat.json"] = restoration.resultFingerprints["chat.json"] }
             var journalPublished = false
             do {
                 for suffix in Self.allowedSuffixes {
-                    if let data = originals[suffix] {
-                        try writePrivate(data, to: payloadURL(restoration.id, "staged", suffix))
+                    if keepChat, suffix == "chat.json" {
+                        // The current owned conversation was frozen by the new
+                        // claim. Preserve it, including answers added since commit.
+                        continue
+                    }
+                    if restoreTargets[suffix]?.exists == true {
+                        try copyPrivate(from: payloadURL(previous.id, "original", suffix),
+                            to: payloadURL(restoration.id, "staged", suffix), expected: restoreTargets[suffix]!)
                     }
                     restoration.stagedFingerprints[suffix] = restoreTargets[suffix]
                 }
                 restoration.publishedFingerprints = restoreTargets
                 restoration.status = .publishing
+                try validateSource(restoration)
+                try validateResults(restoration, expected: restoration.resultFingerprints)
+                try restoration.authority?.validateExact()
                 try save(&restoration)
                 try synchronizeDirectory(root)
                 journalPublished = true
-                try finishPublication(&restoration)
+                return restoration
             } catch {
                 if !journalPublished {
                     try? fm.removeItem(at: directory(restoration.id))
@@ -245,12 +417,12 @@ actor ReprocessingStore {
                 }
                 throw error
             }
-        }
     }
 
     func discard(attemptID: UUID) throws {
         try withStoreLock {
             let attempt = try readAttempt(attemptID)
+            try attempt.authority?.validateExact()
             // A journaled publication must be reconciled, not discarded mid-swap.
             guard attempt.status != .publishing && attempt.status != .completed else { throw StoreError.invalidStatus }
             try fm.removeItem(at: directory(attempt.id))
@@ -316,10 +488,14 @@ actor ReprocessingStore {
         return attempts.count
     }
 
-    private func prepareUnlocked(audioURL: URL, configuration: Data, persist: Bool = true) throws -> Attempt {
+    private func prepareUnlocked(audioURL: URL, configuration: Data, persist: Bool = true,
+                                 authority: RecordingDeletionAuthority? = nil) throws -> Attempt {
+        guard configuration.count <= 512 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
         let source = canonicalAudio(audioURL)
+        try authority?.validateExact()
+        if let authority, canonicalAudio(authority.audioURL) != source { throw StoreError.invalidManifest }
         guard source.isFileURL else { throw StoreError.missingAudio }
-        guard !(try discoverUnlocked()).contains(where: { $0.audioURL == source && $0.status != .completed }) else {
+        guard try attemptsForAudioUnlocked(source).pending == nil else {
             throw StoreError.alreadyPending
         }
         let sourceFingerprint = try fingerprint(at: source)
@@ -336,18 +512,17 @@ actor ReprocessingStore {
                 let current = try fingerprint(at: url)
                 snapshots[suffix] = current
                 if current.exists {
-                    let data = try Data(contentsOf: url)
-                    guard fingerprint(data) == current else { throw StoreError.changedInput(url.lastPathComponent) }
-                    try writePrivate(data, to: payloadURL(id, "original", suffix))
+                    try copyPrivate(from: url, to: payloadURL(id, "original", suffix), expected: current)
                 }
             }
             var attempt = Attempt(id: id, audioURL: source, configuration: configuration,
                                   createdAt: Date(), updatedAt: Date(), status: .queued,
                                   completedStages: [], progress: 0, message: nil,
                                   sourceFingerprint: sourceFingerprint, resultFingerprints: snapshots,
-                                  stagedFingerprints: [:], publishedFingerprints: nil)
+                                  stagedFingerprints: [:], publishedFingerprints: nil, authority: authority)
             try validateSource(attempt)
             try validateResults(attempt, expected: snapshots)
+            try authority?.validateExact()
             if persist {
                 try save(&attempt)
                 try synchronizeDirectory(root)
@@ -364,6 +539,7 @@ actor ReprocessingStore {
         guard attempt.status == .publishing, let target = attempt.publishedFingerprints else {
             throw StoreError.invalidManifest
         }
+        try attempt.authority?.validateExact()
         try validateSource(attempt)
         // The old or new value is allowed for each file because an interrupted
         // atomic rename can precede the next journal update. A third value is an edit.
@@ -375,16 +551,17 @@ actor ReprocessingStore {
         }
         // Recheck candidates on recovery too, before any further canonical changes.
         for (suffix, expected) in attempt.stagedFingerprints {
-            _ = try readPayload(attempt.id, "staged", suffix, expected: expected)
+            try validatePayload(attempt.id, "staged", suffix, expected: expected)
         }
         for suffix in attempt.stagedFingerprints.keys.sorted() {
+            try attempt.authority?.validateExact()
             guard let expected = target[suffix] else { throw StoreError.invalidManifest }
             let url = sidecar(attempt.audioURL, suffix)
             let current = try fingerprint(at: url)
             if current == expected { continue }
             guard current == attempt.resultFingerprints[suffix] else { throw StoreError.changedInput(url.lastPathComponent) }
-            if let data = try readPayload(attempt.id, "staged", suffix, expected: expected) {
-                try writePrivate(data, to: url)
+            if expected.exists {
+                try copyPrivate(from: payloadURL(attempt.id, "staged", suffix), to: url, expected: expected, publicationAuthority: attempt.authority)
             } else {
                 try fm.removeItem(at: url)
                 try synchronizeDirectory(url.deletingLastPathComponent())
@@ -393,6 +570,7 @@ actor ReprocessingStore {
         }
         try validateSource(attempt)
         try validateResults(attempt, expected: target)
+        try attempt.authority?.validateExact()
         attempt.status = .completed
         attempt.progress = 1
         attempt.message = nil
@@ -400,7 +578,13 @@ actor ReprocessingStore {
         RecordingResultMutation.release(audioURL: attempt.audioURL, attemptID: attempt.id)
         // Keep exactly one complete prior set. Cleanup happens after completion is
         // durable, so crashing here can at worst retain an extra backup temporarily.
-        for old in try discoverUnlocked() where old.audioURL == attempt.audioURL && old.id != attempt.id && old.status == .completed {
+        try RecordingDeletionAuthority.scanChildren(root, includeHidden: true) { url in
+            guard let id = UUID(uuidString: url.lastPathComponent), id != attempt.id else { return }
+            guard let header: AttemptHeader = try RecordingDeletionAuthority.readHeader(url.appendingPathComponent("manifest.json"),
+                maximumBytes: 1_024 * 1_024, tokenLimit: 262_144) else { return }
+            guard header.id == id else { throw StoreError.invalidManifest }
+            guard header.audioURL == attempt.audioURL, header.status == .completed else { return }
+            let old = try readAttempt(id)
             try fm.removeItem(at: directory(old.id))
         }
         try synchronizeDirectory(root)
@@ -429,7 +613,8 @@ actor ReprocessingStore {
         try requireDirectory(directory(id))
         let url = directory(id).appendingPathComponent("manifest.json")
         try requireRegularOrMissing(url)
-        let attempt = try JSONDecoder().decode(Attempt.self, from: Data(contentsOf: url))
+        guard let attempt: Attempt = try RecordingDeletionAuthority.readHeader(url,
+            maximumBytes: 1_024 * 1_024, tokenLimit: 262_144) else { throw StoreError.invalidManifest }
         guard attempt.id == id, attempt.audioURL.isFileURL,
               attempt.audioURL == canonicalAudio(attempt.audioURL),
               Set(attempt.resultFingerprints.keys) == Self.allowedSuffixes,
@@ -438,7 +623,38 @@ actor ReprocessingStore {
               attempt.status != .publishing || attempt.publishedFingerprints != nil else {
             throw StoreError.invalidManifest
         }
+        if let authority = attempt.authority {
+            guard canonicalAudio(authority.audioURL) == attempt.audioURL,
+                  try RecordingDeletionAuthority.canonical(sidecar(attempt.audioURL, "json")) == authority.metadata.url,
+                  !authority.audio.directory, !authority.metadata.directory else { throw StoreError.invalidManifest }
+        }
         return attempt
+    }
+
+    private struct AttemptHeader: Decodable {
+        let id: UUID
+        let audioURL: URL
+        let status: Status
+        let createdAt: Date
+    }
+    private func attemptsForAudioUnlocked(_ audio: URL) throws -> (pending: Attempt?, completed: Attempt?) {
+        var pending: Attempt?, completed: Attempt?
+        try RecordingDeletionAuthority.scanChildren(root, includeHidden: true) { url in
+            guard let id = UUID(uuidString: url.lastPathComponent) else { return }
+            try requireDirectory(url)
+            guard let header: AttemptHeader = try RecordingDeletionAuthority.readHeader(url.appendingPathComponent("manifest.json"),
+                maximumBytes: 1_024 * 1_024, tokenLimit: 262_144) else { return }
+            guard header.id == id else { throw StoreError.invalidManifest }
+            guard header.audioURL == audio else { return }
+            if header.status == .completed {
+                if completed == nil || header.createdAt > completed!.createdAt { completed = try readAttempt(id) }
+            } else {
+                guard pending == nil else { throw StoreError.alreadyPending }
+                pending = try readAttempt(id)
+                try RecordingResultMutation.claim(audioURL: audio, attemptID: id)
+            }
+        }
+        return (pending, completed)
     }
 
     private func discoverUnlocked() throws -> [Attempt] {
@@ -458,7 +674,8 @@ actor ReprocessingStore {
 
     private func save(_ attempt: inout Attempt) throws {
         attempt.updatedAt = Date()
-        try writePrivate(JSONEncoder().encode(attempt), to: directory(attempt.id).appendingPathComponent("manifest.json"))
+        let bytes = try LiveArtifactEncoding.encode(attempt, limit: 1_024 * 1_024)
+        try writePrivate(bytes, to: directory(attempt.id).appendingPathComponent("manifest.json"))
     }
 
     private func readPayload(_ id: UUID, _ kind: String, _ suffix: String, expected: Fingerprint) throws -> Data? {
@@ -469,6 +686,13 @@ actor ReprocessingStore {
         let data = try Data(contentsOf: url)
         guard fingerprint(data) == expected else { throw StoreError.invalidManifest }
         return data
+    }
+
+    private func validatePayload(_ id: UUID, _ kind: String, _ suffix: String, expected: Fingerprint) throws {
+        guard expected.exists else { return }
+        let url = payloadURL(id, kind, suffix)
+        try requireDirectory(url.deletingLastPathComponent())
+        guard try fingerprint(at: url) == expected else { throw StoreError.invalidManifest }
     }
 
     private func checkSuffix(_ suffix: String) throws {
@@ -538,6 +762,42 @@ actor ReprocessingStore {
         try handle.synchronize()
         guard rename(temp.path, url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         try synchronizeDirectory(url.deletingLastPathComponent())
+    }
+
+    /// Retain one fixed chunk for backups and publication, including spoken
+    /// audio. Verify content and physical identity before the atomic rename.
+    private func copyPrivate(from source: URL, to target: URL, expected: Fingerprint,
+                             publicationAuthority: RecordingDeletionAuthority? = nil) throws {
+        try requireDirectory(target.deletingLastPathComponent())
+        try requireRegularOrMissing(target)
+        guard expected.exists, let stamp = try RecordingDeletionAuthority.Stamp.read(source),
+              stamp.size >= 0, UInt64(stamp.size) == expected.byteCount else { throw StoreError.invalidManifest }
+        let inputFD = open(source.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard inputFD >= 0 else { throw StoreError.unsafeFile(source.lastPathComponent) }
+        let input = FileHandle(fileDescriptor: inputFD, closeOnDealloc: true)
+        defer { try? input.close() }
+        let temp = target.deletingLastPathComponent().appendingPathComponent(".reprocessing-\(UUID().uuidString)")
+        let outputFD = open(temp.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard outputFD >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let output = FileHandle(fileDescriptor: outputFD, closeOnDealloc: true)
+        defer { try? output.close(); try? fm.removeItem(at: temp) }
+        var hash = SHA256(), count: UInt64 = 0
+        while let chunk = try input.read(upToCount: 512 * 1_024), !chunk.isEmpty {
+            guard count <= expected.byteCount, UInt64(chunk.count) <= expected.byteCount - count else {
+                throw StoreError.changedInput(source.lastPathComponent)
+            }
+            hash.update(data: chunk); count += UInt64(chunk.count)
+            try output.write(contentsOf: chunk)
+        }
+        let actual = Fingerprint(exists: true, byteCount: count,
+            sha256: hash.finalize().map { String(format: "%02x", $0) }.joined())
+        guard actual == expected, try RecordingDeletionAuthority.Stamp.read(source) == stamp else {
+            throw StoreError.changedInput(source.lastPathComponent)
+        }
+        try output.synchronize()
+        try publicationAuthority?.validateExact()
+        guard rename(temp.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        try synchronizeDirectory(target.deletingLastPathComponent())
     }
 
     private func synchronizeDirectory(_ url: URL) throws {
@@ -611,6 +871,15 @@ enum RecordingResultMutation {
     static func withDeletion<T>(of audioURL: URL, _ body: () throws -> T) throws -> T {
         try withTransaction {
             guard state.owners[basePath(audioURL)] == nil else { throw ReprocessingStore.StoreError.alreadyPending }
+            return try body()
+        }
+    }
+
+    /// A pending replacement may inspect its own original managed ledger. This
+    /// grants no write/deletion authority and never bypasses another attempt.
+    static func withClaimedInspection<T>(of audioURL: URL, attemptID: UUID, _ body: () throws -> T) throws -> T {
+        try withTransaction {
+            guard state.owners[basePath(audioURL)] == attemptID else { throw ReprocessingStore.StoreError.alreadyPending }
             return try body()
         }
     }

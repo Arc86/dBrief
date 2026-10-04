@@ -42,6 +42,7 @@ import dBriefWire
         var hasTranscript = true
         var finalPublication: LiveAppFinalPublication?
         var finalBytes = 0
+        var publicationAuthority: [RecordingDeletionAuthority.Item] = []
         var chat: ChatHistory?
         var chatBytes = 0
         init(revision: UInt64, legacy: [LiveLegacyTranscriptValue]?, bytes: Int, closed: Bool) {
@@ -83,6 +84,8 @@ import dBriefWire
     private var started = false
     var persistenceStarted: Bool { started }
     private var retired = false
+    private var replacementSealed = false
+    private(set) var isNonpersistingFinalOnly = false
     private(set) var deletionPending = false
     private(set) var admittedAudioURL: URL?
     private var nativeClosureDurable = false
@@ -98,11 +101,12 @@ import dBriefWire
     private(set) var failure: String?
     private(set) var growthRetired = false
     var isDurable: Bool {
-        started && !deletionPending && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
+        if isNonpersistingFinalOnly { return !retired && failure == nil }
+        return started && !deletionPending && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
             && durableChatRevision == acceptedChatRevision && chatLoad == nil
             && (!captureClosed || !isNative || nativeClosureDurable || hydratedReadOnly)
     }
-    var canEvict: Bool { captureClosed && pinCounter.count == 0 && isDurable }
+    var canEvict: Bool { !isNonpersistingFinalOnly && captureClosed && pinCounter.count == 0 && isDurable }
     var isRecoveredOwner: Bool { recoveredOwner }
     var pendingIntervals: Int { queue.filter { if case .checkpoint = $0 { true } else { false } }.count }
 
@@ -139,14 +143,31 @@ import dBriefWire
         started = true; captureClosed = true; hydratedReadOnly = true; recoveredOwner = true
     }
     func pin() -> Pin { Pin(self) }
+    var finalAnchor: (id: UUID, revision: UInt64)? { finalPublication.map { ($0.id, $0.revision) } ?? nativeFinalAnchor }
+    /// Explicit RAM adapter. It has a fresh shared token/store and the ordinary
+    /// owner reservation, but never starts the artifact writer or invents a
+    /// captured prefix when publishing a saved final result.
+    func configureNonpersistingFinalOnly(audioURL: URL, anchor: (id: UUID, revision: UInt64)?) {
+        isNonpersistingFinalOnly = true; captureClosed = true; sourceUnavailable = true
+        admittedAudioURL = audioURL; nativeFinalAnchor = anchor
+    }
+    func sealForReplacement() throws {
+        try validity.withValidResult {}
+        guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
+        guard !replacementSealed else { return }
+        try chatService?.sealOwnedHistoryForReplacement(self)
+        replacementSealed = true
+        chatService = nil
+    }
+    func reopenAfterFailedReplacement() { if !retired { replacementSealed = false } }
     func attachChatService(_ service: TranscriptChatService) -> Bool {
-        guard !retired, !deletionPending, (try? validity.withValidResult {}) != nil,
+        guard !retired, !deletionPending, !replacementSealed, !isNonpersistingFinalOnly, (try? validity.withValidResult {}) != nil,
               chatService == nil || chatService === service else { return false }
         chatService = service; return true
     }
     func beginChatRequest() throws -> ChatRequest {
         try validity.withValidResult {}
-        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending, !replacementSealed else { throw LiveArtifactError.deleted }
         guard chatRequests.count == 0 else { throw LiveArtifactError.queueFull }
         return ChatRequest(self)
     }
@@ -243,12 +264,12 @@ import dBriefWire
     }
     private func requireChatAdmission() throws {
         try validity.withValidResult {}
-        guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
+        guard !retired, !deletionPending, !replacementSealed else { throw LiveArtifactError.deleted }
         guard chatReady else { throw LiveArtifactError.bindingPending }
     }
 
     func start() {
-        guard !started, !retired else { return }
+        guard !started, !retired, !isNonpersistingFinalOnly else { return }
         started = true
         if isNative {
             observer = Task { [weak self, store] in
@@ -335,6 +356,7 @@ import dBriefWire
     /// This never participates in the hardware Stop latch.
     func flush() async throws {
         try validity.withValidResult {}
+        if isNonpersistingFinalOnly { return }
         if !started { start() }
         if failure == nil, !recoveredOwner { try checkpoint(urgent: true) }
         if failure == nil { startDrain(urgent: true) }
@@ -410,7 +432,42 @@ import dBriefWire
         try requireCapacity(legacyBytes: legacyBytes, chatBytes: tailInterval?.chatBytes ?? 0,
             finalBytes: Self.finalPublicationLimit)
         finalPublication = value
+        if isNonpersistingFinalOnly { acceptedRevision += 1; durableRevision = acceptedRevision; return }
         try checkpoint(urgent: true)
+    }
+
+    /// Reconcile an already durable canonical result before this generation is
+    /// exposed. Equal final facts preserve their exact ID/revision and bytes;
+    /// only a verified changed completed receipt can replace them.
+    func reconcileFinal(_ result: ReprocessingStore.ManagedFinal) async throws {
+        try validity.withValidResult {}
+        try result.validateAuthority()
+        let transcript = result.transcript ?? .init(segments: [])
+        if result.hasFinal {
+            let revision = max(finalPublication?.revision ?? 0, nativeFinalAnchor?.revision ?? 0)
+            guard revision < .max else { throw LiveArtifactError.staleRevision }
+            let candidate = try LiveAppFinalPublication.bounded(id: finalPublication?.id ?? nativeFinalAnchor?.id ?? UUID(),
+                revision: revision + 1,
+                transcript: transcript, fallbackText: result.fallbackText, limit: Self.finalPublicationLimit)
+            if let old = finalPublication, old.segments == candidate.segments,
+               old.speakerLabels == candidate.speakerLabels, old.fallbackText == candidate.fallbackText { return }
+            guard result.matchesReceipt else { throw LiveArtifactError.revisionConflict }
+            finalCommitted = true; needsTextOnlyFallback = result.fallbackText != nil
+            try publishFinal(transcript: transcript, fallbackText: result.fallbackText)
+        } else {
+            guard finalPublication != nil || nativeFinalAnchor != nil else { return }
+            guard result.matchesReceipt else { throw LiveArtifactError.revisionConflict }
+            if isNative, !isNonpersistingFinalOnly {
+                let cleared = await store.clearFinalForReprocessing()
+                guard cleared == .accepted || cleared == .duplicate else { throw LiveArtifactError.verificationFailed }
+            }
+            finalPublication = nil; nativeFinalAnchor = nil; finalCommitted = false; needsTextOnlyFallback = false
+            if !isNonpersistingFinalOnly { try checkpoint(urgent: true) }
+        }
+        if isNonpersistingFinalOnly { return }
+        tailInterval?.publicationAuthority = result.authority
+        try await flush()
+        try result.validateAuthority()
     }
 
     func retire() {
@@ -493,7 +550,7 @@ import dBriefWire
                             legacy: sourceUnavailable ? nil : legacy, captureClosed: closed && (publication != nil || (state?.isClosed ?? true)),
                             finalPublication: publication, sourceUnavailable: sourceUnavailable ? true : nil)
                         _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.envelopeLimit)
-                        try await writer.saveTranscript(value)
+                        try await writer.saveTranscript(value, validating: interval.publicationAuthority)
                         durableRevision = revision
                         if interval.revision == revision {
                             interval.hasTranscript = false; interval.legacy = nil; interval.legacyBytes = 0

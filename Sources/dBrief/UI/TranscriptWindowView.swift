@@ -1416,8 +1416,13 @@ struct TranscriptDetailView: View {
             service = TranscriptChatService(contextProvider: .recording(recordingID: recording.id,
                 registry: registry, legacy: { .legacy(text: "", recordingID: recording.id, speakerLabels: []) }),
                 appSettings: context.appSettings, localPlugin: context.recordingManager.localPlugin, recording: recording)
-            if let entry = registry.entry(recordingID: recording.id), entry.isValid {
+            if let entry = registry.entry(recordingID: recording.id), entry.isValid,
+               !entry.artifacts.isNonpersistingFinalOnly,
+               entry.artifacts.persistenceStarted || context.appState.liveArtifactCaptureEnabled {
                 service.enableRecordingPersistence(owner: entry.artifacts)
+            } else if !isLive, let url = recording.chatSidecarURL {
+                service.enablePersistence(store: context.chatStore, url: url)
+                service.startLoadingPersisted()
             }
         } else if isLive {
             // Freeze committed evidence for this recording, excluding UI partials and processing previews.
