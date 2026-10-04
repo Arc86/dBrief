@@ -22,51 +22,152 @@ private struct ASRTreeEntry: Sendable {
     let identity: ASRFileIdentity; let size: UInt64; let directory: ASRDirectory?
 }
 
+private enum OwnedModelIdentity: Sendable {
+    case asr(LiveASRIdentity,LiveASRConfiguration.Language,Int)
+    case diarization(LiveDiarizationIdentity)
+    var supported: Bool {
+        switch self {
+        case .asr(let identity,_,let chunk): identity.isSupported && [560,1120,2240].contains(chunk)
+        case .diarization(let identity): identity.isSupported
+        }
+    }
+    var namespace: String { switch self { case .asr: "dbrief-asr-"; case .diarization: "dbrief-diar-" } }
+    func configuration(path: String) -> OwnedModelConfiguration {
+        switch self {
+        case .asr(let identity,let language,let chunk): .asr(.init(language: language,chunkMs: chunk,modelDirectory: path,identity: identity))
+        case .diarization(let identity): .diarization(.init(identity: identity,modelDirectory: path))
+        }
+    }
+}
+private enum OwnedModelConfiguration: Sendable {
+    case asr(LiveASRConfiguration), diarization(LiveDiarizationConfiguration)
+    var path: String { switch self { case .asr(let c): c.modelDirectory; case .diarization(let c): c.modelDirectory } }
+    var supported: Bool { switch self { case .asr(let c): c.isValid && c.identity?.isSupported == true; case .diarization(let c): c.isValid } }
+    var namespace: String { switch self { case .asr: "dbrief-asr-"; case .diarization: "dbrief-diar-" } }
+    var fingerprint: String? { switch self { case .asr(let c): c.identity?.modelFingerprint; case .diarization(let c): c.identity.modelFingerprint } }
+    var domain: String { switch self { case .asr: "dBrief.ASRAssets.v1\0"; case .diarization: "dBrief.DiarizationAssets.v1\0" } }
+    var stagingKind: LiveASRStagingBudget.RootKind { switch self { case .asr: .mandatory; case .diarization: .diarization } }
+}
+private enum OwnedModelWitness: Sendable {
+    case asr(LiveASRMetadataWitness), diarization(LiveDiarizationMetadataWitness)
+}
+private final class OwnedReadOnlySnapshot: Sendable {
+    let configuration: OwnedModelConfiguration; let fingerprint: String; let witness: OwnedModelWitness
+    let tree: ASRAssetTree
+    init(tree: ASRAssetTree,configuration: OwnedModelConfiguration,fingerprint: String,witness: OwnedModelWitness) {
+        self.tree = tree; self.configuration = configuration; self.fingerprint = fingerprint; self.witness = witness
+    }
+    func validateCurrentPath() throws -> URL { try tree.validateCurrentPath(readOnly: true) }
+    static func open(_ configuration: OwnedModelConfiguration,testingStagingDirectory: URL?) throws -> OwnedReadOnlySnapshot {
+        guard configuration.supported else { throw LiveASRAssetError.invalidConfiguration }
+        let path = URL(fileURLWithPath: configuration.path), name = path.lastPathComponent, namespace = configuration.namespace
+        guard name.hasPrefix(namespace), UUID(uuidString: String(name.dropFirst(namespace.count))) != nil else { throw LiveASRAssetError.invalidAsset }
+        let parentURL = try testingStagingDirectory ?? ASRAssetTree.systemTemporaryDirectory()
+        let parent = try ASRAssetTree.directory(path: parentURL.path)
+        try ASRAssetTree.privateParent(parent)
+        let parentPath = try ASRAssetTree.path(parent.fd)
+        guard configuration.path == parentPath + "/" + name else { throw LiveASRAssetError.invalidAsset }
+        let root = try ASRDirectory(taking: openat(parent.fd,name,O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC))
+        let tree = try ASRAssetTree.scan(root: root,parent: parent,name: name,path: configuration.path,limits: .init(),configuration: configuration,readOnly: true)
+        let checked = try tree.fingerprint(configuration)
+        _ = try tree.validateCurrentPath(readOnly: true)
+        return .init(tree: tree,configuration: configuration,fingerprint: checked.0,witness: checked.1)
+    }
+}
+
 /// Descriptor witness only. The helper receives no deletion authority.
 public final class LiveASRReadOnlySnapshot: Sendable {
     public let configuration: LiveASRConfiguration
     public let fingerprint: String
     public let metadata: LiveASRMetadataWitness
-    fileprivate let tree: ASRAssetTree
-    fileprivate init(tree: ASRAssetTree, configuration: LiveASRConfiguration,
-                     fingerprint: String, metadata: LiveASRMetadataWitness) {
-        self.tree = tree; self.configuration = configuration; self.fingerprint = fingerprint; self.metadata = metadata
+    private let snapshot: OwnedReadOnlySnapshot
+    fileprivate init(_ snapshot: OwnedReadOnlySnapshot) throws {
+        guard case .asr(let configuration) = snapshot.configuration, case .asr(let metadata) = snapshot.witness else { throw LiveASRAssetError.invalidAsset }
+        self.snapshot = snapshot; self.configuration = configuration; fingerprint = snapshot.fingerprint; self.metadata = metadata
     }
-    public func validateCurrentPath() throws -> URL { try tree.validateCurrentPath(readOnly: true) }
+    public func validateCurrentPath() throws -> URL { try snapshot.validateCurrentPath() }
     public static func open(_ configuration: LiveASRConfiguration) throws -> LiveASRReadOnlySnapshot {
         try open(configuration,testingStagingDirectory: nil)
     }
-    package static func open(_ configuration: LiveASRConfiguration, testingStagingDirectory: URL?) throws -> LiveASRReadOnlySnapshot {
-        guard configuration.isValid, configuration.identity?.isSupported == true else { throw LiveASRAssetError.invalidConfiguration }
-        let path = URL(fileURLWithPath: configuration.modelDirectory), name = path.lastPathComponent
-        guard name.hasPrefix("dbrief-asr-"), UUID(uuidString: String(name.dropFirst(11))) != nil else { throw LiveASRAssetError.invalidAsset }
-        let parentURL = try testingStagingDirectory ?? ASRAssetTree.systemTemporaryDirectory()
-        let parent = try ASRAssetTree.directory(path: parentURL.path)
-        try ASRAssetTree.privateParent(parent)
-        let parentPath = try ASRAssetTree.path(parent.fd)
-        guard configuration.modelDirectory == parentPath + "/" + name else { throw LiveASRAssetError.invalidAsset }
-        let root = try ASRDirectory(taking: openat(parent.fd,name,O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC))
-        let tree = try ASRAssetTree.scan(root: root,parent: parent,name: name,path: configuration.modelDirectory,limits: .init(),readOnly: true)
-        let checked = try tree.fingerprint(configuration)
-        _ = try tree.validateCurrentPath(readOnly: true)
-        return .init(tree: tree,configuration: configuration,fingerprint: checked.0,metadata: checked.1)
+    package static func open(_ configuration: LiveASRConfiguration,testingStagingDirectory: URL?) throws -> LiveASRReadOnlySnapshot {
+        try .init(OwnedReadOnlySnapshot.open(.asr(configuration),testingStagingDirectory: testingStagingDirectory))
     }
 }
 
-/// Cooperating code never purges/renames this private namespace while native
-/// work owns it. SDK URL reopens cannot prevent arbitrary later same-user swaps.
-/// No CoreML constructor, package compiler or downloader is invoked here.
+/// A helper can retain/read the exact snapshot but cannot delete it.
+public final class LiveDiarizationReadOnlySnapshot: Sendable {
+    public let configuration: LiveDiarizationConfiguration
+    public let fingerprint: String
+    public let metadata: LiveDiarizationMetadataWitness
+    private let snapshot: OwnedReadOnlySnapshot
+    fileprivate init(_ snapshot: OwnedReadOnlySnapshot) throws {
+        guard case .diarization(let configuration) = snapshot.configuration, case .diarization(let metadata) = snapshot.witness else { throw LiveASRAssetError.invalidAsset }
+        self.snapshot = snapshot; self.configuration = configuration; fingerprint = snapshot.fingerprint; self.metadata = metadata
+    }
+    public func validateCurrentPath() throws -> URL { try snapshot.validateCurrentPath() }
+    public static func open(_ configuration: LiveDiarizationConfiguration) throws -> LiveDiarizationReadOnlySnapshot {
+        try open(configuration,testingStagingDirectory: nil)
+    }
+    package static func open(_ configuration: LiveDiarizationConfiguration,testingStagingDirectory: URL?) throws -> LiveDiarizationReadOnlySnapshot {
+        try .init(OwnedReadOnlySnapshot.open(.diarization(configuration),testingStagingDirectory: testingStagingDirectory))
+    }
+}
+
+/// Cooperating owners retain this private namespace until native work joins.
 public final class LiveASRModelAssets: Sendable {
     public struct Limits: Sendable {
         public var maximumFileBytes: UInt64 = 2 * 1_073_741_824
         public var maximumTotalBytes: UInt64 = 8 * 1_073_741_824
         public init() {}
-        fileprivate var isValid: Bool {
-            (1...2 * 1_073_741_824).contains(maximumFileBytes) && (1...8 * 1_073_741_824).contains(maximumTotalBytes)
-        }
+        fileprivate var isValid: Bool { (1...2 * 1_073_741_824).contains(maximumFileBytes) && (1...8 * 1_073_741_824).contains(maximumTotalBytes) }
     }
     public enum CopyPoint: Sendable { case beforeOpenFile, afterOpenFile, afterCreateDirectory, beforePublish }
     public typealias Probe = @Sendable (CopyPoint,String) async throws -> Void
+    public let configuration: LiveASRConfiguration
+    private let assets: OwnedModelAssets
+    public convenience init(sourceDirectory: URL,identity: LiveASRIdentity,language: LiveASRConfiguration.Language,chunkMs: Int) throws {
+        try self.init(sourceDirectory: sourceDirectory,identity: identity,language: language,chunkMs: chunkMs,budget: .shared,testingStagingDirectory: nil)
+    }
+    package init(sourceDirectory: URL,identity: LiveASRIdentity,language: LiveASRConfiguration.Language,chunkMs: Int,
+                 budget: LiveASRStagingBudget,testingStagingDirectory: URL?,limits: Limits = .init(),probe: Probe? = nil) throws {
+        assets = try .init(sourceDirectory: sourceDirectory,identity: .asr(identity,language,chunkMs),budget: budget,
+            testingStagingDirectory: testingStagingDirectory,limits: limits,probe: probe)
+        guard case .asr(let configuration) = assets.configuration else { throw LiveASRAssetError.invalidConfiguration }
+        self.configuration = configuration
+    }
+    public func bind(to owner: UUID) -> Bool { assets.bind(to: owner) }
+    public func prepare(owner: UUID) async throws { try await assets.prepare(owner: owner) }
+    public func snapshot(owner: UUID) throws -> LiveASRReadOnlySnapshot { try .init(assets.snapshot(owner: owner)) }
+    @discardableResult public func retire(owner: UUID) -> Task<Void,Never>? { assets.retire(owner: owner) }
+}
+
+public final class LiveDiarizationModelAssets: Sendable {
+    public typealias Limits = LiveASRModelAssets.Limits
+    public typealias CopyPoint = LiveASRModelAssets.CopyPoint
+    public typealias Probe = LiveASRModelAssets.Probe
+    public let configuration: LiveDiarizationConfiguration
+    private let assets: OwnedModelAssets
+    public convenience init(sourceDirectory: URL,identity: LiveDiarizationIdentity) throws {
+        try self.init(sourceDirectory: sourceDirectory,identity: identity,budget: .shared,testingStagingDirectory: nil)
+    }
+    package init(sourceDirectory: URL,identity: LiveDiarizationIdentity,budget: LiveASRStagingBudget,
+                 testingStagingDirectory: URL?,limits: Limits = .init(),probe: Probe? = nil) throws {
+        assets = try .init(sourceDirectory: sourceDirectory,identity: .diarization(identity),budget: budget,
+            testingStagingDirectory: testingStagingDirectory,limits: limits,probe: probe)
+        guard case .diarization(let configuration) = assets.configuration else { throw LiveASRAssetError.invalidConfiguration }
+        self.configuration = configuration
+    }
+    public func bind(to owner: UUID) -> Bool { assets.bind(to: owner) }
+    public func prepare(owner: UUID) async throws { try await assets.prepare(owner: owner) }
+    public func snapshot(owner: UUID) throws -> LiveDiarizationReadOnlySnapshot { try .init(assets.snapshot(owner: owner)) }
+    @discardableResult public func retire(owner: UUID) -> Task<Void,Never>? { assets.retire(owner: owner) }
+}
+
+/// Shared descriptor copying/cleanup, with a closed typed format selection.
+/// No CoreML constructor, package compiler or downloader is invoked here.
+private final class OwnedModelAssets: Sendable {
+    typealias Limits = LiveASRModelAssets.Limits
+    typealias Probe = LiveASRModelAssets.Probe
     private final class State: @unchecked Sendable {
         private let lock = NSLock()
         private var owner: UUID?; private var used = false; private var retired = false
@@ -81,7 +182,7 @@ public final class LiveASRModelAssets: Sendable {
         func publish(_ value: ASROwnedSnapshot, owner: UUID) -> Bool {
             lock.withLock { guard self.owner == owner, !retired, ready == nil else { return false }; ready = value; return true }
         }
-        func snapshot(_ owner: UUID) throws -> LiveASRReadOnlySnapshot {
+        func snapshot(_ owner: UUID) throws -> OwnedReadOnlySnapshot {
             try lock.withLock {
                 guard self.owner == owner, !retired, let ready else { throw LiveASRAssetError.invalidAsset }
                 return ready.snapshot
@@ -94,7 +195,7 @@ public final class LiveASRModelAssets: Sendable {
             }
         }
     }
-    public let configuration: LiveASRConfiguration
+    let configuration: OwnedModelConfiguration
     private let sourceDirectory: URL
     private let parent: ASRDirectory
     private let parentPath: String
@@ -104,31 +205,25 @@ public final class LiveASRModelAssets: Sendable {
     private let probe: Probe?
     private let state = State()
 
-    public convenience init(sourceDirectory: URL, identity: LiveASRIdentity, language: LiveASRConfiguration.Language,
-                            chunkMs: Int) throws {
-        try self.init(sourceDirectory: sourceDirectory,identity: identity,language: language,chunkMs: chunkMs,budget: .shared,
-                      testingStagingDirectory: nil,limits: .init(),probe: nil)
-    }
-    package init(sourceDirectory: URL, identity: LiveASRIdentity, language: LiveASRConfiguration.Language,
-                 chunkMs: Int, budget: LiveASRStagingBudget, testingStagingDirectory: URL?, limits: Limits = .init(), probe: Probe? = nil) throws {
-        guard identity.isSupported, [560,1120,2240].contains(chunkMs), limits.isValid,
-              LiveASRIdentity.validPath(sourceDirectory.path) else { throw LiveASRAssetError.invalidConfiguration }
+    init(sourceDirectory: URL,identity: OwnedModelIdentity,budget: LiveASRStagingBudget,testingStagingDirectory: URL?,
+         limits: Limits = .init(),probe: Probe? = nil) throws {
+        guard identity.supported, limits.isValid, LiveASRIdentity.validPath(sourceDirectory.path) else { throw LiveASRAssetError.invalidConfiguration }
         let temporary = try testingStagingDirectory ?? ASRAssetTree.systemTemporaryDirectory()
         parent = try ASRAssetTree.directory(path: temporary.path); try ASRAssetTree.privateParent(parent)
-        parentPath = try ASRAssetTree.path(parent.fd); name = "dbrief-asr-\(UUID().uuidString.lowercased())"
-        configuration = .init(language: language,chunkMs: chunkMs,modelDirectory: parentPath + "/" + name,identity: identity)
+        parentPath = try ASRAssetTree.path(parent.fd); name = identity.namespace + UUID().uuidString.lowercased()
+        configuration = identity.configuration(path: parentPath + "/" + name)
         self.sourceDirectory = sourceDirectory; self.budget = budget; self.limits = limits; self.probe = probe
     }
     deinit {
         if let owned = state.retire(nil) { Task.detached { owned.cleanup() } }
     }
     public func bind(to owner: UUID) -> Bool { state.bind(owner) }
-    public func snapshot(owner: UUID) throws -> LiveASRReadOnlySnapshot { try state.snapshot(owner) }
+    func snapshot(owner: UUID) throws -> OwnedReadOnlySnapshot { try state.snapshot(owner) }
 
     /// The async caller may await real copying; hardware Stop only seals State.
     public func prepare(owner: UUID) async throws {
         guard state.begin(owner) else { throw LiveASRAssetError.invalidConfiguration }
-        let ticket = try budget.beginWorker()
+        let ticket = try budget.beginWorker(kind: configuration.stagingKind)
         let worker = Task.detached(priority: .utility) { [self] in
             defer { budget.finishWorker(ticket) }
             var owned: ASROwnedSnapshot?
@@ -139,7 +234,7 @@ public final class LiveASRModelAssets: Sendable {
                 let sourceRoot = try ASRAssetTree.directory(path: sourceDirectory.path)
                 // Reject a private staging parent nested inside this cache.
                 _ = try ASRAssetTree.directory(path: parentPath,rejecting: sourceRoot.identity)
-                let source = try ASRAssetTree.scan(root: sourceRoot,parent: nil,name: "",path: sourceDirectory.path,limits: limits,readOnly: false)
+                let source = try ASRAssetTree.scan(root: sourceRoot,parent: nil,name: "",path: sourceDirectory.path,limits: limits,configuration: configuration,readOnly: false)
                 try budget.allocate(ticket,bytes: source.totalBytes,parent: parent.fd); try check(owner)
                 let root = try await createDirectory(parent,name: name,path: "",created: &created,unrecorded: &unrecordedDirectory,owner: owner,ticket: ticket)
                 var directories = ["":root]
@@ -185,9 +280,9 @@ public final class LiveASRModelAssets: Sendable {
                 for entry in created.reversed() where !entry.path.isEmpty {
                     guard let directory = entry.directory, fchmod(directory.fd,0o555) == 0 else { throw LiveASRAssetError.invalidAsset }
                 }
-                let tree = ASRAssetTree(root: root,parent: parent,name: name,path: configuration.modelDirectory,entries: copied,totalBytes: source.totalBytes)
+                let tree = ASRAssetTree(root: root,parent: parent,name: name,path: configuration.path,entries: copied,totalBytes: source.totalBytes,configuration: configuration)
                 let checked = try tree.fingerprint(configuration)
-                let snapshot = LiveASRReadOnlySnapshot(tree: tree,configuration: configuration,fingerprint: checked.0,metadata: checked.1)
+                let snapshot = OwnedReadOnlySnapshot(tree: tree,configuration: configuration,fingerprint: checked.0,witness: checked.1)
                 let prepared = ASROwnedSnapshot(snapshot: snapshot,created: created,leaves: copied.filter { $0.directory == nil },budget: budget,ticket: ticket)
                 owned = prepared
                 _ = try snapshot.validateCurrentPath()
@@ -231,11 +326,11 @@ public final class LiveASRModelAssets: Sendable {
 }
 
 private final class ASROwnedSnapshot: @unchecked Sendable {
-    let snapshot: LiveASRReadOnlySnapshot
+    let snapshot: OwnedReadOnlySnapshot
     private let created: [ASRTreeEntry]; private let leaves: [ASRTreeEntry]
     private let budget: LiveASRStagingBudget; private let ticket: UUID
     private let lock = NSLock(); private var cleaned = false
-    init(snapshot: LiveASRReadOnlySnapshot, created: [ASRTreeEntry], leaves: [ASRTreeEntry], budget: LiveASRStagingBudget, ticket: UUID) {
+    init(snapshot: OwnedReadOnlySnapshot, created: [ASRTreeEntry], leaves: [ASRTreeEntry], budget: LiveASRStagingBudget, ticket: UUID) {
         self.snapshot = snapshot; self.created = created; self.leaves = leaves; self.budget = budget; self.ticket = ticket
     }
     func cleanup() {
@@ -261,14 +356,14 @@ private final class ASROwnedSnapshot: @unchecked Sendable {
 
 private final class ASRAssetTree: Sendable {
     let root: ASRDirectory; let parent: ASRDirectory?; let name: String; let rootPath: String
-    let entries: [ASRTreeEntry]; let totalBytes: UInt64
+    let entries: [ASRTreeEntry]; let totalBytes: UInt64; let configuration: OwnedModelConfiguration
     static let models: Set<String> = ["encoder.mlmodelc","decoder.mlmodelc","joint.mlmodelc","preprocessor.mlmodelc",
         "decoder_joint_argmax.mlmodelc","decoder_joint_noencproj.mlmodelc","decoder_joint.mlmodelc","joint_noencproj_batched.mlmodelc"]
-    init(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String, entries: [ASRTreeEntry], totalBytes: UInt64) {
-        self.root = root; self.parent = parent; self.name = name; rootPath = path; self.entries = entries; self.totalBytes = totalBytes
+    init(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String, entries: [ASRTreeEntry], totalBytes: UInt64, configuration: OwnedModelConfiguration) {
+        self.root = root; self.parent = parent; self.name = name; rootPath = path; self.entries = entries; self.totalBytes = totalBytes; self.configuration = configuration
     }
     static func scan(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String,
-                     limits: LiveASRModelAssets.Limits, readOnly: Bool) throws -> ASRAssetTree {
+                     limits: LiveASRModelAssets.Limits, configuration: OwnedModelConfiguration, readOnly: Bool) throws -> ASRAssetTree {
         var entries: [ASRTreeEntry] = [], total: UInt64 = 0
         func walk(_ directory: ASRDirectory, prefix: String, depth: Int) throws {
             try Task.checkCancellation()
@@ -295,12 +390,24 @@ private final class ASRAssetTree: Sendable {
             }
         }
         try walk(root,prefix: "",depth: 0)
-        let tree = ASRAssetTree(root: root,parent: parent,name: name,path: path,entries: entries,totalBytes: total)
+        let tree = ASRAssetTree(root: root,parent: parent,name: name,path: path,entries: entries,totalBytes: total,configuration: configuration)
         try tree.validateLayout()
         _ = try tree.validateCurrentPath(readOnly: readOnly)
         return tree
     }
     private func validateLayout() throws {
+        if case .diarization(let c) = configuration {
+            let top = entries.filter { !$0.path.contains("/") }
+            guard Set(top.filter { $0.directory != nil }.map(\.name)) == [c.identity.preset.modelFileName],
+                  Set(top.filter { $0.directory == nil }.map(\.name)) == ["learnable_sil_emb.bin",".fluidaudio-nemotron3-weights"],
+                  let embedding = top.first(where: { $0.name == "learnable_sil_emb.bin" }), embedding.size == 2048,
+                  let marker = top.first(where: { $0.name == ".fluidaudio-nemotron3-weights" }), (1...256).contains(marker.size),
+                  let metadata = entries.first(where: { $0.path == c.identity.preset.modelFileName + "/metadata.json" && $0.directory == nil }),
+                  (1...UInt64(LiveDiarizationMetadataWitness.maximumMetadataBytes)).contains(metadata.size) else {
+                throw LiveASRAssetError.invalidAsset
+            }
+            return
+        }
         let top = entries.filter { !$0.path.contains("/") }, modelNames = Set(top.filter { $0.directory != nil }.map(\.name))
         guard Set(top.filter { $0.directory == nil }.map(\.name)) == ["metadata.json","tokenizer.json"],
               modelNames.contains("encoder.mlmodelc"), modelNames.isSubset(of: Self.models),
@@ -346,10 +453,12 @@ private final class ASRAssetTree: Sendable {
         }
         return URL(fileURLWithPath: rootPath,isDirectory: true)
     }
-    func fingerprint(_ configuration: LiveASRConfiguration) throws -> (String,LiveASRMetadataWitness) {
+    func fingerprint(_ configuration: OwnedModelConfiguration) throws -> (String,OwnedModelWitness) {
         try validateLayout(); _ = try validateCurrentPath(readOnly: true)
-        var tree = SHA256(); tree.update(data: Data("dBrief.ASRAssets.v1\0".utf8))
-        var metadata = Data(), tokenizer = Data()
+        var tree = SHA256(); tree.update(data: Data(configuration.domain.utf8))
+        var metadata = Data(), tokenizer = Data(), embedding = Data(), marker = Data()
+        let metadataPath: String
+        switch configuration { case .asr: metadataPath = "metadata.json"; case .diarization(let c): metadataPath = c.identity.preset.modelFileName + "/metadata.json" }
         for entry in entries.sorted(by: { $0.path.utf8.lexicographicallyPrecedes($1.path.utf8) }) {
             try Task.checkCancellation()
             let path = Data(entry.path.utf8); tree.update(data: Data([entry.directory == nil ? 1 : 0]))
@@ -373,15 +482,23 @@ private final class ASRAssetTree: Sendable {
                 if amount == 0 { break }
                 guard UInt64(amount) <= entry.size-count else { throw LiveASRAssetError.oversized }
                 let bytes = Data(buffer.prefix(amount)); hash.update(data: bytes); count += UInt64(amount)
-                if entry.path == "metadata.json" { metadata.append(bytes) }
-                if entry.path == "tokenizer.json" { tokenizer.append(bytes) }
+                if entry.path == metadataPath { metadata.append(bytes) }
+                if case .asr = configuration, entry.path == "tokenizer.json" { tokenizer.append(bytes) }
+                if case .diarization = configuration {
+                    if entry.path == "learnable_sil_emb.bin" { embedding.append(bytes) }
+                    if entry.path == ".fluidaudio-nemotron3-weights" { marker.append(bytes) }
+                }
             }
             try validateFile(); guard count == entry.size else { throw LiveASRAssetError.invalidAsset }
             tree.update(data: Data(hash.finalize()))
         }
         let result = tree.finalize().map { String(format: "%02x",$0) }.joined()
-        guard result == configuration.identity?.modelFingerprint else { throw LiveASRAssetError.fingerprintMismatch }
-        let witness = try LiveASRModelContract.validate(metadata: metadata,tokenizer: tokenizer,configuration: configuration)
+        guard result == configuration.fingerprint else { throw LiveASRAssetError.fingerprintMismatch }
+        let witness: OwnedModelWitness
+        switch configuration {
+        case .asr(let c): witness = .asr(try LiveASRModelContract.validate(metadata: metadata,tokenizer: tokenizer,configuration: c))
+        case .diarization(let c): witness = .diarization(try .init(metadata: metadata,embedding: embedding,marker: marker,revision: c.identity.modelRevision))
+        }
         _ = try validateCurrentPath(readOnly: true)
         return (result,witness)
     }

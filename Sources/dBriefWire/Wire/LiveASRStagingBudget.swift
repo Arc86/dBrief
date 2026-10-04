@@ -6,7 +6,8 @@ import Foundation
 public final class LiveASRStagingBudget: @unchecked Sendable {
     public static let shared = LiveASRStagingBudget()
     public struct Usage: Sendable { public let workers: Int; public let roots: Int; public let bytes: UInt64 }
-    private struct Receipt { var worker = true; var deleted = false; var bytes: UInt64 = 0 }
+    enum RootKind: Sendable { case mandatory, diarization }
+    private struct Receipt { let kind: RootKind; var worker = true; var deleted = false; var bytes: UInt64 = 0 }
     private let lock = NSLock()
     private var receipts: [UUID:Receipt] = [:]
     private let headroom: UInt64
@@ -21,10 +22,10 @@ public final class LiveASRStagingBudget: @unchecked Sendable {
         lock.withLock { .init(workers: receipts.values.filter(\.worker).count,roots: receipts.values.filter { !$0.deleted }.count,
                              bytes: receipts.values.reduce(0) { $0 + $1.bytes }) }
     }
-    func beginWorker() throws -> UUID {
+    func beginWorker(kind: RootKind = .mandatory) throws -> UUID {
         try lock.withLock {
-            guard !receipts.values.contains(where: \.worker), receipts.values.filter({ !$0.deleted }).count < 2 else { throw LiveASRAssetError.busy }
-            let id = UUID(); receipts[id] = Receipt(); return id
+            guard !receipts.values.contains(where: \.worker), receipts.values.filter({ !$0.deleted && $0.kind == kind }).count < (kind == .mandatory ? 2 : 1) else { throw LiveASRAssetError.busy }
+            let id = UUID(); receipts[id] = Receipt(kind: kind); return id
         }
     }
     func allocate(_ id: UUID, bytes: UInt64, parent: Int32) throws {

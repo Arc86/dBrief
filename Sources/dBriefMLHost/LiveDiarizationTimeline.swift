@@ -1,25 +1,6 @@
 import Foundation
 import dBriefWire
 
-/// Nominal SDK cadence only. No preset or frame mapping is acoustically qualified.
-enum LiveDiarizationPreset: String, CaseIterable, Sendable {
-    case ultraLow, veryLow, low, fast, fast24, fast32, efficient, fast128
-    var core: Int {
-        switch self {
-        case .ultraLow: 3
-        case .veryLow: 6
-        case .low, .fast: 9
-        case .fast24: 24
-        case .fast32: 32
-        case .efficient: 48
-        case .fast128: 128
-        }
-    }
-    var right: Int { self == .ultraLow ? 1 : self == .veryLow ? 2 : 4 }
-    var pendingSampleLimit: Int64 { Int64((core + right) * 1_280 + 512 + 3_200) }
-    var maximumBatchFrames: Int { Int((pendingSampleLimit + 159) / 160) + 2 }
-}
-
 struct LiveDiarizationChunk: Sendable {
     let frameCount: Int
     let numSpeakers: Int

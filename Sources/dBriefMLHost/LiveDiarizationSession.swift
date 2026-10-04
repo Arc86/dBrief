@@ -1,7 +1,7 @@
 import Foundation
 import dBriefWire
 
-/// A future sealed native adapter creates a private driver, including its mutable
+/// The sealed native adapter creates a private driver, including its mutable
 /// model buffers. This port cannot reset state or process an entire utterance.
 protocol LiveDiarizationDriving: AnyObject, Sendable {
     func append(_ samples: [Float]) async throws -> [LiveDiarizationChunk]
