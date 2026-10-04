@@ -28,7 +28,8 @@ import Testing
     private let restore: () -> Void
 
     init(holdCopy: Bool = false, engine: LiveTranscriptionEngine = .nemotron, syntheticAudio: Bool = false,
-         stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) throws {
+         stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
+         richStore: TranscriptStore = .init()) throws {
         files = try ASRAssetsFixture()
         let captureDirectory = files.root.appendingPathComponent("CaptureSession")
         try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
@@ -58,7 +59,8 @@ import Testing
             settings.automaticProfileId = oldAutomatic; settings.automaticProfileRecordingID = oldAutomaticOwner
             settings.recordingFolderURL = oldFolder
         }
-        let profile = MeetingProfile(name: "Model-free capture")
+        let profile = MeetingProfile(name: "Model-free capture", overrides: .init(aiProcessingEnabled: false,
+            transcriptionFolderPath: files.root.appendingPathComponent("Transcripts").path))
         settings.profiles = [profile]; settings.activeProfileId = profile.id
         settings.automaticProfileId = nil; settings.automaticProfileRecordingID = nil
         settings.liveTranscriptionEnabled = true; settings.liveTranscriptionEngine = engine
@@ -97,7 +99,7 @@ import Testing
         },began: { _,_ in },failedStart: { _,_,_ in },stopped: { session,state,_ in
             .init(session: session,state: state,fileSize: capturedTrack == nil ? 0 : 64_000,duration: state.duration)
         },termination: { _ in },pauseResume: { _,_,_ in })
-        manager = RecordingManager(appState: state,appSettings: settings,transcriptStore: .init(),insightsStore: .init(),
+        manager = RecordingManager(appState: state,appSettings: settings,transcriptStore: richStore,insightsStore: .init(),
             voiceLibraryStore: .init(url: files.root.appendingPathComponent("voices.json")),
             modelPerformanceStore: .init(url: files.root.appendingPathComponent("performance.json")),
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")),microsoftAuthService: .init(),
@@ -141,6 +143,222 @@ import Testing
         let end = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while ContinuousClock.now < end { if await condition() { return true }; try? await Task.sleep(for: .milliseconds(2)) }
         return await condition()
+    }
+
+    private func prepareFinalForEdits(_ f: LiveManagerFixture) async throws -> (Recording, LiveRecordingSessionRegistry.Entry) {
+        let start = Task { try await f.manager.startRecording() }
+        try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+        await f.manager.stopRecording(); await f.manager.skipProcessing()
+        let recording = try #require(f.state.currentRecording), audio = try #require(recording.finalizedAudioURL)
+        let richURL = try #require(recording.transcriptSidecarURL)
+        try await f.manager.processingPipeline.saveTranscript(.init(text: "Original", segments: [.init(start: 0, end: 1, text: "Original")]),
+            to: audio.deletingPathExtension().appendingPathExtension("transcript.json"))
+        let job = f.manager.launchJob(recording: recording, persistedRequest: .init(transcribe: true, summary: false,
+            actionItems: false, tags: false, titleWasUserProvided: true, autoResume: false)) { job in
+            await f.manager.processRecording(job: job, transcribe: true, summary: false, actionItems: false, tags: false, stopBeforeIntegrations: true)
+        }
+        await job.task?.value
+        #expect(recording.transcriptSidecarURL?.standardizedFileURL.path == richURL.standardizedFileURL.path)
+        let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+        try await entry.artifacts.flush()
+        return (recording, entry)
+    }
+
+    @Test func reprocessingAdmissionForAnotherRecordingDoesNotRetireAHealthyPreparationWrite() async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript)
+        let store = TranscriptStore(beforeOwnedSave: { try? await gate.enter(.sourceTranscript) })
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, richStore: store)
+        var job: ProcessingJob?
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            await f.manager.stopRecording(); await f.manager.skipProcessing()
+            let recording = try #require(f.state.currentRecording), audio = try #require(recording.finalizedAudioURL)
+            try await f.manager.processingPipeline.saveTranscript(.init(text: "Healthy preparation", segments: [.init(start: 0, end: 1, text: "Healthy preparation")]),
+                to: audio.deletingPathExtension().appendingPathExtension("transcript.json"))
+            let processing = f.manager.launchJob(recording: recording, persistedRequest: .init(transcribe: true, summary: false,
+                actionItems: false, tags: false, titleWasUserProvided: true, autoResume: false)) { job in
+                    await f.manager.processRecording(job: job, transcribe: true, summary: false, actionItems: false, tags: false, stopBeforeIntegrations: true)
+                }; job = processing
+            try await gate.waitForArrival()
+            // This is the synchronous hook used when admitting B while A is
+            // processing; B's queued work cannot own A's rich generation.
+            f.manager.reprocessingAdmissionBusy = true
+            f.manager.reprocessingAdmissionBusy = false
+            await gate.release(); await processing.task?.value
+            #expect(processing.persistedRecord?.checkpoint.hasCompleted(.diarized) == true)
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+            #expect(try entry.artifacts.finalContext()?.segments.map(\.text) == ["Healthy preparation"])
+            try await entry.artifacts.flush(); await f.clean()
+        } catch { await gate.release(); await job?.task?.value; await f.clean(); throw error }
+    }
+
+    @Test func delayedEarlierVerifiedEditCannotPublishOverANewerVerifiedEdit() async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript, initiallyEnabled: false)
+        let store = TranscriptStore(afterOwnedSave: { try? await gate.enter(.sourceTranscript) })
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, richStore: store)
+        var earlier: Task<Void, any Error>?
+        do {
+            let (recording, entry) = try await prepareFinalForEdits(f), url = try #require(recording.transcriptSidecarURL)
+            var first = try await store.load(from: url); first.segments[0].text = "Earlier saved edit"
+            var second = first; second.segments[0].text = "Latest saved edit"
+            let a = first, b = second, revision = f.manager.reprocessingResultsRevision
+            await gate.arm()
+            let task = Task { try await f.manager.saveEditedTranscript(a, for: recording, expectedRevision: revision) }; earlier = task
+            try await gate.waitForArrival()
+            try await f.manager.saveEditedTranscript(b, for: recording, expectedRevision: revision)
+            await gate.release()
+            await #expect(throws: CancellationError.self) { try await task.value }
+            #expect(try await store.load(from: url) == b)
+            #expect(try entry.artifacts.finalContext()?.segments.map(\.text) == ["Latest saved edit"])
+            try await entry.artifacts.flush()
+            #expect(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().appTranscript?.finalContext()?.segments.map(\.text) == ["Latest saved edit"])
+            await f.clean()
+        } catch { await gate.release(); _ = try? await earlier?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["admission", "chatRetirement", "recovery", "revision"])
+    func anEditHeldBeforePhysicalWriteCannotOverwriteReplacementAfterItsClaimReleases(boundary: String) async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript, initiallyEnabled: false)
+        let store = TranscriptStore(beforeOwnedSave: { try? await gate.enter(.sourceTranscript) })
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, richStore: store)
+        var edit: Task<Void, any Error>?
+        do {
+            let (recording, _) = try await prepareFinalForEdits(f), url = try #require(recording.transcriptSidecarURL)
+            var old = try await store.load(from: url); old.segments[0].text = "Stale editor preview"
+            var replacement = old; replacement.segments[0].text = "Replacement result"
+            let stale = old, revision = f.manager.reprocessingResultsRevision, audio = try #require(recording.finalizedAudioURL)
+            await gate.arm()
+            let task = Task { try await f.manager.saveEditedTranscript(stale, for: recording, expectedRevision: revision) }; edit = task
+            try await gate.waitForArrival()
+            switch boundary {
+            case "admission": f.manager.reprocessingAdmissionBusy = true
+            case "chatRetirement": f.manager.invalidateReprocessingChat(audio)
+            case "recovery": f.manager.reprocessingRecoveryReady = false
+            default: f.manager.reprocessingResultsRevision += 1
+            }
+            let attempt = UUID()
+            try RecordingResultMutation.claim(audioURL: audio, attemptID: attempt)
+            do {
+                try RecordingResultMutation.withTransaction { try JSONEncoder().encode(replacement).write(to: url, options: .atomic) }
+            } catch { RecordingResultMutation.release(audioURL: audio, attemptID: attempt); throw error }
+            RecordingResultMutation.release(audioURL: audio, attemptID: attempt)
+            f.manager.reprocessingAdmissionBusy = false; f.manager.reprocessingRecoveryReady = true
+            await gate.release()
+            await #expect(throws: CancellationError.self) { try await task.value }
+            #expect(try await store.load(from: url) == replacement)
+            await f.clean()
+        } catch { await gate.release(); _ = try? await edit?.value; await f.clean(); throw error }
+    }
+
+    @Test func actualManagerPublishesOnlyCommittedFinalTextAndKeepsItAfterSpeakerFailureWithoutAWindow() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            try #require(await eventually { f.probe.liveSink != nil })
+            f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Original live evidence")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.stopRecording(); await f.manager.skipProcessing()
+            let recording = try #require(f.state.currentRecording)
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+            let provider = TranscriptContextProvider.recording(recordingID: recording.id, registry: f.state.liveRecordingSessions,
+                legacy: { .legacy(text: "", recordingID: recording.id, speakerLabels: []) })
+            let original = provider.freeze()
+            let audio = try #require(recording.finalizedAudioURL)
+            let rawURL = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            let result = TranscriptionResult(text: "Complete saved text without segment timestamps", segments: [])
+            try await f.manager.processingPipeline.saveTranscript(result, to: rawURL)
+            try Data("corrupt rich sidecar".utf8).write(to: try #require(recording.transcriptSidecarURL))
+            let job = f.manager.launchJob(recording: recording, persistedRequest: .init(transcribe: true, summary: false,
+                actionItems: false, tags: false, titleWasUserProvided: true, autoResume: false)) { job in
+                await f.manager.processRecording(job: job, transcribe: true, summary: false, actionItems: false, tags: false,
+                    stopBeforeIntegrations: true)
+            }
+            await job.task?.value
+            let saved = try #require(try await f.manager.processingJobStore.load(id: job.id))
+            #expect(saved.checkpoint.hasCompleted(.transcribed) && saved.failureStage == .diarization)
+            let final = try await provider.freeze().snapshot()
+            #expect(final.source.version == .final && final.source.scope == .completeFinal)
+            #expect(final.source.publicationID != nil && final.source.publicationRevision == 1)
+            #expect(final.segments.map(\.text) == [result.text])
+            #expect(final.segments.first?.meeting == nil && final.segments.first?.finalPlayback == nil)
+            #expect(try await original.snapshot().segments.map(\.text) == ["Original live evidence"])
+            try await entry.artifacts.flush()
+            let restored = try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(restored.appTranscript?.finalContext() == final && restored.audioURL == audio.standardizedFileURL)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualManagerPublishesExactSavedRichIDsAndReviewedNamesWithoutAWindow() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            await f.manager.stopRecording(); await f.manager.skipProcessing()
+            let recording = try #require(f.state.currentRecording), audio = try #require(recording.finalizedAudioURL)
+            let raw = TranscriptionResult(text: "Saved complete transcript", segments: [.init(start: 0, end: 1,
+                text: "Saved complete transcript", speaker: "speaker")])
+            try await f.manager.processingPipeline.saveTranscript(raw, to: audio.deletingPathExtension().appendingPathExtension("transcript.json"))
+            let segment = RichSegment(start: 0, end: 1, text: "User-edited saved text", originalText: raw.text, speakerId: "speaker")
+            let rich = RichTranscript(segments: [segment], speakerLabels: [.init(id: "speaker", displayName: "Reviewed name")])
+            try await f.manager.transcriptStore.save(rich, to: try #require(recording.transcriptSidecarURL))
+            let job = f.manager.launchJob(recording: recording, persistedRequest: .init(transcribe: true, summary: false,
+                actionItems: false, tags: false, titleWasUserProvided: true, autoResume: false)) { job in
+                await f.manager.processRecording(job: job, transcribe: true, summary: false, actionItems: false, tags: false,
+                    stopBeforeIntegrations: true)
+            }
+            await job.task?.value
+            let entry = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+            try await entry.artifacts.flush()
+            let final = try await TranscriptContextProvider.recording(recordingID: recording.id, registry: f.state.liveRecordingSessions,
+                legacy: { .legacy(text: "", recordingID: recording.id, speakerLabels: []) }).freeze().snapshot()
+            #expect(final.source.version == .final && final.source.publicationRevision == 2)
+            #expect(final.segments.first?.id == segment.id.uuidString.lowercased() && final.segments.first?.text == segment.text)
+            #expect(final.source.speakerLegend == rich.speakerLabels && final.segments.first?.finalPlayback == .init(start: 0, end: 1))
+            let restored = try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(restored.appTranscript?.finalContext() == final)
+            let provider = TranscriptContextProvider.recording(recordingID: recording.id, registry: f.state.liveRecordingSessions,
+                legacy: { .legacy(text: "", recordingID: recording.id, speakerLabels: []) })
+            let oldAnswer = provider.freeze()
+            var edited = rich
+            edited.segments[0].text = "Durably corrected text"
+            edited.speakerLabels[0].displayName = "Corrected name"
+            try await f.manager.saveEditedTranscript(edited, for: recording, expectedRevision: f.manager.reprocessingResultsRevision)
+            let updated = try await provider.freeze().snapshot()
+            #expect(updated.source.publicationID == final.source.publicationID && updated.source.publicationRevision == 3)
+            #expect(updated.segments.first?.id == segment.id.uuidString.lowercased() && updated.segments.first?.text == edited.segments[0].text)
+            #expect(updated.source.speakerLegend == edited.speakerLabels)
+            #expect(try await oldAnswer.snapshot() == final)
+            try await entry.artifacts.flush()
+            #expect(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().appTranscript?.finalContext() == updated)
+            // Failed and superseded view saves cannot publish their previews.
+            let sidecar = try #require(recording.transcriptSidecarURL)
+            try FileManager.default.removeItem(at: sidecar)
+            try FileManager.default.createDirectory(at: sidecar, withIntermediateDirectories: true)
+            edited.speakerLabels[0].displayName = "Unsaved preview"
+            let failedEdit = edited
+            await #expect(throws: (any Error).self) {
+                try await f.manager.saveEditedTranscript(failedEdit, for: recording, expectedRevision: f.manager.reprocessingResultsRevision)
+            }
+            await #expect(throws: CancellationError.self) {
+                try await f.manager.saveEditedTranscript(failedEdit, for: recording, expectedRevision: f.manager.reprocessingResultsRevision - 1)
+            }
+            #expect(try await provider.freeze().snapshot() == updated)
+            try FileManager.default.removeItem(at: sidecar)
+            try await f.manager.transcriptStore.save(rich, to: sidecar)
+            try f.state.liveRecordingSessions.retire(entry.identity)
+            await #expect(throws: CancellationError.self) {
+                try await f.manager.saveEditedTranscript(failedEdit, for: recording, expectedRevision: f.manager.reprocessingResultsRevision)
+            }
+            #expect(try await f.manager.transcriptStore.load(from: sidecar) == rich)
+            await f.clean()
+        } catch { await f.clean(); throw error }
     }
 
     @Test func actualManagerAdoptsFinalAudioAndBindsWithoutAWindowOrJoiningHeldTranscriptIO() async throws {

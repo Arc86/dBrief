@@ -31,6 +31,32 @@ struct LiveAppFinalPublication: Codable, Sendable, Equatable {
         }
     }
 
+    /// Preflight projected facts before allocating a complete segment array.
+    /// Rich edit tokens/original text are not part of the chat publication.
+    static func bounded(id: UUID, revision: UInt64, transcript: RichTranscript,
+                        fallbackText: String?, limit: Int) throws -> Self {
+        struct Header {
+            let id: UUID
+            let revision: UInt64
+            let speakerLabels: [SpeakerLabel]
+            let fallbackText: String?
+        }
+        guard transcript.segments.count <= 100_000 else { throw LiveArtifactError.artifactTooLarge }
+        var remaining = limit - (try LiveArtifactEncoding.estimatedBytes(
+            Header(id: id, revision: revision, speakerLabels: transcript.speakerLabels, fallbackText: fallbackText), limit: limit)) - 256
+        for segment in transcript.segments {
+            let range = ChatFinalPlaybackRange(start: segment.start, end: segment.end)
+            let value = Segment(id: segment.id, text: segment.text, speaker: segment.speakerId,
+                playback: range.isValid ? range : nil)
+            guard remaining > 2 else { throw LiveArtifactError.artifactTooLarge }
+            remaining -= try LiveArtifactEncoding.estimatedBytes(value, limit: remaining) + 2
+        }
+        let value = Self(id: id, revision: revision, transcript: transcript, fallbackText: fallbackText)
+        _ = try LiveArtifactEncoding.estimatedBytes(value, limit: limit)
+        try value.validate()
+        return value
+    }
+
     func context(identity: LiveSessionIdentity) -> TranscriptContextSnapshot {
         let source = ChatTranscriptSource(recordingID: identity.recordingID, captureSessionID: identity.captureSessionID,
             version: .final, publicationID: id, publicationRevision: revision, textRevision: revision,

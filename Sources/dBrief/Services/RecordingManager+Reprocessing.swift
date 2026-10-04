@@ -52,6 +52,7 @@ enum ReprocessingError: LocalizedError {
 
 extension RecordingManager {
     func invalidateReprocessingChat(_ audio: URL) {
+        invalidateTranscriptEditWrites()
         SpokenSummaryService.invalidateForReprocessing(audioURL: audio)
         TranscriptChatService.invalidateForReprocessing(audioURL: audio)
         transcriptChatStore?.session(for: audio)?.invalidateForReprocessing()

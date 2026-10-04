@@ -85,6 +85,12 @@ struct TranscriptContextProvider {
         .init {
             if registry.isRetired(recordingID: recordingID) { return .init(snapshot: { throw CancellationError() }) }
             if let entry = registry.entry(recordingID: recordingID), entry.isValid {
+                do {
+                    if let value = try entry.artifacts.finalContext() {
+                        let validity = entry.validity
+                        return .init(snapshot: { try validity.withValidResult {}; return value })
+                    }
+                } catch { return .init(snapshot: { throw error }) }
                 if !entry.artifacts.isNative {
                     do {
                         let value = try entry.artifacts.legacyContext(), validity = entry.validity

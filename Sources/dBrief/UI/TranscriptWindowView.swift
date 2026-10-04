@@ -1540,10 +1540,11 @@ struct TranscriptDetailView: View {
         guard !isReprocessing else { return }
         // Keep processing/review snapshots aware of edits before the disk await.
         recording.richTranscript = transcript
-        let store = context.transcriptStore
+        let manager = context.recordingManager
+        let revision = manager.reprocessingResultsRevision
         Task {
             do {
-                try await store.save(transcript, for: recording)
+                try await manager.saveEditedTranscript(transcript, for: recording, expectedRevision: revision)
             } catch {
                 Logger.recording.error("TranscriptDetailView: failed to save recording files")
             }

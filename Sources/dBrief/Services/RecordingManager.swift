@@ -77,10 +77,11 @@ final class RecordingManager {
     let reprocessingStore: ReprocessingStore
     weak var transcriptChatStore: TranscriptChatStore?
     var reprocessingAttempts: [ReprocessingStore.Attempt] = []
-    var reprocessingResultsRevision = 0
+    var reprocessingResultsRevision = 0 { didSet { invalidateTranscriptEditWrites() } }
     var calendarContextRevision = 0
-    var reprocessingAdmissionBusy = false
-    var reprocessingRecoveryReady = true
+    var reprocessingAdmissionBusy = false { didSet { if reprocessingAdmissionBusy { invalidateTranscriptEditWrites() } } }
+    var reprocessingRecoveryReady = true { didSet { if !reprocessingRecoveryReady { invalidateTranscriptEditWrites() } } }
+    @ObservationIgnored private var transcriptEditValidity = RecordingDerivativeValidity()
     var queueLoadError: String?
     private var queueRefreshGeneration = 0
     /// Forward the coordinator's observable phases to existing Settings callers.
@@ -893,6 +894,11 @@ final class RecordingManager {
                     try await self.completeLegacyQueueCheckpoint(for: job)
                 }, transcriptCommitted: { @MainActor result, fresh in
                     try self.requireProcessingOwnership(job)
+                    if self.appState.liveArtifactCaptureEnabled,
+                       let owner = self.appState.liveRecordingSessions.entry(recordingID: recording.id)?.artifacts {
+                        do { try owner.publishFinal(result) }
+                        catch { self.reportLiveArtifactFailure(error.localizedDescription) }
+                    }
                     if fresh { self.appSettings.lifetimeTranscribedSeconds += recording.duration }
                     if let index = progress.transcriptionIndex { self.markCompleted(index) }
                     if fresh, let warnings = result.warnings, !warnings.isEmpty {
@@ -1121,22 +1127,33 @@ final class RecordingManager {
             reviewAlreadyCompleted: job.persistedRecord?.checkpoint.hasCompleted(.speakerReviewCompleted) == true,
             reviewRequired: job.persistedRecord?.speakerReviewRequired)
         let sidecarURL = recording.transcriptSidecarURL
+        let publication = try richPublication(for: recording)
         let libraryStore = voiceLibraryStore
         let richStore = transcriptStore
         return try await processingPipeline.prepareSpeakers(input, steps: .init(
             loadLibrary: { await libraryStore.load() },
-            loadTranscript: { required in
+            loadTranscript: { @MainActor required in
                 guard let sidecarURL else { throw TranscriptStoreError.noSidecarURL }
                 let exists = await richStore.exists(at: sidecarURL)
                 try Task.checkCancellation()
-                if exists || required { return try await richStore.load(from: sidecarURL) }
+                if exists || required {
+                    if let entry = publication.entry {
+                        let (rich, receipt) = try await richStore.loadOwned(from: sidecarURL, order: entry.savedTranscriptOrder,
+                            validity: entry.validity, generation: publication.generation)
+                        publication.receipt = receipt; return rich
+                    }
+                    return try await richStore.load(from: sidecarURL)
+                }
                 return nil
-            }, saveTranscript: { rich in
+            }, saveTranscript: { @MainActor rich in
                 guard let sidecarURL else { throw TranscriptStoreError.noSidecarURL }
-                try await richStore.save(rich, to: sidecarURL)
+                if let entry = publication.entry {
+                    publication.receipt = try await richStore.saveOwned(rich, to: sidecarURL, order: entry.savedTranscriptOrder,
+                        validity: entry.validity, generation: publication.generation)
+                } else { try await richStore.save(rich, to: sidecarURL, generation: publication.generation) }
             }, publishTranscript: { @MainActor rich in
                 try self.requireProcessingOwnership(job)
-                recording.richTranscript = rich
+                try self.publishSavedRich(rich, for: recording, publication: publication)
             }, checkpointDiarized: { @MainActor held in
                 try self.requireProcessingOwnership(job)
                 if var record = job.persistedRecord {
@@ -1898,6 +1915,7 @@ final class RecordingManager {
         // Re-diarization must not enroll older raw-transcript cluster embeddings.
         let embeddings = Dictionary(session.items.map { ($0.id, $0.clusterEmbedding) }, uniquingKeysWith: { first, _ in first })
         do {
+            let publication = try richPublication(for: recording)
             try await processingPipeline.confirmSpeakers(confirmed, transcript: operation.transcript, steps: .init(
                 loadTranscript: {
                     guard let url = sidecarURL else { throw TranscriptStoreError.noSidecarURL }
@@ -1905,11 +1923,14 @@ final class RecordingManager {
                 }, save: { @MainActor rich, original in
                     try self.requireReviewOwnership(operation, recording: recording)
                     guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
-                    try await store.save(rich, to: url, replacing: original)
+                    if let entry = publication.entry {
+                        publication.receipt = try await store.saveOwned(rich, to: url, order: entry.savedTranscriptOrder,
+                            validity: entry.validity, generation: publication.generation, replacing: original)
+                    } else { try await store.save(rich, to: url, replacing: original) }
                     try self.requireReviewOwnership(operation, recording: recording)
                 }, publish: { @MainActor rich in
                     try self.requireReviewOwnership(operation, recording: recording)
-                    recording.richTranscript = rich
+                    try self.publishSavedRich(rich, for: recording, publication: publication)
                     operation.transcript = rich
                 }, loadEmbeddings: { embeddings }, enroll: { @MainActor entry in
                     try self.requireReviewOwnership(operation, recording: recording)
@@ -2033,12 +2054,16 @@ final class RecordingManager {
             roster: recording.participants + (recording.calendarEvent?.attendeeNames ?? []))
         let library = voiceLibraryStore
         let store = transcriptStore
+        let publication = try richPublication(for: recording)
         let prepared = try await processingPipeline.prepareRediarizationReview(input, loadLibrary: { await library.load() },
             save: { @MainActor rich in
                 try self.requireReviewOwnership(operation, recording: recording)
                 try validateSource()
                 guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
-                try await store.save(rich, to: url, replacing: baseTranscript)
+                if let entry = publication.entry {
+                    publication.receipt = try await store.saveOwned(rich, to: url, order: entry.savedTranscriptOrder,
+                        validity: entry.validity, generation: publication.generation, replacing: baseTranscript)
+                } else { try await store.save(rich, to: url, replacing: baseTranscript) }
                 try self.requireReviewOwnership(operation, recording: recording)
                 try validateSource()
             }, validateOwnership: { @MainActor in
@@ -2048,7 +2073,7 @@ final class RecordingManager {
         try requireReviewOwnership(operation, recording: recording)
         try validateSource()
         guard let prepared else { return false }
-        recording.richTranscript = prepared.transcript
+        try publishSavedRich(prepared.transcript, for: recording, publication: publication)
         appState.pendingSpeakerReview = SpeakerReviewSession(recording: recording,
             masterAudioURL: recording.finalizedAudioURL, items: prepared.items,
             transcribe: false, summary: false, actionItems: false, tags: false,
@@ -3187,6 +3212,64 @@ final class RecordingManager {
         guard let message else { return }
         appState.durabilityNotice = "Live transcript history is unsaved. \(message)"
         appState.durabilityNoticeIsWarning = true
+    }
+
+    @MainActor private final class RichPublication {
+        let entry: LiveRecordingSessionRegistry.Entry?
+        let generation: RecordingDerivativeValidity
+        let pin: LiveRecordingArtifactOwner.Pin?
+        var receipt: LiveSavedTranscriptOrder.Receipt?
+        init(entry: LiveRecordingSessionRegistry.Entry?, generation: RecordingDerivativeValidity) {
+            self.entry = entry; self.generation = generation; pin = entry?.artifacts.pin()
+        }
+        deinit { pin?.release() }
+    }
+    func invalidateTranscriptEditWrites() {
+        transcriptEditValidity.invalidate(); transcriptEditValidity = .init()
+    }
+    private func richPublication(for recording: Recording, editor: Bool = false) throws -> RichPublication {
+        let registry = appState.liveRecordingSessions, entry = registry.entry(recordingID: recording.id)
+        guard !registry.isRetired(recordingID: recording.id), !registry.owns(recordingID: recording.id) || entry?.isValid == true else {
+            throw CancellationError()
+        }
+        return .init(entry: entry, generation: editor ? transcriptEditValidity : (entry?.richWriteValidity ?? .init()))
+    }
+    private func publishSavedRich(_ transcript: RichTranscript, for recording: Recording, publication: RichPublication) throws {
+        try RecordingResultMutation.withTransaction {
+            let publish = {
+                try publication.generation.withValidResult {
+                    if let entry = publication.entry { try entry.validity.withValidResult {} }
+                    recording.richTranscript = transcript
+                    if self.appState.liveArtifactCaptureEnabled, let owner = publication.entry?.artifacts {
+                        do { try owner.publishSavedFinal(transcript) }
+                        catch { self.reportLiveArtifactFailure(error.localizedDescription) }
+                    }
+                }
+            }
+            if let entry = publication.entry {
+                guard let receipt = publication.receipt else { throw CancellationError() }
+                try entry.savedTranscriptOrder.withCurrent(receipt, publish)
+            } else { try publish() }
+        }
+    }
+
+    /// The view's in-memory edits are previews. Freeze the original generation
+    /// before crossing the store actor; only its verified saved value publishes.
+    func saveEditedTranscript(_ transcript: RichTranscript, for recording: Recording, expectedRevision: Int) async throws {
+        try Task.checkCancellation()
+        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, expectedRevision == reprocessingResultsRevision,
+              !isReprocessing(recording.finalizedAudioURL ?? recording.fileURL),
+              let url = recording.transcriptSidecarURL else { throw CancellationError() }
+        let publication = try richPublication(for: recording, editor: true)
+        if let entry = publication.entry {
+            publication.receipt = try await transcriptStore.saveOwned(transcript, to: url, order: entry.savedTranscriptOrder,
+                validity: entry.validity, generation: publication.generation)
+        } else { try await transcriptStore.save(transcript, to: url, generation: publication.generation) }
+        try Task.checkCancellation()
+        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, expectedRevision == reprocessingResultsRevision,
+              recording.transcriptSidecarURL == url,
+              !isReprocessing(recording.finalizedAudioURL ?? recording.fileURL) else { throw CancellationError() }
+        try publishSavedRich(transcript, for: recording, publication: publication)
     }
 
     private func reportLiveArtifactLimit() {

@@ -9,6 +9,7 @@ import dBriefWire
     nonisolated static let evidenceLimit = 1 * 1_024 * 1_024
     nonisolated static let chatHistoryLimit = 512 * 1_024
     nonisolated static let chatHeaderReserve = 2_048
+    nonisolated static let finalPublicationLimit = 256 * 1_024
     private static let pendingValueLimit = 3 * 1_024 * 1_024
     private static let envelopeLimit = 3 * 1_024 * 1_024
     final class Pin: @unchecked Sendable {
@@ -39,6 +40,8 @@ import dBriefWire
         var legacyBytes: Int
         var captureClosed: Bool
         var hasTranscript = true
+        var finalPublication: LiveAppFinalPublication?
+        var finalBytes = 0
         var chat: ChatHistory?
         var chatBytes = 0
         init(revision: UInt64, legacy: [LiveLegacyTranscriptValue]?, bytes: Int, closed: Bool) {
@@ -64,6 +67,9 @@ import dBriefWire
     @ObservationIgnored var onLimit: (() -> Void)?
     @ObservationIgnored private var legacy: [LiveLegacyTranscriptValue] = []
     @ObservationIgnored private var legacyByID: [UUID: LiveLegacyTranscriptValue] = [:]
+    @ObservationIgnored private var finalPublication: LiveAppFinalPublication?
+    private var finalCommitted = false
+    private var needsTextOnlyFallback = false
     private var legacyBytes = 0
     @ObservationIgnored private let pinCounter = LiveArtifactPinCounter()
     @ObservationIgnored private let chatRequests = LiveArtifactPinCounter()
@@ -298,6 +304,60 @@ import dBriefWire
             captureClosed: captureClosed).legacyContext()
     }
 
+    func finalContext() throws -> TranscriptContextSnapshot? {
+        try validity.withValidResult {}
+        guard !retired else { throw LiveArtifactError.deleted }
+        return finalPublication?.context(identity: identity)
+    }
+
+    /// Called only after the raw transcript and processing checkpoint commit.
+    /// Later resume of that generation must not replace saved rich user edits.
+    func publishFinal(_ result: TranscriptionResult) throws {
+        try validity.withValidResult {}
+        guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
+        finalCommitted = true
+        guard finalPublication == nil else { return }
+        needsTextOnlyFallback = result.segments.isEmpty && !result.text.isEmpty
+        var text = result.text
+        if text.isEmpty {
+            var remaining = Self.finalPublicationLimit / 6
+            for segment in result.segments {
+                guard segment.text.utf8.count < remaining else { throw LiveArtifactError.artifactTooLarge }
+                remaining -= segment.text.utf8.count + 1
+            }
+            for (index, segment) in result.segments.enumerated() {
+                if index > 0 { text.append("\n") }
+                text.append(segment.text)
+            }
+        }
+        try publishFinal(transcript: .init(segments: []), fallbackText: text)
+    }
+
+    /// Saved rich facts become one atomic revision; existing answers retain
+    /// their frozen publication and the original derivative validity token.
+    func publishSavedFinal(_ transcript: RichTranscript) throws {
+        try validity.withValidResult {}
+        guard finalCommitted else { throw LiveArtifactError.bindingPending }
+        let needsFallback = transcript.segments.isEmpty && needsTextOnlyFallback
+        guard !needsFallback || finalPublication?.fallbackText != nil else { throw LiveArtifactError.artifactTooLarge }
+        try publishFinal(transcript: transcript, fallbackText: needsFallback ? finalPublication?.fallbackText : nil)
+        if !transcript.segments.isEmpty { needsTextOnlyFallback = false }
+    }
+
+    private func publishFinal(transcript: RichTranscript, fallbackText: String?) throws {
+        guard captureClosed, !retired else { throw LiveArtifactError.bindingPending }
+        guard acceptedRevision < .max, (finalPublication?.revision ?? 0) < .max else { throw LiveArtifactError.staleRevision }
+        let value = try LiveAppFinalPublication.bounded(id: finalPublication?.id ?? UUID(),
+            revision: (finalPublication?.revision ?? 0) + 1, transcript: transcript, fallbackText: fallbackText,
+            limit: Self.finalPublicationLimit)
+        if let old = finalPublication, old.segments == value.segments,
+           old.speakerLabels == value.speakerLabels, old.fallbackText == value.fallbackText { return }
+        try requireCapacity(legacyBytes: legacyBytes, chatBytes: tailInterval?.chatBytes ?? 0,
+            finalBytes: Self.finalPublicationLimit)
+        finalPublication = value
+        try checkpoint(urgent: true)
+    }
+
     func retire() {
         retired = true; observer?.cancel(); observer = nil; timer?.cancel(); timer = nil
         // A held physical write is still charged until its actual return. Its
@@ -306,19 +366,20 @@ import dBriefWire
 
     private var tailInterval: Interval? { queue.last.flatMap { if case .checkpoint(let value) = $0 { value } else { nil } } }
     private var controlCount: Int { queue.filter { if case .checkpoint = $0 { false } else { true } }.count }
-    private func requireCapacity(legacyBytes: Int, chatBytes: Int, replacingTail: Bool = true) throws {
+    private func requireCapacity(legacyBytes: Int, chatBytes: Int, finalBytes: Int? = nil, replacingTail: Bool = true) throws {
         let tail = replacingTail ? tailInterval : nil
         let pending = queue.reduce(0) { count, work in
             switch work {
-            case .checkpoint(let value): return count + (value === tail ? 0 : value.legacyBytes + value.chatBytes)
+            case .checkpoint(let value): return count + (value === tail ? 0 : value.legacyBytes + value.chatBytes + value.finalBytes)
             case .clear: return count // Separately reserved: at most 8 × 4KiB.
             case .bind: return count
             }
         }
-        guard legacyBytes + chatBytes <= Self.pendingValueLimit - pending else { throw LiveArtifactError.queueFull }
+        guard legacyBytes + chatBytes + (finalBytes ?? tail?.finalBytes ?? 0) <= Self.pendingValueLimit - pending else { throw LiveArtifactError.queueFull }
     }
     private func requireCheckpointCapacity(bytes: Int) throws {
-        try requireCapacity(legacyBytes: bytes, chatBytes: tailInterval?.chatBytes ?? 0)
+        try requireCapacity(legacyBytes: bytes, chatBytes: tailInterval?.chatBytes ?? 0,
+            finalBytes: finalPublication == nil ? 0 : Self.finalPublicationLimit)
     }
     private func checkpoint(urgent: Bool) throws {
         guard !retired else { throw LiveArtifactError.deleted }
@@ -329,9 +390,12 @@ import dBriefWire
             value.hasTranscript = true
             value.revision = acceptedRevision; value.legacy = isNative ? nil : legacy
             value.legacyBytes = legacyBytes; value.captureClosed = captureClosed
+            value.finalPublication = finalPublication; value.finalBytes = finalPublication == nil ? 0 : Self.finalPublicationLimit
         } else {
             queue.append(.checkpoint(.init(revision: acceptedRevision, legacy: isNative ? nil : legacy,
                 bytes: legacyBytes, closed: captureClosed)))
+            tailInterval?.finalPublication = finalPublication
+            tailInterval?.finalBytes = finalPublication == nil ? 0 : Self.finalPublicationLimit
         }
         startDrain(urgent: urgent)
     }
@@ -362,17 +426,20 @@ import dBriefWire
                     // is held. Notifications retain only a revision signal.
                     let hasTranscript = interval.hasTranscript, revision = interval.revision
                     let closed = interval.captureClosed, legacy = interval.legacy, chat = interval.chat
+                    let publication = interval.finalPublication
                     if hasTranscript {
                         let state = isNative ? await store.checkpointState() : nil
                         if isNative { await afterCheckpoint() }
                         if state?.growthRetired == true, !growthRetired { growthRetired = true; onLimit?() }
                         let value = LiveTranscriptArtifact(identity: identity, revision: revision, native: state?.checkpoint,
-                            legacy: legacy, captureClosed: closed && (state?.isClosed ?? true))
+                            legacy: legacy, captureClosed: closed && (publication != nil || (state?.isClosed ?? true)),
+                            finalPublication: publication)
                         _ = try LiveArtifactEncoding.estimatedBytes(value, limit: Self.envelopeLimit)
                         try await writer.saveTranscript(value)
                         durableRevision = revision
                         if interval.revision == revision {
                             interval.hasTranscript = false; interval.legacy = nil; interval.legacyBytes = 0
+                            interval.finalPublication = nil; interval.finalBytes = 0
                             if closed, state?.isClosed == true {
                                 nativeClosureDurable = true; observer?.cancel(); observer = nil
                             }

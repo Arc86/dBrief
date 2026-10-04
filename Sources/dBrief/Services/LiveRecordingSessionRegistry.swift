@@ -9,6 +9,8 @@ final class LiveRecordingSessionRegistry {
         let store: LiveTranscriptStore
         let validity = RecordingDerivativeValidity()
         let artifacts: LiveRecordingArtifactOwner
+        let savedTranscriptOrder = LiveSavedTranscriptOrder()
+        let richWriteValidity = RecordingDerivativeValidity()
         private(set) var captureClosed = false
         private(set) var isValid = true
         private(set) var coordinator: LiveCaptureSessionCoordinator?
@@ -25,6 +27,7 @@ final class LiveRecordingSessionRegistry {
         fileprivate func closeCapture() { captureClosed = true; artifacts.closeCapture() }
         fileprivate func invalidate() {
             isValid = false; validity.invalidate()
+            richWriteValidity.invalidate()
             artifacts.retire()
             let retired = coordinator; coordinator = nil
             Task { await retired?.retire() }

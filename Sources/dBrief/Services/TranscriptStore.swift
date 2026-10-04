@@ -3,6 +3,35 @@ import OSLog
 
 actor TranscriptStore {
     private let fileManager = FileManager.default
+    private let beforeOwnedSave: @Sendable () async -> Void
+    private let afterOwnedSave: @Sendable () async -> Void
+    init(beforeOwnedSave: @escaping @Sendable () async -> Void = {}, afterOwnedSave: @escaping @Sendable () async -> Void = {}) {
+        self.beforeOwnedSave = beforeOwnedSave; self.afterOwnedSave = afterOwnedSave
+    }
+
+    func loadOwned(from url: URL, order: LiveSavedTranscriptOrder, validity: RecordingDerivativeValidity,
+                   generation: RecordingDerivativeValidity) async throws -> (RichTranscript, LiveSavedTranscriptOrder.Receipt) {
+        try RecordingResultMutation.withTransaction {
+            try order.read(at: url) { try generation.withValidResult { try validity.withValidResult { try loadValue(from: url) } } }
+        }
+    }
+    func saveOwned(_ transcript: RichTranscript, to url: URL, order: LiveSavedTranscriptOrder,
+                   validity: RecordingDerivativeValidity, generation: RecordingDerivativeValidity,
+                   replacing expected: RichTranscript? = nil) async throws -> LiveSavedTranscriptOrder.Receipt {
+        await beforeOwnedSave()
+        let receipt = try RecordingResultMutation.withWrite(to: url) {
+            try order.save(at: url) {
+                try generation.withValidResult {
+                    try validity.withValidResult {
+                        if let expected, try loadValue(from: url) != expected { throw TranscriptStoreError.changedDuringReview }
+                        try saveValue(transcript, to: url)
+                    }
+                }
+            }
+        }
+        await afterOwnedSave()
+        return receipt
+    }
 
     // Primary URL-based throwing interface
     func load(from url: URL) async throws -> RichTranscript {
@@ -19,8 +48,9 @@ actor TranscriptStore {
         return transcript
     }
 
-    func save(_ transcript: RichTranscript, to url: URL) async throws {
-        try saveValue(transcript, to: url)
+    func save(_ transcript: RichTranscript, to url: URL, validity: RecordingDerivativeValidity? = nil,
+              generation: RecordingDerivativeValidity? = nil) async throws {
+        try saveValue(transcript, to: url, validity: validity, generation: generation)
     }
 
     /// Compare and replace without an actor suspension between the comparison
@@ -30,7 +60,8 @@ actor TranscriptStore {
         try saveValue(transcript, to: url)
     }
 
-    private func saveValue(_ transcript: RichTranscript, to url: URL) throws {
+    private func saveValue(_ transcript: RichTranscript, to url: URL, validity: RecordingDerivativeValidity? = nil,
+                           generation: RecordingDerivativeValidity? = nil) throws {
         try Task.checkCancellation()
         guard transcript.version == RichTranscript.currentVersion else {
             throw TranscriptStoreError.unsupportedVersion(transcript.version)
@@ -39,7 +70,9 @@ actor TranscriptStore {
         try Task.checkCancellation()
         try RecordingResultMutation.withWrite(to: url) {
             try Task.checkCancellation()
-            try data.write(to: url, options: .atomic)
+            let write = { if let validity { try validity.withValidResult { try data.write(to: url, options: .atomic) } }
+                else { try data.write(to: url, options: .atomic) } }
+            if let generation { try generation.withValidResult(write) } else { try write() }
         }
         let verified = try JSONDecoder().decode(
             RichTranscript.self,
