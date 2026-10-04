@@ -457,6 +457,9 @@ final class RecordingManager {
         case .status(let id, let note):
             guard appState.currentRecording?.id == id else { return }
             appState.recordingStatusNote = note
+        case .microphone(let id, let name):
+            guard appState.currentRecording?.id == id else { return }
+            appState.activeMicrophoneName = name
         case .liveBegan(let id):
             guard appState.currentRecording?.id == id else { return }
             appState.liveTranscriptSegments = []
@@ -484,6 +487,7 @@ final class RecordingManager {
             }
         case .stopped(let result, let terminating):
             appState.recordingStatusNote = nil
+            appState.activeMicrophoneName = nil
             guard let recording = appState.currentRecording, recording.id == result.session.id else { return }
             recording.capturedTracks = result.state.tracks
             recording.finalizedAudioURL = nil
@@ -513,6 +517,7 @@ final class RecordingManager {
         case .failed(let id):
             guard appState.currentRecording?.id == id else { return }
             appState.recordingStatusNote = nil
+            appState.activeMicrophoneName = nil
             appState.currentRecording = nil
             appState.callRecordingBundleId = nil
             appState.recordingState = .idle

@@ -128,6 +128,22 @@ final class AudioTrackWriter: @unchecked Sendable {
         }
     }
 
+    /// Appends silence in the track's established format. No-op before the first
+    /// buffer: there is no position to keep aligned yet.
+    func writeSilence(seconds: TimeInterval) {
+        guard let format = establishedFormat else { return }
+        var remaining = AVAudioFrameCount((seconds * format.sampleRate).rounded())
+        let chunk = AVAudioFrameCount(format.sampleRate)
+        while remaining > 0 {
+            let frames = min(remaining, chunk)
+            // AVAudioPCMBuffer storage is zero-initialized.
+            guard let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+            silence.frameLength = frames
+            do { try write(silence) } catch { return }
+            remaining -= frames
+        }
+    }
+
     func close() {
         lock.withLock {
             audioFile = nil

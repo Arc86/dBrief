@@ -11,6 +11,7 @@ final class PowerStateMonitor {
     private var source: CFRunLoopSource?
     private var lastNotifiedCount: Int = 0
     private var refreshGeneration = 0
+    @ObservationIgnored private var callbackBox: Unmanaged<WeakMonitor>?
     private weak var appState: AppState?
     private weak var recordingManager: RecordingManager?
 
@@ -20,14 +21,19 @@ final class PowerStateMonitor {
     }
 
     func startMonitoring() {
-        let context = Unmanaged.passUnretained(self).toOpaque()
+        // The run-loop source outlives nothing it can see, so hand it a retained
+        // weak box rather than `self`: a notification after this monitor is gone
+        // finds `nil` instead of freed memory. Released in `stopMonitoring`.
+        let box = Unmanaged.passRetained(WeakMonitor(self))
+        callbackBox = box
         source = IOPSNotificationCreateRunLoopSource({ context in
-            guard let context else { return }
-            let monitor = Unmanaged<PowerStateMonitor>.fromOpaque(context).takeUnretainedValue()
+            guard let context,
+                  let monitor = Unmanaged<WeakMonitor>.fromOpaque(context).takeUnretainedValue().monitor
+            else { return }
             Task { @MainActor in
                 await monitor.handlePowerChange()
             }
-        }, context).takeRetainedValue()
+        }, box.toOpaque()).takeRetainedValue()
 
         if let source {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
@@ -41,6 +47,8 @@ final class PowerStateMonitor {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }
         source = nil
+        callbackBox?.release()
+        callbackBox = nil
         log.info("Power state monitoring stopped")
     }
 
@@ -90,4 +98,10 @@ final class PowerStateMonitor {
         }
         return false
     }
+}
+
+/// Context for the IOPS callback, which may fire after its monitor is released.
+private final class WeakMonitor: @unchecked Sendable {
+    weak var monitor: PowerStateMonitor?
+    init(_ monitor: PowerStateMonitor) { self.monitor = monitor }
 }

@@ -69,7 +69,7 @@ struct CaptureCoordinatorTests {
                 case .failed: self.events.append("failed")
                 case .paused: self.events.append("paused")
                 case .resumed: self.events.append("resumed")
-                case .liveBegan, .liveEnded, .live, .meter, .status: break
+                case .liveBegan, .liveEnded, .live, .meter, .status, .microphone: break
                 }
             })
             owner = value

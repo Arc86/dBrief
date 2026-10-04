@@ -14,10 +14,18 @@ final class AudioCaptureManager {
     private(set) var peakLevel: Float = 0
 
     private let systemLifecycle = SystemCaptureLifecycle()
-    private var micEngine: AVAudioEngine?
+    private var micSource: (any MicSource)?
+    /// Shared by every mic source of one recording, so a switch's outage stays on the track.
+    private let micTimeline = MicTimeline()
+    private var micHealth = MicHealth(now: Date())
+    private var micRecoveryAttempts = 0
+    private static let maxMicRecoveryAttempts = 3
+    /// A plan that started but delivered no audio and was replaced by its fallback.
+    private var failedMicPlan: MicSourcePlan?
+    /// The newest source's sink until its first buffer is journaled.
+    private var micFirstBufferPending: (sink: MicCaptureSink, since: Date)?
     private var systemWriter: AudioTrackWriter?
     private var micWriter: AudioTrackWriter?
-    private var micSink: MicCaptureSink?
 
     private var timer: Timer?
     private var timerLifetime: CaptureCallbackLifetime?
@@ -35,12 +43,6 @@ final class AudioCaptureManager {
     /// The user's chosen input UID (`""` == System Default), as last passed to
     /// `startRecording` / `switchMicrophoneDevice`. Drives the auto-follow decision.
     private var selectedInputUID: String = ""
-    /// What the engine currently has applied — the idempotency snapshot fed to the planner.
-    private var appliedInputUID: String = ""
-    private var appliedDefaultInputID: AudioDeviceID?
-    private var appliedVoiceProcessing = false
-
-    private var configChangeObserver: NSObjectProtocol?
     private var outputMonitor: DefaultOutputDeviceMonitor?
     private var inputMonitors: [DefaultOutputDeviceMonitor] = []
     private var reconfigureDebounceTask: Task<Void, Never>?
@@ -49,6 +51,12 @@ final class AudioCaptureManager {
     /// Invoked (on the main actor) after an automatic reconfigure with a short,
     /// user-facing note (e.g. "Switched to MacBook Microphone"). Set by `RecordingManager`.
     var statusNoteHandler: (@MainActor (String) -> Void)?
+
+    /// Invoked (on the main actor) whenever the recording's mic source changes,
+    /// with the device's name (nil once capture stops). Set by `RecordingManager`.
+    var microphoneHandler: (@MainActor (String?) -> Void)?
+    /// Name of the device the running mic source captures from.
+    private(set) var activeMicrophoneName: String?
 
     /// Invoked (on the main actor) on each ~10 Hz meter tick with the current
     /// duration and peak level. Set by `RecordingManager` to push these into
@@ -184,7 +192,7 @@ final class AudioCaptureManager {
             if hasMicrophonePermission {
                 let writer = AudioTrackWriter(url: micURL, role: .mic)
                 self.micWriter = writer
-                try startMicPipeline(writer: writer, inputDeviceUID: inputDeviceUID)
+                try startMicPipeline()
             }
         } catch {
             // Capture setup is transactional. A system stream can already be
@@ -201,13 +209,11 @@ final class AudioCaptureManager {
     }
 
     func stopRecording() async {
-        guard isCapturing || systemLifecycle.isBusy || micEngine != nil
-                || systemWriter != nil || micWriter != nil || micSink != nil
+        guard isCapturing || systemLifecycle.isBusy || micSource != nil
+                || systemWriter != nil || micWriter != nil
                 || micLiveContinuation != nil || systemLiveContinuation != nil
         else { return }
         stopTimer()
-        // Tear down observers before the engine is nilled (the config-change token
-        // is bound to `micEngine`).
         removeChangeObservers()
 
         // Compute the final duration directly from the wall clock rather than
@@ -226,14 +232,13 @@ final class AudioCaptureManager {
         // must outlive every operation that can attach or start their stream.
         await systemLifecycle.stop().value
         lastSystemCaptureFailure = systemLifecycle.lastFailure
-        if let micEngine {
-            micEngine.inputNode.removeTap(onBus: 0)
-            micEngine.stop()
-            self.micEngine = nil
-        }
-
-        micSink?.finish()
-        micSink = nil
+        // Stops delivery and drains the converter before the writer closes.
+        retireMicSource()
+        activeMicrophoneName = nil
+        microphoneHandler?(nil)
+        micTimeline.reset()
+        failedMicPlan = nil
+        micRecoveryAttempts = 0
 
         lastCaptureWriteDiagnostics = AudioCaptureWriteDiagnostics(
             system: systemWriter?.diagnostics ?? .init(),
@@ -245,8 +250,6 @@ final class AudioCaptureManager {
 
         finishLiveStreams()
 
-        appliedInputUID = ""
-        appliedVoiceProcessing = false
         startTime = nil
         pauseStartTime = nil
         isCapturing = false
@@ -256,7 +259,9 @@ final class AudioCaptureManager {
 
     func pauseRecording() {
         guard isCapturing, pauseStartTime == nil else { return }
-        micEngine?.pause()
+        micSource?.pause()
+        // Both tracks stop together, so the pause is not a gap to pad.
+        micTimeline.reset()
         systemLifecycle.stop()
         pauseStartTime = Date()
         stopTimer()
@@ -264,10 +269,23 @@ final class AudioCaptureManager {
 
     func resumeRecording() throws {
         guard isCapturing, let pauseStart = pauseStartTime else { return }
-        // A failed microphone restart leaves the capture logically paused.
-        try micEngine?.start()
-        pauseAccumulator += Date().timeIntervalSince(pauseStart)
+        // Reconcile device changes made while paused before starting, so the
+        // previous device is never restarted. Decide while still paused: a paused
+        // source is not a failed one. A failed restart leaves the capture paused.
+        let decision = micWriter == nil ? nil : computeDecision()
         pauseStartTime = nil
+        do {
+            if let decision, decision.needsReconfigure, let plan = decision.plan {
+                try activateMicSource(plan)
+            } else {
+                try micSource?.start()
+                micHealth.reset(now: Date(), buffers: micSource?.sink.buffersReceived ?? 0)
+            }
+        } catch {
+            pauseStartTime = pauseStart
+            throw error
+        }
+        pauseAccumulator += Date().timeIntervalSince(pauseStart)
         if hasSystemAudioPermission, let systemWriter {
             restartSystemCapture(writer: systemWriter, onFailure: { error in
                 log.error("Failed to resume system capture: \(error.localizedDescription, privacy: .public)")
@@ -301,6 +319,8 @@ final class AudioCaptureManager {
                     guard let self, self.systemLifecycle.accepts(id) else { return }
                     self.systemLifecycle.reportFailure(failure, from: id)
                     self.lastSystemCaptureFailure = failure
+                    DurabilityJournal.shared.record(.init(
+                        name: "system_capture_stopped_unexpectedly", outcome: .failed, failure: failure))
                     status?("System audio capture stopped unexpectedly")
                 }
             }
@@ -335,183 +355,185 @@ final class AudioCaptureManager {
 
     // MARK: - Mic pipeline
 
-    private func startMicPipeline(writer: AudioTrackWriter, inputDeviceUID: String?) throws {
-        let engine = AVAudioEngine()
-        self.micEngine = engine
-
-        do {
-            try AudioInputDeviceManager.applyInputDevice(uid: inputDeviceUID, to: engine)
-        } catch {
-            log.warning("Failed to set mic input device: \(error.localizedDescription, privacy: .public)")
-        }
-
-        let inputNode = engine.inputNode
-        // Apple's Voice Processing IO provides real-time AEC, but it switches
-        // AVAudioEngine into a VoIP mode that ducks system audio at the OS
-        // level — so enabling it alongside ScreenCaptureKit causes empty
-        // system-audio buffers. Restrict it to mic-only recording, where
-        // there's no SCStream to conflict with. In mixed mode we perform
-        // echo suppression offline via the system-track sidechain in
-        // `RecordingFinalizer`. It's further gated on a real speaker→mic echo
-        // path (no-op on headphones, where it would just lower output volume).
-        let wantVoiceProcessing = aecSettingEnabled
-            && !hasSystemAudioPermission
-            && AudioOutputRoute.currentOutputHasEchoPath()
-        var achievedVoiceProcessing = false
-        if wantVoiceProcessing {
-            do {
-                try inputNode.setVoiceProcessingEnabled(true)
-                achievedVoiceProcessing = true
-                log.info("Voice-processing AEC enabled (mic-only mode)")
-            } catch {
-                log.warning("Voice-processing AEC unavailable: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw AudioCaptureError.noMicrophoneAccess
-        }
-        log.info("Mic format: \(inputFormat.sampleRate, privacy: .public)Hz \(inputFormat.channelCount, privacy: .public)ch")
-
-        let handler = try makeMicHandler(writer: writer, newFormat: inputFormat)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat, block: handler)
-
-        try engine.start()
-
-        // Record the state actually achieved (the device may differ if a pinned UID
-        // was missing) so the auto-reconfigure path is idempotent.
-        appliedInputUID = (AudioInputDeviceManager.deviceID(forUID: selectedInputUID) != nil) ? selectedInputUID : ""
-        appliedDefaultInputID = AudioInputDeviceManager.defaultInputDeviceID()
-        appliedVoiceProcessing = achievedVoiceProcessing
+    private func startMicPipeline() throws {
+        micTimeline.reset()
+        let decision = computeDecision()
+        guard let plan = decision.plan else { throw AudioCaptureError.noMicrophoneAccess }
+        try activateMicSource(plan)
         installChangeObservers()
         log.info("Mic capture started")
     }
 
-    /// Retain each tap's sink so its converter can be drained before replacement
-    /// or writer closure. The previous sink must be retired before installing this one.
-    private func makeMicHandler(
-        writer: AudioTrackWriter,
-        newFormat: AVAudioFormat
-    ) throws -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        var converter: MicFormatConverter?
-        if let established = writer.establishedFormat,
-           (established.sampleRate != newFormat.sampleRate || established.channelCount != newFormat.channelCount) {
-            guard let created = MicFormatConverter(from: newFormat, to: established) else {
-                throw AudioConversionError.unsupportedFormat
-            }
-            converter = created
-        }
-        let sink = MicCaptureSink(writer: writer, converter: converter, liveSink: micLiveContinuation)
-        micSink = sink
-        return { buffer, _ in sink.receive(buffer) }
-    }
-
     /// Switch the microphone input device mid-recording without losing the in-progress
-    /// mic track. Routes through the shared reconfigure path (re-point device, keep the
-    /// established-format tap, optionally toggle VPIO). No-op when not recording or in a
-    /// system-audio-only session.
+    /// mic track. No-op when not recording or in a system-audio-only session; while
+    /// paused the selection is applied on resume.
     func switchMicrophoneDevice(to newUID: String?) throws {
-        guard isCapturing, micEngine != nil, micWriter != nil else { return }
+        guard isCapturing, micWriter != nil else { return }
         selectedInputUID = newUID ?? ""
-        try applyReconfigure(computeDecision())
+        failedMicPlan = nil
+        micRecoveryAttempts = 0
+        guard pauseStartTime == nil else { return }
+        // The menu offered this device, so treat it as present: an enumeration
+        // race must not turn an explicit choice into the gone→default fallback.
+        let decision = computeDecision(assumingPresent: selectedInputUID)
+        guard decision.needsReconfigure, let plan = decision.plan else { return }
+        try activateMicSource(plan)
+        if let name = activeMicrophoneName { statusNoteHandler?("Recording from \(name)") }
     }
 
     /// Bridges the impure CoreAudio state into the pure `MicReconfigurePlanner`.
-    private func computeDecision() -> MicReconfigureDecision {
-        let available = Set(AudioInputDeviceManager.availableInputDevices().map(\.uid))
+    private func computeDecision(assumingPresent uid: String = "") -> MicReconfigureDecision {
+        var available = Set(AudioInputDeviceManager.availableInputDevices().map(\.uid))
+        if !uid.isEmpty { available.insert(uid) }
         return MicReconfigurePlanner.decide(
             selectedUID: selectedInputUID,
             availableInputUIDs: available,
+            defaultInputUID: AudioInputDeviceManager.defaultInputDeviceUID(),
             hasSystemAudioPermission: hasSystemAudioPermission,
             aecSettingEnabled: aecSettingEnabled,
             outputHasEchoPath: AudioOutputRoute.currentOutputHasEchoPath(),
-            currentlyAppliedUID: appliedInputUID,
-            currentlyVoiceProcessing: appliedVoiceProcessing,
-            engineStopped: micEngine?.isRunning == false && pauseStartTime == nil,
-            defaultInputChanged: appliedDefaultInputID != AudioInputDeviceManager.defaultInputDeviceID()
+            applied: micSource?.plan,
+            sourceFailed: (micSource.map { !$0.isRunning } ?? false) && pauseStartTime == nil
         )
     }
 
-    /// Re-point the mic engine and/or toggle VPIO to reach `decision`, keeping the
-    /// in-progress mic track continuous. Idempotent no-op unless a change is needed.
-    /// Failed switches propagate without claiming the requested device was applied.
-    private func applyReconfigure(_ decision: MicReconfigureDecision) throws {
-        guard isCapturing, let engine = micEngine, let writer = micWriter else { return }
-        guard decision.needsReconfigure else { return }
-
-        // Whether the engine SHOULD be running after reconfigure — based on user
-        // pause state, NOT `engine.isRunning` (a config-change may have already
-        // stopped it, but we still want to restart unless the user paused).
-        let shouldRun = pauseStartTime == nil
-        let vpioChanged = decision.voiceProcessingEnabled != appliedVoiceProcessing
-
-        // Toggling VPIO requires a fully stopped engine; a device-only change can
-        // use the cheaper pause.
-        if vpioChanged { engine.stop() } else { engine.pause() }
-
-        let inputNode = engine.inputNode
-        inputNode.removeTap(onBus: 0)
-        micSink?.finish()
-        micSink = nil
-
-        let targetUIDOrNil = decision.targetDeviceUID.isEmpty ? nil : decision.targetDeviceUID
-        try AudioInputDeviceManager.applyInputDevice(uid: targetUIDOrNil, to: engine)
-
-        if vpioChanged {
-            do {
-                try inputNode.setVoiceProcessingEnabled(decision.voiceProcessingEnabled)
-            } catch {
-                log.warning("Reconfigure: setVoiceProcessingEnabled failed: \(error.localizedDescription, privacy: .public)")
+    /// Replaces the running mic source with a new one for `plan`, keeping the
+    /// in-progress track. If `plan` can't be built or started, its fallback is
+    /// tried once; if that fails too, the previous source is restored where
+    /// possible and the error is rethrown.
+    private func activateMicSource(_ plan: MicSourcePlan) throws {
+        let previous = micSource?.plan
+        do {
+            try replaceMicSource(with: plan)
+        } catch {
+            log.error("Mic source \(String(describing: plan.backend), privacy: .public) failed to start: \(error.localizedDescription, privacy: .public)")
+            if let fallback = MicReconfigurePlanner.fallback(
+                after: plan, defaultInputUID: AudioInputDeviceManager.defaultInputDeviceUID()
+            ), (try? replaceMicSource(with: fallback)) != nil {
+                failedMicPlan = plan
+                return
             }
+            if let previous, previous != plan { try? replaceMicSource(with: previous) }
+            throw error
         }
+    }
 
-        let newFormat = inputNode.outputFormat(forBus: 0)
-        guard newFormat.sampleRate > 0, newFormat.channelCount > 0 else {
-            log.error("Reconfigure: new device reports invalid format; attempting to restore")
-            if shouldRun { try? engine.start() }
-            throw AudioCaptureError.noMicrophoneAccess
+    private func replaceMicSource(with plan: MicSourcePlan) throws {
+        guard let writer = micWriter else { return }
+        retireMicSource()
+        let sink = MicCaptureSink(writer: writer, timeline: micTimeline, liveSink: micLiveContinuation)
+        // Engine route changes arrive on an AVFAudio thread; `scheduleReconfigure`
+        // ignores them once the recording's observers are removed.
+        let configurationChanged: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor [weak self] in self?.scheduleReconfigure() }
         }
-
-        let handler = try makeMicHandler(writer: writer, newFormat: newFormat)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: newFormat, block: handler)
-        if shouldRun { try engine.start() }
-
-        // Record the achieved state so the snapshot stays truthful AND the
-        // reconfigure converges — a snapshot that can never match the desired state
-        // would re-fire a full engine restart on every later benign config event.
-        //
-        // Device: only adopt the target if the switch actually took; on failure the
-        // engine kept its previous device, so leave the snapshot unchanged.
-        appliedDefaultInputID = AudioInputDeviceManager.defaultInputDeviceID()
-        appliedInputUID = AudioInputDeviceManager.deviceID(forUID: decision.targetDeviceUID) == nil
-            ? "" : decision.targetDeviceUID
-        // VPIO: if the toggle refused (the route can't do Voice Processing), record
-        // the DESIRED value rather than the stuck readback, so benign config events
-        // don't keep retrying an impossible toggle. A genuine route change recomputes
-        // a fresh target and retries then (turning VPIO *off* always succeeds).
-        let achievedVPIO = inputNode.isVoiceProcessingEnabled
-        if vpioChanged, achievedVPIO != decision.voiceProcessingEnabled {
-            log.warning("Reconfigure: VPIO stuck at \(achievedVPIO, privacy: .public); suppressing retry until route changes")
+        let began = Date()
+        let source: any MicSource
+        do {
+            source = try MicSourceFactory.make(plan, sink: sink, onConfigurationChange: configurationChanged)
+            if pauseStartTime == nil {
+                do {
+                    try source.start()
+                } catch {
+                    source.stop()
+                    throw error
+                }
+            }
+        } catch {
+            sink.finish()
+            Self.journalMic("microphone_source_started", .failed, plan, since: began, error: error)
+            throw error
         }
-        appliedVoiceProcessing = vpioChanged ? decision.voiceProcessingEnabled : achievedVPIO
-        log.info("Reconfigure: applied device=\(self.appliedInputUID.isEmpty ? "default" : self.appliedInputUID, privacy: .public) vpio=\(self.appliedVoiceProcessing, privacy: .public)")
+        micSource = source
+        activeMicrophoneName = Self.deviceLabel(for: plan.deviceUID)
+        microphoneHandler?(activeMicrophoneName)
+        micHealth.reset(now: Date(), buffers: 0)
+        micFirstBufferPending = (source.sink, Date())
+        let silenced = AudioInputDeviceManager.isInputSilenced(uid: plan.deviceUID)
+        Self.journalMic("microphone_source_started", .succeeded, plan, since: began,
+                        extra: ["deviceSilenced": silenced ? 1 : 0])
+        if silenced {
+            log.error("Mic source device is muted or at zero input volume in macOS")
+            statusNoteHandler?("\(Self.deviceLabel(for: plan.deviceUID)) is muted in macOS — check Sound settings")
+        }
+        log.notice("Mic source: \(String(describing: plan.backend), privacy: .public) device=\(plan.deviceUID, privacy: .public) vpio=\(plan.voiceProcessing, privacy: .public)")
+    }
+
+    /// Persisted (Application Support/Diagnostics) so a switching failure leaves
+    /// evidence even where the unified log is unreadable. No device names or audio.
+    private static func journalMic(
+        _ name: String, _ outcome: DurabilityEvent.Outcome, _ plan: MicSourcePlan,
+        since start: Date? = nil, error: Error? = nil, extra: [String: Int64] = [:]
+    ) {
+        var measurements = extra
+        measurements["captureSession"] = plan.backend == .captureSession ? 1 : 0
+        measurements["voiceProcessing"] = plan.voiceProcessing ? 1 : 0
+        measurements["systemDefault"] = plan.deviceUID == AudioInputDeviceManager.defaultInputDeviceUID() ? 1 : 0
+        if let start { measurements["milliseconds"] = Int64(Date().timeIntervalSince(start) * 1000) }
+        DurabilityJournal.shared.record(.init(
+            name: name, outcome: outcome, measurements: measurements, failure: error.map { .init(error: $0) }
+        ))
+    }
+
+    private func retireMicSource() {
+        micSource?.stop()
+        micSource = nil
+    }
+
+    /// Runs on the meter tick. A source that never delivers is replaced by its
+    /// fallback; one that stops delivering is rebuilt, a bounded number of times.
+    private func checkMicHealth() {
+        guard isCapturing, pauseStartTime == nil, let source = micSource,
+              reconfigureDebounceTask == nil else { return }
+        let buffers = source.sink.buffersReceived
+        let now = Date()
+        if buffers > 0, let pending = micFirstBufferPending, pending.sink === source.sink {
+            micFirstBufferPending = nil
+            Self.journalMic("microphone_first_buffer", .succeeded, source.plan, since: pending.since)
+        }
+        guard micHealth.isStalled(now: now, buffers: buffers) else {
+            if buffers > 0 { micRecoveryAttempts = 0 }
+            return
+        }
+        micHealth.reset(now: now, buffers: buffers)
+        let plan = source.plan
+        Self.journalMic("microphone_stall", .warning, plan, extra: ["buffers": buffers, "attempt": Int64(micRecoveryAttempts)])
+        // A source that never delivered gets one alternative backend/device; a
+        // fallback that fails in turn is only rebuilt, never cycled back.
+        if buffers == 0, failedMicPlan == nil, let fallback = MicReconfigurePlanner.fallback(
+            after: plan, defaultInputUID: AudioInputDeviceManager.defaultInputDeviceUID()
+        ) {
+            log.error("Mic source delivered no audio; falling back to \(String(describing: fallback.backend), privacy: .public)")
+            failedMicPlan = plan
+            do {
+                try replaceMicSource(with: fallback)
+                statusNoteHandler?("Recording from \(Self.deviceLabel(for: fallback.deviceUID))")
+            } catch {
+                log.error("Mic fallback failed: \(error.localizedDescription, privacy: .public)")
+                statusNoteHandler?("Microphone isn't delivering audio — check input device")
+            }
+            return
+        }
+        guard micRecoveryAttempts < Self.maxMicRecoveryAttempts else { return }
+        micRecoveryAttempts += 1
+        log.error("Mic source stalled; rebuilding (attempt \(self.micRecoveryAttempts, privacy: .public))")
+        do {
+            try replaceMicSource(with: plan)
+        } catch {
+            log.error("Mic rebuild failed: \(error.localizedDescription, privacy: .public)")
+        }
+        if micRecoveryAttempts == Self.maxMicRecoveryAttempts {
+            statusNoteHandler?("Microphone isn't delivering audio — check input device")
+        }
     }
 
     // MARK: - Device/route change observers
 
     private func installChangeObservers() {
-        guard let engine = micEngine else { return }
         removeChangeObservers()
         let lifetime = CaptureCallbackLifetime()
         observerLifetime = lifetime
         let changed = lifetime.handler { [weak self] in self?.scheduleReconfigure() }
-        configChangeObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: engine,
-            queue: nil
-        ) { _ in changed() }
-
         let monitor = DefaultOutputDeviceMonitor { changed() }
         monitor.start()
         outputMonitor = monitor
@@ -525,10 +547,6 @@ final class AudioCaptureManager {
     private func removeChangeObservers() {
         observerLifetime?.invalidate()
         observerLifetime = nil
-        if let token = configChangeObserver {
-            NotificationCenter.default.removeObserver(token)
-            configChangeObserver = nil
-        }
         outputMonitor?.stop()
         outputMonitor = nil
         inputMonitors.forEach { $0.stop() }
@@ -538,34 +556,50 @@ final class AudioCaptureManager {
     }
 
     /// Coalesces the burst of events a single device connect/disconnect produces,
-    /// then reconfigures once if the desired state differs from what's applied.
+    /// then reconfigures once if the desired state differs from what's running.
     private func scheduleReconfigure() {
         guard let lifetime = observerLifetime, lifetime.isValid else { return }
         reconfigureDebounceTask?.cancel()
         reconfigureDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.reconfigureDebounceInterval)
             guard !Task.isCancelled, lifetime.isValid, let self else { return }
-            // Don't churn a paused engine — `resumeRecording` reconciles on resume.
-            guard self.isCapturing, self.pauseStartTime == nil else { return }
+            defer { self.reconfigureDebounceTask = nil }
+            // Don't churn a paused capture — `resumeRecording` reconciles on resume.
+            guard self.isCapturing, self.pauseStartTime == nil, self.micWriter != nil else { return }
             let decision = self.computeDecision()
-            guard decision.needsReconfigure else { return }
-            let previousUID = self.appliedInputUID
-            let previousVPIO = self.appliedVoiceProcessing
+            guard decision.needsReconfigure, let plan = decision.plan else { return }
+            // A plan that just failed and was replaced by its fallback stays
+            // replaced until the devices change or the user picks again.
+            if plan == self.failedMicPlan, self.micSource?.isRunning == true { return }
+            if plan != self.failedMicPlan { self.failedMicPlan = nil }
+            let previous = self.micSource?.plan
+            // Rebuilding the same plan means the source stopped itself (a route
+            // change can stop the engine). Bound it so a route that keeps
+            // stopping can't rebuild forever; delivery resets the budget.
+            if plan == previous {
+                guard self.micRecoveryAttempts < Self.maxMicRecoveryAttempts else { return }
+                self.micRecoveryAttempts += 1
+                if self.micRecoveryAttempts == Self.maxMicRecoveryAttempts {
+                    self.statusNoteHandler?("Microphone isn't delivering audio — check input device")
+                }
+            }
             do {
-                try self.applyReconfigure(decision)
-                self.emitStatusNote(from: previousUID, previousVPIO: previousVPIO, decision: decision)
+                try self.activateMicSource(plan)
+                self.emitStatusNote(from: previous, to: self.micSource?.plan)
             } catch {
                 log.error("Auto reconfigure failed: \(error.localizedDescription, privacy: .public)")
+                self.statusNoteHandler?("Microphone switch failed")
             }
         }
     }
 
-    private func emitStatusNote(from previousUID: String, previousVPIO: Bool, decision: MicReconfigureDecision) {
+    private func emitStatusNote(from previous: MicSourcePlan?, to current: MicSourcePlan?) {
+        guard let current else { return }
         let note: String
-        if decision.targetDeviceUID != previousUID {
-            note = "Switched to \(Self.deviceLabel(for: decision.targetDeviceUID))"
-        } else if decision.voiceProcessingEnabled != previousVPIO {
-            note = decision.voiceProcessingEnabled
+        if current.deviceUID != previous?.deviceUID {
+            note = "Switched to \(Self.deviceLabel(for: current.deviceUID))"
+        } else if current.voiceProcessing != previous?.voiceProcessing {
+            note = current.voiceProcessing
                 ? "Echo cancellation re-enabled"
                 : "Echo cancellation off — headphones detected"
         } else {
@@ -605,6 +639,7 @@ final class AudioCaptureManager {
             self.duration = Date().timeIntervalSince(startTime) - self.pauseAccumulator
             self.peakLevel = max(self.micWriter?.consumePeakLevel() ?? 0, self.systemWriter?.consumePeakLevel() ?? 0)
             tick?(self.duration, self.peakLevel)
+            self.checkMicHealth()
         }
         let timer = Timer(timeInterval: 0.1, repeats: true) { _ in update() }
         RunLoop.main.add(timer, forMode: .common)

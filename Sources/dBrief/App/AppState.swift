@@ -79,6 +79,10 @@ final class AppState {
     /// device or echo cancellation mid-recording (e.g. "Switched to MacBook Microphone").
     /// Auto-cleared a few seconds after it's set; nil when there's nothing to show.
     var recordingStatusNote: String?
+    /// Name of the microphone the current recording is capturing from. Can differ
+    /// from the saved selection (a pinned device that disappeared falls back to
+    /// the system default), so the recording UI shows this rather than the setting.
+    var activeMicrophoneName: String?
     var queuedCount: Int = 0
     var memoryPressureLevel: MemoryPressureLevel = .normal
     var preflightWarning: PreflightWarning?
