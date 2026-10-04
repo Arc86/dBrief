@@ -82,6 +82,14 @@ struct ChatTranscriptSource: Codable, Sendable, Equatable {
     }
 }
 
+/// Optional word-level facts frozen with the exact supplied evidence.
+struct ChatSpeakerAttributionSpan: Codable, Sendable, Equatable {
+    let startUTF8: Int
+    let endUTF8: Int
+    let status: LiveAttributionCoverage.Status
+    let speakers: [String]
+}
+
 struct ChatTranscriptSegment: Sendable, Equatable {
     let id: String
     let source: String
@@ -90,10 +98,13 @@ struct ChatTranscriptSegment: Sendable, Equatable {
     let savedAudio: [LiveSavedAudioSlice]
     let finalPlayback: ChatFinalPlaybackRange?
     let speakers: [String]
+    let speakerAttribution: [ChatSpeakerAttributionSpan]?
     init(id: String, source: String, text: String, meeting: LiveMeetingRange? = nil,
-         savedAudio: [LiveSavedAudioSlice] = [], finalPlayback: ChatFinalPlaybackRange? = nil, speakers: [String] = []) {
+         savedAudio: [LiveSavedAudioSlice] = [], finalPlayback: ChatFinalPlaybackRange? = nil, speakers: [String] = [],
+         speakerAttribution: [ChatSpeakerAttributionSpan]? = nil) {
         self.id = id; self.source = source; self.text = text; self.meeting = meeting
         self.savedAudio = savedAudio; self.finalPlayback = finalPlayback; self.speakers = speakers
+        self.speakerAttribution = speakerAttribution
     }
 }
 
@@ -118,6 +129,16 @@ struct ChatEvidenceReference: Identifiable, Codable, Sendable, Equatable {
     let savedAudio: [LiveSavedAudioSlice]
     let finalPlayback: ChatFinalPlaybackRange?
     let speakers: [String]
+    // No property default: synthesized Codable decodes older absent values as nil.
+    let speakerAttribution: [ChatSpeakerAttributionSpan]?
+    init(id: String, parentSegmentID: String, source: String, text: String, startUTF8: Int, endUTF8: Int,
+         isFragment: Bool, meeting: LiveMeetingRange?, savedAudio: [LiveSavedAudioSlice],
+         finalPlayback: ChatFinalPlaybackRange?, speakers: [String], speakerAttribution: [ChatSpeakerAttributionSpan]? = nil) {
+        self.id = id; self.parentSegmentID = parentSegmentID; self.source = source; self.text = text
+        self.startUTF8 = startUTF8; self.endUTF8 = endUTF8; self.isFragment = isFragment; self.meeting = meeting
+        self.savedAudio = savedAudio; self.finalPlayback = finalPlayback; self.speakers = speakers
+        self.speakerAttribution = speakerAttribution
+    }
 }
 
 struct ChatAnswerBasis: Codable, Sendable, Equatable {

@@ -88,6 +88,10 @@ actor LiveTranscriptStore {
     private(set) var retainedEvidenceBytes = 0
     private(set) var evidenceGrowthRetired = false
     private var terminalEvidenceBytes = 0
+    private let attributionStoreID = UUID()
+    nonisolated static let attributionLimit = 1_024 * 1_024
+    private(set) var retainedAttributionBytes = 0
+    private(set) var attributionGrowthRetired = false
     private static let terminalReserve = 8 * 1_024 * 1_024
 
     init(identity: LiveSessionIdentity, validity: RecordingDerivativeValidity = RecordingDerivativeValidity(), retainedEvidenceLimit: Int? = nil,
@@ -137,6 +141,22 @@ actor LiveTranscriptStore {
         }
         if terminal { terminalEvidenceBytes += estimate * 4 }
         else { retainedEvidenceBytes += estimate * 4 }
+        return true
+    }
+
+    /// Optional history never spends or retires mandatory transcript evidence.
+    /// Validate at the caller, preflight locally, then reserve actual shared room
+    /// before mutation. Replacement/replay cannot refund or resurrect growth.
+    private func reserveAttribution(_ value: Any) -> Bool {
+        guard !attributionGrowthRetired else { return false }
+        let available = Self.attributionLimit - retainedAttributionBytes
+        guard available >= 4, let estimate = try? LiveArtifactEncoding.estimatedBytes(value, limit: available / 4),
+              estimate <= available / 4 else {
+            attributionGrowthRetired = true; return false
+        }
+        do { try payloadReservation?.reserveAttribution(for: attributionStoreID) }
+        catch { attributionGrowthRetired = true; return false }
+        retainedAttributionBytes += estimate * 4
         return true
     }
 
@@ -457,10 +477,11 @@ actor LiveTranscriptStore {
         guard source.isCaptureSource, let lane = lanes[source] else { return .rejected(.invalidAnnotation) }
         if diarizers[source]?.id == contextID { return .duplicate }
         guard knownDiarizers[source]?.contains(contextID) != true else { return .rejected(.invalidAnnotation) }
-        guard reserveEvidence(contextID) else { return .rejected(.capacity) }
-        knownDiarizers[source, default: []].insert(contextID)
-        diarizers[source] = Diarizer(id: contextID, meetingStart: meetingTime(lane.progress.capturedSampleEnd, in: lane.epoch),
+        let diarizer = Diarizer(id: contextID, meetingStart: meetingTime(lane.progress.capturedSampleEnd, in: lane.epoch),
             firstEpochOrder: epochOrder[lane.epoch.id]!, firstSample: lane.progress.capturedSampleEnd)
+        guard reserveAttribution(diarizer) else { return .rejected(.capacity) }
+        knownDiarizers[source, default: []].insert(contextID)
+        diarizers[source] = diarizer
         return .accepted
     }
 
@@ -509,7 +530,7 @@ actor LiveTranscriptStore {
                       }) else { return .rejected(.invalidAnnotation) }
             } else if interval.status == .resolved || interval.status == .overlap { return .rejected(.invalidAnnotation) }
         }
-        guard reserveEvidence(batch) else { return .rejected(.capacity) }
+        guard reserveAttribution(batch) else { return .rejected(.capacity) }
         for annotation in updates { annotations[.init(segment: annotation.segmentID, word: annotation.wordIndex)] = annotation }
         for interval in newCoverage { replaceAttributionCoverage(interval) }
         diarizer.nextSequence += 1; diarizer.lastBatch = batch; diarizers[source] = diarizer

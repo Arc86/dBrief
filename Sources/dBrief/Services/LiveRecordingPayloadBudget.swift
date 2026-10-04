@@ -7,6 +7,21 @@ final class LiveRecordingPayloadBudget: @unchecked Sendable {
         private let budget: LiveRecordingPayloadBudget
         private let bytes: Int
         private let owner: Bool
+        private let attributionLock = NSLock()
+        private var attribution: (store: UUID, lease: Lease)?
+        /// A history allowance belongs to exactly one mutable store and follows
+        /// this original owner lease through actual writer/task completion.
+        func reserveAttribution(for store: UUID) throws {
+            try attributionLock.withLock {
+                guard owner else { throw LiveRecordingSessionRegistry.Failure.capacity }
+                if let attribution {
+                    guard attribution.store == store else { throw LiveRecordingSessionRegistry.Failure.capacity }
+                    return
+                }
+                let lease = try budget.reserveAuxiliary(bytes: LiveTranscriptStore.attributionLimit)
+                attribution = (store, lease)
+            }
+        }
         fileprivate init(_ budget: LiveRecordingPayloadBudget, bytes: Int, owner: Bool) {
             self.budget = budget; self.bytes = bytes; self.owner = owner
         }

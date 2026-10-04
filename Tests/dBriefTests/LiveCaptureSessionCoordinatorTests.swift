@@ -218,9 +218,18 @@ private actor CaptureFrontierPublicationGate {
         let c = LiveCaptureSessionCoordinator(input: f.input(), store: store, transport: await t.transport(),
             storeAccess: .init(admit: { await store.admit($0) }, checkEpoch: { identity, epoch in
                 let admission = await store.checkEpoch(owner: identity, epoch: epoch)
+                // Retire actual mandatory history after the accepted preflight.
+                // Optional speaker contexts have an independent allowance.
+                var exhausted = false
                 for _ in 0..<128 {
-                    if await store.registerDiarizer(owner: identity, source: .microphone, contextID: UUID()) == .rejected(.capacity) { break }
+                    let loss = LiveCaptureRawLoss(id: UUID(), source: .microphone, sourceEpoch: f.mic.id,
+                        frames: .init(startFrame: 0, frameCount: 1, sampleRate: 16_000), reason: .unavailable, bufferCount: 1)
+                    let result = await store.recordCaptureLoss(owner: identity, loss: loss)
+                    if result == .rejected(.capacity) { exhausted = true; break }
+                    #expect(result == .accepted)
                 }
+                #expect(exhausted)
+                #expect(await store.evidenceGrowthRetired)
                 return admission
             }))
         do {
