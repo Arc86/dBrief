@@ -6,6 +6,8 @@ import dBriefWire
 actor LiveASROrchestrator {
     static let maximumEpochsPerHelper = 4096
     typealias Loader = @Sendable (LiveASRConfiguration) async throws -> any NemotronDecoderMaking
+    typealias DiarizationLoader = @Sendable (LiveDiarizationConfiguration) async throws -> any LiveDiarizationDriving
+    typealias DiarizationEmit = @Sendable (LiveDiarizationEvent) -> Bool
     typealias VADLoader = @Sendable (LiveSessionBegin) async throws -> LiveVADModelFactory
     private enum State { case loading, active, retiring, paused, needsReplacement, closed }
     private final class OriginalPacket: Sendable {
@@ -52,6 +54,30 @@ actor LiveASROrchestrator {
         var partialTask: Task<Void, Never>?
         var partialContinuation: AsyncStream<(UUID, String)>.Continuation?
     }
+    private enum DiarizationPhase { case preparing, awaitingInput, active, pausing, paused, finishing, retired }
+    private enum DiarizationOutcome: Sendable {
+        case loaded(any LiveDiarizationDriving), batch(LiveDiarizationBatch, terminal: Bool), paused, resumed, failed
+    }
+    private struct DiarizationWork: Sendable { let id: UUID; let task: Task<DiarizationOutcome, Never> }
+    private struct DiarizationRange { let start: Int64; var end: Int64 }
+    private final class DiarizationWitness: LiveDiarizationResourceWitness { let ownerID: UUID; init(_ id: UUID) { ownerID = id } }
+    private struct Diarization {
+        let ownerID: UUID, requestID: UUID, requestedScope: LiveLaneScope, configuration: LiveDiarizationConfiguration
+        var scope: LiveLaneScope
+        var phase = DiarizationPhase.preparing
+        var contextID: UUID?, confirmed = false, nextEvent: UInt64 = 0
+        var driver: LiveDiarizationDriverOwnership?, session: LiveDiarizationSession?, work: DiarizationWork?
+        var ranges: [UUID: DiarizationRange] = [:]
+        var streamEnd: Int64 = 0, frameEnd: Int64 = 0, lastMeetingEnd: Int64?
+        var frames: [LiveDiarizationFrame]?, frameCursor = 0
+        var outstanding: UInt64?, lastAcknowledged: UInt64?
+        var pausePending = false, resumePending: (LiveLaneScope, LiveLaneScope)?, finishPending = false, terminalProduced = false
+        var joined = false
+    }
+    private let diarizationLoader: DiarizationLoader?
+    private let diarizationEmit: DiarizationEmit?
+    private var diarization: Diarization?
+    private var diarizationRetirement: (UUID, Task<Void, Never>, LiveDiarizationEvent.RetirementReason)?
     private let loader: Loader
     private let vadLoader: VADLoader?
     private let emit: @Sendable (LiveSessionEvent) -> Void
@@ -75,7 +101,8 @@ actor LiveASROrchestrator {
     private var knownEpochs: Set<UUID> = []
     private var closed = false
 
-    init(loader: @escaping Loader, vadLoader: VADLoader? = nil, emit: @escaping @Sendable (LiveSessionEvent) -> Void,
+    init(loader: @escaping Loader, vadLoader: VADLoader? = nil, diarizationLoader: DiarizationLoader? = nil,
+         diarizationEmit: DiarizationEmit? = nil, emit: @escaping @Sendable (LiveSessionEvent) -> Void,
          testingBeforeRetirement: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
          testingBeforeWorkReturn: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
          testingBeforeVADActivation: @escaping @Sendable (LiveLaneScope) async -> Void = { _ in },
@@ -85,6 +112,7 @@ actor LiveASROrchestrator {
          testingBeforeInstall: @escaping @Sendable (LiveLaneScope,LiveLaneScope) async -> Void = { _,_ in },
          testingAfterInstall: @escaping @Sendable (LiveLaneScope,LiveLaneScope) async -> Void = { _,_ in }) {
         self.loader = loader; self.vadLoader = vadLoader; self.emit = emit
+        self.diarizationLoader = diarizationLoader; self.diarizationEmit = diarizationEmit
         self.testingBeforeRetirement = testingBeforeRetirement; self.testingBeforeWorkReturn = testingBeforeWorkReturn
         self.testingBeforeVADActivation = testingBeforeVADActivation
         self.testingAfterLoadingReturn = testingAfterLoadingReturn
@@ -129,8 +157,25 @@ actor LiveASROrchestrator {
             loading = task
             Task { await task.value; self.testingAfterLoadingReturn() }
             return .accepted
+        case .prepareDiarization(let scope, let owner, let configuration):
+            return prepareDiarization(scope: scope, owner: owner, configuration: configuration, requestID: requestID)
+        case .acknowledgeDiarization(let identity, let owner, let context):
+            guard var current = diarization, current.scope.identity == identity, current.ownerID == owner,
+                  current.contextID == context, current.phase != .retired else { return .rejected(.staleScope) }
+            current.confirmed = true; diarization = current; publishDiarization(); return .accepted
+        case .acknowledgeDiarizationPosterior(let identity, let owner, let context, let sequence):
+            guard var current = diarization, current.scope.identity == identity, current.ownerID == owner,
+                  current.contextID == context, current.phase != .retired else { return .rejected(.staleScope) }
+            if current.lastAcknowledged == sequence { return .accepted }
+            guard current.outstanding == sequence else { return .rejected(.outOfOrder) }
+            current.lastAcknowledged = sequence; current.outstanding = nil; diarization = current
+            publishDiarization(); return .accepted
+        case .retireDiarization(let identity, let owner):
+            guard let current = diarization, current.scope.identity == identity, current.ownerID == owner else { return .rejected(.staleScope) }
+            retireDiarization(.pressure); return .accepted
         case .cancel(let identity):
             guard begin?.identity == identity else { return .rejected(.staleScope) }
+            retireDiarization(.stopped)
             if closed { return .accepted }
             loading?.cancel()
             for source in lanes.keys where lanes[source]?.state != .closed {
@@ -146,7 +191,9 @@ actor LiveASROrchestrator {
             guard !knownEpochs.contains(epoch.id), LiveSessionBegin(identity: identity, configuration: begin.configuration, epochs: [epoch],vad: begin.vad).isValid else { return .rejected(.invalidConfiguration) }
             guard knownEpochs.count < epochLimit else { return .rejected(.unavailable) }
             old.partialTask?.cancel(); old.partialContinuation?.finish()
-            knownEpochs.insert(epoch.id); lanes[epoch.source] = Lane(epoch: epoch); kick(epoch.source)
+            knownEpochs.insert(epoch.id); lanes[epoch.source] = Lane(epoch: epoch)
+            replaceDiarizationEpoch(previous: .init(identity: identity, source: epoch.source, epochID: oldID), epoch: epoch, paused: old.state == .paused)
+            kick(epoch.source)
             return .accepted
         case .packet(let packet):
             guard !closed, matches(packet.scope), let current = lanes[packet.scope.source] else { return .rejected(.staleScope) }
@@ -220,6 +267,7 @@ actor LiveASROrchestrator {
         }
     }
     private func loadFailed() {
+        retireDiarization(.failed)
         guard !closed, let begin else { return }
         for source in lanes.keys { cut(source, reason: .preparation) }
         closed = true; emit(.failed(begin.identity, .unavailable))
@@ -248,6 +296,7 @@ actor LiveASROrchestrator {
             asrConsumedSampleEnd: lane.consumed)))
     }
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
+        if source == .system { retireDiarization(.discontinuity) }
         guard var lane = lanes[source], lane.state != .closed else { return }
         let first = lane.state != .needsReplacement
         lane.state = .needsReplacement; lane.gapReason = reason; lane.generation = nil
@@ -311,6 +360,7 @@ actor LiveASROrchestrator {
                 case .packet(let samples, let start):
                     let native = try await session.append(samples: samples, startSample: start)
                     guard self.processed(scope, workID: workID, generation: generation!, end: start + Int64(samples.count), progress: native) else { return }
+                    offerDiarization(scope: scope, samples: samples, start: start)
                 case .barrier(let id, let barrier):
                     let result = try await session.finish(replacingDecoder: false)
                     guard self.commit(scope, workID: workID, generation: generation!, result: result, barrier: barrier) else { return }
@@ -380,7 +430,7 @@ actor LiveASROrchestrator {
                 var value = segment(words)
                 if (try? JSONEncoder().encode(value).count) ?? .max > 55000 { value = segment([]) }
                 guard value.isValid else { cut(scope.source,reason: .engineRestart); return false }
-                payload = .committed(value); lane.nextSegment += 1
+                payload = .committed(attachingDiarization(value, scope: scope)); lane.nextSegment += 1
             }
         }
         lane.settled = barrier.sampleEnd; lane.consumed = barrier.sampleEnd; lane.generation = nil
@@ -390,6 +440,7 @@ actor LiveASROrchestrator {
         return true
     }
     private func finishBarrier(_ source: LiveSource, id: UUID, barrier: LiveFinishBarrier) {
+        orderedDiarizationBarrier(barrier)
         lanes[source]?.barrier = nil; lanes[source]?.completedBarrier = (id,barrier)
         send(source,.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd))
         if barrier.kind != .utterance { lanes[source]?.partialTask?.cancel(); lanes[source]?.partialContinuation?.finish() }
@@ -656,6 +707,11 @@ actor LiveASROrchestrator {
                 }
                 try cursor.commit(range)
             }
+            guard currentConfiguredWork(scope, workID: workID) else { return }
+            // One original packet is already <=3200 samples. VAD fragmentation
+            // must not create multiple optional offers in the same mandatory
+            // work. Copy only its immutable PCM value, not the packet owner.
+            offerDiarization(scope: scope, samples: original.samples, start: original.start)
         } catch { failed(scope,workID: workID) }
     }
     private func configuredPrepareASR(_ scope: LiveLaneScope,workID: UUID,session: NemotronDecoderSession,
@@ -718,7 +774,9 @@ actor LiveASROrchestrator {
             var fresh = Lane(epoch: epoch); fresh.nativeScope = new
             fresh.sharedInput = try .init(scope: new,configuration: begin.configuration,vadOwnerID: runtime.ownerID)
             old.partialTask?.cancel(); old.partialContinuation?.finish()
-            lanes[epoch.source] = fresh; installations[epoch.source] = nil; kick(epoch.source)
+            lanes[epoch.source] = fresh; installations[epoch.source] = nil
+            replaceDiarizationEpoch(previous: wireOld, epoch: epoch, paused: old.state == .paused)
+            kick(epoch.source)
             return .accepted // No suspension after the final cancellation gate.
         } catch {
             if mutated {
@@ -734,5 +792,193 @@ actor LiveASROrchestrator {
             if installations[epoch.source]?.id == reservation.id { installations[epoch.source] = nil }
             return .rejected(closed ? .closed : .unavailable)
         }
+    }
+
+    var diarizationIsIdle: Bool {
+        guard let d = diarization else { return false }
+        return d.phase == .retired ? d.joined : (d.phase == .active || d.phase == .awaitingInput) && d.work == nil && d.frames == nil && works[.system] == nil && lanes[.system]?.commands.isEmpty == true
+    }
+    var diarizationIsPaused: Bool { diarization?.phase == .paused && diarization?.work == nil }
+
+    private func prepareDiarization(scope: LiveLaneScope, owner: UUID, configuration: LiveDiarizationConfiguration, requestID: UUID) -> LiveSessionReply {
+        if let current = diarization {
+            guard current.phase != .retired else { return .rejected(.closed) }
+            return current.requestedScope == scope && current.ownerID == owner && current.configuration == configuration && current.requestID == requestID ? .accepted : .rejected(.closed)
+        }
+        guard !closed, matches(scope), scope.source == .system else { return .rejected(.staleScope) }
+        guard configuration.isValid else { return .rejected(.invalidConfiguration) }
+        guard let loader = diarizationLoader, diarizationEmit != nil, let lane = lanes[.system],
+              !lane.closing, lane.state == .active || lane.state == .loading else { return .rejected(.unavailable) }
+        diarization = .init(ownerID: owner, requestID: requestID, requestedScope: scope, configuration: configuration, scope: scope)
+        guard emitDiarization(.preparing, scope: scope) else { retireDiarization(.output); return .accepted }
+        let task = Task {
+            do { try Task.checkCancellation(); return DiarizationOutcome.loaded(try await loader(configuration)) }
+            catch { return DiarizationOutcome.failed } // Cached tasks retain no arbitrary native Error.
+        }
+        installDiarizationWork(task); return .accepted
+    }
+    private func installDiarizationWork(_ task: Task<DiarizationOutcome, Never>) {
+        let id = UUID(); diarization?.work = .init(id: id, task: task)
+        Task { let result = await task.value; diarizationReturned(id, outcome: result) }
+    }
+    private func emitDiarization(_ payload: LiveDiarizationEvent.Payload, scope: LiveLaneScope) -> Bool {
+        guard let current = diarization, current.nextEvent < .max, let emit = diarizationEmit else { return false }
+        diarization?.nextEvent += 1
+        return emit(.init(scope: scope, ownerID: current.ownerID, sequence: current.nextEvent, payload: payload))
+    }
+    private func offerDiarization(scope: LiveLaneScope, samples: [Float], start: Int64) {
+        guard scope.source == .system, var current = diarization, current.phase != .retired else { return }
+        if current.phase == .preparing { return } // Never relabel earlier unavailable PCM.
+        guard current.scope == scope, current.phase == .awaitingInput || current.phase == .active,
+              current.work == nil, current.frames == nil else { retireDiarization(.capacity); return }
+        guard (1...3200).contains(samples.count), samples.allSatisfy(\.isFinite), start >= 0,
+              start <= Int64.max - Int64(samples.count), current.streamEnd <= Int64.max - 320 - Int64(samples.count),
+              current.streamEnd + Int64(samples.count) - current.frameEnd * 160 <= current.configuration.identity.preset.pendingSampleLimit else { retireDiarization(.capacity); return }
+        let end = start + Int64(samples.count)
+        let meeting: LiveMeetingRange?
+        if let origin = lanes[.system]?.epoch.meetingOriginNanoseconds {
+            let lo = start.multipliedReportingOverflow(by: 62_500), hi = end.multipliedReportingOverflow(by: 62_500)
+            let a = origin.addingReportingOverflow(lo.partialValue), b = origin.addingReportingOverflow(hi.partialValue)
+            guard !lo.overflow, !hi.overflow, !a.overflow, !b.overflow,
+                  current.lastMeetingEnd.map({ a.partialValue >= $0 }) ?? true else { retireDiarization(.discontinuity); return }
+            meeting = .init(startNanoseconds: a.partialValue, endNanoseconds: b.partialValue)
+        } else { meeting = nil }
+        let first = current.session == nil
+        if first {
+            guard let driver = current.driver else { retireDiarization(.failed); return }
+            do {
+                let session = try LiveDiarizationSession(scope: scope, preset: current.configuration.identity.preset,
+                    witness: DiarizationWitness(current.ownerID), sourceOrigin: start) { driver }
+                current.session = session; current.contextID = session.contextID; current.phase = .active
+                current.ranges[scope.epochID] = .init(start: start, end: start)
+            } catch { retireDiarization(.failed); return }
+            diarization = current
+            guard emitDiarization(.ready(originSample: start, contextID: current.contextID!), scope: scope) else { retireDiarization(.output); return }
+            current = diarization!
+        }
+        guard let session = current.session, var range = current.ranges[scope.epochID], range.end == start else { retireDiarization(.discontinuity); return }
+        range.end = end; current.ranges[scope.epochID] = range; current.streamEnd += Int64(samples.count)
+        if let meeting { current.lastMeetingEnd = meeting.endNanoseconds }; diarization = current
+        // Capture only this bounded slice; no OriginalPacket or mandatory receipt.
+        let task = Task {
+            do {
+                if first { _ = try await session.prepare() }
+                let token = try await session.admit(scope: scope, samples: samples, startSample: start, meeting: meeting)
+                return DiarizationOutcome.batch(try await session.complete(token), terminal: false)
+            } catch { return DiarizationOutcome.failed }
+        }
+        installDiarizationWork(task)
+    }
+    private func diarizationReturned(_ id: UUID, outcome: DiarizationOutcome) {
+        guard var current = diarization, current.work?.id == id, current.phase != .retired else { return }
+        current.work = nil
+        switch outcome {
+        case .loaded(let driver):
+            guard !closed, matches(current.scope), lanes[.system]?.state == .active || lanes[.system]?.state == .loading else { retireDiarization(.discontinuity); return }
+            current.driver = .init(driver); current.phase = .awaitingInput
+        case .batch(let batch, let terminal):
+            guard batch.token.contextID == current.contextID, batch.streamSampleEnd == current.streamEnd,
+                  batch.frames.count <= LiveDiarizationTimeline.maximumMappedFrames else { retireDiarization(.failed); return }
+            current.frameEnd = batch.nativeFrameEnd; current.terminalProduced = terminal
+            if !batch.frames.isEmpty { current.frames = batch.frames; current.frameCursor = 0 }
+        case .paused: current.phase = .paused
+        case .resumed:
+            guard let next = current.resumePending else { retireDiarization(.failed); return }
+            current.scope = next.1; current.ranges[next.1.epochID] = .init(start: 0, end: 0)
+            current.resumePending = nil; current.phase = .active
+        case .failed: retireDiarization(.failed); return
+        }
+        diarization = current; publishDiarization()
+    }
+    private func publishDiarization() {
+        guard var current = diarization, current.phase != .retired, current.work == nil, current.outstanding == nil else { return }
+        if let frames = current.frames {
+            guard current.confirmed else { return }
+            if current.frameCursor < frames.count {
+                let first = frames[current.frameCursor]; var rows: [LiveDiarizationRow] = []
+                do {
+                    while current.frameCursor < frames.count, rows.count < 2, frames[current.frameCursor].scope == first.scope {
+                        let frame = frames[current.frameCursor]
+                        guard frame.contextID == current.contextID, first.scope.identity == current.scope.identity, first.scope.source == .system,
+                              let admitted = current.ranges[first.scope.epochID], frame.samples.start >= admitted.start, frame.samples.end <= admitted.end else { throw LiveProtocolError.staleScope }
+                        rows.append(try .init(streamSamples: frame.streamSamples, samples: frame.samples, meeting: frame.meeting, activity: frame.activity))
+                        current.frameCursor += 1
+                    }
+                } catch { retireDiarization(.failed); return }
+                current.outstanding = current.nextEvent; diarization = current
+                guard emitDiarization(.posterior(contextID: current.contextID!, rows: rows), scope: first.scope) else { retireDiarization(.output); return }
+                return // Exact packet acknowledgement grants the next credit.
+            }
+            current.frames = nil; current.frameCursor = 0; diarization = current
+        }
+        advanceDiarizationControl()
+    }
+    private func orderedDiarizationBarrier(_ barrier: LiveFinishBarrier) {
+        guard barrier.scope.source == .system, let current = diarization, current.phase != .retired else { return }
+        if barrier.kind == .utterance { return }
+        guard current.scope == barrier.scope, current.session != nil,
+              current.ranges[barrier.scope.epochID]?.end == barrier.sampleEnd else { retireDiarization(.stopped); return }
+        if barrier.kind == .pause { diarization?.pausePending = true; diarization?.phase = .pausing }
+        else { diarization?.finishPending = true; diarization?.phase = .finishing }
+        advanceDiarizationControl()
+    }
+    private func replaceDiarizationEpoch(previous: LiveLaneScope, epoch: LiveEpoch, paused: Bool) {
+        guard previous.source == .system, let current = diarization, current.phase != .retired else { return }
+        guard paused, current.scope == previous, current.resumePending == nil, current.session != nil,
+              current.ranges[epoch.id] == nil, current.ranges.count < LiveDiarizationTimeline.maximumEpochs,
+              current.phase == .paused || current.phase == .pausing else { retireDiarization(.discontinuity); return }
+        diarization?.resumePending = (previous, .init(identity: previous.identity, source: .system, epochID: epoch.id))
+        advanceDiarizationControl()
+    }
+    private func advanceDiarizationControl() {
+        guard var current = diarization, current.phase != .retired, current.work == nil, current.frames == nil,
+              let session = current.session else { return }
+        if current.terminalProduced { retireDiarization(.finished); return }
+        let task: Task<DiarizationOutcome, Never>
+        if current.pausePending {
+            current.pausePending = false; let scope = current.scope
+            task = Task { do { _ = try await session.pause(scope: scope); return .paused } catch { return .failed } }
+        } else if let resume = current.resumePending, current.phase == .paused {
+            task = Task { do { _ = try await session.resume(previous: resume.0, next: resume.1); return .resumed } catch { return .failed } }
+        } else if current.finishPending {
+            current.finishPending = false; let scope = current.scope
+            task = Task { do { return .batch(try await session.finish(scope: scope), terminal: true) } catch { return .failed } }
+        } else { return }
+        diarization = current; installDiarizationWork(task)
+    }
+    private func attachingDiarization(_ segment: CommittedLiveSegment, scope: LiveLaneScope) -> CommittedLiveSegment {
+        guard let current = diarization, current.phase != .retired, current.confirmed, let context = current.contextID,
+              scope.identity == current.scope.identity, scope.source == .system, let samples = segment.range.samples,
+              let range = current.ranges[scope.epochID], samples.start >= range.start, samples.end <= range.end else { return segment }
+        return .init(id: segment.id, source: segment.source, range: segment.range, text: segment.text,
+                     words: segment.words, language: segment.language, diarizerContextID: context)
+    }
+    private func retireDiarization(_ reason: LiveDiarizationEvent.RetirementReason) {
+        guard var current = diarization, current.phase != .retired else { return }
+        current.phase = .retired; current.frames = nil; current.outstanding = nil; current.confirmed = false
+        current.work?.task.cancel(); diarization = current
+        let id = UUID(), work = current.work, session = current.session, driver = current.driver
+        let task = Task {
+            var returned: (any LiveDiarizationDriving)?
+            if let work, case .loaded(let actual) = await work.task.value { returned = actual }
+            if let session { await session.retire(); await session.joinRetirement() }
+            await driver?.shutdown(); await returned?.shutdown()
+            withExtendedLifetime(work) {}; withExtendedLifetime(session) {}; withExtendedLifetime(driver) {}; withExtendedLifetime(returned) {}
+        }
+        diarizationRetirement = (id, task, reason)
+        Task { await task.value; diarizationRetired(id, reason: reason) }
+    }
+    private func diarizationRetired(_ id: UUID, reason: LiveDiarizationEvent.RetirementReason) {
+        guard diarizationRetirement?.0 == id, var current = diarization else { return }
+        current.work = nil; current.driver = nil; current.session = nil; current.joined = true
+        current.pausePending = false; current.resumePending = nil; current.finishPending = false
+        diarization = current; diarizationRetirement = nil
+        _ = emitDiarization(.retired(contextID: current.contextID, receiptID: id, reason: reason), scope: current.scope)
+    }
+    func joinDiarizationRetirement() async {
+        if let operation = diarizationRetirement {
+            await operation.1.value
+            diarizationRetired(operation.0, reason: operation.2)
+        } // Exact id makes concurrent join/observer finalization idempotent.
     }
 }

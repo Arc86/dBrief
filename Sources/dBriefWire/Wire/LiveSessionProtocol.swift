@@ -96,7 +96,18 @@ public enum LiveSessionRequest: Codable, Sendable, Equatable {
     case begin(LiveSessionBegin), packet(LiveAudioPacket), barrier(LiveFinishBarrier)
     case cut(scope: LiveLaneScope, nextPacketSequence: UInt64, sampleEnd: Int64, reason: LiveGapReason)
     case replaceEpoch(identity: LiveSessionIdentity, oldEpochID: UUID, epoch: LiveEpoch)
+    case prepareDiarization(scope: LiveLaneScope, ownerID: UUID, configuration: LiveDiarizationConfiguration)
+    case acknowledgeDiarization(identity: LiveSessionIdentity, ownerID: UUID, contextID: UUID)
+    case acknowledgeDiarizationPosterior(identity: LiveSessionIdentity, ownerID: UUID, contextID: UUID, sequence: UInt64)
+    case retireDiarization(identity: LiveSessionIdentity, ownerID: UUID)
     case cancel(LiveSessionIdentity)
+    /// Closed independent-output inventory; never use mandatory reply capacity.
+    public var isOptionalDiarizationControl: Bool {
+        switch self {
+        case .prepareDiarization, .acknowledgeDiarization, .acknowledgeDiarizationPosterior, .retireDiarization: true
+        default: false
+        }
+    }
 }
 public enum LiveSessionReply: Codable, Sendable, Equatable { case accepted, rejected(LiveProtocolError) }
 
@@ -137,6 +148,7 @@ public struct LiveLaneEvent: Codable, Sendable, Equatable {
     public init(scope: LiveLaneScope, sequence: UInt64, payload: Payload) { self.scope = scope; self.sequence = sequence; self.payload = payload }
 }
 public enum LiveSessionEvent: Codable, Sendable, Equatable {
+    case diarization(LiveDiarizationEvent)
     case lane(LiveLaneEvent), finished(LiveSessionIdentity), failed(LiveSessionIdentity, LiveProtocolError)
 }
 public enum LiveSessionMessage: Codable, Sendable, Equatable { case reply(LiveSessionReply), event(LiveSessionEvent) }

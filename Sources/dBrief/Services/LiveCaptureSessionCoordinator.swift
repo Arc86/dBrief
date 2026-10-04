@@ -580,6 +580,7 @@ actor LiveCaptureSessionCoordinator {
         guard !terminal else { return }
         guard isValidOwner else { terminate(.stopped); return }
         switch event {
+        case .diarization: return // Pending reviewed app admission/store receiver.
         case .failed(let identity, _): if identity == input.identity { terminate(.unavailable) }
         case .finished(let identity):
             guard identity == input.identity else { return }

@@ -139,6 +139,9 @@ actor MLHostConnection {
     func sendLive(_ request: LiveSessionRequest) async throws -> LiveSessionReply {
         guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, process?.isRunning == true else { throw MLHostError.protocolViolation }
         if case .begin = request { throw MLHostError.protocolViolation }
+        // Closed until owned asset/profile/store admission is integrated. The
+        // current app cannot acknowledge/register an optional helper context.
+        if request.isOptionalDiarizationControl { throw LiveProtocolError.unavailable }
         guard pending.count < 128 else { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
         let id = UUID()
         let envelope = RequestEnvelope(id: id, request: .live(request))
@@ -444,13 +447,26 @@ actor MLHostConnection {
         // Serial consumer: chunks are ingested strictly in arrival order.
         ingestContinuation?.finish()
         let boundedTransport = role == .live || ordinaryTransportBounded
-        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: boundedTransport ? .bufferingOldest(8) : .unbounded)
+        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: role == .live ? .bufferingNewest(1) : boundedTransport ? .bufferingOldest(8) : .unbounded)
         self.ingestContinuation = continuation
         let ingestDelivery = boundedIngestDelivery, ordinary = role == .ordinary
+        let liveMailbox = role == .live ? LiveReadMailbox() : nil
+        let liveFilter = role == .live ? try LiveOutputReadFilter(stdoutPipe.fileHandleForReading) : nil
         ingestTask = Task { [weak self] in
+            defer { liveMailbox?.discardQueued() }
             for await data in stream {
-                if boundedTransport, ordinary { await ingestDelivery() }
-                await self?.ingest(data,from: proc)
+                if let liveMailbox {
+                    while !Task.isCancelled {
+                        var receipt = liveMailbox.take()
+                        guard receipt != nil else { break }
+                        await ingestDelivery()
+                        await self?.ingest(receipt!.data,from: proc)
+                        receipt = nil // Actual Data owner releases its private byte ticket.
+                    }
+                } else {
+                    if boundedTransport, ordinary { await ingestDelivery() }
+                    await self?.ingest(data,from: proc)
+                }
             }
         }
         if boundedTransport {
@@ -458,8 +474,22 @@ actor MLHostConnection {
             let live = role == .live
             stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self, continuation] handle in
                 do {
-                    guard let data = try LiveFrameReader.readChunk(from: handle) else { handle.readabilityHandler = nil; return }
-                    if case .dropped = continuation.yield(data), latch.claim() {
+                    let dropped: Bool
+                    if let liveFilter, let liveMailbox {
+                        let outcome = try liveFilter.read(from: handle) { data in
+                            guard liveMailbox.offer(data) else { return false }
+                            continuation.yield(Data()); return true
+                        }
+                        switch outcome {
+                        case .eof: handle.readabilityHandler = nil; liveMailbox.finish(); return
+                        case .idle, .delivered: return
+                        case .overflow: dropped = true
+                        }
+                    } else {
+                        guard let data = try LiveFrameReader.readChunk(from: handle) else { handle.readabilityHandler = nil; return }
+                        if case .dropped = continuation.yield(data) { dropped = true } else { dropped = false }
+                    }
+                    if dropped, latch.claim() {
                         continuation.finish(); Task {
                             if live { await self?.failLive(MLHostError.protocolViolation) }
                             else { await self?.failBoundedOrdinary(from: proc, error: ChatStreamEndError.limited) }
@@ -667,6 +697,7 @@ actor MLHostConnection {
 
     private func receiveLive(_ event: LiveSessionEvent) throws {
         guard let begin = liveBegin else { throw MLHostError.protocolViolation }
+        if case .diarization = event { return } // Never spend mandatory event capacity.
         // Check decoded size before any stream or pre-reply inbox can retain it.
         // One transient decoded frame is separately bounded by the wire limit.
         if let limit = liveEventLimits.accountedBytes {
@@ -675,6 +706,7 @@ actor MLHostConnection {
             }
         }
         switch event {
+        case .diarization: return
         case .lane(let lane):
             guard lane.scope.identity == begin.identity else { throw MLHostError.protocolViolation }
             if retiredEpochs.contains(lane.scope.epochID) { return }

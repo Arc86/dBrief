@@ -23,8 +23,8 @@ struct LiveDiarizationBatch: Sendable {
     let replay: Bool
 }
 
-/// Model-free lifecycle foundation. No production loader, wire admission, retained
-/// posterior window, acoustic qualification or app-pressure acknowledgement.
+/// Serial native lifecycle. The producer owns bounded wire admission/publication;
+/// acoustic qualification and app pressure admission remain separate.
 actor LiveDiarizationSession {
     enum Failure: Error, Equatable { case invalidConfiguration, invalidInput, staleScope, busy, inactive, capacity, failed }
     enum Phase: Sendable { case unprepared, preparing, active, paused, finished, retired }
@@ -69,9 +69,9 @@ actor LiveDiarizationSession {
     private var joined = false
     private var terminal: LiveDiarizationBatch?
 
-    init(scope: LiveLaneScope, preset: LiveDiarizationPreset, witness: any LiveDiarizationResourceWitness, factory: @escaping Factory) throws {
+    init(scope: LiveLaneScope, preset: LiveDiarizationPreset, witness: any LiveDiarizationResourceWitness, sourceOrigin: Int64 = 0, factory: @escaping Factory) throws {
         let context = UUID(); contextID = context
-        timeline = try .init(scope: scope, contextID: context, preset: preset)
+        timeline = try .init(scope: scope, contextID: context, preset: preset, sourceOrigin: sourceOrigin)
         self.witness = witness; self.factory = factory
     }
     func snapshot() -> Snapshot {

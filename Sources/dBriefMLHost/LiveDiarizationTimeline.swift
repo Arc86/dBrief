@@ -26,6 +26,7 @@ struct LiveDiarizationTimeline: Sendable {
     static let maximumMappedFrames = 2_048
     private struct Piece: Sendable {
         let scope: LiveLaneScope
+        let sourceStart: Int64
         let streamStart: Int64
         var count: Int64
         let meetingStart: Int64?
@@ -47,10 +48,10 @@ struct LiveDiarizationTimeline: Sendable {
     var pieceCount: Int { pieces.count }
     var pendingSamples: Int64 { max(0, streamEnd - frameEnd * 160) }
 
-    init(scope: LiveLaneScope, contextID: UUID, preset: LiveDiarizationPreset) throws {
-        guard scope.source.isCaptureSource else { throw LiveDiarizationSession.Failure.invalidConfiguration }
+    init(scope: LiveLaneScope, contextID: UUID, preset: LiveDiarizationPreset, sourceOrigin: Int64 = 0) throws {
+        guard scope.source.isCaptureSource, sourceOrigin >= 0, sourceOrigin <= Int64.max - 3_200 else { throw LiveDiarizationSession.Failure.invalidConfiguration }
         identity = scope.identity; source = scope.source; self.contextID = contextID; self.preset = preset
-        self.scope = scope; epochs = [scope.epochID]
+        self.scope = scope; epochs = [scope.epochID]; sourceEnd = sourceOrigin
     }
 
     mutating func resume(previous: LiveLaneScope, next: LiveLaneScope) throws {
@@ -78,7 +79,7 @@ struct LiveDiarizationTimeline: Sendable {
             pieces[pieces.count - 1].count += count
         } else {
             guard pieces.count < Self.maximumEpochs else { throw LiveDiarizationSession.Failure.capacity }
-            pieces.append(.init(scope: scope, streamStart: streamEnd, count: count, meetingStart: meeting?.startNanoseconds))
+            pieces.append(.init(scope: scope, sourceStart: start, streamStart: streamEnd, count: count, meetingStart: meeting?.startNanoseconds))
         }
         streamEnd = stream.partialValue; sourceEnd = end.partialValue
         if let meeting { lastKnownMeetingEnd = meeting.endNanoseconds }
@@ -118,7 +119,7 @@ struct LiveDiarizationTimeline: Sendable {
                             LiveMeetingRange(startNanoseconds: $0 + first * 62_500, endNanoseconds: $0 + last * 62_500)
                         }
                         rows.append(.init(scope: piece.scope, contextID: contextID, streamSamples: .init(start: lo, end: hi),
-                            samples: .init(start: first, end: last), meeting: meeting, activity: activity))
+                            samples: .init(start: piece.sourceStart + first, end: piece.sourceStart + last), meeting: meeting, activity: activity))
                     }
                     index += 1
                 }
@@ -134,11 +135,11 @@ struct LiveDiarizationTimeline: Sendable {
             throw LiveDiarizationSession.Failure.staleScope
         }
         guard segment.isValid, let range = segment.range.samples,
-              let piece = pieces.first(where: { $0.scope == scope }), range.end <= piece.count else { throw LiveDiarizationSession.Failure.invalidInput }
+              let piece = pieces.first(where: { $0.scope == scope }), range.start >= piece.sourceStart, range.end <= piece.sourceStart + piece.count else { throw LiveDiarizationSession.Failure.invalidInput }
         if let meeting = segment.range.meeting {
             guard let origin = piece.meetingStart,
-                  meeting.startNanoseconds == origin + range.start * 62_500,
-                  meeting.endNanoseconds == origin + range.end * 62_500 else { throw LiveDiarizationSession.Failure.invalidInput }
+                  meeting.startNanoseconds == origin + (range.start - piece.sourceStart) * 62_500,
+                  meeting.endNanoseconds == origin + (range.end - piece.sourceStart) * 62_500 else { throw LiveDiarizationSession.Failure.invalidInput }
         }
         return .init(id: segment.id, source: segment.source, range: segment.range, text: segment.text, words: segment.words,
             language: segment.language, diarizerContextID: contextID)

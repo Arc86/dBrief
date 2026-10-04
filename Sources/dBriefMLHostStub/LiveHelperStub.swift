@@ -24,11 +24,20 @@ struct LiveHelperStub {
         }
         guard CommandLine.arguments.contains("--nemotron-live"), case .live(let request) = envelope.request else { reply(.rejected(.unsupportedRole)); return }
         switch request {
+        case .prepareDiarization, .acknowledgeDiarization, .acknowledgeDiarizationPosterior, .retireDiarization:
+            reply(.rejected(.unavailable))
         case .begin(let begin):
             guard self.begin == nil, begin.isValid else { reply(.rejected(.invalidConfiguration)); return }
             guard begin.vad == nil else { reply(.rejected(.unavailable)); return }
             self.begin = begin; streamID = envelope.id
             reply(.accepted,terminal: false)
+            if mode == "live-optional-flood" {
+                // Test-only malformed optional JSON must be stripped before the
+                // mandatory raw handoff/decoder, even while ingest is held.
+                let frame = try! LiveOutputDemultiplexer.tag(Data(repeating: 0x42, count: 508))
+                for _ in 0..<512 { FileHandle.standardOutput.write(frame) }
+                if let flag = ProcessInfo.processInfo.environment["STUB_FLAG_1"] { try? Data().write(to: URL(fileURLWithPath: flag)) }
+            }
             if mode == "live-init-failure" { send(.init(id: envelope.id,channel: .live,event: .live(.event(.failed(begin.identity,.unavailable))))); return }
             if mode == "live-oversized" { FileHandle.standardOutput.write(Data([0,1,0,1])); return }
             for epoch in begin.epochs {
