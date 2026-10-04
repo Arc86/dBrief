@@ -61,6 +61,7 @@ final class LiveRecordingSessionRegistry {
         }
     }
     private var entries: [UUID: Entry] = [:]
+    private var terminationStarted = false
     private struct DeletionTicket {
         let entry: Entry?
         let writer: LiveSessionArtifactStore
@@ -159,6 +160,7 @@ final class LiveRecordingSessionRegistry {
         unavailableRecordings.insert(identity.recordingID)
     }
     private func register(_ identity: LiveSessionIdentity, native: Bool) throws -> Entry {
+        guard !terminationStarted else { throw LiveArtifactError.terminating }
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }
         guard !unavailableRecordings.contains(identity.recordingID) else { throw Failure.unavailable }
         if let entry = entries[identity.recordingID] {
@@ -203,12 +205,23 @@ final class LiveRecordingSessionRegistry {
         return entry
     }
 
+    /// Resident census includes originals hidden by a replacement phase. No
+    /// discovery or cold load is started; pending loads keep their actual work.
+    func freezeForTermination() -> (owners: [LiveRecordingArtifactOwner.TerminationTarget], loads: [Task<Entry?, any Error>]) {
+        terminationStarted = true
+        let pending = loads.values.compactMap(\.task)
+        for load in loads.values { load.validity.invalidate() }
+        let targets = entries.values.compactMap { $0.artifacts.freezeForTermination() }
+        return (targets, pending)
+    }
+
     func captureDidClose(_ identity: LiveSessionIdentity) throws { try owned(identity).closeCapture() }
     func install(_ coordinator: LiveCaptureSessionCoordinator, for identity: LiveSessionIdentity) throws { try owned(identity).install(coordinator) }
 
     /// Reserve and pin before the first await. This is replacement admission,
     /// never a deletion tombstone, and public resolution cannot bypass it.
     func beginReplacement(recordingID: UUID, audioURL: URL, attemptID: UUID? = nil, isRetention: Bool = false, originalAuthority: RecordingDeletionAuthority? = nil) throws -> Replacement {
+        guard !terminationStarted else { throw LiveArtifactError.terminating }
         guard !isKnownDeleted(recordingID: recordingID) else { throw LiveArtifactError.deleted }
         if let phase = replacements[recordingID] {
             guard phase.isRetention == isRetention, (isRetention || attemptID != nil), phase.attemptID == attemptID,
@@ -298,6 +311,7 @@ final class LiveRecordingSessionRegistry {
     }
 
     private func installReplacement(_ phase: Replacement) async throws -> Entry? {
+        guard !terminationStarted else { throw LiveArtifactError.terminating }
         try requireReplacement(phase)
         if phase.nonpersisting, let identity = phase.identity {
             guard entries[phase.recordingID] == nil else { throw Failure.identityConflict }
@@ -306,6 +320,7 @@ final class LiveRecordingSessionRegistry {
                 beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
             entry.configureNonpersistingFinalOnly(audioURL: phase.authority.audioURL, anchor: phase.finalAnchor)
             try await onHydration?(entry)
+            guard !terminationStarted else { throw LiveArtifactError.terminating }
             try requireReplacement(phase)
             entries[phase.recordingID] = entry; replacements[phase.recordingID] = nil
             return entry
@@ -576,6 +591,7 @@ final class LiveRecordingSessionRegistry {
     /// Nil means confirmed legacy only after complete safe discovery. Owned
     /// but missing/corrupt/deleted evidence never selects the legacy provider.
     func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false) async throws -> Entry? {
+        guard !terminationStarted else { throw LiveArtifactError.terminating }
         if let phase = replacements[recordingID], !forDeletion {
             if let audioURL, try RecordingDeletionAuthority.canonical(audioURL) != phase.authority.audioURL { throw LiveArtifactError.wrongOwner }
             if phase.isRetention { try await finishRetention(phase) }
@@ -585,6 +601,7 @@ final class LiveRecordingSessionRegistry {
     }
     private func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false, replacement: Replacement?) async throws -> Entry? {
         func requireAdmission() throws {
+            guard !terminationStarted else { throw LiveArtifactError.terminating }
             guard replacements[recordingID] == nil || replacements[recordingID] === replacement else { throw Failure.unavailable }
         }
         try requireAdmission()
@@ -623,6 +640,7 @@ final class LiveRecordingSessionRegistry {
                     guard owner?.identity == nil, owner?.revision == nil, owner?.bindingGeneration == nil else { throw Failure.unavailable }
                 }.value
                 try Task.checkCancellation()
+                try requireAdmission()
                 if let entry = entries[recordingID], entry.isValid { try validateAudioAssociation(entry, audioURL); return entry }
                 guard !owns(recordingID: recordingID), !retiredRecordings.contains(recordingID) else { throw Failure.unavailable }
             }

@@ -76,8 +76,11 @@ final class TranscriptChatStore {
 
     /// Flush every session's pending (debounced) save to disk. Called on app
     /// termination so an exchange sent within the debounce window isn't lost.
-    func flushAll() async {
+    func flushAll(includeRecordingOwned: Bool = true) async {
         for session in sessions.values {
+            // Normal Quit already bounded the recording-owned drain. A second
+            // cache flush must not rejoin a timed-out physical writer.
+            if !includeRecordingOwned, session.usesRecordingPersistence { continue }
             await session.flushPendingSave()
         }
     }

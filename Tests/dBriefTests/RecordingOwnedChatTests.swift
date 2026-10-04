@@ -5,6 +5,48 @@ import dBriefWire
 
 @MainActor @Suite("Recording-owned chat lifecycle", .serialized)
 struct RecordingOwnedChatTests {
+    @Test func quitFreezesAnInterruptedAnswerWithoutWaitingForItsHeldProducerReturn() async throws {
+        let returned = LiveArtifactGate(stage: .sourceChat)
+        try await withFixture(gates: []) { f in
+            f.cleanupGates.append(returned)
+            let service = f.service(returnGate: returned), send = f.send(service, "Question before Quit")
+            try await f.files.eventually { await MainActor.run { service.messages.last?.content == "Partial answer." } }
+            let basis = try #require(service.messages.last?.basis)
+            try f.registry.captureDidClose(f.files.identity)
+            #expect(await LiveArtifactTerminationDrain.run(registry: f.registry, deadline: .seconds(3)) == .complete)
+            try await returned.waitForArrival()
+            #expect(!service.isStreaming && !f.entry.artifacts.canEvict)
+            let saved = try await f.recover()
+            #expect(saved.chat?.messages.last?.outcome == .interrupted && saved.chat?.messages.last?.basis == basis)
+            let target = f.entry.artifacts.acceptedChatRevision
+            await returned.release(); _ = await send.value
+            try await f.files.eventually { await MainActor.run { f.entry.artifacts.canEvict } }
+            #expect(f.entry.artifacts.acceptedChatRevision == target)
+        }
+    }
+
+    @Test func quitCacheFlushSkipsHeldOwnedWriterAndStillSavesLegacyHistory() async throws {
+        let gate = LiveArtifactGate(stage: .sourceChat)
+        try await withFixture(gates: [gate]) { f in
+            let owned = f.service(), send = f.send(owned, "Owned question")
+            try await gate.waitForArrival()
+            let cache = TranscriptChatStore()
+            cache.set(owned, for: f.files.identity.recordingID, url: f.files.audio)
+            let legacyURL = f.files.root.appendingPathComponent("legacy.chat.json")
+            let legacy = f.legacyService()
+            legacy.enablePersistence(store: ChatStore(), url: legacyURL)
+            let legacySend = f.send(legacy, "Legacy pending history")
+            try await f.files.eventually { await MainActor.run { legacy.messages.last?.content == "Partial answer." } }
+            legacy.stopGenerating(); _ = await legacySend.value
+            cache.set(legacy, for: legacyURL)
+            await cache.flushAll(includeRecordingOwned: false)
+            #expect(try await ChatStore().load(from: legacyURL)?.messages.first?.content == "Legacy pending history")
+            #expect(!f.entry.artifacts.isDurable)
+            owned.stopGenerating(); _ = await send.value
+            await gate.release(); try await f.entry.artifacts.flush()
+        }
+    }
+
     @Test func fastSendWaitsForOriginalHistoryAndRestoresItsRevision() async throws {
         let gate = LiveArtifactGate(stage: .historyLoad)
         try await withFixture(gates: [gate]) { f in
@@ -533,6 +575,11 @@ struct RecordingOwnedChatTests {
                 beforeChatProducerReturn: { _ = try? await returnGate?.enter(.sourceChat) }),
             beforeStreamFailureHandling: { _ = try? await failureGate?.enter(.sourceChat) })
         service.enableRecordingPersistence(owner: entry.artifacts)
+        services.append(service); return service
+    }
+    func legacyService() -> TranscriptChatService {
+        let service = TranscriptChatService(transcriptText: "Legacy source", speakerLabels: [], appSettings: settings,
+            localPlugin: nil, aiService: AIService(session: session))
         services.append(service); return service
     }
     func startBoundedStream(returnGate: LiveArtifactGate) -> ChatStreamRun {

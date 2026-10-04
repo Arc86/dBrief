@@ -16,8 +16,11 @@ enum LiveArtifactStage: Sendable {
 enum LiveArtifactError: Error, Equatable, LocalizedError {
     case staleRevision, revisionConflict, bindingPending, deleted, queueFull, artifactTooLarge
     case wrongOwner, unsupportedVersion, corruptArtifact, unsafePath, verificationFailed, missingEvidence
+    case terminating, terminationTimedOut
     var errorDescription: String? {
         switch self {
+        case .terminating: "dBrief is closing; live history is waiting for storage."
+        case .terminationTimedOut: "Live history could not finish saving before quit. The last saved checkpoint has been kept."
         case .staleRevision: "A newer live history revision has already been accepted."
         case .revisionConflict: "The saved history differs at the same revision. Both copies have been kept."
         case .bindingPending: "Live history binding needs a retry. New history remains in memory."

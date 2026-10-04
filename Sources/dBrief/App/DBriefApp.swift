@@ -223,10 +223,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Close active audio writers first. This makes the recovery tracks
             // readable even if a later shutdown task stalls or is interrupted.
-            await self.recordingManager?.prepareForTermination()
+            _ = await self.recordingManager?.prepareForQuit()
             // Flush any debounced chat save so an exchange sent moments
             // before quit survives — the _exit() below skips normal teardown.
-            await self.transcriptChatStore?.flushAll()
+            await self.transcriptChatStore?.flushAll(includeRecordingOwned: false)
             await self.recordingManager?.forceReleaseGPU()
             // Bypasses C++ static destructors (`__cxa_finalize_ranges`) which
             // deadlock in `mlx::core::scheduler::Scheduler::~Scheduler()`.

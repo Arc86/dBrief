@@ -13,6 +13,7 @@ final class RecordingManager {
     let appState: AppState
     let appSettings: AppSettings
     @ObservationIgnored private lazy var captureCoordinator = makeCaptureCoordinator()
+    @ObservationIgnored private var quitPreparation: Task<LiveArtifactTerminationResult, Never>?
 
     private func makeCaptureCoordinator() -> CaptureCoordinator {
         let factory = liveFactoryOverride ?? LiveRecordingFactory(registry: appState.liveRecordingSessions,admission: liveJobAdmission,
@@ -475,6 +476,22 @@ final class RecordingManager {
     func prepareForTermination() async {
         cancelPostRecordingAutomation()
         await captureCoordinator.stop(terminating: true)
+    }
+
+    /// Normal Quit closes hardware first, then drains the exact admitted live
+    /// history independently of windows. Reentry shares one deadline/target.
+    func prepareForQuit(artifactDeadline: Duration = .seconds(3)) async -> LiveArtifactTerminationResult {
+        if let quitPreparation { return await quitPreparation.value }
+        let task = Task { @MainActor in
+            await self.prepareForTermination()
+            let result = await LiveArtifactTerminationDrain.run(registry: self.appState.liveRecordingSessions, deadline: artifactDeadline)
+            if result != .complete {
+                self.reportLiveArtifactFailure("Quit could not finish saving live history. The last saved checkpoint has been kept.")
+            }
+            return result
+        }
+        quitPreparation = task
+        return await task.value
     }
 
     func startRecording(associatedApp: String? = nil, callBundleId: String? = nil) async throws {

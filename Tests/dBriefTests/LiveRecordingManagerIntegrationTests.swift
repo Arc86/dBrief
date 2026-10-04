@@ -19,6 +19,7 @@ private actor ReprocessingHydrationFault {
     var input: LiveSessionBegin?
     var liveSink: (@Sendable (CaptureLivePreview.Event) -> Void)?
     var previewStops = 0
+    var hardwareStops = 0
     private var createWaiter: CheckedContinuation<Void,Never>?
     func holdCreate() async { createEntered = true; await withCheckedContinuation { createWaiter = $0 } }
     func releaseCreate() { createWaiter?.resume(); createWaiter = nil }
@@ -41,7 +42,7 @@ private actor ReprocessingHydrationFault {
          stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
          deletionFiles: ProcessingPipeline.DeletionFiles = .init(),
          richStore: TranscriptStore = .init(), payloadBudget: LiveRecordingPayloadBudget? = nil,
-         artifactPersistence: Bool = true, queueFiles: QueueScheduleStore.Files = .init(),
+         artifactPersistence: Bool = true, qualifiedLiveSelection: Bool = true, queueFiles: QueueScheduleStore.Files = .init(),
          reprocessingStage: @escaping @Sendable (ReprocessingStore.PreparationStage) async -> Void = { _ in }) throws {
         files = try ASRAssetsFixture()
         privacyStore = PrivacyReceiptStore(gapDirectoryURL: files.root.appendingPathComponent("gaps"),
@@ -104,7 +105,7 @@ private actor ReprocessingHydrationFault {
         let (mic,micOutput) = AsyncStream<LiveAudioBuffer>.makeStream(), (system,systemOutput) = AsyncStream<LiveAudioBuffer>.makeStream()
         let hardware = CaptureCoordinator.Hardware(start: { request,_ in
             probe.request = request; return .init(mic: mic,system: system)
-        },stop: { micOutput.finish(); systemOutput.finish() },snapshot: {
+        },stop: { probe.hardwareStops += 1; micOutput.finish(); systemOutput.finish() },snapshot: {
             .init(tracks: capturedTrack.map { .init(systemURL: nil, micURL: $0) }, duration: capturedTrack == nil ? 0 : 1, microphoneEnabled: true)
         },
             pause: {},resume: {},switchInputDevice: { _ in },permissions: .init(microphone: { true },systemAudio: { false }))
@@ -134,7 +135,8 @@ private actor ReprocessingHydrationFault {
                     stop: { await MainActor.run { probe.previewStops += 1 } })
             }), mlHost: ordinary,
             liveSelectionProvider: { language,chunk,sources in
-                .init(profileID: "fixture",hardware: "fixture",sourceDirectory: files.source,identity: ASRAssetsFixture.identity(),
+                guard qualifiedLiveSelection else { return nil }
+                return .init(profileID: "fixture",hardware: "fixture",sourceDirectory: files.source,identity: ASRAssetsFixture.identity(),
                     language: language,chunkMs: chunk,sources: sources,captureQualified: true)
             })
     }
@@ -184,6 +186,236 @@ private actor ReprocessingHydrationFault {
         let end = ContinuousClock.now.advanced(by: TestTiming.asyncDeadline)
         while ContinuousClock.now < end { if await condition() { return true }; try? await Task.sleep(for: .milliseconds(2)) }
         return await condition()
+    }
+
+    private func startForQuit(_ f: LiveManagerFixture) async throws -> LiveRecordingSessionRegistry.Entry {
+        let start = Task { try await f.manager.startRecording() }
+        try #require(await eventually { f.probe.createEntered })
+        f.probe.releaseCreate(); try await start.value
+        let recording = try #require(f.state.currentRecording)
+        return try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+    }
+
+    @Test func normalQuitWithPersistenceDisabledStartsNoArtifactWriterAndBarsAnotherCapture() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let start = Task { try await f.manager.startRecording() }
+            try #require(await eventually { f.probe.createEntered }); f.probe.releaseCreate(); try await start.value
+            #expect(await f.manager.prepareForQuit() == .complete && f.probe.hardwareStops == 1)
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await #expect(throws: (any Error).self) { try await f.manager.startRecording() }
+            #expect(f.probe.hardwareStops == 1)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func normalQuitReportsAnAdmittedBindFailureAndPreservesTheOriginalFilesForColdRecovery() async throws {
+        let gate = LiveArtifactGate(stage: .journalPrepared), fault = LiveArtifactFault(stage: .journalPrepared)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await gate.enter($0); try await fault.check($0) })
+        var quit: Task<LiveArtifactTerminationResult, Never>?
+        do {
+            let entry = try await startForQuit(f)
+            try #require(await eventually { f.probe.liveSink != nil })
+            f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Original recoverable evidence")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.stopRecording(); await f.manager.skipProcessing()
+            let audio = try #require(entry.artifacts.admittedAudioURL)
+            let audioBytes = try Data(contentsOf: audio)
+            try await gate.waitForArrival()
+            let operation = Task { await f.manager.prepareForQuit() }; quit = operation
+            for _ in 0..<20 { await Task.yield() }
+            await gate.release()
+            #expect(await operation.value == .failed && !entry.artifacts.isDurable && entry.artifacts.failure != nil)
+            #expect(try Data(contentsOf: audio) == audioBytes)
+            let saved = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            // journalPrepared is before the journal's durable write: the
+            // injected failure must preserve an unbound recoverable source.
+            #expect(saved.appTranscript?.legacy?.first?.text == "Original recoverable evidence" && saved.audioURL == nil)
+            try entry.artifacts.retry(); try await entry.artifacts.flush()
+            let retried = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(retried.audioURL == audio.standardizedFileURL && retried.appTranscript?.legacy == saved.appTranscript?.legacy)
+            await f.clean()
+        } catch { await gate.release(); _ = await quit?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func normalQuitJoinsTheExactNoWindowClosedCheckpointAfterHardwareStop(native: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript)
+        let f = try LiveManagerFixture(engine: native ? .nemotron : .appleSpeech, stage: { try await gate.enter($0) })
+        var quit: Task<LiveArtifactTerminationResult, Never>?
+        do {
+            let entry = try await startForQuit(f)
+            if !native {
+                try #require(await eventually { f.probe.liveSink != nil })
+                f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "No window owns this checkpoint")]))
+                try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            }
+            var returned = false
+            let operation = Task { let result = await f.manager.prepareForQuit(); returned = true; return result }; quit = operation
+            try #require(await eventually { f.state.recordingState == .idle })
+            try await gate.waitForArrival()
+            for _ in 0..<20 { await Task.yield() }
+            #expect(f.probe.hardwareStops == 1 && entry.captureClosed)
+            #expect(!returned && !entry.artifacts.isDurable)
+            let duplicate = Task { await f.manager.prepareForQuit(artifactDeadline: .milliseconds(1)) }
+            for _ in 0..<20 { await Task.yield() }
+            #expect(!returned)
+            await gate.release()
+            let result = await operation.value, joined = await duplicate.value
+            #expect(result == .complete && joined == .complete)
+            #expect(entry.artifacts.isDurable)
+            let saved = try #require(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().appTranscript)
+            #expect(saved.captureClosed && saved.revision == entry.artifacts.durableRevision)
+            if native { #expect(saved.native == (await entry.store.checkpoint())) }
+            else { #expect(saved.legacy?.first?.text == "No window owns this checkpoint") }
+            await f.clean()
+        } catch { await gate.release(); _ = await quit?.value; await f.clean(); throw error }
+    }
+
+    @Test func normalQuitJoinsAnAdmittedNoWindowBindAndClearWithoutChangingFrozenAnswerBasis() async throws {
+        let gate = LiveArtifactGate(stage: .journalPrepared)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await gate.enter($0) })
+        var quit: Task<LiveArtifactTerminationResult, Never>?
+        do {
+            let entry = try await startForQuit(f)
+            try #require(await eventually { f.probe.liveSink != nil })
+            f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Exact original evidence")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.stopRecording()
+            _ = try await entry.artifacts.loadChat()
+            try entry.artifacts.saveChat(.init(messages: [.init(role: .user, content: "Before Clear")]), urgent: true)
+            try entry.artifacts.clearChat()
+            let answerID = UUID()
+            let context = try TranscriptContextBuilder.build(snapshot: entry.artifacts.legacyContext(),
+                route: .init(engine: "remoteEndpoint", endpointID: nil, provider: "fixture", origin: nil, model: "fixture"),
+                budget: .init(contextTokens: 8_192, outputTokens: 512, templateReserve: 256),
+                language: .english, question: "What was said?", history: [], answerID: answerID)
+            let answer = ChatMessage(id: answerID, role: .assistant, content: "Exact answer", basis: context.basis, outcome: .completed)
+            try entry.artifacts.saveChat(.init(messages: [answer]), urgent: true)
+            let recording = try #require(f.state.currentRecording)
+            await f.manager.skipProcessing()
+            let audio = try #require(recording.finalizedAudioURL)
+            try await gate.waitForArrival()
+            var returned = false
+            let operation = Task { let result = await f.manager.prepareForQuit(); returned = true; return result }; quit = operation
+            for _ in 0..<50 { await Task.yield() }
+            #expect(!returned && !entry.artifacts.isDurable)
+            await gate.release()
+            #expect(await operation.value == .complete && entry.artifacts.isDurable)
+            let saved = try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(saved.audioURL == audio.standardizedFileURL && saved.appTranscript?.captureClosed == true)
+            #expect(saved.chat?.messages == [answer] && saved.chat?.revision == entry.artifacts.acceptedChatRevision)
+            #expect(saved.chat?.messages.first?.basis == context.basis)
+            await f.clean()
+        } catch { await gate.release(); _ = await quit?.value; await f.clean(); throw error }
+    }
+
+    @Test func normalQuitTimesOutWithoutClearingDirtyStateOrExtendingItsTarget() async throws {
+        let gate = LiveArtifactGate(stage: .sourceTranscript)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: { try await gate.enter($0) })
+        do {
+            let entry = try await startForQuit(f)
+            _ = try await entry.artifacts.loadChat()
+            let result = await f.manager.prepareForQuit(artifactDeadline: .milliseconds(100))
+            try await gate.waitForArrival()
+            #expect(result == .timedOut && f.probe.hardwareStops == 1)
+            #expect(!entry.artifacts.isDurable && entry.artifacts.failure != nil)
+            let frozenRevision = entry.artifacts.acceptedRevision, frozenChat = entry.artifacts.acceptedChatRevision
+            let durable = entry.artifacts.durableRevision
+            #expect(f.state.durabilityNotice != nil)
+            #expect(f.state.liveRecordingSessions.reservedPayloadBytes >= LiveRecordingArtifactOwner.reservationBytes)
+            #expect(throws: (any Error).self) { try entry.artifacts.saveChat(.init(messages: [.init(role: .user, content: "Late")]), urgent: true) }
+            #expect(throws: (any Error).self) { try entry.artifacts.clearChat() }
+            #expect(throws: (any Error).self) { try entry.artifacts.bind(to: f.files.root.appendingPathComponent("late.m4a")) }
+            #expect(await f.manager.prepareForQuit() == .timedOut)
+            #expect(entry.artifacts.acceptedRevision == frozenRevision && entry.artifacts.acceptedChatRevision == frozenChat)
+            #expect(entry.artifacts.durableRevision == durable)
+            await gate.release(); await entry.artifacts.waitForSubmittedWrites()
+            #expect(entry.artifacts.failure != nil && !entry.artifacts.isDurable)
+            try entry.artifacts.retry(); try await entry.artifacts.flush()
+            #expect(entry.artifacts.isDurable && entry.artifacts.acceptedRevision == frozenRevision)
+            await f.clean()
+        } catch { await gate.release(); await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func normalQuitAdoptsTheExactAlreadyAdmittedInitialHistoryLoad(fail: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .historyLoad), fault = LiveArtifactFault(stage: .historyLoad)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: {
+            try await gate.enter($0)
+            if fail { try await fault.check($0) }
+        })
+        var load: Task<ChatHistory?, any Error>?, quit: Task<LiveArtifactTerminationResult, Never>?
+        do {
+            let entry = try await startForQuit(f)
+            let original = ChatMessage(role: .assistant, content: "Original saved answer", outcome: .completed)
+            try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions"))
+                .saveChat(.init(messages: [original]), revision: 7)
+            let loading = Task { try await entry.artifacts.loadChat() }; load = loading
+            try await gate.waitForArrival()
+            var returned = false
+            let operation = Task { let result = await f.manager.prepareForQuit(); returned = true; return result }; quit = operation
+            try #require(await eventually { f.state.recordingState == .idle })
+            for _ in 0..<20 { await Task.yield() }
+            #expect(!returned)
+            await gate.release()
+            let result = await operation.value
+            if fail {
+                #expect(result == .failed && !entry.artifacts.isDurable && entry.artifacts.failure != nil)
+                _ = try? await loading.value
+            } else {
+                #expect(result == .complete && entry.artifacts.isDurable && entry.artifacts.chatReady)
+                #expect(try await loading.value?.messages == [original])
+                #expect(entry.artifacts.acceptedChatRevision == 7 && entry.artifacts.durableChatRevision == 7)
+            }
+            let saved = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(saved.chat?.revision == 7 && saved.chat?.messages == [original])
+            await f.clean()
+        } catch { await gate.release(); _ = try? await load?.value; _ = await quit?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func normalQuitCannotCallAnOpenNativeStoreDurableOrAcceptItsLateClosureRevision(closeBeforeReturn: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .ownerHydration), writeGate = LiveArtifactGate(stage: .sourceTranscript)
+        let f = try LiveManagerFixture(stage: { stage in if closeBeforeReturn { try await writeGate.enter(stage) } }, qualifiedLiveSelection: false)
+        var publication: Task<LiveStoreAdmission, Never>?, quit: Task<LiveArtifactTerminationResult, Never>?
+        do {
+            let entry = try await startForQuit(f)
+            #expect(!(await entry.store.projection().isClosed))
+            // Inject a terminal publisher held past hardware closure. This is
+            // an actual manager/store seam, not native/device qualification.
+            let closing = Task { try? await gate.enter(.ownerHydration); return await entry.store.close(owner: entry.identity) }; publication = closing
+            try await gate.waitForArrival()
+            if closeBeforeReturn { try await writeGate.waitForArrival() }
+            var returned = false
+            let operation = Task { let result = await f.manager.prepareForQuit(); returned = true; return result }; quit = operation
+            try #require(await eventually { f.state.recordingState == .idle })
+            // Observe the real admission seal while the earlier writer is
+            // held, rather than inferring census completion from a sleep.
+            try #require(await eventually {
+                do { let request = try entry.artifacts.beginChatRequest(); request.release(); return false }
+                catch LiveArtifactError.terminating { return true }
+                catch { return false }
+            })
+            let frozen = entry.artifacts.acceptedRevision
+            #expect(f.probe.hardwareStops == 1 && entry.captureClosed)
+            if closeBeforeReturn {
+                #expect(!returned && !entry.artifacts.isDurable)
+                await gate.release(); #expect(await closing.value == .accepted)
+                #expect(entry.artifacts.acceptedRevision == frozen)
+                await writeGate.release()
+            }
+            #expect(await operation.value == .failed && !entry.artifacts.isDurable && entry.artifacts.failure != nil)
+            let saved = try #require(try await LiveSessionArtifactStore(identity: entry.identity,
+                rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover().appTranscript)
+            #expect(saved.native != nil)
+            if !closeBeforeReturn {
+                #expect(!saved.captureClosed)
+                await gate.release(); #expect(await closing.value == .accepted)
+            }
+            for _ in 0..<50 { await Task.yield() }
+            #expect(entry.artifacts.acceptedRevision == frozen && !entry.artifacts.isDurable && entry.artifacts.failure != nil)
+            await f.clean()
+        } catch { await gate.release(); await writeGate.release(); _ = await publication?.value; _ = await quit?.value; await f.clean(); throw error }
     }
 
     private func prepareForDeletion(_ f: LiveManagerFixture, bound: Bool) async throws -> (Recording, LiveRecordingSessionRegistry.Entry, URL, URL) {

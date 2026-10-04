@@ -15,6 +15,9 @@ actor LiveTranscriptStore {
     private final class CaptureBinding: @unchecked Sendable {
         private let lock = NSLock()
         private var owner: UUID?
+        private var closed = false
+        var isClosed: Bool { lock.withLock { closed } }
+        func recordClosure() { lock.withLock { closed = true } }
         func bind(_ value: UUID, accepting: () -> Bool) -> Bool {
             lock.withLock {
                 guard owner == nil else { return owner == value }
@@ -25,6 +28,9 @@ actor LiveTranscriptStore {
         func owns(_ value: UUID) -> Bool { lock.withLock { owner == value } }
     }
     private nonisolated let captureBinding = CaptureBinding()
+    /// Constant-size closure truth for a synchronous lifecycle census. This
+    /// is published only by actual closed mutations or readonly restoration.
+    nonisolated var captureIsClosed: Bool { captureBinding.isClosed }
     /// One core can publish/retire this capture. Binding precedes async startup,
     /// even when a second factory supplied another ingress/preparation object.
     nonisolated func bindCaptureOwner(_ owner: UUID, accepting: () -> Bool) -> Bool {
@@ -113,6 +119,7 @@ actor LiveTranscriptStore {
         annotations = Dictionary(uniqueKeysWithValues: checkpoint.annotations.map { (.init(segment: $0.segmentID, word: $0.wordIndex), $0) })
         attributionCoverage = checkpoint.attributionCoverage
         finalPublication = checkpoint.finalPublication; retiredPublications = Set(checkpoint.retiredPublicationIDs)
+        captureBinding.recordClosure()
     }
 
     /// Charge new retained values before their mutation. The conservative
@@ -167,6 +174,7 @@ actor LiveTranscriptStore {
     private func mutate(_ body: () -> LiveStoreAdmission) -> LiveStoreAdmission {
         let before = revision
         let result = (try? validity.withValidResult(body)) ?? .rejected(.closed)
+        if isClosed { captureBinding.recordClosure() }
         if revision != before { for observer in observers.values { observer.yield(revision) } }
         return result
     }
