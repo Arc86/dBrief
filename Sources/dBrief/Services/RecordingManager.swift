@@ -111,6 +111,7 @@ final class RecordingManager {
         let requestedAudioURL: URL
         var prepared: ProcessingPipeline.FileDeletionTicket?
         var destructiveStarted = false
+        var retention = false
         init(frozen: ProcessingPipeline.FileDeletionTicket, store: PrivacyReceiptStore,
              owner: LiveRecordingSessionRegistry.Entry?, maintenance: LiveRecordingPayloadBudget.Lease?, requestedAudioURL: URL) {
             self.frozen = frozen; self.store = store; self.owner = owner; pin = owner?.artifacts.pin(); self.maintenance = maintenance
@@ -3599,27 +3600,198 @@ final class RecordingManager {
     /// Serializes retention with capture, processing, delivery review, and queue
     /// mutations. Never delete inputs while an async processor is reading them.
     func runRetentionCleanup(category: RetentionCategory, days: Int, folders: [URL]) async throws -> RetentionCleanupResult {
-        await refreshReprocessingAttempts()
-        guard reprocessingRecoveryReady, reprocessingAttempts.isEmpty, !reprocessingAdmissionBusy else {
-            throw ReprocessingError.pendingAttempt
-        }
+        guard days >= 0 else { return .init() }
         guard !captureCoordinator.isBusy, appState.isIdle, !appState.showPostRecordingSheet, !postRecordingAction.isBusy,
               !queueEnqueueInProgress, appState.processingJob == nil,
               !recoveryMaintenanceInProgress, !processingCancellationInProgress, !queueMutationInProgress, !reviewingIntegrationDeliveries else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording and processing to finish, then retry cleanup."])
         }
         recoveryMaintenanceInProgress = true
-        defer { recoveryMaintenanceInProgress = false }
+        defer { recoveryMaintenanceInProgress = false; RecordingLibraryChange.notify() }
+        let registry = appState.liveRecordingSessions
+        let inspection = try registry.reserveReprocessingInspection()
+        defer { withExtendedLifetime(inspection) {} }
+        // Establish both finite output ownership and managed namespaces before
+        // recovery reconciliation can mutate a snapshot or metadata sidecar.
+        let (timestamp, ownership) = try await processingPipeline.retentionOwnership(folders: folders)
+        try await processingPipeline.validateRetentionFolders(configuredQueueFolders)
         let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)
-        let result = try await processingPipeline.cleanupRetention(category: category, days: days,
-            folders: folders, lifecycle: lifecycle)
-        try await reprocessingStore.purgeCompletedForMissingAudio()
-        if category == .transcripts {
-            let cutoff = Date().addingTimeInterval(-Double(max(0, days)) * 86_400)
-            try await reprocessingStore.purgeCompletedTranscriptHistory(olderThan: cutoff, in: folders)
+        try await deletionPrivacyStore.preflightRetention()
+        let pending = try await lifecycle.pendingRetentionBases()
+        try await registry.discover(refresh: true)
+        let attempts = try await reprocessingStore.discoverForRetention()
+        guard reprocessingRecoveryReady, attempts.allSatisfy({ $0.status == .completed }), !reprocessingAdmissionBusy else { throw ReprocessingError.pendingAttempt }
+        let cutoff = timestamp.addingTimeInterval(-Double(days) * 86_400)
+        let queueBases = try await processingPipeline.retentionQueueBases(folders: folders)
+        let blocked = pending.union(queueBases)
+        var protected = ownership.opaqueLiveBases.union(blocked), deferred = blocked.union(ownership.opaqueLiveBases), result = RetentionCleanupResult()
+        var associations: [UUID: URL] = [:]
+        for (audio, id) in ownership.recordingIDs {
+            guard associations[id] == nil || associations[id] == audio else { throw LiveArtifactError.wrongOwner }
+            associations[id] = audio
         }
-        await refreshWorkQueue()
+        for hint in registry.retentionHints {
+            guard let reference = hint.audioURL ?? associations[hint.identity.recordingID] else { continue }
+            let audio = try RecordingDeletionAuthority.canonical(reference)
+            let base = audio.deletingPathExtension().path
+            let deletedRetry = hint.deleted && category == .recordings && folders.contains {
+                audio.path.hasPrefix(RetentionOwnership.canonicalFolder($0).path + "/")
+            }
+            // Missing metadata/audio cannot turn a managed hint into permission
+            // to purge its private completed backups.
+            guard deletedRetry || ownership.audio.contains(audio) || ownership.recordingIDs[audio] == hint.identity.recordingID else { protected.insert(base); deferred.insert(base); continue }
+            guard ownership.recordingIDs[audio] == nil || ownership.recordingIDs[audio] == hint.identity.recordingID else { throw LiveArtifactError.wrongOwner }
+            protected.insert(base)
+            if RetentionCleanup.isProtectedByQueue(audio, queuedBases: blocked) { deferred.insert(base); continue }
+            let changed: Bool
+            if category == .transcripts {
+                if hint.deleted { deferred.insert(base); continue }
+                changed = try await expireLiveTranscriptHistory(hint.identity.recordingID, audio: audio, cutoff: cutoff, ownership: ownership)
+            } else {
+                changed = try await expireLiveRecording(hint.identity.recordingID, audio: audio, cutoff: cutoff, ownership: ownership,
+                    deleted: hint.deleted, lifecycle: lifecycle, result: &result)
+            }
+            if !changed { deferred.insert(base) }
+            else if category == .transcripts { result.historiesRetired += 1; deferred.remove(base) }
+        }
+        let conventional = try await processingPipeline.cleanupRetention(category: category, days: days,
+            folders: folders, lifecycle: lifecycle, store: deletionPrivacyStore, protectedBases: protected)
+        result.filesDeleted += conventional.filesDeleted; result.bytesFreed += conventional.bytesFreed
+        result.privacyCleanupFailures += conventional.privacyCleanupFailures
+        try await reprocessingStore.purgeCompletedForMissingAudio(protectedBases: deferred, bounded: true)
+        if category == .transcripts {
+            // Opaque/unknown bases and every deferred managed owner keep their
+            // private completed backups as well as their canonical files.
+            try await reprocessingStore.purgeCompletedTranscriptHistory(olderThan: cutoff, in: folders,
+                protectedBases: deferred, bounded: true)
+        }
+        await refreshWorkQueue(boundedRetention: true)
         return result
+    }
+
+    private func expireLiveTranscriptHistory(_ id: UUID, audio: URL, cutoff: Date,
+                                             ownership: RetentionOwnership) async throws -> Bool {
+        let registry = appState.liveRecordingSessions
+        let authority = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: id)
+        guard authority.audio.stamp != nil, let phase = try registry.beginRetention(recordingID: id, authority: authority) else { return false }
+        if phase.retentionCommitted { try await registry.finishRetention(phase); return true }
+        do {
+            guard let owner = try await registry.resolveForReplacement(phase), owner.artifacts.persistenceStarted else {
+                registry.abandonReplacement(phase); return false
+            }
+            try await owner.artifacts.flushAdmittedWrites()
+            var items: [RecordingDeletionAuthority.Item] = []
+            for url in ownership.artifacts.sorted(by: { $0.path < $1.path }) {
+                guard ownership.owners[url] == [audio], RetentionCleanup.matches(url, category: .transcripts),
+                      ![".chat.json", ".live-transcript.json"].contains(where: { url.lastPathComponent.hasSuffix($0) }),
+                      RetentionOwnership.isRegularUnlinked(url),
+                      let created = try url.resourceValues(forKeys: [.creationDateKey]).creationDate, created < cutoff else { continue }
+                items.append(try .init(url))
+            }
+            // A proof may retire with its own selected dependencies. Preserve it
+            // while any newer, shared or out-of-scope dependency survives.
+            var selected = Set(items.map(\.url))
+            var changed = true
+            while changed {
+                changed = false
+                for item in items where selected.contains(item.url) {
+                    if ownership.dependencies[item.url]?.contains(where: {
+                        !selected.contains($0) && FileManager.default.fileExists(atPath: $0.path)
+                    }) == true { selected.remove(item.url); changed = true }
+                }
+            }
+            items.removeAll { !selected.contains($0.url) }
+            items.sort { lhs, rhs in
+                if (lhs.url.pathExtension == "md") != (rhs.url.pathExtension == "md") { return lhs.url.pathExtension == "md" }
+                return lhs.url.path < rhs.url.path
+            }
+            guard items.count <= 128 else { throw LiveArtifactError.artifactTooLarge }
+            let linked = items.first(where: { $0.url.pathExtension.lowercased() == "md" })?.url
+            guard let receipt = try await owner.artifacts.writer.commitRetention(olderThan: cutoff, authority: phase.authority,
+                conventional: items, linkedMarkdown: linked) else { registry.abandonReplacement(phase); return false }
+            try registry.adoptRetention(phase, receipt: receipt, writer: owner.artifacts.writer)
+            try await registry.finishRetention(phase)
+            return true
+        } catch { registry.abandonReplacement(phase); throw error }
+    }
+
+    private func expireLiveRecording(_ id: UUID, audio: URL, cutoff: Date, ownership: RetentionOwnership,
+                                     deleted: Bool, lifecycle: RecoveryLifecycle, result: inout RetentionCleanupResult) async throws -> Bool {
+        let registry = appState.liveRecordingSessions
+        let ticket: ProcessingPipeline.FileDeletionTicket
+        var admission: LiveRecordingSessionRegistry.Replacement?
+        var admittedOwner: LiveRecordingSessionRegistry.Entry?
+        defer {
+            if let admission { registry.abandonReplacement(admission) }
+            if admittedOwner?.isValid == true { admittedOwner?.resumeRichWritesAfterFailedIntent() }
+        }
+        if deleted {
+            guard let saved = try await registry.recordingRetentionTicket(recordingID: id) else { return false }
+            ticket = saved
+        } else {
+            if let owner = registry.entry(recordingID: id), !owner.artifacts.canExpire || !owner.artifacts.persistenceStarted { return false }
+            let authority = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: id)
+            guard authority.audio.stamp != nil else { return false }
+            var items: [RecordingDeletionAuthority.Item] = [], bytes = 512 + (try RecordingDeletionAuthority.charge(audio))
+            let tracks = ownership.audio.filter { ownership.owners[$0]?.contains(audio) == true }.sorted { $0.path < $1.path }
+            for track in tracks {
+                guard RetentionOwnership.isRegularUnlinked(track),
+                      let date = try track.resourceValues(forKeys: [.creationDateKey]).creationDate, date < cutoff else { return false }
+                let item = try RecordingDeletionAuthority.Item(track); bytes += try RecordingDeletionAuthority.charge(item.url); items.append(item)
+            }
+            guard items.contains(where: { $0.url == authority.audioURL }) else { return false }
+            for suffix in ["chat.json", "live-transcript.json"] {
+                let url = audio.deletingPathExtension().appendingPathExtension(suffix)
+                if try RecordingDeletionAuthority.Stamp.read(url) != nil,
+                   (try url.resourceValues(forKeys: [.creationDateKey]).creationDate ?? .distantFuture) >= cutoff { return false }
+            }
+            // Preserve ownership metadata while any conventional result/export
+            // survives. The audio inventory never inherits these derivatives.
+            if ownership.dependencies[authority.metadata.url]?.contains(where: { dependency in
+                !items.contains(where: { $0.url == dependency })
+                    && ![".chat.json", ".live-transcript.json"].contains(where: { dependency.lastPathComponent.hasSuffix($0) })
+                    && FileManager.default.fileExists(atPath: dependency.path)
+            }) != true, let date = try authority.metadata.url.resourceValues(forKeys: [.creationDateKey]).creationDate, date < cutoff {
+                bytes += try RecordingDeletionAuthority.charge(authority.metadata.url); items.append(authority.metadata)
+            }
+            guard items.count <= 128, bytes <= RecordingDeletionAuthority.ticketLimit else { throw LiveArtifactError.artifactTooLarge }
+            var frozen = ProcessingPipeline.FileDeletionTicket(authority: authority, items: items, recoveryDirectory: nil, discard: nil, bytes: bytes)
+            frozen.retentionCutoff = cutoff
+            guard let phase = try registry.beginRetention(recordingID: id, authority: authority, recordingExpiry: true) else { return false }
+            admission = phase
+            guard let owner = try await registry.resolveForReplacement(phase), owner.artifacts.persistenceStarted else { return false }
+            admittedOwner = owner
+            owner.sealRichWritesForDeletion()
+            try await owner.artifacts.flushAdmittedWrites()
+            ticket = try await processingPipeline.prepareDeletion(frozen, lifecycle: lifecycle, store: deletionPrivacyStore)
+        }
+        try ticket.validateRetentionScope()
+        let key = ticket.authority.audioURL.path
+        let state: DeletionState
+        if let retained = pendingFileDeletions[key] { state = retained }
+        else {
+            guard pendingFileDeletions.count < 8 else { throw LiveArtifactError.queueFull }
+            try ticket.validateFiles()
+            let owner = admittedOwner ?? registry.entry(recordingID: id)
+            state = DeletionState(frozen: ticket, store: deletionPrivacyStore, owner: owner,
+                maintenance: owner == nil ? try registry.reserveDeletionMaintenance() : nil, requestedAudioURL: audio)
+            state.managed = true; state.retention = true; state.prepared = ticket
+            pendingFileDeletions[key] = state
+        }
+        do {
+            try await resolveDeletionOwner(state)
+            // Source-only inventories are aged inside the writer immediately
+            // before its durable intent. No new Bind or captured text is invented.
+            let original = state.prepared!.items
+            try await finishDeletion(state, lifecycle: lifecycle)
+            result.filesDeleted += original.filter { $0.stamp != nil && !FileManager.default.fileExists(atPath: $0.url.path) }.count
+            result.bytesFreed += original.reduce(0) { $0 + ((!FileManager.default.fileExists(atPath: $1.url.path)) ? ($1.stamp?.size ?? 0) : 0) }
+            return true
+        } catch { abandonUncommittedDeletion(state); throw error }
+    }
+
+    func prepareLiveHistoryExport(recordingID: UUID, audioURL: URL?) async throws -> LiveHistoryExportSnapshot {
+        try await appState.liveRecordingSessions.prepareHistoryExport(recordingID: recordingID, audioURL: audioURL)
     }
 
     func deleteRecording(_ audioURL: URL) async throws {
@@ -3759,12 +3931,12 @@ final class RecordingManager {
             try RecordingResultMutation.withDeletion(of: ticket.authority.audioURL) { try ticket.validateFiles() }
             let registry = appState.liveRecordingSessions
             if let owner = state.owner {
-                if owner.artifacts.persistenceStarted { try await registry.deleteArtifacts(recordingID: owner.identity.recordingID) }
+                if owner.artifacts.persistenceStarted { try await registry.deleteArtifacts(recordingID: owner.identity.recordingID, retention: state.retention ? ticket : nil) }
                 else if !registry.isRetired(recordingID: owner.identity.recordingID) { try registry.retire(owner.identity) }
                 state.destructiveStarted = true
                 transcriptChatStore?.remove(for: owner.identity.recordingID)
             } else if state.managed, let id = ticket.recordingID {
-                try await registry.deleteArtifacts(recordingID: id)
+                try await registry.deleteArtifacts(recordingID: id, retention: state.retention ? ticket : nil)
                 state.destructiveStarted = true; transcriptChatStore?.remove(for: id)
             } else {
                 state.destructiveStarted = true
@@ -3807,11 +3979,22 @@ final class RecordingManager {
     /// checks prevent older refreshes from overwriting newer UI intent.
     func refreshQueuedCount() async { await refreshWorkQueue() }
 
-    func refreshWorkQueue() async {
-        await refreshReprocessingAttempts()
+    func refreshWorkQueue(boundedRetention: Bool = false) async {
+        if !boundedRetention { await refreshReprocessingAttempts() }
         queueRefreshGeneration += 1
         let generation = queueRefreshGeneration
         do {
+            if boundedRetention {
+                // Retention preserves all queue markers and scheduling. Refresh
+                // only the admitted recovery stores; broad marker discovery has
+                // its own normal UI admission and is outside this sweep.
+                let jobs = try await processingJobStore.discoverForRetention()
+                let batches = try await integrationDeliveryStore.discoverForRetention()
+                guard generation == queueRefreshGeneration else { return }
+                recoveryQueueEntries = RecoveryQueueEntry.entries(jobs: jobs, deliveries: batches,
+                    queuedIDs: Set(pendingQueueItems.map { $0.item.id }), activeID: appState.processingJob?.id)
+                return
+            }
             let snapshot = try await queueScheduleStore.snapshot(configuredFolders: configuredQueueFolders)
             let discovery = await processingJobStore.discover()
             let batches = try await integrationDeliveryStore.discover()

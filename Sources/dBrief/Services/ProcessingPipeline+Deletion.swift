@@ -2,7 +2,7 @@ import Foundation
 import os
 
 extension ProcessingPipeline {
-    struct DiscardRequest: Sendable {
+    struct DiscardRequest: Codable, Sendable {
         let recordingID: UUID
         let recoveryManifestURL: URL?
         let audioURL: URL
@@ -84,12 +84,28 @@ extension ProcessingPipeline {
         if let deletionError { throw deletionError }
     }
 
+    func retentionOwnership(folders: [URL]) throws -> (Date, RetentionOwnership) {
+        try RetentionOwnership.preflight(folders: folders)
+        let value = RetentionOwnership(folders: folders)
+        guard !value.inspectionFailed else { throw LiveArtifactError.artifactTooLarge }
+        return (now(), value)
+    }
+
+    func validateRetentionFolders(_ folders: [URL]) throws { try RetentionOwnership.preflight(folders: folders) }
+
+    func retentionQueueBases(folders: [URL]) throws -> Set<String> {
+        try RetentionOwnership.preflight(folders: folders)
+        return Set(RetentionOwnership.regularFiles(in: folders).filter { $0.lastPathComponent.hasSuffix(".queue.json") }
+            .map { RetentionCleanup.canonicalBase($0.deletingPathExtension().deletingPathExtension()) })
+    }
+
     func cleanupRetention(category: RetentionCategory, days: Int, folders: [URL], lifecycle: RecoveryLifecycle,
-                          store: PrivacyReceiptStore = .shared) async throws -> RetentionCleanupResult {
+                          store: PrivacyReceiptStore = .shared, protectedBases: Set<String> = []) async throws -> RetentionCleanupResult {
         let timestamp = now()
-        let owners = try await lifecycle.privacyOwners()
-        let protected = try await lifecycle.prepareRetention(category: category, days: days, folders: folders, now: timestamp)
+        try RetentionOwnership.preflight(folders: folders)
+        let owners = try await lifecycle.privacyOwners(bounded: true)
+        let protected = try await lifecycle.prepareRetention(category: category, days: days, folders: folders, now: timestamp, protectedBases: protectedBases, bounded: true)
         return await RetentionCleanup.cleanupWithPrivacy(category: category, olderThanDays: days, in: folders,
-            store: store, now: timestamp, protectedBases: protected, extraRecordingIDs: owners)
+            store: store, now: timestamp, protectedBases: protected, extraRecordingIDs: owners, bounded: true)
     }
 }

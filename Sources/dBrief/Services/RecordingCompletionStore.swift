@@ -10,11 +10,11 @@ enum RecordingCompletionStore {
         try await RecordingMetadataStore.shared.record(completion, audioURL: audioURL, fallback: fallback)
     }
 
-    static func reconcile(_ record: PersistedProcessingJob) async throws {
-        try await RecordingMetadataStore.shared.reconcile(record)
+    static func reconcile(_ record: PersistedProcessingJob, retention: Bool = false) async throws {
+        try await RecordingMetadataStore.shared.reconcile(record, retention: retention)
     }
 
-    static func reconcile(_ batch: IntegrationDeliveryBatch) async throws {
-        try await RecordingMetadataStore.shared.reconcile(batch)
+    static func reconcile(_ batch: IntegrationDeliveryBatch, retention: Bool = false) async throws {
+        try await RecordingMetadataStore.shared.reconcile(batch, retention: retention)
     }
 }

@@ -3,6 +3,27 @@ import Testing
 @testable import dBrief
 
 struct RetentionCleanupTests {
+    @Test(arguments: ["future", "corrupt", "foreign", "symlink"])
+    func unknownChatOnlyOwnershipProtectsBothRetentionPolicies(kind: String) throws {
+        let fm = FileManager.default, root = fm.temporaryDirectory.appendingPathComponent("opaque-chat-\(UUID())")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true); defer { try? fm.removeItem(at: root) }
+        let audio = root.appendingPathComponent("meeting.wav"), markdown = root.appendingPathComponent("meeting.md")
+        try Data("audio".utf8).write(to: audio); try Data("notes".utf8).write(to: markdown); try writeRetentionOwner(for: audio)
+        let chat = root.appendingPathComponent("meeting.chat.json")
+        let bytes = kind == "future" ? Data(#"{"version":99,"messages":[]}"#.utf8) :
+            kind == "foreign" ? Data(#"{"version":2,"identity":{"recordingID":"foreign"},"messages":[]}"#.utf8) : Data("unreadable chat".utf8)
+        if kind == "symlink" {
+            let external = root.appendingPathComponent("keep.txt"); try bytes.write(to: external)
+            try fm.createSymbolicLink(at: chat, withDestinationURL: external)
+        } else { try bytes.write(to: chat) }
+        for category in [RetentionCategory.recordings, .transcripts] {
+            let result = RetentionCleanup.cleanup(category: category, olderThanDays: 7, in: [root], now: Date().addingTimeInterval(30 * 86_400))
+            #expect(result.filesDeleted == 0)
+            #expect(fm.fileExists(atPath: audio.path) && fm.fileExists(atPath: markdown.path) && fm.fileExists(atPath: audio.deletingPathExtension().appendingPathExtension("json").path))
+            #expect(try Data(contentsOf: chat) == bytes)
+        }
+    }
+
     // MARK: - Schedule
 
     @Test
@@ -199,6 +220,27 @@ struct RetentionCleanupTests {
         // Audio and its plain metadata sidecar are kept.
         #expect(fm.fileExists(atPath: audio.path))
         #expect(fm.fileExists(atPath: metadata.path))
+    }
+
+    @Test(arguments: [RetentionCategory.recordings, .transcripts])
+    func opaqueLiveOwnershipProtectsConventionalFilesAndMetadata(category: RetentionCategory) throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("retention-live-\(UUID())")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let audio = folder.appendingPathComponent("meeting.wav")
+        try Data([1]).write(to: audio); try writeRetentionOwner(for: audio)
+        let base = audio.deletingPathExtension(), chat = base.appendingPathExtension("chat.json")
+        let live = base.appendingPathExtension("live-transcript.json")
+        try Data("Unknown future live schema".utf8).write(to: live)
+        try Data("Historical conversation".utf8).write(to: chat)
+        let original = try Data(contentsOf: chat)
+        let result = RetentionCleanup.cleanup(category: category, olderThanDays: 7, in: [folder],
+            now: Date().addingTimeInterval(30 * 86_400))
+        #expect(result.filesDeleted == 0)
+        #expect(fm.fileExists(atPath: audio.path))
+        #expect(fm.fileExists(atPath: base.appendingPathExtension("json").path))
+        #expect(try Data(contentsOf: chat) == original)
     }
 
     @Test

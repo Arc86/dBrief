@@ -101,6 +101,26 @@ actor ReprocessingStore {
         try withStoreLock { try discoverUnlocked() }
     }
 
+    /// Retention admission retains a finite aggregate, without acquiring claims
+    /// or loading every historical configuration before checking its bounds.
+    func discoverForRetention() throws -> [Attempt] {
+        try withStoreLock { try discoverRetentionUnlocked() }
+    }
+    private func discoverRetentionUnlocked() throws -> [Attempt] {
+        var values: [Attempt] = [], bytes = 0
+        try RecordingDeletionAuthority.scanChildren(root, includeHidden: true) { directory in
+            guard let id = UUID(uuidString: directory.lastPathComponent) else { return }
+            try requireDirectory(directory)
+            let file = directory.appendingPathComponent("manifest.json")
+            guard let stamp = try RecordingDeletionAuthority.Stamp.read(file) else { return }
+            guard values.count < 128, stamp.size >= 0, stamp.size <= 512 * 1_024 - bytes else { throw LiveArtifactError.artifactTooLarge }
+            let value = try readAttempt(id)
+            guard try RecordingDeletionAuthority.Stamp.read(file) == stamp else { throw LiveArtifactError.wrongOwner }
+            bytes += Int(stamp.size); values.append(value)
+        }
+        return values
+    }
+
     func pendingAttempt(audioURL: URL) throws -> Attempt? {
         try withStoreLock {
             let source = canonicalAudio(audioURL)
@@ -446,12 +466,14 @@ actor ReprocessingStore {
     /// Retention cleanup can remove audio outside this store. Remove only its
     /// completed backups, preserving resumable work and that work's prior backup.
     @discardableResult
-    func purgeCompletedForMissingAudio() throws -> Int {
+    func purgeCompletedForMissingAudio(protectedBases: Set<String> = [], bounded: Bool = false) throws -> Int {
         try withStoreLock {
-            let attempts = try discoverUnlocked()
+            let attempts = try bounded ? discoverRetentionUnlocked() : discoverUnlocked()
             let pendingSources = Set(attempts.filter { $0.status != .completed }.map(\.audioURL))
             let expired = try attempts.filter { attempt in
-                guard attempt.status == .completed, !pendingSources.contains(attempt.audioURL) else { return false }
+                guard attempt.status == .completed, !pendingSources.contains(attempt.audioURL),
+                      !RetentionCleanup.isProtectedByQueue(attempt.audioURL, queuedBases: protectedBases) else { return false }
+                if bounded { return try !RecordingDeletionAuthority.regularFileExistsInAvailableParent(attempt.audioURL) }
                 try requireRegularOrMissing(attempt.audioURL)
                 return !fm.fileExists(atPath: attempt.audioURL.path)
             }
@@ -463,14 +485,15 @@ actor ReprocessingStore {
     /// when the corresponding audio is retained. Match selected folders recursively
     /// by path components so a sibling with the same path prefix is never included.
     @discardableResult
-    func purgeCompletedTranscriptHistory(olderThan cutoff: Date, in folders: [URL]) throws -> Int {
+    func purgeCompletedTranscriptHistory(olderThan cutoff: Date, in folders: [URL], protectedBases: Set<String> = [], bounded: Bool = false) throws -> Int {
         try withStoreLock {
             let selectedFolders = folders.filter(\.isFileURL).map { canonicalAudio($0).pathComponents }
             guard !selectedFolders.isEmpty else { return 0 }
-            let attempts = try discoverUnlocked()
+            let attempts = try bounded ? discoverRetentionUnlocked() : discoverUnlocked()
             let pendingSources = Set(attempts.filter { $0.status != .completed }.map(\.audioURL))
             let expired = attempts.filter { attempt in
                 guard attempt.status == .completed, attempt.updatedAt <= cutoff,
+                      !RetentionCleanup.isProtectedByQueue(attempt.audioURL, queuedBases: protectedBases),
                       !pendingSources.contains(attempt.audioURL) else { return false }
                 let parent = attempt.audioURL.deletingLastPathComponent().pathComponents
                 return selectedFolders.contains { parent.starts(with: $0) }
@@ -624,7 +647,7 @@ actor ReprocessingStore {
             throw StoreError.invalidManifest
         }
         if let authority = attempt.authority {
-            guard canonicalAudio(authority.audioURL) == attempt.audioURL,
+            guard try RecordingDeletionAuthority.canonical(authority.audioURL) == RecordingDeletionAuthority.canonical(attempt.audioURL),
                   try RecordingDeletionAuthority.canonical(sidecar(attempt.audioURL, "json")) == authority.metadata.url,
                   !authority.audio.directory, !authority.metadata.directory else { throw StoreError.invalidManifest }
         }

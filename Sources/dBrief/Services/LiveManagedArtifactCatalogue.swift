@@ -52,16 +52,16 @@ enum LiveManagedArtifactCatalogue {
         }
         return hints
     }
-    private static func header(_ url: URL, maximum: Int = 16 * 1_024) throws -> Header? {
+    private static func header(_ url: URL, maximum: Int = RecordingDeletionAuthority.ticketLimit) throws -> Header? {
         try LiveSessionArtifactStore.requireSafeParents(url)
         return try RecordingDeletionAuthority.readHeader(url, maximumBytes: maximum,
-            tokenLimit: maximum > 16 * 1_024 ? 1_048_576 : 512)
+            tokenLimit: maximum > RecordingDeletionAuthority.ticketLimit ? 1_048_576 : 32_768)
     }
     private static func inspect(directory: URL, capture: UUID) throws -> Hint {
         if let deleted = try header(directory.appendingPathComponent("deletion.json")) {
-            guard [1, 2].contains(deleted.version), deleted.identity.captureSessionID == capture,
+            guard [1, 2, 3].contains(deleted.version), deleted.identity.captureSessionID == capture,
                   deleted.version == 1 ? deleted.intentID == nil : deleted.intentID != nil && deleted.cleanupComplete != nil,
-                  (deleted.audioURL == nil) == (deleted.generation == nil) else { throw LiveArtifactError.corruptArtifact }
+                  deleted.version == 3 ? deleted.audioURL != nil : (deleted.audioURL == nil) == (deleted.generation == nil) else { throw LiveArtifactError.corruptArtifact }
             try validateAudio(deleted.audioURL, directory: directory)
             return .init(identity: deleted.identity, audioURL: deleted.audioURL, deleted: true)
         }
@@ -89,7 +89,7 @@ enum LiveManagedArtifactCatalogue {
     }
     private static func validateAudio(_ audio: URL?, directory: URL) throws {
         guard let audio else { return }
-        guard audio.isFileURL, audio == audio.standardizedFileURL, audio.absoluteString.utf8.count <= 4_096,
+        guard RecordingDeletionAuthority.isNormalizedFileURL(audio),
               RetentionCleanup.audioExtensions.contains(audio.pathExtension.lowercased()),
               !audio.path.hasPrefix(directory.path + "/") else { throw LiveArtifactError.unsafePath }
         try LiveSessionArtifactStore.requireSafeParents(audio)

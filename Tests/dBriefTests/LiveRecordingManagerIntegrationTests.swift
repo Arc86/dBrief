@@ -41,7 +41,7 @@ private actor ReprocessingHydrationFault {
          stage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
          deletionFiles: ProcessingPipeline.DeletionFiles = .init(),
          richStore: TranscriptStore = .init(), payloadBudget: LiveRecordingPayloadBudget? = nil,
-         artifactPersistence: Bool = true,
+         artifactPersistence: Bool = true, queueFiles: QueueScheduleStore.Files = .init(),
          reprocessingStage: @escaping @Sendable (ReprocessingStore.PreparationStage) async -> Void = { _ in }) throws {
         files = try ASRAssetsFixture()
         privacyStore = PrivacyReceiptStore(gapDirectoryURL: files.root.appendingPathComponent("gaps"),
@@ -126,6 +126,7 @@ private actor ReprocessingHydrationFault {
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")),microsoftAuthService: .init(),
             deletionFiles: deletionFiles, deletionPrivacyStore: privacyStore,
             recordingFinalizer: .init(resolveFFmpeg: { nil }), reprocessingStore: .init(root: files.root.appendingPathComponent("reprocessing"), preparationStage: reprocessingStage),
+            queueScheduleStore: .init(url: files.root.appendingPathComponent("queue-schedule.json"), files: queueFiles),
             integrationDeliveryStore: .init(rootURL: files.root.appendingPathComponent("deliveries")),
             captureHardware: hardware,capturePersistence: persistence,liveFactory: factory,
             capturePreview: .init(prepare: { _ in nil }, make: {
@@ -202,6 +203,564 @@ private actor ReprocessingHydrationFault {
         let history = bound ? audio.deletingPathExtension().appendingPathExtension("chat.json")
             : f.files.root.appendingPathComponent("LiveSessions/\(entry.identity.captureSessionID.uuidString)/chat.json")
         return (recording, entry, audio, history)
+    }
+
+    private func age(_ urls: [URL]) throws {
+        for url in urls { try FileManager.default.setAttributes([.creationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: url.path) }
+    }
+
+    private func completedRetentionJob(_ recording: Recording, audio: URL) -> PersistedProcessingJob {
+        let date = Date().addingTimeInterval(-30 * 86_400)
+        return .init(id: UUID(), recordingID: recording.id, createdAt: date, updatedAt: date, status: .completed,
+            request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: false),
+            source: .init(recordingDate: recording.date, duration: 1, fileSize: 8, meetingTitle: "Saved", participants: [],
+                echoSuppressionApplied: false, finalizedAudioPath: audio.path, segmentAudioPaths: []))
+    }
+
+    @Test(arguments: ["job", "delivery", "child"])
+    func recordingRetentionCannotDeleteReplacedRecoveryFilesAfterIntentOrColdRestart(kind: String) async throws {
+        let gate = LiveArtifactGate(stage: .retentionRemoval)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { try await gate.enter(.retentionRemoval) }))
+        var sweep: Task<RetentionCleanupResult, Error>?
+        do {
+            let (recording, old, audio, chat) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([audio, chat, live])
+            let job = completedRetentionJob(recording, audio: audio)
+            let file: URL
+            if kind == "delivery" {
+                var batch = IntegrationDeliveryBatch(id: job.id, recordingID: recording.id, createdAt: job.createdAt,
+                    bundle: .init(title: "Saved", createdAt: job.createdAt, durationSeconds: 1, audioFileURL: audio,
+                        transcript: "Saved text", summary: nil, actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
+                    deliveries: [.init(id: UUID(), destination: .webhook, configurationDigest: "fixture")])
+                batch.deliveries[0].status = .succeeded
+                let root = f.files.root.appendingPathComponent("deliveries")
+                try await IntegrationDeliveryStore(rootURL: root).save(batch); file = root.appendingPathComponent(job.id.uuidString + ".json")
+            } else {
+                try await f.manager.processingJobStore.save(job)
+                file = f.files.root.appendingPathComponent("jobs/\(job.id.uuidString)/job.json")
+            }
+            let bytes = try Data(contentsOf: file)
+            let task = Task { try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()]) }; sweep = task
+            try await gate.waitForArrival(); #expect(!old.isValid && FileManager.default.fileExists(atPath: audio.path))
+            let child = file.deletingLastPathComponent().appendingPathComponent("new-private-child.bin")
+            if kind == "child" { try Data("new unrelated bytes".utf8).write(to: child) }
+            else { try bytes.write(to: file, options: .atomic) }
+            await gate.release()
+            await #expect(throws: LiveArtifactError.wrongOwner) { _ = try await task.value }
+            #expect(try Data(contentsOf: file) == bytes && FileManager.default.fileExists(atPath: audio.path))
+            if kind == "child" { #expect(FileManager.default.fileExists(atPath: child.path)) }
+            let (_, restarted) = f.restartedManager()
+            await #expect(throws: LiveArtifactError.wrongOwner) {
+                _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(try Data(contentsOf: file) == bytes && FileManager.default.fileExists(atPath: audio.path))
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test func recordingRetentionColdRetryDrainsMultipleFrozenJobsIncludingHeaderlessScratch() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { throw LiveArtifactFixtureFailure.injected }))
+        do {
+            let (recording, old, audio, chat) = try await prepareForDeletion(f, bound: true)
+            try age([audio, chat, audio.deletingPathExtension().appendingPathExtension("live-transcript.json")])
+            let records = [completedRetentionJob(recording, audio: audio), completedRetentionJob(recording, audio: audio)]
+            for record in records { try await f.manager.processingJobStore.save(record) }
+            let first = f.files.root.appendingPathComponent("jobs/\(records[0].id.uuidString)")
+            let scratch = first.appendingPathComponent("original-private-scratch.bin")
+            try Data("original captured scratch".utf8).write(to: scratch)
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(!old.isValid && FileManager.default.fileExists(atPath: audio.path))
+            try FileManager.default.removeItem(at: first.appendingPathComponent("job.json"))
+            let (_, restarted) = f.restartedManager()
+            _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            for record in records { #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("jobs/\(record.id.uuidString)").path)) }
+            #expect(!FileManager.default.fileExists(atPath: scratch.path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func recordingRetentionRevalidatesMasterAuthorityBeforeAnyRecoveryRemoval(metadata: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .retentionRemoval)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { try await gate.enter(.retentionRemoval) }))
+        var sweep: Task<RetentionCleanupResult, Error>?
+        do {
+            let (recording, _, audio, chat) = try await prepareForDeletion(f, bound: true)
+            try age([audio, chat, audio.deletingPathExtension().appendingPathExtension("live-transcript.json")])
+            let record = completedRetentionJob(recording, audio: audio); try await f.manager.processingJobStore.save(record)
+            let jobFile = f.files.root.appendingPathComponent("jobs/\(record.id.uuidString)/job.json"), bytes = try Data(contentsOf: jobFile)
+            let task = Task { try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()]) }; sweep = task
+            try await gate.waitForArrival()
+            let replaced = metadata ? audio.deletingPathExtension().appendingPathExtension("json") : audio
+            try Data(contentsOf: replaced).write(to: replaced, options: .atomic)
+            await gate.release()
+            await #expect(throws: LiveArtifactError.wrongOwner) { _ = try await task.value }
+            #expect(try Data(contentsOf: jobFile) == bytes && FileManager.default.fileExists(atPath: audio.path))
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true], ["chat.json", "CHAT.JSON", "LIVE-TRANSCRIPT.JSON"]) func opaqueOrphanHistoryProtectsRecoveryAndPrivateBackupsBeforeConventionalEffects(corruptMetadata: Bool, marker: String) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech)
+        do {
+            let folder = f.files.root.appendingPathComponent("Recordings")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let audio = folder.appendingPathComponent("opaque.m4a"); try Data([1, 2]).write(to: audio)
+            let transcript = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Original private backup")).write(to: transcript)
+            let candidate = try await f.manager.reprocessingStore.prepare(audioURL: audio, configuration: Data())
+            try await f.manager.reprocessingStore.stage(JSONEncoder().encode(TranscriptionResult(text: "New saved text")), suffix: "transcript.json", attemptID: candidate.id)
+            try await f.manager.reprocessingStore.commit(attemptID: candidate.id)
+            let backup = f.files.root.appendingPathComponent("reprocessing/\(candidate.id.uuidString)/original/transcript.json"), bytes = try Data(contentsOf: backup)
+            let chat = audio.deletingPathExtension().appendingPathExtension(marker), unknown = Data(#"{"version":999,"messages":[]}"#.utf8)
+            try unknown.write(to: chat)
+            if corruptMetadata { try Data(#"{"version":999}"#.utf8).write(to: audio.deletingPathExtension().appendingPathExtension("json")) }
+            let date = Date().addingTimeInterval(-30 * 86_400)
+            var record = PersistedProcessingJob(id: UUID(), recordingID: UUID(), createdAt: date, updatedAt: date, status: .completed,
+                request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: false),
+                source: .init(recordingDate: date, duration: 1, fileSize: 2, meetingTitle: "Saved", participants: [],
+                    echoSuppressionApplied: false, finalizedAudioPath: audio.path, segmentAudioPaths: []))
+            record.completedAt = date; try await f.manager.processingJobStore.save(record)
+            let manifest = f.files.root.appendingPathComponent("jobs/\(record.id.uuidString)/job.json"), original = try Data(contentsOf: manifest)
+            _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [folder])
+            #expect(FileManager.default.fileExists(atPath: backup.path) && FileManager.default.fileExists(atPath: manifest.path))
+            if FileManager.default.fileExists(atPath: backup.path) { #expect(try Data(contentsOf: backup) == bytes) }
+            if FileManager.default.fileExists(atPath: manifest.path) { #expect(try Data(contentsOf: manifest) == original) }
+            #expect(try Data(contentsOf: chat) == unknown)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func recordingRetentionPreservesAudioAndPrivacyWhileRecoveryStorageIsUnavailable(delivery: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .retentionRemoval)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(beforeRemoval: { try await gate.enter(.retentionRemoval) }))
+        var sweep: Task<RetentionCleanupResult, Error>?
+        do {
+            let (recording, _, audio, chat) = try await prepareForDeletion(f, bound: true)
+            try age([audio, chat, audio.deletingPathExtension().appendingPathExtension("live-transcript.json")])
+            let record = completedRetentionJob(recording, audio: audio)
+            let root = f.files.root.appendingPathComponent(delivery ? "deliveries" : "jobs")
+            let relative: String
+            if delivery {
+                var batch = IntegrationDeliveryBatch(id: record.id, recordingID: recording.id, createdAt: record.createdAt,
+                    bundle: .init(title: "Saved", createdAt: record.createdAt, durationSeconds: 1, audioFileURL: audio,
+                        transcript: "Saved private text", summary: nil, actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
+                    deliveries: [.init(id: UUID(), destination: .webhook, configurationDigest: "fixture")])
+                batch.deliveries[0].status = .succeeded
+                try await IntegrationDeliveryStore(rootURL: root).save(batch); relative = record.id.uuidString + ".json"
+            } else {
+                try await f.manager.processingJobStore.save(record); relative = record.id.uuidString + "/job.json"
+            }
+            let bytes = try Data(contentsOf: root.appendingPathComponent(relative))
+            let receipt = PrivacyReceiptStore.sidecarURL(for: audio)
+            _ = try await f.privacyStore.begin(.init(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper)), runID: UUID(), at: receipt)
+            let privacy = try Data(contentsOf: receipt)
+            let task = Task { try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()]) }; sweep = task
+            try await gate.waitForArrival()
+            let offline = f.files.root.appendingPathComponent("offline-recovery")
+            try FileManager.default.moveItem(at: root, to: offline)
+            await gate.release()
+            await #expect(throws: (any Error).self) { _ = try await task.value }
+            #expect(FileManager.default.fileExists(atPath: audio.path) && FileManager.default.fileExists(atPath: receipt.path))
+            #expect(try Data(contentsOf: offline.appendingPathComponent(relative)) == bytes)
+            if FileManager.default.fileExists(atPath: receipt.path) { #expect(try Data(contentsOf: receipt) == privacy) }
+            let (_, unavailable) = f.restartedManager()
+            await #expect(throws: (any Error).self) { _ = try await unavailable.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()]) }
+            try FileManager.default.moveItem(at: offline, to: root)
+            let (_, restarted) = f.restartedManager()
+            _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!FileManager.default.fileExists(atPath: audio.path) && !FileManager.default.fileExists(atPath: receipt.path))
+            #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(relative).path))
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test func recordingRetentionSealsAdmissionBeforeIntentAndReopensAfterIntentFailure() async throws {
+        let gate = LiveArtifactGate(stage: .deletionIntent), fault = LiveArtifactFault(stage: .deletionIntent)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await gate.enter($0); try await fault.check($0) })
+        var sweep: Task<RetentionCleanupResult, Error>?
+        do {
+            let (recording, old, audio, chat) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([audio, chat, live]); let before = try [audio, chat, live].map { try Data(contentsOf: $0) }
+            let task = Task { try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()]) }; sweep = task
+            try await gate.waitForArrival()
+            #expect(old.isValid && f.state.liveRecordingSessions.entry(recordingID: recording.id) == nil)
+            #expect(throws: LiveArtifactError.deleted) { _ = try old.artifacts.beginChatRequest() }
+            await #expect(throws: LiveRecordingSessionRegistry.Failure.unavailable) { _ = try await f.manager.prepareLiveHistoryExport(recordingID: recording.id, audioURL: audio) }
+            await gate.release()
+            await #expect(throws: LiveArtifactFixtureFailure.injected) { _ = try await task.value }
+            #expect(old.isValid && f.state.liveRecordingSessions.entry(recordingID: recording.id) === old)
+            #expect(try [audio, chat, live].map { try Data(contentsOf: $0) } == before)
+            let request = try old.artifacts.beginChatRequest(); request.release()
+            #expect(f.state.liveRecordingSessions.pendingReplacements.isEmpty)
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test func retentionPreflightBoundsPrivatePrivacyRootsBeforeAnyIntent() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, old, audio, chat) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([audio, chat, live]); let before = try [audio, chat, live].map { try Data(contentsOf: $0) }
+            let root = f.files.root.appendingPathComponent("pending"); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            for index in 0..<1_000 { try Data().write(to: root.appendingPathComponent("unrelated-\(index).txt")) }
+            await #expect(throws: LiveArtifactError.artifactTooLarge) {
+                _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(old.isValid && f.state.liveRecordingSessions.pendingReplacements.isEmpty)
+            #expect(try [audio, chat, live].map { try Data(contentsOf: $0) } == before)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func retentionRefreshKeepsQueueIntentWithoutReadingAnUnadmittedSchedule() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, queueFiles: .init(read: { _ in throw LiveArtifactFixtureFailure.injected }))
+        do {
+            try Data([1]).write(to: f.files.root.appendingPathComponent("queue-schedule.json"))
+            let item = QueueItem(transcribe: true, summary: false, actionItems: false, tags: false)
+            let audio = f.files.root.appendingPathComponent("queued.wav")
+            f.manager.pendingQueueItems = [.init(audioURL: audio, item: item, fileSize: nil)]; f.state.queuedCount = 1
+            let error = "Saved schedule is unreadable"; f.manager.queueLoadError = error
+            await f.manager.refreshWorkQueue(boundedRetention: true)
+            #expect(f.manager.queueLoadError == error && f.state.queuedCount == 1 && f.manager.pendingQueueItems.map { $0.item.id } == [item.id])
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func retentionPreservesCompletedBackupsForAnUnavailableManagedMaster(removeMetadata: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, _, audio, _) = try await prepareForDeletion(f, bound: true)
+            try JSONEncoder().encode(TranscriptionResult(text: "Original private backup")).write(to: audio.deletingPathExtension().appendingPathExtension("transcript.json"))
+            let candidate = try await stageModelFreeReplacement(f, recording: recording, audio: audio, text: "Fresh saved final")
+            await f.manager.refreshReprocessingAttempts(); await f.manager.resumeReprocessing(candidate.id)
+            let job = try #require(f.state.processingJob); try await job.task?.value
+            let backup = f.files.root.appendingPathComponent("reprocessing/\(candidate.id.uuidString)/original/transcript.json")
+            let bytes = try Data(contentsOf: backup)
+            #expect(try await f.manager.reprocessingStore.load(attemptID: candidate.id).status == .completed)
+            try FileManager.default.removeItem(at: audio)
+            if removeMetadata { try FileManager.default.removeItem(at: audio.deletingPathExtension().appendingPathExtension("json")) }
+            await #expect(throws: Never.self, "Completed backup remains discoverable after source loss") {
+                _ = try await f.manager.reprocessingStore.load(attemptID: candidate.id)
+            }
+            _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [audio.deletingLastPathComponent()])
+            #expect(try Data(contentsOf: backup) == bytes)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func heldRetentionCleanupCannotInheritReplacedMasterOrMetadata(metadata: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .retentionTranscript)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await gate.enter($0) })
+        var sweep: Task<RetentionCleanupResult, Error>?
+        do {
+            let (recording, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([live, chatURL]); let before = try [live, chatURL].map { try Data(contentsOf: $0) }
+            let receipt = PrivacyReceiptStore.sidecarURL(for: audio)
+            _ = try await f.privacyStore.begin(.init(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper)), runID: UUID(), at: receipt)
+            let privacy = try Data(contentsOf: receipt)
+            let task = Task { try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()]) }; sweep = task
+            try await gate.waitForArrival(); #expect(!old.isValid)
+            let replaced = metadata ? audio.deletingPathExtension().appendingPathExtension("json") : audio
+            try Data(contentsOf: replaced).write(to: replaced, options: .atomic)
+            await gate.release()
+            await #expect(throws: LiveArtifactError.wrongOwner) { _ = try await task.value }
+            #expect(try [live, chatURL].map { try Data(contentsOf: $0) } == before)
+            #expect(try Data(contentsOf: receipt) == privacy && FileManager.default.fileExists(atPath: audio.path))
+            let (_, restarted) = f.restartedManager()
+            await #expect(throws: LiveArtifactError.wrongOwner) { _ = try await restarted.prepareLiveHistory(recordingID: recording.id, audioURL: audio) }
+            #expect(!old.isValid && f.state.liveRecordingSessions.pendingReplacements.count == 1)
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test func retentionProtectsAPinnedOwnerAndThenRemovesOnlyAgedConventionalDerivatives() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            let markdown = audio.deletingPathExtension().appendingPathExtension("md")
+            let spoken = audio.deletingPathExtension().appendingPathExtension("spokensummary.m4a")
+            try Data("Markdown, not JSON".utf8).write(to: markdown); try Data([1, 2, 3]).write(to: spoken)
+            let insightsURL = audio.deletingPathExtension().appendingPathExtension("insights.json")
+            try JSONEncoder().encode(RecordingInsights(summary: "", actionItems: [], tags: [], sentiment: "neutral", markdownPath: markdown.path)).write(to: insightsURL)
+            try age([live, chatURL, markdown, spoken, insightsURL])
+            let before = try [live, chatURL, markdown, spoken].map { try Data(contentsOf: $0) }
+            let pin = old.artifacts.pin()
+            let protected = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(old.isValid && protected.historiesRetired == 0 && protected.filesDeleted == 0)
+            #expect(try [live, chatURL, markdown, spoken].map { try Data(contentsOf: $0) } == before)
+            pin.release()
+            _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!old.isValid && FileManager.default.fileExists(atPath: audio.path))
+            #expect(!FileManager.default.fileExists(atPath: markdown.path) && !FileManager.default.fileExists(atPath: spoken.path))
+            #expect(!FileManager.default.fileExists(atPath: insightsURL.path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func sourceBeforeBindRetentionUsesStableMetadataOwnershipWithoutInventingABinding() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, old, _, chatURL) = try await prepareForDeletion(f, bound: false)
+            let source = chatURL.deletingLastPathComponent().appendingPathComponent("live-transcript.json")
+            try age([source, chatURL])
+            let folder = f.settings.recordingFolderURL
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let audio = folder.appendingPathComponent("source-owner.wav"); try Data("model-free master".utf8).write(to: audio)
+            let metadata = RecordingMetadataPayload(recordingID: recording.id, dateISO8601: "2026-10-04T00:00:00Z", durationSeconds: 1,
+                meetingTitle: "Owner", masterFileName: audio.lastPathComponent, segmentFileNames: [], warnings: [])
+            try JSONEncoder().encode(metadata).write(to: audio.deletingPathExtension().appendingPathExtension("json"))
+            let (_, restarted) = f.restartedManager()
+            let result = try await restarted.runRetentionCleanup(category: .transcripts, days: 7, folders: [folder])
+            #expect(result.historiesRetired == 1)
+            #expect(!FileManager.default.fileExists(atPath: source.deletingLastPathComponent().appendingPathComponent("binding.json").path))
+            let retained = try await LiveSessionArtifactStore(identity: old.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(retained.historyRetained && retained.audioURL == nil && retained.appTranscript?.sourceUnavailable == true)
+            let owner = try #require(try await restarted.prepareLiveHistory(recordingID: recording.id, audioURL: audio))
+            #expect(owner.artifacts.historyRetained && FileManager.default.fileExists(atPath: audio.path))
+            #expect(try JSONDecoder().decode(LiveTranscriptArtifact.self, from: Data(contentsOf: audio.deletingPathExtension().appendingPathExtension("live-transcript.json"))).sourceUnavailable == true)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func retentionPreflightRejectsOversizedOutputOrRecoveryBeforeRetiringAnyOwner(recovery: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([live, chatURL]); let before = try [live, chatURL].map { try Data(contentsOf: $0) }
+            if recovery {
+                let directory = f.files.root.appendingPathComponent("jobs/\(UUID().uuidString)")
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try Data(repeating: 32, count: 128 * 1_024 + 1).write(to: directory.appendingPathComponent("job.json"))
+            } else {
+                for index in 0..<4_097 { try Data().write(to: audio.deletingLastPathComponent().appendingPathComponent("unrelated-\(index).txt")) }
+            }
+            await #expect(throws: LiveArtifactError.artifactTooLarge) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(old.isValid && f.state.liveRecordingSessions.pendingReplacements.isEmpty)
+            #expect(try [live, chatURL].map { try Data(contentsOf: $0) } == before)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func explicitReprocessingAfterTranscriptRetentionCanPublishAFreshFinal() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let live = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            let chat = try Data(contentsOf: chatURL); try age([live])
+            _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!old.isValid)
+            let candidate = try await stageModelFreeReplacement(f, recording: recording, audio: audio, text: "Fresh explicit final")
+            await f.manager.refreshReprocessingAttempts(); await f.manager.resumeReprocessing(candidate.id)
+            let job = try #require(f.state.processingJob); try await job.task?.value
+            #expect(f.state.lastError == nil && f.state.processingJob == nil)
+            let fresh = try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+            #expect(fresh.isValid && fresh !== old)
+            #expect(try fresh.artifacts.finalContext()?.segments.map(\.text) == ["Fresh explicit final"])
+            #expect(try Data(contentsOf: chatURL) == chat)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func transcriptRetentionPreservesANewerConversationAndItsFrozenAnswerBasis() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let answerID = UUID(), text = "Saved answer [[dbrief:1]]"
+            let context = try TranscriptContextBuilder.build(snapshot: .legacy(text: "Exact included evidence", recordingID: recording.id, speakerLabels: []),
+                route: .init(engine: "fixture", endpointID: nil, provider: nil, origin: nil, model: nil),
+                budget: .init(contextTokens: 8_192, outputTokens: 512, templateReserve: 256), language: .matchInput,
+                question: "What?", history: [], answerID: answerID)
+            try old.artifacts.saveChat(.init(messages: [.init(id: answerID, role: .assistant, content: text, basis: context.basis,
+                outcome: .streaming, referenceResolution: ChatReferenceParser.resolve(text, basis: context.basis))]), urgent: true)
+            try await old.artifacts.flush()
+            let chatBytes = try Data(contentsOf: chatURL)
+            let liveURL = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            let revision = try JSONDecoder().decode(LiveTranscriptArtifact.self, from: Data(contentsOf: liveURL)).revision
+            try age([liveURL])
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!old.isValid && result.historiesRetired == 1 && result.summary != "Nothing to delete.")
+            #expect(try Data(contentsOf: chatURL) == chatBytes)
+            let retained = try JSONDecoder().decode(LiveTranscriptArtifact.self, from: Data(contentsOf: liveURL))
+            #expect(retained.sourceUnavailable == true && retained.revision == revision + 1)
+            let (_, restarted) = f.restartedManager()
+            _ = try await restarted.prepareLiveHistory(recordingID: recording.id, audioURL: audio)
+            #expect(try Data(contentsOf: chatURL) == chatBytes)
+            let snapshot = try await restarted.prepareLiveHistoryExport(recordingID: recording.id, audioURL: audio)
+            let exported = try JSONDecoder().decode(LiveHistoryExport.self, from: snapshot.data)
+            #expect(!exported.sourceAvailable && exported.chat?.messages.first?.basis == context.basis)
+            #expect(exported.chat?.messages.first?.outcome == .streaming)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func retentionCleanupFailureRetiresThenRestartsWithoutDoubleRevisions() async throws {
+        let fault = LiveArtifactFault(stage: .retentionChat)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await fault.check($0) })
+        do {
+            let (recording, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let liveURL = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([liveURL, chatURL])
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(!old.isValid && FileManager.default.fileExists(atPath: audio.path))
+            let rewritten = try Data(contentsOf: liveURL)
+            let (_, restarted) = f.restartedManager()
+            _ = try await restarted.prepareLiveHistory(recordingID: recording.id, audioURL: audio)
+            #expect(try Data(contentsOf: liveURL) == rewritten)
+            #expect(try JSONDecoder().decode(ChatHistory.self, from: Data(contentsOf: chatURL)).messages.isEmpty)
+            let markerURL = f.files.root.appendingPathComponent("LiveSessions/\(old.identity.captureSessionID.uuidString)/retention.json")
+            #expect(try JSONDecoder().decode(LiveHistoryRetention.self, from: Data(contentsOf: markerURL)).cleanupComplete)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func failedRetentionIntentKeepsTheHealthyOriginalAndExactFiles() async throws {
+        let fault = LiveArtifactFault(stage: .retentionIntent)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await fault.check($0) })
+        do {
+            let (_, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let liveURL = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([liveURL, chatURL]); let before = try [liveURL, chatURL].map { try Data(contentsOf: $0) }
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(old.isValid && f.state.liveRecordingSessions.entry(recordingID: old.identity.recordingID) === old)
+            #expect(try [liveURL, chatURL].map { try Data(contentsOf: $0) } == before)
+            #expect(f.state.liveRecordingSessions.pendingReplacements.isEmpty)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func recordingRetentionColdRetryKeepsOriginalPhysicalAuthority(replace: Bool) async throws {
+        let fault = LiveArtifactFault(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true, stage: { try await fault.check($0) })
+        do {
+            let (recording, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let liveURL = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            try age([audio, chatURL, liveURL])
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(!old.isValid && FileManager.default.fileExists(atPath: audio.path))
+            let original = try Data(contentsOf: audio)
+            if replace { try original.write(to: audio, options: .atomic) }
+            let (state, restarted) = f.restartedManager()
+            if replace {
+                await #expect(throws: LiveArtifactError.wrongOwner) {
+                    _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+                }
+                #expect(try Data(contentsOf: audio) == original && Data(contentsOf: chatURL).count > 0)
+            } else {
+                _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+                #expect(!FileManager.default.fileExists(atPath: audio.path) && state.liveRecordingSessions.isKnownDeleted(recordingID: recording.id))
+            }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func recordingRetentionRetriesPrivacyAfterAudioAndMetadataHaveDisappeared() async throws {
+        let failure = LiveArtifactFault(stage: .deletionCleanup)
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true,
+            deletionFiles: .init(removeEvidence: { _,_ in try await failure.check(.deletionCleanup) }))
+        do {
+            let (_, old, audio, chatURL) = try await prepareForDeletion(f, bound: true)
+            let liveURL = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            let metadata = audio.deletingPathExtension().appendingPathExtension("json")
+            let receipt = PrivacyReceiptStore.sidecarURL(for: audio)
+            _ = try await f.privacyStore.begin(.init(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper)), runID: UUID(), at: receipt)
+            let privacy = try Data(contentsOf: receipt)
+            try age([audio, metadata, chatURL, liveURL])
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(!old.isValid && !FileManager.default.fileExists(atPath: audio.path) && !FileManager.default.fileExists(atPath: metadata.path))
+            #expect(try Data(contentsOf: receipt) == privacy)
+            let (state, restarted) = f.restartedManager()
+            _ = try await restarted.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(state.liveRecordingSessions.isKnownDeleted(recordingID: old.identity.recordingID) && !state.liveRecordingSessions.hasPendingDeletion(recordingID: old.identity.recordingID))
+            #expect(!FileManager.default.fileExists(atPath: receipt.path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func transcriptRetentionRetiresTheActualGenerationWithoutDeletingAudioOrPrivacy() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, entry, audio, history) = try await prepareForDeletion(f, bound: true)
+            let (_, admission) = try await f.manager.processingPipeline.retentionOwnership(folders: [audio.deletingLastPathComponent()])
+            let canonicalAudio = try RecordingDeletionAuthority.canonical(audio)
+            try #require(!admission.inspectionFailed && admission.recordingIDs[canonicalAudio] == entry.identity.recordingID)
+            try #require(admission.audio.contains(canonicalAudio))
+            try #require(entry.artifacts.canExpire)
+            try #require(try await f.manager.processingPipeline.retentionQueueBases(folders: [audio.deletingLastPathComponent()]).isEmpty)
+            let pending = try await RecoveryLifecycle(jobs: f.manager.processingJobStore,
+                deliveries: .init(rootURL: f.files.root.appendingPathComponent("deliveries"))).pendingRetentionBases()
+            try #require(pending.isEmpty)
+            let transcript = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            for url in [transcript, history] {
+                try FileManager.default.setAttributes([.creationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: url.path)
+            }
+            _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!entry.isValid)
+            #expect(!f.state.liveRecordingSessions.isKnownDeleted(recordingID: entry.identity.recordingID))
+            #expect(FileManager.default.fileExists(atPath: audio.path))
+            #expect(FileManager.default.fileExists(atPath: audio.deletingPathExtension().appendingPathExtension("json").path))
+            let saved = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(saved.appTranscript?.sourceUnavailable == true)
+            #expect(saved.appTranscript?.legacy == nil && saved.appTranscript?.finalPublication == nil)
+            #expect(saved.chat?.messages.isEmpty != false)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func recordingRetentionRetiresOwnedHistoryBeforeAgedAudioDisappears() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, entry, audio, history) = try await prepareForDeletion(f, bound: true)
+            let transcript = audio.deletingPathExtension().appendingPathExtension("live-transcript.json")
+            for url in [audio, history, transcript] {
+                try FileManager.default.setAttributes([.creationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: url.path)
+            }
+            _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(!entry.isValid)
+            #expect(f.state.liveRecordingSessions.isKnownDeleted(recordingID: entry.identity.recordingID))
+            #expect(!FileManager.default.fileExists(atPath: audio.path))
+            #expect(!FileManager.default.fileExists(atPath: history.path))
+            #expect(!FileManager.default.fileExists(atPath: transcript.path))
+            let saved = try await LiveSessionArtifactStore(identity: entry.identity, rootURL: f.files.root.appendingPathComponent("LiveSessions")).recover()
+            #expect(saved.deleted)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func recordingRetentionDefersAnOldMasterWithNewerOwnedConversation() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (_, entry, audio, history) = try await prepareForDeletion(f, bound: true)
+            try FileManager.default.setAttributes([.creationDate: Date().addingTimeInterval(-30 * 86_400)], ofItemAtPath: audio.path)
+            let original = try Data(contentsOf: history)
+            _ = try await f.manager.runRetentionCleanup(category: .recordings, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(entry.isValid)
+            #expect(FileManager.default.fileExists(atPath: audio.path))
+            #expect(try Data(contentsOf: history) == original)
+            await f.clean()
+        } catch { await f.clean(); throw error }
     }
 
     @Test func actualReprocessingPreservesOwnedConversationAndReplacesTheOriginalProviderGeneration() async throws {

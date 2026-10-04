@@ -24,13 +24,17 @@ struct RetentionCleanupResult: Sendable {
     var filesDeleted: Int = 0
     var bytesFreed: Int64 = 0
     var privacyCleanupFailures: Int = 0
+    var historiesRetired: Int = 0
 
     /// One-line, user-facing summary for the Settings UI.
     var summary: String {
         if privacyCleanupFailures > 0 {
             return "Deleted \(filesDeleted) files. Some privacy evidence could not be removed; retry cleanup when storage is available."
         }
-        guard filesDeleted > 0 else { return "Nothing to delete." }
+        guard filesDeleted > 0 else {
+            if historiesRetired > 0 { return "Cleared saved history for \(historiesRetired) recording\(historiesRetired == 1 ? "" : "s")." }
+            return "Nothing to delete."
+        }
         let size = ByteCountFormatter.string(fromByteCount: bytesFreed, countStyle: .file)
         let noun = filesDeleted == 1 ? "file" : "files"
         return "Deleted \(filesDeleted) \(noun) (\(size))."
@@ -73,6 +77,7 @@ enum RetentionCleanup {
         ".insights.json",
         ".reprocessing.json",
         ".chat.json",
+        ".live-transcript.json",
         ".spokensummary.json",
         // The spoken-summary audio is a derived artifact that travels with its
         // script sidecar — age both under the transcripts policy so they never
@@ -89,7 +94,7 @@ enum RetentionCleanup {
     /// metadata, resume `*.queue.json`) that travels with the audio.
     static func isRecordingFile(_ url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
-        if isTranscriptFile(name) || name.hasSuffix(".privacy.json") { return false }
+        if isTranscriptFile(name) || name.hasSuffix(".privacy.json") || name.hasSuffix(".live-binding.json") { return false }
         if audioExtensions.contains(url.pathExtension.lowercased()) { return true }
         return name.hasSuffix(".json")
     }
@@ -106,22 +111,24 @@ enum RetentionCleanup {
     static func cleanupWithPrivacy(
         category: RetentionCategory, olderThanDays days: Int, in folders: [URL],
         store: PrivacyReceiptStore = .shared, now: Date = Date(), protectedBases: Set<String> = [],
-        extraRecordingIDs: [URL: Set<UUID>] = [:]
+        extraRecordingIDs: [URL: Set<UUID>] = [:], bounded: Bool = false
     ) async -> RetentionCleanupResult {
         guard category == .recordings, days >= 0 else {
             return cleanup(category: category, olderThanDays: days, in: folders, now: now, protectedBases: protectedBases)
         }
+        if bounded { do { try await store.preflightRetention() } catch { return .init(privacyCleanupFailures: 1) } }
         let fm = FileManager.default
         let ownership = RetentionOwnership(folders: folders, trustedAudio: Set(extraRecordingIDs.keys))
-        var candidates: [URL: [URL]] = [:]
+        guard !ownership.inspectionFailed else { return .init() }
+        var candidates: [URL: [URL]] = [:], targetBytes = 0
         for folder in Set(folders) {
-            let protected = queuedRecordingBases(in: folder, fileManager: fm).union(protectedBases)
+            let protected = queuedRecordingBases(in: folder, fileManager: fm).union(protectedBases).union(ownership.opaqueLiveBases)
             let files = RetentionOwnership.regularFiles(in: [folder], fileManager: fm)
             for url in files {
                 var receipts: [URL]
                 if url.lastPathComponent.hasSuffix(".privacy.json") {
                     if await store.isPendingReceipt(url) { continue }
-                    guard (try? await store.load(from: url)) != nil else { continue }
+                    guard (try? await store.load(from: url, maximumBytes: bounded ? 128 * 1_024 : PrivacyReceiptStore.maximumFileBytes)) != nil else { continue }
                     receipts = [url]
                 }
                 else if ownership.audio.contains(url) {
@@ -145,7 +152,16 @@ enum RetentionCleanup {
                             ids.formUnion(entry.value)
                         }
                     }
-                    candidates[receipt] = await store.deletionTargets(for: audio, recordingIDs: ids)
+                    if bounded {
+                        do {
+                            var ownedIDs = ids
+                            for (master, id) in ownership.recordingIDs where PrivacyReceiptLifecycle.receiptURL(for: master) == receipt { ownedIDs.insert(id) }
+                            let targets = try await store.boundedDeletionTargets(for: audio, recordingIDs: ownedIDs, byteLimit: RecordingDeletionAuthority.ticketLimit)
+                            targetBytes += try targets.reduce(0) { try $0 + RecordingDeletionAuthority.charge($1) }
+                            guard candidates.count < 128, targetBytes <= 512 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
+                            candidates[receipt] = targets
+                        } catch { return .init(privacyCleanupFailures: 1) }
+                    } else { candidates[receipt] = await store.deletionTargets(for: audio, recordingIDs: ids) }
                 }
             }
         }
@@ -153,7 +169,7 @@ enum RetentionCleanup {
                              protectedBases: protectedBases, trustedAudio: Set(extraRecordingIDs.keys))
         for (receipt, targets) in candidates {
             do {
-                guard try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: receipt) else { continue }
+                guard try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: receipt, bounded: bounded) else { continue }
                 let values = try? receipt.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 try await store.removeEvidence(at: targets)
                 if values?.isRegularFile == true {
@@ -165,7 +181,7 @@ enum RetentionCleanup {
                 log.error("Retention could not reconcile privacy evidence")
             }
         }
-        result.privacyCleanupFailures += await store.retryDeletedEvidenceCleanup()
+        result.privacyCleanupFailures += await store.retryDeletedEvidenceCleanup(bounded: bounded)
         return result
     }
 
@@ -187,7 +203,8 @@ enum RetentionCleanup {
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
 
         let ownership = RetentionOwnership(folders: folders, trustedAudio: trustedAudio, fileManager: fileManager)
-        let queuedBases = folders.reduce(into: protectedBases) {
+        guard !ownership.inspectionFailed else { return .init() }
+        let queuedBases = folders.reduce(into: protectedBases.union(ownership.opaqueLiveBases)) {
             $0.formUnion(queuedRecordingBases(in: $1, fileManager: fileManager))
         }
         var result = RetentionCleanupResult()
@@ -240,30 +257,40 @@ enum RetentionCleanup {
         for case let url as URL in enumerator
         where url.lastPathComponent.lowercased().hasSuffix(".queue.json") {
             bases.insert(
-                url.deletingLastPathComponent().resolvingSymlinksInPath()
-                    .appendingPathComponent(url.deletingPathExtension().deletingPathExtension().lastPathComponent).standardizedFileURL.path
+                canonicalBase(url.deletingPathExtension().deletingPathExtension())
             )
         }
         return bases
     }
 
-    private static func isProtectedByQueue(
+    /// Conventional callers historically expose macOS's fixed alias spelling.
+    /// This affects content-free keys only; mutation authorities keep realpath.
+    static func legacyBase(_ url: URL) -> String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        if path.hasPrefix("/private/var/") || path.hasPrefix("/private/tmp/") { return String(path.dropFirst(8)) }
+        return path
+    }
+
+    static func canonicalBase(_ url: URL) -> String { ((try? RecordingDeletionAuthority.canonical(url)) ?? url).path }
+
+    static func isProtectedByQueue(
         _ url: URL,
         queuedBases: Set<String>
     ) -> Bool {
         let lowerName = url.lastPathComponent.lowercased()
-        let knownSuffixes = [".queue.json", ".privacy.json"] + transcriptSuffixes
+        let knownSuffixes = [".queue.json", ".privacy.json", ".live-binding.json"] + transcriptSuffixes
         let base = knownSuffixes.first(where: { lowerName.hasSuffix($0) }).map { suffix in
             let stem = String(url.lastPathComponent.dropLast(suffix.count))
-            return url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(stem)
-                .standardizedFileURL.path
-        } ?? url.deletingLastPathComponent().resolvingSymlinksInPath()
-            .appendingPathComponent(url.deletingPathExtension().lastPathComponent).standardizedFileURL.path
-        if queuedBases.contains(base) { return true }
+            return canonicalBase(url.deletingLastPathComponent().appendingPathComponent(stem))
+        } ?? canonicalBase(url.deletingPathExtension())
+        func contains(_ path: String) -> Bool {
+            queuedBases.contains(path) || queuedBases.contains(legacyBase(URL(fileURLWithPath: path)))
+        }
+        if contains(base) { return true }
 
         // Segments are named `<master>_partNN.<ext>`.
         guard let range = base.range(of: #"_part[0-9]+$"#, options: .regularExpression)
         else { return false }
-        return queuedBases.contains(String(base[..<range.lowerBound]))
+        return contains(String(base[..<range.lowerBound]))
     }
 }

@@ -6,6 +6,11 @@ extension RecordingDeletionAuthority {
     /// Bounds charge app-owned values conservatively; Foundation scratch/RSS is
     /// not measured or qualified by this worksheet.
     static func readHeader<T: Decodable>(_ url: URL, maximumBytes: Int = 16 * 1_024, tokenLimit: Int = 512) throws -> T? {
+        guard let data = try readJSON(url, maximumBytes: maximumBytes, tokenLimit: tokenLimit) else { return nil }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    static func readJSON(_ url: URL, maximumBytes: Int, tokenLimit: Int) throws -> Data? {
         guard maximumBytes >= 0, maximumBytes <= 3 * 1_024 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
         guard let stamp = try Stamp.read(url) else { return nil }
         guard stamp.size >= 0, stamp.size <= maximumBytes else { throw LiveArtifactError.artifactTooLarge }
@@ -16,11 +21,8 @@ extension RecordingDeletionAuthority {
         let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
         guard data.count <= maximumBytes, data.count == stamp.size else { throw LiveArtifactError.artifactTooLarge }
         try validateJSON(data, tokenLimit: tokenLimit)
-        // JSONDecoder validates the complete syntax, while the small T selects
-        // only ownership fields. No array of participant or delivery content.
-        let result = try JSONDecoder().decode(T.self, from: data)
         guard try Stamp.read(url) == stamp else { throw LiveArtifactError.wrongOwner }
-        return result
+        return data
     }
 
     static func validateJSON(_ data: Data, tokenLimit: Int = 512) throws {
@@ -28,7 +30,9 @@ extension RecordingDeletionAuthority {
         struct Frame { let object: Bool; var key = true; var seen: UInt64 = 0; var valueLimit = 0 }
         let keys = ["version", "id", "recordingID", "jobID", "masterFileName", "finalizedAudioPath", "audioFileURL", "source", "checkpoint", "bundle",
                     "identity", "captureSessionID", "revision", "bindingGeneration", "generation", "audioURL", "phase", "intentID", "cleanupComplete",
-                    "native", "legacy", "sourceUnavailable", "captureClosed", "finalPublication", "chat", "transcript"]
+                    "native", "legacy", "sourceUnavailable", "captureClosed", "finalPublication", "chat", "transcript",
+                    "retention", "historyAuthority", "authority", "items", "steps", "effect", "original", "result", "completed", "retentionCutoff", "sourceRetired",
+                    "jobs", "deliveries", "retentionJobs", "retentionDeliveries", "value"]
         var frames: [Frame] = []; frames.reserveCapacity(32)
         var index = 0, tokens = 0
         func token() throws { tokens += 1; guard tokens <= tokenLimit else { throw LiveArtifactError.artifactTooLarge } }
@@ -76,8 +80,12 @@ extension RecordingDeletionAuthority {
         guard frames.isEmpty else { throw LiveArtifactError.corruptArtifact }
     }
 
-    static func scanChildren(_ root: URL, includeHidden: Bool = false, visit: (URL) throws -> Void) throws {
-        guard try Stamp.read(root, directory: true) != nil else { return }
+    static func scanChildren(_ root: URL, includeHidden: Bool = false, requireRoot: Bool = false, visit: (URL) throws -> Void) throws {
+        if requireRoot { try LiveSessionArtifactStore.requireSafeParents(root) }
+        guard let original = try Stamp.read(root, directory: true) else {
+            if requireRoot { throw LiveArtifactError.unsafePath }
+            return
+        }
         var failure: (any Error)?
         guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil,
             options: includeHidden ? [.skipsSubdirectoryDescendants] : [.skipsSubdirectoryDescendants, .skipsHiddenFiles],
@@ -88,5 +96,17 @@ extension RecordingDeletionAuthority {
             try visit(item)
         }
         if let failure { throw failure }
+        if requireRoot, try Stamp.read(root, directory: true) != original { throw LiveArtifactError.wrongOwner }
+    }
+
+    /// Missing audio is established only by a readable, still-identical parent.
+    /// Offline storage must preserve completion journals and backup evidence.
+    static func regularFileExistsInAvailableParent(_ file: URL) throws -> Bool {
+        var found = false
+        try scanChildren(file.deletingLastPathComponent(), includeHidden: true, requireRoot: true) {
+            if $0.lastPathComponent == file.lastPathComponent { found = true }
+        }
+        if found { return try Stamp.read(file) != nil }
+        return false
     }
 }

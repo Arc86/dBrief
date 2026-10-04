@@ -11,6 +11,7 @@ enum LiveArtifactStage: Sendable {
     case historyLoad
     case sourceChat, sourceTranscript, journalPrepared, targetChat, targetTranscript, journalCommitted
     case sourceCleanup, deletionIntent, deletionCleanup
+    case retentionIntent, retentionTranscript, retentionChat, retentionRemoval, retentionCompleted, exportSnapshot
 }
 enum LiveArtifactError: Error, Equatable, LocalizedError {
     case staleRevision, revisionConflict, bindingPending, deleted, queueFull, artifactTooLarge
@@ -45,6 +46,16 @@ actor LiveSessionArtifactStore {
         fileprivate let intentDigest: String
         fileprivate let intentByteCount: Int
     }
+    struct RetentionReceipt: Sendable {
+        let identity: LiveSessionIdentity
+        fileprivate let digest: String
+    }
+    private struct RetentionRequest: Sendable {
+        let cutoff: Date
+        let authority: RecordingDeletionAuthority
+        let conventional: [RecordingDeletionAuthority.Item]
+        let linkedMarkdown: URL?
+    }
     struct Restored: Sendable {
         let chat: ChatHistory?
         let transcriptValue: LiveTranscriptArtifactCodec.Value?
@@ -52,6 +63,7 @@ actor LiveSessionArtifactStore {
         var appTranscript: LiveTranscriptArtifact? { transcriptValue?.app }
         let audioURL: URL?
         let deleted: Bool
+        var historyRetained = false
         var authority: [RecordingDeletionAuthority.Item] = []
         func validateAuthority() throws {
             for item in authority {
@@ -111,16 +123,19 @@ actor LiveSessionArtifactStore {
         let generation: UUID?
         let intentID: UUID?
         var cleanupComplete: Bool?
+        var retention: ProcessingPipeline.FileDeletionTicket? = nil
+        var historyAuthority: [RecordingDeletionAuthority.Item]? = nil
     }
-    private enum Outcome { case restored(Restored), deletion(DeletionReceipt) }
+    private enum Outcome { case restored(Restored), deletion(DeletionReceipt), retention(RetentionReceipt?), recordingRetention(ProcessingPipeline.FileDeletionTicket?) }
     private final class Batch {
         var chat: Payload?, transcript: Payload?
         var waiters: [CheckedContinuation<Outcome?, any Error>] = []
     }
     private enum Operation {
         case writes(Batch), clear(Payload), bind(URL), recover, recoverOwner, retry(chat: Payload?, transcript: Payload?), delete
-        case deletionIntent, deletionCleanup(DeletionReceipt)
-        case inspectClaimedOwner(UUID)
+        case deletionIntent, recordingRetentionIntent(ProcessingPipeline.FileDeletionTicket), inspectRecordingRetention, deletionCleanup(DeletionReceipt)
+        case inspectClaimedOwner(UUID), inspectExport
+        case retentionIntent(RetentionRequest), retentionCleanup(RetentionReceipt)
         var isControl: Bool { if case .writes = self { false } else { true } }
     }
     private struct Job {
@@ -134,6 +149,8 @@ actor LiveSessionArtifactStore {
     var sessionURL: URL { rootURL.appendingPathComponent(identity.captureSessionID.uuidString, isDirectory: true) }
     private var journalURL: URL { sessionURL.appendingPathComponent("binding.json") }
     private var deletionURL: URL { sessionURL.appendingPathComponent("deletion.json") }
+    private var retentionURL: URL { sessionURL.appendingPathComponent("retention.json") }
+    private var admittedRetentionID: UUID?
     private let beforeStage: @Sendable (LiveArtifactStage) async throws -> Void
     private let validity: RecordingDerivativeValidity
     private let payloadReservation: LiveRecordingPayloadBudget.Lease?
@@ -213,8 +230,36 @@ actor LiveSessionArtifactStore {
         guard case .deletion(let receipt) = try await submitControl(.deletionIntent, allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
         return receipt
     }
+    func commitRecordingRetention(_ ticket: ProcessingPipeline.FileDeletionTicket) async throws -> DeletionReceipt {
+        try ticket.validateRetentionScope()
+        guard case .deletion(let receipt) = try await submitControl(.recordingRetentionIntent(ticket), allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
+        return receipt
+    }
+    /// Deleted-owner recovery exposes only the original small audio inventory.
+    /// It never loads content or grants a new provider/write generation.
+    func inspectRecordingRetention() async throws -> ProcessingPipeline.FileDeletionTicket? {
+        guard case .recordingRetention(let value) = try await submitControl(.inspectRecordingRetention, allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
+        return value
+    }
     func cleanupDeletion(_ receipt: DeletionReceipt) async throws {
         _ = try await submitControl(.deletionCleanup(receipt), allowingDeleted: true, allowingRetiredCleanup: true)
+    }
+
+    /// Ordered pure inspection: no Bind roll-forward, restart normalization or
+    /// publication reconciliation. Export describes the saved prefix exactly.
+    func inspectForExport() async throws -> Restored {
+        guard case .restored(let value) = try await submitControl(.inspectExport) else { throw LiveArtifactError.verificationFailed }
+        return value
+    }
+    func commitRetention(olderThan cutoff: Date, authority: RecordingDeletionAuthority,
+                         conventional: [RecordingDeletionAuthority.Item], linkedMarkdown: URL?) async throws -> RetentionReceipt? {
+        guard conventional.count <= 128 else { throw LiveArtifactError.artifactTooLarge }
+        let request = RetentionRequest(cutoff: cutoff, authority: authority, conventional: conventional, linkedMarkdown: linkedMarkdown)
+        guard case .retention(let value) = try await submitControl(.retentionIntent(request)) else { throw LiveArtifactError.verificationFailed }
+        return value
+    }
+    func cleanupRetention(_ receipt: RetentionReceipt) async throws {
+        _ = try await submitControl(.retentionCleanup(receipt), allowingRetiredCleanup: true)
     }
 
     func status() -> Status {
@@ -317,9 +362,28 @@ actor LiveSessionArtifactStore {
         if case .deletionCleanup(let receipt) = operation {
             try await cleanupDeleted(receipt); return nil
         }
+        if case .retentionCleanup(let receipt) = operation {
+            try await cleanupRetained(receipt); return nil
+        }
+        if case .inspectExport = operation { try await beforeStage(.exportSnapshot) }
+        switch operation {
+        case .recover, .recoverOwner:
+            try inspectDisk()
+            if !isDeleted {
+                if let value = try retentionValue(), !value.cleanupComplete { try await cleanupRetained(retentionReceipt(value)) }
+                admittedRetentionID = try retentionValue()?.intentID
+            }
+        default: break
+        }
         switch operation { case .recover, .recoverOwner, .inspectClaimedOwner: try await beforeStage(.historyLoad); default: break }
         try inspectDisk()
         switch operation {
+        case .inspectExport:
+            guard !isDeleted, journal?.phase != .prepared else { throw LiveArtifactError.bindingPending }
+            if let value = try retentionValue(), !value.cleanupComplete { throw LiveArtifactError.bindingPending }
+            return .restored(try restoreDisk(interruptChat: false))
+        case .retentionIntent(let request):
+            return .retention(try await commitRetentionIntent(request))
         case .inspectClaimedOwner(let attemptID):
             guard !isDeleted, journal?.phase != .prepared else { throw LiveArtifactError.bindingPending }
             return .restored(try restoreDisk(inspectionClaim: attemptID))
@@ -327,6 +391,12 @@ actor LiveSessionArtifactStore {
             try await cleanupDeleted(commitIntent()); return nil
         case .deletionIntent:
             return .deletion(try await commitIntent())
+        case .recordingRetentionIntent(let ticket):
+            return .deletion(try await commitIntent(retention: ticket))
+        case .inspectRecordingRetention:
+            guard let bytes = try read(deletionURL, maximum: RecordingDeletionAuthority.ticketLimit) else { return .recordingRetention(nil) }
+            let value: Deletion = try decode(bytes); try validate(value)
+            return .recordingRetention(value.retention)
         case .recover, .recoverOwner:
             if isDeleted {
                 if case .recover = operation { try await cleanupDeleted(currentDeletionReceipt()) }
@@ -346,7 +416,7 @@ actor LiveSessionArtifactStore {
             if let journal { try await finishBinding(journal) }
             if let transcript, durableTranscript?.fingerprint != transcript.fingerprint { try await write(transcript) }
             if let chat, durableChat?.fingerprint != chat.fingerprint { try await write(chat) }
-        case .delete, .recover, .recoverOwner, .deletionIntent, .deletionCleanup, .inspectClaimedOwner: break
+        case .delete, .recover, .recoverOwner, .deletionIntent, .deletionCleanup, .inspectClaimedOwner, .inspectExport, .retentionIntent, .retentionCleanup, .recordingRetentionIntent, .inspectRecordingRetention: break
         }
         return nil
     }
@@ -395,6 +465,7 @@ actor LiveSessionArtifactStore {
         try derivativeTransaction {
             try inspectDiskWhileValid()
             guard !isDeleted else { throw LiveArtifactError.deleted }
+            try requireNotDeleted()
             guard journal?.phase != .prepared else { throw LiveArtifactError.bindingPending }
             let generation = journal?.generation
             let url = journal.map { targetURL(payload.kind, audio: $0.audioURL) } ?? sourceURL(payload.kind)
@@ -493,12 +564,12 @@ actor LiveSessionArtifactStore {
             }
         }
     }
-    private func restoreDisk(inspectionClaim: UUID? = nil) throws -> Restored {
+    private func restoreDisk(inspectionClaim: UUID? = nil, interruptChat: Bool = true) throws -> Restored {
         try derivativeTransaction {
             try inspectDiskWhileValid()
             guard !isDeleted else { return .init(chat: nil, transcriptValue: nil, audioURL: nil, deleted: true) }
             let audio = journal?.phase == .committed ? journal?.audioURL : nil
-            var paths = [journalURL, deletionURL, sourceURL(.chat), sourceURL(.transcript)]
+            var paths = [journalURL, deletionURL, retentionURL, sourceURL(.chat), sourceURL(.transcript)]
             if let audio {
                 paths += [audio, audio.deletingPathExtension().appendingPathExtension("json"), bindingTarget(audio),
                           targetURL(.chat, audio: audio), targetURL(.transcript, audio: audio)]
@@ -509,22 +580,56 @@ actor LiveSessionArtifactStore {
             let generation = audio == nil ? nil : journal?.generation
             let chat = try readPayload(.chat, from: audio.map { targetURL(.chat, audio: $0) } ?? sourceURL(.chat), generation: generation)
             let transcript = try readPayload(.transcript, from: audio.map { targetURL(.transcript, audio: $0) } ?? sourceURL(.transcript), generation: generation)
-            let restored = Restored(chat: try chat.map { try decode($0.data, as: ChatHistory.self).interruptedAfterRestart },
-                transcriptValue: try transcript.map { try LiveTranscriptArtifactCodec.decode($0.data) }, audioURL: audio, deleted: false, authority: authority)
+            let restored = Restored(chat: try chat.map {
+                var value = try decode($0.data, as: ChatHistory.self)
+                if interruptChat { return value.interruptedAfterRestart }
+                value.bindingGeneration = generation; return value
+            }, transcriptValue: try transcript.map {
+                if interruptChat { return try LiveTranscriptArtifactCodec.decode($0.data) }
+                return try LiveTranscriptArtifactCodec.decode(boundBytes($0, generation: generation))
+            }, audioURL: audio, deleted: false, historyRetained: try retentionValue()?.sourceWasRetired == true, authority: authority)
             try restored.validateAuthority()
             return restored
         }
     }
 
-    private func commitIntent() async throws -> DeletionReceipt {
+    private func commitIntent(retention: ProcessingPipeline.FileDeletionTicket? = nil) async throws -> DeletionReceipt {
         if !isDeleted { try await beforeStage(.deletionIntent) }
         return try derivativeTransaction {
             try inspectDiskWhileValid()
             if isDeleted { return try currentDeletionReceipt() }
             if let journal { try requireOwner(journal.audioURL) }
-            let intent = Deletion(version: 2, identity: identity, audioURL: journal?.audioURL, generation: journal?.generation,
-                                  intentID: UUID(), cleanupComplete: false)
-            try createSessionDirectory(); try writeVerified(encode(intent), to: deletionURL)
+            var history: [RecordingDeletionAuthority.Item]?
+            if let retention {
+                try retention.validateRetentionScope(); try retention.authority.validateExact(); try retention.validateFiles()
+                guard journal == nil || (journal?.phase == .committed && (journal?.audioURL).flatMap({ try? RecordingDeletionAuthority.canonical($0) }) == retention.authority.audioURL),
+                      retention.recordingID == identity.recordingID else { throw LiveArtifactError.wrongOwner }
+                for item in retention.items where try RecordingDeletionAuthority.Stamp.read(item.url) != nil {
+                    guard let created = try item.url.resourceValues(forKeys: [.creationDateKey]).creationDate,
+                          created < retention.retentionCutoff! else { throw LiveArtifactError.wrongOwner }
+                }
+                let prefix = retention.authority.audioURL.deletingPathExtension().lastPathComponent + "_part"
+                let selected = Set(retention.items.map(\.url))
+                try RecordingDeletionAuthority.scanChildren(retention.authority.audioURL.deletingLastPathComponent()) { url in
+                    let stem = url.deletingPathExtension().lastPathComponent
+                    guard RetentionCleanup.audioExtensions.contains(url.pathExtension.lowercased()), stem.hasPrefix(prefix),
+                          !stem.dropFirst(prefix.count).isEmpty, stem.dropFirst(prefix.count).allSatisfy(\.isNumber) else { return }
+                    guard selected.contains(try RecordingDeletionAuthority.canonical(url)) else { throw LiveArtifactError.wrongOwner }
+                }
+                for kind in [Kind.chat, .transcript] {
+                    for url in [sourceURL(kind), targetURL(kind, audio: retention.authority.audioURL)] {
+                        if try readPayload(kind, from: url, generation: url == sourceURL(kind) ? nil : journal?.generation) != nil {
+                            guard let created = try url.resourceValues(forKeys: [.creationDateKey]).creationDate,
+                                  created < retention.retentionCutoff! else { throw LiveArtifactError.wrongOwner }
+                        }
+                    }
+                }
+                history = try [sourceURL(.chat), sourceURL(.transcript), targetURL(.chat, audio: retention.authority.audioURL),
+                    targetURL(.transcript, audio: retention.authority.audioURL), bindingTarget(retention.authority.audioURL)].map { try RecordingDeletionAuthority.Item($0) }
+            }
+            let intent = Deletion(version: retention == nil ? 2 : 3, identity: identity, audioURL: retention?.authority.audioURL ?? journal?.audioURL, generation: journal?.generation,
+                                  intentID: UUID(), cleanupComplete: false, retention: retention, historyAuthority: history)
+            try createSessionDirectory(); try writeVerified(encodeControl(intent), to: deletionURL)
             isDeleted = true
             // Construct the verified receipt before releasing the token. A
             // concurrent retirement cannot turn a committed intent into a
@@ -533,7 +638,7 @@ actor LiveSessionArtifactStore {
         }
     }
     private func currentDeletionReceipt() throws -> DeletionReceipt {
-        guard let bytes = try read(deletionURL) else { throw LiveArtifactError.verificationFailed }
+        guard let bytes = try read(deletionURL, maximum: RecordingDeletionAuthority.ticketLimit) else { throw LiveArtifactError.verificationFailed }
         let intent: Deletion = try decode(bytes); try validate(intent)
         return try deletionReceipt(intent)
     }
@@ -541,13 +646,13 @@ actor LiveSessionArtifactStore {
         // Completion changes only cleanup state, never the immutable authority.
         // The original version1 intent's canonical shape remains compatible.
         var intent = value; intent.cleanupComplete = nil
-        let bytes = try encode(intent)
+        let bytes = try encodeControl(intent)
         return .init(identity: intent.identity, intentDigest: Payload.digest(bytes), intentByteCount: bytes.count)
     }
     private func cleanupDeleted(_ receipt: DeletionReceipt) async throws {
         try await beforeStage(.deletionCleanup)
         try RecordingResultMutation.withTransaction {
-            guard let bytes = try read(deletionURL) else { throw LiveArtifactError.verificationFailed }
+            guard let bytes = try read(deletionURL, maximum: RecordingDeletionAuthority.ticketLimit) else { throw LiveArtifactError.verificationFailed }
             var intent: Deletion = try decode(bytes); try validate(intent)
             let current = try deletionReceipt(intent)
             guard receipt.identity == identity, current.intentDigest == receipt.intentDigest,
@@ -556,6 +661,10 @@ actor LiveSessionArtifactStore {
                 try requireDeletedArtifactAbsence(intent)
                 isDeleted = true; acceptedChat = nil; acceptedTranscript = nil; durableChat = nil; durableTranscript = nil
                 return
+            }
+            if let retention = intent.retention {
+                try retention.authority.validateExact(); try retention.validateFiles()
+                for item in intent.historyAuthority ?? [] { try item.validate() }
             }
             if let audio = intent.audioURL { try requireOwner(audio) }
             for kind in [Kind.transcript, .chat] {
@@ -572,14 +681,14 @@ actor LiveSessionArtifactStore {
                 try RecordingResultMutation.withWrite(to: bindingTarget(audio)) {
                     if let bytes = try read(bindingTarget(audio)) {
                         let old: Journal = try decode(bytes); try validate(old)
-                        guard old.generation == generation && old.audioURL == audio else { throw LiveArtifactError.wrongOwner }
+                        guard old.generation == generation, try RecordingDeletionAuthority.canonical(old.audioURL) == RecordingDeletionAuthority.canonical(audio) else { throw LiveArtifactError.wrongOwner }
                         try removeVerified(bindingTarget(audio))
                     }
                 }
             }
             try requireDeletedArtifactAbsence(intent)
             intent.cleanupComplete = true
-            try writeVerified(encode(intent), to: deletionURL)
+            try writeVerified(encodeControl(intent), to: deletionURL)
             isDeleted = true
             acceptedChat = nil; acceptedTranscript = nil; durableChat = nil; durableTranscript = nil
         }
@@ -590,6 +699,166 @@ actor LiveSessionArtifactStore {
             paths += [targetURL(.chat, audio: audio), targetURL(.transcript, audio: audio), bindingTarget(audio)]
         }
         guard try paths.allSatisfy({ try read($0, maximum: 0, contents: false) == nil }) else { throw LiveArtifactError.verificationFailed }
+    }
+
+    private func encodeControl<T: Encodable>(_ value: T) throws -> Data {
+        let bytes = try LiveArtifactEncoding.encode(value, limit: RecordingDeletionAuthority.inspectionAllowance)
+        guard bytes.count <= RecordingDeletionAuthority.ticketLimit else { throw LiveArtifactError.artifactTooLarge }
+        return bytes
+    }
+
+    private func retentionValue() throws -> LiveHistoryRetention? {
+        guard let data = try read(retentionURL, maximum: RecordingDeletionAuthority.ticketLimit) else { return nil }
+        let value: LiveHistoryRetention = try decode(data)
+        try validateRetention(value)
+        return value
+    }
+    private func validateRetention(_ value: LiveHistoryRetention) throws {
+        guard value.version == 1, value.identity == identity, value.authority.recordingID == identity.recordingID,
+              value.steps.count <= 128, Set(value.steps.map { $0.original.url }).count == value.steps.count else { throw LiveArtifactError.wrongOwner }
+        let audio = value.authority.audioURL, base = audio.deletingPathExtension()
+        let allowed = Set(try RetentionCleanup.transcriptSuffixes.filter { ![".chat.json", ".live-transcript.json"].contains($0) }
+            .map { try RecordingDeletionAuthority.canonical(URL(fileURLWithPath: base.path + $0)) })
+        let sourceTranscript = try RecordingDeletionAuthority.canonical(sourceURL(.transcript)), sourceChat = try RecordingDeletionAuthority.canonical(sourceURL(.chat))
+        let targetTranscript = try RecordingDeletionAuthority.canonical(targetURL(.transcript, audio: audio)), targetChat = try RecordingDeletionAuthority.canonical(targetURL(.chat, audio: audio))
+        var bytes = 1_024
+        for step in value.steps {
+            try Self.requireSafeParents(step.original.url)
+            guard !step.original.directory, step.result?.url == nil || step.result?.url == step.original.url else { throw LiveArtifactError.unsafePath }
+            bytes += try RecordingDeletionAuthority.charge(step.original.url) * 2
+            guard bytes <= RecordingDeletionAuthority.ticketLimit else { throw LiveArtifactError.artifactTooLarge }
+            switch step.effect {
+            case .transcript:
+                guard step.original.url == sourceTranscript || step.original.url == targetTranscript,
+                      step.revision != nil else { throw LiveArtifactError.wrongOwner }
+            case .chat:
+                guard step.original.url == sourceChat || step.original.url == targetChat,
+                      step.revision != nil else { throw LiveArtifactError.wrongOwner }
+            case .remove:
+                guard allowed.contains(step.original.url) || step.original.url == value.linkedMarkdown,
+                      step.revision == nil else { throw LiveArtifactError.wrongOwner }
+            }
+        }
+        if let markdown = value.linkedMarkdown {
+            guard markdown.isFileURL, markdown.pathExtension.lowercased() == "md" else { throw LiveArtifactError.unsafePath }
+        }
+        if let generation = value.generation {
+            guard journal?.phase == .committed, journal?.generation == generation, (journal?.audioURL).flatMap({ try? RecordingDeletionAuthority.canonical($0) }) == audio else { throw LiveArtifactError.wrongOwner }
+        } else {
+            // Completed source-only retirement may later Bind its empty marker.
+            // This grants no cleanup authority over that later generation.
+            guard journal == nil || (value.cleanupComplete && (journal?.audioURL).flatMap({ try? RecordingDeletionAuthority.canonical($0) }) == audio) else { throw LiveArtifactError.bindingPending }
+        }
+    }
+    private func retentionReceipt(_ value: LiveHistoryRetention) throws -> RetentionReceipt {
+        .init(identity: value.identity, digest: Payload.digest(try encodeControl(value.immutable)))
+    }
+    private func commitRetentionIntent(_ input: RetentionRequest) async throws -> RetentionReceipt? {
+        try await beforeStage(.retentionIntent)
+        return try derivativeTransaction {
+            try inspectDiskWhileValid(); try requireNotDeleted(); try input.authority.validateExact()
+            if let retained = try retentionValue(), !retained.cleanupComplete { return try retentionReceipt(retained) }
+            guard journal?.phase != .prepared else { throw LiveArtifactError.bindingPending }
+            try requireOwner(input.authority.audioURL)
+            var steps: [LiveHistoryRetention.Step] = []
+            for item in input.conventional {
+                try item.validate()
+                if item.stamp != nil { steps.append(.init(original: item, effect: .remove, revision: nil)) }
+            }
+            for kind in [Kind.transcript, .chat] {
+                let url = journal.map { targetURL(kind, audio: $0.audioURL) } ?? sourceURL(kind)
+                guard let payload = try readPayload(kind, from: url, generation: journal?.generation),
+                      let created = try url.resourceValues(forKeys: [.creationDateKey]).creationDate, created < input.cutoff else { continue }
+                let hasContent: Bool
+                if kind == .chat { hasContent = !(try decode(payload.data, as: ChatHistory.self)).messages.isEmpty }
+                else {
+                    let value = try LiveTranscriptArtifactCodec.decode(payload.data)
+                    hasContent = value.app?.sourceUnavailable != true || value.app?.finalPublication != nil
+                }
+                guard hasContent else { continue }
+                guard payload.revision < UInt64.max else { throw LiveArtifactError.artifactTooLarge }
+                steps.append(.init(original: try RecordingDeletionAuthority.Item(url), effect: kind == .chat ? .chat : .transcript,
+                    revision: payload.revision + 1))
+            }
+            guard !steps.isEmpty else { return nil }
+            let value = LiveHistoryRetention(version: 1, identity: identity, intentID: UUID(), authority: input.authority,
+                generation: journal?.generation, cutoff: input.cutoff, linkedMarkdown: input.linkedMarkdown, sourceRetired: try retentionValue()?.sourceWasRetired == true || steps.contains(where: { $0.effect == .transcript }), steps: steps, cleanupComplete: false)
+            try validateRetention(value)
+            var completed = value
+            for index in completed.steps.indices where completed.steps[index].effect != .remove {
+                completed.steps[index].result = completed.steps[index].original
+                completed.steps[index].completed = true
+            }
+            _ = try encodeControl(completed)
+            try writeVerified(encodeControl(value), to: retentionURL)
+            return try retentionReceipt(value)
+        }
+    }
+    private func cleanupRetained(_ receipt: RetentionReceipt) async throws {
+        // No shared token is needed for this narrowly scoped, verified cleanup.
+        // The marker authorizes neither a new captured prefix nor audio removal.
+        var value = try RecordingResultMutation.withTransaction { () throws -> LiveHistoryRetention in
+            try inspectRetentionJournal()
+            guard let value = try retentionValue(), receipt.identity == identity,
+                  try retentionReceipt(value).digest == receipt.digest else { throw LiveArtifactError.wrongOwner }
+            return value
+        }
+        if value.cleanupComplete { return }
+        for index in value.steps.indices {
+            let step = value.steps[index]
+            try await beforeStage(step.effect == .transcript ? .retentionTranscript : step.effect == .chat ? .retentionChat : .retentionRemoval)
+            try RecordingResultMutation.withDeletion(of: value.authority.audioURL) {
+                try inspectRetentionJournal()
+                guard let current = try retentionValue(), try retentionReceipt(current).digest == receipt.digest else { throw LiveArtifactError.wrongOwner }
+                value = current; try value.authority.validateExact(); try requireOwner(value.authority.audioURL)
+                let currentStep = value.steps[index]
+                if currentStep.completed {
+                    if let result = currentStep.result { try result.validate() }
+                    else if try RecordingDeletionAuthority.Stamp.read(currentStep.original.url) != nil { throw LiveArtifactError.wrongOwner }
+                    return
+                }
+                try currentStep.original.validate()
+                switch currentStep.effect {
+                case .remove: try unlinkRetained(currentStep.original)
+                case .chat:
+                    let history = ChatHistory(messages: [], identity: identity, revision: currentStep.revision,
+                        bindingGeneration: value.generation)
+                    try writeVerified(LiveArtifactEncoding.encode(history, limit: chatPayloadLimit), to: currentStep.original.url)
+                    value.steps[index].result = try RecordingDeletionAuthority.Item(currentStep.original.url)
+                case .transcript:
+                    let transcript = LiveTranscriptArtifact(identity: identity, revision: currentStep.revision!, captureClosed: true,
+                        bindingGeneration: value.generation, sourceUnavailable: true)
+                    try writeVerified(LiveArtifactEncoding.encode(transcript, limit: payloadLimit), to: currentStep.original.url)
+                    value.steps[index].result = try RecordingDeletionAuthority.Item(currentStep.original.url)
+                }
+                value.steps[index].completed = true
+                try writeVerified(encodeControl(value), to: retentionURL)
+            }
+        }
+        try await beforeStage(.retentionCompleted)
+        try RecordingResultMutation.withDeletion(of: value.authority.audioURL) {
+            try inspectRetentionJournal()
+            guard let current = try retentionValue(), try retentionReceipt(current).digest == receipt.digest else { throw LiveArtifactError.wrongOwner }
+            value = current; try value.authority.validateExact(); try requireOwner(value.authority.audioURL)
+            guard value.steps.allSatisfy(\.completed) else { throw LiveArtifactError.verificationFailed }
+            for step in value.steps {
+                if let result = step.result { try result.validate() }
+                else if try RecordingDeletionAuthority.Stamp.read(step.original.url) != nil { throw LiveArtifactError.wrongOwner }
+            }
+            value.cleanupComplete = true
+            try writeVerified(encodeControl(value), to: retentionURL)
+        }
+    }
+    private func inspectRetentionJournal() throws {
+        // Read ledger routing without adopting content or requiring a live token.
+        if let data = try read(journalURL) {
+            let value: Journal = try decode(data); try validate(value); journal = value
+            guard value.phase == .committed else { throw LiveArtifactError.bindingPending }
+            try verifyBindingLedger(value)
+        }
+        if let data = try read(deletionURL) {
+            let value: Deletion = try decode(data); try validate(value); throw LiveArtifactError.deleted
+        }
     }
 
     private func sourceURL(_ kind: Kind) -> URL { sessionURL.appendingPathComponent(kind == .chat ? "chat.json" : "live-transcript.json") }
@@ -606,18 +875,27 @@ actor LiveSessionArtifactStore {
         }
     }
     private func validate(_ value: Deletion) throws {
-        guard value.version == 1 || value.version == 2 else { throw LiveArtifactError.unsupportedVersion }
+        guard [1, 2, 3].contains(value.version) else { throw LiveArtifactError.unsupportedVersion }
         guard value.version == 1 ? value.intentID == nil : value.intentID != nil && value.cleanupComplete != nil else {
             throw LiveArtifactError.corruptArtifact
         }
-        guard value.identity == identity, (value.audioURL == nil) == (value.generation == nil),
-              value.audioURL.map({ $0.isFileURL && $0 == $0.standardizedFileURL }) ?? true else { throw LiveArtifactError.wrongOwner }
+        guard value.identity == identity, value.version == 3 ? value.audioURL != nil : (value.audioURL == nil) == (value.generation == nil),
+              value.audioURL.map(RecordingDeletionAuthority.isNormalizedFileURL) ?? true else { throw LiveArtifactError.wrongOwner }
         if let audio = value.audioURL { try validateBindingPaths(audio) }
+        if value.version == 3 {
+            guard let retention = value.retention, let history = value.historyAuthority,
+                  retention.authority.audioURL == value.audioURL, retention.recordingID == identity.recordingID else { throw LiveArtifactError.corruptArtifact }
+            try retention.validateRetentionScope()
+            let audio = retention.authority.audioURL
+            let expected = Set(try [sourceURL(.chat), sourceURL(.transcript), targetURL(.chat, audio: audio), targetURL(.transcript, audio: audio), bindingTarget(audio)].map { try RecordingDeletionAuthority.canonical($0) })
+            guard history.count == expected.count, Set(history.map(\.url)) == expected, history.allSatisfy({ !$0.directory }) else { throw LiveArtifactError.wrongOwner }
+        } else { guard value.retention == nil, value.historyAuthority == nil else { throw LiveArtifactError.unsupportedVersion } }
     }
     private func requireCurrentJournal(_ value: Journal) throws {
         guard let bytes = try read(journalURL), try decode(bytes, as: Journal.self) == value else { throw LiveArtifactError.revisionConflict }
     }
     private func requireNotDeleted() throws {
+        if let retained = try retentionValue(), retained.intentID != admittedRetentionID { throw LiveArtifactError.staleRevision }
         if let bytes = try read(deletionURL) { let intent: Deletion = try decode(bytes); try validate(intent); isDeleted = true; throw LiveArtifactError.deleted }
     }
     private func requireOwner(_ audio: URL, inspectionClaim: UUID? = nil) throws {
@@ -634,7 +912,7 @@ actor LiveSessionArtifactStore {
         else { try RecordingResultMutation.withDeletion(of: audio, inspect) }
     }
     private func validateBindingPaths(_ audio: URL) throws {
-        guard audio.isFileURL, audio == audio.standardizedFileURL,
+        guard RecordingDeletionAuthority.isNormalizedFileURL(audio),
               RetentionCleanup.audioExtensions.contains(audio.pathExtension.lowercased()),
               !audio.deletingPathExtension().lastPathComponent.isEmpty else { throw LiveArtifactError.unsafePath }
         let paths = [audio, audio.deletingPathExtension().appendingPathExtension("json"), bindingTarget(audio),
@@ -776,6 +1054,20 @@ actor LiveSessionArtifactStore {
         try synchronizeDirectory(url.deletingLastPathComponent())
         guard try read(url) == data else { throw LiveArtifactError.verificationFailed }
     }
+    private func unlinkRetained(_ item: RecordingDeletionAuthority.Item) throws {
+        try requireSafeParents(item.url); try item.validate()
+        guard try RecordingDeletionAuthority.Stamp.read(item.url) != nil else { return }
+        let descriptor = open(item.url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else { throw LiveArtifactError.unsafePath }
+        defer { close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, UInt64(info.st_ino) == item.stamp?.inode,
+              UInt64(UInt32(bitPattern: info.st_dev)) == item.stamp?.device else { throw LiveArtifactError.wrongOwner }
+        try item.validate()
+        guard unlink(item.url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        try synchronizeDirectory(item.url.deletingLastPathComponent())
+    }
+
     private func removeVerified(_ url: URL) throws {
         guard try read(url) != nil else { return }
         try fm.removeItem(at: url); try synchronizeDirectory(url.deletingLastPathComponent())

@@ -18,6 +18,13 @@ struct PrivacyReceiptLifecycleTests {
         .init(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper))
     }
 
+    @Test func boundedRetentionCannotTreatAnUnavailableFolderAsProofOfAudioDeletion() throws {
+        let f = Fixture(); try f.create(); defer { f.clean() }
+        #expect(try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: f.receipt, bounded: true))
+        try FileManager.default.removeItem(at: f.root)
+        #expect(throws: (any Error).self) { _ = try PrivacyReceiptLifecycle.hasSurvivingAudio(for: f.receipt, bounded: true) }
+    }
+
     @Test func snapshotDoesNotCreateEvidenceAndReportsIndependentGapsAndUnreadableFiles() async throws {
         let f = Fixture(); try f.create(); defer { f.clean() }
         let store = f.store()

@@ -117,11 +117,11 @@ actor RecordingMetadataStore {
     }
 
     func record(_ completion: ProcessingCompletionStamp, audioURL: URL,
-                       fallback: RecordingMetadataPayload) throws {
-        try RecordingResultMutation.withTransaction { try recordWhileLocked(completion, audioURL: audioURL, fallback: fallback) }
+                       fallback: RecordingMetadataPayload, retention: Bool = false) throws {
+        try RecordingResultMutation.withTransaction { try recordWhileLocked(completion, audioURL: audioURL, fallback: fallback, retention: retention) }
     }
     private func recordWhileLocked(_ completion: ProcessingCompletionStamp, audioURL: URL,
-                                   fallback: RecordingMetadataPayload) throws {
+                                   fallback: RecordingMetadataPayload, retention: Bool = false) throws {
         try Task.checkCancellation()
         let fm = FileManager.default
         let audioType = try fm.attributesOfItem(atPath: audioURL.path)[.type] as? FileAttributeType
@@ -134,7 +134,10 @@ actor RecordingMetadataStore {
             guard try fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType == .typeRegular else {
                 throw Failure.invalidMetadata
             }
-            let bytes = try files.read(url)
+            let bytes: Data
+            if retention {
+                guard let value = try RecordingDeletionAuthority.readJSON(url, maximumBytes: 128 * 1_024, tokenLimit: 32_768) else { throw Failure.invalidMetadata }; bytes = value
+            } else { bytes = try files.read(url) }
             try Task.checkCancellation()
             guard (try? JSONDecoder().decode(RecordingMetadataPayload.self, from: bytes)) != nil,
                   let parsed = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw Failure.invalidMetadata }
@@ -155,29 +158,29 @@ actor RecordingMetadataStore {
         try writeVerified(bytes, to: url)
     }
 
-    func reconcile(_ record: PersistedProcessingJob) throws {
+    func reconcile(_ record: PersistedProcessingJob, retention: Bool = false) throws {
         try Task.checkCancellation()
         guard let completedAt = record.completedAt, let path = record.source.finalizedAudioPath else { return }
         let audio = URL(fileURLWithPath: path)
-        guard try audioStillExists(audio) else { return }
+        guard try retention ? RecordingDeletionAuthority.regularFileExistsInAvailableParent(audio) : audioStillExists(audio) else { return }
         let source = record.source
         let fallback = RecordingMetadataPayload(recordingID: record.recordingID,
             dateISO8601: ISO8601DateFormatter().string(from: source.recordingDate), durationSeconds: source.duration,
             meetingTitle: source.meetingTitle, masterFileName: audio.lastPathComponent,
             segmentFileNames: source.segmentAudioPaths.map { URL(fileURLWithPath: $0).lastPathComponent }, warnings: [],
             participants: source.participants, calendarAttendees: source.calendarEvent?.attendeeNames ?? [], associatedApp: source.associatedApp)
-        try self.record(.init(jobID: record.id, completedAt: completedAt), audioURL: audio, fallback: fallback)
+        try self.record(.init(jobID: record.id, completedAt: completedAt), audioURL: audio, fallback: fallback, retention: retention)
     }
 
-    func reconcile(_ batch: IntegrationDeliveryBatch) throws {
+    func reconcile(_ batch: IntegrationDeliveryBatch, retention: Bool = false) throws {
         try Task.checkCancellation()
         guard let completion = batch.successfulWorkflowCompletion else { return }
         let audio = batch.bundle.audioFileURL
-        guard try audioStillExists(audio) else { return }
+        guard try retention ? RecordingDeletionAuthority.regularFileExistsInAvailableParent(audio) : audioStillExists(audio) else { return }
         let fallback = RecordingMetadataPayload(recordingID: batch.recordingID,
             dateISO8601: ISO8601DateFormatter().string(from: batch.bundle.createdAt), durationSeconds: batch.bundle.durationSeconds,
             meetingTitle: batch.bundle.title, masterFileName: audio.lastPathComponent, segmentFileNames: [], warnings: [])
-        try record(completion, audioURL: audio, fallback: fallback)
+        try record(completion, audioURL: audio, fallback: fallback, retention: retention)
     }
 
     private func audioStillExists(_ url: URL) throws -> Bool {

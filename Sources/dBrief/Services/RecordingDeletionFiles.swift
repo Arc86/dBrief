@@ -3,7 +3,7 @@ import Foundation
 extension ProcessingPipeline {
     /// Frozen once before intent. The same small inventory survives partial
     /// removal, including loss of the metadata which supplied privacy ownership.
-    struct FileDeletionTicket: Sendable {
+    struct FileDeletionTicket: Codable, Sendable {
         let authority: RecordingDeletionAuthority
         let items: [RecordingDeletionAuthority.Item]
         let recoveryDirectory: RecordingDeletionAuthority.Item?
@@ -11,12 +11,13 @@ extension ProcessingPipeline {
         let bytes: Int
         var snapshots = RecoveryLifecycle.DeletionSnapshot()
         var privacyTargets: [URL] = []
+        var retentionCutoff: Date? = nil
         var recordingID: UUID? { authority.recordingID }
         func adoptingVerifiedRecordingID(_ id: UUID) throws -> Self {
             try validateFiles()
             var value = Self(authority: try authority.adoptingVerifiedRecordingID(id), items: items,
                 recoveryDirectory: recoveryDirectory, discard: discard, bytes: bytes)
-            value.snapshots = snapshots; value.privacyTargets = privacyTargets
+            value.snapshots = snapshots; value.privacyTargets = privacyTargets; value.retentionCutoff = retentionCutoff
             return value
         }
 
@@ -66,6 +67,34 @@ extension ProcessingPipeline {
                 return Self(authority: authority, items: items, recoveryDirectory: recoveryDirectory, discard: discard, bytes: bytes)
             }
         }
+        /// Recording retention carries only selected aged audio and optional
+        /// metadata. Conventional derivatives are never inherited by this ticket.
+        func validateRetentionScope() throws {
+            guard let owner = recordingID, discard == nil, recoveryDirectory == nil, retentionCutoff != nil, !items.isEmpty,
+                  items.count <= 128, snapshots.jobs.count + snapshots.deliveries.count <= 128,
+                  privacyTargets.count <= 128 else { throw LiveArtifactError.corruptArtifact }
+            try snapshots.validateRetention()
+            guard snapshots.recordingIDs.allSatisfy({ $0 == owner }) else { throw LiveArtifactError.wrongOwner }
+            let base = authority.audioURL.deletingPathExtension(), prefix = base.lastPathComponent + "_part"
+            var charge = 512 + (try RecordingDeletionAuthority.charge(authority.audioURL))
+            for item in items {
+                guard !item.directory, item.url == (try RecordingDeletionAuthority.canonical(item.url)) else { throw LiveArtifactError.unsafePath }
+                let stem = item.url.deletingPathExtension().lastPathComponent
+                let segment = item.url.deletingLastPathComponent() == base.deletingLastPathComponent()
+                    && RetentionCleanup.audioExtensions.contains(item.url.pathExtension.lowercased()) && stem.hasPrefix(prefix)
+                    && !stem.dropFirst(prefix.count).isEmpty && stem.dropFirst(prefix.count).allSatisfy(\.isNumber)
+                guard item.url == authority.audioURL || item.url == authority.metadata.url || segment else { throw LiveArtifactError.wrongOwner }
+                charge += try RecordingDeletionAuthority.charge(item.url)
+            }
+            for url in privacyTargets {
+                guard url.isFileURL, url.lastPathComponent.hasSuffix(".privacy.json") else { throw LiveArtifactError.unsafePath }
+                charge += try RecordingDeletionAuthority.charge(url)
+            }
+            charge += snapshots.charge
+            guard Set(items.map(\.url)).count == items.count, items.contains(where: { $0.url == authority.audioURL }),
+                  charge <= RecordingDeletionAuthority.ticketLimit else { throw LiveArtifactError.artifactTooLarge }
+        }
+
         private static func isDirectory(_ url: URL) throws -> Bool {
             let value = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard value.isSymbolicLink != true else { throw LiveArtifactError.unsafePath }
@@ -98,7 +127,7 @@ extension ProcessingPipeline {
     func prepareDeletion(_ frozen: FileDeletionTicket, lifecycle: RecoveryLifecycle?, store: PrivacyReceiptStore) async throws -> FileDeletionTicket {
         var value = frozen
         if let lifecycle { value.snapshots = try await lifecycle.deletionSnapshot(for: value.authority.audioURL,
-            byteLimit: RecordingDeletionAuthority.ticketLimit - value.bytes) }
+            byteLimit: RecordingDeletionAuthority.ticketLimit - value.bytes, retention: value.retentionCutoff != nil) }
         var ids = value.snapshots.recordingIDs
         if let id = value.recordingID { ids.insert(id) }
         value.privacyTargets = try await store.boundedDeletionTargets(for: value.authority.audioURL, recordingIDs: ids,
@@ -110,7 +139,7 @@ extension ProcessingPipeline {
     func removeDeletionFiles(_ ticket: FileDeletionTicket, lifecycle: RecoveryLifecycle?, store: PrivacyReceiptStore,
                              files: DeletionFiles = .init(), allowSharedAudio: Bool = false) async throws {
         try await files.beforeRemoval()
-        if let lifecycle { try await lifecycle.removeSnapshots(for: ticket.authority.audioURL, expected: ticket.snapshots, authority: ticket.authority) }
+        if let lifecycle { try await lifecycle.removeSnapshots(for: ticket.authority.audioURL, expected: ticket.snapshots, authority: ticket.authority, retention: ticket.retentionCutoff != nil) }
         let fm = files.fileManager()
         var firstError: (any Error)?
         var removedSession: URL?
@@ -134,7 +163,7 @@ extension ProcessingPipeline {
                     finalized: discard.finalized, knownFiles: ticket.items.filter { !$0.directory }.map(\.url),
                     removedSessionDirectory: removedSession, fileManager: fm)
             } else {
-                safe = try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: ticket.authority.audioURL), fileManager: fm)
+                safe = try !PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: ticket.authority.audioURL), fileManager: fm, bounded: ticket.retentionCutoff != nil)
             }
             if safe { try await files.removeEvidence(store, ticket) }
             else if !allowSharedAudio { throw LiveArtifactError.verificationFailed }

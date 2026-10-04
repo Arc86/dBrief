@@ -148,6 +148,7 @@ final class AppContext {
                 let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: [recordingsFolder])
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
+                combined.historiesRetired += result.historiesRetired
             }
             if appSettings.autoDeleteTranscriptsEnabled {
                 let days = appSettings.autoDeleteTranscriptsDays
@@ -155,6 +156,7 @@ final class AppContext {
                     folders: [recordingsFolder, transcriptionFolder])
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
+                combined.historiesRetired += result.historiesRetired
             }
 
             appSettings.lastRetentionCleanupDate = Date()

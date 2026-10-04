@@ -19,10 +19,146 @@ struct RecoveryQueueTests {
     }
     private func batch(job: PersistedProcessingJob) -> IntegrationDeliveryBatch {
         IntegrationDeliveryBatch(id: job.id, recordingID: job.recordingID, createdAt: job.createdAt,
-            bundle: .init(title: "Meeting", createdAt: job.createdAt, durationSeconds: 1,
+            bundle: .init(title: job.source.meetingTitle, createdAt: job.createdAt, durationSeconds: 1,
                 audioFileURL: URL(fileURLWithPath: job.source.finalizedAudioPath!), transcript: "Private text",
                 summary: nil, actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
             deliveries: [.init(id: UUID(), destination: .webhook, configurationDigest: "target")])
+    }
+
+    @Test(arguments: [false, true]) func retentionRemovalCannotInheritAReplacedRecoveryManifest(delivery: Bool) async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        var record = job(audio: root.appendingPathComponent("audio.wav"), status: .completed)
+        record.source.meetingTitle = String(repeating: "x", count: 20 * 1_024)
+        if delivery {
+            let store = IntegrationDeliveryStore(rootURL: root.appendingPathComponent("deliveries"))
+            let original = batch(job: record); try await store.save(original)
+            let selected = try #require(try await store.retentionInventory().first)
+            let file = selected.authority.manifest.url, bytes = try Data(contentsOf: file)
+            try bytes.write(to: file, options: .atomic)
+            await #expect(throws: LiveArtifactError.wrongOwner) { try await store.removeForRetention(id: original.id, expectedRecordingID: original.recordingID, expected: selected.authority) }
+            #expect(try Data(contentsOf: file) == bytes)
+            let renewed = try #require(try await store.retentionInventory().first)
+            try await store.removeForRetention(id: original.id, expectedRecordingID: original.recordingID, expected: renewed.authority)
+            #expect(!FileManager.default.fileExists(atPath: file.path))
+        } else {
+            let store = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs")); try await store.save(record)
+            let selected = try #require(try await store.retentionInventory().first)
+            let file = selected.authority.manifest.url, bytes = try Data(contentsOf: file)
+            try bytes.write(to: file, options: .atomic)
+            await #expect(throws: LiveArtifactError.wrongOwner) { try await store.removeForRetention(id: record.id, expectedRecordingID: record.recordingID, expected: selected.authority) }
+            #expect(try Data(contentsOf: file) == bytes)
+            let renewed = try #require(try await store.retentionInventory().first)
+            try await store.removeForRetention(id: record.id, expectedRecordingID: record.recordingID, expected: renewed.authority)
+            #expect(!FileManager.default.fileExists(atPath: file.path))
+        }
+    }
+
+    @Test func retentionReplayFinishesFrozenScratchAfterItsManifestDisappears() async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let audio = root.appendingPathComponent("audio.wav"); try Data([1]).write(to: audio)
+        let record = job(audio: audio, status: .completed)
+        let jobs = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs"))
+        let lifecycle = RecoveryLifecycle(jobs: jobs, deliveries: .init(rootURL: root.appendingPathComponent("deliveries")))
+        try await jobs.save(record)
+        let directory = root.appendingPathComponent("jobs/\(record.id.uuidString)")
+        let child = directory.appendingPathComponent("original-private-scratch.bin")
+        try Data("original scratch".utf8).write(to: child)
+        let expected = try await lifecycle.deletionSnapshot(for: audio, byteLimit: RecordingDeletionAuthority.ticketLimit, retention: true)
+        let authority = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: record.recordingID)
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("job.json"))
+        await #expect(throws: Never.self, "Replay must finish original headerless scratch") {
+            try await lifecycle.removeSnapshots(for: audio, expected: expected, authority: authority, retention: true)
+        }
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+        await #expect(throws: Never.self, "A removed original inventory must remain idempotent") {
+            try await lifecycle.removeSnapshots(for: audio, expected: expected, authority: authority, retention: true)
+        }
+        #expect(FileManager.default.fileExists(atPath: audio.path))
+    }
+
+    @Test(arguments: [false, true]) func retentionPhysicalRecordMustStillNameTheAuthorizedAudio(delivery: Bool) async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let audio = root.appendingPathComponent("authorized.wav"); try Data([1]).write(to: audio)
+        let record = job(audio: root.appendingPathComponent("foreign.wav"), status: .completed)
+        let authority = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: record.recordingID)
+        if delivery {
+            let store = IntegrationDeliveryStore(rootURL: root.appendingPathComponent("deliveries")); try await store.save(batch(job: record))
+            let frozen = try #require(try await store.retentionInventory().first)
+            await #expect(throws: LiveArtifactError.wrongOwner) { try await store.removeForRetention(id: record.id,
+                expectedRecordingID: record.recordingID, expected: frozen.authority, audioAuthority: authority) }
+            #expect(FileManager.default.fileExists(atPath: frozen.authority.manifest.url.path))
+        } else {
+            let store = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs")); try await store.save(record)
+            let frozen = try #require(try await store.retentionInventory().first)
+            await #expect(throws: LiveArtifactError.wrongOwner) { try await store.removeForRetention(id: record.id,
+                expectedRecordingID: record.recordingID, expected: frozen.authority, audioAuthority: authority) }
+            #expect(FileManager.default.fileExists(atPath: frozen.authority.manifest.url.path))
+        }
+    }
+
+    @Test func retentionTicketRejectsForeignRecoveryPrivacyOwners() async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let audio = root.appendingPathComponent("audio.wav"); try Data([1]).write(to: audio)
+        let record = job(audio: audio, status: .completed)
+        let jobs = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs")); try await jobs.save(record)
+        let lifecycle = RecoveryLifecycle(jobs: jobs, deliveries: .init(rootURL: root.appendingPathComponent("deliveries")))
+        let authority = try RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: UUID())
+        var ticket = ProcessingPipeline.FileDeletionTicket(authority: authority, items: [authority.audio],
+            recoveryDirectory: nil, discard: nil, bytes: 512 + (try RecordingDeletionAuthority.charge(audio)) * 2)
+        ticket.retentionCutoff = Date()
+        ticket.snapshots = try await lifecycle.deletionSnapshot(for: audio, byteLimit: RecordingDeletionAuthority.ticketLimit, retention: true)
+        #expect(throws: LiveArtifactError.wrongOwner) { try ticket.validateRetentionScope() }
+    }
+
+    @Test func retentionSnapshotEncodingIsStableThroughRepeatedColdDecodes() throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let pairs = (0..<8).map { _ in (UUID(), UUID()) }
+        var physical: [UUID: RecoveryRetentionAuthority] = [:]
+        for (id, _) in pairs {
+            let file = root.appendingPathComponent(id.uuidString + ".json"); try Data("{}".utf8).write(to: file)
+            physical[id] = try .init(manifest: .init(file))
+        }
+        let snapshot = RecoveryLifecycle.DeletionSnapshot(jobs: Dictionary(uniqueKeysWithValues: pairs),
+            deliveries: Dictionary(uniqueKeysWithValues: pairs.reversed()), retentionJobs: physical, retentionDeliveries: physical)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let original = try encoder.encode(snapshot)
+        for _ in 0..<32 {
+            let decoded = try JSONDecoder().decode(RecoveryLifecycle.DeletionSnapshot.self, from: original)
+            #expect(try encoder.encode(decoded) == original)
+        }
+        let legacy = try JSONSerialization.data(withJSONObject: ["jobs": pairs.flatMap { [$0.0.uuidString, $0.1.uuidString] },
+            "deliveries": []])
+        #expect(try JSONDecoder().decode(RecoveryLifecycle.DeletionSnapshot.self, from: legacy).jobs == snapshot.jobs)
+        let duplicate = try JSONSerialization.data(withJSONObject: ["jobs": [pairs[0].0.uuidString, pairs[0].1.uuidString,
+            pairs[0].0.uuidString, pairs[0].1.uuidString], "deliveries": []])
+        #expect(throws: LiveArtifactError.wrongOwner) { _ = try JSONDecoder().decode(RecoveryLifecycle.DeletionSnapshot.self, from: duplicate) }
+    }
+
+    @Test func boundedRetentionPreservesCompletionJournalsWhileRecordingStorageIsOffline() async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("offline-recordings")
+        var record = job(audio: folder.appendingPathComponent("audio.wav"), status: .completed)
+        record.completedAt = Date(timeIntervalSince1970: 200)
+        let jobs = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs")); try await jobs.save(record)
+        let manifest = root.appendingPathComponent("jobs/\(record.id.uuidString)/job.json"), bytes = try Data(contentsOf: manifest)
+        let lifecycle = RecoveryLifecycle(jobs: jobs, deliveries: .init(rootURL: root.appendingPathComponent("deliveries")))
+        await #expect(throws: (any Error).self) { _ = try await lifecycle.prepareRetention(category: .transcripts,
+            days: 1, folders: [folder], now: Date(timeIntervalSince1970: 1_000_000), bounded: true) }
+        #expect(FileManager.default.fileExists(atPath: manifest.path))
+        if FileManager.default.fileExists(atPath: manifest.path) { #expect(try Data(contentsOf: manifest) == bytes) }
+    }
+
+    @Test(arguments: [false, true]) func retentionRejectsAnOversizedRecoveryRecordBeforeReadingItsValue(delivery: Bool) async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        var record = job(audio: root.appendingPathComponent("audio.wav"), status: .completed)
+        record.source.meetingTitle = String(repeating: "x", count: 130 * 1_024)
+        if delivery {
+            let store = IntegrationDeliveryStore(rootURL: root.appendingPathComponent("deliveries")); try await store.save(batch(job: record))
+            await #expect(throws: LiveArtifactError.artifactTooLarge) { _ = try await store.retentionInventory() }
+        } else {
+            let store = ProcessingJobStore(rootURL: root.appendingPathComponent("jobs")); try await store.save(record)
+            await #expect(throws: LiveArtifactError.artifactTooLarge) { _ = try await store.retentionInventory() }
+        }
     }
 
     @Test func movingPreservesRelativeOrderAndHandlesBoundaries() {

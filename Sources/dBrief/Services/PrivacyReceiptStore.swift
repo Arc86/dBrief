@@ -33,7 +33,7 @@ actor PrivacyReceiptStore {
         audioURL.deletingPathExtension().appendingPathExtension("privacy.json")
     }
 
-    func load(from url: URL) throws -> PrivacyReceipt? {
+    func load(from url: URL, maximumBytes: Int = 16 * 1_024 * 1_024) throws -> PrivacyReceipt? {
         let url = resolvedURL(url)
         let attributes: [FileAttributeKey: Any]
         do {
@@ -42,10 +42,11 @@ actor PrivacyReceiptStore {
             return nil
         }
         guard attributes[.type] as? FileAttributeType == .typeRegular else { throw StoreError.unsafeFile }
+        guard maximumBytes > 0, maximumBytes <= Self.maximumFileBytes else { throw StoreError.oversizedFile }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        let data = try handle.read(upToCount: Self.maximumFileBytes + 1) ?? Data()
-        guard data.count <= Self.maximumFileBytes else { throw StoreError.oversizedFile }
+        let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
+        guard data.count <= maximumBytes else { throw StoreError.oversizedFile }
         struct Header: Decodable { let version: Int }
         let decoder = JSONDecoder()
         guard try decoder.decode(Header.self, from: data).version == PrivacyReceipt.currentVersion else {
@@ -315,6 +316,24 @@ actor PrivacyReceiptStore {
 
     /// Manager tickets reserve before this scan and preflight each retained URL.
     /// No directory-wide array or receipt contents enter the cleanup inventory.
+    /// A finite admission over private roots precedes any retention effect.
+    /// File contents are read later through individually bounded APIs.
+    func preflightRetention() throws {
+        guard pendingRoots.count <= 32, aliases.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
+        var visited = 0, bytes = 0
+        for root in Set(pendingRoots + [gapDirectoryURL]) {
+            try LiveSessionArtifactStore.requireSafeParents(root.appendingPathComponent("probe"))
+            try RecordingDeletionAuthority.scanChildren(root, includeHidden: true) { file in
+                visited += 1; bytes += try RecordingDeletionAuthority.charge(file)
+                guard visited <= 4_096, bytes <= 512 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
+            }
+        }
+        for (key, value) in aliases {
+            bytes += try RecordingDeletionAuthority.charge(URL(fileURLWithPath: key)) + RecordingDeletionAuthority.charge(value)
+            guard bytes <= 512 * 1_024 else { throw LiveArtifactError.artifactTooLarge }
+        }
+    }
+
     func boundedDeletionTargets(for audioURL: URL, recordingIDs: Set<UUID>,
                                 extra: URL? = nil, byteLimit: Int) throws -> [URL] {
         guard pendingRoots.count <= 32, recordingIDs.count <= 128, aliases.count <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
@@ -366,7 +385,7 @@ actor PrivacyReceiptStore {
             let original = Set(ticket.privacyTargets.map(receiptKey))
             guard ticket.privacyTargets.allSatisfy({ original.contains(receiptKey(resolvedURL($0))) }) else { throw LiveArtifactError.wrongOwner }
             if ticket.discard == nil,
-               try PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: ticket.authority.audioURL)) {
+               try PrivacyReceiptLifecycle.hasSurvivingAudio(for: PrivacyReceiptLifecycle.receiptURL(for: ticket.authority.audioURL), bounded: ticket.retentionCutoff != nil) {
                 throw LiveArtifactError.verificationFailed
             }
             try removeEvidence(at: ticket.privacyTargets)
@@ -398,25 +417,28 @@ actor PrivacyReceiptStore {
     /// Retry app-owned remnants even when their final audio/receipt no longer
     /// exists for output-folder discovery. Deletion markers contain only hashes;
     /// pending file names contain generated IDs, never user recording names.
-    func retryDeletedEvidenceCleanup() -> Int {
+    func retryDeletedEvidenceCleanup(bounded: Bool = false) -> Int {
+        if bounded { do { try preflightRetention() } catch { return 1 } }
+        func visit(_ root: URL, _ body: (URL) throws -> Void) throws {
+            if bounded { try RecordingDeletionAuthority.scanChildren(root, includeHidden: true, visit: body) }
+            else { for file in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) { try body(file) } }
+        }
         var failures = 0
         for root in pendingRoots {
-            let files: [URL]
-            do { files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) }
-            catch let error as CocoaError where error.code == .fileReadNoSuchFile { continue }
-            catch { failures += 1; continue }
-            for file in files {
-                let pending = file.pathExtension == "binding" ? file.deletingPathExtension() : file
-                guard pendingID(pending) != nil, isSuppressed(pending) else { continue }
-                do { try removeEvidence(at: [pending]) }
-                catch { failures += 1 }
-            }
+            do {
+                try visit(root) { file in
+                    let pending = file.pathExtension == "binding" ? file.deletingPathExtension() : file
+                    guard pendingID(pending) != nil, isSuppressed(pending) else { return }
+                    do { try removeEvidence(at: [pending]) } catch { failures += 1 }
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile { }
+            catch { failures += 1 }
         }
         do {
-            let markers = try FileManager.default.contentsOfDirectory(at: gapDirectoryURL, includingPropertiesForKeys: nil)
-            for marker in markers where marker.pathExtension == "deleted" {
+            try visit(gapDirectoryURL) { marker in
+                guard marker.pathExtension == "deleted" else { return }
                 let hash = marker.deletingPathExtension().lastPathComponent
-                guard hash.count == 64, hash.allSatisfy({ $0.isHexDigit }) else { continue }
+                guard hash.count == 64, hash.allSatisfy({ $0.isHexDigit }) else { return }
                 do { try removeIfPresent(gapDirectoryURL.appendingPathComponent(hash + ".gap")) }
                 catch { failures += 1 }
             }

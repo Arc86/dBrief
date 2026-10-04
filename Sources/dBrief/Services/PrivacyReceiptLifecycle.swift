@@ -31,10 +31,9 @@ enum PrivacyReceiptLifecycle {
 
     /// Throws if the folder cannot be inspected. Offline storage is never
     /// interpreted as proof that the recording has been deleted.
-    static func hasSurvivingAudio(for receiptURL: URL, fileManager: FileManager = .default) throws -> Bool {
+    static func hasSurvivingAudio(for receiptURL: URL, fileManager: FileManager = .default, bounded: Bool = false) throws -> Bool {
         let base = receiptURL.deletingPathExtension().deletingPathExtension().lastPathComponent
-        let siblings = try fileManager.contentsOfDirectory(at: receiptURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)
-        return siblings.contains { url in
+        func matches(_ url: URL) -> Bool {
             guard RecordingDiscovery.supportedExtensions.contains(url.pathExtension.lowercased()) else { return false }
             let stem = url.deletingPathExtension().lastPathComponent
             if stem == base { return true }
@@ -43,5 +42,11 @@ enum PrivacyReceiptLifecycle {
             let suffix = stem.dropFirst(prefix.count)
             return !suffix.isEmpty && suffix.allSatisfy(\.isNumber)
         }
+        if bounded {
+            var found = false
+            try RecordingDeletionAuthority.scanChildren(receiptURL.deletingLastPathComponent(), includeHidden: true, requireRoot: true) { if matches($0) { found = true } }
+            return found
+        }
+        return try fileManager.contentsOfDirectory(at: receiptURL.deletingLastPathComponent(), includingPropertiesForKeys: nil).contains(where: matches)
     }
 }

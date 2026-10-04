@@ -127,6 +127,20 @@ struct ReprocessingStoreTests {
         #expect(FileManager.default.fileExists(atPath: f.audio.path))
     }
 
+    @Test func boundedMissingAudioCleanupPreservesBackupsWhenTheOutputFolderIsOffline() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let folder = f.root.appendingPathComponent("output")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let audio = folder.appendingPathComponent("audio.m4a"); try Data([1, 2]).write(to: audio)
+        let store = ReprocessingStore(root: f.storeRoot)
+        let completed = try await store.prepare(audioURL: audio, configuration: Data())
+        try await store.stage(Data("new transcript".utf8), suffix: "transcript.json", attemptID: completed.id)
+        try await store.commit(attemptID: completed.id)
+        try FileManager.default.moveItem(at: folder, to: f.root.appendingPathComponent("offline-output"))
+        await #expect(throws: (any Error).self) { _ = try await store.purgeCompletedForMissingAudio(bounded: true) }
+        #expect(try await store.discoverForRetention().map(\.id) == [completed.id])
+    }
+
     @Test func missingAudioCleanupKeepsPendingWorkspaceAndItsPreviousResults() async throws {
         let f = try Fixture(); defer { f.clean() }
         let store = ReprocessingStore(root: f.storeRoot)

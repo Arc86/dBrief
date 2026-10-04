@@ -52,6 +52,12 @@ struct RecordingDeletionAuthority: Codable, Sendable {
         guard recordingID == nil || recordingID == id else { throw LiveArtifactError.wrongOwner }
         return .init(audio: audio, metadata: metadata, recordingID: id)
     }
+    /// Foundation rewrites the fixed /private aliases even after realpath has
+    /// resolved them. Both spellings are admitted; arbitrary lexical paths are not.
+    static func isNormalizedFileURL(_ url: URL) -> Bool {
+        url.isFileURL && url.absoluteString.utf8.count <= 4_096 &&
+            (url == url.standardizedFileURL || (try? canonical(url)) == url)
+    }
     static func canonical(_ url: URL) throws -> URL {
         guard url.isFileURL, url.absoluteString.utf8.count <= 4_096 else { throw LiveArtifactError.unsafePath }
         var directory = url.deletingLastPathComponent(), missing: [String] = []

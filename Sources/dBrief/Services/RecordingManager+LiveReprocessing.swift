@@ -73,6 +73,7 @@ extension RecordingManager {
 
     func reconcileManagedReprocessing(_ entry: LiveRecordingSessionRegistry.Entry) async throws {
         guard let audio = entry.artifacts.admittedAudioURL else { return }
+        if entry.artifacts.historyRetained, !appState.liveRecordingSessions.isExplicitReprocessingReplacement(recordingID: entry.identity.recordingID) { return }
         let inspection = try appState.liveRecordingSessions.reserveReprocessingInspection()
         defer { withExtendedLifetime(inspection) {} }
         if let result = try await reprocessingStore.managedFinal(audioURL: audio, identity: entry.identity,

@@ -51,8 +51,9 @@ import dBriefWire
     }
     private final class Delete {
         let continuation: CheckedContinuation<LiveSessionArtifactStore.DeletionReceipt, any Error>
+        let retention: ProcessingPipeline.FileDeletionTicket?
         var executing = false
-        init(_ continuation: CheckedContinuation<LiveSessionArtifactStore.DeletionReceipt, any Error>) { self.continuation = continuation }
+        init(_ continuation: CheckedContinuation<LiveSessionArtifactStore.DeletionReceipt, any Error>, retention: ProcessingPipeline.FileDeletionTicket?) { self.continuation = continuation; self.retention = retention }
     }
     private enum Work { case checkpoint(Interval), clear(ChatHistory, Int), bind(URL), delete(Delete) }
     let identity: LiveSessionIdentity
@@ -106,6 +107,8 @@ import dBriefWire
             && durableChatRevision == acceptedChatRevision && chatLoad == nil
             && (!captureClosed || !isNative || nativeClosureDurable || hydratedReadOnly)
     }
+    var canExpire: Bool { captureClosed && pinCounter.count == 0 && (!started || isDurable) }
+    private(set) var historyRetained = false
     var canEvict: Bool { !isNonpersistingFinalOnly && captureClosed && pinCounter.count == 0 && isDurable }
     var isRecoveredOwner: Bool { recoveredOwner }
     var pendingIntervals: Int { queue.filter { if case .checkpoint = $0 { true } else { false } }.count }
@@ -139,6 +142,7 @@ import dBriefWire
         needsTextOnlyFallback = finalPublication?.fallbackText != nil && finalPublication?.segments.isEmpty == true
         currentChat = restored.chat; chatReady = true
         acceptedChatRevision = restored.chat?.revision ?? 0; durableChatRevision = acceptedChatRevision
+        historyRetained = restored.historyRetained
         admittedAudioURL = restored.audioURL
         started = true; captureClosed = true; hydratedReadOnly = true; recoveredOwner = true
     }
@@ -339,7 +343,7 @@ import dBriefWire
 
     /// One admitted control follows earlier writes/Bind. Caller cancellation
     /// does not abandon a physical intent or its verified return value.
-    func commitDeletionIntent() async throws -> LiveSessionArtifactStore.DeletionReceipt {
+    func commitDeletionIntent(retention: ProcessingPipeline.FileDeletionTicket? = nil) async throws -> LiveSessionArtifactStore.DeletionReceipt {
         try validity.withValidResult {}
         guard started, captureClosed, !retired, !deletionPending else { throw LiveArtifactError.deleted }
         guard controlCount < 8 else { throw LiveArtifactError.queueFull }
@@ -347,7 +351,7 @@ import dBriefWire
         let pin = pin(); defer { pin.release() }
         deletionPending = true
         return try await withCheckedThrowingContinuation { continuation in
-            queue.append(.delete(Delete(continuation)))
+            queue.append(.delete(Delete(continuation, retention: retention)))
             startDrain(urgent: true)
         }
     }
@@ -362,6 +366,15 @@ import dBriefWire
         if failure == nil { startDrain(urgent: true) }
         await waitForSubmittedWrites()
         if failure != nil { throw LiveArtifactError.verificationFailed }
+        guard isDurable else { throw LiveArtifactError.verificationFailed }
+    }
+
+    /// A sealed retention owner drains only previously admitted controls.
+    /// Creating another checkpoint here would reset an expired file's age.
+    func flushAdmittedWrites() async throws {
+        try validity.withValidResult {}
+        guard started, !retired, failure == nil else { throw LiveArtifactError.verificationFailed }
+        startDrain(urgent: true); await waitForSubmittedWrites()
         guard isDurable else { throw LiveArtifactError.verificationFailed }
     }
 
@@ -576,14 +589,16 @@ import dBriefWire
                         // A prior load was admitted outside this queue. Join it
                         // before intent, so recover cannot run deletion cleanup.
                         if let task = chatLoad { _ = try await task.value }
-                        let receipt = try await writer.commitDeletionIntent()
+                        let receipt: LiveSessionArtifactStore.DeletionReceipt
+                        if let retention = request.retention { receipt = try await writer.commitRecordingRetention(retention) }
+                        else { receipt = try await writer.commitDeletionIntent() }
                         queue.removeFirst()
                         request.continuation.resume(returning: receipt)
                     } catch {
                         queue.removeFirst(); deletionPending = false
                         // Notifications coalesced while Delete was pending may
                         // include actual native closure. Catch up after failure.
-                        if isNative, !hydratedReadOnly { do { try checkpoint(urgent: true) } catch { report(error) } }
+                        if isNative, !hydratedReadOnly, !replacementSealed { do { try checkpoint(urgent: true) } catch { report(error) } }
                         request.continuation.resume(throwing: error)
                     }
                 }

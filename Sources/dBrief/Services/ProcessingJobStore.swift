@@ -194,16 +194,40 @@ actor ProcessingJobStore {
         return discovery
     }
 
-    func remove(id: UUID, expectedRecordingID: UUID? = nil, authority: RecordingDeletionAuthority? = nil) throws {
+    func remove(id: UUID, expectedRecordingID: UUID? = nil, authority: RecordingDeletionAuthority? = nil, retention: Bool = false) throws {
         if let authority {
             try RecordingResultMutation.withDeletion(of: authority.audioURL) {
                 try authority.validate()
-                guard let header = try deletionHeader(id: id) else { return }
+                guard let header = try deletionHeader(id: id, retention: retention) else { return }
                 guard header.recordingID == expectedRecordingID,
                       try header.source.finalizedAudioPath.map({ try RecordingDeletionAuthority.canonical(URL(fileURLWithPath: $0)).path }) == authority.audioURL.path else { throw LiveArtifactError.wrongOwner }
                 try fileManager.removeItem(at: directoryURL(for: id)); RecordingLibraryChange.notify()
             }
         } else { try removeVerified(id: id, expectedRecordingID: expectedRecordingID) }
+    }
+
+    func removeForRetention(id: UUID, expectedRecordingID: UUID, expected: RecoveryRetentionAuthority,
+                            audioAuthority: RecordingDeletionAuthority? = nil) throws {
+        func remove() throws {
+            try audioAuthority?.validate()
+            guard expected.manifest.url == (try RecordingDeletionAuthority.canonical(manifestURL(for: id))),
+                  expected.directory?.url.path == (try RecordingDeletionAuthority.canonical(directoryURL(for: id))).path else { throw LiveArtifactError.wrongOwner }
+            try expected.validate()
+            if let header = try deletionHeader(id: id, retention: true) {
+                guard header.recordingID == expectedRecordingID else { throw LiveArtifactError.wrongOwner }
+                if let audioAuthority {
+                    guard try header.source.finalizedAudioPath.map({ try RecordingDeletionAuthority.canonical(URL(fileURLWithPath: $0)) }) == audioAuthority.audioURL else { throw LiveArtifactError.wrongOwner }
+                }
+            }
+            // The absent original header does not imply its frozen scratch
+            // directory is gone. Validate and finish only surviving originals.
+            guard try RecordingDeletionAuthority.Stamp.read(directoryURL(for: id), directory: true) != nil else { try expected.validate(); return }
+            try expected.validate()
+            try fileManager.removeItem(at: directoryURL(for: id))
+            RecordingLibraryChange.notify()
+        }
+        if let audioAuthority { try RecordingResultMutation.withDeletion(of: audioAuthority.audioURL, remove) }
+        else { try RecordingResultMutation.withTransaction(remove) }
     }
 
     private struct DeletionHeader: Decodable {
@@ -213,20 +237,41 @@ actor ProcessingJobStore {
         let checkpoint: Checkpoint
         let source: Source
     }
-    private func deletionHeader(id: UUID) throws -> DeletionHeader? {
-        guard let header: DeletionHeader = try RecordingDeletionAuthority.readHeader(manifestURL(for: id)) else { return nil }
+    private func deletionHeader(id: UUID, retention: Bool = false) throws -> DeletionHeader? {
+        guard let header: DeletionHeader = try RecordingDeletionAuthority.readHeader(manifestURL(for: id), maximumBytes: retention ? 128 * 1_024 : 16 * 1_024, tokenLimit: retention ? 32_768 : 512) else { return nil }
         guard header.version == PersistedProcessingJob.currentVersion, header.checkpoint.version == ProcessingCheckpoint.currentVersion,
               header.id == id, header.checkpoint.jobID == id else { throw StoreError.mismatchedIdentifier }
         guard (header.source.finalizedAudioPath?.utf8.count ?? 0) <= 4_096 else { throw LiveArtifactError.artifactTooLarge }
         return header
     }
-    func deletionOwners(for audioURL: URL, byteLimit: Int) throws -> [UUID: UUID] {
+    /// Finite full-value discovery used only within retention's charged lease.
+    func discoverForRetention() throws -> [PersistedProcessingJob] { try retentionInventory().map(\.value) }
+    func retentionInventory() throws -> [RecoveryRetentionRecord<PersistedProcessingJob>] {
+        var values: [RecoveryRetentionRecord<PersistedProcessingJob>] = [], bytes = 0
+        try RecordingDeletionAuthority.scanChildren(rootURL) { directory in
+            guard let id = UUID(uuidString: directory.lastPathComponent) else { return }
+            guard try RecordingDeletionAuthority.Stamp.read(directory, directory: true) != nil else { return }
+            let file = directory.appendingPathComponent(Self.manifestFileName)
+            let manifest = try RecordingDeletionAuthority.Item(file)
+            guard let stamp = manifest.stamp else { return }
+            guard stamp.size <= 128 * 1_024, values.count < 128,
+                  stamp.size <= 512 * 1_024 - bytes else { throw LiveArtifactError.artifactTooLarge }
+            bytes += Int(stamp.size)
+            guard let record: PersistedProcessingJob = try RecordingDeletionAuthority.readHeader(file, maximumBytes: 128 * 1_024,
+                tokenLimit: 32_768) else { throw StoreError.verificationFailed }
+            try validate(record, directoryID: id)
+            values.append(.init(value: record, authority: try .init(manifest: manifest, directory: directory)))
+        }
+        return values.sorted { $0.value.createdAt < $1.value.createdAt }
+    }
+
+    func deletionOwners(for audioURL: URL, byteLimit: Int, retention: Bool = false) throws -> [UUID: UUID] {
         let path = try RecordingDeletionAuthority.canonical(audioURL).path
         var result: [UUID: UUID] = [:]
         try RecordingDeletionAuthority.scanChildren(rootURL) { directory in
             guard let id = UUID(uuidString: directory.lastPathComponent) else { return }
             guard try RecordingDeletionAuthority.Stamp.read(directory, directory: true) != nil else { return }
-            guard let header = try deletionHeader(id: id), let source = header.source.finalizedAudioPath,
+            guard let header = try deletionHeader(id: id, retention: retention), let source = header.source.finalizedAudioPath,
                   try RecordingDeletionAuthority.canonical(URL(fileURLWithPath: source)).path == path else { return }
             guard result.count < 128, (result.count + 1) * 160 <= byteLimit else { throw LiveArtifactError.artifactTooLarge }
             result[id] = header.recordingID
