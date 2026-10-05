@@ -68,11 +68,13 @@ public struct LiveSessionBegin: Codable, Sendable, Equatable {
     public let configuration: LiveASRConfiguration
     public let epochs: [LiveEpoch]
     public let vad: LiveVADConfiguration?
-    public init(identity: LiveSessionIdentity, configuration: LiveASRConfiguration, epochs: [LiveEpoch], vad: LiveVADConfiguration? = nil) {
-        self.identity = identity; self.configuration = configuration; self.epochs = epochs; self.vad = vad
+    public let diarization: LiveDiarizationBegin?
+    public init(identity: LiveSessionIdentity, configuration: LiveASRConfiguration, epochs: [LiveEpoch], vad: LiveVADConfiguration? = nil, diarization: LiveDiarizationBegin? = nil) {
+        self.identity = identity; self.configuration = configuration; self.epochs = epochs; self.vad = vad; self.diarization = diarization
     }
     public var isValid: Bool {
-        configuration.isValid && (vad?.isValid ?? true) && (1...2).contains(epochs.count) && Set(epochs.map(\.id)).count == epochs.count &&
+        configuration.isValid && (vad?.isValid ?? true) &&
+            (diarization.map { $0.configuration.isValid && epochs.contains { $0.source == .system } } ?? true) && (1...2).contains(epochs.count) && Set(epochs.map(\.id)).count == epochs.count &&
             Set(epochs.map(\.source)).count == epochs.count && epochs.allSatisfy { epoch in
                 epoch.source.isCaptureSource && epoch.availability == .active && epoch.language == configuration.language.rawValue &&
                     !epoch.engineRevision.isEmpty && epoch.engineRevision.utf8.count <= 256 && (epoch.meetingOriginNanoseconds.map { $0 >= 0 } ?? true)
@@ -96,6 +98,7 @@ public enum LiveSessionRequest: Codable, Sendable, Equatable {
     case begin(LiveSessionBegin), packet(LiveAudioPacket), barrier(LiveFinishBarrier)
     case cut(scope: LiveLaneScope, nextPacketSequence: UInt64, sampleEnd: Int64, reason: LiveGapReason)
     case replaceEpoch(identity: LiveSessionIdentity, oldEpochID: UUID, epoch: LiveEpoch)
+    case diarizationControl(LiveDiarizationControl)
     case prepareDiarization(scope: LiveLaneScope, ownerID: UUID, configuration: LiveDiarizationConfiguration)
     case acknowledgeDiarization(identity: LiveSessionIdentity, ownerID: UUID, contextID: UUID)
     case acknowledgeDiarizationPosterior(identity: LiveSessionIdentity, ownerID: UUID, contextID: UUID, sequence: UInt64)
@@ -104,7 +107,7 @@ public enum LiveSessionRequest: Codable, Sendable, Equatable {
     /// Closed independent-output inventory; never use mandatory reply capacity.
     public var isOptionalDiarizationControl: Bool {
         switch self {
-        case .prepareDiarization, .acknowledgeDiarization, .acknowledgeDiarizationPosterior, .retireDiarization: true
+        case .diarizationControl, .prepareDiarization, .acknowledgeDiarization, .acknowledgeDiarizationPosterior, .retireDiarization: true
         default: false
         }
     }

@@ -51,6 +51,22 @@ actor MLHostConnection {
     var ordinaryModeWaiterCount: Int { ordinaryModeWaiters.count }
     private var ordinaryBoundedReader = LiveFrameReader()
     private let boundedIngestDelivery: @Sendable () async -> Void
+    private let boundedDiarizationIngestDelivery: @Sendable () async -> Void
+    private let testingLiveInputWrite: @Sendable (Bool) -> Void
+    private let testingDiarizationReaderLifetime: @Sendable (Bool) -> Void
+    private let testingAfterDiarizationClaim: (@Sendable () async -> Void)?
+    private let diarizationEndpoint = LiveDiarizationEndpoint()
+    private var diarizationMailbox: LiveOptionalReadMailbox?
+    private var diarizationIngestTask: Task<Void, Never>?
+    private var diarizationConnection: LiveDiarizationConnection?
+    private var diarizationEpochs: LiveOptionalEpochAuthority?
+    private var diarizationUsed = false
+    private var diarizationTransportFinished = false
+    private let diarizationScopeFailure = LiveReadFailureLatch()
+    var livePendingCount: Int { pending.count }
+    var diarizationAwaitingEpochCount: Int { diarizationConnection?.epochs.awaitingCount ?? 0 }
+    var diarizationRawResidentBytes: Int { diarizationMailbox?.residentBytes ?? 0 }
+    var diarizationPendingCount: Int { get async { await diarizationConnection?.pendingCount ?? 0 } }
 
     private var process: Process?
     private var stdinHandle: FileHandle?
@@ -83,13 +99,21 @@ actor MLHostConnection {
     init(binaryURL: URL, supportBase: URL, environment: [String: String] = [:], role: MLHostRole = .ordinary,
          resourceAdmission: LiveModelJobAdmission? = nil, terminationDelivery: @escaping @Sendable () async -> Void = {},
          retirementWaitDelivery: (@Sendable () async -> Void)? = nil, liveEventLimits: LiveEventLimits = .init(),
-         boundedIngestDelivery: @escaping @Sendable () async -> Void = {}) {
+         boundedIngestDelivery: @escaping @Sendable () async -> Void = {},
+         boundedDiarizationIngestDelivery: @escaping @Sendable () async -> Void = {},
+         testingAfterDiarizationClaim: (@Sendable () async -> Void)? = nil,
+         testingDiarizationReaderLifetime: @escaping @Sendable (Bool) -> Void = { _ in },
+         testingLiveInputWrite: @escaping @Sendable (Bool) -> Void = { _ in }) {
         self.binaryURL = binaryURL
         self.supportBase = supportBase
         self.extraEnvironment = environment
         self.role = role; self.resourceAdmission = role == .ordinary ? resourceAdmission : nil
         self.terminationDelivery = terminationDelivery
         self.boundedIngestDelivery = boundedIngestDelivery
+        self.boundedDiarizationIngestDelivery = boundedDiarizationIngestDelivery
+        self.testingAfterDiarizationClaim = testingAfterDiarizationClaim
+        self.testingDiarizationReaderLifetime = testingDiarizationReaderLifetime
+        self.testingLiveInputWrite = testingLiveInputWrite
         self.retirementWaitDelivery = retirementWaitDelivery
         self.liveEventLimits = .init(queued: min(512, max(1, liveEventLimits.queued)),
             deferred: liveEventLimits.deferred.map { min(32, max(1, $0)) },
@@ -125,6 +149,7 @@ actor MLHostConnection {
         try validateLiveFrame(envelope)
         try ensureRunning()
         liveUsed = true; liveBegin = input; liveRequestID = id
+        diarizationEpochs = input.diarization.map { _ in LiveOptionalEpochAuthority(input) }
         liveGeneration = UUID(); let generation = liveGeneration
         for epoch in input.epochs { liveEpochs[epoch.id] = .init(source: epoch.source) }
         let (stream, continuation) = AsyncThrowingStream<LiveSessionEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(liveEventLimits.queued))
@@ -136,11 +161,42 @@ actor MLHostConnection {
         return stream
     }
 
+    /// No receiver opens from a flag/configuration alone: copied owner + exact
+    /// supported resource identity/claim must be current through actual admission.
+    func openDiarization(assets: LiveDiarizationModelAssets, ownerID: UUID, lease: LiveResourceLease,
+                         admission: LiveModelJobAdmission) async throws -> AsyncThrowingStream<LiveDiarizationEvent, Error> {
+        guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, !diarizationUsed,
+              let child = process, child.isRunning, let input = liveBegin, let frozen = input.diarization,
+              frozen.ownerID == ownerID, frozen.configuration == assets.configuration,
+              let epochAuthority = diarizationEpochs, epochAuthority.identity == input.identity, epochAuthority.isOpen,
+              lease.identity == input.identity, lease.attributionEnabled, lease.request.attributionRequested,
+              lease.request.diarization == frozen.configuration.identity,
+              let writer = liveWriter, let requestID = liveRequestID, let mailbox = diarizationMailbox else { throw LiveProtocolError.unavailable }
+        let snapshot = try assets.snapshot(owner: ownerID); _ = try snapshot.validateCurrentPath()
+        let generation = liveGeneration
+        let receiver = LiveDiarizationConnection(input: input, sessionRequestID: requestID, writer: writer, assets: assets,
+            snapshot: snapshot, ownerID: ownerID, lease: lease, admission: admission, epochAuthority: epochAuthority, afterClaim: testingAfterDiarizationClaim)
+        // Before any await, Stop owns and joins this exact provisional admission.
+        guard diarizationEndpoint.install(receiver) else { throw LiveProtocolError.closed }
+        diarizationUsed = true; diarizationConnection = receiver
+        let stream = try await receiver.open()
+        guard generation == liveGeneration, child === process, child.isRunning, !liveEnded,
+              !liveTerminalReceived, epochAuthority.isOpen, mailbox.activate() else {
+            receiver.transportEnded(); await receiver.finishTransport(); throw LiveProtocolError.closed
+        }
+        return stream
+    }
+    func sendDiarizationControl(_ control: LiveDiarizationControl, deadline: Duration = .milliseconds(250)) async throws -> LiveSessionReply {
+        guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, process?.isRunning == true,
+              let receiver = diarizationConnection else { throw LiveProtocolError.unavailable }
+        return try await receiver.command(control, deadline: deadline)
+    }
+
     func sendLive(_ request: LiveSessionRequest) async throws -> LiveSessionReply {
         guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, process?.isRunning == true else { throw MLHostError.protocolViolation }
         if case .begin = request { throw MLHostError.protocolViolation }
-        // Closed until owned asset/profile/store admission is integrated. The
-        // current app cannot acknowledge/register an optional helper context.
+        // Optional controls have their own owned channel; never use mandatory
+        // request/event/writer capacity, including legacy fixture controls.
         if request.isOptionalDiarizationControl { throw LiveProtocolError.unavailable }
         guard pending.count < 128 else { failLive(MLHostError.protocolViolation); throw MLHostError.protocolViolation }
         let id = UUID()
@@ -150,6 +206,12 @@ actor MLHostConnection {
             guard identity == liveBegin?.identity, liveEpochs[oldID]?.source == epoch.source,
                   liveEpochs[epoch.id] == nil, !retiredEpochs.contains(epoch.id) else { throw LiveProtocolError.staleScope }
             liveEpochs[epoch.id] = .init(source: epoch.source)
+            if epoch.source == .system, let authority = diarizationEpochs, !authority.reserve(epoch) {
+                authority.close() // Sticky even before a receiver/native claim exists.
+                if diarizationScopeFailure.claim(), let optional = diarizationConnection {
+                    Task { await optional.rawOverflow() } // Never reject ASR replacement.
+                }
+            }
         }
         if case .barrier(let barrier) = request {
             guard barrier.scope.identity == liveBegin?.identity,
@@ -308,6 +370,8 @@ actor MLHostConnection {
         let retired = retiredLiveProcesses
         await Task.detached { for child in retired { child.waitUntilExit() } }.value
         retiredLiveProcesses.removeAll { child in retired.contains { $0 === child } }
+        // Includes a provisional claim still suspended when shutdown began.
+        await diarizationConnection?.helperExited()
     }
 
     /// Freeze process generation around the policy await. A late reservation
@@ -452,6 +516,29 @@ actor MLHostConnection {
         let ingestDelivery = boundedIngestDelivery, ordinary = role == .ordinary
         let liveMailbox = role == .live ? LiveReadMailbox() : nil
         let liveFilter = role == .live ? try LiveOutputReadFilter(stdoutPipe.fileHandleForReading) : nil
+        let optionalMailbox = role == .live ? LiveOptionalReadMailbox() : nil
+        self.diarizationMailbox = optionalMailbox
+        if let optionalMailbox {
+            let endpoint = diarizationEndpoint, delivery = boundedDiarizationIngestDelivery
+            let lifetime = testingDiarizationReaderLifetime
+            diarizationIngestTask = Task.detached {
+                lifetime(true)
+                let decoder = JSONDecoder()
+                defer { optionalMailbox.discardQueued(); lifetime(false) }
+                for await _ in optionalMailbox.wakes {
+                    while !Task.isCancelled {
+                        var receipt = optionalMailbox.take()
+                        guard receipt != nil else { break }
+                        await delivery()
+                        if !Task.isCancelled, let receiver = endpoint.receiver {
+                            do { await receiver.receive(try decoder.decode(EventEnvelope.self, from: receipt!.data)) }
+                            catch { await receiver.malformed() }
+                        }
+                        receipt = nil // Actual body dies before its private ticket returns.
+                    }
+                }
+            }
+        }
         ingestTask = Task { [weak self] in
             defer { liveMailbox?.discardQueued() }
             for await data in stream {
@@ -472,11 +559,17 @@ actor MLHostConnection {
         if boundedTransport {
             let latch = LiveReadFailureLatch()
             let live = role == .live
+            let optionalLatch = LiveReadFailureLatch(), endpoint = diarizationEndpoint
             stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self, continuation] handle in
                 do {
                     let dropped: Bool
                     if let liveFilter, let liveMailbox {
-                        let outcome = try liveFilter.read(from: handle) { data in
+                        let outcome = try liveFilter.read(from: handle, optional: { body in
+                            if optionalMailbox?.offer(body) == .overflow, optionalLatch.claim() {
+                                optionalMailbox?.discardQueued()
+                                if let receiver = endpoint.receiver { Task { await receiver.rawOverflow() } }
+                            }
+                        }) { data in
                             guard liveMailbox.offer(data) else { return false }
                             continuation.yield(Data()); return true
                         }
@@ -520,6 +613,10 @@ actor MLHostConnection {
         } catch {
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             continuation.finish(); ingestContinuation = nil
+            // This disabled mailbox belongs to the exact failed launch. Every
+            // retry must end its reader instead of overwriting a suspended task.
+            optionalMailbox?.finish(); diarizationIngestTask?.cancel()
+            diarizationIngestTask = nil; diarizationMailbox = nil
             throw MLHostError.helperUnavailable
         }
         self.process = proc
@@ -528,7 +625,7 @@ actor MLHostConnection {
         self.ordinaryBoundedReader = LiveFrameReader()
         if role == .live {
             liveReader = LiveFrameReader()
-            liveWriter = LivePipeWriter(handle: stdinPipe.fileHandleForWriting) { [weak self] in
+            liveWriter = LivePipeWriter(handle: stdinPipe.fileHandleForWriting, testingMandatoryWrite: testingLiveInputWrite) { [weak self] in
                 Task { await self?.failLive(MLHostError.helperCrashed) }
             }
         }
@@ -639,6 +736,11 @@ actor MLHostConnection {
         if let process, !retiredLiveProcesses.contains(where: { $0 === process }) { retiredLiveProcesses.append(process) }
         if let process, process.isRunning { _ = kill(process.processIdentifier, SIGKILL) }
         process = nil
+        diarizationEpochs?.close(); diarizationConnection?.transportEnded()
+        if let optional = diarizationConnection, !diarizationTransportFinished {
+            diarizationTransportFinished = true; Task { await optional.finishTransport() }
+        }
+        diarizationMailbox?.finish(); diarizationIngestTask?.cancel()
         liveWriter?.retire(); liveWriter = nil; stdinHandle = nil
         ingestContinuation?.finish(); ingestContinuation = nil
     }
@@ -763,10 +865,12 @@ actor MLHostConnection {
         case .replaceEpoch(_,let oldID,let epoch):
             if reply == .accepted {
                 liveBarriers.retire(oldID); liveEpochs[oldID] = nil; retiredEpochs.insert(oldID)
+                if epoch.source == .system { diarizationEpochs?.resolve(epoch.id, accepted: true) }
             } else {
                 // A rejected command cannot have legitimately started its decoder.
                 guard liveEpochs[epoch.id]?.nextSequence == 0 else { throw MLHostError.protocolViolation }
                 liveEpochs[epoch.id] = nil
+                if epoch.source == .system { diarizationEpochs?.resolve(epoch.id, accepted: false) }
             }
         default: break
         }

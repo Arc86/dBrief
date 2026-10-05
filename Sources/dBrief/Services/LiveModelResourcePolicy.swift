@@ -18,16 +18,17 @@ struct LiveResourceProfile: Sendable, Equatable {
     /// allocation and every source's native manager/scratch. Never an estimate.
     let vadBytes: UInt64?
     let asr: LiveASRIdentity?
+    let diarization: LiveDiarizationIdentity?
     init(id: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
          qualificationID: String, asrBytes: UInt64, attributionBytes: UInt64?, headroomBytes: UInt64,
          concurrentChatModels: [String: UInt64], backgroundWorkQualified: Bool,
-         vad: LiveVADIdentity? = nil, vadBytes: UInt64? = nil, asr: LiveASRIdentity? = nil) {
+         vad: LiveVADIdentity? = nil, vadBytes: UInt64? = nil, asr: LiveASRIdentity? = nil, diarization: LiveDiarizationIdentity? = nil) {
         self.id = id; self.hardware = hardware; self.modelRevision = modelRevision; self.chunkMs = chunkMs
         self.sourceCount = sourceCount; self.qualificationID = qualificationID; self.asrBytes = asrBytes
         self.attributionBytes = attributionBytes; self.headroomBytes = headroomBytes
         self.concurrentChatModels = concurrentChatModels; self.backgroundWorkQualified = backgroundWorkQualified
         self.vad = vad; self.vadBytes = vadBytes
-        self.asr = asr
+        self.asr = asr; self.diarization = diarization
     }
 }
 struct LiveResourceRequest: Sendable, Equatable {
@@ -39,11 +40,12 @@ struct LiveResourceRequest: Sendable, Equatable {
     let attributionRequested: Bool
     let vad: LiveVADConfiguration?
     let asr: LiveASRIdentity?
+    let diarization: LiveDiarizationIdentity?
     init(profileID: String, hardware: String, modelRevision: String, chunkMs: Int, sourceCount: Int,
-         attributionRequested: Bool, vad: LiveVADConfiguration? = nil, asr: LiveASRIdentity? = nil) {
+         attributionRequested: Bool, vad: LiveVADConfiguration? = nil, asr: LiveASRIdentity? = nil, diarization: LiveDiarizationIdentity? = nil) {
         self.profileID = profileID; self.hardware = hardware; self.modelRevision = modelRevision
         self.chunkMs = chunkMs; self.sourceCount = sourceCount; self.attributionRequested = attributionRequested; self.vad = vad
-        self.asr = asr
+        self.asr = asr; self.diarization = diarization
     }
 }
 struct LiveResourceMeasurement: Sendable {
@@ -89,6 +91,7 @@ actor LiveModelResourcePolicy {
         let exclusive: Bool
         var attributionRunning: Bool
         var attributionResident = false
+        var attributionTransportOwner: UUID?
         var resident = false
         var vadResident = false
         // All sums are validated against the profile's maximum allocation
@@ -195,7 +198,8 @@ actor LiveModelResourcePolicy {
         guard profile.hardware == request.hardware, profile.modelRevision == request.modelRevision,
               profile.chunkMs == request.chunkMs, profile.sourceCount == request.sourceCount,
               profile.vad == request.vad?.identity, request.vad?.isValid ?? true,
-              profile.asr == request.asr, request.asr?.isSupported ?? true else { throw LiveResourceRejection.unsupported }
+              profile.asr == request.asr, request.asr?.isSupported ?? true,
+              profile.diarization == request.diarization, request.diarization?.isSupported ?? true else { throw LiveResourceRejection.unsupported }
         return profile
     }
 
@@ -263,9 +267,43 @@ actor LiveModelResourcePolicy {
     }
 
     func confirmAttributionResident(_ lease: LiveResourceLease) {
-        guard active?.lease == lease, active?.attributionRunning == true, active?.attributionResident == false else { return }
+        guard active?.lease == lease, active?.attributionTransportOwner == nil,
+              active?.attributionRunning == true, active?.attributionResident == false else { return }
         active?.attributionResident = true
         generation = UUID()
+    }
+
+    /// A copied optional model may have one actual transport/native owner. An
+    /// immutable enabled lease cannot reopen retired or already claimed work.
+    func claimAttributionTransport(_ lease: LiveResourceLease, owner: UUID,
+                                   measurement: LiveResourceMeasurement, token: LiveResourceMeasurementToken) throws {
+        try validateToken(token)
+        guard let active, active.lease == lease, active.exclusive, active.resident,
+              active.attributionRunning, !active.attributionResident,
+              active.attributionTransportOwner == nil,
+              lease.attributionEnabled, lease.request.attributionRequested,
+              let identity = lease.request.diarization, identity.isSupported,
+              identity == active.profile.diarization else { throw LiveResourceRejection.ownerConflict }
+        guard measurement.pressure == .normal else { throw LiveResourceRejection.pressure }
+        // Telemetry includes resident jobs, but an already admitted allocation
+        // that has not loaded yet must remain charged beside this late model.
+        let pending = active.pendingOptionalBytes.addingReportingOverflow(try pendingJobBytes(active.profile))
+        guard !pending.overflow,
+              Self.fits(pending.partialValue, headroom: active.profile.headroomBytes, available: measurement.availableBytes) else {
+            throw LiveResourceRejection.insufficientMemory
+        }
+        self.active?.attributionTransportOwner = owner; generation = UUID()
+    }
+    func validateAttributionTransport(_ lease: LiveResourceLease, owner: UUID) -> Bool {
+        active?.lease == lease && active?.attributionRunning == true && active?.attributionTransportOwner == owner
+    }
+    func confirmAttributionResident(_ lease: LiveResourceLease, transportOwner: UUID) {
+        guard validateAttributionTransport(lease, owner: transportOwner), active?.attributionResident == false else { return }
+        active?.attributionResident = true; generation = UUID()
+    }
+    func confirmAttributionRetired(_ lease: LiveResourceLease, transportOwner: UUID) {
+        guard validateAttributionTransport(lease, owner: transportOwner) else { return }
+        active?.attributionRunning = false; generation = UUID()
     }
 
     /// A preview decision never reserves memory. Execution uses this atomic
@@ -330,7 +368,7 @@ actor LiveModelResourcePolicy {
     }
 
     func confirmAttributionRetired(_ lease: LiveResourceLease) {
-        guard active?.lease == lease, active?.attributionRunning == true else { return }
+        guard active?.lease == lease, active?.attributionRunning == true, active?.attributionTransportOwner == nil else { return }
         active?.attributionRunning = false
         generation = UUID()
     }
@@ -352,6 +390,7 @@ actor LiveModelResourcePolicy {
         if let asr = profile.asr { guard asr.isSupported, asr.modelRevision == profile.modelRevision else { return false } }
         guard let mandatory = sum(profile.asrBytes,profile.vadBytes ?? 0),
               sum(mandatory,profile.headroomBytes) != nil else { return false }
+        if let identity = profile.diarization { guard identity.isSupported, profile.attributionBytes != nil else { return false } }
         if let extra = profile.attributionBytes {
             guard extra > 0, sum(mandatory,extra,profile.headroomBytes) != nil else { return false }
         }

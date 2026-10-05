@@ -67,12 +67,12 @@ final class LiveOutputReadFilter: @unchecked Sendable {
         guard flags >= 0, fcntl(handle.fileDescriptor, F_SETFL, flags | O_NONBLOCK) == 0 else { throw LiveProtocolError.unavailable }
     }
     enum Result { case idle, eof, delivered, overflow }
-    func read(from handle: FileHandle, deliver: (Data) -> Bool) throws -> Result { try lock.withLock {
+    func read(from handle: FileHandle, optional: (Data) -> Void = { _ in }, deliver: (Data) -> Bool) throws -> Result { try lock.withLock {
         var bytes = [UInt8](repeating: 0, count: 16_384)
         while true {
             let n = bytes.withUnsafeMutableBytes { Darwin.read(handle.fileDescriptor, $0.baseAddress, $0.count) }
             if n > 0 {
-                let mandatory = try mux.feed(Data(bytes.prefix(n))) // Current app has no optional sink.
+                let mandatory = try mux.feed(Data(bytes.prefix(n)), optional: optional)
                 guard !mandatory.isEmpty else { return .idle }
                 return deliver(mandatory) ? .delivered : .overflow // Handoff stays under the ordering lock.
             }

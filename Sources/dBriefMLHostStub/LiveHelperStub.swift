@@ -11,12 +11,74 @@ struct LiveHelperStub {
     private var barrierCount = 0
     private var delayedBarrier: (UUID, LiveFinishBarrier)?
     private var awaitingRetiredReply: UUID?
+    private var optionalPrepared = false, optionalRetired = false
+    private var optionalContext = UUID(), optionalSequence: UInt64 = 0, optionalOrigin: Int64 = 0
+    private var optionalPrepareAttempts = 0
     init(mode: String) { self.mode = mode }
     private mutating func event(_ source: LiveSource, _ payload: LiveLaneEvent.Payload, send: (EventEnvelope) -> Void) {
         guard let begin, let id = streamID, let lane = lanes[source] else { return }
         lanes[source]?.event += 1
         send(.init(id: id,channel: .live,event: .live(.event(.lane(.init(scope: .init(identity: begin.identity,source: source,epochID: lane.epoch.id),sequence: lane.event,payload: payload))))))
     }
+    private func optionalEnvelope(_ envelope: EventEnvelope) {
+        guard let body = try? JSONEncoder().encode(envelope), let framed = try? LiveOutputDemultiplexer.tag(body) else { exit(7) }
+        FileHandle.standardOutput.write(framed)
+    }
+    private mutating func optionalEvent(_ payload: LiveDiarizationEvent.Payload, epochID: UUID? = nil) {
+        guard let begin, let frozen = begin.diarization, let id = streamID, let lane = lanes[.system] else { return }
+        let owner = mode == "live-duplex-foreign" ? UUID() : frozen.ownerID
+        let event = LiveDiarizationEvent(scope: .init(identity: begin.identity, source: .system, epochID: mode == "live-duplex-foreign-epoch" ? UUID() : (epochID ?? lane.epoch.id)),
+            ownerID: owner, sequence: mode == "live-duplex-bad-sequence" ? optionalSequence + 1 : optionalSequence, payload: payload)
+        optionalSequence += 1
+        optionalEnvelope(.init(id: id, channel: .live, event: .live(.event(.diarization(event)))))
+    }
+    private mutating func optionalControl(_ control: LiveDiarizationControl, id: UUID) {
+        func reply(_ result: LiveSessionReply) {
+            if mode != "live-duplex-no-reply" { optionalEnvelope(.init(id: id, channel: .live, event: .live(.reply(result)))) }
+        }
+        guard let begin, let frozen = begin.diarization, control.identity == begin.identity, control.ownerID == frozen.ownerID else { reply(.rejected(.staleScope)); return }
+        switch control.payload {
+        case .prepare(let epoch):
+            optionalPrepareAttempts += 1
+            if let flag = ProcessInfo.processInfo.environment["STUB_FLAG_1"] { try? Data(String(optionalPrepareAttempts).utf8).write(to: URL(fileURLWithPath: flag)) }
+            guard !optionalPrepared, let lane = lanes[.system], lane.epoch.id == epoch else { reply(.rejected(.staleScope)); return }
+            optionalPrepared = true; optionalOrigin = lane.end; reply(.accepted)
+            if mode == "live-duplex-bad-body" {
+                FileHandle.standardOutput.write(try! LiveOutputDemultiplexer.tag(Data(repeating: 0x42, count: 508))); return
+            }
+            optionalEvent(.preparing); optionalEvent(.ready(originSample: optionalOrigin, contextID: optionalContext))
+        case .acknowledge(let context):
+            guard optionalPrepared, !optionalRetired, context == optionalContext else { reply(.rejected(.staleScope)); return }
+            reply(.accepted)
+            let start = lanes[.system]!.epoch.meetingOriginNanoseconds
+            let batches = mode == "live-duplex-event-overflow" ? 5 : 1
+            for batch in 0..<batches {
+                var rows: [LiveDiarizationRow] = []
+                for i in (batch * 2)..<(batch * 2 + 2) {
+                    let streamStart = Int64(i * 160), streamEnd = Int64((i + 1) * 160)
+                    let samples = LiveSampleRange(start: optionalOrigin + streamStart, end: optionalOrigin + streamEnd)
+                    let meeting: LiveMeetingRange?
+                    if let start {
+                        meeting = .init(startNanoseconds: start + samples.start * 62_500, endNanoseconds: start + samples.end * 62_500)
+                    } else { meeting = nil }
+                    rows.append(try! .init(streamSamples: .init(start: streamStart, end: streamEnd), samples: samples,
+                        meeting: meeting, activity: [Float](repeating: 0.7, count: 8)))
+                }
+                optionalEvent(.posterior(contextID: context, rows: rows))
+            }
+        case .acknowledgePosterior(let context, let sequence):
+            reply(context == optionalContext && sequence == 2 ? .accepted : .rejected(.outOfOrder))
+        case .retire:
+            guard optionalPrepared else { reply(.rejected(.staleScope)); return }; reply(.accepted)
+            if mode == "live-duplex-no-reply" { return }
+            if mode == "live-duplex-held-retirement", let flag = ProcessInfo.processInfo.environment["STUB_FLAG_2"],
+               !FileManager.default.fileExists(atPath: flag) { return }
+            if !optionalRetired {
+                optionalRetired = true; optionalEvent(.retired(contextID: optionalContext, receiptID: UUID(), reason: .pressure))
+            }
+        }
+    }
+
     mutating func handle(_ envelope: RequestEnvelope, send: (EventEnvelope) -> Void) {
         func reply(_ reply: LiveSessionReply, terminal: Bool = true) {
             send(.init(id: envelope.id,channel: .live,event: .live(.reply(reply))))
@@ -24,8 +86,10 @@ struct LiveHelperStub {
         }
         guard CommandLine.arguments.contains("--nemotron-live"), case .live(let request) = envelope.request else { reply(.rejected(.unsupportedRole)); return }
         switch request {
+        case .diarizationControl(let control):
+            optionalControl(control, id: envelope.id)
         case .prepareDiarization, .acknowledgeDiarization, .acknowledgeDiarizationPosterior, .retireDiarization:
-            reply(.rejected(.unavailable))
+            optionalEnvelope(.init(id: envelope.id, channel: .live, event: .live(.reply(.rejected(.unavailable)))))
         case .begin(let begin):
             guard self.begin == nil, begin.isValid else { reply(.rejected(.invalidConfiguration)); return }
             guard begin.vad == nil else { reply(.rejected(.unavailable)); return }
@@ -49,6 +113,10 @@ struct LiveHelperStub {
                 if mode == "live-unsolicited-barrier" {
                     event(epoch.source,.barrierCompleted(requestID: UUID(),kind: .pause,sampleEnd: 0),send: send)
                 }
+            }
+            if mode == "live-duplex-input-stall" {
+                if let flag = ProcessInfo.processInfo.environment["STUB_FLAG_2"] { try? Data().write(to: URL(fileURLWithPath: flag)) }
+                Thread.sleep(forTimeInterval: 10)
             }
             if mode == "live-read-stall" { Thread.sleep(forTimeInterval: 10) }
         case .packet(let packet):
@@ -124,6 +192,10 @@ struct LiveHelperStub {
             if completionFirst { reply(mode == "live-rejected-after-completion" ? .rejected(.unavailable) : .accepted) }
         case .cancel(let identity):
             guard begin?.identity == identity else { reply(.rejected(.staleScope)); return }
+            if mode == "live-duplex-malformed" {
+                let frame = try! LiveOutputDemultiplexer.tag(Data(repeating: 0x42, count: 508))
+                for _ in 0..<512 { FileHandle.standardOutput.write(frame) }
+            }
             if mode == "live-terminal-admission-gate", let (id,barrier) = delayedBarrier {
                 delayedBarrier = nil
                 event(barrier.scope.source,.barrierCompleted(requestID: id,kind: barrier.kind,sampleEnd: barrier.sampleEnd),send: send)
@@ -146,7 +218,14 @@ struct LiveHelperStub {
             } else { reply(.accepted); send(.init(id: streamID!,channel: .live,event: .live(.event(.finished(identity))))) }
         case .replaceEpoch(let identity, let old, let epoch):
             guard begin?.identity == identity, lanes[epoch.source]?.epoch.id == old else { reply(.rejected(.staleScope)); return }
+            if mode == "live-duplex-reject-before-open" { reply(.rejected(.unavailable)); return }
             let oldLane = lanes[epoch.source]!
+            if optionalPrepared, mode == "live-duplex-retire-on-replacement" || mode == "live-duplex-reject-replacement" {
+                optionalEvent(.retired(contextID: optionalContext, receiptID: UUID(), reason: .pressure), epochID: epoch.id)
+                optionalRetired = true
+                if let flag = ProcessInfo.processInfo.environment["STUB_FLAG_2"] { try? Data().write(to: URL(fileURLWithPath: flag)) }
+                if mode == "live-duplex-reject-replacement" { reply(.rejected(.unavailable)); return }
+            }
             reply(.accepted); lanes[epoch.source] = Lane(epoch: epoch); event(epoch.source,.ready(generation: UUID(),originSample: 0),send: send)
             if let id = awaitingRetiredReply {
                 awaitingRetiredReply = nil

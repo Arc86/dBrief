@@ -16,7 +16,10 @@ private final class HPaudit: @unchecked Sendable {
     private var normal: [LiveSessionEvent] = [], optional: [LiveDiarizationEvent] = []
     private var hits: [String: Int] = [:], acknowledged: Set<UInt64> = []
     private var rejectOutput = false
+    private var loadedConfiguration: LiveDiarizationConfiguration?
     func reject() { lock.withLock { rejectOutput = true } }
+    func loaded(_ configuration: LiveDiarizationConfiguration) { lock.withLock { loadedConfiguration = configuration } }
+    var configuration: LiveDiarizationConfiguration? { lock.withLock { loadedConfiguration } }
     func emit(_ e: LiveSessionEvent) { lock.withLock { normal.append(e) } }
     func emitOptional(_ e: LiveDiarizationEvent) -> Bool { lock.withLock { optional.append(e); return !rejectOutput } }
     func hit(_ k: String) { lock.withLock { hits[k, default: 0] += 1 } }
@@ -86,7 +89,7 @@ private struct HPfixture {
         .init(id: id ?? scope.epochID, source: .system, engineRevision: "fixture", language: "en", meetingOriginNanoseconds: origin)
     }
     func start(_ audit: HPaudit, load: HPgate? = nil, append: HPgate? = nil, shutdown: HPgate? = nil, finish: HPgate? = nil,
-               vad: VADLoadFixture? = nil, disposal: @escaping @Sendable (LiveLaneScope) -> Void = { _ in }) async throws -> LiveASROrchestrator {
+               vad: VADLoadFixture? = nil, frozen: Bool = false, disposal: @escaping @Sendable (LiveLaneScope) -> Void = { _ in }) async throws -> LiveASROrchestrator {
         let vadLoader: LiveASROrchestrator.VADLoader?
         if let fixture = vad {
             vadLoader = { input in
@@ -94,10 +97,10 @@ private struct HPfixture {
                 return try await LiveVADModelFactory.load(configuration: input.vad!, sources: [.system], assets: assets) { assets, _ in HPvad(assets) }
             }
         } else { vadLoader = nil }
-        let helper = LiveASROrchestrator(loader: { _ in HPfactory(audit: audit) }, vadLoader: vadLoader, diarizationLoader: { _ in
-            audit.hit("load"); await load?.wait(); return HPdriver(audit, append: append, shutdown: shutdown, finish: finish)
+        let helper = LiveASROrchestrator(loader: { _ in HPfactory(audit: audit) }, vadLoader: vadLoader, diarizationLoader: { configuration in
+            audit.loaded(configuration); audit.hit("load"); await load?.wait(); return HPdriver(audit, append: append, shutdown: shutdown, finish: finish)
         }, diarizationEmit: audit.emitOptional, emit: audit.emit, testingPacketDisposed: disposal)
-        #expect(await helper.handle(.begin(.init(identity: scope.identity, configuration: .init(language: .en, chunkMs: 560, modelDirectory: "/fixture-asr"), epochs: [epoch()], vad: vad?.configuration)), requestID: UUID()) == .accepted)
+        #expect(await helper.handle(.begin(.init(identity: scope.identity, configuration: .init(language: .en, chunkMs: 560, modelDirectory: "/fixture-asr"), epochs: [epoch()], vad: vad?.configuration, diarization: frozen ? .init(ownerID: owner, configuration: configuration) : nil)), requestID: UUID()) == .accepted)
         try #require(await HPuntil { audit.ready })
         return helper
     }
@@ -321,7 +324,11 @@ private func HPuntil(_ predicate: () async -> Bool) async -> Bool {
         let controls: [LiveSessionRequest] = [f.prepare,
             .acknowledgeDiarization(identity: f.scope.identity, ownerID: f.owner, contextID: context),
             .acknowledgeDiarizationPosterior(identity: f.scope.identity, ownerID: f.owner, contextID: context, sequence: 1),
-            .retireDiarization(identity: f.scope.identity, ownerID: f.owner)]
+            .retireDiarization(identity: f.scope.identity, ownerID: f.owner),
+            .diarizationControl(.init(identity: f.scope.identity, ownerID: f.owner, payload: .prepare(epochID: f.scope.epochID))),
+            .diarizationControl(.init(identity: f.scope.identity, ownerID: f.owner, payload: .acknowledge(contextID: context))),
+            .diarizationControl(.init(identity: f.scope.identity, ownerID: f.owner, payload: .acknowledgePosterior(contextID: context, sequence: 1))),
+            .diarizationControl(.init(identity: f.scope.identity, ownerID: f.owner, payload: .retire))]
         do {
             for control in controls {
                 let id = UUID()
@@ -357,6 +364,41 @@ private func HPuntil(_ predicate: () async -> Bool) async -> Bool {
             await helper.joinDiarizationRetirement()
         } catch { await f.cleanup(helper); throw error }
         await f.cleanup(helper)
+    }
+
+    @Test(arguments: [false, true])
+    func frozenCompactPrepareUsesOnlyExactBeginConfigurationAndNeverHoldsASR(frozen: Bool) async throws {
+        let f = HPfixture(), audit = HPaudit(), load = HPgate(), shutdown = HPgate()
+        let helper = try await f.start(audit, load: load, shutdown: shutdown, frozen: frozen)
+        func control(_ owner: UUID, _ identity: LiveSessionIdentity, _ epoch: UUID) -> LiveSessionRequest {
+            .diarizationControl(.init(identity: identity, ownerID: owner, payload: .prepare(epochID: epoch)))
+        }
+        do {
+            #expect(audit.count("load") == 0 && audit.configuration == nil && audit.events.isEmpty)
+            let foreignCapture = LiveSessionIdentity(recordingID: f.scope.identity.recordingID, captureSessionID: UUID())
+            for request in [control(UUID(), f.scope.identity, f.scope.epochID),
+                            control(f.owner, foreignCapture, f.scope.epochID), control(f.owner, f.scope.identity, UUID())] {
+                #expect(await helper.handle(request, requestID: UUID()) == .rejected(.staleScope))
+            }
+            #expect(audit.count("load") == 0 && audit.events.isEmpty)
+            let reply = await helper.handle(control(f.owner, f.scope.identity, f.scope.epochID), requestID: UUID())
+            if frozen {
+                #expect(reply == .accepted); try #require(await HPuntil { await load.entered })
+                #expect(audit.configuration == f.configuration && audit.count("load") == 1)
+            } else { #expect(reply == .rejected(.staleScope) && audit.count("load") == 0) }
+            #expect(try await helper.handle(f.packet(0, 0), requestID: UUID()) == .accepted)
+            #expect(await helper.handle(f.barrier(1, 160, .finish), requestID: UUID()) == .accepted)
+            try #require(await HPuntil { audit.terminal })
+            #expect(audit.commits.count == 1 && audit.commits[0].text == "unchanged ASR" && audit.commits[0].diarizerContextID == nil)
+            if frozen {
+                #expect(!audit.retired); await load.release()
+                try #require(await HPuntil { await shutdown.entered })
+                #expect(!audit.retired && audit.count("shutdown") == 1 && audit.count("driver-dead") == 0)
+                await shutdown.release(); await helper.joinDiarizationRetirement()
+                #expect(audit.retired && audit.count("shutdown") == 1)
+            }
+            await f.cleanup(helper)
+        } catch { await load.release(); await shutdown.release(); await f.cleanup(helper); throw error }
     }
 
     @Test func independentCompactWireOracleRejectsMalformedEvidence() throws {

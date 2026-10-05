@@ -157,6 +157,21 @@ actor LiveASROrchestrator {
             loading = task
             Task { await task.value; self.testingAfterLoadingReturn() }
             return .accepted
+        case .diarizationControl(let control):
+            guard let frozen = begin?.diarization, begin?.identity == control.identity,
+                  frozen.ownerID == control.ownerID else { return .rejected(.staleScope) }
+            switch control.payload {
+            case .prepare(let epoch):
+                return prepareDiarization(scope: .init(identity: control.identity, source: .system, epochID: epoch),
+                    owner: control.ownerID, configuration: frozen.configuration, requestID: requestID)
+            case .acknowledge(let context):
+                return await handle(.acknowledgeDiarization(identity: control.identity, ownerID: control.ownerID, contextID: context), requestID: requestID)
+            case .acknowledgePosterior(let context, let sequence):
+                return await handle(.acknowledgeDiarizationPosterior(identity: control.identity, ownerID: control.ownerID,
+                    contextID: context, sequence: sequence), requestID: requestID)
+            case .retire:
+                return await handle(.retireDiarization(identity: control.identity, ownerID: control.ownerID), requestID: requestID)
+            }
         case .prepareDiarization(let scope, let owner, let configuration):
             return prepareDiarization(scope: scope, owner: owner, configuration: configuration, requestID: requestID)
         case .acknowledgeDiarization(let identity, let owner, let context):
