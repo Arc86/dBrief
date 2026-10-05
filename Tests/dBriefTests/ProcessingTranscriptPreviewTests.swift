@@ -23,13 +23,13 @@ struct ProcessingTranscriptPreviewTests {
         #expect(job.transcriptPreviewSegments.isEmpty)
         #expect(job.transcriptButtonTitle == nil)
         job.transcriptionStartedAt = .now
-        #expect(job.transcriptButtonTitle == "Transcription Progress")
+        #expect(job.transcriptButtonTitle == "Transcription progress")
         job.progressiveSegments = [.init(start: 0, end: 2, text: "Draft words")]
-        #expect(job.transcriptButtonTitle == "Live Transcript")
+        #expect(job.transcriptButtonTitle == "Live transcript")
         #expect(job.transcriptPreviewSegments.map(\.text) == ["Draft words"])
         job.recording.transcription = .init(text: "Final words", segments: [.init(start: 0, end: 3, text: "Final words", speaker: "Alice")])
         job.transcriptionStartedAt = nil
-        #expect(job.transcriptButtonTitle == "View Transcript")
+        #expect(job.transcriptButtonTitle == "View transcript")
         #expect(job.transcriptPreviewSegments.map(\.text) == ["Final words"])
         #expect(job.transcriptPreviewSegments.first?.speaker == "Alice")
     }
@@ -37,7 +37,7 @@ struct ProcessingTranscriptPreviewTests {
     @Test func nonStreamingTextOnlyResultCanBeViewedWhileAnalysisRuns() {
         let job = ProcessingJob(recording: Recording(fileURL: URL(fileURLWithPath: "/tmp/preview.wav"), duration: 12))
         job.recording.transcription = .init(text: "A complete transcript without timestamps")
-        #expect(job.transcriptButtonTitle == "View Transcript")
+        #expect(job.transcriptButtonTitle == "View transcript")
         #expect(job.transcriptPreviewSegments.first?.text == "A complete transcript without timestamps")
         #expect(job.transcriptPreviewSegments.first?.end == 12)
     }

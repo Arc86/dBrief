@@ -226,7 +226,7 @@ struct RecordingHistoryView: View {
                         ? "Copy the summary" : "Copy the transcript (no summary yet)")
 
                     actionTile(title: "Show in Finder", systemImage: "folder") {
-                        NSWorkspace.shared.selectFile(item.url.path, inFileViewerRootedAtPath: "")
+                        MenuBarPanel.reveal(item.url)
                     }
 
                     ReprocessingMenu(recording: Recording(

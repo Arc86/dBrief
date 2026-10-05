@@ -74,17 +74,15 @@ struct MenuPanelButtonStyle: ButtonStyle {
     }
 }
 
-/// The panel's one neon moment: a brand-gradient hairline (no glow), used for the
-/// Recording library entry. With Reduce neon it becomes a plain accent outline.
-struct MenuPanelNeonButtonStyle: ButtonStyle {
+/// The Recording library entry: an accent-coloured outline, so it reads as the way
+/// into the app without competing with the brand moments (View transcript).
+struct MenuPanelLibraryButtonStyle: ButtonStyle {
     var height: CGFloat = 32
     @Environment(\.viewerPalette) private var palette
-    @Environment(\.calmAppearance) private var calm
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-        let stroke = LinearGradient(colors: palette.brandStops.map(\.color), startPoint: .leading, endPoint: .trailing)
         configuration.label
             .uiFont(.system(size: 12, weight: .semibold))
             .foregroundStyle(palette.heading.color)
@@ -93,7 +91,7 @@ struct MenuPanelNeonButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: height)
             .background(palette.surface.color, in: shape)
             .overlay {
-                shape.strokeBorder(calm ? AnyShapeStyle(palette.primary.color) : AnyShapeStyle(stroke), lineWidth: 1.25)
+                shape.strokeBorder(palette.primary.color, lineWidth: 1.25)
                     .allowsHitTesting(false)
             }
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
@@ -318,6 +316,18 @@ enum MenuBarPanel {
         close()
         openWindow(id: id)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Opens a file or folder in its app (Finder, an editor) in front of the panel.
+    static func open(_ url: URL) {
+        close()
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Reveals a file in Finder in front of the panel.
+    static func reveal(_ url: URL) {
+        close()
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     /// Runs an open/save panel in front of other apps' windows.

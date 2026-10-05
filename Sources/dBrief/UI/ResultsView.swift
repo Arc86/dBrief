@@ -218,7 +218,7 @@ struct ResultsView: View {
                 .disabled(recording.transcription == nil && recording.summary == nil)
 
                 Button {
-                    if let url = markdownURL { NSWorkspace.shared.open(url) }
+                    if let url = markdownURL { MenuBarPanel.open(url) }
                 } label: {
                     Label("Open file", systemImage: "doc.text")
                 }

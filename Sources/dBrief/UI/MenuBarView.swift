@@ -151,7 +151,7 @@ struct MenuBarView: View {
                                 .font(.system(size: 11, weight: .semibold))
                         }
                     }
-                    .buttonStyle(MenuPanelNeonButtonStyle(height: 32))
+                    .buttonStyle(MenuPanelLibraryButtonStyle(height: 32))
                     .help("Open the recording library: every recording with its summary, transcript and assistant")
                 }
 

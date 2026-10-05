@@ -232,7 +232,7 @@ struct RecordingControlsView: View {
                         }
                         .disabled(!recordingManager.canPerformLibraryWork)
                         Button("Show files") {
-                            NSWorkspace.shared.open(InterruptedSessionStore.defaultRootURL)
+                            MenuBarPanel.open(InterruptedSessionStore.defaultRootURL)
                         }
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
