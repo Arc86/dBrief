@@ -381,7 +381,7 @@ The **"Low RAM" processing tag** (`TranscriptionProgressView`) now renders only 
 
 ### Linked System Frameworks
 
-`ScreenCaptureKit`, `AVFoundation`, `EventKit`, `Security` — linked via SPM `linkerSettings` (not Xcode build settings).
+`ScreenCaptureKit`, `AVFoundation`, `EventKit`, `Security`, `ServiceManagement`, `WebKit` — linked via SPM `linkerSettings` (not Xcode build settings).
 
 ## Key Patterns
 

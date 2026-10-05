@@ -1,4 +1,6 @@
 import Foundation
+import os
+import dBriefWire
 
 /// Keyboard shortcuts the web editor forwards to the Summary card.
 enum MarkdownEditorShortcut: String, Sendable {
@@ -163,6 +165,13 @@ enum MarkdownEditorResources {
         return FileManager.default.fileExists(atPath: index.path) ? index : nil
     }
 
-    /// `nil` when running outside the app bundle (e.g. `swift run`).
-    static var bundledIndexURL: URL? { indexURL(in: Bundle.main.resourceURL) }
+    /// `nil` when running outside the app bundle (e.g. `swift run`). Resolved once
+    /// per launch; a missing bundle is logged once and the plain editor is used.
+    static let bundledIndexURL: URL? = {
+        let url = indexURL(in: Bundle.main.resourceURL)
+        if url == nil {
+            Logger.app.notice("Bundled summary editor not found; using the plain-text summary editor")
+        }
+        return url
+    }()
 }

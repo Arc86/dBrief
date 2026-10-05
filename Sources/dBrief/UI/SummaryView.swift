@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// A full-height reading document for the selected recording's summary.
-/// Analysis editing and persistence live in the viewer shell's shared editor.
+/// A full-height reading document for the selected recording's summary, edited
+/// inline with the Markdown block editor. The edit state is owned by the viewer
+/// shell (`TranscriptDetailView`), which also persists the saved summary.
 struct SummaryView: View {
     let insights: RecordingInsights?
     let isGenerating: Bool

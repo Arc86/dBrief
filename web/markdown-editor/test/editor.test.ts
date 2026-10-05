@@ -9,7 +9,7 @@ const realSummary = [
   "",
   "## Discussion Points",
   "",
-  '* Rutger licht **toe** dat de _change flow_ is aangepast — één voorbeeld: "P&O-groep".',
+  '* Rutger licht **toe** dat de _change flow_ is aangepast — één voorbeeld: “P&O-groep”.',
   "* Zie [ServiceNow](https://www.servicenow.com) voor details.",
   "  * Genest punt",
   "",

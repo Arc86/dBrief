@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// A single draft for all analysis fields. The shell dismisses only after a
-/// verified save; an error leaves these working copies available for retry.
+/// A sheet draft for the action items and tags (the summary is edited inline in
+/// `SummaryView`). The shell dismisses only after a verified save; an error
+/// leaves these working copies available for retry.
 struct RecordingAnalysisEditor: View {
     let baseline: RecordingInsights
     let isReadOnly: Bool
