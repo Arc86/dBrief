@@ -11,6 +11,8 @@ struct ReprocessingMenu: View {
     var hasTranscript = true
     var label: String? = nil
     var presentationStyle: ReprocessingMenuPresentationStyle = .sheet
+    /// Icon-over-label tile, for the menu panel's action grid.
+    var stacksLabel = false
     @Environment(RecordingManager.self) private var manager
     @State private var showCalendarLink = false
     @Environment(AppSettings.self) private var settings
@@ -40,7 +42,12 @@ struct ReprocessingMenu: View {
             Divider()
             Button("Restore previous results") { restore() }.disabled(!canRestore)
         } label: {
-            Label(label ?? (hasTranscript ? "Reprocess" : "Transcribe"), systemImage: "arrow.trianglehead.2.clockwise")
+            let title = label ?? (hasTranscript ? "Reprocess" : "Transcribe")
+            if stacksLabel {
+                RecordingListTileLabel(title: title, systemImage: "arrow.trianglehead.2.clockwise")
+            } else {
+                Label(title, systemImage: "arrow.trianglehead.2.clockwise")
+            }
         }
         .disabled(locked || isRestoring || !manager.reprocessingRecoveryReady)
         .help(locked ? "This recording has a pending attempt in Queue & Recovery" : "Reprocess this recording")

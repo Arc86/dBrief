@@ -70,6 +70,28 @@ struct MenuPanelSnapshotTests {
         return [
             ("03-ready", { _ in }, nil),
             ("06-video-url", { _ in }, { AnyView(YouTubeURLInputView(isVisible: .constant(true))) }),
+            ("04-row-actions", { _ in }, { AnyView(RecordingListRow(title: "Kort Fragment Zonder Inhoud", expanded: true, toggle: {}) {
+                RecordingListPlayButton(isPlaying: false, title: "Kort Fragment") {}
+            } metadata: {
+                HStack(spacing: 6) {
+                    Text("Yesterday 1:52 PM · 0:03")
+                    RecordingListStatus(title: "Analyzed", systemImage: "checkmark.circle", tint: .green)
+                }
+            } actions: {
+                Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                    GridRow {
+                        RecordingListAction(title: "Copy summary", systemImage: "doc.on.doc", style: .tile) {}
+                        RecordingListAction(title: "Show in Finder", systemImage: "folder", style: .tile) {}
+                        RecordingListAction(title: "Reprocess", systemImage: "arrow.trianglehead.2.clockwise", style: .tile) {}
+                    }
+                    GridRow {
+                        RecordingListAction(title: "Transcript", systemImage: "doc.text", style: .tile) {}.disabled(true)
+                        RecordingListAction(title: "Integrations", systemImage: "paperplane", style: .tile) {}
+                        RecordingListAction(title: "Delete", systemImage: "trash", destructive: true, style: .tile) {}
+                    }
+                }
+            }) }),
+            ("05-queue", { _ in }, { AnyView(ProcessingQueueView(expanded: .constant(true))) }),
             ("07-recording", { state in
                 state.recordingState = .recording
                 state.recordingDuration = 9

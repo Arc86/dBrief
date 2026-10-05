@@ -91,7 +91,7 @@ modes; a unit test enforces this.
 | 02 | Mini player (`FloatingMiniPlayer`) | Header strip on `canvas` (logo, dBrief, ● Recording, 0:15, collapse chevron), level bars, Pause / danger Stop |
 | 03 | Ready | Hero Record button; Profile selector + hotkey hint on one row; Transcript viewer row; collapsed Recent recordings + Queue & Recovery; import row; footer |
 | 04 | Recent recording actions | Expanded row shows a fixed 3×2 tile grid: Copy summary, Show in Finder, Reprocess / Transcript, Integrations, Delete. Unavailable actions are **disabled tiles**, so the grid never reflows |
-| 05 | Queue and recovery | Empty state: tray icon, "No pending work", caption. *Pen also shows "Pause queue" — not implemented (no backing behaviour); see Out of scope* |
+| 05 | Queue and recovery | Empty state: tray icon, "No pending work", caption, and the existing "Pause queue" control (already backed by `RecordingManager.setQueuePaused`) |
 | 06 | Video URL import | Inline panel under the import row: title + ✕, URL field, accent "Go" (disabled tint when empty), status caption |
 | 07 | Recording | Timer 30/600 + "Recording" (danger), level bars, Pause / danger Stop, Mic selector (success) + System audio (success), Obsidian folder + Choose…, import buttons disabled. No Profile row |
 | 08 | Recording completed | Centered title 22/650 + meta (duration · size · 📅 Calendar linked); Meeting details + Refresh; meeting selector + "Updated at"; Calendar attendees; Participants token box; **Processing settings row** (profile · N tasks selected ›) replaces the inline checkbox list; hero "Process recording"; output-folder caption; Keep audio only / Queue / ••• |
@@ -111,7 +111,6 @@ modes; a unit test enforces this.
 
 ## 6. Out of scope
 
-- **Pause queue** (05): needs a new queue-paused state in `RecordingManager`; separate ticket.
 - **Memory meter "12.7 / 16 GB"** (11): needs a memory-usage reader; keep today's "Low RAM" tag, restyled.
 - Onboarding, Settings, Speaker review window, CallEndedPopup (follows 01's styling only if trivial).
 - Any change to recording, processing, queue or calendar behaviour.

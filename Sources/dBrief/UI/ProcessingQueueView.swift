@@ -4,6 +4,8 @@ import SwiftUI
 struct ProcessingQueueView: View {
     @Environment(RecordingManager.self) private var manager
     @Environment(AppState.self) private var appState
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     @Binding var expanded: Bool
     @State private var expandedItem: Item?
 
@@ -18,13 +20,14 @@ struct ProcessingQueueView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RecordingListSectionHeader(title: "Queue & Recovery", subtitle: RecordingListPresentation.queueSummary(
+            // The summary repeats what the expanded list shows, so it only rides along when collapsed.
+            RecordingListSectionHeader(title: "Queue & Recovery", subtitle: expanded ? nil : RecordingListPresentation.queueSummary(
                 pending: manager.pendingQueueItems.count + visibleReprocessing.filter { $0.status == .queued }.count, recovery: manager.recoveryQueueEntries.count + visibleReprocessing.filter { $0.status != .queued }.count,
                 paused: manager.queuePaused, processing: appState.processingJob != nil,
                 hasError: manager.queueLoadError != nil), expanded: $expanded) {
                 if manager.queueLoadError != nil || !manager.recoveryQueueEntries.isEmpty || visibleReprocessing.contains(where: { $0.status != .queued }) {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.orange).accessibilityLabel("Queue needs attention")
+                        .foregroundStyle(status.warning.color).accessibilityLabel("Queue needs attention")
                 }
                 RecordingListIconButton(title: "Refresh queue and recovery", systemImage: "arrow.clockwise") {
                     Task { await manager.refreshWorkQueue() }
@@ -36,11 +39,15 @@ struct ProcessingQueueView: View {
                 if !manager.reprocessingRecoveryReady { ReprocessingRecoveryView() }
                 if let job = appState.processingJob {
                     HStack(spacing: 8) {
-                        Image(systemName: "waveform").foregroundStyle(.secondary)
+                        Image(systemName: "waveform").foregroundStyle(palette.primary.color)
                             .frame(width: 30, height: 30)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(job.recording.meetingTitleDraft).uiFont(.callout).lineLimit(1)
-                            RecordingListStatus(title: "Processing", systemImage: "arrow.triangle.2.circlepath")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(job.recording.meetingTitleDraft)
+                                .uiFont(.system(size: 13, weight: .medium))
+                                .foregroundStyle(palette.heading.color)
+                                .lineLimit(1)
+                            RecordingListStatus(title: "Processing", systemImage: "arrow.triangle.2.circlepath",
+                                                tint: palette.primary.color)
                         }
                         Spacer(minLength: 0)
                         RecordingListAction(title: "Stop", systemImage: "stop") {
@@ -49,7 +56,7 @@ struct ProcessingQueueView: View {
                         .disabled(editing)
                         .help("Stop processing; saved progress remains available for recovery")
                     }
-                    .padding(6)
+                    .padding(.vertical, 6)
                 }
 
                 if !hasPendingWork && appState.processingJob == nil && manager.queueLoadError == nil {
@@ -72,18 +79,19 @@ struct ProcessingQueueView: View {
 
                 if let error = manager.queueLoadError {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .uiFont(.caption).fixedSize(horizontal: false, vertical: true)
+                        .uiFont(.system(size: 12)).foregroundStyle(status.danger.color)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if hasPendingWork {
                     Text("Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first.")
-                        .uiFont(.caption2).foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             if expanded || !manager.pendingQueueItems.isEmpty {
-                HStack {
-                    Button(manager.queuePaused ? "Resume Automatic Queue" : "Pause Queue") {
+                HStack(spacing: 8) {
+                    Button(manager.queuePaused ? "Resume automatic queue" : "Pause queue") {
                         Task {
                             if await manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
                                 await manager.drainQueueIfNeeded()
@@ -94,16 +102,15 @@ struct ProcessingQueueView: View {
                     .help("Pause prevents the next job from starting; the current job can finish. This setting survives a restart.")
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
-                        Button("Process Queue") { Task { await manager.startProcessingQueue() } }
-                            .buttonStyle(.typographyProminent)
+                        Button("Process queue") { Task { await manager.startProcessingQueue() } }
+                            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 33, fontSize: 13, fillsWidth: false))
                             .disabled(manager.queueLoadError != nil)
                     }
                 }
                 .disabled(editing)
             }
         }
-        .buttonStyle(.typographyBordered)
-        .controlSize(.small)
+        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33, fontSize: 13, fillsWidth: false))
         .task { await manager.refreshWorkQueue() }
         .onChange(of: appState.processingJob?.id) { _, _ in Task { await manager.refreshWorkQueue() } }
         .onChange(of: appState.queuedCount) { _, _ in Task { await manager.refreshWorkQueue() } }
@@ -126,9 +133,9 @@ struct ProcessingQueueView: View {
             reprocessingRow(attempt)
         }
         if !manager.recoveryQueueEntries.isEmpty {
-            if !manager.pendingQueueItems.isEmpty { Divider().padding(.vertical, 4) }
-            Text("Needs attention").uiFont(.caption.weight(.semibold))
-                .foregroundStyle(.secondary).padding(.horizontal, 6)
+            if !manager.pendingQueueItems.isEmpty { MenuPanelHairline().padding(.vertical, 4) }
+            Text("Needs attention").uiFont(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.secondary.color)
             ForEach(manager.recoveryQueueEntries) { entry in
                 recoveryRow(entry)
             }
@@ -140,14 +147,16 @@ struct ProcessingQueueView: View {
         let request = try? JSONDecoder().decode(ReprocessingRequest.self, from: attempt.configuration)
         return RecordingListRow(title: request?.title ?? attempt.audioURL.deletingPathExtension().lastPathComponent,
             expanded: expandedItem == key, toggle: { expandedItem = expandedItem == key ? nil : key }) {
-                Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
+                Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(palette.secondary.color)
             } metadata: {
                 Text("\(request?.options.operation.title ?? "Reprocessing") · \(attempt.status == .queued ? "Queued" : "Needs attention")")
-                    .uiFont(.caption).foregroundStyle(.secondary)
             } actions: {
                 VStack(alignment: .leading, spacing: 6) {
-                    if let message = attempt.message { Text(message).uiFont(.caption).fixedSize(horizontal: false, vertical: true) }
-                    HStack {
+                    if let message = attempt.message {
+                        Text(message).uiFont(.system(size: 12)).foregroundStyle(palette.text.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack(spacing: 6) {
                         RecordingListAction(title: "Resume", systemImage: "play") {
                             Task { await manager.resumeReprocessing(attempt.id) }
                         }.disabled(appState.processingJob != nil || editing)
@@ -165,12 +174,12 @@ struct ProcessingQueueView: View {
         return RecordingListRow(title: title, expanded: expandedItem == key, toggle: {
             expandedItem = expandedItem == key ? nil : key
         }) {
-            Text("\(index + 1)").uiFont(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            Text("\(index + 1)").uiFont(.system(size: 13).monospacedDigit()).foregroundStyle(palette.secondary.color)
                 .accessibilityLabel("Queue position \(index + 1)")
         } metadata: {
             HStack(spacing: 6) {
                 RecordingListStatus(title: available ? "Queued" : "Audio unavailable",
-                    systemImage: available ? "clock" : "exclamationmark.triangle", tint: .orange)
+                    systemImage: available ? "clock" : "exclamationmark.triangle", tint: status.warning.color)
                 if available { Text(item.autoQueued ? "· Automatic" : "· Deferred") }
             }
         } actions: {
@@ -207,13 +216,13 @@ struct ProcessingQueueView: View {
             expandedItem = expandedItem == key ? nil : key
         }) {
             Image(systemName: entry.isDelivery ? "paperplane" : "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(status.warning.color)
         } metadata: {
             Text(entry.status).lineLimit(1)
         } actions: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(entry.status + " · " + entry.date.formatted(date: .abbreviated, time: .shortened))
-                    .uiFont(.caption2).foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {
                     RecordingListAction(title: entry.isDelivery ? "Integrations…" : "Resume",
