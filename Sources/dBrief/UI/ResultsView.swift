@@ -2,15 +2,15 @@ import SwiftUI
 import AppKit
 
 struct ResultsView: View {
-    @Environment(\.uiTypography) private var typography
     @Environment(\.openWindow) var openWindow
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
-    @State private var collapsedSections = Set<Section>()
     @State private var copied = false
-    @State private var showAllActionItems = false
+    @State private var showDetails = false
 
     enum Section: Hashable {
         case summary
@@ -27,300 +27,250 @@ struct ResultsView: View {
     }
 
     private func content(recording: Recording) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                    .uiFont(.headline)
-                    .lineLimit(1)
-                Spacer()
-                if recording.duration > 0 {
-                    Text(recording.formattedDuration)
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.bottom, 6)
+        let markdownURL = findMarkdownFile(for: recording)
+        return VStack(alignment: .leading, spacing: 14) {
+            header(recording: recording, markdownURL: markdownURL)
 
-            // Status strip
-            statusStrip
-                .padding(.bottom, 10)
-
-            // Pre-flight warning banner
             if let warning = appState.preflightWarning {
                 preflightBanner(warning)
-                    .padding(.bottom, 8)
             }
 
-            // Scrollable sections
-            ScrollView {
-                VStack(spacing: 6) {
-                    if recording.summary != nil || recording.actionItems != nil {
-                        if let summary = recording.summary {
-                            collapsibleSection(.summary, title: "Summary") {
-                                Text(.init(summary))
-                                    .uiFont(.callout)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-
-                        if let items = recording.actionItems, !items.isEmpty {
-                            collapsibleSection(.actionItems, title: "Action Items (\(items.count))") {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    let isCollapsed = collapsedSections.contains(.actionItems)
-                                    let visible = isCollapsed ? [] : (showAllActionItems ? Array(items[...]) : Array(items.prefix(3)))
-                                    ForEach(Array(visible.enumerated()), id: \.offset) { _, item in
-                                        HStack(alignment: .top, spacing: 6) {
-                                            Text("◦").foregroundStyle(.secondary).uiFont(.caption)
-                                            Text(item).uiFont(.callout)
-                                        }
-                                    }
-                                    if !isCollapsed && !showAllActionItems && items.count > 3 {
-                                        Button("+\(items.count - 3) more") {
-                                            showAllActionItems = true
-                                        }
-                                        .buttonStyle(.typographyBorderless)
-                                        .uiFont(.caption)
-                                        .foregroundStyle(.blue)
-                                        .padding(.leading, 14)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-
-                        if recording.tags != nil || recording.sentiment != nil {
-                            collapsibleSection(.tagsAndSentiment, title: tagsAndSentimentTitle(recording)) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    if let sentiment = recording.sentiment {
-                                        HStack {
-                                            Text("Sentiment")
-                                                .uiFont(.caption)
-                                                .foregroundStyle(.secondary)
-                                            Spacer()
-                                            Text(sentiment)
-                                                .uiFont(.caption)
-                                        }
-                                    }
-                                    if let tags = recording.tags, !tags.isEmpty {
-                                        FlowLayout(spacing: 4) {
-                                            ForEach(tags, id: \.self) { tag in
-                                                Text(tag)
-                                                    .uiFont(.caption)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(.fill)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                            }
-                                        }
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    } else if let transcription = recording.transcription {
-                        // AI failed but transcription succeeded — show transcript
-                        collapsibleSection(.transcript, title: "Transcript") {
-                            Text(.init(transcription.text))
-                                .uiFont(.callout)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    // Retry banner — shown when AI step failed and remote endpoint exists
-                    if aiStepFailed, appSettings.effectiveDefaultAIEndpoint != nil {
-                        retryBanner
-                    }
+            if let summary = recording.summary {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Summary")
+                        .uiFont(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.heading.color)
+                    Text(.init(summary))
+                        .uiFont(.system(size: 14))
+                        .foregroundStyle(palette.text.color)
+                        .lineLimit(showDetails ? nil : 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
-                .padding(.bottom, 8)
-            }
-            .frame(minHeight: 160, maxHeight: 320)
-
-            Divider()
-                .padding(.vertical, 6)
-
-            // Pinned action bar
-            actionBar(recording: recording)
-        }
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Status strip
-
-    private var statusStrip: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(appState.processingSteps.filter { isSignificantStep($0) }.enumerated()), id: \.offset) { index, step in
-                if index > 0 {
-                    Text("·").uiFont(.caption2).foregroundStyle(.secondary)
+            } else if let transcription = recording.transcription {
+                // AI failed or was off but transcription succeeded — show the transcript.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Transcript")
+                        .uiFont(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.heading.color)
+                    Text(.init(transcription.text))
+                        .uiFont(.system(size: 14))
+                        .foregroundStyle(palette.text.color)
+                        .lineLimit(showDetails ? 30 : 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
-                stepChip(step)
             }
-            Spacer()
+
+            if hasDetails(recording) {
+                detailsDisclosure(recording: recording)
+            }
+
+            actions(recording: recording, markdownURL: markdownURL)
+
+            if !failedSteps.isEmpty {
+                failureRow
+            }
+
+            Button("Dismiss brief") {
+                appState.processingSteps.removeAll()
+                appState.preflightWarning = nil
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 28, fontSize: 13))
+            .frame(maxWidth: .infinity)
         }
-        .lineLimit(1)
     }
 
-    private func isSignificantStep(_ step: ProcessingStep) -> Bool {
-        let name = step.name.lowercased()
-        return name.contains("transcrib") || name.contains("summar") || name.contains("action") ||
-               name.contains("tag") || name.contains("title") || name.contains("markdown")
-    }
+    // MARK: - Header
 
-    private func stepChip(_ step: ProcessingStep) -> some View {
-        Group {
-            switch step.status {
-            case .completed:
-                Text("✓ \(abbreviatedStepName(step.name))")
-                    .foregroundStyle(.green)
-            case .failed:
-                Text("✕ \(abbreviatedStepName(step.name))")
-                    .foregroundStyle(.red)
-            case .inProgress:
-                Text("⋯ \(abbreviatedStepName(step.name))")
-                    .foregroundStyle(.secondary)
-            case .pending:
-                Text(abbreviatedStepName(step.name))
-                    .foregroundStyle(.tertiary)
+    private func header(recording: Recording, markdownURL: URL?) -> some View {
+        VStack(spacing: 6) {
+            Text(recording.generatedTitle ?? recording.meetingTitleDraft)
+                .uiFont(.system(size: 22, weight: .semibold))
+                .foregroundStyle(palette.heading.color)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .help(recording.generatedTitle ?? recording.meetingTitleDraft)
+            Text([recording.date.formatted(date: .abbreviated, time: .omitted),
+                  recording.duration > 0 ? recording.formattedDuration : nil]
+                .compactMap { $0 }.joined(separator: " · "))
+                .uiFont(.system(size: 12))
+                .foregroundStyle(palette.secondary.color)
+            if let contents = MenuPanelProgress.briefContents(
+                summary: recording.summary != nil,
+                actions: !(recording.actionItems ?? []).isEmpty,
+                tags: !(recording.tags ?? []).isEmpty,
+                notes: markdownURL != nil
+            ) {
+                Label {
+                    Text(contents).foregroundStyle(palette.secondary.color)
+                } icon: {
+                    Image(systemName: "checkmark.circle").foregroundStyle(status.success.color)
+                }
+                .uiFont(.system(size: 12))
             }
         }
-        .uiFont(.caption2)
+        .frame(maxWidth: .infinity)
     }
 
-    private func abbreviatedStepName(_ name: String) -> String {
-        if name.lowercased().contains("transcrib") { return "Trans" }
-        if name.lowercased().contains("summar") { return "Summ" }
-        if name.lowercased().contains("action") { return "Act" }
-        if name.lowercased().contains("tag") { return "Tags" }
-        if name.lowercased().contains("title") { return "Title" }
-        if name.lowercased().contains("markdown") { return "Notes" }
-        return String(name.prefix(5))
+    // MARK: - Details
+
+    private func hasDetails(_ recording: Recording) -> Bool {
+        !(recording.actionItems ?? []).isEmpty || !(recording.tags ?? []).isEmpty || recording.sentiment != nil
+            || (recording.summary?.count ?? 0) > 220
     }
 
-    // MARK: - Collapsible section
-
-    private func collapsibleSection<Content: View>(
-        _ section: Section,
-        title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        let isCollapsed = collapsedSections.contains(section)
-        return VStack(spacing: 0) {
+    private func detailsDisclosure(recording: Recording) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Button {
-                if isCollapsed { collapsedSections.remove(section) } else { collapsedSections.insert(section) }
+                withAnimation(.easeOut(duration: 0.15)) { showDetails.toggle() }
             } label: {
-                HStack {
-                    Text(title)
-                        .uiFont(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .textCase(typography.readingFont == .openDyslexic ? nil : .uppercase)
-                        .tracking(typography.readingFont == .openDyslexic ? 0 : 0.5)
-                    Spacer()
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Image(systemName: showDetails ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(showDetails ? "Fewer details" : "More details")
+                        .uiFont(.system(size: 13))
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
+                .foregroundStyle(palette.secondary.color)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue(showDetails ? "expanded" : "collapsed")
 
-            if !isCollapsed {
-                content()
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
+            if showDetails {
+                if let items = recording.actionItems, !items.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Action items (\(items.count))")
+                            .uiFont(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(palette.heading.color)
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text("•").foregroundStyle(palette.secondary.color)
+                                Text(item).foregroundStyle(palette.text.color)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .uiFont(.system(size: 13))
+                        }
+                    }
+                }
+                if let tags = recording.tags, !tags.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(recording.sentiment.map { "Tags · \($0)" } ?? "Tags")
+                            .uiFont(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(palette.heading.color)
+                        FlowLayout(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag)
+                                    .uiFont(.system(size: 12))
+                                    .foregroundStyle(palette.accentText.color)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 3)
+                                    .background(palette.selected.color, in: Capsule())
+                            }
+                        }
+                    }
+                } else if let sentiment = recording.sentiment {
+                    Text("Sentiment · \(sentiment)")
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                }
             }
         }
-        .background(.fill.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Actions
+
+    private func actions(recording: Recording, markdownURL: URL?) -> some View {
+        VStack(spacing: 8) {
+            if let transcript = recording.richTranscript, !transcript.segments.isEmpty,
+               let audioURL = recording.finalizedAudioURL {
+                Button {
+                    appState.pendingTranscriptSelectionURL = audioURL
+                    openWindow(id: "transcript")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "text.viewfinder")
+                        Text("View transcript")
+                        Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .uiFont(.system(size: 15, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(ViewerBrandButtonStyle(height: 40))
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    copyNotes(recording: recording)
+                } label: {
+                    Label(copied ? "Copied" : "Copy notes", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                .disabled(recording.transcription == nil && recording.summary == nil)
+
+                Button {
+                    if let url = markdownURL { NSWorkspace.shared.open(url) }
+                } label: {
+                    Label("Open file", systemImage: "doc.text")
+                }
+                .disabled(markdownURL == nil)
+                .help(markdownURL == nil ? "No Markdown file was written for this recording" : "Open the Markdown notes")
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+        }
+    }
+
+    // MARK: - Failures
+
+    private var failedSteps: [ProcessingStep] {
+        appState.processingSteps.filter { if case .failed = $0.status { true } else { false } }
+    }
+
+    private var failureRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MenuPanelHairline()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(status.warning.color)
+                Text("Didn’t finish: " + failedSteps.map(\.name).joined(separator: " · "))
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.text.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if aiStepFailed, appSettings.effectiveDefaultAIEndpoint != nil {
+                    Button("Retry AI") {
+                        Task {
+                            guard let recording = appState.processingRecording else { return }
+                            appState.preflightWarning = nil
+                            await recordingManager.retryAIAnalysis(for: recording)
+                        }
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 12, fillsWidth: false))
+                    .help("Retry AI analysis with the remote endpoint")
+                }
+            }
+        }
     }
 
     // MARK: - Banners
 
     private func preflightBanner(_ warning: PreflightWarning) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-                .font(.callout)
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(status.warning.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Low available memory")
-                    .uiFont(.caption)
-                    .fontWeight(.semibold)
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
                 Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB but only \(String(format: "%.1f", warning.availableGB)) GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps\(warning.hasRemoteEndpoint ? " or retry with a remote endpoint" : "") if it stalls.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(10)
-        .background(Color.yellow.opacity(0.1))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var retryBanner: some View {
-        HStack(spacing: 8) {
-            Text("Retry AI with remote endpoint?")
-                .uiFont(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Retry") {
-                Task {
-                    guard let recording = appState.processingRecording else { return }
-                    appState.preflightWarning = nil
-                    await recordingManager.retryAIAnalysis(for: recording)
-                }
-            }
-            .buttonStyle(.typographyProminent)
-            .controlSize(.mini)
-        }
-        .padding(10)
-        .background(Color.accentColor.opacity(0.08))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor.opacity(0.2), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: - Action bar
-
-    private func actionBar(recording: Recording) -> some View {
-        HStack(spacing: 6) {
-            Button(copied ? "Copied!" : "Copy Notes") {
-                copyNotes(recording: recording)
-            }
-            .buttonStyle(.typographyProminent)
-            .controlSize(.small)
-            .disabled(recording.transcription == nil && recording.summary == nil)
-
-            Spacer()
-
-            let markdownURL = findMarkdownFile(for: recording)
-            Button("Open File") {
-                if let url = markdownURL {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            .buttonStyle(.typographyBordered)
-            .controlSize(.small)
-            .disabled(markdownURL == nil)
-
-            if let transcript = recording.richTranscript, !transcript.segments.isEmpty,
-               let audioURL = recording.finalizedAudioURL {
-                Button("View Transcript") {
-                    appState.pendingTranscriptSelectionURL = audioURL
-                    openWindow(id: "transcript")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                .buttonStyle(.typographyBordered)
-                .controlSize(.small)
-            }
-
-            Button("Dismiss") {
-                appState.processingSteps.removeAll()
-                appState.preflightWarning = nil
-            }
-            .buttonStyle(.typographyBordered)
-            .controlSize(.small)
-        }
+        .padding(12)
+        .background(status.warning.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: - Helpers
@@ -331,12 +281,6 @@ struct ResultsView: View {
             let name = step.name.lowercased()
             return name.contains("summar") || name.contains("action") || name.contains("tag") || name.contains("qwen") || name.contains("ai")
         }
-    }
-
-    private func tagsAndSentimentTitle(_ recording: Recording) -> String {
-        var parts: [String] = ["Tags"]
-        if let sentiment = recording.sentiment { parts.append(sentiment) }
-        return parts.joined(separator: " · ")
     }
 
     private func copyNotes(recording: Recording) {

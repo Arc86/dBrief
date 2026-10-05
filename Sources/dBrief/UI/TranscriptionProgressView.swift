@@ -5,6 +5,8 @@ import AppKit
 struct TranscriptionProgressView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     var onCancel: (() async -> Void)?
     @State private var copied = false
     @State private var memStats: (used: Int64, free: Int64, total: Int64)? = nil
@@ -28,22 +30,21 @@ struct TranscriptionProgressView: View {
             let fraction = Double(stats.used) / Double(stats.total)
             let usedGB = Double(stats.used) / 1_073_741_824
             let totalGB = Double(stats.total) / 1_073_741_824
-            let color: Color = fraction > 0.85 ? .red : fraction > 0.6 ? .yellow : .green
+            let color = fraction > 0.85 ? status.danger.color : fraction > 0.6 ? status.warning.color : status.success.color
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Memory")
-                        .uiFont(.caption2)
-                        .foregroundStyle(.secondary)
                     Spacer()
                     Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
-                        .uiFont(.caption2)
-                        .foregroundStyle(fraction > 0.6 ? color : .secondary)
+                        .monospacedDigit()
                 }
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2).fill(.quaternary)
-                        RoundedRectangle(cornerRadius: 2)
+                        Capsule().fill(palette.divider.color)
+                        Capsule()
                             .fill(color)
                             .frame(width: geo.size.width * CGFloat(min(fraction, 1.0)))
                             .animation(.linear(duration: 0.3), value: fraction)
@@ -51,82 +52,56 @@ struct TranscriptionProgressView: View {
                 }
                 .frame(height: 4)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Memory")
+            .accessibilityValue(String(format: "%.1f of %.0f gigabytes used", usedGB, totalGB))
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(isComplete ? "Processing Complete" : "Processing...")
-                .uiFont(.headline)
-
-            ForEach(appState.processingSteps) { step in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        stepIcon(for: step.status)
-                            .frame(width: 16)
-                        Text(step.name)
-                            .uiFont(.callout)
-                        Spacer()
-                        if case .inProgress = step.status, appState.memoryPressureLevel == .critical {
-                            Text("⚠ Low RAM")
-                                .uiFont(.caption2)
-                                .foregroundStyle(.yellow)
-                        }
-                    }
-                    if case .inProgress = step.status, let progress = step.progress {
-                        ProgressView(value: progress, total: 1.0)
-                            .progressViewStyle(.linear)
-                            .frame(height: 4)
-                            .padding(.leading, 24)
-                            .padding(.top, 4)
-                            .animation(.linear(duration: 0.3), value: progress)
-                    }
-                    if case .inProgress = step.status, let detail = step.detail, !detail.isEmpty {
-                        Text(detail)
-                            .uiFont(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 24)
-                    }
-                    if case .failed(let message) = step.status, !message.isEmpty {
-                        ScrollView {
-                            Text(message)
-                                .uiFont(.caption)
-                                .foregroundStyle(.red)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(maxHeight: 60)
-                        .padding(.leading, 24)
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(isComplete ? "Processing complete" : "Processing recording")
+                    .uiFont(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                Spacer()
+                if let done = MenuPanelProgress.doneLabel(appState.processingSteps) {
+                    Text(done)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
                 }
             }
-            
+
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(appState.processingSteps) { step in
+                    stepRow(step)
+                }
+            }
+
             if let liveText = appState.liveInferenceText {
-                Divider()
                 ScrollView {
                     Text(liveText)
                         .uiFont(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondary.color)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
+                        .padding(8)
                 }
                 .frame(maxHeight: 150)
-                .background(Color(NSColor.textBackgroundColor).opacity(0.5))
-                .cornerRadius(4)
+                .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
             }
 
             memoryBar
 
-            HStack {
+            HStack(spacing: 8) {
                 if hasInProgressStep, let onCancel {
                     Button {
                         Task { await onCancel() }
                     } label: {
-                        Label("Stop", systemImage: "stop.fill")
+                        Label("Stop", systemImage: "stop")
                     }
-                    .buttonStyle(.typographyBordered)
-                    .controlSize(.small)
-                    .tint(.red)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 33, fillsWidth: false))
                 }
 
                 if let title = appState.processingJob?.transcriptButtonTitle {
@@ -137,8 +112,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label(title, systemImage: "text.viewfinder")
                     }
-                    .buttonStyle(.typographyBordered)
-                    .controlSize(.small)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
                 }
 
                 if appState.pendingSpeakerReview != nil {
@@ -147,15 +121,14 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label("Review speakers", systemImage: "person.crop.circle.badge.questionmark")
                     }
-                    .buttonStyle(.typographyProminent)
-                    .controlSize(.small)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 33, fontSize: 13))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isComplete, let recording = appState.processingRecording, recording.transcription != nil {
-                Divider()
-                HStack {
+                MenuPanelHairline()
+                HStack(spacing: 8) {
                     Button(copied ? "Copied!" : "Copy Notes") {
                         if
                             let transcript = recording.transcription?.text,
@@ -181,20 +154,15 @@ struct TranscriptionProgressView: View {
                             }
                         }
                     }
-                    .buttonStyle(.typographyBordered)
-                    .controlSize(.small)
-
-                    Spacer()
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
 
                     Button("Close") {
                         appState.processingSteps.removeAll()
                     }
-                    .buttonStyle(.typographyBordered)
-                    .controlSize(.small)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
                 }
             }
         }
-        .padding(.vertical, 4)
         .onAppear {
             memStats = MemoryPressureMonitor.getMemoryStats()
             memTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
@@ -209,21 +177,79 @@ struct TranscriptionProgressView: View {
         }
     }
 
+    private func stepRow(_ step: ProcessingStep) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                stepIcon(for: step.status)
+                    .frame(width: 18, height: 18)
+                Text(step.name)
+                    .uiFont(.system(size: 14))
+                    .foregroundStyle(isDone(step.status) ? palette.secondary.color : palette.heading.color)
+                Spacer()
+                if case .inProgress = step.status, appState.memoryPressureLevel == .critical {
+                    Text("Low RAM")
+                        .uiFont(.system(size: 11, weight: .medium))
+                        .foregroundStyle(status.warning.color)
+                }
+            }
+            if case .inProgress = step.status, let progress = step.progress {
+                ProgressView(value: progress, total: 1.0)
+                    .progressViewStyle(.linear)
+                    .tint(palette.primary.color)
+                    .frame(height: 4)
+                    .padding(.leading, 28)
+                    .padding(.top, 2)
+                    .animation(.linear(duration: 0.3), value: progress)
+            }
+            if case .inProgress = step.status, let detail = step.detail, !detail.isEmpty {
+                Text(detail)
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.secondary.color)
+                    .padding(.leading, 28)
+            }
+            if case .failed(let message) = step.status, !message.isEmpty {
+                ScrollView {
+                    Text(message)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(status.danger.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 60)
+                .padding(.leading, 28)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func isDone(_ status: ProcessingStep.Status) -> Bool {
+        if case .completed = status { return true }
+        return false
+    }
+
     @ViewBuilder
-    private func stepIcon(for status: ProcessingStep.Status) -> some View {
-        switch status {
+    private func stepIcon(for stepStatus: ProcessingStep.Status) -> some View {
+        switch stepStatus {
         case .pending:
             Image(systemName: "circle")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 15))
+                .foregroundStyle(palette.divider.color)
+                .accessibilityLabel("Waiting")
         case .inProgress:
             ProgressView()
                 .controlSize(.small)
+                .tint(palette.primary.color)
+                .accessibilityLabel("In progress")
         case .completed:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(status.success.color)
+                .accessibilityLabel("Done")
         case .failed:
-            Image(systemName: "xmark.circle.fill")
-                .foregroundStyle(.red)
+            Image(systemName: "xmark.circle")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(status.danger.color)
+                .accessibilityLabel("Failed")
         }
     }
 }

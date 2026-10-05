@@ -111,6 +111,5 @@ modes; a unit test enforces this.
 
 ## 6. Out of scope
 
-- **Memory meter "12.7 / 16 GB"** (11): needs a memory-usage reader; keep today's "Low RAM" tag, restyled.
 - Onboarding, Settings, Speaker review window, CallEndedPopup (follows 01's styling only if trivial).
 - Any change to recording, processing, queue or calendar behaviour.
