@@ -1,3 +1,31 @@
+## dBrief 1.4.6
+
+### Switch microphones mid-recording
+
+- **Switch between Bluetooth earbuds and your Mac's microphone while recording.** Pick a different mic from the recording menu and dBrief moves to it straight away, keeping one continuous recording. Previously a switch could leave the microphone silent or end in an error.
+- **Follows your devices automatically.** Disconnect your earbuds and recording continues on the Mac's microphone; reconnect them and it moves back. A microphone you picked yourself is used again as soon as it reappears.
+- **See which microphone is recording.** The mic button in the recording controls now shows the device in use, and a short note confirms each switch.
+- **Your voice stays in sync with the meeting audio.** The moments between two microphones are kept as silence, so your track doesn't drift ahead of the other participants after a switch.
+- **Warning for a muted microphone.** If macOS has the selected microphone muted or its input level at zero, dBrief tells you instead of quietly recording silence.
+- **Tip:** Bluetooth earbuds switch to a lower-quality call mode while their own microphone is in use. Listening on your earbuds while recording with the Mac's microphone keeps both your playback and your voice at full quality.
+
+### Local transcription
+
+- **Two new Parakeet models.** **Parakeet Ultra** is more accurate than v3 at the same speed and size. **Parakeet Redux** is a compact ~220 MB download for macOS 15 and later; its first use takes a few minutes to prepare. Parakeet v3 remains the default.
+
+### AI analysis
+
+- **Claude Sonnet 5.5** is available and is now the default for new Anthropic endpoints. Newer Claude models that reject custom sampling settings no longer fail with a request error.
+- **Shared action items name real people** (e.g. "Alice/Bob") instead of placeholder owners like "Owner 1/Owner 2".
+
+### Fixes
+
+- **Fixed a crash after a power-source change**, such as plugging in the charger or a Bluetooth headset's battery status updating while switching microphones.
+- **Local models keep working after you cancel processing.** Previously, cancelling made every later transcription, download, or model removal fail until dBrief was restarted.
+- **Reprocessing from the library sidebar works again.** Right-click actions such as Transcribe, Re-run analysis, Detect speakers, and Link calendar now open as expected.
+
+---
+
 ## dBrief 1.4.5
 
 ### Speaker review
