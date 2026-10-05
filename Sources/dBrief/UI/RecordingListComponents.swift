@@ -110,7 +110,7 @@ struct RecordingListPlayButton: View {
         Button(action: action) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.primary.color)
+                .foregroundStyle(status.accentMark.color)
                 .frame(width: 30, height: 30)
                 .background(palette.surface.color, in: Circle())
                 .overlay(Circle().strokeBorder(status.accentBorder.color, lineWidth: 1))

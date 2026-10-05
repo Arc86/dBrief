@@ -62,7 +62,13 @@ struct ResultsView: View {
                 }
             }
 
-            if hasDetails(recording) {
+            if MenuPanelProgress.offersMoreDetails(
+                summary: recording.summary,
+                transcriptFallback: recording.summary == nil && recording.transcription != nil,
+                actionCount: recording.actionItems?.count ?? 0,
+                tagCount: recording.tags?.count ?? 0,
+                hasSentiment: recording.sentiment != nil
+            ) {
                 detailsDisclosure(recording: recording)
             }
 
@@ -114,11 +120,6 @@ struct ResultsView: View {
     }
 
     // MARK: - Details
-
-    private func hasDetails(_ recording: Recording) -> Bool {
-        !(recording.actionItems ?? []).isEmpty || !(recording.tags ?? []).isEmpty || recording.sentiment != nil
-            || (recording.summary?.count ?? 0) > 220
-    }
 
     private func detailsDisclosure(recording: Recording) -> some View {
         VStack(alignment: .leading, spacing: 10) {

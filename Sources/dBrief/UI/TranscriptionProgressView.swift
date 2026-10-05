@@ -99,9 +99,11 @@ struct TranscriptionProgressView: View {
                     Button {
                         Task { await onCancel() }
                     } label: {
-                        Label("Stop", systemImage: "stop")
+                        Label(MenuPanelProgress.stopProcessingTitle(isCapturing: !appState.isIdle), systemImage: "stop")
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 33, fillsWidth: false))
+                    .accessibilityLabel("Stop processing")
+                    .help("Stop processing; saved progress remains available for recovery")
                 }
 
                 if let title = appState.processingJob?.transcriptButtonTitle {

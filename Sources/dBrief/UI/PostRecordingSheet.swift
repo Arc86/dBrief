@@ -124,6 +124,9 @@ struct PostRecordingSheet: View {
             }
 
             MenuPanelHairline()
+            if profileNoticeOnSurface {
+                profileContext
+            }
             processingSettings
             MenuPanelHairline()
 
@@ -275,6 +278,10 @@ struct PostRecordingSheet: View {
 
     // MARK: - Processing settings
 
+    private var profileNoticeOnSurface: Bool {
+        MenuPanelProgress.profileNoticeOnSurface(isDeferred: appState.currentRecording?.profileSelection.isDeferred ?? false)
+    }
+
     private var selectedTaskCount: Int {
         MenuPanelProgress.selectedTaskCount(transcribe: transcribe, summary: summary, actionItems: actionItems,
                                             tags: tags, aiEnabled: reviewAIEnabled)
@@ -319,7 +326,9 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(palette.secondary.color)
                 profileMenu
             }
-            profileContext
+            if !profileNoticeOnSurface {
+                profileContext
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)

@@ -39,4 +39,19 @@ import Testing
             #expect(ViewerThemeResolver.contrast(o.2.accentBorder, o.1.surface) < ViewerThemeResolver.contrast(o.1.primary, o.1.surface))
         }
     }
+
+    @Test func filledDangerLabelIsReadableInEveryMode() {
+        for (mode, _, panel) in palettes() {
+            #expect(ViewerThemeResolver.contrast(panel.onDanger, panel.danger) >= 4.5, "onDanger in \(mode)")
+        }
+    }
+
+    @Test(arguments: ["#FFD60A", "#0A1F44", "#000000", "#FFFFFF", "#1268F5"])
+    func playControlsStayVisibleWithExtremeAccents(accent: String) {
+        for (mode, base, panel) in palettes(accent: accent) {
+            // Non-text UI needs 3:1 against its background (WCAG 1.4.11).
+            #expect(ViewerThemeResolver.contrast(panel.accentBorder, base.surface) >= 3, "accent border \(accent) in \(mode)")
+            #expect(ViewerThemeResolver.contrast(panel.accentMark, base.surface) >= 3, "accent mark \(accent) in \(mode)")
+        }
+    }
 }

@@ -46,7 +46,7 @@ struct MenuPanelButtonStyle: ButtonStyle {
         switch kind {
         case .hero: palette.onPrimary.color
         case .danger, .dangerTile: status.danger.color
-        case .dangerFilled: .white
+        case .dangerFilled: status.onDanger.color
         case .accentOutline: palette.heading.color
         case .quiet: palette.secondary.color
         default: palette.text.color
@@ -176,14 +176,20 @@ struct MenuPanelStatusDot: View {
         Circle()
             .fill(tone.color(palette: palette, status: status))
             .frame(width: size, height: size)
-            .opacity(dimmed ? 0.35 : 1)
+            .opacity(Self.opacity(pulse: pulse && !reduceMotion, dimmed: dimmed))
             .onAppear { startPulse() }
             .onChange(of: pulse) { _, _ in startPulse() }
             .accessibilityHidden(true)
     }
 
+    /// Dimming only shows while pulsing, so a stopped or re-appearing dot is never stuck pale.
+    static func opacity(pulse: Bool, dimmed: Bool) -> Double {
+        pulse && dimmed ? 0.35 : 1
+    }
+
     private func startPulse() {
-        guard pulse, !reduceMotion else { dimmed = false; return }
+        dimmed = false
+        guard pulse, !reduceMotion else { return }
         withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dimmed = true }
     }
 }
@@ -193,13 +199,13 @@ struct MenuPanelLevelBars: View {
     let level: Float
     var active = true
     var height: CGFloat = 37
-    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     private static let barWidth: CGFloat = 3
     private static let gap: CGFloat = 3
 
     var body: some View {
-        let colour = palette.primary.color
+        let colour = status.accentMark.color
         let shown = CGFloat(AudioLevelMeter.displayLevel(level))
         Canvas { context, size in
             let count = max(1, Int((size.width + Self.gap) / (Self.barWidth + Self.gap)))

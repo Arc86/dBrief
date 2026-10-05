@@ -52,4 +52,32 @@ import Testing
         #expect(MenuPanelProgress.selectedTaskCount(transcribe: false, summary: true, actionItems: true, tags: true, aiEnabled: true) == 0)
         #expect(MenuPanelProgress.selectedTaskCount(transcribe: true, summary: true, actionItems: true, tags: true, aiEnabled: false) == 1)
     }
+
+    @Test func moreDetailsAppearsWheneverTextCanBeCutOff() {
+        // Short single-line summary with nothing else: nothing to reveal.
+        #expect(!MenuPanelProgress.offersMoreDetails(summary: "Short.", transcriptFallback: false, actionCount: 0, tagCount: 0, hasSentiment: false))
+        // Medium summary that wraps past four lines in a 328 pt column.
+        #expect(MenuPanelProgress.offersMoreDetails(summary: String(repeating: "word ", count: 36), transcriptFallback: false, actionCount: 0, tagCount: 0, hasSentiment: false))
+        // Short bulleted summary spread over several lines.
+        #expect(MenuPanelProgress.offersMoreDetails(summary: "- a\n- b\n- c\n- d\n- e", transcriptFallback: false, actionCount: 0, tagCount: 0, hasSentiment: false))
+        // A transcript fallback is always expandable.
+        #expect(MenuPanelProgress.offersMoreDetails(summary: nil, transcriptFallback: true, actionCount: 0, tagCount: 0, hasSentiment: false))
+        #expect(MenuPanelProgress.offersMoreDetails(summary: "Short.", transcriptFallback: false, actionCount: 2, tagCount: 0, hasSentiment: false))
+    }
+
+    @Test func stopProcessingIsNamedApartFromStopRecording() {
+        #expect(MenuPanelProgress.stopProcessingTitle(isCapturing: false) == "Stop")
+        #expect(MenuPanelProgress.stopProcessingTitle(isCapturing: true) == "Stop processing")
+    }
+
+    @Test func deferredProfileNoticeStaysOnTheSurface() {
+        #expect(MenuPanelProgress.profileNoticeOnSurface(isDeferred: true))
+        #expect(!MenuPanelProgress.profileNoticeOnSurface(isDeferred: false))
+    }
+
+    @Test func statusDotOnlyDimsWhilePulsing() {
+        #expect(MenuPanelStatusDot.opacity(pulse: true, dimmed: true) < 1)
+        #expect(MenuPanelStatusDot.opacity(pulse: false, dimmed: true) == 1)
+        #expect(MenuPanelStatusDot.opacity(pulse: true, dimmed: false) == 1)
+    }
 }

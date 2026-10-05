@@ -44,6 +44,25 @@ enum MenuPanelProgress {
         return "\(done) of \(steps.count) done"
     }
 
+    /// Whether the brief should offer "More details": anything beyond the
+    /// four-line preview, judged at roughly 42 characters per line of the panel.
+    static func offersMoreDetails(summary: String?, transcriptFallback: Bool, actionCount: Int, tagCount: Int, hasSentiment: Bool) -> Bool {
+        if transcriptFallback || actionCount > 0 || tagCount > 0 || hasSentiment { return true }
+        guard let summary else { return false }
+        let lines = summary.split(separator: "\n", omittingEmptySubsequences: false)
+            .reduce(0) { $0 + max(1, Int((Double($1.count) / 42).rounded(.up))) }
+        return lines > 4
+    }
+
+    /// During record-while-processing two Stop buttons are on screen; name the job's one.
+    static func stopProcessingTitle(isCapturing: Bool) -> String {
+        isCapturing ? "Stop processing" : "Stop"
+    }
+
+    /// A deferred profile switch happens on its own when the current job ends, so
+    /// its notice and opt-out stay visible instead of inside Processing settings.
+    static func profileNoticeOnSurface(isDeferred: Bool) -> Bool { isDeferred }
+
     /// Tasks that will actually run: AI tasks need a transcript and AI processing on.
     static func selectedTaskCount(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool, aiEnabled: Bool) -> Int {
         guard transcribe else { return 0 }
