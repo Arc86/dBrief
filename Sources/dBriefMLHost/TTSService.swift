@@ -104,14 +104,7 @@ final class TTSService: @unchecked Sendable {
         // component ("MultiCodeEmbedder model not loaded"). We load exactly once,
         // after attaching the progress callback. The race is wider on the heavier
         // 1.7B model, which is why it surfaced there.
-        let config = TTSKitConfig(
-            model: variant,
-            downloadBase: downloadBase,
-            verbose: true,
-            logLevel: .info,
-            load: false
-        )
-        let engine = try await TTSKit(config)
+        let engine = try await TTSKit(Self.ttsConfig(variant: variant, downloadBase: downloadBase))
         engine.modelStateCallback = { [stateHandler] (_, newState: ModelState) in
             switch newState {
             case .downloading:
@@ -131,6 +124,17 @@ final class TTSService: @unchecked Sendable {
     // MARK: - Paths
 
     private let fileManager = FileManager.default
+
+    static func ttsConfig(variant: TTSModelVariant, downloadBase: URL) -> TTSKitConfig {
+        TTSKitConfig(
+            model: variant,
+            downloadBase: downloadBase,
+            modelToken: HubAuth.anonymousToken,
+            verbose: true,
+            logLevel: .info,
+            load: false
+        )
+    }
 
     private func ttsDownloadBaseURL() throws -> URL {
         try SupportPaths.subdirectory("TTS")
