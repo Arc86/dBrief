@@ -2534,8 +2534,11 @@ final class RecordingManager {
     /// Called by MemoryPressureMonitor when system memory pressure is detected.
     /// Unloads all local AI models to free memory.
     func handleMemoryPressure() async {
+        // Unloads every local model from memory — Parakeet included, through the
+        // helper's memoryPressurePurge. It must never delete model files: macOS sends
+        // pressure warnings several times an hour, and purging Parakeet's cache here
+        // made every next transcription re-download the model (~600 MB for Ultra).
         await localAIPluginService.purgeModelsOnMemoryPressure()
-        try? await parakeetService.purgeModels()
     }
 
     /// Force-release all Metal/GPU resources before app termination.
