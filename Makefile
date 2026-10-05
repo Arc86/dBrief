@@ -118,6 +118,7 @@ app: build
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
 	cp -R Sources/dBrief/Resources/Fonts $(RESOURCES)/Fonts
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
+	cp -R Sources/dBrief/Resources/MarkdownEditor $(RESOURCES)/MarkdownEditor
 	@set -e; \
 	LOCAL_METALLIB="$$(find .build -type f -name 'default.metallib' | head -n 1)"; \
 	if [ -n "$$LOCAL_METALLIB" ]; then \

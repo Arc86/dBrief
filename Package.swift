@@ -52,6 +52,7 @@ let package = Package(
                 .linkedFramework("EventKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("ServiceManagement"),
+                .linkedFramework("WebKit"),
             ]
         ),
         .testTarget(
