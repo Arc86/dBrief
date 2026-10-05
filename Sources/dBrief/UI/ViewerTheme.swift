@@ -16,6 +16,9 @@ private struct ViewerModeKey: EnvironmentKey {
 private struct ViewerNonNeonKey: EnvironmentKey {
     static let defaultValue = false
 }
+private struct MenuPanelPaletteKey: EnvironmentKey {
+    static let defaultValue = MenuPanelPalette.resolve(mode: .light, base: ViewerPaletteKey.defaultValue)
+}
 
 extension EnvironmentValues {
     var viewerPalette: ViewerPalette {
@@ -33,6 +36,10 @@ extension EnvironmentValues {
     var viewerNonNeon: Bool {
         get { self[ViewerNonNeonKey.self] }
         set { self[ViewerNonNeonKey.self] = newValue }
+    }
+    var menuPanelPalette: MenuPanelPalette {
+        get { self[MenuPanelPaletteKey.self] }
+        set { self[MenuPanelPaletteKey.self] = newValue }
     }
 }
 

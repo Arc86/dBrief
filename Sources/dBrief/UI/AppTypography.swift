@@ -165,7 +165,7 @@ struct AppAppearanceScope: ViewModifier {
             .environment(\.font, AppFontStyle.body.resolve(using: typography))
             .environment(\.viewerPalette, palette)
             .environment(\.viewerMode, mode)
-            .background(NativeControlTypography(preferences: typography).frame(width: 0, height: 0))
+            .environment(\.menuPanelPalette, MenuPanelPalette.resolve(mode: mode, base: palette))            .background(NativeControlTypography(preferences: typography).frame(width: 0, height: 0))
             .buttonStyle(.typographyBordered)
             .menuStyle(.button)
             .tint(palette.primary.color)

@@ -42,7 +42,7 @@ The frames use a few status colours the viewer palette does not have. They go in
 | `dangerBorder` | `#D5B3C1` | `#755C6F` | `#D9B2A8` | `#7A564C` | Stop/Delete/confirm borders |
 | `warning` | `#E0A21B` | `#E0A21B` | `#C08A2E` | `#D9A54A` | Memory bar, "needs attention" |
 | `accentBorder` | derived | derived | derived | derived | Play circles, "Record call" outline: `primary` mixed 50 % into `surface` |
-| `successFill` | derived | derived | derived | derived | Recovery banner: `success` mixed 92 % into `surface` |
+| `successFill` | derived | derived | derived | derived | Recovery banner: `success` mixed 95 % into `surface` |
 
 **Deliberate deviation:** Pen draws the light "Recording" label as `#D7415C`, which is 4.4:1 on white
 (fails AA). We use `danger` (`#B93852`, 5.6:1). Every text role must reach 4.5:1 on `surface` in all four
