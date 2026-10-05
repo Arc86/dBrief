@@ -41,6 +41,31 @@ struct MarkdownEditorControllerTests {
         #expect(reloaded.contains("Eerste versie"))
     }
 
+    private func proseMirrorHasFocus(_ controller: MarkdownEditorController) async -> Bool {
+        let script = "document.activeElement?.classList.contains('ProseMirror') === true;"
+        return (try? await controller.webView.evaluateJavaScript(script) as? Bool) ?? false
+    }
+
+    @Test("An editor on a hidden tab never takes focus when it becomes ready", .timeLimit(.minutes(1)))
+    func inactiveEditorDoesNotFocus() async throws {
+        let index = try #require(MarkdownEditorResources.indexURL(in: MarkdownEditorSourceBundle.resources))
+        let controller = MarkdownEditorController(indexURL: index, markdown: "Verborgen")
+        defer { controller.tearDown() }
+        controller.setActive(false)
+        _ = try #require(await firstLoaded(from: controller))
+        #expect(await proseMirrorHasFocus(controller) == false)
+    }
+
+    @Test("The visible editor puts the caret in the document when it becomes ready", .timeLimit(.minutes(1)))
+    func activeEditorFocuses() async throws {
+        let index = try #require(MarkdownEditorResources.indexURL(in: MarkdownEditorSourceBundle.resources))
+        let controller = MarkdownEditorController(indexURL: index, markdown: "Zichtbaar")
+        defer { controller.tearDown() }
+        controller.setActive(true)
+        _ = try #require(await firstLoaded(from: controller))
+        #expect(await proseMirrorHasFocus(controller))
+    }
+
     @Test("currentMarkdown reads the live document without a changed round-trip", .timeLimit(.minutes(1)))
     func currentMarkdownIsLive() async throws {
         let index = try #require(MarkdownEditorResources.indexURL(in: MarkdownEditorSourceBundle.resources))

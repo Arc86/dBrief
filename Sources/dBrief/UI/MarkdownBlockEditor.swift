@@ -17,6 +17,10 @@ final class MarkdownEditorController: NSObject {
     private var theme: MarkdownEditorTheme?
     private var isReadOnly = false
     private var isReady = false
+    /// False while the editor sits on a hidden viewer tab; it must never take focus then.
+    private(set) var isActive = true
+    /// `ready` asked for keyboard focus before the web view was in a window.
+    private var wantsFirstResponder = false
 
     init(indexURL: URL, markdown: String) {
         self.indexURL = indexURL
@@ -45,8 +49,35 @@ final class MarkdownEditorController: NSObject {
         run(MarkdownEditorScript.call("setReadOnly", readOnly))
     }
 
+    /// Called on every SwiftUI configure. Becoming inactive cancels a pending focus;
+    /// staying active completes one once the web view has a window.
+    func setActive(_ active: Bool) {
+        isActive = active
+        guard active else {
+            wantsFirstResponder = false
+            return
+        }
+        if wantsFirstResponder, webView.window != nil { focus() }
+    }
+
+    /// Puts the caret in the document: JS focus for ProseMirror, AppKit first
+    /// responder so keystrokes reach the web view. Only for the visible, editable editor.
     func focus() {
+        guard isActive, !isReadOnly else {
+            wantsFirstResponder = false
+            return
+        }
         run("window.dbrief.focus();")
+        makeWebViewFirstResponder()
+    }
+
+    private func makeWebViewFirstResponder() {
+        guard let window = webView.window else {
+            wantsFirstResponder = true
+            return
+        }
+        wantsFirstResponder = false
+        window.makeFirstResponder(webView)
     }
 
     /// The live document, read straight from the page (the debounced `changed`
@@ -80,7 +111,7 @@ final class MarkdownEditorController: NSObject {
             if let theme { run(MarkdownEditorScript.call("setTheme", theme.cssVariables)) }
             run(MarkdownEditorScript.call("setReadOnly", isReadOnly))
             run(MarkdownEditorScript.call("setMarkdown", latestMarkdown))
-            if !isReadOnly { focus() }
+            focus()
         case .loaded(let markdown), .changed(let markdown):
             latestMarkdown = markdown
         case .height, .shortcut:
@@ -187,5 +218,6 @@ struct MarkdownBlockEditor: NSViewRepresentable {
         controller.onMessage = onMessage
         controller.setTheme(theme)
         controller.setReadOnly(isReadOnly)
+        controller.setActive(isActive)
     }
 }
