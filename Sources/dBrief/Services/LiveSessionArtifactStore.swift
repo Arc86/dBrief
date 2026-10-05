@@ -4,6 +4,7 @@ import Foundation
 import dBriefWire
 
 enum LiveArtifactStage: Sendable {
+    case ramRetentionQueueScan, ramRetentionPrepared, ramRetentionRemoved
     case catalogueRead
     case cataloguePublication
     case registryResolution
@@ -1076,6 +1077,10 @@ actor LiveSessionArtifactStore {
         guard try read(url) == data else { throw LiveArtifactError.verificationFailed }
     }
     private func unlinkRetained(_ item: RecordingDeletionAuthority.Item) throws {
+        try Self.unlinkRetained(item)
+    }
+    nonisolated static func unlinkRetained(_ item: RecordingDeletionAuthority.Item,
+        didUnlink: (() -> Void)? = nil, beforeSync: (URL) throws -> Void = { _ in }) throws {
         try requireSafeParents(item.url); try item.validate()
         guard try RecordingDeletionAuthority.Stamp.read(item.url) != nil else { return }
         let descriptor = open(item.url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
@@ -1086,14 +1091,17 @@ actor LiveSessionArtifactStore {
               UInt64(UInt32(bitPattern: info.st_dev)) == item.stamp?.device else { throw LiveArtifactError.wrongOwner }
         try item.validate()
         guard unlink(item.url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        try synchronizeDirectory(item.url.deletingLastPathComponent())
+        didUnlink?()
+        try beforeSync(item.url.deletingLastPathComponent())
+        try synchronizeRetainedDirectory(item.url.deletingLastPathComponent())
     }
 
     private func removeVerified(_ url: URL) throws {
         guard try read(url) != nil else { return }
         try fm.removeItem(at: url); try synchronizeDirectory(url.deletingLastPathComponent())
     }
-    private func synchronizeDirectory(_ url: URL) throws {
+    private func synchronizeDirectory(_ url: URL) throws { try Self.synchronizeRetainedDirectory(url) }
+    nonisolated static func synchronizeRetainedDirectory(_ url: URL) throws {
         let descriptor = open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(descriptor) }

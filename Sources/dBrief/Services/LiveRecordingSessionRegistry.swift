@@ -106,20 +106,152 @@ final class LiveRecordingSessionRegistry {
         fileprivate var nonpersisting = false
         fileprivate var capturePersistenceAllowed: Bool
         fileprivate let ramCapture: LiveRAMCaptureMetadata?
+        fileprivate let archivedRAM: LiveManagedArtifactCatalogue.Hint?
         fileprivate var ramCandidate: Entry?
         fileprivate var finishTask: Task<Entry?, any Error>?
         fileprivate var finishWaiters = 0
         fileprivate let finalAnchor: (id: UUID, revision: UInt64)?
-        fileprivate init(recordingID: UUID, authority: RecordingDeletionAuthority, original: Entry?, isRetention: Bool = false) {
+        fileprivate init(recordingID: UUID, authority: RecordingDeletionAuthority, original: Entry?, isRetention: Bool = false, archivedRAM: LiveManagedArtifactCatalogue.Hint? = nil) {
             self.recordingID = recordingID; self.authority = authority; self.original = original; self.isRetention = isRetention
-            identity = original?.identity; pin = original?.artifacts.pin()
-            nonpersisting = original.map { !$0.artifacts.persistenceStarted } ?? false
-            capturePersistenceAllowed = original?.artifacts.capturePersistenceAllowed ?? true
-            ramCapture = original?.artifacts.ramMetadata?.capture
+            self.archivedRAM = archivedRAM
+            identity = original?.identity ?? archivedRAM?.identity; pin = original?.artifacts.pin()
+            nonpersisting = original.map { !$0.artifacts.persistenceStarted } ?? (archivedRAM?.ram != nil)
+            capturePersistenceAllowed = original?.artifacts.capturePersistenceAllowed ?? archivedRAM?.capturePersistenceAllowed ?? true
+            ramCapture = original?.artifacts.ramMetadata?.capture ?? archivedRAM?.ram?.capture
             finalAnchor = original?.artifacts.finalAnchor
         }
     }
     private var replacements: [UUID: Replacement] = [:]
+    @MainActor final class RAMTranscriptRetention {
+        let identity: LiveSessionIdentity
+        fileprivate let validity: RecordingDerivativeValidity
+        fileprivate var original: Entry?
+        fileprivate let revision: UInt64
+        fileprivate let metadata: LiveRAMSourceMetadata
+        fileprivate let admittedAudio: URL?
+        fileprivate let cutoff: Date
+        fileprivate var folders: [URL]
+        fileprivate let maintenance: LiveRecordingPayloadBudget.Lease
+        fileprivate let worker: LiveRAMTranscriptRetention
+        fileprivate var witness: LiveRAMTranscriptRetention.Inventory?
+        fileprivate var task: Task<Void, any Error>?
+        fileprivate var waiters = 0
+        fileprivate var abandoned = false
+        fileprivate(set) var intentCommitted = false
+        fileprivate init(original: Entry, cutoff: Date, folders: [URL], maintenance: LiveRecordingPayloadBudget.Lease,
+                         worker: LiveRAMTranscriptRetention, metadata: LiveRAMSourceMetadata) {
+            identity = original.identity; validity = original.validity; self.original = original
+            revision = original.artifacts.acceptedRevision; self.metadata = metadata
+            admittedAudio = original.artifacts.admittedAudioURL; self.cutoff = cutoff; self.folders = folders
+            self.maintenance = maintenance; self.worker = worker
+        }
+    }
+    private var ramRetentions: [UUID: RAMTranscriptRetention] = [:]
+    var pendingRAMTranscriptRetentions: Int { ramRetentions.count }
+    var pendingRAMRetentionWaiters: Int { ramRetentions.values.reduce(0) { $0 + $1.waiters } }
+    private let beforeRAMDirectorySync: @Sendable (URL) throws -> Void
+
+    func beginRAMTranscriptRetention(recordingID: UUID, olderThan cutoff: Date, folders: [URL]) throws -> RAMTranscriptRetention? {
+        guard !terminationStarted else { throw LiveArtifactError.terminating }
+        guard cutoff.timeIntervalSinceReferenceDate.isFinite else { throw LiveArtifactError.corruptArtifact }
+        guard folders.count <= 32 else { throw LiveArtifactError.artifactTooLarge }
+        for folder in folders { _ = try LiveRAMCaptureMetadata(startedAt: cutoff, intendedFolder: folder) }
+        guard ramRetentions[recordingID] == nil, replacements[recordingID] == nil, deletions[recordingID] == nil,
+              exports[recordingID] == nil, loads[recordingID] == nil else { throw Failure.unavailable }
+        guard ramRetentions.count + replacements.count < 8 else { throw Failure.capacity }
+        guard let original = entries[recordingID] else { return nil }
+        guard !original.artifacts.capturePersistenceAllowed, !original.artifacts.isNative, original.coordinator == nil,
+              let metadata = original.artifacts.ramMetadata, !metadata.sourceRetired else { throw Failure.unavailable }
+        guard original.isValid, original.captureClosed, original.artifacts.canExpire, metadata.isOlder(than: cutoff),
+              original.artifacts.admittedAudioURL != nil || metadata.capture.intendedFolder != nil else { return nil }
+        try original.validity.withValidResult {}
+        let phase = RAMTranscriptRetention(original: original, cutoff: cutoff, folders: folders,
+            maintenance: try reserveDeletionMaintenance(), worker: .init(stage: beforeStage, beforeSync: beforeRAMDirectorySync), metadata: metadata)
+        try original.artifacts.sealForReplacement()
+        ramRetentions[recordingID] = phase
+        return phase
+    }
+    func ramTranscriptRetentionProgress(_ phase: RAMTranscriptRetention) async -> LiveRAMTranscriptRetention.Progress {
+        await phase.worker.counts()
+    }
+    private func requireRAMPhase(_ phase: RAMTranscriptRetention, original: Entry) throws {
+        guard ramRetentions[phase.identity.recordingID] === phase, phase.original === original,
+              original.identity == phase.identity, original.validity === phase.validity else { throw Failure.unavailable }
+    }
+    private func eligibleRAMPhase(_ phase: RAMTranscriptRetention, original: Entry) throws -> Bool {
+        try requireRAMPhase(phase, original: original)
+        guard !terminationStarted, !phase.abandoned, entries[phase.identity.recordingID] === original,
+              original.isValid, original.captureClosed, original.artifacts.canExpire,
+              original.artifacts.ramMetadata == phase.metadata, original.artifacts.acceptedRevision == phase.revision,
+              original.artifacts.admittedAudioURL == phase.admittedAudio, phase.metadata.isOlder(than: phase.cutoff) else { return false }
+        try phase.validity.withValidResult {}
+        return true
+    }
+    private func releaseUncommittedRAMPhase(_ phase: RAMTranscriptRetention, original: Entry) {
+        guard ramRetentions[phase.identity.recordingID] === phase, !phase.intentCommitted else { return }
+        if !terminationStarted, entries[phase.identity.recordingID] === original, original.isValid,
+           original.validity === phase.validity { original.artifacts.reopenAfterFailedReplacement() }
+        phase.folders = []; phase.original = nil; ramRetentions[phase.identity.recordingID] = nil
+    }
+    func abandonRAMTranscriptRetention(_ phase: RAMTranscriptRetention) {
+        guard ramRetentions[phase.identity.recordingID] === phase, !phase.intentCommitted else { return }
+        phase.abandoned = true
+        if phase.task == nil, let original = phase.original { releaseUncommittedRAMPhase(phase, original: original) }
+    }
+    func runRAMTranscriptRetention(_ phase: RAMTranscriptRetention) async throws {
+        guard phase.waiters < 8, let original = phase.original else { throw Failure.capacity }
+        try requireRAMPhase(phase, original: original)
+        let task: Task<Void, any Error>
+        if let existing = phase.task { task = existing }
+        else {
+            let maintenance = phase.maintenance
+            task = Task { [self, phase, original, maintenance] in
+                defer { phase.task = nil; withExtendedLifetime(original) {}; withExtendedLifetime(maintenance) {} }
+                do {
+                    if !phase.intentCommitted {
+                        let witness = try await phase.worker.prepare(identity: phase.identity, admittedAudio: phase.admittedAudio,
+                            capture: phase.metadata.capture, cutoff: phase.cutoff, folders: phase.folders)
+                        phase.folders = []
+                        guard let witness, try eligibleRAMPhase(phase, original: original) else {
+                            releaseUncommittedRAMPhase(phase, original: original); return
+                        }
+                        try await beforeStage(.retentionIntent)
+                        guard try eligibleRAMPhase(phase, original: original) else {
+                            releaseUncommittedRAMPhase(phase, original: original); return
+                        }
+                        try RecordingResultMutation.withTransaction {
+                            try witness.validateOriginal()
+                            guard try eligibleRAMPhase(phase, original: original) else { throw Failure.unavailable }
+                            // Archive first: capacity failure cannot revoke a healthy
+                            // source. This marker is independent of recording deletion.
+                            try admitHint(.init(identity: phase.identity, audioURL: phase.admittedAudio, deleted: false,
+                                ram: phase.metadata.retiringSource()))
+                            phase.witness = witness; phase.intentCommitted = true
+                            revokeExport(phase.identity.recordingID); onEviction?(original); original.invalidate()
+                            if entries[phase.identity.recordingID] === original { entries[phase.identity.recordingID] = nil }
+                        }
+                        try await phase.worker.install(witness)
+                    }
+                    try requireRAMPhase(phase, original: original)
+                    try await phase.worker.cleanup()
+                    try requireRAMPhase(phase, original: original)
+                    try RecordingResultMutation.withTransaction {
+                        guard let witness = phase.witness, phase.intentCommitted else { throw Failure.unavailable }
+                        try witness.validateRemoved()
+                        phase.original = nil; ramRetentions[phase.identity.recordingID] = nil
+                    }
+                } catch {
+                    if !phase.intentCommitted { releaseUncommittedRAMPhase(phase, original: original) }
+                    throw error
+                }
+            }
+            phase.task = task
+        }
+        phase.waiters += 1; defer { phase.waiters -= 1 }
+        try await task.value
+        try Task.checkCancellation()
+    }
+
     private var exports: [UUID: RecordingDerivativeValidity] = [:]
     private func revokeExport(_ recordingID: UUID) { exports[recordingID]?.invalidate() }
     private var hints: [UUID: LiveManagedArtifactCatalogue.Hint] = [:]
@@ -168,7 +300,9 @@ final class LiveRecordingSessionRegistry {
     init(artifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"), ownerLimit: Int = 8,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
          afterCheckpoint: @escaping @Sendable () async -> Void = {}, payloadBudget: LiveRecordingPayloadBudget? = nil,
-         ramFinalClock: @escaping @MainActor () -> Date = { Date.now }) {
+         ramFinalClock: @escaping @MainActor () -> Date = { Date.now },
+         beforeRAMDirectorySync: @escaping @Sendable (URL) throws -> Void = { _ in }) {
+        self.beforeRAMDirectorySync = beforeRAMDirectorySync
         self.artifactRoot = artifactRoot; self.ownerLimit = min(8, max(1, ownerLimit)); self.beforeStage = beforeStage
         self.afterCheckpoint = afterCheckpoint; self.ramFinalClock = ramFinalClock
         budget = payloadBudget ?? LiveRecordingPayloadBudget(ownerLimit: ownerLimit)
@@ -192,7 +326,8 @@ final class LiveRecordingSessionRegistry {
     private func register(_ identity: LiveSessionIdentity, native: Bool, capturePersistenceAllowed: Bool = true,
                           ramCapture: LiveRAMCaptureMetadata? = nil) throws -> Entry {
         guard !terminationStarted else { throw LiveArtifactError.terminating }
-        guard replacements[identity.recordingID] == nil else { throw Failure.unavailable }
+        guard replacements[identity.recordingID] == nil, ramRetentions[identity.recordingID] == nil,
+              hints[identity.recordingID]?.ram?.sourceRetired != true else { throw Failure.unavailable }
         guard !capturePersistenceAllowed || ramCapture == nil else { throw Failure.identityConflict }
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }
         guard !unavailableRecordings.contains(identity.recordingID) else { throw Failure.unavailable }
@@ -215,7 +350,7 @@ final class LiveRecordingSessionRegistry {
         return entry
     }
     private func evictOneDurableOwner() {
-        guard let evictable = entries.values.first(where: { replacements[$0.identity.recordingID] == nil && $0.artifacts.canEvict }) else { return }
+        guard let evictable = entries.values.first(where: { replacements[$0.identity.recordingID] == nil && ramRetentions[$0.identity.recordingID] == nil && $0.artifacts.canEvict }) else { return }
         let hint = LiveManagedArtifactCatalogue.Hint(identity: evictable.identity, audioURL: evictable.artifacts.admittedAudioURL, deleted: false)
         guard (try? admitHint(hint)) != nil else { return }
         revokeExport(evictable.identity.recordingID)
@@ -223,11 +358,11 @@ final class LiveRecordingSessionRegistry {
         evictable.invalidate(); entries[evictable.identity.recordingID] = nil
     }
 
-    func entry(recordingID: UUID) -> Entry? { replacements[recordingID] == nil ? entries[recordingID] : nil }
+    func entry(recordingID: UUID) -> Entry? { replacements[recordingID] == nil && ramRetentions[recordingID] == nil ? entries[recordingID] : nil }
     func entry(audioURL: URL) -> Entry? {
         guard let path = try? RecordingDeletionAuthority.canonical(audioURL) else { return nil }
         return entries.values.first {
-            replacements[$0.identity.recordingID] == nil &&
+            replacements[$0.identity.recordingID] == nil && ramRetentions[$0.identity.recordingID] == nil &&
             $0.artifacts.admittedAudioURL.flatMap { try? RecordingDeletionAuthority.canonical($0) } == path
         }
     }
@@ -236,7 +371,7 @@ final class LiveRecordingSessionRegistry {
         retiredRecordings.contains(recordingID) || hints[recordingID]?.deleted == true || deletions[recordingID] != nil
     }
     func entry(identity: LiveSessionIdentity) -> Entry? {
-        guard replacements[identity.recordingID] == nil, let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
+        guard replacements[identity.recordingID] == nil, ramRetentions[identity.recordingID] == nil, let entry = entries[identity.recordingID], entry.identity == identity else { return nil }
         return entry
     }
 
@@ -247,7 +382,7 @@ final class LiveRecordingSessionRegistry {
         let pending = loads.values.compactMap(\.task)
         for load in loads.values { load.validity.invalidate() }
         let candidates = replacements.values.compactMap(\.ramCandidate)
-        let targets = (Array(entries.values) + candidates).compactMap { $0.artifacts.freezeForTermination() }
+        let targets = (Array(entries.values) + candidates + ramRetentions.values.compactMap { $0.original }.filter { original in entries[original.identity.recordingID] !== original }).compactMap { $0.artifacts.freezeForTermination() }
         return (targets, pending)
     }
 
@@ -264,14 +399,16 @@ final class LiveRecordingSessionRegistry {
                   try RecordingDeletionAuthority.canonical(audioURL) == phase.authority.audioURL else { throw Failure.unavailable }
             try phase.authority.validateExact(); return phase
         }
+        guard ramRetentions[recordingID] == nil else { throw Failure.unavailable }
+        guard replacements.count + ramRetentions.count < 8 else { throw Failure.capacity }
         try reserveNamespace()
-        guard replacements.count < 8 else { throw Failure.capacity }
         let original = entries[recordingID]
         guard original == nil || original?.captureClosed == true else { throw Failure.unavailable }
         let authority = try originalAuthority ?? RecordingDeletionAuthority(audioURL: audioURL, expectedRecordingID: recordingID)
         try authority.validateExact()
         guard authority.audio.stamp != nil else { throw ReprocessingError.missingAudio }
-        let phase = Replacement(recordingID: recordingID, authority: authority, original: original, isRetention: isRetention)
+        let phase = Replacement(recordingID: recordingID, authority: authority, original: original, isRetention: isRetention,
+            archivedRAM: hints[recordingID]?.ram?.sourceRetired == true ? hints[recordingID] : nil)
         phase.attemptID = attemptID
         replacements[recordingID] = phase
         revokeExport(recordingID)
@@ -285,7 +422,7 @@ final class LiveRecordingSessionRegistry {
 
     func resolveForReplacement(_ phase: Replacement) async throws -> Entry? {
         try requireReplacement(phase)
-        if phase.retiredOriginal { return nil }
+        if phase.retiredOriginal || phase.archivedRAM != nil { return nil }
         let entry: Entry?
         if let original = phase.original { entry = original }
         else {
@@ -369,6 +506,10 @@ final class LiveRecordingSessionRegistry {
             try await onHydration?(entry)
             guard !terminationStarted else { throw LiveArtifactError.terminating }
             try requireReplacement(phase)
+            if let archived = phase.archivedRAM {
+                guard hints[phase.recordingID] == archived else { throw Failure.identityConflict }
+                hints[phase.recordingID] = nil
+            }
             entries[phase.recordingID] = entry; replacements[phase.recordingID] = nil
             installed = true
             return entry
@@ -425,9 +566,9 @@ final class LiveRecordingSessionRegistry {
     }
 
     func prepareHistoryExport(recordingID: UUID, audioURL: URL?) async throws -> LiveHistoryExportSnapshot {
-        guard exports[recordingID] == nil, exports.count < 8, replacements[recordingID] == nil,
+        guard exports[recordingID] == nil, exports.count < 8, replacements[recordingID] == nil, ramRetentions[recordingID] == nil,
               !isKnownDeleted(recordingID: recordingID) else { throw Failure.unavailable }
-        guard entries[recordingID]?.artifacts.capturePersistenceAllowed != false else { throw LiveArtifactError.missingEvidence }
+        guard entries[recordingID]?.artifacts.capturePersistenceAllowed != false, hints[recordingID]?.ram == nil else { throw LiveArtifactError.missingEvidence }
         let token = RecordingDerivativeValidity(), original = entries[recordingID]
         let pin = original?.artifacts.pin()
         let reservation = try reserveReprocessingInspection()
@@ -464,7 +605,8 @@ final class LiveRecordingSessionRegistry {
 
     func replacement(attemptID: UUID) -> Replacement? { replacements.values.first { $0.attemptID == attemptID } }
     func permitsProcessing(recordingID: UUID, attemptID: UUID?) -> Bool {
-        guard let phase = replacements[recordingID] else { return true }
+        guard ramRetentions[recordingID] == nil else { return false }
+        guard let phase = replacements[recordingID] else { return hints[recordingID]?.ram?.sourceRetired != true }
         return attemptID != nil && phase.attemptID == attemptID
     }
     var pendingReplacements: [Replacement] { Array(replacements.values) }
@@ -495,6 +637,7 @@ final class LiveRecordingSessionRegistry {
     /// Intent failure leaves the entry valid. A verified receipt retires its
     /// exact producers before cleanup, and remains available across retries.
     func deleteArtifacts(recordingID: UUID, retention: ProcessingPipeline.FileDeletionTicket? = nil) async throws {
+        guard ramRetentions[recordingID] == nil else { throw Failure.unavailable }
         revokeExport(recordingID)
         let ticket: DeletionTicket
         if let retained = deletions[recordingID] { ticket = retained }
@@ -588,7 +731,8 @@ final class LiveRecordingSessionRegistry {
                           entries[hint.identity.recordingID] == nil || entries[hint.identity.recordingID]?.identity == hint.identity,
                           hints[hint.identity.recordingID] == nil || hints[hint.identity.recordingID]?.identity == hint.identity,
                           entries[hint.identity.recordingID]?.artifacts.capturePersistenceAllowed != false,
-                          replacements[hint.identity.recordingID]?.capturePersistenceAllowed != false else { throw Failure.identityConflict }
+                          replacements[hint.identity.recordingID]?.capturePersistenceAllowed != false,
+                          hints[hint.identity.recordingID]?.ram == nil else { throw Failure.identityConflict }
                 }
                 let newIDs = values.keys.reduce(0) { $0 + (hints[$1] == nil ? 1 : 0) }
                 func effective(_ proposed: LiveManagedArtifactCatalogue.Hint) -> LiveManagedArtifactCatalogue.Hint {
@@ -646,6 +790,8 @@ final class LiveRecordingSessionRegistry {
     /// but missing/corrupt/deleted evidence never selects the legacy provider.
     func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false) async throws -> Entry? {
         guard !terminationStarted else { throw LiveArtifactError.terminating }
+        guard ramRetentions[recordingID] == nil else { throw Failure.unavailable }
+        guard hints[recordingID]?.ram?.sourceRetired != true else { throw LiveArtifactError.missingEvidence }
         if let phase = replacements[recordingID], !forDeletion {
             if let audioURL, try RecordingDeletionAuthority.canonical(audioURL) != phase.authority.audioURL { throw LiveArtifactError.wrongOwner }
             if phase.isRetention { try await finishRetention(phase) }
@@ -656,6 +802,8 @@ final class LiveRecordingSessionRegistry {
     private func resolve(recordingID: UUID, audioURL: URL? = nil, forDeletion: Bool = false, replacement: Replacement?) async throws -> Entry? {
         func requireAdmission() throws {
             guard !terminationStarted else { throw LiveArtifactError.terminating }
+            guard ramRetentions[recordingID] == nil else { throw Failure.unavailable }
+            guard hints[recordingID]?.ram?.sourceRetired != true else { throw LiveArtifactError.missingEvidence }
             guard replacements[recordingID] == nil || replacements[recordingID] === replacement else { throw Failure.unavailable }
         }
         try requireAdmission()

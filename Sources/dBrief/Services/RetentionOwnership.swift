@@ -107,6 +107,15 @@ struct RetentionOwnership: Sendable {
         let bindingGeneration: UUID?
     }
 
+    /// Reused bounded negative-ownership predicate; missing ordinary files do
+    /// not grant new ownership and unsupported/artifact headers remain opaque.
+    static func isOrdinaryChat(_ url: URL) throws -> Bool {
+        guard let header: ManagedChatHeader = try RecordingDeletionAuthority.readHeader(url,
+            maximumBytes: LiveRecordingArtifactOwner.chatHistoryLimit, tokenLimit: 1_048_576) else { return true }
+        return (1...ChatHistory.currentVersion).contains(header.version) && header.identity == nil
+            && header.revision == nil && header.bindingGeneration == nil
+    }
+
     /// Admission runs before recovery reconciliation or any retention effect.
     /// The existing ownership builder is safe only within this finite worksheet.
     @discardableResult
@@ -134,10 +143,7 @@ struct RetentionOwnership: Sendable {
                     // Discover negative ownership independently of valid master
                     // metadata, before recovery or private backup effects.
                     do {
-                        if let header: ManagedChatHeader = try RecordingDeletionAuthority.readHeader(url,
-                            maximumBytes: LiveRecordingArtifactOwner.chatHistoryLimit, tokenLimit: 1_048_576),
-                           !(1...ChatHistory.currentVersion).contains(header.version) || header.identity != nil
-                                || header.revision != nil || header.bindingGeneration != nil { opaque.insert(markerBase) }
+                        if try !isOrdinaryChat(url) { opaque.insert(markerBase) }
                     } catch { opaque.insert(markerBase) }
                 }
                 guard isRegularUnlinked(url, fileManager: fileManager), url.pathExtension == "json",
