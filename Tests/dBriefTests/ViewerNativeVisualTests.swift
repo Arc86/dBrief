@@ -251,14 +251,14 @@ struct ViewerNativeVisualTests {
     }
 
     @Test(
-        "Captures the real waveform speaker timeline and reading paragraph at four appearance modes",
+        "Captures the speaker timeline bar and reading paragraph at four appearance modes",
         .enabled(
             if: ProcessInfo.processInfo.environment["DBRIEF_VIEWER_SNAPSHOT_DIR"] != nil,
             "Set DBRIEF_VIEWER_SNAPSHOT_DIR to render opt-in native PNG captures."
         )
     )
     @MainActor
-    func capturesWaveformAndReadingPreferences() async throws {
+    func capturesSpeakerTimelineAndReadingPreferences() async throws {
         guard let outputPath = ProcessInfo.processInfo.environment["DBRIEF_VIEWER_SNAPSHOT_DIR"] else {
             return
         }
@@ -281,9 +281,6 @@ struct ViewerNativeVisualTests {
             duration: 8,
             count: sampleCount
         )
-        let samples = (0..<sampleCount).map { index in
-            Float(0.16 + 0.78 * abs(sin(Double(index) * 0.41)))
-        }
         let readingText = AttributedString(
             "We agreed to publish the revised schedule after each owner confirms the dates. "
                 + "The transcript keeps short pauses visible, leaves unassigned time neutral, and avoids "
@@ -300,16 +297,15 @@ struct ViewerNativeVisualTests {
             let root = ViewerPlaybackNativeFixture(
                 mode: mode,
                 palette: palette,
-                samples: samples,
                 speakerIDs: speakerIDs,
                 readingText: readingText
             )
             let imageURL = outputDirectory.appendingPathComponent(
-                "viewer-waveform-reading-\(mode.rawValue).png"
+                "viewer-timeline-reading-\(mode.rawValue).png"
             )
             try await Self.capture(
                 root,
-                title: "Viewer waveform and reading — \(mode.displayName)",
+                title: "Viewer timeline and reading — \(mode.displayName)",
                 size: CGSize(width: 920, height: 2_000),
                 to: imageURL
             )
@@ -687,7 +683,6 @@ private struct ViewerPanelNativeFixture: View {
 private struct ViewerPlaybackNativeFixture: View {
     let mode: ViewerAppearanceMode
     let palette: ViewerPalette
-    let samples: [Float]
     let speakerIDs: [String?]
     let readingText: AttributedString
 

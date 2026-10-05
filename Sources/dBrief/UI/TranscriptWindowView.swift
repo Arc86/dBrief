@@ -565,8 +565,8 @@ struct TranscriptDetailView: View {
             }
             .help("Delete recording")
 
-            // Search match counter + prev/next, kept adjacent to the trailing
-            // `.searchable` field (which the system pins to the toolbar's edge).
+            // Search match counter + prev/next for the transcript's in-pane
+            // search bar, so they stay reachable from the toolbar.
             if isSearching {
                 Divider()
                 Text(searchCounterLabel)
@@ -728,6 +728,7 @@ struct TranscriptDetailView: View {
             .scrollIndicators(.automatic)
             .onAppear { transcriptScrollFollow.resumeFollowing() }
             .modifier(PlaybackFollower(audioURL: recording.finalizedAudioURL, turns: displayedTurns,
+                                       isVisible: mode == .transcript,
                                        proxy: proxy, follow: transcriptScrollFollow,
                                        activeTurnID: $activeTurnID, isPlaying: $isPlaybackRunning))
             .onChange(of: searchScrollTick) { _, _ in
@@ -751,7 +752,8 @@ struct TranscriptDetailView: View {
         return .init(
             turn: turn,
             isActive: active,
-            isPulsing: active && isPlaybackRunning,
+            // A mounted-but-hidden transcript tab must not keep animating.
+            isPulsing: active && isPlaybackRunning && mode == .transcript,
             isLast: turn.id == lastID,
             isMe: turn.speakerId != nil && turn.speakerId == meSpeakerId,
             showSpeakerName: showSpeakerNames,
@@ -773,6 +775,8 @@ struct TranscriptDetailView: View {
         hasher.combine(enrolledSpeakerIds)
         hasher.combine(isReprocessing)
         hasher.combine(recording.participants)
+        hasher.combine(recording.calendarEvent?.attendeeNames)
+        hasher.combine(recording.calendarCandidates.flatMap(\.attendeeNames))
         return hasher.finalize()
     }
 

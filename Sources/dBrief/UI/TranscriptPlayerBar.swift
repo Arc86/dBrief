@@ -63,7 +63,7 @@ struct TranscriptPlayerBar: View {
                 palette: palette,
                 onTogglePlayback: { audioPlayer.togglePlayPause(url: audioURL) },
                 onSetRate: { audioPlayer.setRate($0) },
-                waveform: { waveform }
+                timeline: { timeline }
             )
         }
         .padding(16)
@@ -84,7 +84,7 @@ struct TranscriptPlayerBar: View {
         .onChange(of: mode) { _, _ in rebuildTimelineColors() }
     }
 
-    private var waveform: some View {
+    private var timeline: some View {
         SpeakerTimelineBar(
             runs: timelineRuns,
             colors: timelineColors,
@@ -167,7 +167,7 @@ private struct SpeakerLegendEntry: Identifiable, Equatable {
     var id: String { speakerID }
 }
 
-private struct TranscriptPlayerControls<WaveformContent: View>: View {
+private struct TranscriptPlayerControls<TimelineContent: View>: View {
     let isPlaying: Bool
     let audioFileExists: Bool
     let currentTime: String
@@ -176,14 +176,14 @@ private struct TranscriptPlayerControls<WaveformContent: View>: View {
     let palette: ViewerPalette
     let onTogglePlayback: () -> Void
     let onSetRate: (Float) -> Void
-    let waveform: () -> WaveformContent
+    let timeline: () -> TimelineContent
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
                 playButton
                 currentTimeLabel
-                waveform()
+                timeline()
                     .frame(minWidth: 220, maxWidth: .infinity)
                 durationLabel
                 speedMenu
@@ -197,7 +197,7 @@ private struct TranscriptPlayerControls<WaveformContent: View>: View {
                     durationLabel
                     speedMenu
                 }
-                waveform()
+                timeline()
                     .frame(maxWidth: .infinity)
             }
         }

@@ -53,8 +53,8 @@ struct SpeakerTimelineStrip: View, Equatable {
     }
 }
 
-/// Who spoke when, as a slim coloured bar with a playhead. Replaces the audio
-/// waveform: no audio decoding, and only the clip width and playhead move.
+/// Who spoke when, as a slim coloured bar with a playhead. No audio decoding;
+/// only the clip width and playhead move.
 struct SpeakerTimelineBar: View {
     let runs: [SpeakerTimelineRun]
     let colors: [String: Color]

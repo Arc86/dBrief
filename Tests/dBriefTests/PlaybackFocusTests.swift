@@ -9,12 +9,9 @@ import Testing
         SpeakerTurn(speakerId: "A", segments: [RichSegment(start: 9, end: 12, text: "c", originalText: "c", speakerId: "A")]),
     ]
 
-    @Test func nothingIsLitBeforePlaybackStarts() {
-        #expect(PlaybackFocus.activeTurnID(time: 0, turns: turns, isThisFile: true, isPlaying: false) == nil)
-    }
-
-    @Test func nothingIsLitAfterPlaybackFinishes() {
-        // AudioPlayer resets currentTime to 0 and keeps currentFileURL on finish.
+    @Test func stoppedAtZeroLightsNothing() {
+        // Covers a freshly loaded file and a finished one: AudioPlayer resets
+        // currentTime to 0 and keeps currentFileURL on finish.
         #expect(PlaybackFocus.activeTurnID(time: 0, turns: turns, isThisFile: true, isPlaying: false) == nil)
     }
 

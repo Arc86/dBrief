@@ -25,9 +25,12 @@ enum PlaybackFocus {
 /// Observes `AudioPlayer` for the transcript list. Reading `currentTime` here —
 /// not in `TranscriptDetailView.body` — keeps the 10 Hz ticks from re-running the
 /// whole detail view; it writes `activeTurnID` only when the active turn changes.
+/// While the transcript tab is mounted but hidden it keeps the lit turn current
+/// but never scrolls; it catches up when the tab is shown.
 struct PlaybackFollower: ViewModifier {
     let audioURL: URL?
     let turns: [SpeakerTurn]
+    let isVisible: Bool
     let proxy: ScrollViewProxy
     let follow: TranscriptScrollFollowController
     @Binding var activeTurnID: UUID?
@@ -42,7 +45,10 @@ struct PlaybackFollower: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onAppear { refresh(scroll: false, animated: false) }
+            .onAppear { revealWhilePlaying(refresh(scroll: false, animated: false)) }
+            .onChange(of: isVisible) { _, visible in
+                if visible { revealWhilePlaying(activeTurnID) }
+            }
             .onChange(of: audioPlayer.currentTime) { old, new in
                 refresh(scroll: true, animated: PlaybackFocus.animatesFollowScroll(
                     from: old, to: new, isPlaying: audioPlayer.isPlaying, rate: audioPlayer.playbackRate))
@@ -51,7 +57,7 @@ struct PlaybackFollower: ViewModifier {
                 let active = refresh(scroll: false, animated: false)
                 // Pressing Play after scrolling away jumps back to the active turn.
                 // Uses the id just resolved, not the binding read back.
-                if playing {
+                if playing, isVisible {
                     follow.resumeFollowing()
                     if let active, follow.shouldFollow { proxy.scrollTo(active, anchor: .center) }
                 }
@@ -69,12 +75,25 @@ struct PlaybackFollower: ViewModifier {
                                             isThisFile: isThisFile, isPlaying: audioPlayer.isPlaying)
         guard id != activeTurnID else { return id }
         activeTurnID = id
-        guard scroll, let id, follow.shouldFollow else { return id }
+        guard scroll, isVisible, let id, follow.shouldFollow else { return id }
         if animated && !reduceMotion {
             withAnimation { proxy.scrollTo(id, anchor: .center) }
         } else {
             proxy.scrollTo(id, anchor: .center)
         }
         return id
+    }
+
+    /// Opening the transcript (or switching to its tab) mid-playback jumps to the
+    /// playing turn. Deferred to the next main-queue pass so the list has laid
+    /// out and the tab switch has resumed following. Paused, the reader's scroll
+    /// position stays.
+    private func revealWhilePlaying(_ id: UUID?) {
+        guard let id, isVisible, isThisFile, audioPlayer.isPlaying else { return }
+        let proxy = proxy, follow = follow
+        DispatchQueue.main.async {
+            guard follow.shouldFollow else { return }
+            proxy.scrollTo(id, anchor: .center)
+        }
     }
 }

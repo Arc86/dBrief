@@ -221,8 +221,10 @@ actor AIService {
     /// Model families that still accept a non-default `temperature`. Anything else —
     /// Sonnet 5+, Opus 4.7+, Opus 5+, Fable, and future models — returns a 400 for
     /// non-default sampling parameters, so it is omitted for them.
+    /// The dated `-4-2025…` entries are the first Claude 4 ids (no minor version).
     private nonisolated static let temperatureAcceptingModels = [
         "claude-3", "haiku-4-5", "sonnet-4-5", "sonnet-4-6", "opus-4-0", "opus-4-1", "opus-4-5", "opus-4-6",
+        "sonnet-4-2025", "opus-4-2025",
     ]
 
     nonisolated static func anthropicAcceptsTemperature(model: String) -> Bool {
