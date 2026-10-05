@@ -49,3 +49,5 @@ monitor_inference.sh
 
 # Local design-context notes for the impeccable skill
 /PRODUCT.md
+
+web/markdown-editor/node_modules/
