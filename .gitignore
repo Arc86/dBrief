@@ -43,3 +43,9 @@ MEMORY_FIXES_SUMMARY.md
 DEVELOPMENT_ROADMAP.md
 monitor_inference.sh
 /security-audit/
+.playwright-cli/
+.agents/
+.kilocode/
+
+# Local design-context notes for the impeccable skill
+/PRODUCT.md
