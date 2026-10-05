@@ -49,6 +49,18 @@ final class MarkdownEditorController: NSObject {
         run("window.dbrief.focus();")
     }
 
+    /// The live document, read straight from the page (the debounced `changed`
+    /// message may not have arrived yet). Nil until the page is ready.
+    func currentMarkdown() async -> String? {
+        guard isReady else { return nil }
+        do {
+            return try await webView.evaluateJavaScript("window.dbrief.getMarkdown();") as? String
+        } catch {
+            Logger.app.error("Summary editor markdown read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     func tearDown() {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "dbrief")
         webView.navigationDelegate = nil
@@ -128,6 +140,16 @@ private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// Lets the owning view read the editor's live document without a round-trip message.
+@MainActor
+final class MarkdownEditorHandle {
+    weak var controller: MarkdownEditorController?
+
+    func currentMarkdown() async -> String? {
+        await controller?.currentMarkdown()
+    }
+}
+
 /// Inline Notion-style Markdown editor for the Summary card.
 struct MarkdownBlockEditor: NSViewRepresentable {
     let indexURL: URL
@@ -137,12 +159,14 @@ struct MarkdownBlockEditor: NSViewRepresentable {
     let isActive: Bool
     let theme: MarkdownEditorTheme
     let onMessage: (MarkdownEditorMessage) -> Void
+    var handle: MarkdownEditorHandle?
 
     func makeCoordinator() -> MarkdownEditorController {
         MarkdownEditorController(indexURL: indexURL, markdown: initialMarkdown)
     }
 
     func makeNSView(context: Context) -> WKWebView {
+        handle?.controller = context.coordinator
         configure(context.coordinator)
         return context.coordinator.webView
     }

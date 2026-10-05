@@ -40,4 +40,16 @@ struct MarkdownEditorControllerTests {
         let reloaded = try #require(await firstLoaded(from: controller))
         #expect(reloaded.contains("Eerste versie"))
     }
+
+    @Test("currentMarkdown reads the live document without a changed round-trip", .timeLimit(.minutes(1)))
+    func currentMarkdownIsLive() async throws {
+        let index = try #require(MarkdownEditorResources.indexURL(in: MarkdownEditorSourceBundle.resources))
+        let controller = MarkdownEditorController(indexURL: index, markdown: "Eerste versie")
+        defer { controller.tearDown() }
+        _ = try #require(await firstLoaded(from: controller))
+
+        _ = try? await controller.webView.evaluateJavaScript(MarkdownEditorScript.call("setMarkdown", "Live tekst"))
+        let live = await controller.currentMarkdown()
+        #expect(live?.contains("Live tekst") == true)
+    }
 }

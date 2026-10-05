@@ -24,6 +24,9 @@ window.addEventListener("keydown", (event) => {
   const name = shortcutFor(event);
   if (!name) return;
   event.preventDefault();
+  // Flush the live document first: Milkdown's `changed` is debounced, so the
+  // shortcut could otherwise overtake the last keystrokes (messages are ordered).
+  if (name === "save" && window.dbrief) post({ type: "changed", markdown: window.dbrief.getMarkdown() });
   post({ type: "shortcut", name });
 });
 

@@ -21,6 +21,7 @@ struct SummaryView: View {
     @State private var isSaving = false
     @State private var confirmDiscard = false
     @State private var editorHeight: Double = 160
+    @State private var editorHandle = MarkdownEditorHandle()
 
     init(
         insights: RecordingInsights?,
@@ -191,7 +192,8 @@ struct SummaryView: View {
                 isReadOnly: isReadOnly || isSaving,
                 isActive: isCurrentTab,
                 theme: MarkdownEditorTheme(palette: palette, reading: reading, mode: mode),
-                onMessage: handle
+                onMessage: handle,
+                handle: editorHandle
             )
             .frame(height: max(editorHeight, 160))
             // The block handle sits in the card's padding; text lines up near the read view.
@@ -230,8 +232,16 @@ struct SummaryView: View {
     }
 
     private func save() async {
-        guard canSave else { return }
+        guard !isSaving, !isReadOnly else { return }
         isSaving = true
+        // The editor's `changed` is debounced; pull the live text so a fast save keeps it.
+        if let markdown = await editorHandle.currentMarkdown() {
+            edit?.draft.apply(.changed(markdown: markdown))
+        }
+        guard edit?.draft.isDirty == true else {
+            isSaving = false
+            return
+        }
         _ = await onSaveEdit()
         isSaving = false
     }
