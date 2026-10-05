@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 
+/// The menu bar panel ("Signature" design): a status header, flat sections split
+/// by hairlines, and a Settings / Quit footer. Colours come from the shared viewer
+/// palette, so the panel follows Light, Dark, Paper and Dark Paper.
 struct MenuBarView: View {
     @Environment(\.openWindow) var openWindow
     @Environment(\.viewerPalette) private var palette
@@ -12,91 +15,27 @@ struct MenuBarView: View {
     @State private var showYouTubeInput = false
     @State private var showQueueManagement = false
     @State private var showRecentRecordings = true
+    @State private var contentHeight: CGFloat = 0
+
+    static let panelWidth: CGFloat = 360
 
     var body: some View {
-        VStack(spacing: 10) {
+        Group {
             if !appSettings.hasCompletedOnboarding {
                 OnboardingView()
+                    .padding(12)
+                    .frame(minWidth: 340, idealWidth: Self.panelWidth)
             } else {
-                header
-
-                Divider()
-
-                // The post-recording sheet is a focused, dedicated screen: it
-                // replaces the recording controls (no Profile row / Record button),
-                // history, queue, and file-transcription affordances — matching the
-                // "Recording complete" design frame.
-                if appState.showPostRecordingSheet {
-                    PostRecordingSheet()
-                } else {
-                    RecordingControlsView()
-
-                    if appState.isProcessing {
-                        Divider()
-                        TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
-                    } else if appState.hasProcessingResults, !showQueueManagement {
-                        Divider()
-                        ResultsView()
-                    }
-
-                    Divider()
-
-                    // Primary library entry stays visible independently of list
-                    // disclosure, processing progress, and completion results.
-                    Button {
-                        openWindow(id: "transcript")
-                        NSApp.activate(ignoringOtherApps: true)
-                    } label: {
-                        Label("Transcript viewer", systemImage: "rectangle.split.2x1")
-                            .uiFont(.callout.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 3)
-                    }
-                    .buttonStyle(.typographyBordered)
-                    .controlSize(.large)
-                    .help("Open the transcript viewer")
-
-                    if appState.isIdle, !appState.hasProcessingResults {
-                        RecordingHistoryView(expanded: $showRecentRecordings)
-                    }
-
-                    Divider()
-                    ProcessingQueueView(expanded: $showQueueManagement)
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Button {
-                                recordingManager.pickFileForTranscription()
-                            } label: {
-                                Label("Transcribe File...", systemImage: "doc.badge.plus")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.typographyBordered)
-                            .controlSize(.small)
-                            .disabled(!appState.isIdle)
-
-                            Button {
-                                showYouTubeInput.toggle()
-                            } label: {
-                                Label("YouTube URL...", systemImage: "play.rectangle")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.typographyBordered)
-                            .controlSize(.small)
-                            .disabled(!appState.isIdle)
-                        }
-
-                        if showYouTubeInput && appState.isIdle {
-                            YouTubeURLInputView(isVisible: $showYouTubeInput)
-                        }
-                    }
+                VStack(spacing: 0) {
+                    header
+                    MenuPanelHairline()
+                    boundedContent
+                    footer
                 }
-
-
+                .frame(width: Self.panelWidth)
             }
         }
+        .background(palette.surface.color)
         .task {
             await recordingManager.refreshQueuedCount()
         }
@@ -108,66 +47,173 @@ struct MenuBarView: View {
         .onChange(of: showRecentRecordings) { _, expanded in
             if expanded { showQueueManagement = false }
         }
-        .padding(12)
-        // Let the window-style popover size to its content rather than forcing a
-        // hard pixel width; the ideal/min keep it sensible without fighting the OS.
-        .frame(minWidth: 340, idealWidth: 360)
-        .background(palette.canvas.color)
+    }
+
+    // MARK: - Header
+
+    private var status: MenuPanelStatus {
+        .resolve(
+            isRecording: appState.isRecording,
+            isPaused: appState.isPaused,
+            isProcessing: appState.isProcessing,
+            showsPostRecording: appState.showPostRecordingSheet,
+            hasResults: appState.hasProcessingResults
+        )
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            if let icon = DBriefAppIcon.image {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Image(systemName: "waveform.circle.fill")
-                    .uiFont(.title2)
-                    .foregroundStyle(.blue)
-            }
-
+        HStack(spacing: 9) {
+            BrandBarsMark(height: 24)
             Text("dBrief")
-                .uiFont(.headline)
+                .uiFont(.system(size: 17, weight: .semibold))
+                .foregroundStyle(palette.heading.color)
+            HStack(spacing: 6) {
+                MenuPanelStatusDot(tone: status.tone, pulse: status == .recording)
+                Text(status.label)
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.secondary.color)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 17)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("dBrief, \(status.label)")
+    }
 
-            Spacer()
+    // MARK: - Sections
 
-            statusPill
+    /// Grows with its content and scrolls only once it would outgrow the screen,
+    /// so the header and footer always stay reachable.
+    private var boundedContent: some View {
+        ScrollView(.vertical) {
+            sections
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: MenuPanelContentHeightKey.self, value: proxy.size.height)
+                    }
+                )
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .overlayScrollers()
+        .frame(height: min(max(contentHeight, 1), maxContentHeight))
+        .onPreferenceChange(MenuPanelContentHeightKey.self) { contentHeight = $0 }
+    }
 
-            MenuBarSettingsMenu {
+    private var maxContentHeight: CGFloat {
+        let screen = NSScreen.main?.visibleFrame.height ?? 900
+        return max(320, screen - 140)
+    }
+
+    @ViewBuilder
+    private var sections: some View {
+        VStack(spacing: 0) {
+            // The post-recording sheet is a focused, dedicated screen: it replaces
+            // the recording controls, history, queue and import affordances.
+            if appState.showPostRecordingSheet {
+                MenuPanelSection(showsDivider: false) {
+                    PostRecordingSheet()
+                }
+            } else {
+                MenuPanelSection {
+                    RecordingControlsView()
+                }
+
+                if appState.isProcessing {
+                    MenuPanelSection {
+                        TranscriptionProgressView(onCancel: recordingManager.cancelProcessing)
+                    }
+                } else if appState.hasProcessingResults, !showQueueManagement {
+                    MenuPanelSection {
+                        ResultsView()
+                    }
+                }
+
+                // Primary library entry stays visible independently of list
+                // disclosure, processing progress, and completion results.
+                MenuPanelSection(verticalPadding: 12) {
+                    Button {
+                        openWindow(id: "transcript")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "rectangle.split.2x1")
+                            Text("Transcript viewer")
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .row, height: 36))
+                    .help("Open the transcript viewer")
+                }
+
+                if appState.isIdle, !appState.hasProcessingResults {
+                    MenuPanelSection {
+                        RecordingHistoryView(expanded: $showRecentRecordings)
+                    }
+                }
+
+                MenuPanelSection {
+                    ProcessingQueueView(expanded: $showQueueManagement)
+                }
+
+                MenuPanelSection(showsDivider: false) {
+                    importRow
+                    if showYouTubeInput && appState.isIdle {
+                        YouTubeURLInputView(isVisible: $showYouTubeInput)
+                    }
+                }
+            }
+        }
+    }
+
+    private var importRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                recordingManager.pickFileForTranscription()
+            } label: {
+                Label("Transcribe file…", systemImage: "doc.badge.plus")
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fontSize: 12))
+            .disabled(!appState.isIdle)
+
+            Button {
+                showYouTubeInput.toggle()
+            } label: {
+                Label("YouTube URL…", systemImage: "play.rectangle")
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fontSize: 12))
+            .disabled(!appState.isIdle)
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack {
+            Button {
                 closeMenuBarExtraWindow()
                 openWindow(id: "settings")
                 NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Label("Settings…", systemImage: "gearshape")
             }
+            .keyboardShortcut(",", modifiers: .command)
+            .help("Open Settings")
+
+            Spacer()
+
+            Button("Quit dBrief") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
         }
-    }
-
-    private var statusPill: some View {
-        HStack(spacing: 6) {
-            BrandStatusDot(color: statusColor, size: 8, pulse: appState.isRecording)
-            Text(statusLabel)
-                .uiFont(.brandMono(11))
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Status: \(statusLabel)")
-    }
-
-    private var statusLabel: String {
-        if appState.isRecording { return "Recording" }
-        if appState.isPaused { return "Paused" }
-        if appState.isProcessing { return "Processing" }
-        return "Ready"
-    }
-
-    private var statusColor: Color {
-        if appState.isRecording { return Brand.recording }
-        if appState.isPaused { return Brand.paused }
-        if appState.isProcessing { return Brand.processing }
-        return Brand.ready
+        .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 25))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(palette.canvas.color)
+        .overlay(alignment: .top) { MenuPanelHairline() }
     }
 
     private func closeMenuBarExtraWindow() {
@@ -177,27 +223,7 @@ struct MenuBarView: View {
     }
 }
 
-/// Secondary app controls stay compact even with a larger accessibility font.
-struct MenuBarSettingsMenu: View {
-    let onSettings: () -> Void
-
-    var body: some View {
-        Menu {
-            Button("Settings…", action: onSettings)
-                .keyboardShortcut(",", modifiers: .command)
-            Divider()
-            Button("Quit dBrief") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q", modifiers: .command)
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 14))
-                .frame(width: 24, height: 24)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Settings and app controls")
-        .help("Settings and app controls")
-    }
+private struct MenuPanelContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

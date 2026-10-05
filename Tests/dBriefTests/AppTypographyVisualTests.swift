@@ -68,7 +68,7 @@ private struct TypographyFixture: View {
                 Text("dBrief").uiFont(.headline)
                 Spacer()
                 Text("Ready").uiFont(.caption)
-                MenuBarSettingsMenu(onSettings: {})
+                Button("Settings…") {}.buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 25))
             }
             if form {
                 Form { controls }.formStyle(.grouped)
