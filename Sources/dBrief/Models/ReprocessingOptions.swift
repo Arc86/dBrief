@@ -120,10 +120,10 @@ struct ReprocessingOptions: Codable, Sendable {
                 throw ConfigurationError.unsupportedLanguage("This Whisper model supports English only. Choose a multilingual model for this language.")
             }
         case .parakeetLocal:
-            guard ParakeetModelInfo.variants.contains(where: { $0.id == parakeetModelVariant }) else {
-                throw ConfigurationError.unsupportedModel("The saved Parakeet model is unavailable. Choose v2 or v3.")
+            guard ParakeetModelInfo.available.contains(where: { $0.id == parakeetModelVariant }) else {
+                throw ConfigurationError.unsupportedModel("The saved Parakeet model is unavailable. Choose another Parakeet model.")
             }
-            if parakeetModelVariant == "v2" && !isEnglish {
+            if ParakeetModelInfo.find(parakeetModelVariant).isEnglishOnly && !isEnglish {
                 throw ConfigurationError.unsupportedLanguage("Parakeet v2 supports English only. Choose v3 for multilingual speech.")
             }
         case .appleSpeech: _ = try AppleSpeechLanguages.requireLocale(for: spokenLanguage)

@@ -138,7 +138,12 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     func purgeSpeakerKitModel() async throws { _ = try await connection.call(.purgeSpeakerKit) }
     func purgeQwenModel() async throws { _ = try await connection.call(.purgeQwen) }
     func purgeModelsOnMemoryPressure() async { _ = try? await connection.call(.memoryPressurePurge) }
-    func forceUnload() async { _ = try? await connection.call(.forceUnload) }
+    /// Drains and unloads every engine. The helper refuses all requests after this,
+    /// so retire its process; the next call launches a fresh helper.
+    func forceUnload() async {
+        _ = try? await connection.call(.forceUnload)
+        await connection.shutdown()
+    }
 
     private static func bool(_ e: MLEvent) -> Bool? { if case let .boolResult(b) = e { b } else { nil } }
 }

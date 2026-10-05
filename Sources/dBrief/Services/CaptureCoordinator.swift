@@ -35,6 +35,8 @@ final class CaptureCoordinator {
         case live(UUID, CaptureLivePreview.Event)
         case meter(UUID, Double, Float)
         case status(UUID, String?)
+        /// The device the mic track is recording from right now (nil when none).
+        case microphone(UUID, String?)
     }
     enum Failure: LocalizedError {
         case busy, terminating
@@ -48,6 +50,7 @@ final class CaptureCoordinator {
     enum HardwareEvent: Sendable {
         case meter(Double, Float)
         case status(String)
+        case microphone(String?)
     }
     typealias HardwareSink = @MainActor @Sendable (HardwareEvent) -> Void
     struct Permissions: Sendable {
@@ -83,9 +86,12 @@ final class CaptureCoordinator {
                 if let sink {
                     audio.stateTickHandler = { duration, peak in sink(.meter(duration, peak)) }
                     audio.statusNoteHandler = { sink(.status($0)) }
+                    audio.microphoneHandler = { sink(.microphone($0)) }
+                    if let name = audio.activeMicrophoneName { sink(.microphone(name)) }
                 } else {
                     audio.stateTickHandler = nil
                     audio.statusNoteHandler = nil
+                    audio.microphoneHandler = nil
                 }
             }
             result.permissions = .init(refresh: { audio.refreshPermissions() },
@@ -274,6 +280,8 @@ final class CaptureCoordinator {
                 self.onEvent(.status(owned.request.id, nil))
             }
             onEvent(.status(owned.request.id, message))
+        case .microphone(let name):
+            onEvent(.microphone(owned.request.id, name))
         }
     }
 

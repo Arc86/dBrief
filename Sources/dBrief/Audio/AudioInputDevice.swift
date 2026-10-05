@@ -10,20 +10,6 @@ struct AudioInputDevice: Identifiable, Hashable {
     var displayName: String { name }
 }
 
-enum AudioInputDeviceError: LocalizedError {
-    case deviceNotFound(String)
-    case failedToSetDevice(OSStatus)
-
-    var errorDescription: String? {
-        switch self {
-        case .deviceNotFound(let uid):
-            return "Audio input device not found (\(uid))."
-        case .failedToSetDevice(let status):
-            return "Failed to set audio input device (OSStatus \(status))."
-        }
-    }
-}
-
 enum AudioInputDeviceManager {
     static func availableInputDevices() -> [AudioInputDevice] {
         let deviceIDs = allDeviceIDs()
@@ -45,42 +31,34 @@ enum AudioInputDeviceManager {
         return devices.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    static func applyInputDevice(uid: String?, to engine: AVAudioEngine) throws {
-        let deviceID = try resolveInputDeviceID(uid: uid,
-            defaultDevice: defaultInputDeviceID, deviceForUID: deviceID(forUID:))
-
-        guard let audioUnit = engine.inputNode.audioUnit else {
-            return
-        }
-
-        var mutableDeviceID = deviceID
-        let status = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &mutableDeviceID,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
+    /// True when macOS has the device's input muted or its input volume at zero.
+    /// Such a device still delivers buffers — of exact digital silence — so
+    /// capture health can't see it; it has to be read from the device.
+    static func isInputSilenced(uid: String) -> Bool {
+        guard let id = deviceID(forUID: uid) else { return false }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
         )
-
-        guard status == noErr else {
-            throw AudioInputDeviceError.failedToSetDevice(status)
+        var muted: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        if AudioObjectHasProperty(id, &address),
+           AudioObjectGetPropertyData(id, &address, 0, nil, &size, &muted) == noErr, muted != 0 {
+            return true
         }
+        address.mSelector = kAudioDevicePropertyVolumeScalar
+        var volume: Float32 = 1
+        size = UInt32(MemoryLayout<Float32>.size)
+        return AudioObjectHasProperty(id, &address)
+            && AudioObjectGetPropertyData(id, &address, 0, nil, &size, &volume) == noErr
+            && volume <= 0
     }
 
-    /// Resolve System Default to an actual device ID. Returning early for nil
-    /// would leave an existing engine pinned to its previous (possibly gone) input.
-    static func resolveInputDeviceID(
-        uid: String?,
-        defaultDevice: () -> AudioDeviceID?,
-        deviceForUID: (String) -> AudioDeviceID?
-    ) throws -> AudioDeviceID {
-        let trimmed = (uid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, let id = deviceForUID(trimmed), id != 0 { return id }
-        guard let id = defaultDevice(), id != 0 else {
-            throw AudioInputDeviceError.deviceNotFound("System Default")
-        }
-        return id
+    /// UID of the current macOS default input device, if any.
+    static func defaultInputDeviceUID() -> String? {
+        guard let id = defaultInputDeviceID() else { return nil }
+        return stringProperty(selector: kAudioDevicePropertyDeviceUID, deviceID: id)
     }
 
     static func defaultInputDeviceID() -> AudioDeviceID? {

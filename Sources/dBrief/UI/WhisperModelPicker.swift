@@ -105,7 +105,9 @@ struct WhisperModelPicker: View {
                 Text("Saved model is absent from the catalog; availability is unverified.")
                     .uiFont(.caption).foregroundStyle(.orange)
             }
-            if WhisperModelCatalog.entries[selectedID]?.englishOnly == true || selectedID == LocalTranscriptionChoice.parakeetV2, !language.isEmpty,
+            if WhisperModelCatalog.entries[selectedID]?.englishOnly == true
+                || LocalTranscriptionChoice.parakeetVariant(selectedID).map({ ParakeetModelInfo.find($0).isEnglishOnly }) == true,
+               !language.isEmpty,
                language.lowercased().split(separator: "-").first != "en" {
                 Text("English only. Choose a multilingual model for the selected language.")
                     .uiFont(.caption).foregroundStyle(.orange)

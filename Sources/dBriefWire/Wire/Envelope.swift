@@ -24,7 +24,7 @@ public enum MLRequest: Sendable, Codable {
     case downloadParakeet(variant: String)
     case isWhisperCached(name: String)
     case isLLMCached
-    case isParakeetCached
+    case isParakeetCached(variant: String)
     case fetchWhisperModels(repo: String)
     case purgeModels
     case purgeWhisper

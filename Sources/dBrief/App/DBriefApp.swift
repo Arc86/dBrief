@@ -8,6 +8,13 @@ private let log = Logger.app
 @MainActor
 @Observable
 final class AppContext {
+    /// The only instance. Services register OS callbacks with unretained `self`
+    /// (power-source and Carbon hot-key handlers), so an AppContext must never be
+    /// built and then discarded: SwiftUI evaluates a `@State` initial value again
+    /// whenever it re-creates the App struct, and the dropped duplicate's callbacks
+    /// then fire into freed memory (EXC_BAD_ACCESS in PowerStateMonitor, beta 74).
+    static let shared = AppContext()
+
     @ObservationIgnored lazy var promptEditorWindows = PromptEditorWindowController(context: self)
     let appState = AppState()
     let appSettings = AppSettings()
@@ -235,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct DBriefApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var context = AppContext()
+    @State private var context = AppContext.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init() {

@@ -6,92 +6,149 @@ struct MicReconfigurePlannerTests {
     // Convenience wrapper with sensible defaults so each test states only what it varies.
     private func decide(
         selectedUID: String = "",
-        available: Set<String> = [],
-        mixed: Bool = false,
+        available: Set<String> = ["BuiltIn", "Buds"],
+        defaultUID: String? = "BuiltIn",
+        mixed: Bool = true,
         aec: Bool = true,
         echoPath: Bool = true,
-        appliedUID: String = "",
-        appliedVPIO: Bool = false
+        applied: MicSourcePlan? = nil,
+        sourceFailed: Bool = false
     ) -> MicReconfigureDecision {
         MicReconfigurePlanner.decide(
             selectedUID: selectedUID,
             availableInputUIDs: available,
+            defaultInputUID: defaultUID,
             hasSystemAudioPermission: mixed,
             aecSettingEnabled: aec,
             outputHasEchoPath: echoPath,
-            currentlyAppliedUID: appliedUID,
-            currentlyVoiceProcessing: appliedVPIO
+            applied: applied,
+            sourceFailed: sourceFailed
         )
     }
 
+    private func engine(_ uid: String, vpio: Bool = false) -> MicSourcePlan {
+        MicSourcePlan(deviceUID: uid, backend: .engine, voiceProcessing: vpio)
+    }
+
+    private func session(_ uid: String) -> MicSourcePlan {
+        MicSourcePlan(deviceUID: uid, backend: .captureSession, voiceProcessing: false)
+    }
+
+    // MARK: Device and backend choice
+
     @Test
-    func pinnedPresentStays() {
-        let d = decide(selectedUID: "HS", available: ["HS", "BuiltIn"], mixed: true, appliedUID: "HS")
-        #expect(d.targetDeviceUID == "HS")
-        #expect(!d.needsReconfigure)
+    func systemDefaultUsesEngineOnTheDefaultDevice() {
+        #expect(decide().plan == engine("BuiltIn"))
     }
 
     @Test
-    func pinnedGoneFallsBackToDefault() {
-        // AirPods pinned but no longer present → fall back to default, keep recording.
-        let d = decide(selectedUID: "AirPods", available: ["BuiltIn"], mixed: true, appliedUID: "AirPods")
-        #expect(d.targetDeviceUID == "")
+    func pinnedDefaultDeviceUsesEngine() {
+        #expect(decide(selectedUID: "BuiltIn").plan == engine("BuiltIn"))
+    }
+
+    @Test
+    func pinnedOffDefaultDeviceUsesCaptureSession() {
+        // Buds are the macOS default; the user picks the built-in mic in dBrief.
+        // AVAudioEngine delivers zero callbacks for that route.
+        #expect(decide(selectedUID: "BuiltIn", defaultUID: "Buds").plan == session("BuiltIn"))
+    }
+
+    @Test
+    func pinnedGoneFallsBackToDefaultEngine() {
+        let d = decide(selectedUID: "Buds", available: ["BuiltIn"], applied: session("Buds"))
+        #expect(d.plan == engine("BuiltIn"))
         #expect(d.needsReconfigure)
     }
 
     @Test
-    func systemDefaultFollowsAndNoOpWhenStable() {
-        // Empty selection, already on default, mixed mode (no VPIO) → nothing to do.
-        let d = decide(selectedUID: "", available: ["BuiltIn"], mixed: true, appliedUID: "")
-        #expect(d.targetDeviceUID == "")
-        #expect(!d.needsReconfigure)
-    }
-
-    @Test
-    func speakersToHeadphonesTogglesVPIOOff() {
-        // Mic-only, AEC on, output now has no echo path, VPIO currently on → turn off.
-        let d = decide(mixed: false, aec: true, echoPath: false, appliedVPIO: true)
-        #expect(!d.voiceProcessingEnabled)
+    func pinnedDeviceReturnsWhenReconnected() {
+        let d = decide(selectedUID: "Buds", applied: engine("BuiltIn"))
+        #expect(d.plan == session("Buds"))
         #expect(d.needsReconfigure)
     }
 
     @Test
-    func headphonesToSpeakersTogglesVPIOOn() {
-        let d = decide(mixed: false, aec: true, echoPath: true, appliedVPIO: false)
-        #expect(d.voiceProcessingEnabled)
+    func noInputDeviceKeepsTheCurrentSource() {
+        let d = decide(available: [], defaultUID: nil, applied: engine("BuiltIn"))
+        #expect(d.plan == nil)
+        #expect(!d.needsReconfigure)
+    }
+
+    // MARK: Following the system default
+
+    @Test
+    func systemDefaultChangeBuildsANewSourceForTheNewDevice() {
+        // Buds connect and become the default mid-recording.
+        let d = decide(defaultUID: "Buds", applied: engine("BuiltIn"))
+        #expect(d.plan == engine("Buds"))
         #expect(d.needsReconfigure)
     }
 
     @Test
-    func mixedModeNeverTogglesVPIO() {
-        // Even with AEC on and an echo path, mixed mode keeps VPIO off.
-        let d = decide(mixed: true, aec: true, echoPath: true, appliedVPIO: false)
-        #expect(!d.voiceProcessingEnabled)
-        #expect(!d.needsReconfigure)
-    }
-
-    @Test
-    func idempotentNoOp() {
-        // Desired equals applied (pinned present + VPIO already on) → no reconfigure.
-        let d = decide(selectedUID: "HS", available: ["HS"], mixed: false, aec: true, echoPath: true,
-                       appliedUID: "HS", appliedVPIO: true)
-        #expect(!d.needsReconfigure)
-    }
-
-    @Test
-    func aecSettingOffKeepsVPIOOff() {
-        let d = decide(mixed: false, aec: false, echoPath: true, appliedVPIO: false)
-        #expect(!d.voiceProcessingEnabled)
-        #expect(!d.needsReconfigure)
-    }
-
-    @Test
-    func deviceGoneAndVPIOChangeBothApply() {
-        // Pinned device vanished AND route changed at once (the AirPods-die storm).
-        let d = decide(selectedUID: "AirPods", available: ["BuiltIn"], mixed: false,
-                       aec: true, echoPath: true, appliedUID: "AirPods", appliedVPIO: false)
-        #expect(d.targetDeviceUID == "")
-        #expect(d.voiceProcessingEnabled)
+    func pinnedDeviceMovesToCaptureSessionWhenItStopsBeingDefault() {
+        let d = decide(selectedUID: "BuiltIn", defaultUID: "Buds", applied: engine("BuiltIn"))
+        #expect(d.plan == session("BuiltIn"))
         #expect(d.needsReconfigure)
+    }
+
+    @Test
+    func stableStateIsANoOp() {
+        #expect(!decide(applied: engine("BuiltIn")).needsReconfigure)
+        #expect(!decide(selectedUID: "Buds", applied: session("Buds")).needsReconfigure)
+    }
+
+    @Test
+    func failedSourceRebuildsEvenWhenThePlanIsUnchanged() {
+        #expect(decide(applied: engine("BuiltIn"), sourceFailed: true).needsReconfigure)
+    }
+
+    // MARK: Voice processing
+
+    @Test
+    func mixedModeNeverUsesVoiceProcessing() {
+        #expect(decide(mixed: true).plan?.voiceProcessing == false)
+    }
+
+    @Test
+    func micOnlyOnSpeakersUsesVoiceProcessing() {
+        #expect(decide(mixed: false).plan == engine("BuiltIn", vpio: true))
+    }
+
+    @Test
+    func headphonesTurnVoiceProcessingOff() {
+        let d = decide(mixed: false, echoPath: false, applied: engine("BuiltIn", vpio: true))
+        #expect(d.plan == engine("BuiltIn"))
+        #expect(d.needsReconfigure)
+    }
+
+    @Test
+    func aecSettingOffKeepsVoiceProcessingOff() {
+        #expect(decide(mixed: false, aec: false).plan == engine("BuiltIn"))
+    }
+
+    @Test
+    func captureSessionNeverClaimsVoiceProcessing() {
+        let d = decide(selectedUID: "BuiltIn", defaultUID: "Buds", mixed: false)
+        #expect(d.plan == session("BuiltIn"))
+    }
+
+    // MARK: Fallback after a source delivers no audio
+
+    @Test
+    func silentEngineFallsBackToCaptureSessionOnTheSameDevice() {
+        #expect(MicReconfigurePlanner.fallback(after: engine("Buds", vpio: true), defaultInputUID: "Buds")
+            == session("Buds"))
+    }
+
+    @Test
+    func silentPinnedSessionFallsBackToTheDefaultEngine() {
+        #expect(MicReconfigurePlanner.fallback(after: session("BuiltIn"), defaultInputUID: "Buds")
+            == engine("Buds"))
+    }
+
+    @Test
+    func silentSessionOnTheDefaultHasNoFurtherFallback() {
+        #expect(MicReconfigurePlanner.fallback(after: session("Buds"), defaultInputUID: "Buds") == nil)
+        #expect(MicReconfigurePlanner.fallback(after: session("Buds"), defaultInputUID: nil) == nil)
     }
 }

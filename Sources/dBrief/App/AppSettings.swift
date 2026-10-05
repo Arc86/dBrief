@@ -1053,7 +1053,7 @@ final class AppSettings {
         self.showMenuBarRecordingDuration = defaults.object(forKey: Keys.showMenuBarRecordingDuration) as? Bool ?? true
         self.reduceNeon = defaults.object(forKey: Keys.reduceNeon) as? Bool ?? false
         self.lifetimeTranscribedSeconds = defaults.object(forKey: Keys.lifetimeTranscribedSeconds) as? Double ?? 0
-        self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? "v3"
+        self.parakeetModelVariant = defaults.string(forKey: Keys.parakeetModelVariant) ?? ParakeetModelInfo.defaultID
 
         self.summaryPrompt = defaults.string(forKey: Keys.summaryPrompt) ?? Self.defaultSummaryPrompt
         self.actionItemsPrompt = defaults.string(forKey: Keys.actionItemsPrompt) ?? Self.defaultActionItemsPrompt

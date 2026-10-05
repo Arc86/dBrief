@@ -114,9 +114,7 @@ struct OnboardingModelDownloadView: View {
     private func modelTitle(_ kind: LocalModelKind) -> String {
         switch kind {
         case .whisper: WhisperModelInfo.parse(appSettings.whisperModelName).displayName
-        case .parakeet: LocalTranscriptionChoice.title(appSettings.parakeetModelVariant == "v2"
-                                                     ? LocalTranscriptionChoice.parakeetV2
-                                                     : LocalTranscriptionChoice.parakeetV3)
+        case .parakeet: LocalTranscriptionChoice.title(LocalTranscriptionChoice.parakeet(appSettings.parakeetModelVariant))
         case .gemma: AppSettings.AIEngine.qwenLocal.displayName
         }
     }

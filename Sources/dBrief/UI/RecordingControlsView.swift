@@ -135,6 +135,7 @@ struct RecordingControlsView: View {
                 HStack(spacing: 8) {
                     MicrophoneInputMenu(
                         selectedUID: appSettings.audioInputDeviceUID,
+                        activeName: appState.activeMicrophoneName,
                         enabled: recordingManager.hasMicrophonePermission,
                         select: { recordingManager.switchInputDevice(to: $0) }
                     )

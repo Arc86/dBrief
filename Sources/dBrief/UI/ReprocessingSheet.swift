@@ -127,8 +127,8 @@ private struct ReprocessingEditor: View {
                 language: options.spokenLanguage, identifySpeakers: options.diarizationEnabled) {
                     let engine = LocalTranscriptionChoice.engine($0)
                     if engine == .localWhisper { options.whisperModelName = $0 }
-                    if engine == .parakeetLocal {
-                        options.parakeetModelVariant = $0 == LocalTranscriptionChoice.parakeetV2 ? "v2" : "v3"
+                    if let variant = LocalTranscriptionChoice.parakeetVariant($0) {
+                        options.parakeetModelVariant = variant
                     }
                     options.engine = engine
                 }

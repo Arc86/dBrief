@@ -43,7 +43,7 @@ final class ModelDownloadCoordinator {
                  }, isCached: { request in
                      switch request {
                      case .whisper(let config): await plugin.isWhisperModelCached(name: config.modelName)
-                     case .parakeet: await parakeet.isModelDownloaded()
+                     case .parakeet(let variant): await parakeet.isModelDownloaded(variant: variant)
                      case .gemma: await plugin.isLLMModelCached()
                      }
                  }, availableWhisperModels: {

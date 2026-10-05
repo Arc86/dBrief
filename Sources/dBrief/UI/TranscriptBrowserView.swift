@@ -390,7 +390,7 @@ struct TranscriptBrowserView: View {
             item: item,
             isSelected: selection == item.url,
             onTap: { selectRecording(item.url) })
-        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript) }
+        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript, presentationStyle: .window) }
     }
 
     private func sidebarResultsHeading(

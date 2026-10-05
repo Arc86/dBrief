@@ -87,8 +87,8 @@ struct SettingsTranscriptionTab: View {
                     language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in
                         let engine = LocalTranscriptionChoice.engine(id)
                         if engine == .localWhisper { appSettings.whisperModelName = id }
-                        if engine == .parakeetLocal {
-                            appSettings.parakeetModelVariant = id == LocalTranscriptionChoice.parakeetV2 ? "v2" : "v3"
+                        if let variant = LocalTranscriptionChoice.parakeetVariant(id) {
+                            appSettings.parakeetModelVariant = variant
                         }
                         appSettings.transcriptionEngine = engine
                         lastLocalEngine = engine
