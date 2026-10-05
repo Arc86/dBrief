@@ -264,91 +264,91 @@ struct BrandKicker: View {
 
 // MARK: - Participant pill
 
-/// A removable participant chip: identity dot + name + close affordance.
+/// A removable participant token: name + close affordance on the accent tint.
 struct ParticipantPill: View {
     let name: String
-    var color: Color = Brand.violet
     var onRemove: () -> Void
     /// When set, the name itself becomes a button that hands editing back to the caller
     /// (which swaps this pill for an inline text field). Nil keeps the pill read-only.
     var onEdit: (() -> Void)? = nil
 
+    @Environment(\.viewerPalette) private var palette
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            BrandStatusDot(color: color, size: 6)
+        HStack(spacing: 8) {
             if let onEdit {
                 Button(action: onEdit) {
                     Text(name)
-                        .uiFont(.system(size: 12.5))
-                        .foregroundStyle(.primary)
-                        .underline(hovering, color: .primary.opacity(0.35))
+                        .uiFont(.system(size: 13))
+                        .foregroundStyle(palette.heading.color)
+                        .underline(hovering, color: palette.secondary.color)
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
                 .help("Click to edit this name")
             } else {
                 Text(name)
-                    .uiFont(.system(size: 12.5))
-                    .foregroundStyle(.primary)
+                    .uiFont(.system(size: 13))
+                    .foregroundStyle(palette.heading.color)
             }
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.text.color)
                     .frame(width: 15, height: 15)
-                    .background(Color.primary.opacity(0.08), in: Circle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(name)")
         }
-        .padding(.leading, 9)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background(Color.primary.opacity(0.06), in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
+        .padding(.leading, 12)
+        .padding(.trailing, 8)
+        .padding(.vertical, 5)
+        .background(palette.selected.color, in: Capsule())
     }
 }
 
-// MARK: - Gradient check row
+// MARK: - Check row
 
-/// A tappable post-processing option: a gradient-filled check box (when on) + label.
-/// Mirrors the design's custom checkboxes while staying keyboard/tap friendly.
+/// A tappable post-processing option: an accent-filled check box (when on) + label.
 struct BrandCheckRow: View {
     let title: String
     @Binding var isOn: Bool
     var enabled: Bool = true
-    @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
 
     var body: some View {
         Button {
             if enabled { isOn.toggle() }
         } label: {
-            HStack(spacing: 11) {
+            HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.25), lineWidth: 1.5)
-                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .strokeBorder(palette.divider.color, lineWidth: 1.5)
+                        .frame(width: 18, height: 18)
                     if isOn {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Brand.ctaFill(calm: calm))
-                            .frame(width: 20, height: 20)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(palette.primary.color)
+                            .frame(width: 18, height: 18)
                             .overlay(
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .heavy))
-                                    .foregroundStyle(.white)
+                                    .font(.system(size: 10, weight: .heavy))
+                                    .foregroundStyle(palette.onPrimary.color)
                             )
                     }
                 }
                 Text(title)
-                    .uiFont(.system(size: 14))
-                    .foregroundStyle(.primary)
+                    .uiFont(.system(size: 13))
+                    .foregroundStyle(palette.text.color)
                 Spacer(minLength: 0)
             }
+            .frame(minHeight: 26)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.4)
         .disabled(!enabled)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

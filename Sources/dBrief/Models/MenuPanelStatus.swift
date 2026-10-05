@@ -44,6 +44,13 @@ enum MenuPanelProgress {
         return "\(done) of \(steps.count) done"
     }
 
+    /// Tasks that will actually run: AI tasks need a transcript and AI processing on.
+    static func selectedTaskCount(transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool, aiEnabled: Bool) -> Int {
+        guard transcribe else { return 0 }
+        guard aiEnabled else { return 1 }
+        return 1 + [summary, actionItems, tags].filter { $0 }.count
+    }
+
     static func briefContents(summary: Bool, actions: Bool, tags: Bool, notes: Bool) -> String? {
         let parts = [(summary, "Summary"), (actions, "Actions"), (tags, "Tags"), (notes, "Notes")]
             .filter { $0.0 }.map { $0.1 }

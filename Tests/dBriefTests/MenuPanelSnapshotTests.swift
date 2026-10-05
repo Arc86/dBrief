@@ -102,6 +102,20 @@ struct MenuPanelSnapshotTests {
                 state.currentRecording = recording()
                 state.showPostRecordingSheet = true
             }, nil),
+            ("09-long-title", { state in
+                let names = ["Jesper Mol", "Alexandra van den Berg-Schoenmaker", "Mohammed Al-Hassan",
+                             "Charlotte de Vries", "Jean-Baptiste Dubois", "Sanne Jansen"]
+                let event = CalendarEvent(
+                    title: "Customer architecture review — ServiceNow platform strategy, integration dependencies, and roadmap",
+                    attendees: names.map { .init(name: $0, email: nil) },
+                    body: "", startDate: Date(timeIntervalSinceNow: -3600), endDate: Date())
+                let long = recording()
+                long.meetingTitleDraft = event.title
+                long.calendarCandidates = [event]
+                long.calendarEvent = event
+                state.currentRecording = long
+                state.showPostRecordingSheet = true
+            }, nil),
             ("11-processing", { state in
                 state.processingJob = ProcessingJob(recording: recording())
                 state.processingRecording = recording()

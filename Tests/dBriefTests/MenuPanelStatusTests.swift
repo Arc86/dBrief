@@ -44,4 +44,12 @@ import Testing
         #expect(MenuPanelProgress.briefContents(summary: true, actions: false, tags: false, notes: true) == "Summary · Notes")
         #expect(MenuPanelProgress.briefContents(summary: false, actions: false, tags: false, notes: false) == nil)
     }
+
+    @Test func selectedTaskCountFollowsTranscriptionAndAI() {
+        #expect(MenuPanelProgress.selectedTaskCount(transcribe: true, summary: true, actionItems: true, tags: true, aiEnabled: true) == 4)
+        #expect(MenuPanelProgress.selectedTaskCount(transcribe: true, summary: false, actionItems: true, tags: false, aiEnabled: true) == 2)
+        // AI tasks don't run without a transcript or with AI processing off.
+        #expect(MenuPanelProgress.selectedTaskCount(transcribe: false, summary: true, actionItems: true, tags: true, aiEnabled: true) == 0)
+        #expect(MenuPanelProgress.selectedTaskCount(transcribe: true, summary: true, actionItems: true, tags: true, aiEnabled: false) == 1)
+    }
 }
