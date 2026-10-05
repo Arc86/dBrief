@@ -8,25 +8,40 @@ struct SummaryView: View {
     let canGenerate: Bool
     let isReadOnly: Bool
     let onGenerate: () -> Void
+    @Binding var edit: SummaryEditState?
+    let isCurrentTab: Bool
+    let saveError: String?
+    let onSaveEdit: () async -> Bool
 
     @Environment(\.viewerPalette) private var palette
     @Environment(\.viewerReading) private var reading
     @Environment(\.viewerMode) private var mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isSummaryCollapsed = false
+    @State private var isSaving = false
+    @State private var confirmDiscard = false
+    @State private var editorHeight: Double = 160
 
     init(
         insights: RecordingInsights?,
         isGenerating: Bool,
         canGenerate: Bool,
         isReadOnly: Bool = false,
-        onGenerate: @escaping () -> Void = {}
+        onGenerate: @escaping () -> Void = {},
+        edit: Binding<SummaryEditState?> = .constant(nil),
+        isCurrentTab: Bool = true,
+        saveError: String? = nil,
+        onSaveEdit: @escaping () async -> Bool = { false }
     ) {
         self.insights = insights
         self.isGenerating = isGenerating
         self.canGenerate = canGenerate
         self.isReadOnly = isReadOnly
         self.onGenerate = onGenerate
+        self._edit = edit
+        self.isCurrentTab = isCurrentTab
+        self.saveError = saveError
+        self.onSaveEdit = onSaveEdit
     }
 
     private var summaryText: String? {
@@ -53,6 +68,8 @@ struct SummaryView: View {
             VStack(alignment: .leading, spacing: 22) {
                 if isGenerating {
                     generatingState
+                } else if edit != nil {
+                    editingDocument
                 } else if let summaryText {
                     summaryDocument(summaryText)
                 } else {
@@ -115,6 +132,117 @@ struct SummaryView: View {
         }
         .padding(24)
         .modifier(ViewerCard())
+    }
+
+    private var canSave: Bool {
+        edit?.draft.isDirty == true && !isSaving && !isReadOnly
+    }
+
+    private var editingDocument: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 11) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15))
+                    .foregroundStyle(palette.accentText.color)
+                Text("Summary")
+                    .uiFont(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                Spacer(minLength: 8)
+                Button("Cancel") { requestCancel() }
+                    .keyboardShortcut(isCurrentTab ? KeyboardShortcut.cancelAction : nil)
+                    .disabled(isSaving)
+                Button {
+                    Task { await save() }
+                } label: {
+                    if isSaving { ProgressView().controlSize(.small) } else { Text("Save") }
+                }
+                .keyboardShortcut(isCurrentTab ? KeyboardShortcut("s", modifiers: .command) : nil)
+                .disabled(!canSave)
+            }
+            .uiFont(.system(size: 12))
+            .buttonStyle(ViewerCommandButtonStyle())
+
+            if isReadOnly {
+                Label("Reprocessing is in progress. Your draft is kept; editing is paused.", systemImage: "lock")
+                    .uiFont(.callout)
+                    .foregroundStyle(palette.secondary.color)
+            }
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.triangle")
+                    .uiFont(.callout)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+            editorBody
+        }
+        .padding(24)
+        .modifier(ViewerCard())
+        .confirmationDialog("Discard changes to the summary?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) { edit = nil }
+            Button("Keep Editing", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder private var editorBody: some View {
+        if let indexURL = MarkdownEditorResources.bundledIndexURL {
+            MarkdownBlockEditor(
+                indexURL: indexURL,
+                initialMarkdown: edit?.draft.current ?? "",
+                isReadOnly: isReadOnly || isSaving,
+                isActive: isCurrentTab,
+                theme: MarkdownEditorTheme(palette: palette, reading: reading, mode: mode),
+                onMessage: handle
+            )
+            .frame(height: max(editorHeight, 160))
+            // The block handle sits in the card's padding; text lines up near the read view.
+            .padding(.leading, -20)
+            .accessibilityLabel("Summary editor")
+        } else {
+            // `swift run` without the app bundle: plain-text fallback.
+            TextEditor(text: Binding(
+                get: { edit?.draft.current ?? "" },
+                set: { edit?.draft.apply(.changed(markdown: $0)) }
+            ))
+            .font(readingFont)
+            .frame(minHeight: 220)
+            .accessibilityLabel("Summary draft")
+            .onAppear {
+                if let current = edit?.draft.current { edit?.draft.apply(.loaded(markdown: current)) }
+            }
+        }
+    }
+
+    private func handle(_ message: MarkdownEditorMessage) {
+        switch message {
+        case .height(let height):
+            editorHeight = height
+        case .shortcut(.save):
+            guard isCurrentTab else { return }
+            Task { await save() }
+        case .shortcut(.cancel):
+            guard isCurrentTab else { return }
+            requestCancel()
+        case .loaded, .changed:
+            edit?.draft.apply(message)
+        case .ready:
+            break
+        }
+    }
+
+    private func save() async {
+        guard canSave else { return }
+        isSaving = true
+        _ = await onSaveEdit()
+        isSaving = false
+    }
+
+    private func requestCancel() {
+        guard !isSaving else { return }
+        if edit?.draft.isDirty == true {
+            confirmDiscard = true
+        } else {
+            edit = nil
+        }
     }
 
     private var unavailableState: some View {

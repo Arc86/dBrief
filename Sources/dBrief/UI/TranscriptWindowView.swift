@@ -46,6 +46,9 @@ struct TranscriptDetailView: View {
     @State private var analysisEditorPresented = false
     @State private var analysisEditorBaseline: RecordingInsights?
     @State private var analysisSaveError: String?
+    /// Inline summary edit in progress (Summary tab); persisted per recording in
+    /// `SummaryDraftCache` so switching recordings never loses a dirty draft.
+    @State private var summaryEdit: SummaryEditState?
     @FocusState private var transcriptSearchFocused: Bool
 
     /// Whether the assistant (chat) side panel is open beside the content.
@@ -342,7 +345,10 @@ struct TranscriptDetailView: View {
         .sheet(isPresented: $analysisEditorPresented) {
             if let baseline = analysisEditorBaseline {
                 RecordingAnalysisEditor(baseline: baseline, isReadOnly: isReprocessing, saveError: analysisSaveError,
-                    onSave: { await saveInsights($0) }, onCancel: { analysisEditorPresented = false })
+                    onSave: { edited in
+                        if await saveInsights(edited, basedOn: baseline) { analysisEditorPresented = false }
+                    },
+                    onCancel: { analysisEditorPresented = false })
             }
         }
         .sheet(isPresented: $showPrivacyReceipt) {
@@ -455,11 +461,15 @@ struct TranscriptDetailView: View {
         }
         if mode != .transcript {
             Button {
-                analysisEditorBaseline = insights
                 analysisSaveError = nil
-                analysisEditorPresented = true
+                if mode == .summary {
+                    if summaryEdit == nil, let insights { summaryEdit = SummaryEditState(insights: insights) }
+                } else {
+                    analysisEditorBaseline = insights
+                    analysisEditorPresented = true
+                }
             } label: { Label("Edit", systemImage: "pencil") }
-                .disabled(isReprocessing || insights == nil)
+                .disabled(isReprocessing || insights == nil || (mode == .summary && summaryEdit != nil))
         }
     }
 
@@ -576,7 +586,27 @@ struct TranscriptDetailView: View {
     private var summaryBody: some View {
         SummaryView(insights: insights, isGenerating: isGenerating,
                     canGenerate: richTranscript != nil && !isReprocessing,
-                    isReadOnly: isReprocessing, onGenerate: { Task { await generateSummary() } })
+                    isReadOnly: isReprocessing, onGenerate: { Task { await generateSummary() } },
+                    edit: $summaryEdit, isCurrentTab: mode == .summary,
+                    saveError: summaryEdit == nil ? nil : analysisSaveError,
+                    onSaveEdit: { await saveSummaryEdit() })
+            .onChange(of: summaryEdit) { _, state in
+                SummaryDraftCache.shared.store(state, for: recording.fileURL)
+            }
+    }
+
+    /// Saves the inline summary draft through the same path as the modal.
+    private func saveSummaryEdit() async -> Bool {
+        guard let edit = summaryEdit else { return false }
+        guard !edit.isStale(currentSummary: insights?.summary) else {
+            analysisSaveError = "The summary was regenerated while you were editing. Copy your text, cancel, and edit the new summary."
+            return false
+        }
+        var edited = edit.insightsBaseline
+        edited.summary = edit.draft.current
+        guard await saveInsights(edited, basedOn: edit.insightsBaseline) else { return false }
+        summaryEdit = nil
+        return true
     }
 
     // MARK: - Transcript
@@ -1504,15 +1534,17 @@ struct TranscriptDetailView: View {
             && FileManager.default.fileExists(atPath: scriptURL.path)
     }
 
-    private func saveInsights(_ updated: RecordingInsights) async {
+    /// Saves an analysis edit (modal or inline summary). Returns true only when both the
+    /// sidecar and any linked Markdown note were written; on false the caller keeps its draft.
+    private func saveInsights(_ updated: RecordingInsights, basedOn baseline: RecordingInsights) async -> Bool {
         analysisSaveError = nil
         guard !isReprocessing else {
             analysisSaveError = "Reprocessing is in progress. Your draft has been kept."
-            return
+            return false
         }
-        guard let baseline = analysisEditorBaseline, let url = recording.insightsSidecarURL else {
+        guard let url = recording.insightsSidecarURL else {
             analysisSaveError = InsightsStoreError.noSidecarURL.localizedDescription
-            return
+            return false
         }
         let revision = context.recordingManager.reprocessingResultsRevision
         do {
@@ -1540,14 +1572,15 @@ struct TranscriptDetailView: View {
                         }
                     } catch {
                         analysisSaveError = "Analysis saved, but the linked Markdown note could not be updated. Your draft is kept so you can retry. \(error.localizedDescription)"
-                        return
+                        return false
                     }
                 }
             }
-            analysisEditorPresented = false
+            return true
         } catch {
             analysisSaveError = "Analysis could not be saved. Your draft is kept. \(error.localizedDescription)"
             Logger.recording.error("Failed to save insights sidecar")
+            return false
         }
     }
 
@@ -1613,6 +1646,10 @@ struct TranscriptDetailView: View {
         mode = ViewerPresentationPolicy.modeAfterLoad(
             current: mode, hasAppliedInitialMode: didApplyInitialMode, hasSummary: hasSummary)
         didApplyInitialMode = true
+        if summaryEdit == nil, let restored = SummaryDraftCache.shared.restore(for: recording.fileURL) {
+            summaryEdit = restored
+            mode = .summary
+        }
         if resumedChat { assistantOpen = true }
         recomputeSearch()
 

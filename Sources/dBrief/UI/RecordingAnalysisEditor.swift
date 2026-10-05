@@ -10,7 +10,6 @@ struct RecordingAnalysisEditor: View {
     let onCancel: () -> Void
 
     @Environment(\.viewerPalette) private var palette
-    @State private var summary: String
     @State private var actions: [DraftAction]
     @State private var tags: String
     @State private var isSaving = false
@@ -27,14 +26,13 @@ struct RecordingAnalysisEditor: View {
         self.saveError = saveError
         self.onSave = onSave
         self.onCancel = onCancel
-        _summary = State(initialValue: baseline.summary)
         _actions = State(initialValue: baseline.actionItems.map { DraftAction(text: $0) })
         _tags = State(initialValue: baseline.tags.joined(separator: ", "))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Edit analysis").uiFont(.title2.weight(.semibold))
+            Text("Edit actions and tags").uiFont(.title2.weight(.semibold))
             if isReadOnly {
                 Label("Reprocessing is in progress. Your draft is retained; editing is temporarily unavailable.", systemImage: "lock")
                     .uiFont(.callout)
@@ -45,10 +43,6 @@ struct RecordingAnalysisEditor: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Summary").uiFont(.headline)
-                    TextEditor(text: $summary)
-                        .uiFont(.body).frame(minHeight: 220)
-                        .accessibilityLabel("Summary draft")
                     Text("Actions").uiFont(.headline)
                     ForEach($actions) { $action in
                         HStack(alignment: .top) {
@@ -72,7 +66,6 @@ struct RecordingAnalysisEditor: View {
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction).disabled(isSaving)
                 Button {
                     var edited = baseline
-                    edited.summary = summary
                     // Preserve every unchanged raw action key, including whitespace.
                     let rawActions = actions.map(\.text)
                     if rawActions != baseline.actionItems {
@@ -93,7 +86,7 @@ struct RecordingAnalysisEditor: View {
             .buttonStyle(ViewerCommandButtonStyle())
         }
         .padding(24)
-        .frame(minWidth: 520, idealWidth: 660, minHeight: 520, idealHeight: 700)
+        .frame(minWidth: 480, idealWidth: 560, minHeight: 360, idealHeight: 480)
         .foregroundStyle(palette.text.color)
         .background(palette.surface.color)
         .interactiveDismissDisabled(isSaving)
