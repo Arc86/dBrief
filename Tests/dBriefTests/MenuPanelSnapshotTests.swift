@@ -5,7 +5,8 @@ import Testing
 
 /// Renders the menu bar panel in its main states and all four appearance modes to
 /// PNGs for side-by-side comparison with the Pen "Signature" frames. Opt-in:
-/// `DBRIEF_MENU_SNAPSHOT_DIR=/some/dir swift test --filter MenuPanelSnapshotTests`.
+/// `DBRIEF_MENU_SNAPSHOT_DIR=/some/dir swift test --filter MenuPanelSnapshotTests`; narrow with
+/// `DBRIEF_MENU_SNAPSHOT_MODES` / `_STATES`, vary with `_ACCENT=#RRGGBB` and `_CALM=1` (Reduce neon).
 @Suite("Menu panel renders", .serialized) @MainActor
 struct MenuPanelSnapshotTests {
     nonisolated private static let directory = ProcessInfo.processInfo.environment["DBRIEF_MENU_SNAPSHOT_DIR"]
@@ -144,7 +145,9 @@ struct MenuPanelSnapshotTests {
 
     private func render<V: View>(_ view: V, mode: ViewerAppearanceMode, to url: URL) async throws {
         let typography = AppTypographyPreferences()
-        let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: "#1268F5", nonNeon: false)
+        let env = ProcessInfo.processInfo.environment
+        let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: env["DBRIEF_MENU_SNAPSHOT_ACCENT"] ?? "#1268F5",
+                                                  nonNeon: env["DBRIEF_MENU_SNAPSHOT_CALM"] != nil)
         let scheme: ColorScheme = mode.isDark ? .dark : .light
         let host = NSHostingView(rootView: view
             .background(palette.surface.color)
