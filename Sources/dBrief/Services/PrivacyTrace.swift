@@ -91,20 +91,23 @@ enum PrivacyTrace {
     }
 
     static func streamRun(_ operation: PrivacyOperation,
-        bounded: Bool = false,
+        bounded: Bool = false, ownership: TranscriptContextOwnership? = nil,
         makeStream: @escaping @Sendable () async throws -> ChatStreamRun) -> ChatStreamRun {
         let originatingContext = context
         let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
         let task = Task {
+            defer { withExtendedLifetime(ownership) {} }
             do {
+                try TranscriptContextOwnership.requireValid(ownership)
                 try await $context.withValue(originatingContext) {
                     try await perform(operation) {
+                        try TranscriptContextOwnership.requireValid(ownership)
                         let upstream = try await makeStream()
                         var failure: (any Error)?
                         do {
                             for try await chunk in upstream.stream {
                                 try Task.checkCancellation()
-                                try buffer.yield(chunk)
+                                try TranscriptContextOwnership.withValidResult(ownership) { try buffer.yield(chunk) }
                             }
                         } catch { failure = error }
                         upstream.cancel()
@@ -113,6 +116,7 @@ enum PrivacyTrace {
                         // AsyncThrowingStream can end iteration normally on
                         // cancellation; that is not a successful completion.
                         try Task.checkCancellation()
+                        try TranscriptContextOwnership.requireValid(ownership)
                     }
                 }
                 continuation.finish()

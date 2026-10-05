@@ -80,19 +80,21 @@ final class MLNativeJobOwnership: @unchecked Sendable {
     let lease: LiveResourceJobLease
     let process: Process
     private let policy: LiveModelResourcePolicy
+    private let inputWriter: LivePipeWriter?
     private let lock = NSLock()
     private var task: Task<Void,Never>?
-    init(lease: LiveResourceJobLease,process: Process,policy: LiveModelResourcePolicy) {
-        self.lease = lease; self.process = process; self.policy = policy
+    init(lease: LiveResourceJobLease, process: Process, policy: LiveModelResourcePolicy, inputWriter: LivePipeWriter? = nil) {
+        self.lease = lease; self.process = process; self.policy = policy; self.inputWriter = inputWriter
     }
     deinit { _ = retire() }
     @discardableResult func retire() -> Task<Void,Never> {
         lock.withLock {
             if let task { return task }
-            let process = self.process, lease = self.lease, policy = self.policy
+            let process = self.process, lease = self.lease, policy = self.policy, inputWriter = self.inputWriter
             let work = Task {
                 if process.isRunning { process.terminate() }
                 await Task.detached { process.waitUntilExit() }.value
+                await inputWriter?.retire().value
                 await policy.releaseJob(lease)
             }
             task = work; return work

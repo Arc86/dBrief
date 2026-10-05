@@ -5,6 +5,7 @@ import Foundation
 actor PrivacyHTTPTrace {
     typealias FileUpload = @Sendable (URLRequest, URL) async throws -> (Data, URLResponse)
     private let context: PrivacyTrace.Context
+    private var ownership: TranscriptContextOwnership?
     private let textQueryItems: Set<String>
     private let modelQueryItem: String?
     private var bodyData: Set<PrivacyOperation.DataCategory>
@@ -14,9 +15,9 @@ actor PrivacyHTTPTrace {
     private var completed = false
 
     init(operation: PrivacyOperation, context: PrivacyTrace.Context, textQueryItems: Set<String> = [],
-         textInBody: Bool = true, modelQueryItem: String? = nil) {
+         textInBody: Bool = true, modelQueryItem: String? = nil, ownership: TranscriptContextOwnership? = nil) {
         self.operation = operation
-        self.context = context
+        self.context = context; self.ownership = ownership
         self.textQueryItems = textQueryItems
         self.modelQueryItem = modelQueryItem
         self.bodyData = operation.data
@@ -27,23 +28,24 @@ actor PrivacyHTTPTrace {
         token = await PrivacyTrace.begin(operation, in: context)
     }
 
-    func redirect(to request: URLRequest) async {
+    @discardableResult
+    func redirect(to request: URLRequest) async -> Bool {
         let previous = pending
         let next = Task {
             await previous?.value
-            await self.recordRedirect(to: request)
+            return await self.recordRedirect(to: request)
         }
-        pending = next
-        await next.value
+        pending = Task { _ = await next.value }
+        return await next.value
     }
 
-    private func recordRedirect(to request: URLRequest) async {
-        guard !completed else { return }
+    private func recordRedirect(to request: URLRequest) async -> Bool {
+        guard !completed else { return false }
         await PrivacyTrace.finish(token, outcome: .redirected)
         guard let url = request.url else {
             token = nil
             await context.store.noteGap(at: context.receiptURL)
-            return
+            return false
         }
         let method = (request.httpMethod ?? "GET").uppercased()
         let retainsBody = method != "GET" && method != "HEAD"
@@ -63,6 +65,7 @@ actor PrivacyHTTPTrace {
                 model: model),
             responseFormat: retainsBody ? operation.responseFormat : nil)
         token = await PrivacyTrace.begin(operation, in: context)
+        return true
     }
 
     func finish(response: URLResponse) async {
@@ -78,6 +81,7 @@ actor PrivacyHTTPTrace {
     private func recordCompletion(response: URLResponse) async {
         guard !completed else { return }
         completed = true
+        defer { ownership = nil }
         if response.url?.host?.lowercased() != operation.destination.hostname {
             // An injected/custom transport that follows redirects without our
             // delegate cannot establish the destinations of the missing hops.
@@ -105,6 +109,7 @@ actor PrivacyHTTPTrace {
     private func recordFailure(_ outcome: PrivacyAttempt.Outcome) async {
         guard !completed else { return }
         completed = true
+        defer { ownership = nil }
         await PrivacyTrace.finish(token, outcome: outcome)
     }
 
@@ -130,18 +135,21 @@ actor PrivacyHTTPTrace {
     /// Streaming completion is recorded by the consumer after reading the body,
     /// not when headers arrive. A broken/cancelled stream cannot become success.
     static func bytes(for request: URLRequest, operation: PrivacyOperation,
-                      session: URLSession = .shared) async throws -> (URLSession.AsyncBytes, URLResponse, PrivacyHTTPTrace?) {
+                      session: URLSession = .shared, ownership: TranscriptContextOwnership? = nil) async throws -> (URLSession.AsyncBytes, URLResponse, PrivacyHTTPTrace?) {
+        defer { withExtendedLifetime(ownership) {} }
         try Task.checkCancellation()
+        try TranscriptContextOwnership.requireValid(ownership)
         let trace: PrivacyHTTPTrace?
         if let context = PrivacyTrace.context {
-            let scoped = PrivacyHTTPTrace(operation: operation, context: context)
+            let scoped = PrivacyHTTPTrace(operation: operation, context: context, ownership: ownership)
             await scoped.start()
             trace = scoped
         } else { trace = nil }
         do {
             try Task.checkCancellation()
+            try TranscriptContextOwnership.requireValid(ownership)
             let (bytes, response) = try await session.bytes(for: request,
-                delegate: PrivacyHTTPTaskDelegate(trace: trace))
+                delegate: PrivacyHTTPTaskDelegate(trace: trace, ownership: ownership))
             return (bytes, response, trace)
         } catch {
             await trace?.finish(error: error)
@@ -175,24 +183,48 @@ actor PrivacyHTTPTrace {
     }
 }
 
-private final class PrivacyHTTPTaskDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+final class PrivacyHTTPTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let trace: PrivacyHTTPTrace?
-    init(trace: PrivacyHTTPTrace?) { self.trace = trace }
+    private let ownershipLock = NSRecursiveLock()
+    private var ownership: TranscriptContextOwnership?
+    private var taskCompleted = false
+    init(trace: PrivacyHTTPTrace?, ownership: TranscriptContextOwnership? = nil) {
+        self.trace = trace; self.ownership = ownership
+    }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
-        guard SensitiveRedirectPolicy.allows(from: response.url, to: request.url) else {
+        // Capture the wrapper at callback entry, before completion can clear
+        // this delegate's slot. A completed owned request cannot become unowned.
+        let admitted = ownershipLock.withLock { (active: !taskCompleted, ownership: ownership) }
+        guard admitted.active, SensitiveRedirectPolicy.allows(from: response.url, to: request.url) else {
             // Returning nil delivers the original 3xx to normal HTTP error
             // handling. Never record an attempt at a destination we rejected.
             completionHandler(nil)
             return
         }
+        let ownership = admitted.ownership, trace = self.trace
         Task {
-            await trace?.redirect(to: request)
-            completionHandler(request)
+            defer { withExtendedLifetime(ownership) {} }
+            let recorded = await trace?.redirect(to: request) ?? true
+            do {
+                try ownershipLock.withLock {
+                    guard recorded, !taskCompleted else { throw CancellationError() }
+                    try TranscriptContextOwnership.withValidResult(ownership) { completionHandler(request) }
+                }
+            } catch {
+                completionHandler(nil)
+                await trace?.finish(error: error)
+            }
         }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        // URLSession may retain a completed delegate. The actual body producer
+        // and any admitted redirect callback keep independent wrapper copies.
+        ownershipLock.withLock { taskCompleted = true; ownership = nil }
     }
 }
 

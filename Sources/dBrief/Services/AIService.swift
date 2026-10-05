@@ -139,12 +139,14 @@ actor AIService {
     }
 
     nonisolated func startChat(systemPrompt: String, userMessage: String, endpoint: Endpoint,
-        stage: PrivacyOperation.Stage = .chat, bounded: Bool = false) -> ChatStreamRun {
+        stage: PrivacyOperation.Stage = .chat, bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) -> ChatStreamRun {
         let isAnthropic = endpoint.provider == .anthropic
         let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
         let task = Task {
+            defer { withExtendedLifetime(ownership) {} }
             var trace: PrivacyHTTPTrace?
             do {
+                try TranscriptContextOwnership.requireValid(ownership)
                 let request: URLRequest = try {
                     isAnthropic
                         ? try Self.anthropicStreamRequest(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint)
@@ -154,7 +156,7 @@ actor AIService {
                 let (asyncBytes, response, requestTrace) = try await PrivacyHTTPTrace.bytes(for: request,
                     operation: .init(stage: stage, data: [.text, .metadata],
                         destination: .remote(url: request.url!, provider: isAnthropic ? .anthropic : .openAICompatible,
-                            model: endpoint.modelName)), session: self.session)
+                            model: endpoint.modelName)), session: self.session, ownership: ownership)
                 defer { asyncBytes.task.cancel() }
                 trace = requestTrace
                 guard let httpResponse = response as? HTTPURLResponse,
@@ -169,7 +171,9 @@ actor AIService {
                     guard line.hasPrefix("data:") else { return true }
                     let jsonStr = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                     if jsonStr == "[DONE]" { return false }
-                    if let content = try parser.consume(jsonStr) { try buffer.yield(content) }
+                    if let content = try parser.consume(jsonStr) {
+                        try TranscriptContextOwnership.withValidResult(ownership) { try buffer.yield(content) }
+                    }
                     return true
                 }
                 if bounded {
@@ -198,6 +202,7 @@ actor AIService {
                     for try await line in asyncBytes.lines { if try !consume(line) { break } }
                 }
                 try Task.checkCancellation()
+                try TranscriptContextOwnership.requireValid(ownership)
                 try parser.finish()
                 await trace?.finish(response: response)
                 continuation.finish()

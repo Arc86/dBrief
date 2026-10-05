@@ -47,6 +47,12 @@ actor MLHostConnection {
     private var activeNativeJobs: Set<UUID> = []
     private var ordinaryRetirement: Task<Void,Never>?
     private var ordinaryTransportBounded = false
+    private var ordinaryOwnedInput = false
+    private var ordinaryInputWriter: LivePipeWriter?
+    private let testingAfterOwnedChatAdmission: (@Sendable () async -> Void)?
+    private let testingOwnedInputWrite: @Sendable (Bool) -> Void
+    private let testingOwnedControl: @Sendable (Bool) -> Void
+    private let testingOwnedInputEncoded: @Sendable (Int) -> Void
     private var ordinaryModeWaiters: [UUID: AsyncStream<Void>.Continuation] = [:]
     var ordinaryModeWaiterCount: Int { ordinaryModeWaiters.count }
     private var ordinaryBoundedReader = LiveFrameReader()
@@ -103,7 +109,11 @@ actor MLHostConnection {
          boundedDiarizationIngestDelivery: @escaping @Sendable () async -> Void = {},
          testingAfterDiarizationClaim: (@Sendable () async -> Void)? = nil,
          testingDiarizationReaderLifetime: @escaping @Sendable (Bool) -> Void = { _ in },
-         testingLiveInputWrite: @escaping @Sendable (Bool) -> Void = { _ in }) {
+         testingLiveInputWrite: @escaping @Sendable (Bool) -> Void = { _ in },
+         testingAfterOwnedChatAdmission: (@Sendable () async -> Void)? = nil,
+         testingOwnedInputWrite: @escaping @Sendable (Bool) -> Void = { _ in },
+         testingOwnedControl: @escaping @Sendable (Bool) -> Void = { _ in },
+         testingOwnedInputEncoded: @escaping @Sendable (Int) -> Void = { _ in }) {
         self.binaryURL = binaryURL
         self.supportBase = supportBase
         self.extraEnvironment = environment
@@ -114,6 +124,10 @@ actor MLHostConnection {
         self.testingAfterDiarizationClaim = testingAfterDiarizationClaim
         self.testingDiarizationReaderLifetime = testingDiarizationReaderLifetime
         self.testingLiveInputWrite = testingLiveInputWrite
+        self.testingAfterOwnedChatAdmission = testingAfterOwnedChatAdmission
+        self.testingOwnedInputWrite = testingOwnedInputWrite
+        self.testingOwnedControl = testingOwnedControl
+        self.testingOwnedInputEncoded = testingOwnedInputEncoded
         self.retirementWaitDelivery = retirementWaitDelivery
         self.liveEventLimits = .init(queued: min(512, max(1, liveEventLimits.queued)),
             deferred: liveEventLimits.deferred.map { min(32, max(1, $0)) },
@@ -306,44 +320,93 @@ actor MLHostConnection {
         await startStream(request).stream
     }
 
-    func startStream(_ request: MLRequest, bounded: Bool = false) async -> ChatStreamRun {
-        let id = UUID()
+    func startStream(_ request: MLRequest, bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) async -> ChatStreamRun {
+        defer { withExtendedLifetime(ownership) {} }
+        let id = UUID(), isOwned = ownership != nil
         do {
             guard role == .ordinary else { throw MLHostError.protocolViolation }
             if case .live = request { throw MLHostError.protocolViolation }
-            try await admitOrdinary(request,id: id, bounded: bounded)
+            try TranscriptContextOwnership.requireValid(ownership)
+            if isOwned { try Self.preflightOwnedInput(request) }
+            try await admitOrdinary(request,id: id, bounded: bounded, ownership: ownership)
         } catch { return .init(stream: AsyncThrowingStream { $0.finish(throwing: error) }) }
+        let generation = ordinaryGeneration, child = process, inputWriter = ordinaryInputWriter, readerTask = ingestTask
+        if ownership != nil {
+            if let testingAfterOwnedChatAdmission { await testingAfterOwnedChatAdmission() }
+            do {
+                try Task.checkCancellation()
+                try TranscriptContextOwnership.requireValid(ownership)
+                guard generation == ordinaryGeneration, child === process, inputWriter === ordinaryInputWriter else { throw CancellationError() }
+            } catch {
+                if activeNativeJobs.contains(id) { ordinaryRequestFinished(id) }
+                return .init(stream: AsyncThrowingStream { $0.finish(throwing: error) })
+            }
+        }
         let progress = MLProgress.sink
-        let returned = ChatStreamReturn(), child = process, readerTask = ingestTask
+        let returned = ChatStreamReturn(), written: ChatStreamReturn? = isOwned ? ChatStreamReturn() : nil
         let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
         var stopped = false // Pending callbacks are serialized by this actor.
-            pending[id] = Pending(
-                onEvent: { event in
-                    switch event {
-                    case .state(let state): progress?(state)
-                    case .token(let s):
-                        guard !stopped else { return }
-                        do { try buffer.yield(s) }
-                        catch {
-                            stopped = true
-                            continuation.finish(throwing: error)
+        var inputRejected = false
+        do {
+            // Actor-serial encoding follows every admission/hook await. No
+            // suspension separates this bounded allocation from guarded enqueue.
+            let ownedFrame = isOwned ? try Self.ownedInputFrame(.init(id: id, request: request)) : nil
+            if let ownedFrame { testingOwnedInputEncoded(ownedFrame.count) }
+            try TranscriptContextOwnership.withValidResult(ownership) {
+                pending[id] = Pending(
+                    onEvent: { event in
+                        switch event {
+                        case .state(let state): progress?(state)
+                        case .token(let s):
+                            guard !stopped else { return }
+                            do { try buffer.yield(s) }
+                            catch {
+                                stopped = true
+                                continuation.finish(throwing: error)
+                            }
+                        case .finished: returned.finish(); continuation.finish()
+                        case .error(let w): returned.finish(); continuation.finish(throwing: w)
+                        default: break
                         }
-                    case .finished: returned.finish(); continuation.finish()
-                    case .error(let w): returned.finish(); continuation.finish(throwing: w)
-                    default: break
+                    },
+                    onCrash: {
+                        continuation.finish(throwing: $0)
+                        Task.detached {
+                            child?.waitUntilExit(); await readerTask?.value
+                            await inputWriter?.retire().value; returned.finish()
+                        }
                     }
-                },
-                onCrash: {
-                    continuation.finish(throwing: $0)
-                    Task.detached { child?.waitUntilExit(); await readerTask?.value; returned.finish() }
+                )
+                continuation.onTermination = { @Sendable _ in
+                    Task {
+                        if isOwned { await self.cancelOwnedStream(id, generation: generation, child: child, writer: inputWriter) }
+                        else { await self.send(.cancel, id: id) }
+                    }
                 }
-            )
-            continuation.onTermination = { @Sendable _ in
-                Task { await self.send(.cancel, id: id) }
+                if let ownedFrame {
+                    guard inputWriter?.enqueue(ownedFrame, ownership: ownership, returned: written) == true else {
+                        inputRejected = true; throw ChatStreamEndError.limited
+                    }
+                } else { write(RequestEnvelope(id: id, request: request)) }
             }
-            write(RequestEnvelope(id: id, request: request))
-        let receipt = Task { await returned.wait() }
-        return .init(stream: buffer.stream, cancel: { Task { await self.send(.cancel, id: id) } }, join: { await receipt.value })
+        } catch {
+            pending[id] = nil; written?.finish()
+            // Rejected input cannot reuse a possibly partially framed stream.
+            if inputRejected, let child { failOwnedOrdinaryInput(from: child, error: error) }
+            else if activeNativeJobs.contains(id) { ordinaryRequestFinished(id) }
+            // Installed native claims remain until actual child/writer return.
+            return .init(stream: AsyncThrowingStream { $0.finish(throwing: error) })
+        }
+        let receipt = Task {
+            defer { withExtendedLifetime(ownership) {} }
+            await written?.wait(); await returned.wait()
+        }
+        return .init(stream: buffer.stream, cancel: {
+            Task {
+                if isOwned { await self.cancelOwnedStream(id, generation: generation, child: child, writer: inputWriter) }
+                else { await self.send(.cancel, id: id) }
+            }
+        }, join: { await receipt.value })
     }
 
     func shutdown() {
@@ -379,12 +442,13 @@ actor MLHostConnection {
 
     /// Freeze process generation around the policy await. A late reservation
     /// cannot dispatch into a child whose idle retirement has already begun.
-    private func admitOrdinary(_ request: MLRequest,id: UUID, bounded: Bool = false) async throws {
+    private func admitOrdinary(_ request: MLRequest,id: UUID, bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) async throws {
         while true {
             try Task.checkCancellation()
+            try TranscriptContextOwnership.requireValid(ownership)
             if let child = process, !child.isRunning { handleTermination(of: child) }
             if nativeJobs.count >= 96, pending.isEmpty, activeNativeJobs.isEmpty { retireOrdinaryProcess() }
-            if process != nil, ordinaryTransportBounded != bounded {
+            if process != nil, (ordinaryTransportBounded != bounded || ordinaryOwnedInput != (ownership != nil)) {
                 if !pending.isEmpty || !activeNativeJobs.isEmpty {
                     if case .chatStream = request { throw MLHostError.resourceDeferred }
                     // Background work preserves its existing awaited admission.
@@ -401,21 +465,41 @@ actor MLHostConnection {
                 await retirementWaitDelivery?()
             }
             guard generation == ordinaryGeneration else { continue }
+            try TranscriptContextOwnership.requireValid(ownership)
             let lease = try await resourceAdmission?.acquire(owner: id,request: request)
+            do { try TranscriptContextOwnership.requireValid(ownership) }
+            catch { if let lease { await resourceAdmission?.policy.releaseJob(lease) }; throw error }
             guard generation == ordinaryGeneration, !Task.isCancelled else {
                 if let lease { await resourceAdmission?.policy.releaseJob(lease) }
                 try Task.checkCancellation(); continue
             }
-            if process != nil, ordinaryTransportBounded != bounded {
+            if process != nil, (ordinaryTransportBounded != bounded || ordinaryOwnedInput != (ownership != nil)) {
                 if let lease { await resourceAdmission?.policy.releaseJob(lease) }
                 continue
             }
-            if process == nil { ordinaryTransportBounded = bounded }
-            do { try ensureRunning() }
-            catch { if let lease { await resourceAdmission?.policy.releaseJob(lease) }; throw error }
-            if let lease, let process, let resourceAdmission {
-                nativeJobs[id] = .init(lease: lease,process: process,policy: resourceAdmission.policy)
-                activeNativeJobs.insert(id)
+            if process == nil { ordinaryTransportBounded = bounded; ordinaryOwnedInput = ownership != nil }
+            let previousChild = process
+            do {
+                try TranscriptContextOwnership.requireValid(ownership)
+                // OS setup/startup never owns the source validity lock.
+                try ensureRunning()
+                if let lease, let process, let resourceAdmission {
+                    nativeJobs[id] = .init(lease: lease, process: process, policy: resourceAdmission.policy, inputWriter: ordinaryInputWriter)
+                    activeNativeJobs.insert(id)
+                }
+                try TranscriptContextOwnership.requireValid(ownership)
+            } catch {
+                if let child = process, child !== previousChild {
+                    // A real started child needs physical ownership even if a
+                    // post-start authority check or launch throw rejects it.
+                    if nativeJobs[id] == nil, let lease, let resourceAdmission {
+                        nativeJobs[id] = .init(lease: lease, process: child, policy: resourceAdmission.policy, inputWriter: ordinaryInputWriter)
+                        activeNativeJobs.insert(id)
+                    }
+                    retireOrdinaryProcess()
+                } else if nativeJobs[id] != nil { ordinaryRequestFinished(id) }
+                else if let lease { await resourceAdmission?.policy.releaseJob(lease) }
+                throw error
             }
             return
         }
@@ -463,6 +547,8 @@ actor MLHostConnection {
     private func retireOrdinaryProcess() {
         ordinaryGeneration = UUID()
         let child = process; process = nil
+        let inputWriter = ordinaryInputWriter; ordinaryInputWriter = nil
+        let writerReturn = inputWriter?.retire()
         stdinHandle = nil
         ingestContinuation?.finish(); ingestContinuation = nil
         let readerTask = ingestTask; ingestTask = nil
@@ -474,7 +560,7 @@ actor MLHostConnection {
             await previous?.value
             for receipt in receipts { await receipt.retire().value }
             if let child { await Task.detached { child.waitUntilExit() }.value }
-            await readerTask?.value
+            await readerTask?.value; await writerReturn?.value
         }
         signalOrdinaryProgress()
     }
@@ -611,7 +697,16 @@ actor MLHostConnection {
         proc.terminationHandler = { [weak self] exited in
             Task { await terminationDelivery(); await self?.handleTermination(of: exited) }
         }
+        var inputWriter: LivePipeWriter?
         do {
+            if role == .ordinary, ordinaryOwnedInput {
+                let writer = LivePipeWriter(handle: stdinPipe.fileHandleForWriting, nonblockingWrites: true,
+                    testingMandatoryWrite: testingOwnedInputWrite) { [weak self] in
+                    Task { await self?.failOwnedOrdinaryInput(from: proc, error: MLHostError.helperCrashed) }
+                }
+                inputWriter = writer
+                guard writer.isReady else { throw MLHostError.helperUnavailable }
+            }
             try proc.run()
         } catch {
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
@@ -620,10 +715,16 @@ actor MLHostConnection {
             // retry must end its reader instead of overwriting a suspended task.
             optionalMailbox?.finish(); diarizationIngestTask?.cancel()
             diarizationIngestTask = nil; diarizationMailbox = nil
+            inputWriter?.retire()
+            if proc.processIdentifier > 0 {
+                self.process = proc; self.stdinHandle = stdinPipe.fileHandleForWriting
+                self.ordinaryInputWriter = inputWriter
+            }
             throw MLHostError.helperUnavailable
         }
         self.process = proc
         self.stdinHandle = stdinPipe.fileHandleForWriting
+        self.ordinaryInputWriter = inputWriter
         self.reader = FrameReader()
         self.ordinaryBoundedReader = LiveFrameReader()
         if role == .live {
@@ -697,6 +798,8 @@ actor MLHostConnection {
         let dead = pending
         pending.removeAll()
         process = nil
+        let inputWriter = ordinaryInputWriter; ordinaryInputWriter = nil
+        let writerReturn = inputWriter?.retire()
         stdinHandle = nil
         ingestContinuation?.finish(); ingestContinuation = nil
         let readerTask = ingestTask; ingestTask = nil
@@ -704,7 +807,7 @@ actor MLHostConnection {
         ordinaryRetirement = Task {
             await previous?.value
             for receipt in owned.values { await receipt.retire().value }
-            await readerTask?.value
+            await readerTask?.value; await writerReturn?.value
         }
         signalOrdinaryProgress()
         for (_, p) in dead { p.onCrash(MLHostError.helperCrashed) }
@@ -716,8 +819,44 @@ actor MLHostConnection {
                   liveWriter?.enqueue(FrameCodec.encode(payload)) == true else { failLive(MLHostError.protocolViolation); return }
             return
         }
-        guard let stdinHandle, let payload = try? frameEncoder.encode(envelope) else { return }
-        stdinHandle.write(FrameCodec.encode(payload))
+        guard let payload = try? frameEncoder.encode(envelope) else { return }
+        if ordinaryOwnedInput {
+            guard payload.count <= LivePipeWriter.maximumQueuedBytes - 4,
+                  ordinaryInputWriter?.enqueue(FrameCodec.encode(payload)) == true else {
+                if let process { failOwnedOrdinaryInput(from: process, error: ChatStreamEndError.limited) }
+                return
+            }
+        } else { stdinHandle?.write(FrameCodec.encode(payload)) }
+    }
+
+    /// Worst escaping is six JSON bytes per UTF8 input byte. Fixed allowance
+    /// covers UUID/request/case tags/field names and the four-byte frame header.
+    private nonisolated static func preflightOwnedInput(_ request: MLRequest) throws {
+        guard case let .chatStream(systemPrompt, userMessage) = request else { throw MLHostError.protocolViolation }
+        let (count, overflow) = systemPrompt.utf8.count.addingReportingOverflow(userMessage.utf8.count)
+        guard !overflow, count <= (LivePipeWriter.maximumQueuedBytes - 4 - 4_096) / 6 else { throw ChatStreamEndError.limited }
+    }
+
+    nonisolated static func ownedInputFrame(_ envelope: RequestEnvelope) throws -> Data {
+        try preflightOwnedInput(envelope.request)
+        let payload = try JSONEncoder().encode(envelope)
+        guard payload.count <= LivePipeWriter.maximumQueuedBytes - 4 else { throw ChatStreamEndError.limited }
+        return FrameCodec.encode(payload)
+    }
+
+    private func cancelOwnedStream(_ id: UUID, generation: UUID, child: Process?, writer: LivePipeWriter?) {
+        guard generation == ordinaryGeneration, child === process, writer === ordinaryInputWriter else {
+            testingOwnedControl(false); return
+        }
+        testingOwnedControl(true)
+        send(.cancel, id: id)
+    }
+
+    private func failOwnedOrdinaryInput(from child: Process, error: any Error) {
+        guard child === process, ordinaryOwnedInput else { return }
+        let dead = pending; pending.removeAll()
+        retireOrdinaryProcess()
+        for owner in dead.values { owner.onCrash(error) }
     }
 
     private func validateLiveFrame(_ envelope: RequestEnvelope) throws {

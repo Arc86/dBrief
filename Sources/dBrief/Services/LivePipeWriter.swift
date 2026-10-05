@@ -1,41 +1,59 @@
 import Darwin
 import Foundation
 
-/// One blocking writer outside the connection actor. The byte bound includes the
-/// frame currently blocked in the kernel, so a child that stops reading cannot
-/// grow an unbounded backlog or prevent the actor's force deadline from firing.
+/// One serial writer outside the connection actor. Queued bytes include the
+/// frame currently in the kernel. Owned ordinary input uses bounded nonblocking
+/// effects so source retirement never waits behind a full FIFO.
 final class LivePipeWriter: @unchecked Sendable {
+    static let maximumQueuedBytes = 512 * 1_024
+    private struct Frame {
+        let data: Data
+        let ownership: TranscriptContextOwnership?
+        let returned: ChatStreamReturn?
+    }
     private let handle: FileHandle
     private let lock = NSLock()
     private let writeLock = NSLock()
     private let queue = DispatchQueue(label: "dBrief.live-helper-input")
     private let failed: @Sendable () -> Void
     private let testingMandatoryWrite: @Sendable (Bool) -> Void
-    private var frames: [Data] = []
+    private let nonblockingWrites: Bool
+    let isReady: Bool
+    private var frames: [Frame] = []
     private var bytes = 0
     private var draining = false
     private var retired = false
     private var frameCount = 0
+    private var retirement: Task<Void, Never>?
+    var residentBytes: Int { lock.withLock { bytes } }
 
-    init(handle: FileHandle, testingMandatoryWrite: @escaping @Sendable (Bool) -> Void = { _ in }, failed: @escaping @Sendable () -> Void) {
+    init(handle: FileHandle, nonblockingWrites: Bool = false,
+         testingMandatoryWrite: @escaping @Sendable (Bool) -> Void = { _ in }, failed: @escaping @Sendable () -> Void) {
         self.handle = handle; self.failed = failed; self.testingMandatoryWrite = testingMandatoryWrite
-        _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+        self.nonblockingWrites = nonblockingWrites
+        let fd = handle.fileDescriptor, noSignal = fcntl(fd, F_SETNOSIGPIPE, 1)
+        if nonblockingWrites {
+            var info = stat(); let flags = fcntl(fd, F_GETFL)
+            isReady = noSignal == 0 && fstat(fd, &info) == 0 && info.st_mode & S_IFMT == S_IFIFO &&
+                flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0
+        } else { isReady = true }
     }
 
-    func enqueue(_ frame: Data) -> Bool {
-        let accepted = lock.withLock {
-            guard !retired, frameCount < 128, frame.count <= 524288 - bytes else { return false }
-            frames.append(frame); bytes += frame.count; frameCount += 1
+    func enqueue(_ frame: Data, ownership: TranscriptContextOwnership? = nil, returned: ChatStreamReturn? = nil) -> Bool {
+        lock.withLock {
+            guard isReady, !retired, (nonblockingWrites || ownership == nil), frameCount < 128,
+                  frame.count <= Self.maximumQueuedBytes - bytes else { return false }
+            frames.append(.init(data: frame, ownership: ownership, returned: returned))
+            bytes += frame.count; frameCount += 1
             if !draining { draining = true; queue.async { self.drain() } }
             return true
         }
-        return accepted
     }
 
-    /// No queue or blocking descriptor write for optional work. Mandatory work
-    /// owns priority, including a frame already removed from the queue.
+    /// No queue or blocking descriptor write for optional live work. Mandatory
+    /// work owns priority, including a frame already removed from the queue.
     func tryWriteOptional(_ frame: Data) -> Bool {
-        guard !frame.isEmpty, frame.count <= 512, writeLock.try() else { return false }
+        guard !nonblockingWrites, !frame.isEmpty, frame.count <= 512, writeLock.try() else { return false }
         defer { writeLock.unlock() }
         guard lock.try() else { return false }
         let idle = !retired && !draining && frames.isEmpty && frameCount == 0
@@ -51,34 +69,94 @@ final class LivePipeWriter: @unchecked Sendable {
             let n = frame.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
             if n == frame.count { return true }
             if n < 0, errno == EINTR { continue }
-            return false // Atomic <=PIPE_BUF nonblocking FIFO writes are all-or-none.
+            return false
         }
         return false
     }
 
-    /// Call after killing the owning child, which releases any blocked write.
-    func retire() {
-        lock.withLock { retired = true; frames.removeAll() }
-        queue.async { self.writeLock.withLock { try? self.handle.close() } }
+    /// Live blocking writers require their owning child to be killed first.
+    /// Owned nonblocking writers observe this latch without waiting for stdin.
+    /// Every caller shares the actual serial close receipt, even after failure.
+    @discardableResult func retire() -> Task<Void, Never> {
+        lock.withLock {
+            if let retirement { return retirement }
+            retired = true; discardQueued()
+            let returned = ChatStreamReturn(), task = Task { await returned.wait() }
+            retirement = task
+            queue.async {
+                self.writeLock.withLock { try? self.handle.close() }
+                returned.finish()
+            }
+            return task
+        }
+    }
+
+    /// Called only while holding the state lock. In-flight frames stay owned.
+    private func discardQueued() {
+        for frame in frames { bytes -= frame.data.count; frameCount -= 1; frame.returned?.finish() }
+        frames.removeAll()
     }
 
     private func drain() {
         while true {
-            let frame: Data? = lock.withLock {
+            let frame: Frame? = lock.withLock {
                 guard !retired, !frames.isEmpty else { draining = false; return nil }
                 return frames.removeFirst()
             }
             guard let frame else { return }
-            do { try writeLock.withLock {
-                testingMandatoryWrite(true); defer { testingMandatoryWrite(false) }
-                try handle.write(contentsOf: frame)
-            } }
-            catch {
-                let notify = lock.withLock { let active = !retired; retired = true; frames.removeAll(); return active }
+            defer { withExtendedLifetime(frame.ownership) {} }
+            do {
+                if nonblockingWrites {
+                    testingMandatoryWrite(true)
+                    do { defer { testingMandatoryWrite(false) }; try writeNonblocking(frame) }
+                } else {
+                    try writeLock.withLock {
+                        testingMandatoryWrite(true); defer { testingMandatoryWrite(false) }
+                        try handle.write(contentsOf: frame.data)
+                    }
+                }
+            } catch {
+                let notify = lock.withLock {
+                    let active = !retired; retired = true; discardQueued()
+                    bytes -= frame.data.count; frameCount -= 1; draining = false
+                    return active
+                }
+                frame.returned?.finish()
                 if notify { failed() }
+                _ = retire()
                 return
             }
-            lock.withLock { bytes -= frame.count; frameCount -= 1 }
+            lock.withLock { bytes -= frame.data.count; frameCount -= 1 }
+            frame.returned?.finish()
+        }
+    }
+
+    private func writeNonblocking(_ frame: Frame) throws {
+        let fd = handle.fileDescriptor, atomicLimit = fpathconf(fd, _PC_PIPE_BUF)
+        guard atomicLimit > 0 else { throw MLHostError.helperCrashed }
+        var offset = 0
+        while offset < frame.data.count {
+            let count = min(Int(atomicLimit), frame.data.count - offset)
+            let result: (count: Int, error: Int32) = try TranscriptContextOwnership.withValidResult(frame.ownership) {
+                try lock.withLock {
+                    guard !retired else { throw CancellationError() }
+                    let n = frame.data.withUnsafeBytes {
+                        Darwin.write(fd, $0.baseAddress!.advanced(by: offset), count)
+                    }
+                    return (n, n < 0 ? errno : 0)
+                }
+            }
+            if result.count == count { offset += count; continue }
+            if result.count >= 0 { throw MLHostError.helperCrashed } // Atomic FIFO write anomaly.
+            if result.error == EINTR { continue }
+            guard result.error == EAGAIN || result.error == EWOULDBLOCK else { throw MLHostError.helperCrashed }
+            guard !lock.withLock({ retired }) else { throw CancellationError() }
+            try TranscriptContextOwnership.requireValid(frame.ownership)
+            // No source/state/descriptor lock is held while the FIFO is full.
+            var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            let ready = poll(&descriptor, 1, 20)
+            if ready < 0 { if errno == EINTR { continue }; throw MLHostError.helperCrashed }
+            guard descriptor.revents & Int16(POLLERR | POLLHUP | POLLNVAL) == 0 else { throw MLHostError.helperCrashed }
         }
     }
 }

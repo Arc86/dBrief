@@ -92,9 +92,10 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     }
 
     func startChat(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage = .chat,
-        bounded: Bool = false) async -> ChatStreamRun {
-        PrivacyTrace.streamRun(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel)), bounded: bounded) { [connection] in
-            await connection.startStream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage), bounded: bounded)
+        bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) async -> ChatStreamRun {
+        PrivacyTrace.streamRun(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel)), bounded: bounded, ownership: ownership) { [connection] in
+            try TranscriptContextOwnership.requireValid(ownership)
+            return await connection.startStream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage), bounded: bounded, ownership: ownership)
         }
     }
 

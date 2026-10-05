@@ -53,6 +53,35 @@ if mode == "chat-prefix-bound" || mode == "chat-pipe-flood" {
     }
 }
 
+// Physical input regression: observe FIFO occupancy without consuming it.
+// Read admission and real child exit are independently controlled; SIGTERM
+// cannot make a logical cancel look like a physical completion receipt.
+if mode == "owned-input-stall" {
+    signal(SIGTERM, SIG_IGN)
+    let startup = flag("STUB_FLAG_1", default: "owned_input_start")
+    let readRelease = flag("STUB_FLAG_2", default: "owned_input_read")
+    let occupancy = flag("STUB_FLAG_3", default: "owned_input_occupancy")
+    let exitFlag = flag("STUB_FLAG_4", default: "owned_input_exit")
+    retirementExit = exitFlag
+    try? Data("started".utf8).write(to: startup, options: .atomic)
+    let watchdog = Date().addingTimeInterval(30)
+    Thread.detachNewThread {
+        while !FileManager.default.fileExists(atPath: exitFlag.path), Date() < watchdog { Thread.sleep(forTimeInterval: 0.01) }
+        exit(0)
+    }
+    var observed: Int32 = 0
+    while !FileManager.default.fileExists(atPath: readRelease.path), Date() < watchdog {
+        var occupied: Int32 = 0
+        // macOS sys/filio.h: FIONREAD = _IOR('f',127,int), whose compound
+        // macro is unavailable to Swift. IOC_OUT | sizeof(int)<<16 | 'f'<<8 |127.
+        if ioctl(FileHandle.standardInput.fileDescriptor, UInt(0x4004667f), &occupied) == 0, occupied > observed {
+            observed = occupied
+            try? Data(String(occupied).utf8).write(to: occupancy, options: .atomic)
+        }
+        Thread.sleep(forTimeInterval: 0.002)
+    }
+}
+
 // closes-after-unload: like the real helper, `.forceUnload` drains and closes
 // admission, but the process stays alive and rejects every later request.
 var admissionClosed = false
@@ -64,6 +93,9 @@ var liveStub = LiveHelperStub(mode: mode)
 while true {
     let chunk = FileHandle.standardInput.availableData
     if chunk.isEmpty {
+        if mode == "owned-input-stall" {
+            try? Data("eof".utf8).write(to: flag("STUB_FLAG_6", default: "owned_input_eof"), options: .atomic)
+        }
         if let retirementExit {
             while !FileManager.default.fileExists(atPath: retirementExit.path) { Thread.sleep(forTimeInterval: 0.01) }
         }
@@ -89,6 +121,19 @@ while true {
             }
         }
         switch mode {
+        case "owned-input-stall":
+            if case .chatStream = env.request {
+                let url = flag("STUB_FLAG_5", default: "owned_input_decoded")
+                var data = (try? Data(contentsOf: url)) ?? Data()
+                data.append(Data((env.id.uuidString + "\n").utf8)); try? data.write(to: url, options: .atomic)
+            }
+            if case .cancel = env.request {
+                let url = flag("STUB_FLAG_7", default: "owned_input_controls")
+                var data = (try? Data(contentsOf: url)) ?? Data()
+                data.append(Data((env.id.uuidString + "\n").utf8)); try? data.write(to: url, options: .atomic)
+            }
+            if case .forceUnload = env.request { send(.init(id: env.id, channel: .plugin, event: .voidResult)) }
+            send(.init(id: env.id, channel: .plugin, event: .finished))
         case "dispatch-batch":
             if case .cancel = env.request { continue }
             let released = flag("STUB_FLAG_1",default: "stub_batch_released")

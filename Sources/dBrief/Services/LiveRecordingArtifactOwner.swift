@@ -148,6 +148,7 @@ import dBriefWire
         started = true; captureClosed = true; hydratedReadOnly = true; recoveredOwner = true
     }
     func pin() -> Pin { Pin(self) }
+    func contextOwnership() -> TranscriptContextOwnership { .init(pin: pin(), validity: validity) }
     var finalAnchor: (id: UUID, revision: UInt64)? { finalPublication.map { ($0.id, $0.revision) } ?? nativeFinalAnchor }
     /// Explicit RAM adapter. It has a fresh shared token/store and the ordinary
     /// owner reservation, but never starts the artifact writer or invents a
@@ -477,13 +478,13 @@ import dBriefWire
         guard !isNative, !retired else { throw LiveArtifactError.deleted }
         guard !sourceUnavailable else { throw LiveArtifactError.missingEvidence }
         return try LiveTranscriptArtifact(identity: identity, revision: acceptedRevision, legacy: legacy,
-            captureClosed: captureClosed).legacyContext()
+            captureClosed: captureClosed).legacyContext().retaining(contextOwnership())
     }
 
     func finalContext() throws -> TranscriptContextSnapshot? {
         try validity.withValidResult {}
         guard !retired else { throw LiveArtifactError.deleted }
-        return finalPublication?.context(identity: identity)
+        return finalPublication?.context(identity: identity).retaining(contextOwnership())
     }
 
     /// Called only after the raw transcript and processing checkpoint commit.

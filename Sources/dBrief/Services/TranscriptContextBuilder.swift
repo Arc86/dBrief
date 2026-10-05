@@ -1,9 +1,36 @@
 import Foundation
 import dBriefWire
 
+/// Copies retain the original owner's reservation and retirement authority.
+/// Evidence growth does not revoke frozen facts; derivative retirement does.
+final class TranscriptContextOwnership: Sendable {
+    private let pin: LiveRecordingArtifactOwner.Pin
+    private let validity: RecordingDerivativeValidity
+
+    init(pin: LiveRecordingArtifactOwner.Pin, validity: RecordingDerivativeValidity) {
+        self.pin = pin; self.validity = validity
+    }
+    func requireValid() throws { try validity.withValidResult {} }
+    static func requireValid(_ ownership: TranscriptContextOwnership?) throws { try ownership?.requireValid() }
+    static func withValidResult<T>(_ ownership: TranscriptContextOwnership?, _ body: () throws -> T) throws -> T {
+        if let ownership { return try ownership.validity.withValidResult(body) }
+        return try body()
+    }
+}
+
 struct TranscriptContextSnapshot: Sendable, Equatable {
     let source: ChatTranscriptSource
     let segments: [ChatTranscriptSegment]
+    private let ownership: TranscriptContextOwnership?
+    var contextOwnership: TranscriptContextOwnership? { ownership }
+
+    init(source: ChatTranscriptSource, segments: [ChatTranscriptSegment], ownership: TranscriptContextOwnership? = nil) {
+        self.source = source; self.segments = segments; self.ownership = ownership
+    }
+    func retaining(_ ownership: TranscriptContextOwnership) -> Self {
+        .init(source: source, segments: segments, ownership: ownership)
+    }
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.source == rhs.source && lhs.segments == rhs.segments }
 
     static func legacy(text: String, recordingID: UUID?, speakerLabels: [SpeakerLabel], live: Bool = false) -> Self {
         .init(source: .legacy(recordingID: recordingID, live: live, speakerLabels: speakerLabels),
@@ -100,12 +127,13 @@ struct TranscriptContextProvider {
                     } catch { return .init(snapshot: { throw error }) }
                 }
                 let store = entry.store, identity = entry.identity, validity = entry.validity
+                let ownership = entry.artifacts.contextOwnership()
                 return .init(snapshot: {
                     try Task.checkCancellation()
                     let value = await store.snapshot()
                     try validity.withValidResult {}
                     guard value.identity == identity else { throw CancellationError() }
-                    return .live(value)
+                    return TranscriptContextSnapshot.live(value).retaining(ownership)
                 })
             }
             if registry.owns(recordingID: recordingID) { return .init(snapshot: { throw LiveArtifactError.wrongOwner }) }
@@ -142,6 +170,15 @@ struct PreparedTranscriptChat: Sendable, Equatable {
     let systemPrompt: String
     let userMessage: String
     let basis: ChatAnswerBasis
+    private let ownership: TranscriptContextOwnership?
+    var contextOwnership: TranscriptContextOwnership? { ownership }
+
+    init(systemPrompt: String, userMessage: String, basis: ChatAnswerBasis, ownership: TranscriptContextOwnership? = nil) {
+        self.systemPrompt = systemPrompt; self.userMessage = userMessage; self.basis = basis; self.ownership = ownership
+    }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.systemPrompt == rhs.systemPrompt && lhs.userMessage == rhs.userMessage && lhs.basis == rhs.basis
+    }
 }
 
 enum TranscriptContextError: Error, Equatable, LocalizedError {
@@ -165,6 +202,9 @@ enum TranscriptContextBuilder {
 
     static func build(snapshot: TranscriptContextSnapshot, route: ChatRouteBasis, budget: ChatContextBudget,
                       language: OutputLanguage, question: String, history: [ChatMessage], answerID: UUID) throws -> PreparedTranscriptChat {
+        defer { withExtendedLifetime(snapshot) {} }
+        try Task.checkCancellation()
+        try TranscriptContextOwnership.requireValid(snapshot.contextOwnership)
         guard budget.contextTokens >= 2_048, budget.contextTokens <= 1_048_576, budget.outputTokens > 0,
               budget.outputTokens < budget.contextTokens, budget.templateReserve >= 128,
               budget.templateReserve < budget.contextTokens - budget.outputTokens else { throw TranscriptContextError.invalidBudget }
@@ -259,7 +299,10 @@ enum TranscriptContextBuilder {
             budget: .init(contextTokens: budget.contextTokens, estimatedPromptTokens: estimate,
                           outputTokens: budget.outputTokens, templateReserve: budget.templateReserve,
                           counting: "UTF8 byte application estimate; native preflight where available"))
-        return .init(systemPrompt: system, userMessage: user, basis: basis)
+        try Task.checkCancellation()
+        return try TranscriptContextOwnership.withValidResult(snapshot.contextOwnership) {
+            .init(systemPrompt: system, userMessage: user, basis: basis, ownership: snapshot.contextOwnership)
+        }
     }
 
     private static func header(_ source: ChatTranscriptSource, language: OutputLanguage, excerpts: Bool, scanLimited: Bool) -> String {
