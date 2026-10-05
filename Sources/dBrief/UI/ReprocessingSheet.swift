@@ -24,8 +24,11 @@ struct ReprocessingSheet: View {
                 VStack(spacing: 16) {
                     ProgressView("Loading settings…")
                     Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fillsWidth: false))
                 }
                 .padding(32)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .panelWindowChrome()
             }
         }
         .task {
@@ -59,6 +62,7 @@ private struct ReprocessingEditor: View {
     @Environment(RecordingManager.self) private var manager
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.viewerPalette) private var palette
 
     init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool,
          supportsCalendarReload: Bool,
@@ -87,39 +91,52 @@ private struct ReprocessingEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(options.operation.title).uiFont(.title2.weight(.semibold))
-            Text(recording.generatedTitle ?? recording.meetingTitleDraft).lineLimit(2)
-            Text(usingPrevious ? "Using previous attempt settings" : "Using current defaults")
-                .uiFont(.caption).foregroundStyle(.secondary)
-            Form {
-                if options.requiresTranscription { transcriptionControls }
-                if options.requiresAnalysis { analysisControls }
-                if options.operation == .speakers {
-                    Text("Detect speakers on-device using the original audio. Transcript words and timings are preserved; existing speaker assignments and names are replaced.")
+        VStack(alignment: .leading, spacing: 0) {
+            PanelWindowHeader(
+                title: options.operation.title,
+                subtitle: recording.generatedTitle ?? recording.meetingTitleDraft,
+                detail: usingPrevious ? "Using previous attempt settings" : "Using current defaults"
+            )
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 14)
+            MenuPanelHairline()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if options.requiresTranscription { transcriptionControls }
+                    if options.requiresAnalysis { analysisControls }
+                    if options.operation == .speakers {
+                        PanelCard(title: "Speakers") {
+                            PanelNote("Detect speakers on-device using the original audio. Transcript words and timings are preserved; existing speaker assignments and names are replaced.")
+                        }
+                    }
+                    destinationDisclosure
+                    PanelNote("Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt.")
+                    if let message = error ?? validationError {
+                        PanelNote(message, tone: .danger).textSelection(.enabled)
+                    }
                 }
-                destinationDisclosure
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
             }
-            .formStyle(.grouped)
-            .frame(minHeight: 160, maxHeight: 390)
-            Text("Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt.")
-                .uiFont(.callout).foregroundStyle(.secondary)
-            if let message = error ?? validationError {
-                Text(message).foregroundStyle(.red).uiFont(.callout).textSelection(.enabled)
-            }
-            HStack {
+            .scrollBounceBehavior(.basedOnSize)
+            MenuPanelHairline()
+            HStack(spacing: 8) {
+                if isStarting { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fillsWidth: false))
                     .disabled(isStarting)
-                Button(appState.processingJob == nil ? "Start" : "Add to Queue") { start() }
+                Button(appState.processingJob == nil ? "Start" : "Add to queue") { start() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.typographyProminent)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
                     .disabled(isStarting || validationError != nil)
-                if isStarting { ProgressView().controlSize(.small) }
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
         }
-        .padding(24)
         .frame(width: 530)
+        .panelWindowChrome()
         .interactiveDismissDisabled(isStarting)
         .sheet(isPresented: $showWhisperComparison) {
             WhisperModelPicker(modelIDs: whisperModels, selectedID: LocalTranscriptionChoice.id(
@@ -144,44 +161,54 @@ private struct ReprocessingEditor: View {
     }
 
     @ViewBuilder private var transcriptionControls: some View {
-        Section(settingsTitle: "Transcription") {
+        PanelCard(title: "Transcription") {
             if options.engine == .appleSpeech {
                 AppleSpeechLanguagePicker(selection: $options.spokenLanguage, title: "Spoken language")
             } else {
-                Picker("Spoken language", selection: $options.spokenLanguage) {
-                    Text(options.engine == .appleSpeech ? "Automatic (system language)" : "Automatic detection").tag("")
-                    ForEach(languageCodes, id: \.self) { code in
-                        Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                PanelRow(label: "Spoken language") {
+                    Picker("Spoken language", selection: $options.spokenLanguage) {
+                        Text(options.engine == .appleSpeech ? "Automatic (system language)" : "Automatic detection").tag("")
+                        ForEach(languageCodes, id: \.self) { code in
+                            Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                        }
                     }
+                    .labelsHidden().fixedSize()
                 }
             }
-            Picker("Transcription", selection: Binding(
-                get: { options.engine == .remoteEndpoint },
-                set: { options.engine = $0 ? .remoteEndpoint : .localWhisper })) {
-                Text("On this Mac").tag(false)
-                Text("Remote service").tag(true)
+            PanelRow(label: "Transcription") {
+                Picker("Transcription", selection: Binding(
+                    get: { options.engine == .remoteEndpoint },
+                    set: { options.engine = $0 ? .remoteEndpoint : .localWhisper })) {
+                    Text("On this Mac").tag(false)
+                    Text("Remote service").tag(true)
+                }
+                .labelsHidden().fixedSize()
             }
             switch options.engine {
             case .localWhisper:
-                LabeledContent("Whisper model", value: WhisperModelInfo.parse(options.whisperModelName).displayName)
-                Text("Models download on first use.").uiFont(.caption).foregroundStyle(.secondary)
+                PanelRow(label: "Whisper model") { Text(WhisperModelInfo.parse(options.whisperModelName).displayName) }
+                PanelNote("Models download on first use.")
             case .parakeetLocal:
-                LabeledContent("Parakeet model", value: ParakeetModelInfo.find(options.parakeetModelVariant).displayName)
-                Text("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
-                    .uiFont(.caption).foregroundStyle(.secondary)
+                PanelRow(label: "Parakeet model") { Text(ParakeetModelInfo.find(options.parakeetModelVariant).displayName) }
+                PanelNote("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
             case .remoteEndpoint:
-                LabeledContent("Model", value: options.transcriptionEndpoint?.modelName ?? "No endpoint configured")
+                PanelRow(label: "Model") { Text(options.transcriptionEndpoint?.modelName ?? "No endpoint configured") }
             case .appleSpeech:
-                Text("Uses Apple's speech model for the selected language.").uiFont(.caption).foregroundStyle(.secondary)
+                PanelNote("Uses Apple's speech model for the selected language.")
             }
             if options.engine != .remoteEndpoint {
-                Button("Change model") { showWhisperComparison = true }
+                Button("Change model…") { showWhisperComparison = true }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
             }
-            Toggle("Detect speakers", isOn: $options.diarizationEnabled)
-            Toggle("Regenerate AI analysis", isOn: $options.regenerateAI)
+            MenuPanelHairline()
+            PanelRow(label: "Detect speakers") {
+                Toggle("Detect speakers", isOn: $options.diarizationEnabled).labelsHidden().controlSize(.mini)
+            }
+            PanelRow(label: "Regenerate AI analysis") {
+                Toggle("Regenerate AI analysis", isOn: $options.regenerateAI).labelsHidden().controlSize(.mini)
+            }
             if !options.regenerateAI {
-                Text("Existing analysis will be kept and marked as based on the previous transcript.")
-                    .uiFont(.caption).foregroundStyle(.secondary)
+                PanelNote("Existing analysis will be kept and marked as based on the previous transcript.")
             }
         }
     }
@@ -205,41 +232,47 @@ private struct ReprocessingEditor: View {
     }
 
     private var analysisControls: some View {
-        Section(settingsTitle: "AI analysis") {
-            LabeledContent("AI engine", value: options.aiEngine.displayName)
+        PanelCard(title: "AI analysis") {
+            PanelRow(label: "AI engine") { Text(options.aiEngine.displayName) }
             if supportsCalendarReload {
-                Toggle("Refresh selected calendar attendees", isOn: Binding(
-                    get: { options.loadCalendarParticipants == true },
-                    set: { options.loadCalendarParticipants = $0 }))
+                PanelRow(label: "Refresh selected calendar attendees") {
+                    Toggle("Refresh selected calendar attendees", isOn: Binding(
+                        get: { options.loadCalendarParticipants == true },
+                        set: { options.loadCalendarParticipants = $0 }))
+                    .labelsHidden().controlSize(.mini)
+                }
             }
-            Picker("AI output language", selection: outputLanguageSelection) {
-                Text("Match transcript").tag("match")
-                Text("English").tag("en")
-                Text("Dutch").tag("nl")
-                Text("Custom language code").tag("custom")
+            PanelRow(label: "AI output language") {
+                Picker("AI output language", selection: outputLanguageSelection) {
+                    Text("Match transcript").tag("match")
+                    Text("English").tag("en")
+                    Text("Dutch").tag("nl")
+                    Text("Custom language code").tag("custom")
+                }
+                .labelsHidden().fixedSize()
             }
             if case .custom(let code) = options.outputLanguage {
                 TextField("Language code", text: Binding(get: { code }, set: { options.outputLanguage = .custom($0) }))
+                    .panelTextField()
             }
         }
     }
 
     private var destinationDisclosure: some View {
-        Section(settingsTitle: "Processing destinations") {
+        PanelCard(title: "Processing destinations") {
             if options.requiresTranscription && options.engine == .remoteEndpoint {
-                Text("Audio → \(destination(options.transcriptionEndpoint))")
+                PanelRow(label: "Audio") { Text(destination(options.transcriptionEndpoint)) }
             }
             if options.requiresAnalysis && options.aiEngine == .remoteEndpoint {
-                Text("Transcript → \(destination(options.aiEndpoint))")
+                PanelRow(label: "Transcript") { Text(destination(options.aiEndpoint)) }
             }
             if options.requiresAnalysis && options.aiEngine == .localCLI {
-                Text("Transcript is passed to your configured Local CLI command, which may use an external service.")
+                PanelNote("Transcript is passed to your configured Local CLI command, which may use an external service.")
             }
             if options.requiresTranscription && !options.vocabulary.isEmpty && options.spellingEngine == .remoteEndpoint {
-                Text("Transcript for vocabulary correction → \(destination(options.aiEndpoint))")
+                PanelRow(label: "Vocabulary correction") { Text(destination(options.aiEndpoint)) }
             }
-            Text("Speaker detection runs on this Mac. Integration delivery and exports are separate actions.")
-                .uiFont(.caption).foregroundStyle(.secondary)
+            PanelNote("Speaker detection runs on this Mac. Integration delivery and exports are separate actions.")
         }
     }
 

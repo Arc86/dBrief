@@ -6,6 +6,7 @@ struct CalendarLinkSheet: View {
     var dismissAction: (() -> Void)? = nil
     @Environment(RecordingManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.viewerPalette) private var palette
     @State private var events: [CalendarEvent] = []
     @State private var meetingList: CalendarLinkMeetingList?
     @State private var selectedID: CalendarLinkSelectionID?
@@ -29,42 +30,63 @@ struct CalendarLinkSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(saved ? "Calendar meeting linked" : "Link calendar meeting")
-                .uiFont(.title2.weight(.semibold))
-            if saved {
-                Text("The meeting context is saved. Existing generated results are kept until you choose to regenerate them.")
-                Text("Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees.")
-                    .foregroundStyle(.secondary)
-                Text("Previously exported files and content sent to integrations are not updated automatically.")
-                    .uiFont(.callout).foregroundStyle(.secondary)
-                HStack {
-                    Spacer()
-                    Button("Done") { close() }.keyboardShortcut(.cancelAction)
-                    if hasTranscript {
-                        Button("Re-run AI analysis…") { showAnalysis = true }
-                            .buttonStyle(.typographyProminent).keyboardShortcut(.defaultAction)
-                    }
-                }
-            } else {
-                Text(meetingList.map {
+        VStack(alignment: .leading, spacing: 0) {
+            PanelWindowHeader(
+                title: saved ? "Calendar meeting linked" : "Link calendar meeting",
+                subtitle: saved ? nil : (meetingList.map {
                     "Meetings from \($0.recordingStart.formatted(date: .abbreviated, time: .omitted)), with likely matches first."
                 } ?? "Meetings from the recording’s original day, with likely matches first.")
-                    .foregroundStyle(.secondary)
-                if loading && meetingList == nil {
-                    ProgressView("Loading meetings…")
-                } else {
-                    if let status = meetingList?.statusMessage {
-                        Label(status, systemImage: "calendar.badge.clock")
-                            .uiFont(.callout).foregroundStyle(.secondary)
-                            .accessibilityAddTraits(.updatesFrequently)
-                    }
-                    if refreshing { ProgressView("Refreshing this date…").controlSize(.small) }
-                    if events.isEmpty {
-                        if let empty = meetingList?.emptyMessage {
-                            Text(empty).foregroundStyle(.secondary)
-                        }
-                    } else {
+            )
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 14)
+            MenuPanelHairline()
+            VStack(alignment: .leading, spacing: 14) {
+                if saved { savedContent } else { pickerContent }
+                if let error { PanelNote(error, tone: .danger).textSelection(.enabled) }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            MenuPanelHairline()
+            footer
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+        }
+        .frame(width: 540)
+        .panelWindowChrome()
+        .disabled(saving)
+        .interactiveDismissDisabled(saving)
+        .task(id: recording.id) { await loadCached() }
+        .onDisappear { refreshTask?.cancel(); requestID = UUID() }
+        .sheet(isPresented: $showAnalysis, onDismiss: { close() }) {
+            ReprocessingSheet(recording: recording, operation: .analysis)
+        }
+    }
+
+    @ViewBuilder private var savedContent: some View {
+        PanelCard {
+            PanelNote("The meeting context is saved. Existing generated results are kept until you choose to regenerate them.")
+            PanelNote("Re-run AI analysis to update the summary, action items, and tags using the meeting agenda and participants. Review speaker names in the transcript using the meeting attendees.")
+            PanelNote("Previously exported files and content sent to integrations are not updated automatically.")
+        }
+    }
+
+    @ViewBuilder private var pickerContent: some View {
+        if loading && meetingList == nil {
+            PanelProgressLabel("Loading meetings…")
+        } else {
+            if let status = meetingList?.statusMessage {
+                Label(status, systemImage: "calendar.badge.clock")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+            if refreshing { PanelProgressLabel("Refreshing this date…") }
+            if events.isEmpty {
+                if let empty = meetingList?.emptyMessage { PanelNote(empty) }
+            } else {
+                PanelCard {
+                    PanelRow(label: "Meeting") {
                         Picker("Meeting", selection: Binding(
                             get: { selectedID },
                             set: { selectedID = $0; if retainedSelection?.0 != $0 { retainedSelection = nil } }
@@ -74,41 +96,66 @@ struct CalendarLinkSheet: View {
                                 Text(label(event)).tag(Optional(selectionID(for: event)))
                             }
                         }
-                        if let event = selected {
-                            if !event.attendeeNames.isEmpty {
-                                Text(event.attendeeNames.joined(separator: ", ")).uiFont(.callout)
-                            }
-                            if !event.body.isEmpty {
-                                ScrollView { Text(event.body).uiFont(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
-                                    .frame(maxHeight: 130)
-                            }
-                            Toggle("Use meeting title", isOn: $updateTitle)
-                            Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
-                            Text("The full calendar context is saved even when these fields are kept.")
-                                .uiFont(.caption).foregroundStyle(.secondary)
-                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 340)
                     }
-                }
-                if let error { Text(error).foregroundStyle(.red).uiFont(.callout).textSelection(.enabled) }
-                HStack {
-                    Button("Refresh this date") { startRefresh(force: true) }
-                        .disabled(loading || refreshing || saving)
-                    Spacer()
-                    Button("Cancel") { close() }.keyboardShortcut(.cancelAction).disabled(saving)
-                    Button("Link Meeting") { save() }
-                        .buttonStyle(.typographyProminent).keyboardShortcut(.defaultAction)
-                        .disabled(selected == nil || saving)
-                    if saving { ProgressView().controlSize(.small) }
+                    if let event = selected {
+                        if !event.attendeeNames.isEmpty {
+                            PanelRow(label: "Attendees") {
+                                Text(event.attendeeNames.joined(separator: ", ")).lineLimit(3)
+                            }
+                        }
+                        if !event.body.isEmpty {
+                            ScrollView {
+                                Text(event.body)
+                                    .uiFont(.system(size: 11))
+                                    .foregroundStyle(palette.text.color)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(maxHeight: 110)
+                        }
+                        MenuPanelHairline()
+                        PanelRow(label: "Use meeting title") {
+                            Toggle("Use meeting title", isOn: $updateTitle).labelsHidden().controlSize(.mini)
+                        }
+                        PanelRow(label: "Replace participants with attendees") {
+                            Toggle("Replace participants with meeting attendees", isOn: $updateParticipants)
+                                .labelsHidden().controlSize(.mini)
+                        }
+                        PanelNote("The full calendar context is saved even when these fields are kept.")
+                    }
                 }
             }
         }
-        .padding(24).frame(width: 540)
-        .disabled(saving)
-        .interactiveDismissDisabled(saving)
-        .task(id: recording.id) { await loadCached() }
-        .onDisappear { refreshTask?.cancel(); requestID = UUID() }
-        .sheet(isPresented: $showAnalysis, onDismiss: { close() }) {
-            ReprocessingSheet(recording: recording, operation: .analysis)
+    }
+
+    @ViewBuilder private var footer: some View {
+        HStack(spacing: 8) {
+            if saved {
+                Spacer()
+                Button("Done") { close() }.keyboardShortcut(.cancelAction)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fillsWidth: false))
+                if hasTranscript {
+                    Button("Re-run AI analysis…") { showAnalysis = true }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
+                }
+            } else {
+                Button { startRefresh(force: true) } label: {
+                    Label("Refresh this date", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 30, fontSize: 12))
+                .disabled(loading || refreshing || saving)
+                Spacer()
+                if saving { ProgressView().controlSize(.small) }
+                Button("Cancel") { close() }.keyboardShortcut(.cancelAction).disabled(saving)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fillsWidth: false))
+                Button("Link meeting") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
+                    .disabled(selected == nil || saving)
+            }
         }
     }
 

@@ -74,8 +74,8 @@ struct MenuPanelButtonStyle: ButtonStyle {
     }
 }
 
-/// The panel's one neon moment: a brand-gradient hairline with a faint glow, used for
-/// the Recording library entry. With Reduce neon it becomes a plain accent outline.
+/// The panel's one neon moment: a brand-gradient hairline (no glow), used for the
+/// Recording library entry. With Reduce neon it becomes a plain accent outline.
 struct MenuPanelNeonButtonStyle: ButtonStyle {
     var height: CGFloat = 32
     @Environment(\.viewerPalette) private var palette
@@ -91,14 +91,6 @@ struct MenuPanelNeonButtonStyle: ButtonStyle {
             .lineLimit(1)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: height)
-            .background {
-                if !calm {
-                    // Soft halo: the same gradient, blurred, just outside the edge.
-                    shape.stroke(stroke, lineWidth: 3)
-                        .blur(radius: 5)
-                        .opacity(configuration.isPressed ? 0.6 : 0.35)
-                }
-            }
             .background(palette.surface.color, in: shape)
             .overlay {
                 shape.strokeBorder(calm ? AnyShapeStyle(palette.primary.color) : AnyShapeStyle(stroke), lineWidth: 1.25)

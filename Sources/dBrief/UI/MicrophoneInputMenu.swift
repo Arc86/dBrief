@@ -18,7 +18,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = false
-        button.font = .systemFont(ofSize: 12)
+        button.font = .systemFont(ofSize: 11)
         button.setAccessibilityLabel("Microphone input")
         let menu = NSMenu()
         menu.font = button.font

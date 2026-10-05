@@ -47,8 +47,10 @@ struct MenuPanelSnapshotTests {
                     integrationDeliveryStore: IntegrationDeliveryStore(rootURL: root.appendingPathComponent("deliveries")))
                 manager.reprocessingRecoveryReady = true
                 configure(state)
+                // "w-" fixtures are whole windows that size themselves.
+                let isWindow = name.hasPrefix("w-")
                 let content: AnyView = fixture.map { make in
-                    AnyView(make().padding(16).frame(width: MenuBarView.panelWidth))
+                    isWindow ? make() : AnyView(make().padding(16).frame(width: MenuBarView.panelWidth))
                 } ?? AnyView(MenuBarView())
                 try await render(content
                     .environment(state)
@@ -56,7 +58,8 @@ struct MenuPanelSnapshotTests {
                     .environment(manager)
                     .environment(AudioPlayer())
                     .environment(MicrosoftAuthService()),
-                    mode: mode, to: output.appendingPathComponent("\(name)-\(mode.rawValue).png"))
+                    mode: mode, width: isWindow ? nil : MenuBarView.panelWidth,
+                    to: output.appendingPathComponent("\(name)-\(mode.rawValue).png"))
             }
         }
     }
@@ -94,6 +97,23 @@ struct MenuPanelSnapshotTests {
             }) }),
             ("05-queue", { _ in }, { AnyView(ProcessingQueueView(expanded: .constant(true))) }),
             ("01-call-detected", { state in state.detectedCallApp = "Teams" }, { AnyView(CallDetectedPopup()) }),
+            ("w-reprocess", { _ in }, { AnyView(ReprocessingSheet(recording: recording(), operation: .transcribe, dismissAction: {})) }),
+            ("w-calendar-link", { _ in }, { AnyView(CalendarLinkSheet(recording: recording(), hasTranscript: true, dismissAction: {})) }),
+            ("w-speaker-review", { _ in }, {
+                let items = [
+                    SpeakerReviewItem(id: "Speaker 1", proposedName: "Speaker 1", reason: .noEmbedding, confidence: 0,
+                                      personId: nil, clusterEmbedding: [], snippet: nil),
+                    SpeakerReviewItem(id: "Speaker 2", proposedName: "Jesper Mol", reason: .matched, confidence: 0.82,
+                                      personId: nil, clusterEmbedding: [], snippet: (start: 1, end: 4)),
+                ]
+                let draft = SpeakerReviewDraft(items: items)
+                return AnyView(SpeakerReviewContent(
+                    draft: draft, meetingTitle: nil, meetingNames: ["Jep"], library: VoiceLibrary(),
+                    libraryLoading: false, masterAudioURL: audio, samplePlayer: AudioPlayer(),
+                    beforeAnalysis: true, onConfirm: {}, onCancel: {})
+                    .frame(width: SpeakerReviewView.contentSize.width, height: SpeakerReviewView.contentSize.height)
+                    .panelWindowChrome())
+            }),
             ("07-recording", { state in
                 state.recordingState = .recording
                 state.recordingDuration = 9
@@ -143,7 +163,7 @@ struct MenuPanelSnapshotTests {
         ]
     }
 
-    private func render<V: View>(_ view: V, mode: ViewerAppearanceMode, to url: URL) async throws {
+    private func render<V: View>(_ view: V, mode: ViewerAppearanceMode, width fixedWidth: CGFloat?, to url: URL) async throws {
         let typography = AppTypographyPreferences()
         let env = ProcessInfo.processInfo.environment
         let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: env["DBRIEF_MENU_SNAPSHOT_ACCENT"] ?? "#1268F5",
@@ -161,7 +181,7 @@ struct MenuPanelSnapshotTests {
             .buttonStyle(.typographyBordered).menuStyle(.button)
             .tint(palette.primary.color)
             .fixedSize(horizontal: false, vertical: true))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: MenuBarView.panelWidth, height: 1200),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: fixedWidth ?? 900, height: 1200),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -169,8 +189,9 @@ struct MenuPanelSnapshotTests {
         window.orderFront(nil)
         try await Task.sleep(for: .milliseconds(400))
         let size = host.fittingSize
-        window.setContentSize(NSSize(width: MenuBarView.panelWidth, height: size.height))
-        host.frame = NSRect(origin: .zero, size: NSSize(width: MenuBarView.panelWidth, height: size.height))
+        let width = fixedWidth ?? size.width
+        window.setContentSize(NSSize(width: width, height: size.height))
+        host.frame = NSRect(origin: .zero, size: NSSize(width: width, height: size.height))
         try await Task.sleep(for: .milliseconds(150))
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
