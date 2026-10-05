@@ -10,6 +10,8 @@ struct MenuPanelButtonStyle: ButtonStyle {
     var kind: Kind
     var height: CGFloat = 33
     var fontSize: CGFloat? = nil
+    /// Secondary actions stretch to share a row; set false for a button sized to its label.
+    var fillsWidth = true
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
     @Environment(\.isEnabled) private var isEnabled
@@ -21,7 +23,7 @@ struct MenuPanelButtonStyle: ButtonStyle {
             .foregroundStyle(foreground)
             .lineLimit(1)
             .padding(.horizontal, kind == .quiet ? 0 : 11)
-            .frame(maxWidth: kind == .quiet ? nil : .infinity, minHeight: height)
+            .frame(maxWidth: kind == .quiet || !fillsWidth ? nil : .infinity, minHeight: height)
             .background(background, in: shape)
             .overlay {
                 if let border {

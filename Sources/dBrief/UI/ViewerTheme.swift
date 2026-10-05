@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 extension ViewerRGB {
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
+    var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
 }
 
 private struct ViewerPaletteKey: EnvironmentKey {

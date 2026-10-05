@@ -9,6 +9,8 @@ struct MicrophoneInputMenu: NSViewRepresentable {
     /// The device actually recording, shown as the chip title.
     let activeName: String?
     let enabled: Bool
+    /// Title colour while the microphone is usable (panel success colour).
+    var tint: NSColor = .systemGreen
     let select: @MainActor (String?) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -16,7 +18,7 @@ struct MicrophoneInputMenu: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = false
-        button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        button.font = .systemFont(ofSize: 12)
         button.setAccessibilityLabel("Microphone input")
         let menu = NSMenu()
         menu.font = button.font
@@ -28,9 +30,12 @@ struct MicrophoneInputMenu: NSViewRepresentable {
 
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         context.coordinator.parent = self
-        button.contentTintColor = enabled ? .systemGreen : .secondaryLabelColor
+        button.contentTintColor = enabled ? tint : .secondaryLabelColor
         // A pull-down button shows its first item as the title.
-        button.menu?.item(at: 0)?.title = context.coordinator.chipTitle
+        button.menu?.item(at: 0)?.attributedTitle = NSAttributedString(
+            string: context.coordinator.chipTitle,
+            attributes: [.foregroundColor: enabled ? tint : NSColor.secondaryLabelColor,
+                         .font: button.font ?? NSFont.systemFont(ofSize: 12)])
         button.setAccessibilityValue(activeName)
     }
 

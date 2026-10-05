@@ -32,7 +32,7 @@ struct MenuPanelSnapshotTests {
             .split(separator: ",").compactMap { ViewerAppearanceMode(rawValue: String($0)) }
         let only = ProcessInfo.processInfo.environment["DBRIEF_MENU_SNAPSHOT_STATES"]?.split(separator: ",").map(String.init)
 
-        for (name, configure) in Self.states(root: root) where only == nil || only!.contains(name) {
+        for (name, configure, fixture) in Self.states(root: root) where only == nil || only!.contains(name) {
             for mode in modes {
                 let state = AppState()
                 let manager = RecordingManager(appState: state, appSettings: settings,
@@ -46,7 +46,10 @@ struct MenuPanelSnapshotTests {
                     integrationDeliveryStore: IntegrationDeliveryStore(rootURL: root.appendingPathComponent("deliveries")))
                 manager.reprocessingRecoveryReady = true
                 configure(state)
-                try await render(MenuBarView()
+                let content: AnyView = fixture.map { make in
+                    AnyView(make().padding(16).frame(width: MenuBarView.panelWidth))
+                } ?? AnyView(MenuBarView())
+                try await render(content
                     .environment(state)
                     .environment(settings)
                     .environment(manager)
@@ -57,24 +60,26 @@ struct MenuPanelSnapshotTests {
         }
     }
 
-    private static func states(root: URL) -> [(String, (AppState) -> Void)] {
+    /// (name, AppState setup, optional stand-alone fixture rendered instead of the whole panel)
+    private static func states(root: URL) -> [(String, (AppState) -> Void, (() -> AnyView)?)] {
         let audio = root.appendingPathComponent("2026-10-05_1000_HVA VU Mailen.m4a")
         FileManager.default.createFile(atPath: audio.path, contents: Data())
         func recording() -> Recording {
             Recording(fileURL: audio, duration: 11, fileSize: 6_800_000, meetingTitleDraft: "HVA / VU Mailen", finalizedAudioURL: audio)
         }
         return [
-            ("03-ready", { _ in }),
+            ("03-ready", { _ in }, nil),
+            ("06-video-url", { _ in }, { AnyView(YouTubeURLInputView(isVisible: .constant(true))) }),
             ("07-recording", { state in
                 state.recordingState = .recording
                 state.recordingDuration = 9
                 state.peakLevel = 0.5
                 state.activeMicrophoneName = "MacBook Pro Microphone"
-            }),
+            }, nil),
             ("08-completed", { state in
                 state.currentRecording = recording()
                 state.showPostRecordingSheet = true
-            }),
+            }, nil),
             ("11-processing", { state in
                 state.processingJob = ProcessingJob(recording: recording())
                 state.processingRecording = recording()
@@ -85,7 +90,7 @@ struct MenuPanelSnapshotTests {
                     ProcessingStep(name: "Extracting action items", status: .pending),
                     ProcessingStep(name: "Analyzing tags & sentiment", status: .pending),
                 ]
-            }),
+            }, nil),
             ("12-brief", { state in
                 var done = recording()
                 done.summary = "Dit was een korte testopname zonder inhoudelijke vergadering; er is enkel geverifieerd dat de opname werkt."
@@ -96,7 +101,7 @@ struct MenuPanelSnapshotTests {
                     ProcessingStep(name: "Finalizing audio", status: .completed),
                     ProcessingStep(name: "Generating summary", status: .completed),
                 ]
-            }),
+            }, nil),
         ]
     }
 
@@ -105,6 +110,7 @@ struct MenuPanelSnapshotTests {
         let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: "#1268F5", nonNeon: false)
         let scheme: ColorScheme = mode.isDark ? .dark : .light
         let host = NSHostingView(rootView: view
+            .background(palette.surface.color)
             .environment(\.uiTypography, typography)
             .environment(\.font, AppFontStyle.body.resolve(using: typography))
             .environment(\.viewerPalette, palette)
