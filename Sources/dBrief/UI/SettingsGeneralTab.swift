@@ -8,15 +8,13 @@ struct SettingsGeneralTab: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        GeometryReader { geometry in
-            Form {
+        Form {
                 Section("Appearance", settingsSearch: .appearance) {
                     SettingsAppearanceEditor(
                         preferences: $settings.viewerAppearance,
                         typography: $settings.uiTypography,
                         nonNeon: $settings.reduceNeon
                     )
-                    .frame(width: max(0, geometry.size.width - 64))
                 }
                 .listRowBackground(Color.clear)
 
@@ -78,6 +76,5 @@ struct SettingsGeneralTab: View {
         .scrollBounceBehavior(.basedOnSize)
         .toggleStyle(.smallSwitch)
         .padding(.top, -20)
-        }
     }
 }

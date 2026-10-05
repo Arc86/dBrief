@@ -21,7 +21,7 @@ struct SettingsAppearanceVisualTests {
             (ViewerReadingFont.inter, 12, ColorScheme.light),
             (.inter, 13, .dark), (.openDyslexic, 20, .light)
         ] {
-            for width: CGFloat in [520, 760] {
+            for width: CGFloat in [520, 760, 1400] {
                 let typography = AppTypographyPreferences(readingFont: font, fontSize: size)
                 let palette = ViewerThemeResolver.resolve(mode: scheme == .dark ? .dark : .light,
                     sourceHex: "#1268F5", nonNeon: true)
@@ -60,20 +60,22 @@ private struct AppearanceFixture: View {
     @Environment(\.uiTypography) private var initialTypography
     @State private var typography: AppTypographyPreferences?
     var body: some View {
-        GeometryReader { geometry in
-            Form {
+        Form {
                 Section("Appearance") {
                     SettingsAppearanceEditor(preferences: $preferences,
                         typography: Binding(get: { typography ?? initialTypography }, set: { typography = $0 }),
                         nonNeon: $nonNeon)
-                        .frame(width: max(0, geometry.size.width - 96))
                 }
                 .listRowBackground(Color.clear)
+
+                // A plain section beside it: the editor must share its column width.
+                Section("App behavior") {
+                    Toggle("Start at login", isOn: .constant(false))
+                }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .padding(16)
         .background(Color(nsColor: .windowBackgroundColor))
-        }
     }
 }
