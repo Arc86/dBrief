@@ -47,6 +47,7 @@ final class LiveRecordingSessionRegistry {
             captureClosed = true; artifacts.configureNonpersistingFinalOnly(audioURL: audioURL, anchor: anchor)
         }
         fileprivate func invalidate() {
+            coordinator?.sealAttribution()
             isValid = false; validity.invalidate()
             richWriteValidity.invalidate()
             richDeletionAdmission.invalidate()
@@ -133,6 +134,22 @@ final class LiveRecordingSessionRegistry {
     private let afterCheckpoint: @Sendable () async -> Void
     private let budget: LiveRecordingPayloadBudget
     var reservedPayloadBytes: Int { budget.reservedBytes }
+    func reserveAttributionWorking(_ identity: LiveSessionIdentity) throws -> LiveRecordingPayloadBudget.Lease {
+        guard !terminationStarted, let entry = entry(identity: identity), entry.isValid, !entry.captureClosed,
+              entry.coordinator != nil else { throw Failure.retired }
+        return try budget.reserveAuxiliary(bytes: LiveAttributionWorkingSet.limit)
+    }
+    /// Called synchronously at the original pressure callback, before any hop.
+    func sealAttributionForPressure(_ pressure: LiveResourceMeasurement.Pressure) {
+        guard pressure != .normal else { return }
+        for entry in entries.values { entry.coordinator?.sealAttribution() }
+        for replacement in replacements.values { replacement.original?.coordinator?.sealAttribution() }
+    }
+    func applyResourcePressure(_ measurement: LiveResourceMeasurement, policy: LiveModelResourcePolicy) async {
+        let actions = await policy.pressureActions(measurement)
+        let owners = Array(entries.values) + replacements.values.compactMap(\.original)
+        for owner in owners { owner.coordinator?.retireAttribution(leaseIDs: actions.retireAttribution,policy: policy) }
+    }
     func reserveDeletionMaintenance() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveMaintenance() }
     func reserveInspection() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveAuxiliary(bytes: LiveManagedArtifactCatalogue.inspectionBytes) }
     func reserveReprocessingInspection() throws -> LiveRecordingPayloadBudget.Lease { try budget.reserveAuxiliary(bytes: 32 * 1_024 * 1_024) }

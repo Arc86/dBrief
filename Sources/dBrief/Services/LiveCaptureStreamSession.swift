@@ -233,7 +233,7 @@ final class LiveCaptureStreamSession: @unchecked Sendable {
     func beginClosing() {
         let changed = lock.withLock {
             guard !state.closing, !state.expired else { return false }
-            state.closing = true; ingress.closeInput(); cancelPauseTasksWhileLocked(); return true
+            state.closing = true; coordinator.sealAttribution(); ingress.closeInput(); cancelPauseTasksWhileLocked(); return true
         }
         guard changed else { return }
         Task {
@@ -272,7 +272,7 @@ final class LiveCaptureStreamSession: @unchecked Sendable {
     func expire() {
         let tasks = lock.withLock { () -> [Task<Void, Never>]? in
             guard !state.expired else { return nil }
-            state.expired = true; state.closing = true; ingress.retireInput(); cancelPauseTasksWhileLocked()
+            state.expired = true; state.closing = true; coordinator.sealAttribution(); ingress.retireInput(); cancelPauseTasksWhileLocked()
             return state.consumers
         }
         guard let tasks else { return }

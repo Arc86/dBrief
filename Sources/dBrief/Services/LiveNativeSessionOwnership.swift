@@ -63,7 +63,8 @@ final class LiveNativeSessionOwnership: @unchecked Sendable {
                     await original.transport.shutdown()
                 }
                 original.ingress?.confirmNativeRetired(owner: original.owner)
-                original.preparation?.retireNativeAssets(owner: original.owner)
+                await original.preparation?.attribution?.joinAfterExit()
+                await original.preparation?.retireNativeAssets(owner: original.owner)?.value
                 if let resources = original.resources, let lease = original.lease { await resources.release(lease) }
             }
             shutdownTask = work; return work

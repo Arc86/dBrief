@@ -159,6 +159,12 @@ public final class LiveDiarizationModelAssets: Sendable {
     }
     public func bind(to owner: UUID) -> Bool { assets.bind(to: owner) }
     public func prepare(owner: UUID) async throws { try await assets.prepare(owner: owner) }
+    /// Capture's shared working reservation bounds descriptor payload separately
+    /// from staging disk/native cost. Legacy/helper callers keep the nil default.
+    package func prepare(owner: UUID, captureInventoryLimit: Int) async throws {
+        guard (1...65_536).contains(captureInventoryLimit) else { throw LiveASRAssetError.oversized }
+        try await assets.prepare(owner: owner, inventory: .init(limit: captureInventoryLimit))
+    }
     public func snapshot(owner: UUID) throws -> LiveDiarizationReadOnlySnapshot { try .init(assets.snapshot(owner: owner)) }
     @discardableResult public func retire(owner: UUID) -> Task<Void,Never>? { assets.retire(owner: owner) }
 }
@@ -221,7 +227,7 @@ private final class OwnedModelAssets: Sendable {
     func snapshot(owner: UUID) throws -> OwnedReadOnlySnapshot { try state.snapshot(owner) }
 
     /// The async caller may await real copying; hardware Stop only seals State.
-    public func prepare(owner: UUID) async throws {
+    public func prepare(owner: UUID, inventory: ASRInventoryBudget? = nil) async throws {
         guard state.begin(owner) else { throw LiveASRAssetError.invalidConfiguration }
         let ticket = try budget.beginWorker(kind: configuration.stagingKind)
         let worker = Task.detached(priority: .utility) { [self] in
@@ -234,7 +240,7 @@ private final class OwnedModelAssets: Sendable {
                 let sourceRoot = try ASRAssetTree.directory(path: sourceDirectory.path)
                 // Reject a private staging parent nested inside this cache.
                 _ = try ASRAssetTree.directory(path: parentPath,rejecting: sourceRoot.identity)
-                let source = try ASRAssetTree.scan(root: sourceRoot,parent: nil,name: "",path: sourceDirectory.path,limits: limits,configuration: configuration,readOnly: false)
+                let source = try ASRAssetTree.scan(root: sourceRoot,parent: nil,name: "",path: sourceDirectory.path,limits: limits,configuration: configuration,readOnly: false,inventory: inventory)
                 try budget.allocate(ticket,bytes: source.totalBytes,parent: parent.fd); try check(owner)
                 let root = try await createDirectory(parent,name: name,path: "",created: &created,unrecorded: &unrecordedDirectory,owner: owner,ticket: ticket)
                 var directories = ["":root]
@@ -280,7 +286,7 @@ private final class OwnedModelAssets: Sendable {
                 for entry in created.reversed() where !entry.path.isEmpty {
                     guard let directory = entry.directory, fchmod(directory.fd,0o555) == 0 else { throw LiveASRAssetError.invalidAsset }
                 }
-                let tree = ASRAssetTree(root: root,parent: parent,name: name,path: configuration.path,entries: copied,totalBytes: source.totalBytes,configuration: configuration)
+                let tree = ASRAssetTree(root: root,parent: parent,name: name,path: configuration.path,entries: copied,totalBytes: source.totalBytes,configuration: configuration,inventory: inventory)
                 let checked = try tree.fingerprint(configuration)
                 let snapshot = OwnedReadOnlySnapshot(tree: tree,configuration: configuration,fingerprint: checked.0,witness: checked.1)
                 let prepared = ASROwnedSnapshot(snapshot: snapshot,created: created,leaves: copied.filter { $0.directory == nil },budget: budget,ticket: ticket)
@@ -354,24 +360,71 @@ private final class ASROwnedSnapshot: @unchecked Sendable {
     }
 }
 
+/// One capture-only meter survives in the copied tree. Entry charges include
+/// every retained source/copied/created/filtered/sorted inventory without COW
+/// credit. Scratch is aggregate across recursive lists and concurrent validation.
+private final class ASRInventoryBudget: @unchecked Sendable {
+    final class Scratch {
+        private let budget: ASRInventoryBudget
+        private var bytes = 0
+        fileprivate init(_ budget: ASRInventoryBudget) { self.budget = budget }
+        func add(_ count: Int) throws { try budget.reserveScratch(count); bytes += count }
+        deinit { budget.releaseScratch(bytes) }
+    }
+    static let attemptedPathBytes = 32 * 1_024
+    private let limit: Int
+    private let lock = NSLock()
+    private var entries = 0, scratchBytes = 0
+    init(limit: Int) { self.limit = limit }
+    func admit(path: String, name: String) throws {
+        let length = path.utf8.count.addingReportingOverflow(name.utf8.count)
+        let terminated = length.partialValue.addingReportingOverflow(2)
+        let variable = terminated.partialValue.multipliedReportingOverflow(by: 4)
+        let charge = variable.partialValue.addingReportingOverflow(2_048)
+        guard !length.overflow, !terminated.overflow, !variable.overflow, !charge.overflow else { throw LiveASRAssetError.oversized }
+        try lock.withLock {
+            guard charge.partialValue <= limit - entries else { throw LiveASRAssetError.oversized }
+            entries += charge.partialValue
+        }
+    }
+    func scratch(bytes: Int = 0) throws -> Scratch {
+        let charge = Scratch(self);try charge.add(bytes);return charge
+    }
+    private func reserveScratch(_ count: Int) throws {
+        try lock.withLock {
+            guard count >= 0, count <= 65_536 - scratchBytes else { throw LiveASRAssetError.oversized }
+            scratchBytes += count
+        }
+    }
+    private func releaseScratch(_ count: Int) { lock.withLock { scratchBytes -= count } }
+}
+private struct ASRDirectoryNames {
+    let values: [String]
+    let scratch: ASRInventoryBudget.Scratch?
+}
+
 private final class ASRAssetTree: Sendable {
     let root: ASRDirectory; let parent: ASRDirectory?; let name: String; let rootPath: String
     let entries: [ASRTreeEntry]; let totalBytes: UInt64; let configuration: OwnedModelConfiguration
+    private let inventory: ASRInventoryBudget?
     static let models: Set<String> = ["encoder.mlmodelc","decoder.mlmodelc","joint.mlmodelc","preprocessor.mlmodelc",
         "decoder_joint_argmax.mlmodelc","decoder_joint_noencproj.mlmodelc","decoder_joint.mlmodelc","joint_noencproj_batched.mlmodelc"]
-    init(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String, entries: [ASRTreeEntry], totalBytes: UInt64, configuration: OwnedModelConfiguration) {
-        self.root = root; self.parent = parent; self.name = name; rootPath = path; self.entries = entries; self.totalBytes = totalBytes; self.configuration = configuration
+    init(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String, entries: [ASRTreeEntry], totalBytes: UInt64, configuration: OwnedModelConfiguration, inventory: ASRInventoryBudget? = nil) {
+        self.root = root; self.parent = parent; self.name = name; rootPath = path; self.entries = entries; self.totalBytes = totalBytes; self.configuration = configuration; self.inventory = inventory
     }
     static func scan(root: ASRDirectory, parent: ASRDirectory?, name: String, path: String,
-                     limits: LiveASRModelAssets.Limits, configuration: OwnedModelConfiguration, readOnly: Bool) throws -> ASRAssetTree {
+                     limits: LiveASRModelAssets.Limits, configuration: OwnedModelConfiguration, readOnly: Bool, inventory: ASRInventoryBudget? = nil) throws -> ASRAssetTree {
         var entries: [ASRTreeEntry] = [], total: UInt64 = 0
         func walk(_ directory: ASRDirectory, prefix: String, depth: Int) throws {
             try Task.checkCancellation()
             guard depth <= 8 else { throw LiveASRAssetError.oversized }
-            for name in try names(directory.fd) {
+            let enumeration = try names(directory.fd,inventory: inventory)
+            defer { withExtendedLifetime(enumeration) {} }
+            for name in enumeration.values {
                 guard entries.count < 512 else { throw LiveASRAssetError.oversized }
                 let path = prefix.isEmpty ? name : prefix + "/" + name
                 guard path.utf8.count <= 4096 else { throw LiveASRAssetError.oversized }
+                try inventory?.admit(path: path,name: name)
                 var info = stat()
                 guard fstatat(directory.fd,name,&info,AT_SYMLINK_NOFOLLOW) == 0 else { throw LiveASRAssetError.invalidAsset }
                 let identity = ASRFileIdentity(info)
@@ -389,8 +442,12 @@ private final class ASRAssetTree: Sendable {
                 }
             }
         }
-        try walk(root,prefix: "",depth: 0)
-        let tree = ASRAssetTree(root: root,parent: parent,name: name,path: path,entries: entries,totalBytes: total,configuration: configuration)
+        do {
+            let paths = try inventory?.scratch(bytes: ASRInventoryBudget.attemptedPathBytes)
+            defer { withExtendedLifetime(paths) {} }
+            try walk(root,prefix: "",depth: 0)
+        }
+        let tree = ASRAssetTree(root: root,parent: parent,name: name,path: path,entries: entries,totalBytes: total,configuration: configuration,inventory: inventory)
         try tree.validateLayout()
         _ = try tree.validateCurrentPath(readOnly: readOnly)
         return tree
@@ -427,6 +484,8 @@ private final class ASRAssetTree: Sendable {
         }
     }
     func validateCurrentPath(readOnly: Bool) throws -> URL {
+        let paths = try inventory?.scratch(bytes: ASRInventoryBudget.attemptedPathBytes)
+        defer { withExtendedLifetime(paths) {} }
         try Task.checkCancellation()
         guard try Self.path(root.fd) == rootPath else { throw LiveASRAssetError.invalidAsset }
         if let parent { guard Self.matches(parent.fd,name: name,identity: root.identity) else { throw LiveASRAssetError.invalidAsset } }
@@ -449,7 +508,9 @@ private final class ASRAssetTree: Sendable {
         }
         for (path,directory) in directories {
             let expected = entries.filter { $0.path.split(separator: "/").dropLast().joined(separator: "/") == path }.map(\.name).sorted()
-            guard try Self.names(directory.fd) == expected else { throw LiveASRAssetError.invalidAsset }
+            let enumeration = try Self.names(directory.fd,inventory: inventory)
+            defer { withExtendedLifetime(enumeration) {} }
+            guard enumeration.values == expected else { throw LiveASRAssetError.invalidAsset }
         }
         return URL(fileURLWithPath: rootPath,isDirectory: true)
     }
@@ -506,7 +567,8 @@ private final class ASRAssetTree: Sendable {
     static func matches(_ parent: Int32, name: String, identity: ASRFileIdentity) -> Bool {
         var info = stat(); return fstatat(parent,name,&info,AT_SYMLINK_NOFOLLOW) == 0 && ASRFileIdentity(info) == identity
     }
-    static func names(_ fd: Int32) throws -> [String] {
+    static func names(_ fd: Int32, inventory: ASRInventoryBudget? = nil) throws -> ASRDirectoryNames {
+        let scratch = try inventory?.scratch()
         let reopened = openat(fd,".",O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard reopened >= 0 else { throw LiveASRAssetError.invalidAsset }
         guard let stream = fdopendir(reopened) else { close(reopened); throw LiveASRAssetError.invalidAsset }
@@ -523,9 +585,14 @@ private final class ASRAssetTree: Sendable {
             if name == "." || name == ".." { continue }
             guard result.count < 512, !name.isEmpty, name.utf8.count <= 255,
                   !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }), !name.contains("/") else { throw LiveASRAssetError.oversized }
+            let terminated = name.utf8.count.addingReportingOverflow(1)
+            let variable = terminated.partialValue.multipliedReportingOverflow(by: 4)
+            let charge = variable.partialValue.addingReportingOverflow(128)
+            guard !terminated.overflow, !variable.overflow, !charge.overflow else { throw LiveASRAssetError.oversized }
+            try scratch?.add(charge.partialValue) // Before append/sort, including ancestor lists.
             result.append(name)
         }
-        return result.sorted()
+        return .init(values: result.sorted(),scratch: scratch)
     }
     static func directory(path: String, rejecting: ASRFileIdentity? = nil) throws -> ASRDirectory {
         guard LiveASRIdentity.validPath(path) else { throw LiveASRAssetError.invalidConfiguration }

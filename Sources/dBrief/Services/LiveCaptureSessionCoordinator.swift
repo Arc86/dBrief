@@ -7,9 +7,16 @@ struct LiveASRTransport: Sendable {
     var deadline: @Sendable (Duration) async -> Void
     var shutdown: @Sendable () async -> Void
 
+    var openDiarization: (@Sendable (LiveDiarizationModelAssets, UUID, LiveResourceLease, LiveModelJobAdmission, LiveAttributionPublication, LiveRecordingPayloadBudget.Lease) async throws -> AsyncThrowingStream<LiveDiarizationEvent,Error>)? = nil
+    var diarizationControl: (@Sendable (LiveDiarizationControl) async throws -> LiveSessionReply)? = nil
+    var sealDiarization: (@Sendable () async -> Void)? = nil
+
     static func live(_ connection: MLHostConnection) -> Self {
         .init(begin: { try await connection.beginLive($0) }, command: { try await connection.sendLive($0) },
-              deadline: { await connection.armLiveDeadline($0) }, shutdown: { await connection.shutdownLiveAndWaitForExit() })
+              deadline: { await connection.armLiveDeadline($0) }, shutdown: { await connection.shutdownLiveAndWaitForExit() },
+              openDiarization: { try await connection.openDiarization(assets: $0,ownerID: $1,lease: $2,admission: $3,publication: $4,payloadReservation: $5) },
+              diarizationControl: { try await connection.sendDiarizationControl($0) },
+              sealDiarization: { await connection.retireDiarizationPublication() })
     }
 }
 
@@ -73,11 +80,29 @@ actor LiveCaptureSessionCoordinator {
         var closed = false
         var controlID = UUID()
     }
+    private final class OptionalReceipt: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: LiveStoreAdmission?
+        private var waiter: CheckedContinuation<LiveStoreAdmission,Never>?
+        func finish(_ value: LiveStoreAdmission) {
+            let original = lock.withLock { () -> CheckedContinuation<LiveStoreAdmission,Never>? in
+                guard result == nil else { return nil }; result = value
+                let original = waiter; waiter = nil; return original
+            }
+            original?.resume(returning: value)
+        }
+        func wait() async -> LiveStoreAdmission { await withCheckedContinuation { continuation in
+            let result = lock.withLock { () -> LiveStoreAdmission? in if let result { return result }; waiter = continuation; return nil }
+            if let result { continuation.resume(returning: result) }
+        } }
+    }
     private enum Publication {
         case begin(LiveEpoch)
         case event(LiveEpoch, LiveTranscriptEvent.Payload)
         case rawLoss(LiveCaptureRawLoss)
         case clearPartials(LiveSource?)
+        case attributionRegistration(LiveLaneScope, Int64, UUID, OptionalReceipt)
+        case attributionAnnotation(LiveSpeakerAttributor.Batch, UInt64, OptionalReceipt)
         case close
     }
     private struct PendingPublication {
@@ -111,6 +136,21 @@ actor LiveCaptureSessionCoordinator {
     private let resources: LiveModelResourcePolicy?
     private var lease: LiveResourceLease?
     private let preparation: LiveCaptureStartPreparation?
+    private nonisolated let attribution: LiveCaptureAttributionOwner?
+    private var registrationOutstanding = false, annotationOutstanding = false
+    private(set) var attributionContextID: UUID?
+    nonisolated var attributionPublicationIsActive: Bool { attribution?.publication.isActive == true }
+    nonisolated var attributionContextWasAcknowledged: Bool { attribution?.publication.contextWasAcknowledged == true }
+    var attributionPosteriorCount: Int { attribution?.posteriorCount ?? 0 }
+    var attributionWorkingBytes: Int { attribution?.workingBytes ?? 0 }
+    var attributionPendingPublicationCount: Int { (registrationOutstanding ? 1 : 0) + (annotationOutstanding ? 1 : 0) }
+    nonisolated func sealAttribution() { attribution?.seal() }
+    nonisolated func retireAttribution(leaseIDs: Set<UUID>, policy: LiveModelResourcePolicy) {
+        guard let attribution, attribution.admission.policy === policy,
+              let id = attribution.leaseID, leaseIDs.contains(id) else { return }
+        attribution.seal()
+        Task { await attribution.retireUnstartedIfSealed() }
+    }
     private let preparationOwner: UUID
     private let invalidOwnerBinding: Bool
     private let epochHistoryLimit: Int
@@ -169,6 +209,7 @@ actor LiveCaptureSessionCoordinator {
             return boundIngress?.bindCoreOwner(preparationOwner) ?? true
         }
         invalidOwnerBinding = !ownsCapture
+        self.attribution = ownsCapture ? preparation?.attribution : nil
         self.preparation = ownsCapture ? preparation : nil
         self.ingress = ownsCapture ? boundIngress : nil
         self.drainDeadline = drainDeadline; self.preparationDeadline = preparationDeadline
@@ -351,7 +392,7 @@ actor LiveCaptureSessionCoordinator {
 
     func beginClosing() {
         guard !invalidOwnerBinding, !terminal, !closing else { return }
-        closing = true; publish(.clearPartials(nil))
+        closing = true; sealAttribution(); publish(.clearPartials(nil))
         ingress?.closeInput()
         if !nativeBeginRequested {
             preparation?.complete(.cancelled,owner: preparationOwner)
@@ -426,7 +467,7 @@ actor LiveCaptureSessionCoordinator {
     func publishIngressLosses(source: LiveSource) {
         guard started, !sealed, !terminal, isValidOwner, lanes[source] != nil, let ingress else { return }
         observeIngressLoss(source: source)
-        guard publications.count <= 512 - 128 else { terminate(.overload); return }
+        guard mandatoryPublicationCount <= 512 - 128 else { terminate(.overload); return }
         let losses = ingress.takeLosses(source)
         // Once taken, every raw fact belongs to this core. Reserve the entire
         // batch before appending, or move all of it into terminal recovery.
@@ -621,7 +662,7 @@ actor LiveCaptureSessionCoordinator {
                 }
                 if lanes.values.allSatisfy({ $0.ready || $0.paused }) {
                     if !sealed { timer?.cancel(); timerGeneration = nil }
-                    if let resources, let lease { Task { await resources.confirmResident(lease) } }
+                    Task { [weak self] in await self?.startAttributionAfterResidency() }
                 }
                 kick(source)
             case .admitted(let sequence, let end):
@@ -739,6 +780,7 @@ actor LiveCaptureSessionCoordinator {
         cut(source,reason: reason)
     }
     private func cut(_ source: LiveSource, reason: LiveGapReason) {
+        if source == .system { sealAttribution() }
         guard !terminal, var lane = lanes[source], !lane.closed else { return }
         lane.controlID = UUID()
         lane.ready = false; lane.cutReason = reason; lane.packets.removeAll(); lane.receipts.removeAll()
@@ -802,6 +844,65 @@ actor LiveCaptureSessionCoordinator {
         lanes[source]?.pumping = false; return nil
     }
 
+    private func startAttributionAfterResidency() async {
+        guard !closing, !terminal, isValidOwner, let resources, let lease else { return }
+        await resources.confirmResident(lease)
+        guard !closing, !terminal, isValidOwner, lanes.values.allSatisfy({ $0.ready || $0.paused }) else { return }
+        attribution?.start(transport: transport,scope: { [weak self] in await self?.currentAttributionScope() },
+            receive: { [weak self] in await self?.receiveAttribution($0) ?? false },
+            publish: { [weak self] in await self?.publishAttribution($0,sequence: $1) ?? .rejected(.closed) })
+    }
+    private func currentAttributionScope() -> LiveLaneScope? {
+        guard !closing, !terminal, isValidOwner, attributionPublicationIsActive, let lane = lanes[.system],
+              lane.ready, !lane.closed, !lane.paused, lane.pauseBoundary == nil, lane.cutReason == nil else { return nil }
+        return .init(identity: input.identity,source: .system,epochID: lane.epoch.id)
+    }
+    private func receiveAttribution(_ event: LiveDiarizationEvent) async -> Bool {
+        guard !closing, !terminal, isValidOwner, let attribution, attribution.publication.isActive,
+              event.scope.identity == input.identity, event.scope.source == .system,
+              event.ownerID == attribution.publication.ownerID, knownEpochs.contains(event.scope.epochID) else { return false }
+        switch event.payload {
+        case .preparing: return true
+        case .ready(let origin,let context):
+            guard attributionContextID == nil, !registrationOutstanding else { return false }
+            let receipt = OptionalReceipt(); registrationOutstanding = true
+            publications.append(.init(value: .attributionRegistration(event.scope,origin,context,receipt),bytes: 0)); startPublisher()
+            let result = await receipt.wait()
+            guard result == .accepted || result == .duplicate, attribution.publication.isActive else { return false }
+            attributionContextID = context; return true
+        case .posterior(let context,let incoming):
+            guard context == attributionContextID, let epoch = publishedEpochs[event.scope.epochID],
+                  let frontier = capturedByEpoch[event.scope.epochID] else { return false }
+            do {
+                var mapped: [LiveDiarizationRow] = []
+                for row in incoming {
+                    guard row.isValid, row.samples.end <= frontier, let range = evidence(epoch,row.samples.start,row.samples.end),
+                          row.meeting == nil || row.meeting == range.meeting else { return false }
+                    mapped.append(try .init(streamSamples: row.streamSamples,samples: row.samples,meeting: range.meeting,activity: row.activityValues()))
+                }
+                try attribution.append(scope: event.scope,rows: mapped); return true
+            } catch { return false }
+        case .retired: attribution.seal(); return true
+        }
+    }
+    private func publishAttribution(_ batch: LiveSpeakerAttributor.Batch, sequence: UInt64) async -> LiveStoreAdmission {
+        guard !terminal, !closing, let attribution, attribution.publication.isActive, !annotationOutstanding,
+              batch.identity == input.identity, batch.source == .system, batch.contextID == attributionContextID else { return .rejected(.closed) }
+        let receipt = OptionalReceipt(); annotationOutstanding = true
+        publications.append(.init(value: .attributionAnnotation(batch,sequence,receipt),bytes: 0)); startPublisher()
+        return await receipt.wait()
+    }
+    private var mandatoryPublicationCount: Int { publications.reduce(0) { count,item in
+        switch item.value { case .attributionRegistration, .attributionAnnotation: count; default: count + 1 }
+    } }
+    private func rejectOptional(_ publication: Publication) {
+        switch publication {
+        case .attributionRegistration(_,_,_,let receipt): registrationOutstanding = false; receipt.finish(.rejected(.closed))
+        case .attributionAnnotation(_,_,let receipt): annotationOutstanding = false; receipt.finish(.rejected(.closed))
+        default: break
+        }
+    }
+
     private func commandCompleted(_ source: LiveSource, _ request: LiveSessionRequest, _ reply: LiveSessionReply) {
         guard !terminal, !abandonedSources.contains(source) else { return }
         if reply != .accepted {
@@ -845,7 +946,7 @@ actor LiveCaptureSessionCoordinator {
             for waiter in waiters { waiter.resume(throwing: LiveProtocolError.invalidConfiguration) }
             return
         }
-        terminal = true; closing = true; sealed = true
+        terminal = true; closing = true; sealed = true; sealAttribution()
         preparation?.complete(privacyOutcome ?? (reason == .stopped ? .cancelled : .failed),owner: preparationOwner)
         ingress?.retireInput()
         pendingPublicationBytes -= replacements.values.reduce(0) { $0 + $1.bytes }
@@ -903,7 +1004,7 @@ actor LiveCaptureSessionCoordinator {
         } else { replacesProgress = false }
         guard let bytes = try? publicationCharge(item),
               publicationByteLimit.map({ bytes <= $0 - pendingPublicationBytes + (replacesProgress ? prior?.bytes ?? 0 : 0) }) ?? true,
-              replacesProgress || publications.count < 512 else {
+              replacesProgress || mandatoryPublicationCount < 512 else {
             // This fact caused overload before normal enqueue. It still belongs
             // in the bounded terminal inventory, including a removed ingress fact.
             if case .rawLoss = item { appendTerminal(item) }
@@ -963,11 +1064,28 @@ actor LiveCaptureSessionCoordinator {
                     terminate(.unavailable); await closeActualStore(); publisher = nil; return
                 }
                 result = await storeAccess.admit(.init(identity: input.identity,epochID: epoch.id,source: epoch.source,sequence: sequence,payload: mapped))
-                if result == .accepted || result == .duplicate { storeSequences[epoch.id] = sequence + 1 }
+                if result == .accepted || result == .duplicate {
+                    storeSequences[epoch.id] = sequence + 1
+                    if result == .accepted, case .committed(let segment) = mapped { attribution?.offer(segment) }
+                }
             case .clearPartials(let source): result = await store.clearPartials(owner: input.identity,source: source)
             case .rawLoss(let loss):
                 result = terminal ? await store.recordTerminalCaptureLoss(owner: preparationOwner, loss: loss)
                     : await store.recordCaptureLoss(owner: input.identity,loss: loss)
+            case .attributionRegistration(let scope,let origin,let context,let receipt):
+                let result: LiveStoreAdmission
+                if let attribution { result = await store.registerDiarizer(scope: scope,originSample: origin,contextID: context,publication: attribution.publication) }
+                else { result = .rejected(.closed) }
+                registrationOutstanding = false; receipt.finish(result)
+                if result != .accepted && result != .duplicate { sealAttribution() }
+                continue
+            case .attributionAnnotation(let batch,let sequence,let receipt):
+                let result: LiveStoreAdmission
+                if let attribution { result = await store.annotate(batch,sequence: sequence,publication: attribution.publication) }
+                else { result = .rejected(.closed) }
+                annotationOutstanding = false; receipt.finish(result)
+                if result != .accepted && result != .duplicate { sealAttribution() }
+                continue
             case .close: result = await store.close(owner: input.identity)
             }
             if case .rejected = result {
@@ -1001,6 +1119,7 @@ actor LiveCaptureSessionCoordinator {
         let rawLosses = recovery.compactMap { item -> LiveCaptureRawLoss? in
             if case .rawLoss(let loss) = item.value { return loss }; return nil
         }
+        for item in recovery { rejectOptional(item.value) }
         publications.removeAll()
         defer { pendingPublicationBytes -= recovery.reduce(0) { $0 + $1.bytes } }
         let projection = await store.projection()

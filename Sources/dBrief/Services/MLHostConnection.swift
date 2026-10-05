@@ -164,10 +164,12 @@ actor MLHostConnection {
     /// No receiver opens from a flag/configuration alone: copied owner + exact
     /// supported resource identity/claim must be current through actual admission.
     func openDiarization(assets: LiveDiarizationModelAssets, ownerID: UUID, lease: LiveResourceLease,
-                         admission: LiveModelJobAdmission) async throws -> AsyncThrowingStream<LiveDiarizationEvent, Error> {
+                         admission: LiveModelJobAdmission, publication: LiveAttributionPublication? = nil,
+                         payloadReservation: LiveRecordingPayloadBudget.Lease? = nil) async throws -> AsyncThrowingStream<LiveDiarizationEvent, Error> {
         guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, !diarizationUsed,
               let child = process, child.isRunning, let input = liveBegin, let frozen = input.diarization,
               frozen.ownerID == ownerID, frozen.configuration == assets.configuration,
+              publication.map({ $0.identity == input.identity && $0.ownerID == ownerID && $0.isActive }) ?? true,
               let epochAuthority = diarizationEpochs, epochAuthority.identity == input.identity, epochAuthority.isOpen,
               lease.identity == input.identity, lease.attributionEnabled, lease.request.attributionRequested,
               lease.request.diarization == frozen.configuration.identity,
@@ -175,7 +177,7 @@ actor MLHostConnection {
         let snapshot = try assets.snapshot(owner: ownerID); _ = try snapshot.validateCurrentPath()
         let generation = liveGeneration
         let receiver = LiveDiarizationConnection(input: input, sessionRequestID: requestID, writer: writer, assets: assets,
-            snapshot: snapshot, ownerID: ownerID, lease: lease, admission: admission, epochAuthority: epochAuthority, afterClaim: testingAfterDiarizationClaim)
+            snapshot: snapshot, ownerID: ownerID, lease: lease, admission: admission, epochAuthority: epochAuthority, afterClaim: testingAfterDiarizationClaim, publication: publication, payloadReservation: payloadReservation)
         // Before any await, Stop owns and joins this exact provisional admission.
         guard diarizationEndpoint.install(receiver) else { throw LiveProtocolError.closed }
         diarizationUsed = true; diarizationConnection = receiver
@@ -186,6 +188,7 @@ actor MLHostConnection {
         }
         return stream
     }
+    func retireDiarizationPublication() async { await diarizationConnection?.retirePublication() }
     func sendDiarizationControl(_ control: LiveDiarizationControl, deadline: Duration = .milliseconds(250)) async throws -> LiveSessionReply {
         guard role == .live, liveUsed, !liveEnded, !liveTerminalReceived, process?.isRunning == true,
               let receiver = diarizationConnection else { throw LiveProtocolError.unavailable }

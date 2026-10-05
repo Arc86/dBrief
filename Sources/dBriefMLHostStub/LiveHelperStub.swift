@@ -13,6 +13,24 @@ struct LiveHelperStub {
     private var awaitingRetiredReply: UUID?
     private var optionalPrepared = false, optionalRetired = false
     private var optionalContext = UUID(), optionalSequence: UInt64 = 0, optionalOrigin: Int64 = 0
+    private var optionalAcknowledged = false, optionalRowsSent = false, optionalRetirePending = false
+    private var captureAttributionMode: Bool { mode.hasPrefix("live-capture-attribution") }
+    private mutating func captureOptionalProgress() {
+        guard captureAttributionMode, let lane = lanes[.system], optionalPrepared else { return }
+        if optionalRetirePending, let flag = ProcessInfo.processInfo.environment["STUB_FLAG_2"],
+           FileManager.default.fileExists(atPath: flag), !optionalRetired {
+            optionalRetired = true; optionalEvent(.retired(contextID: optionalContext,receiptID: UUID(),reason: .pressure))
+        }
+        guard optionalAcknowledged, !optionalRowsSent, !optionalRetired, lane.end >= optionalOrigin + 320 else { return }
+        optionalRowsSent = true
+        let rows = (0..<2).map { i in
+            let first = Int64(i * 160), last = first + 160
+            let samples = LiveSampleRange(start: optionalOrigin + first,end: optionalOrigin + last)
+            let meeting = lane.epoch.meetingOriginNanoseconds.map { LiveMeetingRange(startNanoseconds: $0 + samples.start * 62_500,endNanoseconds: $0 + samples.end * 62_500) }
+            return try! LiveDiarizationRow(streamSamples: .init(start: first,end: last),samples: samples,meeting: meeting,activity: [Float](repeating: 0.7,count: 8))
+        }
+        optionalEvent(.posterior(contextID: optionalContext,rows: rows))
+    }
     private var optionalPrepareAttempts = 0
     init(mode: String) { self.mode = mode }
     private mutating func event(_ source: LiveSource, _ payload: LiveLaneEvent.Payload, send: (EventEnvelope) -> Void) {
@@ -50,6 +68,7 @@ struct LiveHelperStub {
         case .acknowledge(let context):
             guard optionalPrepared, !optionalRetired, context == optionalContext else { reply(.rejected(.staleScope)); return }
             reply(.accepted)
+            if captureAttributionMode { optionalAcknowledged = true; captureOptionalProgress(); return }
             let start = lanes[.system]!.epoch.meetingOriginNanoseconds
             let batches = mode == "live-duplex-event-overflow" ? 5 : 1
             for batch in 0..<batches {
@@ -70,6 +89,7 @@ struct LiveHelperStub {
             reply(context == optionalContext && sequence == 2 ? .accepted : .rejected(.outOfOrder))
         case .retire:
             guard optionalPrepared else { reply(.rejected(.staleScope)); return }; reply(.accepted)
+            if mode == "live-capture-attribution-held-retirement" { optionalRetirePending = true; captureOptionalProgress(); return }
             if mode == "live-duplex-no-reply" { return }
             if mode == "live-duplex-held-retirement", let flag = ProcessInfo.processInfo.environment["STUB_FLAG_2"],
                !FileManager.default.fileExists(atPath: flag) { return }
@@ -124,6 +144,7 @@ struct LiveHelperStub {
             guard let begin, packet.scope.identity == begin.identity, var lane = lanes[packet.scope.source], lane.epoch.id == packet.scope.epochID,
                   packet.sequence == lane.packet, packet.startSample == lane.end, (try? packet.decodedSamples()) != nil else { reply(.rejected(.invalidPacket)); return }
             lane.packet += 1; lane.end += Int64(packet.sampleCount); lanes[packet.scope.source] = lane
+            if packet.scope.source == .system { captureOptionalProgress() }
             reply(.accepted)
             event(packet.scope.source,.admitted(packetSequence: packet.sequence,sampleEnd: lane.end),send: send)
             event(packet.scope.source,.progress(.init(capturedSampleEnd: lane.end,admittedSampleEnd: lane.end,consumedSampleEnd: lane.end,
@@ -164,7 +185,8 @@ struct LiveHelperStub {
             if mode == "live-unresponsive-finish" { return }
             if lane.end > lane.settled {
                 event(barrier.scope.source,.committed(.init(id: .init(epochID: lane.epoch.id,index: lane.segment),source: barrier.scope.source,
-                    range: .init(samples: .init(start: lane.settled,end: lane.end),meeting: nil),text: "Fixture tail")),send: send)
+                    range: .init(samples: .init(start: lane.settled,end: lane.end),meeting: nil),text: "Fixture tail",
+                    diarizerContextID: captureAttributionMode && barrier.scope.source == .system && optionalAcknowledged && lane.settled >= optionalOrigin ? optionalContext : nil)),send: send)
                 lane.segment += 1; lane.settled = lane.end
             }
             // Retain the event counter advanced by event() above.

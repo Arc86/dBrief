@@ -82,7 +82,15 @@ final class AppContext {
         memoryMonitor.registerPressureHandler { [weak self] level in
             guard let self else { return }
             self.appState.memoryPressureLevel = level
+            let pressure: LiveResourceMeasurement.Pressure = switch level {
+            case .normal: .normal
+            case .warning: .warning
+            case .critical: .critical
+            }
+            let measurement = LiveResourceMeasurement(availableBytes: UInt64(max(0,MemoryPressureMonitor.getMemoryStats()?.free ?? 0)),pressure: pressure)
+            self.appState.liveRecordingSessions.sealAttributionForPressure(pressure)
             await self.appState.liveModelResources.measurementDidChange()
+            await self.appState.liveRecordingSessions.applyResourcePressure(measurement,policy: self.appState.liveModelResources)
         }
 
         Task { await self.ensureReady() }

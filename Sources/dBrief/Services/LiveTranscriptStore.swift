@@ -213,6 +213,35 @@ actor LiveTranscriptStore {
                   annotations: [LiveSpeakerAnnotation], coverage: [LiveAttributionCoverage] = []) -> LiveStoreAdmission {
         mutate { annotateWhileValid(owner: owner,source: source,contextID: contextID,sequence: sequence,annotations: annotations,coverage: coverage) }
     }
+    func registerDiarizer(scope: LiveLaneScope, originSample: Int64, contextID: UUID,
+                          publication: LiveAttributionPublication) -> LiveStoreAdmission {
+        guard scope.identity == publication.identity, scope.source == .system else { return .rejected(.wrongOwner) }
+        return (try? publication.storeMutation(recording: validity) {
+            mutate {
+                guard scope.identity == identity else { return .rejected(.wrongOwner) }
+                guard !isClosed else { return .rejected(.closed) }
+                guard let epoch = epochs[scope.epochID], epoch.source == scope.source,
+                      let order = epochOrder[scope.epochID] else { return .rejected(.staleEpoch) }
+                let frontier = lanes[scope.source]?.epoch.id == scope.epochID ? lanes[scope.source]?.progress.capturedSampleEnd ?? -1 :
+                    coverage.lazy.filter { $0.epochID == scope.epochID }.compactMap { $0.range.samples?.end }.max() ?? -1
+                guard originSample >= 0, originSample <= frontier else { return .rejected(.invalidAnnotation) }
+                if diarizers[scope.source]?.id == contextID { return .duplicate }
+                guard knownDiarizers[scope.source]?.contains(contextID) != true else { return .rejected(.invalidAnnotation) }
+                let diarizer = Diarizer(id: contextID,meetingStart: meetingTime(originSample,in: epoch),firstEpochOrder: order,firstSample: originSample)
+                guard reserveAttribution(diarizer) else { return .rejected(.capacity) }
+                knownDiarizers[scope.source,default: []].insert(contextID); diarizers[scope.source] = diarizer
+                return .accepted
+            }
+        }) ?? .rejected(.closed)
+    }
+    func annotate(_ batch: LiveSpeakerAttributor.Batch, sequence: UInt64,
+                  publication: LiveAttributionPublication) -> LiveStoreAdmission {
+        guard batch.identity == publication.identity, batch.source == .system else { return .rejected(.wrongOwner) }
+        return (try? publication.storeMutation(recording: validity) {
+            mutate { annotateWhileValid(owner: batch.identity,source: batch.source,contextID: batch.contextID,sequence: sequence,
+                annotations: batch.annotations,coverage: batch.coverage) }
+        }) ?? .rejected(.closed)
+    }
     func close(owner: LiveSessionIdentity) -> LiveStoreAdmission { mutate { closeWhileValid(owner: owner) } }
     /// Unexpected loss of the accepted core cannot leave an open preview or
     /// invent committed text. Settle only the already published captured prefix.

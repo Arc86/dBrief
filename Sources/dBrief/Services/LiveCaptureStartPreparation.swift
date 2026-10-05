@@ -82,6 +82,7 @@ actor LiveCaptureStartPreparation {
     private nonisolated let id = UUID()
     private nonisolated let vadAssets: LiveVADAssetPreparation?
     private nonisolated let asrAssets: LiveASRModelAssets?
+    nonisolated let attribution: LiveCaptureAttributionOwner?
     private nonisolated let validASRBinding: Bool
     private let privacyScope: RecordingPrivacyScope
     private let runID: UUID
@@ -97,28 +98,34 @@ actor LiveCaptureStartPreparation {
          currentMemory: @escaping @Sendable () async throws -> LiveResourceMeasurement,
          context: @escaping @Sendable (RecordingPrivacyScope,UUID) async -> PrivacyTrace.Context = { await $0.context(runID: $1) },
          beginReceipt: @escaping @Sendable (PrivacyOperation,PrivacyTrace.Context) async -> PrivacyTrace.Token? = { await PrivacyTrace.begin($0,in: $1) },
-         asrAssets: LiveASRModelAssets? = nil, vadAssets: LiveVADAssetPreparation? = nil) {
+         asrAssets: LiveASRModelAssets? = nil, vadAssets: LiveVADAssetPreparation? = nil, attribution: LiveCaptureAttributionOwner? = nil) {
         self.input = input; self.ingress = ingress; self.resources = resources
         self.privacyScope = privacyScope; self.runID = runID; self.request = request
         self.cacheCheck = cacheCheck; self.currentMemory = currentMemory
         self.context = context; self.beginReceipt = beginReceipt
-        self.asrAssets = asrAssets; self.vadAssets = vadAssets
+        self.asrAssets = asrAssets; self.vadAssets = vadAssets; self.attribution = attribution
         validASRBinding = request.asr == input.configuration.identity &&
             (input.configuration.identity == nil ? asrAssets == nil : asrAssets?.configuration == input.configuration) &&
-            (input.vad == nil ? vadAssets == nil : vadAssets?.configuration == input.vad)
+            (input.vad == nil ? vadAssets == nil : vadAssets?.configuration == input.vad) &&
+            (request.attributionRequested ? (attribution?.metadata == input.diarization && attribution?.publication.identity == input.identity &&
+                request.diarization == input.diarization?.configuration.identity && input.diarization != nil) : (attribution == nil && input.diarization == nil))
     }
 
     nonisolated func bind(to owner: UUID) -> Bool {
-        validASRBinding && state.bind(owner) && (asrAssets?.bind(to: id) ?? true) && (vadAssets?.bind(to: id) ?? true)
+        validASRBinding && state.bind(owner) && (asrAssets?.bind(to: id) ?? true) && (vadAssets?.bind(to: id) ?? true) && (attribution?.bind(to: owner) ?? true)
     }
 
     /// Terminal reservation is synchronous; resource return and persistence are
     /// independent of cancellation-ignoring preflight and late token arrival.
     @discardableResult nonisolated func complete(_ outcome: PrivacyAttempt.Outcome, owner: UUID? = nil) -> Task<Void, Never>? {
         guard let (lease,completion,first,retirePendingAssets) = state.complete(outcome,owner: owner) else { return nil }
-        if retirePendingAssets { asrAssets?.retire(owner: id); vadAssets?.retire(owner: id) }
+        let asrCleanup = retirePendingAssets ? asrAssets?.retire(owner: id) : nil
+        let vadCleanup = retirePendingAssets ? vadAssets?.retire(owner: id) : nil
+        if retirePendingAssets { attribution?.seal() }
         let resources = self.resources
         return Task {
+            await asrCleanup?.value; await vadCleanup?.value
+            if retirePendingAssets { await self.attribution?.joinAfterExit() }
             if let lease { await resources.release(lease) }
             await completion?.finish(first)
         }
@@ -127,7 +134,7 @@ actor LiveCaptureStartPreparation {
     func prepare(owner: UUID? = nil) async throws -> Prepared {
         guard validASRBinding, input.isValid, ingress.matches(input), privacyScope.recordingID == input.identity.recordingID,
               request.chunkMs == input.configuration.chunkMs, request.sourceCount == input.epochs.count,
-              request.vad == input.vad, !request.attributionRequested,
+              request.vad == input.vad,
               input.epochs.allSatisfy({ $0.engineRevision == request.modelRevision }),
               state.begin(owner), asrAssets?.bind(to: id) ?? true, vadAssets?.bind(to: id) ?? true else { throw LiveProtocolError.invalidConfiguration }
         var admitted: LiveResourceLease?
@@ -150,6 +157,11 @@ actor LiveCaptureStartPreparation {
             let lease = try await resources.admitNew(identity: input.identity,request: request,measurement: measurement,token: token)
             admitted = lease
             guard state.installLease(lease,owner: owner) else { throw CancellationError() }
+            if let attribution {
+                guard attribution.adopt(lease,owner: owner) else { throw LiveProtocolError.invalidConfiguration }
+                if !lease.attributionEnabled { attribution.seal() }
+                await attribution.retireUnstartedIfSealed()
+            }
             try check(owner)
             let operation = PrivacyOperation(stage: .liveTranscription,data: [.recordingAudio,.metadata],destination: .local(provider: .fluidAudio))
             let receipt = await beginReceipt(operation,context)
@@ -160,7 +172,7 @@ actor LiveCaptureStartPreparation {
             try await validatePreparedStart(result,owner: owner)
             return result
         } catch {
-            complete(PrivacyTrace.outcome(for: error),owner: owner)
+            await complete(PrivacyTrace.outcome(for: error),owner: owner)?.value
             // A sealed admission may have returned before it could install into
             // pending ownership. Exact receipts make repeated release harmless.
             if let admitted { await resources.release(admitted) }
@@ -173,6 +185,7 @@ actor LiveCaptureStartPreparation {
         try check(owner)
         if let asrAssets { _ = try asrAssets.snapshot(owner: id).validateCurrentPath(); try check(owner) }
         try vadAssets?.validate(owner: id); try check(owner)
+        await attribution?.retireUnstartedIfSealed()
         let token = await resources.measurementToken(); try check(owner)
         let measurement = try await currentMemory(); try check(owner)
         try await resources.validatePreparedStart(prepared.lease,measurement: measurement,token: token)

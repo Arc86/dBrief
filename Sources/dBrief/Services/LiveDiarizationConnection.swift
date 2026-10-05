@@ -21,6 +21,7 @@ private final class DiarizationNativeOwnership: @unchecked Sendable {
         let assetOwner: UUID
         let lease: LiveResourceLease
         let admission: LiveModelJobAdmission
+        let payloadReservation: LiveRecordingPayloadBudget.Lease?
     }
     let transportOwner = UUID()
     private let lock = NSLock()
@@ -31,8 +32,8 @@ private final class DiarizationNativeOwnership: @unchecked Sendable {
     private var admissionWaiter: CheckedContinuation<Void, Never>?
     private var cleanup: Task<Void, Never>?
     init(assets: LiveDiarizationModelAssets, snapshot: LiveDiarizationReadOnlySnapshot, owner: UUID,
-         lease: LiveResourceLease, admission: LiveModelJobAdmission) {
-        payload = .init(assets: assets, snapshot: snapshot, assetOwner: owner, lease: lease, admission: admission)
+         lease: LiveResourceLease, admission: LiveModelJobAdmission, payloadReservation: LiveRecordingPayloadBudget.Lease?) {
+        payload = .init(assets: assets, snapshot: snapshot, assetOwner: owner, lease: lease, admission: admission,payloadReservation: payloadReservation)
     }
     var inputAvailable: Bool { lock.withLock { inputOpen } }
     func validatePath() throws {
@@ -67,7 +68,7 @@ private final class DiarizationNativeOwnership: @unchecked Sendable {
             if let payload = owned.0, owned.1 {
                 await payload.assets.retire(owner: payload.assetOwner)?.value
                 // Keep descriptors/snapshot through actual cleanup, not only Data.
-                withExtendedLifetime(payload.snapshot) {}
+                withExtendedLifetime((payload.snapshot,payload.payloadReservation)) {}
                 await payload.admission.policy.confirmAttributionRetired(payload.lease, transportOwner: self.transportOwner)
             }
             // An unclaimed/borrowed provisional snapshot cannot delete another
@@ -91,6 +92,7 @@ actor LiveDiarizationConnection {
     private let admission: LiveModelJobAdmission
     private let native: DiarizationNativeOwnership
     private let afterClaim: (@Sendable () async -> Void)?
+    private let publication: LiveAttributionPublication?
     private let stream: AsyncThrowingStream<LiveDiarizationEvent, Error>
     private let continuation: AsyncThrowingStream<LiveDiarizationEvent, Error>.Continuation
     private let encoder = JSONEncoder()
@@ -110,11 +112,11 @@ actor LiveDiarizationConnection {
 
     init(input: LiveSessionBegin, sessionRequestID: UUID, writer: LivePipeWriter,
          assets: LiveDiarizationModelAssets, snapshot: LiveDiarizationReadOnlySnapshot, ownerID: UUID,
-         lease: LiveResourceLease, admission: LiveModelJobAdmission, epochAuthority: LiveOptionalEpochAuthority, afterClaim: (@Sendable () async -> Void)?) {
+         lease: LiveResourceLease, admission: LiveModelJobAdmission, epochAuthority: LiveOptionalEpochAuthority, afterClaim: (@Sendable () async -> Void)?, publication: LiveAttributionPublication? = nil, payloadReservation: LiveRecordingPayloadBudget.Lease? = nil) {
         identity = input.identity; self.ownerID = ownerID; self.sessionRequestID = sessionRequestID
         self.writer = writer; self.lease = lease; self.admission = admission; self.afterClaim = afterClaim
-        epochs = epochAuthority
-        native = .init(assets: assets, snapshot: snapshot, owner: ownerID, lease: lease, admission: admission)
+        epochs = epochAuthority; self.publication = publication
+        native = .init(assets: assets, snapshot: snapshot, owner: ownerID, lease: lease, admission: admission,payloadReservation: payloadReservation)
         (stream, continuation) = AsyncThrowingStream<LiveDiarizationEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(4))
         continuation.onTermination = { @Sendable [weak self] termination in
             if case .cancelled = termination { Task { await self?.abandoned() } }
@@ -179,17 +181,24 @@ actor LiveDiarizationConnection {
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                let timer = Task { [weak self] in
-                    do { try await Task.sleep(for: deadline) } catch { return }
-                    await self?.expire(id)
+                let dispatch = { [self] in
+                    let timer = Task { [weak self] in
+                        do { try await Task.sleep(for: deadline) } catch { return }
+                        await self?.expire(id)
+                    }
+                    self.pending[id] = .init(continuation: continuation, timer: timer)
+                    guard self.writer.tryWriteOptional(frame) else {
+                        self.settle(id,error: LiveProtocolError.unavailable)
+                        self.fail(LiveProtocolError.unavailable,invalidateProof: false,requestRetire: false); return
+                    }
+                    if case .prepare = control.payload { self.prepareSent = true }
+                    if case .acknowledge = control.payload { self.publication?.contextAcknowledgementWasWritten() }
+                    if isRetire { self.retireAttempted = true }
                 }
-                pending[id] = .init(continuation: continuation, timer: timer)
-                guard writer.tryWriteOptional(frame) else {
-                    settle(id, error: LiveProtocolError.unavailable)
-                    fail(LiveProtocolError.unavailable, invalidateProof: false, requestRetire: false); return
-                }
-                if case .prepare = control.payload { prepareSent = true }
-                if isRetire { retireAttempted = true }
+                do {
+                    if let publication, !isRetire { try publication.dispatch(dispatch) }
+                    else { dispatch() }
+                } catch { continuation.resume(throwing: error) }
             }
         } onCancel: { Task { await self.cancel(id) } }
     }
@@ -234,7 +243,9 @@ actor LiveDiarizationConnection {
                 _ = native.retireAfterProof()
             }
             if !publicationSealed {
-                if case .dropped = continuation.yield(event) {
+                let result = if let publication { try? publication.dispatch { continuation.yield(event) } }
+                    else { continuation.yield(event) }
+                if case .dropped = result {
                     fail(LiveProtocolError.outputLimit, invalidateProof: false, requestRetire: true)
                 }
             }
@@ -242,6 +253,7 @@ actor LiveDiarizationConnection {
         default: malformed()
         }
     }
+    func retirePublication() { fail(LiveProtocolError.closed,invalidateProof: false,requestRetire: true) }
     func malformed() { fail(LiveProtocolError.invalidPacket, invalidateProof: true, requestRetire: true) }
     func rawOverflow() { fail(LiveProtocolError.outputLimit, invalidateProof: true, requestRetire: true) }
     private func abandoned() { fail(LiveProtocolError.closed, invalidateProof: false, requestRetire: true) }
