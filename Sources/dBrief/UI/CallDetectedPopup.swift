@@ -2,103 +2,90 @@ import SwiftUI
 
 struct CallDetectedPopup: View {
     @Environment(AppState.self) private var appState
-    @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(\.calmAppearance) private var calm
 
     var body: some View {
-        ZStack {
-            // Glass background — matches native macOS notification style
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial)
-
-            // Signature brand gradient top bar (solid coral in calm mode)
-            VStack(spacing: 0) {
-                Rectangle().fill(Brand.accentFill(calm: calm)).frame(height: 3)
-                Spacer()
+        CallAlertCard(
+            title: "\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected",
+            message: "Record this call and create a meeting brief.",
+            dismissLabel: "Dismiss",
+            onDismiss: { appState.showCallDetectedPopup = false }
+        ) {
+            Button("Not now") {
+                appState.showCallDetectedPopup = false
             }
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 37, fillsWidth: false))
 
-            // Content — icon vertically centered against text block
-            HStack(alignment: .center, spacing: 14) {
-                // dBrief app icon + live alert dot
-                Image(nsImage: DBriefAppIcon.image ?? NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 52, height: 52)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(alignment: .topTrailing) {
-                        BrandStatusDot(color: Brand.recording, size: 13, pulse: true)
-                            .padding(2)
-                            .background(.background, in: Circle())
-                            .offset(x: 4, y: -4)
-                    }
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    BrandKicker("Call detected", color: Brand.coral)
-
-                    Text("\(appState.detectedCallApp.map { "\($0) call" } ?? "A call") detected")
-                        .uiFont(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-
-                    Text("Want dBrief to record and brief it?")
-                        .uiFont(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    HStack(spacing: 10) {
-                        Button("Not now") {
-                            appState.showCallDetectedPopup = false
-                        }
-                        .buttonStyle(.typographyBordered)
-                        .controlSize(.regular)
-
-                        Button {
-                            appState.showCallDetectedPopup = false
-                            Task {
-                                try? await recordingManager.startRecording(
-                                    associatedApp: appState.detectedCallApp,
-                                    callBundleId: appState.detectedCallAppBundleId
-                                )
-                            }
-                        } label: {
-                            HStack(spacing: 7) {
-                                RecordGlyph(size: 14)
-                                Text("Record")
-                            }
-                            .uiFont(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 7)
-                            .background(Brand.ctaFill(calm: calm), in: Capsule())
-                            .shadow(color: Brand.ctaGlow(calm: calm), radius: calm ? 0 : 10, y: calm ? 0 : 4)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-
-            // Dismiss button — top-trailing, on top
             Button {
                 appState.showCallDetectedPopup = false
+                Task {
+                    try? await recordingManager.startRecording(
+                        associatedApp: appState.detectedCallApp,
+                        callBundleId: appState.detectedCallAppBundleId
+                    )
+                }
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(10)
+                Label("Record call", systemImage: "mic")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .buttonStyle(MenuPanelButtonStyle(kind: .accentOutline, height: 37, fillsWidth: false))
+            .keyboardShortcut(.defaultAction)
         }
-        .frame(width: 380, height: 132)
-        // Clip to the card shape so the gradient top bar follows the rounded
-        // corners instead of overhanging them as a straight line.
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
+/// The floating call prompt card: brand-gradient hairline border (flat accent with
+/// Reduce neon), logo bars, title, message, close button and trailing actions.
+struct CallAlertCard<Actions: View>: View {
+    let title: String
+    let message: String
+    let dismissLabel: String
+    let onDismiss: () -> Void
+    @ViewBuilder var actions: Actions
+    @Environment(\.viewerPalette) private var palette
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                BrandBarsMark(height: 34)
+                    .padding(.top, 3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .uiFont(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(palette.heading.color)
+                        .lineLimit(1)
+                    Text(message)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(palette.secondary.color)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(dismissLabel)
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                actions
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(width: 380, height: 132)
+        .background(palette.surface.color, in: shape)
+        .overlay {
+            shape.strokeBorder(
+                LinearGradient(colors: palette.brandStops.map(\.color), startPoint: .leading, endPoint: .trailing),
+                lineWidth: 1.5
+            )
+            .allowsHitTesting(false)
+        }
+        .clipShape(shape)
+    }
+}

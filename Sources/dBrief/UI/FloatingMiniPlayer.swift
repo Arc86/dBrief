@@ -6,7 +6,7 @@ import OSLog
 @MainActor
 @Observable
 final class FloatingMiniPlayerController {
-    private static let panelWidth: CGFloat = 220
+    private static let panelWidth: CGFloat = 298
     private static let screenMargin: CGFloat = 12
 
     private var window: NSPanel?
@@ -37,7 +37,8 @@ final class FloatingMiniPlayerController {
         panel.isMovableByWindowBackground = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        // The window shadow follows the rounded card's alpha.
+        panel.hasShadow = true
         panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
@@ -105,123 +106,104 @@ private struct MiniPlayerView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(FloatingMiniPlayerController.self) private var controller
     @Environment(\.viewerPalette) private var palette
-    @Environment(\.viewerMode) private var mode
-
-    private static let cachedIcon: Image = {
-        if let image = DBriefAppIcon.image { return Image(nsImage: image) }
-        return Image(systemName: "waveform.circle.fill")
-    }()
+    @Environment(\.menuPanelPalette) private var status
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Top row: status + timer
-            HStack {
-                HStack {
-                    HStack(spacing: 5) {
-                        Self.cachedIcon
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
-                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                            .opacity(0.8)
-
-                        BrandStatusDot(
-                            color: appState.isRecording ? Brand.recording : Brand.paused,
-                            size: 7,
-                            pulse: appState.isRecording
-                        )
-
-                        Text(appState.isRecording ? "Recording" : "Paused")
-                            .uiFont(.brandMono(11, weight: .medium))
-                            .foregroundStyle(appState.isRecording ? Brand.recording : Brand.paused)
-                    }
-
-                    Spacer()
-
-                    Text(formattedDuration)
-                        .uiFont(.brandMono(12, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                .overlay { MiniPlayerDragArea() }
-                .help("Drag to move recording controls")
-
-                Button {
-                    controller.toggleCollapse()
-                } label: {
-                    Image(systemName: controller.isCollapsed ? "chevron.down" : "chevron.up")
-                        .uiFont(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.typographyBorderless)
-                .accessibilityLabel(controller.isCollapsed ? "Expand recording controls" : "Collapse recording controls")
-            }
-
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        VStack(spacing: 0) {
+            header
             if !controller.isCollapsed {
-            // Waveform
-            MiniWaveform(level: appState.peakLevel)
-                .frame(height: 20)
-                .frame(maxWidth: .infinity)
-                .overlay { MiniPlayerDragArea() }
+                VStack(spacing: 10) {
+                    MenuPanelLevelBars(level: appState.peakLevel, active: appState.isRecording, height: 26)
+                        .overlay { MiniPlayerDragArea() }
 
-            // Transient note when the input device / echo cancellation auto-switches.
-            if let note = appState.recordingStatusNote {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .uiFont(.caption2)
-                    Text(note)
-                        .uiFont(.caption2)
-                        .lineLimit(2)
-                }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.opacity)
-            }
-
-            // Bottom: action buttons
-            HStack(spacing: 6) {
-                if appState.isRecording {
-                    Button {
-                        recordingManager.pauseRecording()
-                    } label: {
-                        Label("Pause", systemImage: "pause.fill")
-                            .uiFont(.caption.weight(.medium))
-                            .frame(maxWidth: .infinity)
+                    // Transient note when the input device / echo cancellation auto-switches.
+                    if let note = appState.recordingStatusNote {
+                        Label(note, systemImage: "arrow.triangle.2.circlepath")
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
                     }
-                    .controlSize(.large)
-                    .buttonStyle(.typographyBordered)
-                } else if appState.isPaused {
-                    Button {
-                        do {
-                            try recordingManager.resumeRecording()
-                        } catch {
-                            Logger.recording.error("Failed to resume recording: \(error)")
+
+                    HStack(spacing: 8) {
+                        if appState.isRecording {
+                            Button {
+                                recordingManager.pauseRecording()
+                            } label: {
+                                Label("Pause", systemImage: "pause")
+                            }
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 36))
+                        } else if appState.isPaused {
+                            Button {
+                                do {
+                                    try recordingManager.resumeRecording()
+                                } catch {
+                                    Logger.recording.error("Failed to resume recording: \(error)")
+                                }
+                            } label: {
+                                Label("Resume", systemImage: "play")
+                            }
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 36))
                         }
-                    } label: {
-                        Label("Resume", systemImage: "play.fill")
-                            .uiFont(.caption.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .controlSize(.large)
-                    .buttonStyle(.typographyBordered)
-                }
 
-                Button {
-                    Task { await recordingManager.stopRecording() }
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                        .uiFont(.caption.weight(.bold))
+                        Button {
+                            Task { await recordingManager.stopRecording() }
+                        } label: {
+                            Label("Stop", systemImage: "stop")
+                        }
+                        .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 36))
+                    }
                 }
-                .controlSize(.large)
-                .buttonStyle(CoralControlButtonStyle())
+                .padding(14)
             }
-            } // end if !controller.isCollapsed
         }
-        .padding(12)
-        .frame(width: 220)
-        .background(palette.surface.color.opacity(mode.isPaper ? 1 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        .frame(width: 298)
+        .background(palette.surface.color, in: shape)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(palette.divider.color, lineWidth: 1).allowsHitTesting(false) }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                BrandBarsMark(height: 20)
+                Text("dBrief")
+                    .uiFont(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                Spacer(minLength: 4)
+                MenuPanelStatusDot(tone: appState.isRecording ? .danger : .warning, pulse: appState.isRecording)
+                Text(appState.isRecording ? "Recording" : "Paused")
+                    .uiFont(.system(size: 13, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
+                Text(formattedDuration)
+                    .uiFont(.system(size: 15, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.heading.color)
+            }
+            .overlay { MiniPlayerDragArea() }
+            .help("Drag to move recording controls")
+
+            Button {
+                controller.toggleCollapse()
+            } label: {
+                Image(systemName: controller.isCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.text.color)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(controller.isCollapsed ? "Expand recording controls" : "Collapse recording controls")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 13)
+        .background(palette.canvas.color)
+        .overlay(alignment: .bottom) {
+            if !controller.isCollapsed { MenuPanelHairline() }
+        }
     }
 
     private var formattedDuration: String {
@@ -252,34 +234,5 @@ private struct MiniPlayerDragArea: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
-    }
-}
-
-private struct MiniWaveform: View {
-    let level: Float
-    @Environment(\.calmAppearance) private var calm
-    private let barCount = 20
-
-    @State private var history: [Float] = Array(repeating: 0, count: 20)
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { idx in
-                Capsule()
-                    .fill(Brand.accentFill(calm: calm))
-                    .frame(width: 2.5, height: barHeight(for: idx))
-            }
-        }
-        .animation(.easeOut(duration: 0.1), value: history)
-        .onChange(of: level) { _, newLevel in
-            history.removeFirst()
-            history.append(AudioLevelMeter.displayLevel(newLevel))
-        }
-    }
-
-    private func barHeight(for index: Int) -> CGFloat {
-        let base: CGFloat = 2
-        let maxExtra: CGFloat = 16
-        return base + maxExtra * CGFloat(history[index])
     }
 }

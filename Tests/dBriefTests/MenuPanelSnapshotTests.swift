@@ -92,6 +92,7 @@ struct MenuPanelSnapshotTests {
                 }
             }) }),
             ("05-queue", { _ in }, { AnyView(ProcessingQueueView(expanded: .constant(true))) }),
+            ("01-call-detected", { state in state.detectedCallApp = "Teams" }, { AnyView(CallDetectedPopup()) }),
             ("07-recording", { state in
                 state.recordingState = .recording
                 state.recordingDuration = 9
