@@ -140,6 +140,7 @@ actor AIService {
 
     nonisolated func startChat(systemPrompt: String, userMessage: String, endpoint: Endpoint,
         stage: PrivacyOperation.Stage = .chat, bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) -> ChatStreamRun {
+        let bounded = bounded || ownership != nil
         let isAnthropic = endpoint.provider == .anthropic
         let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
         let task = Task {

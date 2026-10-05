@@ -31,6 +31,76 @@ struct TranscriptChatSnapshotTests {
             language: .matchInput, question: "Evidence", history: [], answerID: UUID())
     }
 
+    private func chatPrepared(_ provider: TranscriptContextProvider) async throws -> PreparedTranscriptChat {
+        let frozen = try provider.freezeForChat(attachedOwner: nil)
+        let snapshot = try await frozen.snapshot()
+        return try TranscriptContextBuilder.build(snapshot: snapshot,
+            route: .init(engine: "fixture", endpointID: nil, provider: nil, origin: nil, model: nil),
+            budget: .init(contextTokens: 8_192, outputTokens: 512, templateReserve: 256),
+            language: .matchInput, question: "Claimed evidence", history: [], answerID: UUID())
+    }
+
+    @Test(arguments: ["delegate", "receipt", "redirect"])
+    func originalChatClaimSurvivesReturnedContextThroughActualHTTPCompletion(path: String) async throws {
+        let f = try LiveArtifactFixture(); defer { f.remove() }
+        let registry = LiveRecordingSessionRegistry(artifactRoot: f.root, ownerLimit: 1)
+        let provider = try ownedProvider(f, registry: registry)
+        let entry = try #require(registry.entry(recordingID: f.identity.recordingID))
+        try registry.captureDidClose(f.identity)
+        var value: PreparedTranscriptChat? = try await chatPrepared(provider)
+        let context = PrivacyTrace.Context(receiptURL: f.root.appendingPathComponent("claimed-http.json"),
+            store: PrivacyReceiptStore(gapDirectoryURL: f.root.appendingPathComponent("gaps"), pendingDirectoryURL: f.root.appendingPathComponent("pending")))
+        let url = URL(string: "https://freeze-chat.invalid/claimed")!
+        let trace = path == "delegate" ? nil : PrivacyHTTPTrace(operation: .init(stage: .chat, data: [.text, .metadata],
+            destination: .remote(url: url, provider: .custom)), context: context, ownership: value?.contextOwnership)
+        let delegate = PrivacyHTTPTaskDelegate(trace: trace, ownership: path == "receipt" ? nil : value?.contextOwnership)
+        value = nil
+        func requireBusy() {
+            do { let request = try entry.artifacts.beginChatRequest(); request.release(); Issue.record("Actual owned HTTP work must keep the original request occupied") }
+            catch { #expect(error as? LiveArtifactError == .queueFull) }
+        }
+        requireBusy()
+        await trace?.start()
+        let session = URLSession(configuration: .ephemeral); defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: url); defer { task.cancel() }
+        let response = try #require(HTTPURLResponse(url: url, statusCode: path == "redirect" ? 307 : 200, httpVersion: nil, headerFields: nil))
+        if path == "delegate" {
+            #expect(!entry.artifacts.canExpire)
+            delegate.urlSession(session, task: task, didCompleteWithError: nil)
+        } else {
+            let hold = ContextReceiptHold()
+            let holder = Task.detached { await context.store.holdForContextOwnershipTest(hold) }
+            var finish: Task<Void, Never>?
+            do {
+                try await hold.waitForArrival()
+                if path == "receipt" {
+                    finish = Task { await trace?.finish(response: response) }
+                } else {
+                    let result = ContextRedirectProbe()
+                    var request = URLRequest(url: URL(string: "https://freeze-chat.invalid/claimed-redirect")!)
+                    request.httpMethod = "POST"; request.httpBody = Data("Exact claimed prompt".utf8)
+                    delegate.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: request,
+                        completionHandler: { result.complete($0) })
+                    // The admitted redirect callback must retain the claim after the delegate slot clears.
+                    delegate.urlSession(session, task: task, didCompleteWithError: nil)
+                    finish = Task { try? await result.waitForReturn(); await trace?.finish(error: CancellationError()) }
+                }
+                for _ in 0..<100 { await Task.yield() }
+                requireBusy(); #expect(!entry.artifacts.canExpire)
+                hold.release(); await holder.value; await finish?.value
+                #expect(!hold.timedOut)
+            } catch { hold.release(); await holder.value; await finish?.value; throw error }
+        }
+        try await f.eventually { @MainActor in
+            do { let request = try entry.artifacts.beginChatRequest(); request.release(); return true }
+            catch { return false }
+        }
+        #expect(entry.artifacts.canExpire)
+        // Holding the completed trace/delegate alive cannot retain a spent claim.
+        withExtendedLifetime(trace) {}; withExtendedLifetime(delegate) {}
+        try registry.retire(f.identity)
+    }
+
     @Test func retiredOldFailureCannotAlterActualReloadedHistoricalAnswer() async throws {
         let f = try LiveArtifactFixture(); defer { f.remove() }
         let registry = LiveRecordingSessionRegistry(artifactRoot: f.root, ownerLimit: 1)
@@ -68,7 +138,7 @@ struct TranscriptChatSnapshotTests {
             #expect(service.messages == historical.messages)
             #expect(service.messages.last?.id == oldAnswer.id && service.messages.last?.basis == oldAnswer.basis)
             try registry.retire(f.identity)
-            #expect(!service.isInvalidatedForReprocessing)
+            #expect(service.isInvalidatedForReprocessing)
             await gate.release()
             #expect(await send.value == .accepted)
             #expect(service.messages == historical.messages)
@@ -105,7 +175,7 @@ struct TranscriptChatSnapshotTests {
         do {
             try await gate.waitForArrival(); try registry.retire(f.identity)
             if cancel { send.cancel() }
-            #expect(!service.isInvalidatedForReprocessing)
+            #expect(service.isInvalidatedForReprocessing)
             #expect(registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
             #expect(service.messages.isEmpty && FrozenChatProtocol.requests.values.isEmpty)
             await gate.release()
@@ -136,7 +206,7 @@ struct TranscriptChatSnapshotTests {
         #expect(await service.send("Evidence", onAccepted: {
             do { try registry.retire(f.identity) } catch { Issue.record(error) }
         }) == .accepted)
-        #expect(!service.isInvalidatedForReprocessing && !service.isStreaming)
+        #expect(service.isInvalidatedForReprocessing && !service.isStreaming)
         #expect(service.messages.last?.outcome == .interrupted)
         #expect(service.messages.last?.content.isEmpty == true && service.messages.last?.basis?.evidence.isEmpty == false)
         #expect(FrozenChatProtocol.requests.values.isEmpty)

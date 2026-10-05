@@ -321,6 +321,7 @@ actor MLHostConnection {
     }
 
     func startStream(_ request: MLRequest, bounded: Bool = false, ownership: TranscriptContextOwnership? = nil) async -> ChatStreamRun {
+        let bounded = bounded || ownership != nil
         defer { withExtendedLifetime(ownership) {} }
         let id = UUID(), isOwned = ownership != nil
         do {

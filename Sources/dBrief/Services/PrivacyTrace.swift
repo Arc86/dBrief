@@ -93,6 +93,7 @@ enum PrivacyTrace {
     static func streamRun(_ operation: PrivacyOperation,
         bounded: Bool = false, ownership: TranscriptContextOwnership? = nil,
         makeStream: @escaping @Sendable () async throws -> ChatStreamRun) -> ChatStreamRun {
+        let bounded = bounded || ownership != nil
         let originatingContext = context
         let buffer = ChatStreamBuffer(bounded: bounded), continuation = buffer.continuation
         let task = Task {

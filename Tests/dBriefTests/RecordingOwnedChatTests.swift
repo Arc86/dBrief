@@ -5,6 +5,414 @@ import dBriefWire
 
 @MainActor @Suite("Recording-owned chat lifecycle", .serialized)
 struct RecordingOwnedChatTests {
+    @Test(arguments: ["recording", "value"])
+    func unattachedOwnedRequestsShareAdmissionBeforeBuildAndThroughActualStoppedReturn(kind: String) async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat), duplicateGate = LiveArtifactGate(stage: .sourceChat)
+            let postStopGate = LiveArtifactGate(stage: .sourceChat), firstBuilds = OwnedChatCounter(), postStopReturned = OwnedChatCounter()
+            f.cleanupGates += [gate, duplicateGate, postStopGate]
+            let value = try f.entry.artifacts.legacyContext()
+            let provider: TranscriptContextProvider = kind == "value" ? .value { value } :
+                .recording(recordingID: f.files.identity.recordingID, registry: f.registry,
+                    legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let firstService = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: {
+                    firstBuilds.add()
+                    _ = try? await (firstBuilds.count == 1 ? gate : postStopGate).enter(.sourceChat)
+                })
+            let built = OwnedChatCounter(), returned = OwnedChatCounter()
+            let duplicate = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: {
+                    built.add(); _ = try? await duplicateGate.enter(.sourceChat)
+                })
+            f.services += [firstService, duplicate]
+            let first = f.send(firstService, "First held question")
+            try await gate.waitForArrival()
+            let second = Task { let result = await duplicate.send("Duplicate question"); returned.add(); return result }
+            f.sends.append(second)
+            try await f.files.eventually { built.count > 0 || returned.count > 0 }
+            #expect(built.count == 0 && returned.count == 1)
+            #expect(duplicate.messages.isEmpty && OwnedChatProtocol.requests.count == 0)
+            do { let claim = try f.entry.artifacts.beginChatRequest(); claim.release(); Issue.record("Unattached owned build must occupy the original request") }
+            catch { #expect(error as? LiveArtifactError == .queueFull) }
+            firstService.stopGenerating()
+            let postStopCheck = Task {
+                #expect(await firstService.send("Before actual builder return") == .notAccepted)
+                postStopReturned.add()
+            }
+            f.joins.append(postStopCheck)
+            try await f.files.eventually { firstBuilds.count > 1 || postStopReturned.count == 1 }
+            #expect(firstBuilds.count == 1 && postStopReturned.count == 1)
+            firstService.stopGenerating()
+            do { let claim = try f.entry.artifacts.beginChatRequest(); claim.release(); Issue.record("Stop must retain the request until actual builder return") }
+            catch { #expect(error as? LiveArtifactError == .queueFull) }
+            duplicate.stopGenerating()
+            await duplicateGate.release(); await postStopGate.release(); await gate.release()
+            await postStopCheck.value
+            #expect(await first.value == .notAccepted)
+            #expect(await second.value == .notAccepted)
+            let claim = try f.entry.artifacts.beginChatRequest(); claim.release()
+            #expect(OwnedChatProtocol.requests.count == 0)
+        }
+    }
+
+    @Test(arguments: ["stop", "retire"], [false, true])
+    func preAcceptanceStopOrRetirementPreservesHistoricalRowsAndSavedBytes(action: String, streamingHistory: Bool) async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            let snapshot = try f.entry.artifacts.legacyContext()
+            let prepared = try TranscriptContextBuilder.build(snapshot: snapshot,
+                route: .init(engine: "historical", endpointID: nil, provider: nil, origin: nil, model: nil),
+                budget: .init(contextTokens: 8_192, outputTokens: 512, templateReserve: 256),
+                language: .matchInput, question: "Historical question", history: [], answerID: UUID())
+            let history = ChatHistory(messages: [.init(role: .user, content: "Historical question"),
+                .init(role: .assistant, content: streamingHistory ? "Historical streaming-looking fact" : "",
+                    basis: prepared.basis, outcome: streamingHistory ? .streaming : .completed)])
+            let store = ChatStore(), url = f.files.root.appendingPathComponent("preserved-history.chat.json")
+            try await store.save(history, to: url)
+            let bytes = try Data(contentsOf: url)
+            let provider = TranscriptContextProvider.value { snapshot }
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: { _ = try? await gate.enter(.sourceChat) })
+            f.services.append(service)
+            if streamingHistory {
+                // Runtime history can contain this row; cold load normally normalizes it.
+                service.startLoadingPersisted(load: { history })
+            }
+            service.enablePersistence(store: store, url: url)
+            if streamingHistory { try await f.files.eventually { await MainActor.run { !service.isLoadingHistory } } }
+            await service.loadPersisted()
+            let oldRows = service.messages
+            #expect(oldRows.last?.basis == prepared.basis)
+            #expect(oldRows.last?.outcome == (streamingHistory ? .streaming : .completed))
+            let send = f.send(service, "New question still before acceptance")
+            try await gate.waitForArrival()
+            #expect(service.messages == oldRows && service.isStreaming)
+            if action == "stop" { service.stopGenerating() }
+            else { try f.registry.retire(f.files.identity) }
+            #expect(service.messages == oldRows)
+            if action == "retire" { #expect(service.isInvalidatedForReprocessing && !service.isStreaming) }
+            await gate.release(); #expect(await send.value == .notAccepted)
+            await service.flushPendingSave()
+            #expect(service.messages == oldRows)
+            #expect(try Data(contentsOf: url) == bytes)
+            #expect(OwnedChatProtocol.requests.count == 0)
+        }
+    }
+
+    @Test func retiringOriginalEntryRevokesUncachedNilPrivacyChatAndOnlyItsAcceptedRow() async throws {
+        try await withFixture { f in
+            let returned = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(returned)
+            let provider = TranscriptContextProvider.recording(recordingID: f.files.identity.recordingID,
+                registry: f.registry, legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session, beforeChatProducerReturn: { _ = try? await returned.enter(.sourceChat) }))
+            let other = TranscriptChatService(contextProvider: .value {
+                .legacy(text: "Unrelated evidence", recordingID: UUID(), speakerLabels: [])
+            }, appSettings: f.settings, localPlugin: nil, aiService: AIService(session: f.session))
+            f.services += [service, other]
+            let send = f.send(service, "Accepted current question")
+            try await f.files.eventually { await MainActor.run { service.messages.last?.content == "Partial answer." } }
+            let basis = service.messages.last?.basis, answerID = service.messages.last?.id
+            try f.registry.retire(f.files.identity)
+            #expect(service.isInvalidatedForReprocessing && !service.isStreaming)
+            #expect(service.messages.last?.id == answerID && service.messages.last?.basis == basis)
+            #expect(service.messages.last?.outcome == .interrupted)
+            #expect(!other.isInvalidatedForReprocessing)
+            service.stopGenerating(); send.cancel()
+            try await returned.waitForArrival()
+            #expect(f.registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
+            await returned.release(); _ = await send.value
+        }
+    }
+
+    @Test(arguments: ["builder", "producer"])
+    func hintlessUnownedCustomSnapshotRetiresThroughActualValidatedSource(stage: String) async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            let snapshot = TranscriptContextSnapshot.legacy(text: "Conventional custom source", recordingID: f.files.identity.recordingID, speakerLabels: [])
+            let prepared = try TranscriptContextBuilder.build(snapshot: snapshot,
+                route: .init(engine: "historical", endpointID: nil, provider: nil, origin: nil, model: nil),
+                budget: .init(contextTokens: 8_192, outputTokens: 512, templateReserve: 256),
+                language: .matchInput, question: "Historical question", history: [], answerID: UUID())
+            let historical = ChatHistory(messages: [.init(role: .user, content: "Historical question"),
+                .init(role: .assistant, content: "Historical confirmed answer", basis: prepared.basis, outcome: .completed)])
+            let store = ChatStore(), url = f.files.root.appendingPathComponent("hintless-history.chat.json")
+            try await store.save(historical, to: url)
+            let provider = TranscriptContextProvider { .init(snapshot: { snapshot }) }
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session, beforeChatProducerReturn: {
+                    if stage == "producer" { _ = try? await gate.enter(.sourceChat) }
+                }), beforeContextBuild: { if stage == "builder" { _ = try? await gate.enter(.sourceChat) } })
+            f.services.append(service)
+            service.enablePersistence(store: store, url: url); await service.loadPersisted()
+            let oldRows = service.messages
+            #expect(oldRows == historical.messages)
+            let send = f.send(service, "Validated conventional source")
+            if stage == "builder" {
+                try await gate.waitForArrival()
+                #expect(service.messages == oldRows && OwnedChatProtocol.requests.count == 0)
+            } else {
+                try await f.files.eventually { await MainActor.run { service.messages.last?.content == "Partial answer." } }
+                #expect(OwnedChatProtocol.requests.count == 1)
+                #expect(service.messages.last?.basis?.source.recordingID == f.files.identity.recordingID)
+                await service.flushPendingSave()
+            }
+            let savedBytes = try Data(contentsOf: url), current = service.messages.last
+            try f.registry.retire(f.files.identity)
+            #expect(service.isInvalidatedForReprocessing && !service.isStreaming)
+            #expect(Array(service.messages.prefix(oldRows.count)) == oldRows)
+            if stage == "producer" {
+                #expect(service.messages.last?.id == current?.id && service.messages.last?.basis == current?.basis)
+                #expect(service.messages.last?.outcome == .interrupted)
+            } else { #expect(service.messages == oldRows) }
+            // Wrongly admitted controls stop before releasing the held build.
+            service.stopGenerating(); send.cancel()
+            if stage == "producer" { try await gate.waitForArrival() }
+            await gate.release()
+            #expect(await send.value == (stage == "producer" ? .accepted : .notAccepted))
+            await service.flushPendingSave()
+            #expect(try Data(contentsOf: url) == savedBytes)
+            #expect(OwnedChatProtocol.requests.count == (stage == "producer" ? 1 : 0))
+        }
+    }
+
+    @Test func stoppedHintlessSnapshotCannotReplaceNewerSendSourceMetadata() async throws {
+        try await withFixture { f in
+            let oldGate = LiveArtifactGate(stage: .sourceChat), currentGate = LiveArtifactGate(stage: .sourceChat)
+            f.cleanupGates += [oldGate, currentGate]
+            let nextIdentity = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())
+            _ = try f.registry.registerLegacy(nextIdentity)
+            let old = TranscriptContextSnapshot.legacy(text: "Old source", recordingID: f.files.identity.recordingID, speakerLabels: [])
+            let next = TranscriptContextSnapshot.legacy(text: "Current source", recordingID: nextIdentity.recordingID, speakerLabels: [])
+            let captured = OwnedChatCounter()
+            let provider = TranscriptContextProvider {
+                captured.add(); let value = captured.count == 1 ? old : next
+                return .init(snapshot: {
+                    if value.source.recordingID == old.source.recordingID { _ = try? await oldGate.enter(.sourceChat) }
+                    return value
+                })
+            }
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: { _ = try? await currentGate.enter(.sourceChat) })
+            f.services.append(service)
+            let obsolete = f.send(service, "Old held snapshot")
+            try await oldGate.waitForArrival(); service.stopGenerating()
+            let current = f.send(service, "Current held build")
+            try await currentGate.waitForArrival()
+            await oldGate.release(); #expect(await obsolete.value == .notAccepted)
+            try f.registry.retire(f.files.identity)
+            #expect(!service.isInvalidatedForReprocessing && service.isStreaming)
+            try f.registry.retire(nextIdentity)
+            #expect(service.isInvalidatedForReprocessing && !service.isStreaming)
+            #expect(service.messages.isEmpty && OwnedChatProtocol.requests.count == 0)
+            service.stopGenerating(); current.cancel()
+            await currentGate.release(); #expect(await current.value == .notAccepted)
+        }
+    }
+
+    @Test(arguments: ["oversized-line", "flood"])
+    func directOwnedRemoteDefaultFlagStillBoundsInputBeforeHeldConsumer(mode: String) async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            OwnedChatProtocol.responses.set(mode)
+            let value = try f.entry.artifacts.legacyContext()
+            let run = AIService(session: f.session, beforeChatProducerReturn: { _ = try? await gate.enter(.sourceChat) })
+                .startChat(systemPrompt: "Owned direct input", userMessage: "Default flag",
+                    endpoint: f.settings.aiEndpoints[0], ownership: value.contextOwnership)
+            f.trackRun(run)
+            // Both fixtures keep HTTP open; overflow must reach the real return gate.
+            try await gate.waitForArrival()
+            var received = 0
+            do { for try await chunk in run.stream {
+                #expect(chunk.utf8.count <= ChatStreamBuffer.chunkLimit); received += chunk.utf8.count
+            }; Issue.record("Owned overflow must report an incomplete result") }
+            catch { #expect(ChatStreamEndError.classify(error) == .limited) }
+            #expect(received <= ChatStreamBuffer.textLimit)
+            if mode == "oversized-line" { #expect(received == 0) }
+            await gate.release(); await run.waitForReturn()
+        }
+    }
+
+    @Test(arguments: ["oversized-finite", "flood-finite"])
+    func directOwnedFiniteRemoteDefaultFlagBoundsRawLineAndAggregate(mode: String) async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            OwnedChatProtocol.responses.set(mode)
+            let value = try f.entry.artifacts.legacyContext()
+            let run = AIService(session: f.session, beforeChatProducerReturn: { _ = try? await gate.enter(.sourceChat) })
+                .startChat(systemPrompt: "Owned direct input", userMessage: "Default flag",
+                    endpoint: f.settings.aiEndpoints[0], ownership: value.contextOwnership)
+            f.trackRun(run)
+            // Finite real HTTP responses also reach this gate in the unbounded causal control.
+            try await gate.waitForArrival()
+            var received = 0
+            do { for try await chunk in run.stream {
+                #expect(chunk.utf8.count <= ChatStreamBuffer.chunkLimit); received += chunk.utf8.count
+            }; Issue.record("Owned overflow must report an incomplete result") }
+            catch { #expect(ChatStreamEndError.classify(error) == .limited) }
+            #expect(received <= ChatStreamBuffer.textLimit)
+            if mode == "oversized-finite" { #expect(received == 0) }
+            await gate.release(); await run.waitForReturn()
+        }
+    }
+
+    @Test func directOwnedPrivacyDefaultFlagBoundsAggregateAndRetainsActualProducer() async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            let value = try f.entry.artifacts.legacyContext(), processed = OwnedChatCounter()
+            let run = PrivacyTrace.streamRun(.init(stage: .chat, data: [.text], destination: .local(provider: .localModel)),
+                ownership: value.contextOwnership) {
+                let (stream, continuation) = AsyncThrowingStream<String, any Error>.makeStream()
+                let task = Task {
+                    continuation.yield(String(repeating: "x", count: ChatStreamBuffer.textLimit + 1)); continuation.finish()
+                    _ = try? await gate.enter(.sourceChat)
+                }
+                return .init(stream: stream, cancel: { processed.add(); task.cancel() }, join: { await task.value })
+            }
+            f.trackRun(run)
+            try await gate.waitForArrival()
+            try await f.files.eventually { processed.count > 0 }
+            try f.registry.retire(f.files.identity)
+            #expect(f.registry.reservedPayloadBytes == LiveRecordingArtifactOwner.reservationBytes + LiveManagedArtifactCatalogue.metadataBytes)
+            await gate.release()
+            do { for try await _ in run.stream {}; Issue.record("Owned oversized chunk must fail") }
+            catch { #expect(ChatStreamEndError.classify(error) == .limited) }
+            await run.waitForReturn()
+        }
+    }
+
+    @Test func unattachedStoppedActualRemoteProducerKeepsOriginalRequestUntilReturn() async throws {
+        try await withFixture { f in
+            let gate = LiveArtifactGate(stage: .sourceChat); f.cleanupGates.append(gate)
+            let provider = TranscriptContextProvider.recording(recordingID: f.files.identity.recordingID, registry: f.registry,
+                legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session, beforeChatProducerReturn: { _ = try? await gate.enter(.sourceChat) }))
+            f.services.append(service)
+            let send = f.send(service, "Unattached owned question")
+            try await f.files.eventually { await MainActor.run { service.messages.last?.content == "Partial answer." } }
+            let basis = service.messages.last?.basis
+            service.stopGenerating(); try await gate.waitForArrival()
+            try f.registry.captureDidClose(f.files.identity)
+            #expect(!f.entry.artifacts.persistenceStarted && !f.entry.artifacts.canExpire)
+            #expect(service.messages.last?.outcome == .interrupted && service.messages.last?.basis == basis)
+            #expect(await service.send("Before actual producer return") == .notAccepted)
+            let duplicate = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session)); f.services.append(duplicate)
+            #expect(await duplicate.send("Uncached duplicate") == .notAccepted)
+            #expect(OwnedChatProtocol.requests.count == 1)
+            await gate.release(); #expect(await send.value == .accepted)
+            // Actual delegate completion can follow producer return. Observe
+            // the original request/Pin refund within the existing deadline.
+            try await f.files.eventually { await MainActor.run { f.entry.artifacts.canExpire } }
+            #expect(f.entry.artifacts.canExpire)
+            let next = f.send(service, "After actual producer return")
+            try await f.files.eventually { await MainActor.run { service.messages.count == 4 && service.messages.last?.content == "Partial answer." } }
+            service.stopGenerating(); _ = await next.value
+        }
+    }
+
+    @Test(arguments: ["undeclared", "declared", "wrongID", "wrongAuthority", "declaredUnowned"])
+    func customOwnedProviderRequiresOriginalSynchronousAuthorityBeforeBuild(mode: String) async throws {
+        try await withFixture { f in
+            let value = try f.entry.artifacts.legacyContext(), built = OwnedChatCounter()
+            let actual: TranscriptContextSnapshot
+            if mode == "wrongID" {
+                actual = .init(source: .legacy(recordingID: UUID(), live: true), segments: value.segments, ownership: value.contextOwnership)
+            } else if mode == "wrongAuthority" {
+                let other = try f.registry.registerLegacy(.init(recordingID: UUID(), captureSessionID: UUID()))
+                try other.artifacts.appendLegacy([.init(start: 0, end: 1, text: "Different owner's evidence")])
+                actual = try other.artifacts.legacyContext()
+            } else if mode == "declaredUnowned" {
+                actual = .init(source: value.source, segments: value.segments)
+            } else { actual = value }
+            let provider = TranscriptContextProvider {
+                .init(ownership: mode == "undeclared" ? nil : value.contextOwnership, snapshot: { actual })
+            }
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: { built.add() }); f.services.append(service)
+            let send = Task { await service.send("Check declared source", onAccepted: {
+                // A wrongly admitted causal control must stop before transport dispatch.
+                if mode == "declaredUnowned" { service.stopGenerating() }
+            }) }; f.sends.append(send)
+            if mode == "declared" {
+                try await f.files.eventually { await MainActor.run { service.messages.last?.content == "Partial answer." } }
+                service.stopGenerating(); #expect(await send.value == .accepted)
+                #expect(built.count == 1 && OwnedChatProtocol.requests.count == 1)
+            } else {
+                #expect(await send.value == .notAccepted)
+                #expect(built.count == 0 && OwnedChatProtocol.requests.count == 0 && service.messages.isEmpty)
+            }
+            let claim = try f.entry.artifacts.beginChatRequest(); claim.release()
+            // Pure freeze remains a fact operation, with no transient claim.
+            #expect(try await provider.freeze().snapshot() == actual)
+        }
+    }
+
+    @Test(arguments: ["value", "custom"])
+    func attachedOriginalAuthorityRejectsNilReturnedOwnershipBeforeBuild(kind: String) async throws {
+        try await withFixture { f in
+            let value = TranscriptContextSnapshot.legacy(text: "Unowned same-ID custom facts",
+                recordingID: f.files.identity.recordingID, speakerLabels: [])
+            let provider: TranscriptContextProvider = kind == "value" ? .value { value } :
+                .init { .init(snapshot: { value }) }
+            let built = OwnedChatCounter()
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session), beforeContextBuild: { built.add() })
+            f.services.append(service); f.registry.startPersistence(f.files.identity)
+            service.enableRecordingPersistence(owner: f.entry.artifacts)
+            let send = Task { await service.send("Require actual attached ownership", onAccepted: {
+                // A wrongly accepted causal control stops before network dispatch.
+                service.stopGenerating()
+            }) }; f.sends.append(send)
+            #expect(await send.value == .notAccepted)
+            #expect(built.count == 0 && OwnedChatProtocol.requests.count == 0 && service.messages.isEmpty)
+            let claim = try f.entry.artifacts.beginChatRequest(); claim.release()
+            #expect(try await provider.freeze().snapshot() == value)
+        }
+    }
+
+    @Test func retirementMetadataReachesIdleStandardProviderButPreservesFreshValidityWithSameRecordingID() async throws {
+        try await withFixture { f in
+            let oldProvider = TranscriptContextProvider.recording(recordingID: f.files.identity.recordingID, registry: f.registry,
+                legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let old = TranscriptChatService(contextProvider: oldProvider, appSettings: f.settings, localPlugin: nil)
+            let replacement = LiveRecordingSessionRegistry(artifactRoot: f.files.root.appendingPathComponent("fresh-generation"))
+            let entry = try replacement.registerLegacy(.init(recordingID: f.files.identity.recordingID, captureSessionID: UUID()))
+            try entry.artifacts.appendLegacy([.init(start: 0, end: 1, text: "Fresh generation")])
+            let freshProvider = TranscriptContextProvider.recording(recordingID: f.files.identity.recordingID, registry: replacement,
+                legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let fresh = TranscriptChatService(contextProvider: freshProvider, appSettings: f.settings, localPlugin: nil)
+            f.services += [old, fresh]
+            #expect(old.recordingIdentity == f.files.identity.recordingID && fresh.recordingIdentity == f.files.identity.recordingID)
+            try f.registry.retire(f.files.identity)
+            #expect(old.isInvalidatedForReprocessing && !fresh.isInvalidatedForReprocessing && entry.isValid)
+            #expect(try await freshProvider.freeze().snapshot().segments.map(\.text) == ["Fresh generation"])
+            try replacement.retire(entry.identity)
+            #expect(fresh.isInvalidatedForReprocessing)
+        }
+    }
+
+    @Test(arguments: ["unicode", "error"])
+    func unattachedOwnedResponseAndErrorUseFiniteEnvelope(mode: String) async throws {
+        try await withFixture { f in
+            OwnedChatProtocol.responses.set(mode)
+            let provider = TranscriptContextProvider.recording(recordingID: f.files.identity.recordingID, registry: f.registry,
+                legacy: { .legacy(text: "Wrong fallback", recordingID: f.files.identity.recordingID, speakerLabels: []) })
+            let service = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                aiService: AIService(session: f.session)); f.services.append(service)
+            #expect(!service.usesRecordingPersistence)
+            #expect(await service.send("Owned unattached envelope") == .accepted)
+            let answer = try #require(service.messages.last)
+            #expect(answer.basis != nil && answer.content.utf8.count <= ChatStreamBuffer.textLimit)
+            #expect((service.streamingError?.utf8.count ?? 0) <= 4_096)
+            if mode == "error" { #expect(answer.outcome == .failed && answer.content.isEmpty) }
+            else { #expect(answer.outcome == .limited && answer.content.isEmpty) }
+            #expect(!f.entry.artifacts.persistenceStarted)
+        }
+    }
+
     @Test func quitFreezesAnInterruptedAnswerWithoutWaitingForItsHeldProducerReturn() async throws {
         let returned = LiveArtifactGate(stage: .sourceChat)
         try await withFixture(gates: []) { f in
@@ -159,9 +567,12 @@ struct RecordingOwnedChatTests {
         let gate = LiveArtifactGate(stage: .sourceChat)
         try await withFixture { f in
             f.cleanupGates.append(gate)
-            let snapshot = TranscriptContextSnapshot.legacy(text: "Original held evidence",
-                recordingID: f.files.identity.recordingID, speakerLabels: [])
-            let provider = TranscriptContextProvider { .init(snapshot: { try await gate.enter(.sourceChat); return snapshot }) }
+            // Attached requests use actual original ownership; the held
+            // custom provider declares that authority before its first await.
+            let snapshot = try f.entry.artifacts.legacyContext()
+            let provider = TranscriptContextProvider {
+                .init(ownership: snapshot.contextOwnership, snapshot: { try await gate.enter(.sourceChat); return snapshot })
+            }
             let service = f.service(provider: provider), first = f.send(service, "Held question")
             try await gate.waitForArrival()
             service.stopGenerating()
@@ -313,6 +724,36 @@ struct RecordingOwnedChatTests {
                 boundedIngestDelivery: { if mode == "chat-pipe-flood" { _ = try? await gate.enter(.sourceChat) } })
             f.connections.append(connection)
             let run = await connection.startStream(.chatStream(systemPrompt: "Fixture", userMessage: "Raw pipe bound"), bounded: true)
+            f.trackRun(run)
+            if mode == "chat-pipe-flood" { try await gate.waitForArrival() }
+            var received = 0
+            do {
+                for try await chunk in run.stream { received += chunk.utf8.count }
+                Issue.record("Raw helper overflow must report an incomplete result")
+            } catch { #expect(ChatStreamEndError.classify(error) == .limited) }
+            #expect(received == 0)
+            let returned = OwnedChatCounter()
+            let join = Task { await run.waitForReturn(); returned.add() }; f.joins.append(join)
+            for _ in 0..<1_000 { await Task.yield() }
+            #expect(returned.count == 0)
+            try Data().write(to: flag)
+            await gate.release(); await join.value
+            #expect(returned.count == 1)
+        }
+    }
+
+    @Test(arguments: ["chat-prefix-bound", "chat-pipe-flood"])
+    func directOwnedLocalDefaultFlagRejectsRawOverflowAndJoinsActualExit(mode: String) async throws {
+        try await withFixture { f in
+            let flag = f.files.root.appendingPathComponent("raw-helper-exit")
+            let gate = LiveArtifactGate(stage: .sourceChat)
+            f.cleanupFiles.append(flag); f.cleanupGates.append(gate)
+            let connection = MLHostConnection(binaryURL: URL(fileURLWithPath: ".build/debug/dBriefMLHostStub"),
+                supportBase: f.files.root, environment: ["STUB_MODE": mode, "STUB_FLAG_1": flag.path],
+                boundedIngestDelivery: { if mode == "chat-pipe-flood" { _ = try? await gate.enter(.sourceChat) } })
+            f.connections.append(connection)
+            let value = try f.entry.artifacts.legacyContext()
+            let run = await connection.startStream(.chatStream(systemPrompt: "Fixture", userMessage: "Raw pipe bound"), ownership: value.contextOwnership)
             f.trackRun(run)
             if mode == "chat-pipe-flood" { try await gate.waitForArrival() }
             var received = 0
@@ -536,9 +977,9 @@ struct RecordingOwnedChatTests {
     let entry: LiveRecordingSessionRegistry.Entry
     let settings = AppSettings()
     private let saved: OwnedChatSettings
-    private let session: URLSession
-    private var services: [TranscriptChatService] = []
-    private var sends: [Task<TranscriptChatSendResult, Never>] = []
+    fileprivate let session: URLSession
+    fileprivate var services: [TranscriptChatService] = []
+    fileprivate var sends: [Task<TranscriptChatSendResult, Never>] = []
     private var runs: [ChatStreamRun] = []
     var joins: [Task<Void, Never>] = []
     private let requestID = UUID().uuidString
@@ -635,10 +1076,14 @@ private final class OwnedChatProtocol: URLProtocol, @unchecked Sendable {
         }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
             httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!, cacheStoragePolicy: .notAllowed)
-        if mode == "flood" {
+        if mode == "flood" || mode == "flood-finite" {
             let payload = try! JSONSerialization.data(withJSONObject: ["choices": [["delta": ["content": String(repeating: "x", count: 8_192)]]]])
             let frame = Data("data: ".utf8) + payload + Data("\n\n".utf8)
             for _ in 0..<64 { client?.urlProtocol(self, didLoad: frame) }
+            if mode == "flood-finite" {
+                client?.urlProtocol(self, didLoad: Data("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n".utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
             return
         }
         if mode == "invalid-utf8" {
@@ -647,7 +1092,7 @@ private final class OwnedChatProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocolDidFinishLoading(self); return
         }
         var content = "Partial answer."
-        if mode == "oversized-line" { content = String(repeating: "x", count: ChatStreamBuffer.lineLimit + 1) }
+        if mode == "oversized-line" || mode == "oversized-finite" { content = String(repeating: "x", count: ChatStreamBuffer.lineLimit + 1) }
         if mode == "unicode" { content = String(repeating: "e\u{301}", count: 70_000) }
         if mode == "references" {
             var bytes = request.httpBody ?? Data()

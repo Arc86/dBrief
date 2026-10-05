@@ -16,8 +16,15 @@ import dBriefWire
         private let lock = NSLock()
         private var owner: LiveRecordingArtifactOwner?
         private let counter: LiveArtifactPinCounter
+        let recordingID: UUID
         @MainActor fileprivate init(_ owner: LiveRecordingArtifactOwner) {
-            self.owner = owner; counter = owner.pinCounter; counter.add()
+            self.owner = owner; recordingID = owner.identity.recordingID; counter = owner.pinCounter; counter.add()
+        }
+        @MainActor func beginChatRequest() throws -> ChatRequest {
+            try lock.withLock {
+                guard let owner else { throw CancellationError() }
+                return try owner.beginChatRequest()
+            }
         }
         func release() { lock.withLock { if owner != nil { counter.remove(); owner = nil } } }
         deinit { release() }
@@ -148,6 +155,7 @@ import dBriefWire
         started = true; captureClosed = true; hydratedReadOnly = true; recoveredOwner = true
     }
     func pin() -> Pin { Pin(self) }
+    var contextAuthority: TranscriptContextAuthority { .init(recordingID: identity.recordingID, validity: validity) }
     func contextOwnership() -> TranscriptContextOwnership { .init(pin: pin(), validity: validity) }
     var finalAnchor: (id: UUID, revision: UInt64)? { finalPublication.map { ($0.id, $0.revision) } ?? nativeFinalAnchor }
     /// Explicit RAM adapter. It has a fresh shared token/store and the ordinary

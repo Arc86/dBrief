@@ -45,6 +45,22 @@ final class TranscriptChatService {
         }
     }
 
+    /// Entry retirement also reaches services outside any injected UI cache.
+    /// A known original token takes precedence over ID/audio coincidence.
+    static func invalidateOwnedSource(recordingID: UUID, validity: RecordingDerivativeValidity) {
+        let retired = TranscriptContextAuthority(recordingID: recordingID, validity: validity)
+        activeServices.removeAll { $0.value == nil }
+        for item in activeServices {
+            guard let service = item.value else { continue }
+            let authority = service.sourceAuthority ?? service.contextProvider.sourceAuthorityHint ?? service.recordingOwner?.contextAuthority
+            if let authority {
+                if authority == retired { service.invalidateForReprocessing() }
+            } else if service.recordingIdentity == recordingID {
+                service.invalidateForReprocessing()
+            }
+        }
+    }
+
     var isInvalidatedForReprocessing: Bool { invalidated }
     private(set) var messages: [ChatMessage] = []
     private(set) var isStreaming = false
@@ -127,16 +143,30 @@ final class TranscriptChatService {
     private let validity = RecordingDerivativeValidity()
     private var sendTask: Task<TranscriptChatSendResult, Never>?
     private var activeSendID: UUID?
+    private var sourceAuthority: TranscriptContextAuthority?
+    private var sourceRecordingID: UUID?
+    private struct AcceptedAssistant: Equatable {
+        let id: UUID
+        let sendID: UUID
+        let generation: UInt64
+        let owned: Bool
+    }
+    private var acceptedAssistant: AcceptedAssistant?
     private let beforeStreamFailureHandling: @Sendable () async -> Void
     private let beforeContextBuild: @Sendable () async -> Void
 
     /// Retire this session without deleting the currently published conversation.
     /// A retired session can never republish derivatives after an attempt unlocks.
     func invalidateForReprocessing() {
-        stopReading()
+        guard !invalidated else { return }
+        let accepted = currentAcceptedAssistant()
         invalidated = true
         conversationGeneration &+= 1
         validity.invalidate()
+        // Revoke saves before applying only the already accepted current row.
+        finishAcceptedAssistant(accepted, outcome: .interrupted, removeEmptyLegacy: false)
+        acceptedAssistant = nil
+        stopReading()
         sendTask?.cancel()
         saveTask?.cancel()
         loadTask?.cancel()
@@ -175,6 +205,8 @@ final class TranscriptChatService {
         beforeContextBuild: @escaping @Sendable () async -> Void = {}
     ) {
         self.contextProvider = contextProvider
+        self.sourceAuthority = contextProvider.sourceAuthorityHint
+        self.sourceRecordingID = contextProvider.recordingIDHint ?? recording?.id
         self.appSettings = appSettings
         self.localPlugin = localPlugin
         self.resourceAdmission = localPlugin?.connection.resourceAdmission
@@ -231,11 +263,17 @@ final class TranscriptChatService {
         if let owner = recordingOwner, !owner.chatReady, !isLoadingHistory, persistenceError != nil { return .notAccepted }
         // Capture mutable owners and settings before the first suspension.
         let frozenOwner = recordingOwner
-        let ownerRequest: LiveRecordingArtifactOwner.ChatRequest?
-        do { ownerRequest = try frozenOwner?.beginChatRequest() }
-        catch { streamingNotice = "Waiting for the stopped answer to finish."; return .notAccepted }
-        if frozenOwner != nil { ownedProducerCount += 1 }
-        let frozenProvider = contextProvider.freeze()
+        let frozenProvider: TranscriptContextProvider.Frozen
+        do { frozenProvider = try contextProvider.freezeForChat(attachedOwner: frozenOwner) }
+        catch {
+            if (error as? LiveArtifactError) == .queueFull { streamingNotice = "Waiting for the stopped answer to finish." }
+            else { streamingError = Self.boundedUTF8(error.localizedDescription, limit: 4_096).text }
+            return .notAccepted
+        }
+        let ownsRequest = frozenProvider.hasChatRequest
+        if ownsRequest { ownedProducerCount += 1 }
+        sourceAuthority = frozenProvider.sourceAuthority
+        sourceRecordingID = frozenProvider.recordingID ?? contextProvider.recordingIDHint ?? privacyRecording?.id
         let route = FrozenChatRoute(settings: appSettings)
         let language = appSettings.outputLanguage
         let question = userText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -247,8 +285,10 @@ final class TranscriptChatService {
         streamingNotice = nil
         let task = Task { [weak self] () -> TranscriptChatSendResult in
             defer {
-                ownerRequest?.release()
-                if frozenOwner != nil { self?.ownedProducerCount -= 1 }
+                // Returned ownership copies may still be in an actual HTTP
+                // callback or writer. Their last release refunds the request.
+                withExtendedLifetime(frozenProvider) {}
+                if ownsRequest { self?.ownedProducerCount -= 1 }
             }
             guard let self, self.accepts(sendID, generation: generation) else { return .notAccepted }
             do {
@@ -256,6 +296,7 @@ final class TranscriptChatService {
                 let snapshot = try await frozenProvider.snapshot()
                 defer { withExtendedLifetime(snapshot) {} }
                 try TranscriptContextOwnership.requireValid(snapshot.contextOwnership)
+                try frozenProvider.requireSource(recordingID: snapshot.source.recordingID, ownership: snapshot.contextOwnership)
                 guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
                 if let owner = self.privacyRecording?.id, snapshot.source.recordingID != owner {
                     throw TranscriptContextError.recordingMismatch
@@ -263,6 +304,10 @@ final class TranscriptChatService {
                 if let owner = frozenOwner, snapshot.source.recordingID != owner.identity.recordingID {
                     throw TranscriptContextError.recordingMismatch
                 }
+                // A hintless custom source becomes matchable only from its
+                // validated actual value, after the exact current-send guard.
+                self.sourceRecordingID = snapshot.source.recordingID
+                self.sourceAuthority = snapshot.contextOwnership?.authority ?? frozenProvider.sourceAuthority
                 guard !snapshot.segments.isEmpty else {
                     self.streamingNotice = "Waiting for transcript"
                     return .waitingForTranscript
@@ -283,6 +328,7 @@ final class TranscriptChatService {
                 }
                 let prepared = try await withTaskCancellationHandler { try await build.value } onCancel: { build.cancel() }
                 try TranscriptContextOwnership.requireValid(prepared.contextOwnership)
+                try frozenProvider.requireSource(recordingID: prepared.basis.source.recordingID, ownership: prepared.contextOwnership)
                 let context = await self.privacyRecording?.privacyContext()
                 try TranscriptContextOwnership.requireValid(prepared.contextOwnership)
                 guard self.accepts(sendID, generation: generation), !Task.isCancelled else { return .notAccepted }
@@ -306,6 +352,7 @@ final class TranscriptChatService {
         } onCancel: { task.cancel() }
         // A stopped request may unwind after the user has already sent another.
         guard activeSendID == sendID else { return result }
+        if acceptedAssistant?.sendID == sendID { acceptedAssistant = nil }
         sendTask = nil
         activeSendID = nil
         isStreaming = false
@@ -338,6 +385,8 @@ final class TranscriptChatService {
             } catch { persistenceError = error.localizedDescription; return .notAccepted }
         }
         messages = proposed
+        let boundedResponse = owner != nil || prepared.contextOwnership != nil
+        acceptedAssistant = .init(id: assistantID, sendID: sendID, generation: generation, owned: boundedResponse)
         let assistantIdx = messages.count - 1
         onAccepted?()
         guard accepts(sendID, generation: generation), !Task.isCancelled else { return .accepted }
@@ -347,7 +396,7 @@ final class TranscriptChatService {
         }
         var limiter = ChatResponseLimiter()
 
-        let run = await buildStream(prepared: prepared, route: route, bounded: owner != nil)
+        let run = await buildStream(prepared: prepared, route: route, bounded: boundedResponse)
         do {
             for try await chunk in run.stream {
                 try TranscriptContextOwnership.requireValid(prepared.contextOwnership)
@@ -356,9 +405,9 @@ final class TranscriptChatService {
                     run.cancel(); await run.waitForReturn(); return .accepted
                 }
                 if Task.isCancelled { assistantMessage.outcome = .interrupted; break }
-                let bounded = owner == nil ? (text: chunk, limited: false) : Self.boundedUTF8(chunk, limit: remainingResponseBytes)
+                let bounded = boundedResponse ? Self.boundedUTF8(chunk, limit: remainingResponseBytes) : (text: chunk, limited: false)
                 let appended = limiter.append(bounded.text)
-                if owner != nil { remainingResponseBytes -= appended.utf8.count }
+                if boundedResponse { remainingResponseBytes -= appended.utf8.count }
                 assistantMessage.content += appended
                 messages[assistantIdx] = assistantMessage
                 scheduleSave()
@@ -402,7 +451,7 @@ final class TranscriptChatService {
                 assistantMessage.outcome = .failed
                 streamingError = Self.boundedUTF8(error.localizedDescription, limit: 4_096).text
                 if assistantMessage.content.isEmpty {
-                    if owner == nil { assistantMessage.content = "Error: \(error.localizedDescription)" }
+                    if !boundedResponse { assistantMessage.content = "Error: \(error.localizedDescription)" }
                 } else { streamingNotice = "Response interrupted: \(streamingError ?? "")" }
             }
         }
@@ -415,6 +464,7 @@ final class TranscriptChatService {
         } else if (try? TranscriptContextOwnership.requireValid(prepared.contextOwnership)) == nil {
             interruptRetiredAnswer(at: assistantIdx, id: assistantID, sendID: sendID, generation: generation)
         }
+        if acceptedAssistant?.sendID == sendID { acceptedAssistant = nil }
         run.cancel(); await run.waitForReturn()
         return .accepted
     }
@@ -422,30 +472,47 @@ final class TranscriptChatService {
     /// Preserve accepted history but publish no more evidence or saved derivatives.
     private func interruptRetiredAnswer(at index: Int, id: UUID, sendID: UUID, generation: UInt64) {
         guard accepts(sendID, generation: generation),
+              let accepted = currentAcceptedAssistant(), accepted.id == id,
               messages.indices.contains(index), messages[index].id == id else { return }
-        messages[index].outcome = .interrupted
+        finishAcceptedAssistant(accepted, outcome: .interrupted, removeEmptyLegacy: false)
         streamingNotice = "Stopped generating."
+    }
+
+    private func currentAcceptedAssistant() -> AcceptedAssistant? {
+        guard let acceptedAssistant, activeSendID == acceptedAssistant.sendID,
+              conversationGeneration == acceptedAssistant.generation,
+              messages.last?.id == acceptedAssistant.id, messages.last?.role == .assistant,
+              messages.last?.outcome == .streaming else { return nil }
+        return acceptedAssistant
+    }
+
+    /// The caller captures authority before clearing handles or retiring its
+    /// generation. This helper cannot obtain authority from historical rows.
+    private func finishAcceptedAssistant(_ accepted: AcceptedAssistant?, outcome: ChatAnswerOutcome,
+                                         removeEmptyLegacy: Bool) {
+        guard let accepted, acceptedAssistant == accepted, let index = messages.indices.last,
+              messages[index].id == accepted.id, messages[index].role == .assistant,
+              messages[index].outcome == .streaming else { return }
+        messages[index].outcome = outcome
+        if let basis = messages[index].basis {
+            messages[index].referenceResolution = ChatReferenceParser.resolve(messages[index].rawAnswerText, basis: basis)
+        }
+        if removeEmptyLegacy, !accepted.owned, messages[index].content.isEmpty { messages.remove(at: index) }
+        acceptedAssistant = nil
     }
 
     func stopGenerating() {
         guard let task = sendTask else { return }
+        let accepted = currentAcceptedAssistant()
+        finishAcceptedAssistant(accepted, outcome: .interrupted, removeEmptyLegacy: true)
+        acceptedAssistant = nil
         activeSendID = nil
         sendTask = nil
         isStreaming = false
         task.cancel()
         streamingNotice = "Stopped generating."
-        if let index = messages.indices.last, messages[index].role == .assistant,
-           messages[index].outcome == .streaming {
-            messages[index].outcome = .interrupted
-            if let basis = messages[index].basis {
-                messages[index].referenceResolution = ChatReferenceParser.resolve(messages[index].rawAnswerText, basis: basis)
-            }
-        }
-        if recordingOwner == nil, messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
-            messages.removeLast()
-        }
-        // Save from the user's action, before the cancelled task unwinds.
-        scheduleSave(urgent: true)
+        // A pre-acceptance wait grants neither row mutation nor a new save.
+        if accepted != nil { scheduleSave(urgent: true) }
     }
 
     @discardableResult
@@ -457,6 +524,7 @@ final class TranscriptChatService {
         }
         stopReading()
         conversationGeneration &+= 1
+        acceptedAssistant = nil
         loadTask?.cancel()
         loadTask = nil
         messages = []
@@ -616,15 +684,12 @@ final class TranscriptChatService {
 
     private func stopForStorageLimit() {
         guard let task = sendTask else { return }
+        let accepted = currentAcceptedAssistant()
+        finishAcceptedAssistant(accepted, outcome: .limited, removeEmptyLegacy: false)
+        acceptedAssistant = nil
         activeSendID = nil; sendTask = nil; isStreaming = false; task.cancel()
         saveTask?.cancel(); saveTask = nil
         streamingNotice = "Stopped because the conversation is waiting for storage."
-        if let index = messages.indices.last, messages[index].role == .assistant {
-            messages[index].outcome = .limited
-            if let basis = messages[index].basis {
-                messages[index].referenceResolution = ChatReferenceParser.resolve(messages[index].rawAnswerText, basis: basis)
-            }
-        }
         hasUnsavedChanges = true
     }
 
@@ -661,7 +726,7 @@ final class TranscriptChatService {
     var canRetryHistorySave: Bool { !isRetryingHistory && (persistenceError != nil || recordingOwner?.failure != nil) }
     var usesRecordingPersistence: Bool { recordingOwner != nil }
     func usesRecordingOwner(_ owner: LiveRecordingArtifactOwner) -> Bool { recordingOwner === owner }
-    var recordingIdentity: UUID? { recordingOwner?.identity.recordingID ?? privacyRecording?.id }
+    var recordingIdentity: UUID? { recordingOwner?.identity.recordingID ?? sourceRecordingID ?? contextProvider.recordingIDHint ?? privacyRecording?.id }
     var canEvictFromCache: Bool {
         !isStreaming && ownedProducerCount == 0 && !isLoadingHistory && !hasUnsavedChanges
             && historySaveNotice == nil && isPersistenceEnabled && (recordingOwner?.isDurable ?? true)
@@ -683,10 +748,16 @@ final class TranscriptChatService {
     /// is preserved (those earlier answers were grounded in the rough live preview).
     func rebindTranscript(text: String, speakerLabels: [SpeakerLabel]) {
         let recordingID = privacyRecording?.id
-        contextProvider = .value { .legacy(text: text, recordingID: recordingID, speakerLabels: speakerLabels) }
+        rebindContextProvider(.value { .legacy(text: text, recordingID: recordingID, speakerLabels: speakerLabels) })
     }
 
-    func rebindContextProvider(_ provider: TranscriptContextProvider) { contextProvider = provider }
+    func rebindContextProvider(_ provider: TranscriptContextProvider) {
+        contextProvider = provider
+        if sendTask == nil, ownedProducerCount == 0 {
+            sourceAuthority = provider.sourceAuthorityHint
+            sourceRecordingID = provider.recordingIDHint ?? privacyRecording?.id
+        }
+    }
 
     private var lastAnswerEngine: String? { messages.last(where: { $0.basis != nil })?.basis?.route.engine }
 

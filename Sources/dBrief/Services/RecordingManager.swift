@@ -122,6 +122,8 @@ final class RecordingManager {
     @ObservationIgnored private var pendingFileDeletions: [String: DeletionState] = [:]
     private let deletionFiles: ProcessingPipeline.DeletionFiles
     private let deletionPrivacyStore: PrivacyReceiptStore
+    private let capturePrivacyStore: PrivacyReceiptStore
+    private let capturePrivacyPendingRoot: URL
     let transcriptStore: TranscriptStore
     let insightsStore: InsightsStore
     private let markdownOutputStore = MarkdownOutputStore()
@@ -166,6 +168,8 @@ final class RecordingManager {
         processingPipeline: ProcessingPipeline = ProcessingPipeline(),
         deletionFiles: ProcessingPipeline.DeletionFiles = .init(),
         deletionPrivacyStore: PrivacyReceiptStore = .shared,
+        capturePrivacyStore: PrivacyReceiptStore = .shared,
+        capturePrivacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending"),
         recordingFinalizer: RecordingFinalizer = RecordingFinalizer(),
         captureSessionStore: CaptureSessionStore = CaptureSessionStore(),
         reprocessingStore: ReprocessingStore = ReprocessingStore(),
@@ -185,6 +189,8 @@ final class RecordingManager {
         self.processingPipeline = processingPipeline
         self.deletionFiles = deletionFiles
         self.deletionPrivacyStore = deletionPrivacyStore
+        self.capturePrivacyStore = capturePrivacyStore
+        self.capturePrivacyPendingRoot = capturePrivacyPendingRoot
         self.recordingFinalizer = recordingFinalizer
         self.captureSessionStore = captureSessionStore
         self.importCoordinator = importCoordinator
@@ -526,7 +532,8 @@ final class RecordingManager {
             liveEngine: liveEngine,nemotronSelection: selected,language: live.language,
             associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
             prewarmWhisper: prewarmWhisper,
-            privacyScope: RecordingPrivacyScope(recordingID: recordingID))
+            privacyScope: RecordingPrivacyScope(recordingID: recordingID,
+                store: capturePrivacyStore, pendingRootURL: capturePrivacyPendingRoot))
         try await captureCoordinator.start(request)
     }
 

@@ -126,6 +126,7 @@ private actor ReprocessingHydrationFault {
             modelPerformanceStore: .init(url: files.root.appendingPathComponent("performance.json")),
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")),microsoftAuthService: .init(),
             deletionFiles: deletionFiles, deletionPrivacyStore: privacyStore,
+            capturePrivacyStore: privacyStore, capturePrivacyPendingRoot: files.root.appendingPathComponent("pending"),
             recordingFinalizer: .init(resolveFFmpeg: { nil }), reprocessingStore: .init(root: files.root.appendingPathComponent("reprocessing"), preparationStage: reprocessingStage),
             queueScheduleStore: .init(url: files.root.appendingPathComponent("queue-schedule.json"), files: queueFiles),
             integrationDeliveryStore: .init(rootURL: files.root.appendingPathComponent("deliveries")),
@@ -167,6 +168,7 @@ private actor ReprocessingHydrationFault {
             modelPerformanceStore: .init(url: files.root.appendingPathComponent("performance.json")),
             processingJobStore: .init(rootURL: files.root.appendingPathComponent("jobs")), microsoftAuthService: .init(),
             deletionPrivacyStore: privacyStore,
+            capturePrivacyStore: privacyStore, capturePrivacyPendingRoot: files.root.appendingPathComponent("pending"),
             recordingFinalizer: .init(resolveFFmpeg: { nil }),
             captureSessionStore: .init(dependencies: .init(root: { recoveryRoot }, duration: { _ in 1 }, record: { _ in })),
             reprocessingStore: .init(root: files.root.appendingPathComponent("reprocessing")),
@@ -194,6 +196,64 @@ private actor ReprocessingHydrationFault {
         f.probe.releaseCreate(); try await start.value
         let recording = try #require(f.state.currentRecording)
         return try #require(f.state.liveRecordingSessions.entry(recordingID: recording.id))
+    }
+
+    @Test
+    func actualCaptureRequestKeepsTheIntendedPrivacyStoreRootAndRecordingID() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech)
+        do {
+            let entry = try await startForQuit(f)
+            let request = try #require(f.probe.request)
+            let captured = try #require(request.privacyScope)
+            let recording = try #require(f.state.currentRecording)
+            let adopted = try #require(recording.privacyScope)
+            #expect(captured.recordingID == request.id && request.id == entry.identity.recordingID)
+            #expect(captured.store === f.privacyStore)
+            #expect(captured.pendingReceiptURL.deletingLastPathComponent().standardizedFileURL
+                == f.files.root.appendingPathComponent("pending", isDirectory: true).standardizedFileURL)
+            #expect(adopted.recordingID == captured.recordingID)
+            #expect(adopted.store === captured.store)
+            #expect(adopted.pendingReceiptURL == captured.pendingReceiptURL)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true])
+    func actualManagerDeleteRevokesUncachedChatWithoutAdoptedPrivacyAudio(preAdoptionPrivacy: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        let gate = LiveArtifactGate(stage: .sourceChat)
+        var held: Task<TranscriptChatSendResult, Never>?, service: TranscriptChatService?
+        do {
+            let entry = try await startForQuit(f)
+            let recording = try #require(f.state.currentRecording)
+            let preAdoption = Recording(id: recording.id, fileURL: recording.fileURL)
+            try #require(await eventually { f.probe.liveSink != nil })
+            f.probe.liveSink?(.finalized([.init(start: 0, end: 1, text: "Exact recording source before master adoption")]))
+            try #require(await eventually { f.state.liveTranscriptSegments.count == 1 })
+            await f.manager.stopRecording(); await f.manager.skipProcessing()
+            let audio = try #require(recording.finalizedAudioURL)
+            #expect(preAdoption.finalizedAudioURL == nil && preAdoption.fileURL != audio)
+            await f.manager.refreshReprocessingAttempts()
+            let provider = TranscriptContextProvider.recording(recordingID: recording.id, registry: f.state.liveRecordingSessions,
+                legacy: { .legacy(text: "Wrong global fallback", recordingID: recording.id, speakerLabels: []) })
+            let chat = TranscriptChatService(contextProvider: provider, appSettings: f.settings, localPlugin: nil,
+                recording: preAdoptionPrivacy ? preAdoption : nil, beforeContextBuild: { _ = try? await gate.enter(.sourceChat) })
+            service = chat
+            let send = Task { await chat.send("Held uncached question") }; held = send
+            try await gate.waitForArrival()
+            #expect(chat.isStreaming && chat.messages.isEmpty && !chat.usesRecordingPersistence)
+            let foreign = audio.deletingLastPathComponent().appendingPathComponent("foreign-chat-owner.bin")
+            let bytes = Data("Preserve unknown foreign bytes".utf8); try bytes.write(to: foreign)
+            try await f.manager.deleteRecording(audio)
+            #expect(!entry.isValid && chat.isInvalidatedForReprocessing && !chat.isStreaming)
+            #expect(chat.messages.isEmpty && !FileManager.default.fileExists(atPath: audio.path))
+            #expect(try Data(contentsOf: foreign) == bytes)
+            await gate.release(); #expect(await send.value == .notAccepted)
+            await f.clean()
+        } catch {
+            service?.invalidateForReprocessing(); held?.cancel(); await gate.release(); _ = await held?.value
+            await f.clean(); throw error
+        }
     }
 
     @Test func normalQuitWithPersistenceDisabledStartsNoArtifactWriterAndBarsAnotherCapture() async throws {
@@ -1765,9 +1825,11 @@ private actor ReprocessingHydrationFault {
         do {
             let (recording, _, audio, _) = try await prepareForDeletion(f, bound: bound)
             let scope = RecordingPrivacyScope(recordingID: recording.id, store: f.privacyStore,
-                pendingRootURL: f.files.root.appendingPathComponent("pending"))
+                pendingRootURL: f.files.root.appendingPathComponent("viewer-pending"))
             let operation = PrivacyOperation(stage: .transcription, data: [.recordingAudio], destination: .local(provider: .whisper))
             let token = await PrivacyTrace.begin(operation, in: await scope.context())
+            try #require(token != nil)
+            try #require(FileManager.default.fileExists(atPath: scope.pendingReceiptURL.path))
             if !bound { recording.privacyScope = scope }
             let date = Date()
             let job = PersistedProcessingJob(id: UUID(), recordingID: recording.id, createdAt: date, updatedAt: date, status: .completed,

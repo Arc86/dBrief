@@ -49,6 +49,7 @@ final class LiveRecordingSessionRegistry {
         fileprivate func invalidate() {
             coordinator?.sealAttribution()
             isValid = false; validity.invalidate()
+            TranscriptChatService.invalidateOwnedSource(recordingID: identity.recordingID, validity: validity)
             richWriteValidity.invalidate()
             richDeletionAdmission.invalidate()
             artifacts.retire()

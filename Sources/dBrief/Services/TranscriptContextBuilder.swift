@@ -1,14 +1,37 @@
 import Foundation
 import dBriefWire
 
+/// Matching metadata carries no transcript copy or additional owner Pin.
+struct TranscriptContextAuthority: Sendable, Equatable {
+    let recordingID: UUID
+    let validity: RecordingDerivativeValidity
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.recordingID == rhs.recordingID && lhs.validity === rhs.validity
+    }
+}
+
 /// Copies retain the original owner's reservation and retirement authority.
 /// Evidence growth does not revoke frozen facts; derivative retirement does.
 final class TranscriptContextOwnership: Sendable {
     private let pin: LiveRecordingArtifactOwner.Pin
     private let validity: RecordingDerivativeValidity
+    private let request: LiveRecordingArtifactOwner.ChatRequest?
 
     init(pin: LiveRecordingArtifactOwner.Pin, validity: RecordingDerivativeValidity) {
-        self.pin = pin; self.validity = validity
+        self.pin = pin; self.validity = validity; request = nil
+    }
+    private init(original: TranscriptContextOwnership, request: LiveRecordingArtifactOwner.ChatRequest) {
+        pin = original.pin; validity = original.validity; self.request = request
+    }
+    /// Same original Pin/token, with the admitted request held by every actual
+    /// builder, producer, HTTP callback/receipt and physical writer copy.
+    fileprivate func retainingRequest(_ request: LiveRecordingArtifactOwner.ChatRequest) -> TranscriptContextOwnership {
+        .init(original: self, request: request)
+    }
+    var authority: TranscriptContextAuthority { .init(recordingID: pin.recordingID, validity: validity) }
+    @MainActor func beginChatRequest() throws -> LiveRecordingArtifactOwner.ChatRequest {
+        try requireValid()
+        return try pin.beginChatRequest()
     }
     func requireValid() throws { try validity.withValidResult {} }
     static func requireValid(_ ownership: TranscriptContextOwnership?) throws { try ownership?.requireValid() }
@@ -82,25 +105,90 @@ struct TranscriptContextSnapshot: Sendable, Equatable {
     }
 }
 
-/// Freeze is synchronous. Only the captured source operation may cross actors.
+/// Pure freeze retains facts. Chat freeze also claims the original owner's
+/// single transient request before mapping owned evidence or crossing actors.
 struct TranscriptContextProvider {
     struct Frozen: Sendable {
         let snapshot: @Sendable () async throws -> TranscriptContextSnapshot
+        let recordingID: UUID?
+        let sourceAuthority: TranscriptContextAuthority?
+        private let ownership: TranscriptContextOwnership?
+        private let chatRequest: LiveRecordingArtifactOwner.ChatRequest?
+        var hasChatRequest: Bool { chatRequest != nil }
+
+        init(ownership: TranscriptContextOwnership? = nil, recordingID: UUID? = nil,
+             snapshot: @escaping @Sendable () async throws -> TranscriptContextSnapshot) {
+            self.snapshot = snapshot; self.ownership = ownership
+            self.recordingID = recordingID ?? ownership?.authority.recordingID
+            sourceAuthority = ownership?.authority; chatRequest = nil
+        }
+        private init(_ original: Self, request: LiveRecordingArtifactOwner.ChatRequest?,
+                     authority: TranscriptContextAuthority?, recordingID: UUID?) {
+            ownership = original.ownership
+            snapshot = {
+                let value = try await original.snapshot()
+                // Only actual returned ownership can carry the admitted claim.
+                // The declaration must never manufacture a missing authority.
+                guard let request, let originalOwnership = value.contextOwnership else { return value }
+                return value.retaining(originalOwnership.retainingRequest(request))
+            }
+            self.recordingID = recordingID; sourceAuthority = authority; chatRequest = request
+        }
+        @MainActor fileprivate func admittingChat(attachedOwner: LiveRecordingArtifactOwner?,
+            existingRequest: LiveRecordingArtifactOwner.ChatRequest? = nil) throws -> Self {
+            if let attachedOwner {
+                guard recordingID == nil || recordingID == attachedOwner.identity.recordingID,
+                      sourceAuthority == nil || sourceAuthority == attachedOwner.contextAuthority else {
+                    throw TranscriptContextError.recordingMismatch
+                }
+            }
+            let request = try existingRequest ?? ownership?.beginChatRequest() ?? attachedOwner?.beginChatRequest()
+            let authority = sourceAuthority ?? attachedOwner?.contextAuthority
+            return .init(self, request: request, authority: authority,
+                         recordingID: recordingID ?? authority?.recordingID)
+        }
+        func requireSource(recordingID actualID: UUID?, ownership actualOwnership: TranscriptContextOwnership?) throws {
+            if let recordingID, recordingID != actualID { throw TranscriptContextError.recordingMismatch }
+            if let actualOwnership {
+                guard chatRequest != nil, sourceAuthority == actualOwnership.authority,
+                      actualID == actualOwnership.authority.recordingID else { throw LiveArtifactError.wrongOwner }
+            } else if sourceAuthority != nil {
+                // Declared or attached original authority requires a genuinely
+                // owned returned value through every actual dispatch copy.
+                throw LiveArtifactError.wrongOwner
+            }
+        }
     }
-    let capture: @MainActor () -> Frozen
-    init(_ capture: @escaping @MainActor () -> Frozen) { self.capture = capture }
+    let recordingIDHint: UUID?
+    let sourceAuthorityHint: TranscriptContextAuthority?
+    private let capture: @MainActor () -> Frozen
+    private let captureChat: @MainActor (LiveRecordingArtifactOwner?) throws -> Frozen
+
+    /// Custom owned providers declare original authority synchronously on Frozen.
+    /// An undeclared owned returned snapshot cannot dispatch a chat request.
+    init(recordingID: UUID? = nil, _ capture: @escaping @MainActor () -> Frozen) {
+        recordingIDHint = recordingID; sourceAuthorityHint = nil; self.capture = capture
+        captureChat = { owner in try capture().admittingChat(attachedOwner: owner) }
+    }
+    private init(recordingID: UUID, authority: TranscriptContextAuthority?,
+                 capture: @escaping @MainActor () -> Frozen,
+                 chat: @escaping @MainActor (LiveRecordingArtifactOwner?) throws -> Frozen) {
+        recordingIDHint = recordingID; sourceAuthorityHint = authority; self.capture = capture; captureChat = chat
+    }
     @MainActor func freeze() -> Frozen { capture() }
+    @MainActor func freezeForChat(attachedOwner: LiveRecordingArtifactOwner?) throws -> Frozen { try captureChat(attachedOwner) }
 
     @MainActor static func value(_ read: @escaping @MainActor () -> TranscriptContextSnapshot) -> Self {
-        .init { let value = read(); return .init(snapshot: { value }) }
+        .init {
+            let value = read()
+            return .init(ownership: value.contextOwnership, recordingID: value.source.recordingID, snapshot: { value })
+        }
     }
 
     @MainActor static func completed(recordingID: UUID, transcriptURL: URL?, store: TranscriptStore) -> Self {
-        .init {
-            .init(snapshot: {
-                guard let transcriptURL else {
-                    return .legacy(text: "", recordingID: recordingID, speakerLabels: [])
-                }
+        .init(recordingID: recordingID) {
+            .init(recordingID: recordingID, snapshot: {
+                guard let transcriptURL else { return .legacy(text: "", recordingID: recordingID, speakerLabels: []) }
                 do { return .completed(try await store.load(from: transcriptURL), recordingID: recordingID) }
                 catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                     return .legacy(text: "", recordingID: recordingID, speakerLabels: [])
@@ -111,38 +199,52 @@ struct TranscriptContextProvider {
 
     @MainActor static func recording(recordingID: UUID, registry: LiveRecordingSessionRegistry,
                                     legacy: @escaping @MainActor () -> TranscriptContextSnapshot) -> Self {
-        .init {
-            if registry.isRetired(recordingID: recordingID) { return .init(snapshot: { throw CancellationError() }) }
-            if let entry = registry.entry(recordingID: recordingID), entry.isValid {
-                do {
-                    if let value = try entry.artifacts.finalContext() {
-                        let validity = entry.validity
-                        return .init(snapshot: { try validity.withValidResult {}; return value })
-                    }
-                } catch { return .init(snapshot: { throw error }) }
-                if !entry.artifacts.isNative {
-                    do {
-                        let value = try entry.artifacts.legacyContext(), validity = entry.validity
-                        return .init(snapshot: { try validity.withValidResult {}; return value })
-                    } catch { return .init(snapshot: { throw error }) }
-                }
-                let store = entry.store, identity = entry.identity, validity = entry.validity
-                let ownership = entry.artifacts.contextOwnership()
-                return .init(snapshot: {
-                    try Task.checkCancellation()
+        let authority = registry.entry(recordingID: recordingID)?.artifacts.contextAuthority
+        return .init(recordingID: recordingID, authority: authority, capture: {
+            do { return try captureRecording(recordingID, registry: registry, legacy: legacy, chat: false, attachedOwner: nil) }
+            catch { return .init(recordingID: recordingID, snapshot: { throw error }) }
+        }, chat: { attachedOwner in
+            try captureRecording(recordingID, registry: registry, legacy: legacy, chat: true, attachedOwner: attachedOwner)
+        })
+    }
+
+    @MainActor private static func captureRecording(_ recordingID: UUID, registry: LiveRecordingSessionRegistry,
+        legacy: @MainActor () -> TranscriptContextSnapshot, chat: Bool,
+        attachedOwner: LiveRecordingArtifactOwner?) throws -> Frozen {
+        if registry.isRetired(recordingID: recordingID) { throw CancellationError() }
+        if let entry = registry.entry(recordingID: recordingID), entry.isValid {
+            if let attachedOwner, attachedOwner.contextAuthority != entry.artifacts.contextAuthority {
+                throw TranscriptContextError.recordingMismatch
+            }
+            // Admission precedes final/legacy mapping and the native snapshot hop.
+            let request = chat ? try entry.artifacts.beginChatRequest() : nil
+            let frozen: Frozen
+            if let value = try entry.artifacts.finalContext() {
+                frozen = .init(ownership: value.contextOwnership, recordingID: recordingID, snapshot: {
+                    try TranscriptContextOwnership.requireValid(value.contextOwnership); return value
+                })
+            } else if !entry.artifacts.isNative {
+                let value = try entry.artifacts.legacyContext()
+                frozen = .init(ownership: value.contextOwnership, recordingID: recordingID, snapshot: {
+                    try TranscriptContextOwnership.requireValid(value.contextOwnership); return value
+                })
+            } else {
+                let store = entry.store, identity = entry.identity, ownership = entry.artifacts.contextOwnership()
+                frozen = .init(ownership: ownership, recordingID: recordingID, snapshot: {
+                    try Task.checkCancellation(); try ownership.requireValid()
                     let value = await store.snapshot()
-                    try validity.withValidResult {}
+                    try ownership.requireValid()
                     guard value.identity == identity else { throw CancellationError() }
                     return TranscriptContextSnapshot.live(value).retaining(ownership)
                 })
             }
-            if registry.owns(recordingID: recordingID) { return .init(snapshot: { throw LiveArtifactError.wrongOwner }) }
-            let value = legacy()
-            guard value.segments.isEmpty || value.source.recordingID == recordingID else {
-                return .init(snapshot: { throw TranscriptContextError.recordingMismatch })
-            }
-            return .init(snapshot: { value })
+            return chat ? try frozen.admittingChat(attachedOwner: attachedOwner, existingRequest: request) : frozen
         }
+        if registry.owns(recordingID: recordingID) { throw LiveArtifactError.wrongOwner }
+        let value = legacy()
+        guard value.segments.isEmpty || value.source.recordingID == recordingID else { throw TranscriptContextError.recordingMismatch }
+        let frozen = Frozen(ownership: value.contextOwnership, recordingID: recordingID, snapshot: { value })
+        return chat ? try frozen.admittingChat(attachedOwner: attachedOwner) : frozen
     }
 }
 
