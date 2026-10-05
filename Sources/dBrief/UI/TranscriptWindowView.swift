@@ -225,7 +225,12 @@ struct TranscriptDetailView: View {
                             .tint(palette.accentText.color)
                     }
                 } document: {
-                    noTranscriptState
+                    ViewerNoTranscriptState(
+                        canRebuild: recording.transcription != nil,
+                        isPending: isReprocessing,
+                        isBusy: !context.recordingManager.reprocessingRecoveryReady,
+                        onRebuild: rebuildTranscript,
+                        onTranscribe: { reprocessingOperation = .transcribe })
                 } playback: {
                     if recording.finalizedAudioURL != nil { playerBar }
                 } assistant: {
@@ -965,7 +970,8 @@ struct TranscriptDetailView: View {
     @ViewBuilder
     private var liveTranscriptContent: some View {
         VStack(spacing: 0) {
-            liveStatusBanner
+            ViewerLiveStatus(appState: context.appState, isProcessing: isProcessingLive,
+                             segmentCount: liveSegments.count)
             Divider().overlay(palette.divider.color)
             liveTranscriptList
         }
@@ -974,37 +980,6 @@ struct TranscriptDetailView: View {
         // the first arriving segment is what makes the list exist at all.
         .onChange(of: liveSegments.count, initial: true) { _, _ in refreshLiveTurns() }
         .onChange(of: recording.transcription?.text) { _, _ in refreshLiveTurns() }
-    }
-
-    private var liveStatusBanner: some View {
-        let step = isProcessingLive ? context.appState.processingSteps.first {
-            if case .inProgress = $0.status { return true }
-            return false
-        } : nil
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                PulsingDot(color: isProcessingLive ? Brand.processing : Brand.recording, size: 8)
-                Text(isProcessingLive ? (step?.name ?? "Processing…") : "Recording — live transcript")
-                    .uiFont(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.heading.color)
-                Spacer()
-                Text("\(liveSegments.count) segments")
-                    .uiFont(.caption.monospacedDigit())
-                    .foregroundStyle(palette.secondary.color)
-            }
-            if let progress = step?.progress {
-                ProgressView(value: progress, total: 1)
-                    .progressViewStyle(.linear)
-                    .tint(palette.accentText.color)
-            }
-            if let detail = step?.detail, !detail.isEmpty {
-                Text(detail)
-                    .uiFont(.caption)
-                    .foregroundStyle(palette.secondary.color)
-            }
-        }
-        .padding(16)
-        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -1144,51 +1119,6 @@ struct TranscriptDetailView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// No transcript to show. A recording that was never transcribed offers
-    /// Transcribe; a saved transcript whose view failed to load offers Rebuild.
-    private var noTranscriptState: some View {
-        let canRebuild = recording.transcription != nil
-        let busy = isReprocessing || !context.recordingManager.reprocessingRecoveryReady
-        return VStack(spacing: 13) {
-            Image(systemName: canRebuild ? "exclamationmark.triangle" : "waveform")
-                .font(.system(size: 25, weight: .regular))
-                .foregroundStyle(palette.secondary.color)
-                .accessibilityHidden(true)
-            Text(isReprocessing ? "Transcription pending"
-                 : canRebuild ? "Transcript view couldn't be loaded" : "Not transcribed yet")
-                .uiFont(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.heading.color)
-                .multilineTextAlignment(.center)
-            Text(isReprocessing ? "Manage the pending attempt in Queue & Recovery."
-                 : canRebuild ? "The transcript text is saved. Rebuild the view from it."
-                 : "Transcribe this recording to see its transcript, summary and actions.")
-                .uiFont(.system(size: 13))
-                .foregroundStyle(palette.secondary.color)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if !isReprocessing {
-                Group {
-                    if canRebuild {
-                        Button { rebuildTranscript() } label: {
-                            Label("Rebuild transcript", systemImage: "arrow.clockwise")
-                        }
-                    } else {
-                        Button { reprocessingOperation = .transcribe } label: {
-                            Label("Transcribe…", systemImage: "text.badge.plus")
-                        }
-                    }
-                }
-                .buttonStyle(ViewerBrandButtonStyle(height: 38))
-                .disabled(busy)
-                .padding(.top, 3)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(30)
-        .modifier(ViewerCard())
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Speaker assignment
