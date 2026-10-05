@@ -66,8 +66,8 @@ struct MenuBarView: View {
             Text("dBrief")
                 .uiFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
-            // Idle needs no badge; only capture and processing states earn one.
-            if status != .ready {
+            // Idle needs no badge, and capture shows its own status beside the timer.
+            if status != .ready, status != .recording, status != .paused {
                 HStack(spacing: 5) {
                     MenuPanelStatusDot(tone: status.tone, pulse: status == .recording, size: 6)
                     Text(status.label)
@@ -151,7 +151,7 @@ struct MenuBarView: View {
                                 .font(.system(size: 11, weight: .semibold))
                         }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .row, height: 30))
+                    .buttonStyle(MenuPanelNeonButtonStyle(height: 32))
                     .help("Open the recording library: every recording with its summary, transcript and assistant")
                 }
 

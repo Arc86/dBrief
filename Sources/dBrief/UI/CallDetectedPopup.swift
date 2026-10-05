@@ -14,7 +14,7 @@ struct CallDetectedPopup: View {
             Button("Not now") {
                 appState.showCallDetectedPopup = false
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 37, fillsWidth: false))
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
 
             Button {
                 appState.showCallDetectedPopup = false
@@ -27,7 +27,7 @@ struct CallDetectedPopup: View {
             } label: {
                 Label("Record call", systemImage: "mic")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .accentOutline, height: 37, fillsWidth: false))
+            .buttonStyle(MenuPanelButtonStyle(kind: .accentOutline, height: 30, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
     }
@@ -47,15 +47,15 @@ struct CallAlertCard<Actions: View>: View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                BrandBarsMark(height: 34)
+                BrandBarsMark(height: 28)
                     .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .uiFont(.system(size: 16, weight: .semibold))
+                        .uiFont(.system(size: 14, weight: .semibold))
                         .foregroundStyle(palette.heading.color)
                         .lineLimit(1)
                     Text(message)
-                        .uiFont(.system(size: 12))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
                         .lineLimit(2)
                 }
@@ -77,7 +77,7 @@ struct CallAlertCard<Actions: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .frame(width: 380, height: 132)
+        .frame(width: 360, height: 116)
         .background(palette.surface.color, in: shape)
         .overlay {
             shape.strokeBorder(

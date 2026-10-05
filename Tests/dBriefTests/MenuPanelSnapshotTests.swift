@@ -156,6 +156,7 @@ struct MenuPanelSnapshotTests {
             .environment(\.viewerPalette, palette)
             .environment(\.viewerMode, mode)
             .environment(\.menuPanelPalette, MenuPanelPalette.resolve(mode: mode, base: palette))
+            .environment(\.calmAppearance, env["DBRIEF_MENU_SNAPSHOT_CALM"] != nil)
             .environment(\.colorScheme, scheme)
             .buttonStyle(.typographyBordered).menuStyle(.button)
             .tint(palette.primary.color)

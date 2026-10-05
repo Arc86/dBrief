@@ -15,7 +15,7 @@ struct CallEndedPopup: View {
             Button("Keep recording") {
                 appState.showCallEndedPopup = false
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 37, fillsWidth: false))
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
 
             Button {
                 appState.showCallEndedPopup = false
@@ -26,7 +26,7 @@ struct CallEndedPopup: View {
             } label: {
                 Label("Stop", systemImage: "stop")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 37, fillsWidth: false))
+            .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30, fillsWidth: false))
             .keyboardShortcut(.defaultAction)
         }
     }

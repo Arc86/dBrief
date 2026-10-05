@@ -24,7 +24,7 @@ final class CallDetectedOverlayController {
     private var endedObserver: NSObjectProtocol?
     private var endedAutoDismissTask: Task<Void, Never>?
 
-    private static let panelSize = NSSize(width: 380, height: 132)
+    private static let panelSize = NSSize(width: 360, height: 116)
 
     private init() {}
 

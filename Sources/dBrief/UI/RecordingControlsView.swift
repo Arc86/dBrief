@@ -28,9 +28,12 @@ struct RecordingControlsView: View {
                         .monospacedDigit()
                         .foregroundStyle(palette.heading.color)
                     Spacer()
-                    Text(appState.isPaused ? "Paused" : "Recording")
-                        .uiFont(.system(size: 11, weight: .medium))
-                        .foregroundStyle(appState.isPaused ? status.warning.color : status.danger.color)
+                    HStack(spacing: 5) {
+                        MenuPanelStatusDot(tone: appState.isPaused ? .warning : .danger, pulse: appState.isRecording, size: 6)
+                        Text(appState.isPaused ? "Paused" : "Recording")
+                            .uiFont(.system(size: 11, weight: .medium))
+                            .foregroundStyle(appState.isPaused ? status.warning.color : status.danger.color)
+                    }
                 }
                 .accessibilityElement(children: .combine)
 
@@ -97,10 +100,7 @@ struct RecordingControlsView: View {
                 }
             }
         } label: {
-            HStack(spacing: 9) {
-                RecordGlyph(size: 15, color: palette.onPrimary.color)
-                Text("Record meeting")
-            }
+            Label("Record meeting", systemImage: "mic.fill")
         }
         .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 40))
         .help("Start recording (\(appSettings.recordHotkey.displayString))")

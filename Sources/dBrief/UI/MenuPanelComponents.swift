@@ -74,6 +74,41 @@ struct MenuPanelButtonStyle: ButtonStyle {
     }
 }
 
+/// The panel's one neon moment: a brand-gradient hairline with a faint glow, used for
+/// the Recording library entry. With Reduce neon it becomes a plain accent outline.
+struct MenuPanelNeonButtonStyle: ButtonStyle {
+    var height: CGFloat = 32
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.calmAppearance) private var calm
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let stroke = LinearGradient(colors: palette.brandStops.map(\.color), startPoint: .leading, endPoint: .trailing)
+        configuration.label
+            .uiFont(.system(size: 12, weight: .semibold))
+            .foregroundStyle(palette.heading.color)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: height)
+            .background {
+                if !calm {
+                    // Soft halo: the same gradient, blurred, just outside the edge.
+                    shape.stroke(stroke, lineWidth: 3)
+                        .blur(radius: 5)
+                        .opacity(configuration.isPressed ? 0.6 : 0.35)
+                }
+            }
+            .background(palette.surface.color, in: shape)
+            .overlay {
+                shape.strokeBorder(calm ? AnyShapeStyle(palette.primary.color) : AnyShapeStyle(stroke), lineWidth: 1.25)
+                    .allowsHitTesting(false)
+            }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
+            .contentShape(shape)
+    }
+}
+
 /// A flat strip of the panel, split from the next by a full-bleed hairline.
 struct MenuPanelSection<Content: View>: View {
     var showsDivider = true
@@ -245,7 +280,8 @@ struct MenuPanelLevelBars: View {
             for value in visible {
                 let h = max(3, (0.1 + 0.9 * value) * size.height)
                 let rect = CGRect(x: x, y: (size.height - h) / 2, width: Self.barWidth, height: h)
-                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(colour))
+                // Quiet samples fade back so silence reads as a soft baseline, not a row of dots.
+                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(colour.opacity(0.35 + 0.65 * min(1, value * 2))))
                 x += Self.barWidth + Self.gap
             }
         }

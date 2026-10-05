@@ -131,7 +131,7 @@ private struct MiniPlayerView: View {
                             } label: {
                                 Label("Pause", systemImage: "pause")
                             }
-                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 36))
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                         } else if appState.isPaused {
                             Button {
                                 do {
@@ -142,7 +142,7 @@ private struct MiniPlayerView: View {
                             } label: {
                                 Label("Resume", systemImage: "play")
                             }
-                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 36))
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                         }
 
                         Button {
@@ -150,7 +150,7 @@ private struct MiniPlayerView: View {
                         } label: {
                             Label("Stop", systemImage: "stop")
                         }
-                        .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 36))
+                        .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30))
                     }
                 }
                 .padding(14)
@@ -167,15 +167,15 @@ private struct MiniPlayerView: View {
             HStack(spacing: 7) {
                 BrandBarsMark(height: 20)
                 Text("dBrief")
-                    .uiFont(.system(size: 13, weight: .semibold))
+                    .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Spacer(minLength: 4)
                 MenuPanelStatusDot(tone: appState.isRecording ? .danger : .warning, pulse: appState.isRecording)
                 Text(appState.isRecording ? "Recording" : "Paused")
-                    .uiFont(.system(size: 13, weight: .medium))
+                    .uiFont(.system(size: 12, weight: .medium))
                     .foregroundStyle(palette.heading.color)
                 Text(formattedDuration)
-                    .uiFont(.system(size: 15, weight: .semibold))
+                    .uiFont(.system(size: 14, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(palette.heading.color)
             }

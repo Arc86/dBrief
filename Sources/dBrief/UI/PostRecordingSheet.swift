@@ -298,11 +298,15 @@ struct PostRecordingSheet: View {
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 if appSettings.effectiveCalendarSource == .claudeCLI {
-                    if calendarPickerRefreshing {
-                        ProgressView().controlSize(.small).accessibilityLabel("Refreshing meeting list")
-                    }
                     Button { refreshCalendarPicker(for: recording, force: true) } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
+                        HStack(spacing: 5) {
+                            if calendarPickerRefreshing {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text("Refresh")
+                        }
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 24, fontSize: 12))
                     .disabled(calendarPickerRefreshing)
@@ -849,6 +853,9 @@ struct PostRecordingSheet: View {
     private func calendarAttendeesBlock(for recording: Recording) -> some View {
         let allowed = recording.calendarEvent != nil
             && appSettings.effectiveCalendarCLIConfig.attendeePolicy == .onDemand
+        // Attendees only mean something once a meeting is linked; until then the
+        // block is all disabled controls, so leave it out.
+        if recording.calendarEvent != nil {
         VStack(alignment: .leading, spacing: 6) {
             Text("Calendar attendees")
                 .uiFont(.system(size: 12, weight: .medium))
@@ -892,6 +899,7 @@ struct PostRecordingSheet: View {
             }
             .uiFont(.system(size: 11))
             .foregroundStyle(palette.secondary.color)
+        }
         }
     }
 
