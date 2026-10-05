@@ -20,6 +20,7 @@ struct ViewerLibrarySidebar<Results: View>: View {
 
     @Environment(\.viewerPalette) private var palette
     @Environment(\.uiTypography) private var typography
+    @FocusState private var searchFocused: Bool
 
     init(
         searchText: Binding<String>,
@@ -73,11 +74,11 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 .padding(.top, 14)
                 .padding(.bottom, 14)
 
-                Rectangle()
-                    .fill(palette.divider.color)
-                    .frame(height: 1)
-                    .padding(.leading, 24)
-                    .padding(.trailing, 18)
+            Rectangle()
+                .fill(palette.divider.color)
+                .frame(height: 1)
+                .padding(.leading, 24)
+                .padding(.trailing, 18)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -85,13 +86,10 @@ struct ViewerLibrarySidebar<Results: View>: View {
                         errorNotice(error)
                     }
                     results(ViewerSidebarStatusFilterMenu(status: $statusFilter))
-                    if !isLoading, error == nil, let emptyMessage {
-                        Text(emptyMessage)
-                            .uiFont(.system(size: 12))
-                            .foregroundStyle(palette.secondary.color)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 12)
+                    if isLoading, error == nil {
+                        loadingNotice
+                    } else if error == nil, let emptyMessage {
+                        LibrarySidebarNote(text: emptyMessage)
                     }
                 }
                 .padding(.leading, 24)
@@ -157,18 +155,49 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 .textFieldStyle(.plain)
                 .uiFont(.system(size: 13))
                 .foregroundStyle(palette.text.color)
+                .focused($searchFocused)
+                .onExitCommand { searchText = "" }
                 .accessibilityLabel("Search recordings and transcripts")
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
+            }
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, searchText.isEmpty ? 10 : 6)
         .frame(height: 34)
         .background {
             RoundedRectangle(cornerRadius: 8)
                 .fill(palette.surface.color)
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(palette.divider.color, lineWidth: 1)
+                        .strokeBorder(searchFocused ? palette.primary.color : palette.divider.color,
+                                      lineWidth: searchFocused ? 1.5 : 1)
                 }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = true }
+    }
+
+    private var loadingNotice: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Loading recordings…")
+                .uiFont(.system(size: 12))
+                .foregroundStyle(palette.secondary.color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
     }
 
     private var smartViewNavigation: some View {
@@ -192,13 +221,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
                     .foregroundStyle(isSelected ? palette.accentText.color : palette.heading.color)
                     .padding(.horizontal, 10)
                     .frame(height: 34)
-                    .background(
-                        isSelected ? palette.selected.color : .clear,
-                        in: RoundedRectangle(cornerRadius: 7)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LibrarySidebarRowStyle(isSelected: isSelected))
                 .accessibilityLabel(view.title)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("library-view-\(view.rawValue)")
@@ -219,9 +243,12 @@ struct ViewerLibrarySidebar<Results: View>: View {
 
     private func errorNotice(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("Library unavailable", systemImage: "exclamationmark.triangle")
-                .uiFont(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.heading.color)
+            Label {
+                Text("Library unavailable").foregroundStyle(palette.heading.color)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            .uiFont(.system(size: 12, weight: .semibold))
             Text(message)
                 .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
@@ -262,7 +289,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
 
     private var utilities: some View {
         HStack(spacing: 4) {
-            SidebarUtilityButton(symbol: "arrow.clockwise", label: "Refresh recordings", action: onRefresh)
+            SidebarUtilityButton(symbol: "arrow.clockwise", label: "Refresh recordings",
+                                 isBusy: isRefreshing, action: onRefresh)
             SidebarUtilityMenu(symbol: "ellipsis", label: "Library options") {
                 Button("Rebuild Search Index", systemImage: "arrow.clockwise", action: onRebuildSearchIndex)
                     .disabled(isRefreshing)
@@ -312,6 +340,7 @@ struct ViewerSidebarStatusFilterMenu: View {
 private struct SidebarUtilityButton: View {
     let symbol: String
     let label: String
+    var isBusy = false
     let action: () -> Void
 
     @Environment(\.viewerPalette) private var palette
@@ -319,17 +348,23 @@ private struct SidebarUtilityButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(palette.secondary.color)
-                .frame(width: 30, height: 30)
-                .contentShape(RoundedRectangle(cornerRadius: 7))
+            ZStack {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(palette.secondary.color)
+                    .opacity(isBusy ? 0 : 1)
+                if isBusy { ProgressView().controlSize(.small) }
+            }
+            .frame(width: 30, height: 30)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .background(hovering ? palette.selected.color : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .disabled(isBusy)
+        .background(hovering && !isBusy ? palette.selected.color : .clear, in: RoundedRectangle(cornerRadius: 7))
         .onHover { hovering = $0 }
-        .help(label)
+        .help(isBusy ? "Refreshing…" : label)
         .accessibilityLabel(label)
+        .accessibilityValue(isBusy ? "In progress" : "")
     }
 }
 

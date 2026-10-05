@@ -596,16 +596,7 @@ private struct ViewerWorkspaceFixture: View {
             onSettings: {}
         ) { statusMenu in
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
-                    Text("This week")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(palette.secondary.color)
-                    Spacer(minLength: 4)
-                    statusMenu
-                }
-                .padding(.leading, 9)
-                .padding(.trailing, 3)
-                .frame(height: 32)
+                LibrarySectionHeader(title: "This week", count: items.count) { statusMenu }
                 ForEach(items) { item in
                     SidebarRecordingRow(item: item, isSelected: item == items.first, onTap: {})
                 }

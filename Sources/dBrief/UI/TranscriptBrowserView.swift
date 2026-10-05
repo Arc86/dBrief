@@ -250,7 +250,7 @@ struct TranscriptBrowserView: View {
             onSettings: { openWindow(id: "settings") }
         ) { statusMenu in
             if liveRecording != nil || processingRecording != nil {
-                sidebarSectionHeading("In Progress")
+                LibrarySectionHeader(title: "In Progress")
                 if let live = liveRecording {
                     LiveSidebarRow(recording: live, isProcessing: false,
                         isSelected: selection == live.fileURL,
@@ -296,58 +296,51 @@ struct TranscriptBrowserView: View {
         switch library.selectedView {
         case .all:
             VStack(alignment: .leading, spacing: 2) {
-                sidebarResultsHeading("This week", statusMenu: statusMenu)
-                ForEach(thisWeekItems) { row(for: $0) }
+                let thisWeek = thisWeekItems
+                let earlier = earlierItems
+                LibrarySectionHeader(title: "This week", count: thisWeek.isEmpty ? nil : thisWeek.count) { statusMenu }
+                ForEach(thisWeek) { row(for: $0) }
+                if thisWeek.isEmpty, !earlier.isEmpty {
+                    LibrarySidebarNote(text: "Nothing recorded this week.")
+                }
 
-                if !earlierItems.isEmpty {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) { earlierCollapsed.toggle() }
-                    } label: {
-                        HStack(spacing: 7) {
-                            Text("Earlier")
-                                .uiFont(.system(size: 12, weight: .medium))
-                                .foregroundStyle(palette.secondary.color)
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(palette.secondary.color)
-                                .rotationEffect(.degrees(earlierCollapsed ? -90 : 0))
-                        }
-                        .frame(height: 32)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Earlier recordings")
-                    .accessibilityValue(earlierCollapsed ? "Collapsed" : "Expanded")
-                    .accessibilityHint("Shows recordings outside this week.")
+                if !earlier.isEmpty {
+                    LibraryCollapsibleSectionHeader(title: "Earlier", count: earlier.count, collapsed: $earlierCollapsed)
+                        .padding(.top, 6)
 
                     if !earlierCollapsed {
-                        ForEach(earlierItems) { row(for: $0) }
+                        ForEach(earlier) { row(for: $0) }
                     }
                 }
             }
         case .unfinishedActions:
             VStack(alignment: .leading, spacing: 2) {
-                sidebarResultsHeading("Unfinished actions", count: filteredItems.count, statusMenu: statusMenu)
+                LibrarySectionHeader(title: "Unfinished actions", count: filteredItems.count) { statusMenu }
                 ForEach(filteredItems) { row(for: $0) }
             }
         case .recentlyProcessed:
             VStack(alignment: .leading, spacing: 2) {
-                sidebarResultsHeading("Recently processed", count: filteredItems.count, statusMenu: statusMenu)
+                LibrarySectionHeader(title: "Recently processed", count: filteredItems.count) { statusMenu }
                 // Preserve SQL processing-time ordering for Recently Processed.
                 ForEach(filteredItems) { row(for: $0) }
             }
         case .failedJobs, .queuedInterrupted:
             VStack(alignment: .leading, spacing: 2) {
-                sidebarResultsHeading(
-                    library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
+                LibrarySectionHeader(
+                    title: library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
                     count: library.workMatches.count
                 )
-                ForEach(library.workMatches) { sidebarWorkRow($0) }
+                ForEach(library.workMatches) { item in
+                    LibraryWorkRow(item: item, isSelected: selectedWork?.id == item.id) {
+                        selection = nil
+                        detailRecording = nil
+                        selectedWork = item
+                    }
+                }
             }
         case .peopleThisMonth:
             VStack(alignment: .leading, spacing: 2) {
-                sidebarResultsHeading("People this month", count: library.peopleGroups.count, statusMenu: statusMenu)
+                LibrarySectionHeader(title: "People this month", count: library.peopleGroups.count) { statusMenu }
                 ForEach(library.peopleGroups) { group in
                     DisclosureGroup {
                         ForEach(group.recordings) { row(for: $0) }
@@ -363,13 +356,13 @@ struct TranscriptBrowserView: View {
                                 .lineLimit(1)
                             Spacer(minLength: 3)
                             Text("\(group.recordings.count)")
-                                .uiFont(.system(size: 10, weight: .medium).monospacedDigit())
+                                .uiFont(.system(size: 11, weight: .medium).monospacedDigit())
                                 .foregroundStyle(palette.secondary.color)
                         }
                         .contentShape(Rectangle())
                     }
                     .tint(palette.accentText.color)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 3)
                 }
             }
@@ -391,80 +384,6 @@ struct TranscriptBrowserView: View {
             isSelected: selection == item.url,
             onTap: { selectRecording(item.url) })
         .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript, presentationStyle: .window) }
-    }
-
-    private func sidebarResultsHeading(
-        _ title: String,
-        count: Int? = nil,
-        statusMenu: ViewerSidebarStatusFilterMenu? = nil
-    ) -> some View {
-        HStack(spacing: 7) {
-            Text(title)
-                .uiFont(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.secondary.color)
-            if let count {
-                Text("\(count)")
-                    .uiFont(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(palette.secondary.color)
-            }
-            Spacer(minLength: 4)
-            if let statusMenu { statusMenu }
-        }
-        .padding(.leading, 9)
-        .padding(.trailing, 3)
-        .frame(height: 32)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func sidebarSectionHeading(_ title: String) -> some View {
-        Text(title)
-            .uiFont(.system(size: 12, weight: .semibold))
-            .foregroundStyle(palette.secondary.color)
-            .padding(.horizontal, 9)
-            .padding(.top, 7)
-            .padding(.bottom, 4)
-    }
-
-    private func sidebarWorkRow(_ item: LibraryWorkItem) -> some View {
-        let isSelected = selectedWork?.id == item.id
-        return Button {
-            selection = nil
-            detailRecording = nil
-            selectedWork = item
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .uiFont(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? palette.accentText.color : palette.text.color)
-                    .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(item.status)
-                    Text("·")
-                    Text(item.date, style: .date)
-                }
-                .uiFont(.system(size: 10).monospaced())
-                .foregroundStyle(palette.secondary.color)
-                if let audio = item.audioURL {
-                    Text(audio.deletingLastPathComponent().path)
-                        .uiFont(.system(size: 10))
-                        .foregroundStyle(palette.secondary.color)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                isSelected ? palette.selected.color : .clear,
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(item.title)
-        .accessibilityValue("\(item.status), \(item.date.formatted(date: .abbreviated, time: .shortened))")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Helpers
@@ -540,128 +459,5 @@ struct TranscriptBrowserView: View {
         // meeting (participants + calendar attendees) and not just the voice library.
         recording.participants = item.meetingNames
         return recording
-    }
-}
-
-/// `23 Jun` short date used in the sidebar captions.
-private let sidebarDateFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "d MMM"
-    return f
-}()
-
-/// Selectable recording row with theme-adapted selection and hover states.
-struct SidebarRecordingRow: View {
-    let item: RecordingBrowserItem
-    let isSelected: Bool
-    let onTap: () -> Void
-    @Environment(\.viewerPalette) private var palette
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .uiFont(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.heading.color)
-                    .lineLimit(1)
-                caption
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background { background }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(item.title)
-        .accessibilityValue("\(item.statusText), \(item.date.formatted(date: .abbreviated, time: .shortened)), \(item.formattedDuration)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var caption: some View {
-        HStack(spacing: 7) {
-            Text(captionText)
-            if !item.statusText.isEmpty {
-                Text(item.statusText)
-            }
-        }
-        .uiFont(.system(size: 11))
-        .foregroundStyle(palette.secondary.color)
-    }
-
-    private var captionText: String {
-        let date = sidebarDateFormatter.string(from: item.date)
-        return item.formattedDuration.isEmpty ? date : "\(date) · \(item.formattedDuration)"
-    }
-
-    @ViewBuilder
-    private var background: some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(palette.selected.color)
-        } else if hovering {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(palette.selected.color.opacity(0.55))
-        }
-    }
-}
-
-/// Pinned in-progress row — pulsing red/orange dot plus "Recording…/Processing…".
-private struct LiveSidebarRow: View {
-    let recording: Recording
-    let isProcessing: Bool
-    let isSelected: Bool
-    let onTap: () -> Void
-    @Environment(\.viewerPalette) private var palette
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
-    @State private var pulse = false
-
-    private var statusText: String {
-        isProcessing ? "Processing…" : "Recording…"
-    }
-    private var dotColor: Color {
-        isProcessing ? .orange : .red
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                    .uiFont(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.heading.color)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Circle().fill(dotColor).frame(width: 6, height: 6)
-                        .opacity(reduceMotion || pulse ? 1 : 0.4)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-                        .accessibilityHidden(true)
-                    Text(statusText)
-                }
-                .uiFont(.system(size: 11))
-                .foregroundStyle(palette.secondary.color)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(palette.selected.color)
-                } else if hovering {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(palette.selected.color.opacity(0.55))
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .onAppear { pulse = !reduceMotion }
-        .accessibilityLabel(recording.generatedTitle ?? recording.meetingTitleDraft)
-        .accessibilityValue(statusText)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
