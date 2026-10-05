@@ -83,11 +83,7 @@ struct SettingsSpokenVoiceTab: View {
                     .listRowBackground(Color.clear)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
+        .settingsFormStyle()
     }
 
     /// A short sample sentence in the language the preview will be spoken in.

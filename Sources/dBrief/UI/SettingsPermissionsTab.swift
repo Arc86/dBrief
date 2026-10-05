@@ -15,7 +15,7 @@ struct SettingsPermissionsTab: View {
 
     var body: some View {
         Form {
-            Section("Permissions Check", settingsSearch: .permissions) {
+            Section("Permission Status", settingsSearch: .permissions) {
                 PermissionRow(
                     title: "Microphone",
                     statusText: micStatusText,
@@ -81,11 +81,7 @@ struct SettingsPermissionsTab: View {
             }
             .listRowBackground(Color.clear)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
+        .settingsFormStyle()
         .onAppear {
             refreshStatuses()
         }
@@ -273,7 +269,7 @@ struct SettingsPermissionsTab: View {
         case .requestAccess: "Request"
         case .openSystemSettings: "Open Settings"
         case .explainRestriction: nil
-        case .none: "Granted"
+        case .none: nil
         }
     }
 
@@ -293,14 +289,14 @@ private struct PermissionRow: View {
 
     var body: some View {
         LabeledContent(title) {
-            HStack {
-                Text(statusText)
+            HStack(spacing: 10) {
+                Label(statusText, systemImage: statusStyle == .green
+                      ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .foregroundStyle(statusStyle)
                 if let actionTitle {
                     Button(actionTitle) {
                         action()
                     }
-                    .disabled(actionTitle == "Granted")
                     .buttonStyle(.typographyBordered)
                 }
             }

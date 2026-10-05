@@ -19,7 +19,7 @@ struct PromptImprovementPanel: View {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField("Improve clarity while preserving intent", text: $session.improvementRequest, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.plain)
-                            .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                            .padding(12).background(.settingsTextSurface, in: RoundedRectangle(cornerRadius: 12))
                             .accessibilityLabel("What would you like to improve?")
                         ViewThatFits(in: .horizontal) {
                             HStack { shortcuts }
@@ -48,7 +48,7 @@ struct PromptImprovementPanel: View {
                     }
                     Text(suggestion.response.prompt).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        .background(.settingsTextSurface, in: RoundedRectangle(cornerRadius: 8))
                     if !session.canApplySuggestion {
                         Text("The prompt, request, or AI configuration changed. Generate a new suggestion.")
                             .uiFont(.callout).foregroundStyle(.secondary)

@@ -201,6 +201,9 @@ struct ModelPerformanceView: View {
 
     // MARK: - Transcription leaderboard
 
+    // The leaderboards are SwiftUI grids rather than `Table`s: a table's header
+    // and row backgrounds are drawn by AppKit in neutral system colors, which
+    // clash with the warm paper themes.
     private func transcriptionLeaderboard(_ stats: [TranscriptionStat]) -> some View {
         let maxSpeed = stats.map(\.headlineSpeed).max() ?? 1
         let fastestModel = stats.max(by: { $0.headlineSpeed < $1.headlineSpeed })?.model
@@ -208,37 +211,39 @@ struct ModelPerformanceView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Transcription Models")
-            Table(stats, sortOrder: $txSort) {
-                TableColumn("Model", value: \.model) { stat in
-                    HStack(spacing: 6) {
-                        Text(stat.model).lineLimit(2)
-                        if showBadges && stat.model == fastestModel {
-                            badge("FASTEST", accent: true)
+            leaderboard {
+                GridRow {
+                    sortHeader("Model", KeyPathComparator(\TranscriptionStat.model), sort: $txSort)
+                    sortHeader("Relative speed", KeyPathComparator(\TranscriptionStat.headlineSpeed, order: .reverse), sort: $txSort)
+                    sortHeader("Sessions", KeyPathComparator(\TranscriptionStat.sessions, order: .reverse),
+                               sort: $txSort, width: Self.sessionsWidth)
+                }
+                ForEach(stats) { stat in
+                    Divider()
+                    GridRow {
+                        HStack(spacing: 6) {
+                            Text(stat.model).lineLimit(2)
+                            if showBadges && stat.model == fastestModel {
+                                badge("FASTEST", accent: true)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 8) {
+                            Gauge(value: max(0, stat.headlineSpeed), in: 0...max(maxSpeed, 0.001)) {
+                                EmptyView()
+                            }
+                            .gaugeStyle(.accessoryLinearCapacity)
+                            .tint(.accentColor)
+                            Text(String(format: "%.1f×", stat.headlineSpeed))
+                                .uiFont(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .trailing)
+                        }
+                        .frame(maxWidth: .infinity)
+                        sessionsCell(stat.sessions)
                     }
                 }
-                TableColumn("Relative speed", value: \.headlineSpeed) { stat in
-                    HStack(spacing: 8) {
-                        Gauge(value: max(0, stat.headlineSpeed), in: 0...max(maxSpeed, 0.001)) {
-                            EmptyView()
-                        }
-                        .gaugeStyle(.accessoryLinearCapacity)
-                        .tint(.accentColor)
-                        Text(String(format: "%.1f×", stat.headlineSpeed))
-                            .uiFont(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
-                    }
-                }
-                TableColumn("Sessions", value: \.sessions) { stat in
-                    Text("\(stat.sessions)")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .width(min: 60, ideal: 70)
             }
-            .scrollDisabled(true)
-            .frame(height: tableHeight(stats.count))
         }
     }
 
@@ -247,25 +252,78 @@ struct ModelPerformanceView: View {
     private func aiComparison(_ stats: [AIStat]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("AI Analysis Models")
-            Table(stats, sortOrder: $aiSort) {
-                TableColumn("Model", value: \.model) { stat in
-                    Text(stat.model).lineLimit(2)
+            leaderboard {
+                GridRow {
+                    sortHeader("Model", KeyPathComparator(\AIStat.model), sort: $aiSort)
+                    sortHeader("Avg. analysis", KeyPathComparator(\AIStat.avgTime), sort: $aiSort)
+                    sortHeader("Sessions", KeyPathComparator(\AIStat.sessions, order: .reverse),
+                               sort: $aiSort, width: Self.sessionsWidth)
                 }
-                TableColumn("Avg. analysis", value: \.avgTime) { stat in
-                    Text(Self.formatDuration(stat.avgTime))
-                        .uiFont(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                ForEach(stats) { stat in
+                    Divider()
+                    GridRow {
+                        Text(stat.model).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(Self.formatDuration(stat.avgTime))
+                            .uiFont(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        sessionsCell(stat.sessions)
+                    }
                 }
-                TableColumn("Sessions", value: \.sessions) { stat in
-                    Text("\(stat.sessions)")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .width(min: 60, ideal: 70)
             }
-            .scrollDisabled(true)
-            .frame(height: tableHeight(stats.count))
         }
+    }
+
+    private func leaderboard<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        GroupBox {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 9) {
+                rows()
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func sessionsCell(_ sessions: Int) -> some View {
+        Text("\(sessions)")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .frame(width: Self.sessionsWidth, alignment: .leading)
+    }
+
+    private static let sessionsWidth: CGFloat = 64
+
+    /// A column header that sorts by `comparator` — first click uses its order,
+    /// clicking the active column again reverses it.
+    private func sortHeader<Row>(_ title: String, _ comparator: KeyPathComparator<Row>,
+                                 sort: Binding<[KeyPathComparator<Row>]>, width: CGFloat? = nil) -> some View {
+        let active = sort.wrappedValue.first?.keyPath == comparator.keyPath
+        let order = sort.wrappedValue.first?.order ?? comparator.order
+        return Button {
+            if active, var current = sort.wrappedValue.first {
+                current.order = current.order == .forward ? .reverse : .forward
+                sort.wrappedValue = [current]
+            } else {
+                sort.wrappedValue = [comparator]
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .uiFont(.callout.weight(active ? .semibold : .regular))
+                    .foregroundStyle(active ? .primary : .secondary)
+                if active {
+                    Image(systemName: order == .forward ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: width ?? .infinity, alignment: .leading)
+        .accessibilityLabel("Sort by \(title)")
+        .accessibilityValue(active ? (order == .forward ? "Ascending" : "Descending") : "")
     }
 
     // MARK: - Small views
@@ -286,12 +344,6 @@ struct ModelPerformanceView: View {
             )
             .foregroundStyle(accent ? Color.accentColor : Color.secondary)
             .accessibilityLabel("Fastest model")
-    }
-
-    /// Content-sized height so the (scroll-disabled) Table never fights the outer
-    /// ScrollView. Header row + one row per model.
-    private func tableHeight(_ rows: Int) -> CGFloat {
-        CGFloat(max(rows, 1)) * 30 + 30
     }
 
     // MARK: - Aggregation

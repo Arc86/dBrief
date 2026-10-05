@@ -11,7 +11,7 @@ struct SettingsRecordingTab: View {
         @Bindable var settings = appSettings
         Form {
             Section("Shortcut", settingsSearch: .recordingShortcut) {
-                LabeledContent("Start/stop recording:") {
+                LabeledContent("Start or stop recording") {
                     ShortcutRecorderView(hotkey: $settings.recordHotkey)
                 }
                 Text("Global shortcut to toggle recording from anywhere. Defaults to ⌃⌥⌘R.")
@@ -27,7 +27,7 @@ struct SettingsRecordingTab: View {
                     Toggle("Auto-start recording when call detected", isOn: $settings.autoRecordCalls)
 
                     if !appSettings.autoRecordCalls {
-                        Picker("Auto-dismiss prompt:", selection: $settings.autoDismissCallPromptSeconds) {
+                        Picker("Auto-dismiss prompt", selection: $settings.autoDismissCallPromptSeconds) {
                             Text("Never").tag(0)
                             Text("After 10 seconds").tag(10)
                             Text("After 15 seconds").tag(15)
@@ -39,13 +39,13 @@ struct SettingsRecordingTab: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Picker("When a call ends:", selection: $settings.stopRecordingOnCallEnd) {
+                    Picker("When a call ends", selection: $settings.stopRecordingOnCallEnd) {
                         ForEach(AppSettings.CallEndAction.allCases, id: \.self) { action in
                             Text(action.displayName).tag(action)
                         }
                     }
                     if appSettings.stopRecordingOnCallEnd != .off {
-                        Picker("Apply to:", selection: $settings.callEndScope) {
+                        Picker("Apply to", selection: $settings.callEndScope) {
                             ForEach(AppSettings.CallEndScope.allCases, id: \.self) { scope in
                                 Text(scope.displayName).tag(scope)
                             }
@@ -76,9 +76,9 @@ struct SettingsRecordingTab: View {
                                 }
                             }
                         )) {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 callPlatformIcon(for: app)
-                                    .frame(width: 36, height: 36)
+                                    .frame(width: 28, height: 28)
 
                                 Text(app.name)
                             }
@@ -93,25 +93,29 @@ struct SettingsRecordingTab: View {
                 let knownUIDs = Set(inputDevices.map { $0.uid })
                 let isMissingSelection = !selectedUID.isEmpty && !knownUIDs.contains(selectedUID)
 
-                LabeledContent("Input device:") {
-                    Picker("", selection: $settings.audioInputDeviceUID) {
-                        Text("System Default").tag("")
-                        ForEach(inputDevices) { device in
-                            Text(device.displayName).tag(device.uid)
+                LabeledContent("Input device") {
+                    HStack(spacing: 6) {
+                        Picker("Input device", selection: $settings.audioInputDeviceUID) {
+                            Text("System Default").tag("")
+                            ForEach(inputDevices) { device in
+                                Text(device.displayName).tag(device.uid)
+                            }
+                            if isMissingSelection {
+                                Text("Unavailable device (reconnect)").tag(selectedUID)
+                            }
                         }
-                        if isMissingSelection {
-                            Text("Unavailable device (reconnect)").tag(selectedUID)
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .fixedSize()
+                        Button {
+                            inputDevices = AudioInputDeviceManager.availableInputDevices()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
                         }
+                        .buttonStyle(.borderless)
+                        .help("Refresh device list")
+                        .accessibilityLabel("Refresh device list")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 220, alignment: .trailing)
-                }
-                LabeledContent("") {
-                    Button("Refresh device list") {
-                        inputDevices = AudioInputDeviceManager.availableInputDevices()
-                    }
-                    .buttonStyle(.typographyBordered)
                 }
             }
             .listRowBackground(Color.clear)
@@ -139,17 +143,17 @@ struct SettingsRecordingTab: View {
 
             if appSettings.powerUserMode || searchAdvanced {
                 Section("Audio Quality", settingsSearch: .audioQuality) {
-                    LabeledContent("Capture:") {
+                    LabeledContent("Capture") {
                         Text("CAF/LPCM per track (system + mic separate)")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    LabeledContent("Master output:") {
+                    LabeledContent("Master output") {
                         Text("M4A/AAC 96 kbps · 48 kHz stereo")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    LabeledContent("Post-process:") {
+                    LabeledContent("Post-processing") {
                         Text("Mic: 80Hz HPF, sidechain duck vs. system, -16 LUFS loudnorm\nSystem: 40Hz HPF, 12kHz LPF\nMix: amix normalize=0")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)
@@ -159,11 +163,7 @@ struct SettingsRecordingTab: View {
                 .listRowBackground(Color.clear)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
+        .settingsFormStyle()
         .onAppear {
             inputDevices = AudioInputDeviceManager.availableInputDevices()
         }
@@ -204,14 +204,14 @@ struct SettingsRecordingTab: View {
                 Image(nsImage: customIcon)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 30, height: 30)
+                    .frame(width: 24, height: 24)
                     .scaleEffect(1.2)
             } else if let brand = app.brandIcon {
-                brand.text(size: 22)
+                brand.text(size: 16)
                     .foregroundStyle(.secondary)
             } else {
                 Image(systemName: app.sfSymbol)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }
@@ -219,10 +219,10 @@ struct SettingsRecordingTab: View {
 
     private func glassIconTile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [

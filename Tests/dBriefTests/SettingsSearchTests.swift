@@ -10,6 +10,10 @@ struct SettingsSearchTests {
         #expect(SettingsSearch.results(for: "hotkey").first?.destination.section == .recordingShortcut)
         #expect(SettingsSearch.results(for: "retention").first?.destination.page == .storage)
         #expect(SettingsSearch.results(for: "calendar outlook").first?.destination.section == .calendar)
+        #expect(SettingsSearch.results(for: "dark mode").first?.destination.page == .appearance)
+        #expect(SettingsSearch.results(for: "non neon").first?.destination.section == .accentColor)
+        #expect(SettingsSearch.results(for: "font size").first?.destination.section == .typography)
+        #expect(SettingsSearch.results(for: "dock icon").first?.destination.section == .appBehavior)
     }
 
     @Test func queriesAreNormalizedAndRequireAllTerms() {

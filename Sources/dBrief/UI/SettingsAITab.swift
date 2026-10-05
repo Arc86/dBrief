@@ -78,7 +78,7 @@ struct SettingsAITab: View {
                                         set: { settings.outputLanguage = .custom($0.uppercased()) }
                                     )
                                 )
-                                .textFieldStyle(.roundedBorder)
+                                .settingsTextField()
                                 .frame(width: 90)
                             }
                         }
@@ -138,17 +138,13 @@ struct SettingsAITab: View {
                 }
                 if searchRequest?.section == .aiProviders || appSettings.aiEngine == .remoteEndpoint
                     || (appSettings.aiEngine == .localCLI && appSettings.chatFallbackEngine == .remoteEndpoint) {
-                    Section("AI providers", settingsSearch: .aiProviders) {
+                    Section("AI Providers", settingsSearch: .aiProviders) {
                         endpointsSection
                     }
                         .listRowBackground(Color.clear)
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+            .settingsFormStyle()
         }
     }
 
@@ -536,7 +532,7 @@ struct SettingsAITab: View {
             .frame(maxWidth: 350, alignment: .leading)
 
             if isLoadingModels {
-                ProgressView("Loading models...")
+                ProgressView("Loading models…")
                     .controlSize(.small)
             } else if !availableModels.isEmpty {
                 Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
@@ -550,7 +546,7 @@ struct SettingsAITab: View {
                     case .testing:
                         ProgressView()
                             .controlSize(.small)
-                        Text("Testing...")
+                        Text("Testing…")
                     case .success:
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)

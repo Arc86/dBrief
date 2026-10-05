@@ -61,7 +61,7 @@ struct SettingsTranscriptionTab: View {
                 Section("Live Transcription", settingsSearch: .transcriptionLive) { liveTranscriptionSection }
                     .listRowBackground(Color.clear)
                 if appSettings.transcriptionEngine == .remoteEndpoint || searchRequest?.section == .transcriptionServices || searchRequest?.section == .transcriptionChunking {
-                    Section("Transcription services", settingsSearch: .transcriptionServices) { endpointsSection }
+                    Section("Transcription Services", settingsSearch: .transcriptionServices) { endpointsSection }
                         .listRowBackground(Color.clear)
                     if appSettings.powerUserMode || searchAdvanced {
                         Section("Large File Handling", settingsSearch: .transcriptionChunking) {
@@ -75,11 +75,7 @@ struct SettingsTranscriptionTab: View {
                     }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+            .settingsFormStyle()
             .sheet(isPresented: $showWhisperComparison) {
                 WhisperModelPicker(modelIDs: whisperModels.isEmpty ? WhisperModelInfo.fallbackModelNames : whisperModels.map(\.id),
                     selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
@@ -441,7 +437,7 @@ struct SettingsTranscriptionTab: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Add a phrase to ignore", text: $newIgnoredPhrase)
-                    .textFieldStyle(.roundedBorder)
+                    .settingsTextField()
                     .onSubmit { addIgnoredPhrase() }
                 Button("Add", action: addIgnoredPhrase)
                     .disabled(newIgnoredPhrase.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -687,7 +683,7 @@ struct SettingsTranscriptionTab: View {
             .frame(maxWidth: 350)
 
             if isLoadingModels {
-                ProgressView("Loading models...")
+                ProgressView("Loading models…")
                     .controlSize(.small)
             } else if !availableModels.isEmpty {
                 Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
@@ -701,7 +697,7 @@ struct SettingsTranscriptionTab: View {
                     case .testing:
                         ProgressView()
                             .controlSize(.small)
-                        Text("Testing...")
+                        Text("Testing…")
                     case .success:
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)

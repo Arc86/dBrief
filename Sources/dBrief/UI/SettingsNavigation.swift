@@ -3,6 +3,7 @@ import SwiftUI
 /// Stable identifiers for routing; display labels may change independently.
 enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     case general
+    case appearance
     case recording
     case transcription
     case ai
@@ -21,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .general: "General"
+        case .appearance: "Appearance"
         case .recording: "Recording"
         case .transcription: "Transcription"
         case .ai: "AI Analysis"
@@ -39,7 +41,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     }
     var group: SettingsGroup {
         switch self {
-        case .general, .storage, .permissions, .about: .app
+        case .general, .appearance, .storage, .permissions, .about: .app
         case .recording, .watchedFolders: .recording
         case .transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary, .benchmark: .processing
         case .afterRecording, .profiles, .integrations: .workflow
@@ -53,7 +55,8 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     }
     var searchSection: SettingsSectionID {
         switch self {
-        case .general: .appearance
+        case .general: .appBehavior
+        case .appearance: .appearance
         case .recording: .audioInput
         case .storage: .storageFolders
         case .transcription: .transcriptionEngine
@@ -72,7 +75,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     }
     var editsAppDefaults: Bool {
         switch self {
-        case .general, .recording, .transcription, .ai, .spokenVoice, .vocabulary, .watchedFolders, .integrations, .storage, .afterRecording: true
+        case .general, .appearance, .recording, .transcription, .ai, .spokenVoice, .vocabulary, .watchedFolders, .integrations, .storage, .afterRecording: true
         default: false
         }
     }
@@ -93,6 +96,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .storage:        "internaldrive"
         case .afterRecording: "checklist"
         case .general:        "gear"
+        case .appearance:     "paintpalette"
         case .permissions:    "lock.shield"
         case .about:          "info.circle"
         case .recording:      "mic"
@@ -114,6 +118,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .storage:        .brown
         case .afterRecording: .indigo
         case .general:        .gray
+        case .appearance:     .orange
         case .recording:      .red
         case .transcription:  .blue
         case .ai:             .purple
@@ -144,7 +149,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
     }
     var pages: [SettingsPage] {
         switch self {
-        case .app: [.general, .storage, .permissions, .about]
+        case .app: [.general, .appearance, .storage, .permissions, .about]
         case .recording: [.recording, .watchedFolders]
         case .processing: [.transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary, .benchmark]
         case .workflow: [.afterRecording, .profiles, .integrations]
@@ -153,7 +158,8 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum SettingsSectionID: String, CaseIterable, Sendable {
-    case appearance, softwareUpdate, setupGuide
+    case appBehavior, softwareUpdate, setupGuide
+    case appearance, accentColor, typography
     case recordingShortcut, callDetection, callPlatforms, audioInput, echoCancellation, recordingIndicators, audioQuality
     case calendar, integrations
     case storageFolders
@@ -174,7 +180,8 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         case .vocabularyTerms: .vocabulary
         case .automaticImport: .watchedFolders
         case .permissions: .permissions
-        case .appearance, .softwareUpdate, .setupGuide: .general
+        case .appBehavior, .softwareUpdate, .setupGuide: .general
+        case .appearance, .accentColor, .typography: .appearance
         case .recordingShortcut, .callDetection, .callPlatforms, .audioInput, .echoCancellation, .recordingIndicators, .audioQuality: .recording
         case .calendar, .integrations: .integrations
         case .storageFolders: .storage

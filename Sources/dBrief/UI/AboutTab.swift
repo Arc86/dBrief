@@ -256,7 +256,7 @@ struct AboutTab: View {
             Button("Check for updates") { updaterController.checkForUpdates() }
                 .buttonStyle(.plain)
                 .uiFont(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+                .foregroundStyle(.settingsWindowCanvas)
                 .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(Color.primary, in: Capsule())
                 .disabled(!updaterController.canCheckForUpdates)
@@ -285,7 +285,7 @@ struct AboutTab: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.vertical, 14)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(.settingsWindowCanvas)
             }
         }
         .background(Color.primary.opacity(0.1))

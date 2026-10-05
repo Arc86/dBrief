@@ -20,11 +20,7 @@ struct SettingsIntegrationsTab: View {
                     }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+            .settingsFormStyle()
             .navigationDestination(for: IntegrationDestination.self) { destination in
                 integrationDetail(destination)
                     .navigationTitle(destination.displayName)
@@ -70,11 +66,7 @@ struct SettingsIntegrationsTab: View {
                 webhookDetail
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
+        .settingsFormStyle()
     }
 
     private var obsidianDetail: some View {
@@ -84,26 +76,26 @@ struct SettingsIntegrationsTab: View {
             }
 
             if appSettings.obsidianEnabled {
-                LabeledContent("Vault:") {
+                LabeledContent("Vault") {
                     HStack {
                         Text(vaultPathText)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .foregroundStyle(.secondary)
-                        Button("Choose...") {
+                        Button("Choose…") {
                             chooseVault { url in appSettings.obsidianVaultURL = url }
                         }
                         .buttonStyle(.typographyBordered)
                     }
                 }
 
-                LabeledContent("Default output:") {
+                LabeledContent("Default output") {
                     HStack {
                         Text(appSettings.obsidianFolderDisplayName(relativePath: appSettings.obsidianDefaultFolderRelativePath))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .foregroundStyle(.secondary)
-                        Button("Choose...") {
+                        Button("Choose…") {
                             chooseFolderInVault { relativePath in
                                 appSettings.obsidianDefaultFolderRelativePath = relativePath
                             }
@@ -571,7 +563,7 @@ struct SettingsIntegrationsTab: View {
                 }
             } label: {
                 if isTesting.contains(destination) {
-                    Text("Testing...")
+                    Text("Testing…")
                 } else {
                     Text("Test connection")
                 }

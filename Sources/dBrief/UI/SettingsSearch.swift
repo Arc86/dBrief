@@ -33,10 +33,12 @@ struct SettingsSearchEntry: Identifiable, Equatable, Sendable {
 
 enum SettingsSearch {
     static let entries: [SettingsSearchEntry] = SettingsPage.allCases.map(SettingsSearchEntry.init(page:)) + [
-        .init("appearance", "Appearance and startup", "start login dock icon non neon accents theme light dark paper dark paper viewer accent color blue violet green orange gradient follow system default mode", section: .appearance),
-        .init("uiTypography", "UI font and size", "interface global app text typography font size point size default san francisco inter georgia open dyslexic opendyslexic dyslexia monospace", section: .appearance),
-        .init("reading", "Transcript reading options", "display font text size point size reading density compact comfortable spacious speaker names georgia open dyslexic opendyslexic dyslexia monospace reset", section: .appearance),
-        .init("advanced", "Show advanced settings", "power user mode benchmarks model options prompts", section: .appearance),
+        .init("startup", "Start at login and dock icon", "startup launch login dock icon app behavior", section: .appBehavior),
+        .init("appearance", "Theme", "appearance theme light dark paper dark paper viewer follow system default mode", section: .appearance),
+        .init("accentColor", "Accent color", "appearance accent color non neon blue violet green orange black white gradient custom", section: .accentColor),
+        .init("uiTypography", "UI font and size", "appearance interface global app text typography font size point size default san francisco inter georgia open dyslexic opendyslexic dyslexia monospace", section: .typography),
+        .init("reading", "Transcript reading options", "display font text size point size reading density compact comfortable spacious speaker names georgia open dyslexic opendyslexic dyslexia monospace reset", section: .typography),
+        .init("advanced", "Show advanced settings", "power user mode benchmarks model options prompts", section: .appBehavior),
         .init("updates", "Software updates", "check now automatic update version", section: .softwareUpdate),
         .init("setup", "Setup guide", "welcome onboarding first run", section: .setupGuide),
         .init("shortcut", "Recording shortcut", "hotkey keyboard start stop", section: .recordingShortcut),

@@ -96,36 +96,26 @@ struct SettingsVoiceLibraryTab: View {
     // MARK: - Empty library (no people saved yet)
 
     private var emptyLibraryView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                privacySection
-                emptyState
+        Form {
+            Section("Speaker Library", settingsSearch: .speakerLibrary) {
+                Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
+                    .uiFont(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
+            .listRowBackground(Color.clear)
 
-    private var privacySection: some View {
-        SettingsSection(title: "Speaker Library", searchSection: .speakerLibrary) {
-            Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Section(settingsTitle: "Known People") {
+                Text("No voices saved yet. A voice is added when you name a speaker in a transcript, or with \u{201C}Save voice to library\u{201D} from the speaker menu.")
+                    .uiFont(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowBackground(Color.clear)
         }
-    }
-
-    private var emptyState: some View {
-        SettingsSection(title: "Known People") {
-            Text("No voices saved yet. A voice is added when you name a speaker in a transcript, or with \u{201C}Save voice to library\u{201D} from the speaker menu.")
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        .settingsFormStyle()
     }
 
     /// Shown inside the list pane when the library has people but the current
-    /// search/company filter matches none of them — distinct from `emptyState`
+    /// search/company filter matches none of them — distinct from `emptyLibraryView`
     /// (no people saved yet at all), whose copy stays unchanged.
     private var noSearchResultsView: some View {
         VStack(spacing: 6) {
@@ -154,7 +144,7 @@ struct SettingsVoiceLibraryTab: View {
             SettingsSearchHeading("Speaker Library", section: .speakerLibrary)
                 .uiFont(.headline)
             TextField("Search name or company", text: $query)
-                .textFieldStyle(.roundedBorder)
+                .settingsTextField()
 
             HStack {
                 Menu {
@@ -169,7 +159,7 @@ struct SettingsVoiceLibraryTab: View {
                     Label("Company", systemImage: "building.2")
                 }
                 .menuStyle(.button)
-        .buttonStyle(.typographyBorderless)
+                .buttonStyle(.typographyBorderless)
                 .fixedSize()
 
                 Spacer()
@@ -262,7 +252,7 @@ struct SettingsVoiceLibraryTab: View {
         HStack {
             Text("Company").uiFont(.subheadline).foregroundStyle(.secondary)
             TextField("Add company", text: $companyDraft)
-                .textFieldStyle(.roundedBorder)
+                .settingsTextField()
                 .frame(width: 240)
                 .onSubmit { commitCompany() }
         }

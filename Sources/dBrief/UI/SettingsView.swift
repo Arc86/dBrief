@@ -5,7 +5,7 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.viewerPalette) private var palette
-    @State private var destination = SettingsDestination(page: .general)
+    @State private var destination: SettingsDestination
     @State private var profileToEdit: UUID?
     @State private var searchText = ""
     @State private var selectedSearchID: String?
@@ -16,6 +16,11 @@ struct SettingsView: View {
     private enum Focus: Hashable { case search, results }
     private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var results: [SettingsSearchEntry] { SettingsSearch.results(for: searchText) }
+
+    init(page: SettingsPage = .general) {
+        _destination = State(initialValue: SettingsDestination(page: page))
+    }
+
     // Match the detail canvas in macOS 27 System Settings. Its window color
     // resolves to a noticeably grayer surface in our SwiftUI settings window.
     private var canvasColor: Color {
@@ -173,6 +178,7 @@ struct SettingsView: View {
                         }
                         switch tab {
                         case .general:      SettingsGeneralTab()
+                        case .appearance:   SettingsAppearanceTab()
                         case .storage:      SettingsStorageTab()
                         case .afterRecording:
                             SettingsAfterRecordingTab { id in

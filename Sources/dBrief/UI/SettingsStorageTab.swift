@@ -15,12 +15,12 @@ struct SettingsStorageTab: View {
     var body: some View {
         @Bindable var settings = appSettings
         Form {
-            Section("Storage & privacy", settingsSearch: .storageFolders) {
-                folderRow(title: "Recordings:", url: appSettings.recordingFolderURL) { url in
+            Section("Storage & Privacy", settingsSearch: .storageFolders) {
+                folderRow(title: "Recordings", url: appSettings.recordingFolderURL) { url in
                     appSettings.recordingFolderURL = url
                 }
 
-                folderRow(title: "Transcriptions:", url: appSettings.transcriptionFolderURL) { url in
+                folderRow(title: "Transcriptions", url: appSettings.transcriptionFolderURL) { url in
                     appSettings.transcriptionFolderURL = url
                 }
 
@@ -67,11 +67,7 @@ struct SettingsStorageTab: View {
             }
             .listRowBackground(Color.clear)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .toggleStyle(.smallSwitch)
-        .padding(.top, -20)
+        .settingsFormStyle()
         .confirmationDialog(
             "Delete \(pendingCleanup?.displayName ?? "files") older than the selected age?",
             isPresented: Binding(
@@ -140,7 +136,7 @@ struct SettingsStorageTab: View {
             HStack(spacing: 8) {
                 FolderPathControl(url: url)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                Button("Choose...") {
+                Button("Choose…") {
                     chooseFolder(completion: onChoose)
                 }
                 .buttonStyle(.typographyBordered)

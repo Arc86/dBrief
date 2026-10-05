@@ -11,21 +11,14 @@ struct SettingsVocabularyTab: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Terms you add here help the AI understand your domain. After transcription, the AI corrects misspellings of these terms in the transcript. During analysis, they're provided to generate more accurate summaries and action items.")
-                    Text("Add names, acronyms, product names, and technical terms your recordings commonly include.")
-                }
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
                 HStack(spacing: 8) {
-                    TextField("Add a term…", text: $newTermText)
-                        .textFieldStyle(.roundedBorder)
+                    TextField("New term", text: $newTermText, prompt: Text("Add a name, acronym, or product…"))
+                        .labelsHidden()
+                        .settingsTextField()
                         .frame(maxWidth: .infinity)
                         .onSubmit { addTerm() }
                     Button("Add") { addTerm() }
+                        .disabled(newTermText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let addError {
                     Text(addError)
@@ -38,7 +31,7 @@ struct SettingsVocabularyTab: View {
                             .uiFont(.callout)
                         HStack {
                             TextField("Term", text: $editor.text)
-                                .textFieldStyle(.roundedBorder)
+                                .settingsTextField()
                                 .focused($editFocused)
                                 .onSubmit { saveEdit() }
                             Button("Save") { saveEdit() }
@@ -60,27 +53,42 @@ struct SettingsVocabularyTab: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) { startEdit(at: index, term: term) }
-                        Button("Edit") { startEdit(at: index, term: term) }
-                            .disabled(editor.isEditing)
-                            .accessibilityLabel("Edit \(term)")
-                        Button("Delete", role: .destructive) { deleteTerm(at: index, term: term) }
-                            .disabled(editor.originalTerm == term)
-                            .accessibilityLabel("Delete \(term)")
+                        Button { startEdit(at: index, term: term) } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .disabled(editor.isEditing)
+                        .help("Edit")
+                        .accessibilityLabel("Edit \(term)")
+                        Button(role: .destructive) { deleteTerm(at: index, term: term) } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(editor.originalTerm == term)
+                        .help("Delete")
+                        .accessibilityLabel("Delete \(term)")
                     }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.borderless)
+                    .padding(.vertical, 2)
+                }
+                if appSettings.customVocabulary.isEmpty {
+                    Text("No terms yet.")
+                        .uiFont(.callout)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 SettingsSearchHeading("Terms", section: .vocabularyTerms)
             } footer: {
-                Text("Choose Edit or double-click a term. Save applies your change; Cancel discards it.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("After transcription, AI corrects misspellings of these terms in the transcript. During analysis, they help produce more accurate summaries and action items.")
+                    Text("Double-click a term, or use the pencil, to change it.")
+                }
+                .uiFont(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
             }
+            .listRowBackground(Color.clear)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Vocabulary")
+        .settingsFormStyle()
     }
 
     private func startEdit(at index: Int, term: String) {

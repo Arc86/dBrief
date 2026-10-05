@@ -113,7 +113,7 @@ struct TranscriptionModelCard<Actions: View>: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Color.accentColor.opacity(0.07) : Color(nsColor: .controlBackgroundColor),
+        .background(selected ? AnyShapeStyle(Color.accentColor.opacity(0.07)) : AnyShapeStyle(.settingsSurface),
                     in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)

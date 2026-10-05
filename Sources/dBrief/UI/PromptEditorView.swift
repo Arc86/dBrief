@@ -35,7 +35,7 @@ struct PromptEditorView: View {
             }
             footer
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.settingsWindowCanvas)
         .frame(minWidth: 680, minHeight: 500)
         .onChange(of: session.configuration) { _, _ in session.configurationChanged() }
         .onChange(of: session.panel) { _, value in narrowSection = value }
@@ -80,7 +80,7 @@ struct PromptEditorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             }.uiFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 12)
         }
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
+        .background(.settingsTextSurface, in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .padding(.leading, 14).padding(.trailing, session.panel == .none ? 14 : 6).padding(.vertical, 6)
     }
@@ -99,7 +99,7 @@ struct PromptEditorView: View {
             if session.panel == .improve { PromptImprovementPanel(session: session) }
             else { PromptPreviewPanel(session: session) }
         }
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
+        .background(.settingsSurface, in: RoundedRectangle(cornerRadius: 20))
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(.leading, 6).padding(.trailing, 14).padding(.vertical, 6)
     }

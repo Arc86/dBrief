@@ -93,6 +93,8 @@ struct SettingsProfilesTab: View {
                 }
             }
             .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(.settingsSurface)
             .frame(maxHeight: .infinity)
 
             bottomControlBar

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Visual appearance controls shared by Settings and native preview fixtures.
+/// Emits grouped-Form sections, so place it directly inside a `Form`.
 struct SettingsAppearanceEditor: View {
     @Binding var preferences: ViewerAppearancePreferences
     @Binding var typography: AppTypographyPreferences
@@ -15,20 +16,54 @@ struct SettingsAppearanceEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        Section("Theme", settingsSearch: .appearance) {
             themeControls
-            Divider()
-            colorControls
-            Divider()
-            typographyControls
+            caption("Follow System switches between your light and dark theme with macOS.")
         }
-        .padding(6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .listRowBackground(Color.clear)
+
+        Section("Accent Color", settingsSearch: .accentColor) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    accentPresets
+                    Divider().frame(height: 22)
+                    customAccentControl
+                    Spacer(minLength: 0)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    accentPresets
+                    customAccentControl
+                }
+            }
+            .padding(.vertical, 2)
+            Toggle("Reduce neon accents", isOn: $nonNeon)
+            caption("Uses solid accent colors instead of gradients and glows.")
+        }
+        .listRowBackground(Color.clear)
+
+        Section("Typography", settingsSearch: .typography) {
+            Picker("Interface font", selection: $typography.readingFont) {
+                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                    Text(font.displayName).tag(font)
+                }
+            }
+            LabeledContent("Text size") {
+                HStack(spacing: 6) {
+                    Text("\(typography.fontSize) pt").uiFont(.callout.monospacedDigit())
+                    Stepper("Text size", value: $typography.fontSize,
+                            in: AppTypographyPreferences.fontSizeRange)
+                        .labelsHidden()
+                        .accessibilityValue("\(typography.fontSize) points")
+                }
+            }
+            fontPreview
+            caption("Applies to menus, transcripts, and settings throughout dBrief.")
+        }
+        .listRowBackground(Color.clear)
     }
 
     private var themeControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionTitle("Theme", detail: "Choose when light and dark themes are used.")
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 8) {
                 modeButton(.system, symbol: "desktopcomputer")
                 modeButton(.light, symbol: "sun.max")
@@ -45,6 +80,7 @@ struct SettingsAppearanceEditor: View {
                 }
             }
         }
+        .padding(.vertical, 4)
     }
 
     private func modeButton(_ mode: AppThemeMode, symbol: String) -> some View {
@@ -59,6 +95,7 @@ struct SettingsAppearanceEditor: View {
                         Image(systemName: "checkmark.circle.fill").font(.system(size: 12))
                     }
                 }
+                .frame(height: 18)
                 Text(mode.displayName).uiFont(.callout.weight(.medium))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -124,32 +161,6 @@ struct SettingsAppearanceEditor: View {
         .help("Use \(mode.displayName) when \(mode.isDark ? "dark" : "light") mode is active")
     }
 
-    private var colorControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Color", detail: "Accent colors update your controls and theme previews.")
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) {
-                    accentPresets
-                    Divider().frame(height: 22)
-                    customAccentControl
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    accentPresets
-                    customAccentControl
-                }
-            }
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Non-neon").uiFont(.callout)
-                    Text("Use solid accents instead of gradients.")
-                        .uiFont(.caption).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Toggle("Non-neon", isOn: $nonNeon).labelsHidden().toggleStyle(.switch)
-            }
-        }
-    }
-
     private var accentPresets: some View {
         HStack(spacing: 10) {
             ForEach(AppearanceAccentPreset.all) { preset in
@@ -196,41 +207,6 @@ struct SettingsAppearanceEditor: View {
         .help(preset.name)
     }
 
-    private var typographyControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Typography", detail: "Font and size for the app interface.")
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 20) {
-                    fontControls.frame(minWidth: 210, maxWidth: 260)
-                    fontPreview.frame(minWidth: 200, maxWidth: .infinity)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    fontControls
-                    fontPreview
-                }
-            }
-        }
-    }
-
-    private var fontControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Picker("UI font", selection: $typography.readingFont) {
-                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
-                    Text(font.displayName).tag(font)
-                }
-            }
-            HStack {
-                Text("Size").uiFont(.callout)
-                Spacer()
-                Text("\(typography.fontSize) pt").uiFont(.callout.monospacedDigit())
-                Stepper("UI font size", value: $typography.fontSize,
-                        in: AppTypographyPreferences.fontSizeRange)
-                    .labelsHidden()
-                    .accessibilityValue("\(typography.fontSize) points")
-            }
-        }
-    }
-
     private var fontPreview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -254,11 +230,8 @@ struct SettingsAppearanceEditor: View {
         .accessibilityLabel("Live preview, \(typography.readingFont.displayName), \(typography.fontSize) points")
     }
 
-    private func sectionTitle(_ title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).uiFont(.headline)
-            Text(detail).uiFont(.caption).foregroundStyle(.secondary)
-        }
+    private func caption(_ text: String) -> some View {
+        Text(text).uiFont(.caption).foregroundStyle(.secondary)
     }
 
     private var customAccent: Binding<Color> {

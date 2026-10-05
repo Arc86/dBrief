@@ -51,8 +51,7 @@ struct SettingsWatchedFoldersTab: View {
                 .listRowBackground(Color.clear)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .settingsFormStyle()
     }
 
     @ViewBuilder
