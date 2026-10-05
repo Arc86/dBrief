@@ -273,9 +273,17 @@ struct MenuPanelLevelBars: View {
 @MainActor
 enum MenuBarPanel {
     static func close() {
-        for window in NSApp.windows where window.level == .statusBar {
+        // SwiftUI's MenuBarExtra window sits at the pop-up menu level (not .statusBar,
+        // which is the status item itself — hiding that would remove the icon).
+        for window in NSApp.windows where isMenuBarExtraWindow(window) {
             window.orderOut(nil)
         }
+    }
+
+    static func isMenuBarExtraWindow(_ window: NSWindow) -> Bool {
+        let name = String(describing: type(of: window))
+        if name.contains("MenuBarExtra") { return true }
+        return window.level == .popUpMenu && !name.contains("StatusBar") && !(window is NSPanel)
     }
 
     static func open(_ id: String, with openWindow: OpenWindowAction) {

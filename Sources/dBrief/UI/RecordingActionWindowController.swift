@@ -119,9 +119,7 @@ final class RecordingActionWindowController {
     }
 
     private func prepareForPresentation(appSettings: AppSettings) {
-        for window in NSApp.windows where window.level == .statusBar {
-            window.orderOut(nil)
-        }
+        MenuBarPanel.close()
         if !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.regular)
         }
