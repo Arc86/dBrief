@@ -80,28 +80,78 @@ actor ParakeetTranscriptionService {
     /// Trailing silence appended before ASR so the model emits sentence-final
     /// punctuation it would otherwise drop at the sequence boundary (1 second).
     private static let trailingSilenceSamples = 16_000
-    /// Above this many samples we skip in-memory padding and use FluidAudio's own
-    /// (possibly disk-backed) file path, to keep memory bounded on long audio.
+    /// Above this many samples we hand FluidAudio a file instead of a buffer, so
+    /// its memory-efficient disk-backed route runs the inference.
     /// 20 minutes @ 16 kHz.
-    private static let maxInMemorySamples = 16_000 * 60 * 20
+    static let maxInMemorySamples = 16_000 * 60 * 20
 
-    /// Load the file to 16 kHz mono samples, append 1 s of silence, and transcribe
-    /// the padded buffer. Falls back to FluidAudio's file-based path on load failure
-    /// or for very long audio (preserving its memory-efficient disk-backed route —
-    /// samples are `nil` on that route).
+    enum Input {
+        /// Padded 16 kHz mono samples, transcribed in memory.
+        case samples([Float])
+        /// A file for FluidAudio's own file path; delete it afterwards when temporary.
+        case file(URL, isTemporary: Bool)
+    }
+
+    /// Decode the file to 16 kHz mono and append 1 s of silence. Long audio is
+    /// re-written as an exact-length 16 kHz PCM file: FluidAudio's disk-backed
+    /// reader trusts `AVAudioFile.length`, which for AAC/MP3 is an estimate from
+    /// the container header and can overshoot the decodable frames — it then
+    /// fails with `eofErr` at the very end of the file. Its in-memory resampler
+    /// (used here) tolerates that. Undecodable files fall through to FluidAudio's
+    /// own file path unchanged.
+    static func prepareInput(fileURL: URL, maxInMemorySamples: Int = maxInMemorySamples) throws -> Input {
+        guard var samples = try? AudioConverter().resampleAudioFile(fileURL) else {
+            return .file(fileURL, isTemporary: false)
+        }
+        samples.reserveCapacity(samples.count + trailingSilenceSamples)
+        samples.append(contentsOf: repeatElement(Float(0), count: trailingSilenceSamples))
+        guard samples.count > maxInMemorySamples else { return .samples(samples) }
+        return .file(try writeTemporaryPCM(samples), isTemporary: true)
+    }
+
+    /// Write 16 kHz mono Float32 samples to a temporary CAF (no 4 GB WAV cap).
+    private static func writeTemporaryPCM(_ samples: [Float]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbrief-parakeet-\(UUID().uuidString).caf")
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+        do {
+            // Scoped so the file is closed (on deinit) before FluidAudio opens it.
+            let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+            let chunk = 16_000 * 60
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(chunk)) else {
+                throw ASRError.processingFailed("Could not allocate audio buffer")
+            }
+            try samples.withUnsafeBufferPointer { all in
+                var offset = 0
+                while offset < all.count {
+                    let count = min(chunk, all.count - offset)
+                    buffer.floatChannelData![0].update(from: all.baseAddress! + offset, count: count)
+                    buffer.frameLength = AVAudioFrameCount(count)
+                    try file.write(from: buffer)
+                    offset += count
+                }
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
+        return url
+    }
+
+    /// Transcribe the prepared input. Samples are `nil` on the file route, which
+    /// the orchestrator treats as "re-decode for diarization".
     private static func transcribePadded(_ mgr: AsrManager, fileURL: URL) async throws -> (ASRResult, [Float]?) {
         // FluidAudio 0.15.4 makes the TDT decoder state caller-owned. We do
         // single-shot full-file transcription (not streaming), so a fresh state
         // per call is correct.
         var decoderState = try TdtDecoderState()
-        guard var samples = try? AudioConverter().resampleAudioFile(fileURL),
-              samples.count <= maxInMemorySamples
-        else {
-            return (try await mgr.transcribe(fileURL, decoderState: &decoderState), nil)
+        switch try prepareInput(fileURL: fileURL) {
+        case .samples(let samples):
+            return (try await mgr.transcribe(samples, decoderState: &decoderState), samples)
+        case .file(let url, let isTemporary):
+            defer { if isTemporary { try? FileManager.default.removeItem(at: url) } }
+            return (try await mgr.transcribe(url, decoderState: &decoderState), nil)
         }
-        samples.reserveCapacity(samples.count + trailingSilenceSamples)
-        samples.append(contentsOf: repeatElement(Float(0), count: trailingSilenceSamples))
-        return (try await mgr.transcribe(samples, decoderState: &decoderState), samples)
     }
 
     // MARK: - Segment / word reconstruction
