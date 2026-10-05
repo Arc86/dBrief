@@ -25,23 +25,20 @@ final class FloatingMiniPlayerController {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 0),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+            // Borderless: a titled panel reserves an invisible title bar and macOS
+            // keeps titled windows below the menu bar, so it couldn't reach the top.
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         // The window shadow follows the rounded card's alpha.
         panel.hasShadow = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
 
         let content = MiniPlayerView()
             .environment(appState)

@@ -29,6 +29,8 @@ struct PostRecordingSheet: View {
     @FocusState private var participantFieldFocused: Bool
     @State private var confirmingDelete = false
     @State private var showProcessingSettings = false
+    @FocusState private var titleFocused: Bool
+    @State private var titleHovered = false
     @State private var participantsBoxHeight: CGFloat = 0
 
     /// Beyond ≈4–5 pill rows the participants box caps its height and scrolls
@@ -80,7 +82,7 @@ struct PostRecordingSheet: View {
                         Text(request.profile.postRecordingPolicy == .process
                              ? "Processing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds"
                              : "Queueing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds")
-                            .uiFont(.system(size: 13, weight: .semibold))
+                            .uiFont(.system(size: 12, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(palette.heading.color)
                         Text("Choose Review instead to change this recording’s options.")
@@ -90,7 +92,7 @@ struct PostRecordingSheet: View {
                     Spacer(minLength: 4)
                     Button("Review instead") { recordingManager.cancelPostRecordingAutomation() }
                         .keyboardShortcut(.cancelAction)
-                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 12, fillsWidth: false))
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 11, fillsWidth: false))
                 }
                 .padding(12)
                 .background(palette.selected.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -100,26 +102,32 @@ struct PostRecordingSheet: View {
     }
 
     private var reviewContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             titleBlock
             MenuPanelHairline()
 
-            if let recording = appState.currentRecording,
-               (appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty) {
-                meetingDetails(for: recording)
-            }
+            // Meeting details and Processing settings work as an accordion so the
+            // panel stays short: opening one folds the other into a summary row.
+            if showProcessingSettings {
+                meetingSummaryRow
+            } else {
+                if let recording = appState.currentRecording, showsMeetingDetails(recording) {
+                    meetingDetails(for: recording)
+                }
 
-            if appSettings.diarizationEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(participantNames.isEmpty ? "Participants" : "Participants (\(participantNames.count))")
-                        .uiFont(.system(size: 13, weight: .medium))
-                        .foregroundStyle(palette.heading.color)
-                    participantsField
-                    Text("Matched to speakers in order of first appearance.")
-                        .uiFont(.system(size: 11))
-                        .foregroundStyle(palette.secondary.color)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
+                if appSettings.diarizationEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(participantNames.isEmpty ? "Participants" : "Participants (\(participantNames.count))")
+                            .uiFont(.system(size: 12, weight: .medium))
+                            .foregroundStyle(palette.heading.color)
+                        participantsField
+                        Text("Press Return to add each name · matched to speakers in order of first appearance.")
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
@@ -195,14 +203,39 @@ struct PostRecordingSheet: View {
                     .uiFont(.system(size: 11, weight: .medium))
                     .foregroundStyle(palette.secondary.color)
             }
-            TextField("Meeting title", text: $meetingTitle, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-                .multilineTextAlignment(.center)
-                .uiFont(.system(size: 22, weight: .semibold))
-                .foregroundStyle(palette.heading.color)
-                .help("Meeting title · used for file naming (YYYY-MM-DD_HHMM_[meeting-title].md)")
-                .accessibilityLabel("Meeting title")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                TextField("Meeting title", text: $meetingTitle, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...3)
+                    .multilineTextAlignment(.center)
+                    .uiFont(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                    .focused($titleFocused)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Meeting title")
+                    .accessibilityHint("Edit to rename the recording")
+                    .onChange(of: meetingTitle) { _, title in
+                        // A title is one line; a pasted or Option-Return newline would leak into file names.
+                        if title.contains(where: \.isNewline) {
+                            meetingTitle = title.components(separatedBy: .newlines).joined(separator: " ")
+                        }
+                    }
+                Button { titleFocused = true } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(titleFocused || titleHovered ? palette.accentText.color : palette.secondary.color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rename recording")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(titleFocused ? palette.primary.color : titleHovered ? palette.divider.color : .clear, lineWidth: 1)
+            }
+            .onHover { titleHovered = $0 }
+            .help("Click to rename · used for file naming (YYYY-MM-DD_HHMM_[meeting-title].md)")
             if let recording = appState.currentRecording {
                 HStack(spacing: 6) {
                     Text("\(recording.formattedDuration) · \(recording.formattedFileSize)")
@@ -214,7 +247,7 @@ struct PostRecordingSheet: View {
                         ProgressView().controlSize(.mini).accessibilityLabel("Saving recording")
                     }
                 }
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
                 .lineLimit(1)
             }
@@ -224,12 +257,44 @@ struct PostRecordingSheet: View {
 
     // MARK: - Meeting details
 
+    private func showsMeetingDetails(_ recording: Recording) -> Bool {
+        appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty
+    }
+
+    /// Folded meeting details + participants while Processing settings is open.
+    private var meetingSummaryRow: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { showProcessingSettings = false }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Meeting details")
+                        .uiFont(.system(size: 12, weight: .medium))
+                        .foregroundStyle(palette.heading.color)
+                    Text([appState.currentRecording?.calendarEvent?.title ?? "No meeting linked",
+                          participantNames.isEmpty ? "no participants" : "\(participantNames.count) participant\(participantNames.count == 1 ? "" : "s")"]
+                        .joined(separator: " · "))
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.secondary.color)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows meeting details and participants")
+    }
+
     @ViewBuilder
     private func meetingDetails(for recording: Recording) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Meeting details")
-                    .uiFont(.system(size: 13, weight: .medium))
+                    .uiFont(.system(size: 12, weight: .medium))
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 if appSettings.effectiveCalendarSource == .claudeCLI {
@@ -239,7 +304,7 @@ struct PostRecordingSheet: View {
                     Button { refreshCalendarPicker(for: recording, force: true) } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 24, fontSize: 13))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 24, fontSize: 12))
                     .disabled(calendarPickerRefreshing)
                     .accessibilityLabel("Refresh meeting list")
                 }
@@ -295,7 +360,7 @@ struct PostRecordingSheet: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Processing settings")
-                            .uiFont(.system(size: 13, weight: .medium))
+                            .uiFont(.system(size: 12, weight: .medium))
                             .foregroundStyle(palette.heading.color)
                         Text("\(reviewProfile.name) profile · \(selectedTaskCount) task\(selectedTaskCount == 1 ? "" : "s") selected")
                             .uiFont(.system(size: 11))
@@ -322,7 +387,7 @@ struct PostRecordingSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text("Profile")
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
                 profileMenu
             }
@@ -366,10 +431,10 @@ struct PostRecordingSheet: View {
             if !enabledDestinationNames.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Auto-send destinations")
-                        .uiFont(.system(size: 12))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
                     Text(enabledDestinationNames.joined(separator: ", "))
-                        .uiFont(.system(size: 12))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(palette.text.color)
                     if appSettings.integrations.webhook.enabled {
                         Text("Webhook fields: \(webhookFieldsDescription)")
@@ -403,7 +468,7 @@ struct PostRecordingSheet: View {
                         .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
                     if recording.profileSelection.isDeferred {
                         Button("Keep current profile") { recordingManager.cancelPostRecordingAutomation() }
-                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 12, fillsWidth: false))
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
                     }
                 }
             }
@@ -432,7 +497,7 @@ struct PostRecordingSheet: View {
             } label: {
                 Label("Process recording", systemImage: "play")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 44, fontSize: 15))
+            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
             .disabled(processDisabled)
 
             if appSettings.obsidianEnabled, let recording = appState.currentRecording {
@@ -472,25 +537,16 @@ struct PostRecordingSheet: View {
                 .disabled(sanitizedMeetingTitle.isEmpty)
                 .help("Finalize audio and queue processing for later")
 
-                Menu {
-                    Button("Delete recording…", role: .destructive) {
-                        withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
-                    }
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(palette.secondary.color)
-                        .frame(width: 32, height: 33)
-                        .contentShape(Rectangle())
+                    Image(systemName: "trash")
                 }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .accessibilityLabel("More actions")
-                .help("More actions")
+                .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30, fillsWidth: false))
+                .accessibilityLabel("Delete recording")
+                .help("Delete recording")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
         }
     }
 
@@ -529,10 +585,10 @@ struct PostRecordingSheet: View {
     private var deleteConfirmation: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Delete this recording?")
-                .uiFont(.system(size: 13, weight: .semibold))
+                .uiFont(.system(size: 12, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
             Text("The audio file is permanently removed from disk. This can’t be undone.")
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
                 .foregroundStyle(palette.text.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -541,13 +597,13 @@ struct PostRecordingSheet: View {
                 Button("Cancel") {
                     withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = false }
                 }
-                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 35, fillsWidth: false))
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32, fillsWidth: false))
                 .keyboardShortcut(.cancelAction)
 
                 Button("Delete") {
                     Task { await recordingManager.discardRecording() }
                 }
-                .buttonStyle(MenuPanelButtonStyle(kind: .dangerFilled, height: 35, fillsWidth: false))
+                .buttonStyle(MenuPanelButtonStyle(kind: .dangerFilled, height: 32, fillsWidth: false))
             }
         }
         .padding(16)
@@ -606,9 +662,9 @@ struct PostRecordingSheet: View {
                             onEdit: { editingParticipant = name })
                     }
                 }
-                TextField("Add name…", text: $participantInput)
+                TextField("Add a name", text: $participantInput)
                     .textFieldStyle(.plain)
-                    .uiFont(.system(size: 13))
+                    .uiFont(.system(size: 12))
                     .foregroundStyle(palette.heading.color)
                     .frame(minWidth: 90)
                     .padding(.horizontal, 8)
@@ -617,6 +673,13 @@ struct PostRecordingSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
                     .focused($participantFieldFocused)
                     .onSubmit(addParticipant)
+                if !participantInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button(action: addParticipant) {
+                        Label("Add", systemImage: "plus")
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 11, fillsWidth: false))
+                    .help("Add this name (or press Return)")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -788,7 +851,7 @@ struct PostRecordingSheet: View {
             && appSettings.effectiveCalendarCLIConfig.attendeePolicy == .onDemand
         VStack(alignment: .leading, spacing: 6) {
             Text("Calendar attendees")
-                .uiFont(.system(size: 13, weight: .medium))
+                .uiFont(.system(size: 12, weight: .medium))
                 .foregroundStyle(palette.heading.color)
                 .padding(.top, 6)
             HStack(spacing: 8) {
@@ -800,7 +863,7 @@ struct PostRecordingSheet: View {
                           : attendeeLoadState.isLoaded ? "Refresh" : "Load now",
                           systemImage: "person.2")
                 }
-                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33, fillsWidth: false))
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
                 .disabled(!allowed || attendeeLoadState == .loading)
             }
             .help("Fetch invitees during processing; you can start immediately.")
@@ -945,7 +1008,7 @@ private struct ParticipantEditField: View {
     var body: some View {
         TextField("Name", text: $text)
             .textFieldStyle(.plain)
-            .uiFont(.system(size: 12.5))
+            .uiFont(.system(size: 11.5))
             .focused($focused)
             // Hug the text like the pill it replaces; FlowLayout needs a concrete width.
             .frame(width: max(80, CGFloat(text.count) * 7.2 + 20))

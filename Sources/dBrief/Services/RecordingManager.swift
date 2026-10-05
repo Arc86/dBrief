@@ -2212,7 +2212,7 @@ final class RecordingManager {
         panel.allowedContentTypes = contentTypes
         panel.message = "Choose an audio file to transcribe"
 
-        let response = panel.runModal()
+        let response = MenuBarPanel.runModal(panel)
         if !appSettings.showDockIcon {
             NSApp.setActivationPolicy(.accessory)
         }

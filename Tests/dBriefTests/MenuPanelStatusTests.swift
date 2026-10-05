@@ -80,4 +80,12 @@ import Testing
         #expect(MenuPanelStatusDot.opacity(pulse: false, dimmed: true) == 1)
         #expect(MenuPanelStatusDot.opacity(pulse: true, dimmed: false) == 1)
     }
+
+    @Test func levelBarsRiseFastAndFallSlowly() {
+        let rise = MenuPanelLevelBars.smoothed(previous: 0, target: 1)
+        let fall = MenuPanelLevelBars.smoothed(previous: 1, target: 0)
+        #expect(rise > 1 - fall, "rise \(rise) should outpace fall \(1 - fall)")
+        #expect((0...1).contains(rise) && (0...1).contains(fall))
+        #expect(MenuPanelLevelBars.smoothed(previous: 0.4, target: 0.4) == 0.4)
+    }
 }

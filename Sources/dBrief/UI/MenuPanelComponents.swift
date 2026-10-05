@@ -8,7 +8,7 @@ import SwiftUI
 struct MenuPanelButtonStyle: ButtonStyle {
     enum Kind { case hero, secondary, row, danger, dangerFilled, accentOutline, tile, dangerTile, quiet }
     var kind: Kind
-    var height: CGFloat = 33
+    var height: CGFloat = 30
     var fontSize: CGFloat? = nil
     /// Secondary actions stretch to share a row; set false for a button sized to its label.
     var fillsWidth = true
@@ -17,12 +17,12 @@ struct MenuPanelButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: kind == .hero ? 11 : 8, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: kind == .hero ? 9 : 7, style: .continuous)
         configuration.label
             .uiFont(.system(size: fontSize ?? defaultFontSize, weight: kind == .hero ? .semibold : .medium))
             .foregroundStyle(foreground)
             .lineLimit(1)
-            .padding(.horizontal, kind == .quiet ? 0 : 11)
+            .padding(.horizontal, kind == .quiet ? 0 : 10)
             .frame(maxWidth: kind == .quiet || !fillsWidth ? nil : .infinity, minHeight: height)
             .background(background, in: shape)
             .overlay {
@@ -36,9 +36,9 @@ struct MenuPanelButtonStyle: ButtonStyle {
 
     private var defaultFontSize: CGFloat {
         switch kind {
-        case .hero: 18
-        case .tile, .dangerTile, .quiet: 12
-        default: 13
+        case .hero: 14
+        case .tile, .dangerTile, .quiet: 11
+        default: 12
         }
     }
 
@@ -77,15 +77,15 @@ struct MenuPanelButtonStyle: ButtonStyle {
 /// A flat strip of the panel, split from the next by a full-bleed hairline.
 struct MenuPanelSection<Content: View>: View {
     var showsDivider = true
-    var spacing: CGFloat = 10
-    var verticalPadding: CGFloat = 14
+    var spacing: CGFloat = 8
+    var verticalPadding: CGFloat = 11
     @ViewBuilder var content: Content
     @Environment(\.viewerPalette) private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) { content }
             .padding(.vertical, verticalPadding)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .bottom) {
                 if showsDivider { MenuPanelHairline() }
@@ -104,14 +104,14 @@ struct MenuPanelHairline: View {
 struct MenuPanelSelectorLabel: View {
     let text: String
     var tint: Color? = nil
-    var height: CGFloat = 28
+    var height: CGFloat = 26
     var filled = true
     @Environment(\.viewerPalette) private var palette
 
     var body: some View {
         HStack(spacing: 6) {
             Text(text)
-                .uiFont(.system(size: 13))
+                .uiFont(.system(size: 12))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
@@ -150,6 +150,32 @@ struct BrandBarsMark: View {
         .frame(height: height)
         .accessibilityHidden(true)
     }
+}
+
+/// Scrolls only once its content outgrows `maxHeight`. Inside the panel's own scroll
+/// view a plain ScrollView gets no height proposal, so the content is measured.
+struct MenuPanelBoundedScroll<Content: View>: View {
+    var maxHeight: CGFloat
+    @ViewBuilder var content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView(.vertical) {
+            content.background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: MenuPanelBoundedHeightKey.self, value: proxy.size.height)
+                }
+            )
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: min(max(contentHeight, 1), maxHeight))
+        .onPreferenceChange(MenuPanelBoundedHeightKey.self) { contentHeight = $0 }
+    }
+}
+
+private struct MenuPanelBoundedHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 extension MenuPanelStatus.Tone {
@@ -194,25 +220,30 @@ struct MenuPanelStatusDot: View {
     }
 }
 
-/// Live input level as a row of thin accent bars.
+/// Live input level as a scrolling row of thin accent bars: each meter tick adds a
+/// smoothed sample on the right (fast rise, slower fall), so speech reads as a
+/// waveform instead of every bar jumping at once.
 struct MenuPanelLevelBars: View {
     let level: Float
     var active = true
-    var height: CGFloat = 37
+    var height: CGFloat = 30
     @Environment(\.menuPanelPalette) private var status
+    @State private var history = [CGFloat](repeating: 0, count: Self.historyLength)
 
     private static let barWidth: CGFloat = 3
     private static let gap: CGFloat = 3
+    private static let historyLength = 80
 
     var body: some View {
         let colour = status.accentMark.color
-        let shown = CGFloat(AudioLevelMeter.displayLevel(level))
+        let samples = history
         Canvas { context, size in
-            let count = max(1, Int((size.width + Self.gap) / (Self.barWidth + Self.gap)))
+            let count = min(samples.count, max(1, Int((size.width + Self.gap) / (Self.barWidth + Self.gap))))
+            let visible = samples.suffix(count)
             let used = CGFloat(count) * Self.barWidth + CGFloat(count - 1) * Self.gap
-            var x = (size.width - used) / 2
-            for index in 0..<count {
-                let h = max(4, (0.15 + 0.85 * Self.profile(index) * shown) * size.height)
+            var x = size.width - used
+            for value in visible {
+                let h = max(3, (0.1 + 0.9 * value) * size.height)
                 let rect = CGRect(x: x, y: (size.height - h) / 2, width: Self.barWidth, height: h)
                 context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(colour))
                 x += Self.barWidth + Self.gap
@@ -220,15 +251,45 @@ struct MenuPanelLevelBars: View {
         }
         .frame(height: height)
         .opacity(active ? 1 : 0.4)
+        .onChange(of: level) { _, newLevel in
+            guard active else { return }
+            history.append(Self.smoothed(previous: history.last ?? 0, target: CGFloat(AudioLevelMeter.displayLevel(newLevel))))
+            if history.count > Self.historyLength { history.removeFirst(history.count - Self.historyLength) }
+        }
         .accessibilityElement()
         .accessibilityLabel("Input level")
-        .accessibilityValue("\(Int(shown * 100)) percent")
+        .accessibilityValue("\(Int((history.last ?? 0) * 100)) percent")
     }
 
-    /// Stable pseudo-random shape so the strip reads as a waveform at any level.
-    private static func profile(_ index: Int) -> CGFloat {
-        let value = sin(Double(index) * 12.9898) * 43_758.5453
-        return CGFloat(0.25 + 0.75 * (value - value.rounded(.down)))
+    /// Rise quickly to a louder sample, fall back gently: no flicker between ticks.
+    static func smoothed(previous: CGFloat, target: CGFloat) -> CGFloat {
+        let rate: CGFloat = target > previous ? 0.6 : 0.3
+        return previous + (target - previous) * rate
+    }
+}
+
+/// The menu bar panel floats above every window, so anything it opens — a window,
+/// an open panel — must close it first or it ends up behind it.
+@MainActor
+enum MenuBarPanel {
+    static func close() {
+        for window in NSApp.windows where window.level == .statusBar {
+            window.orderOut(nil)
+        }
+    }
+
+    static func open(_ id: String, with openWindow: OpenWindowAction) {
+        close()
+        openWindow(id: id)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Runs an open/save panel in front of other apps' windows.
+    static func runModal(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        close()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.level = .modalPanel
+        return panel.runModal()
     }
 }
 

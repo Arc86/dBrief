@@ -142,10 +142,18 @@ struct RecordingHistoryView: View {
                 } else if recordings.count <= 3 && expandedItemId == nil {
                     historyRows
                 } else {
-                    ScrollView {
-                        historyRows
+                    // Bring an opened row's actions into view instead of leaving them
+                    // below the fold of this short list.
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            historyRows
+                        }
+                        .frame(height: expandedItemId == nil ? 200 : 260)
+                        .onChange(of: expandedItemId) { _, id in
+                            guard let id else { return }
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .top) }
+                        }
                     }
-                    .frame(height: 200)
                 }
             }
 
@@ -171,6 +179,7 @@ struct RecordingHistoryView: View {
         VStack(spacing: 0) {
             ForEach(recordings) { item in
                 historyRow(item)
+                    .id(item.id)
                     .overlay(alignment: .bottom) {
                         if item.id != recordings.last?.id { MenuPanelHairline() }
                     }
@@ -228,13 +237,12 @@ struct RecordingHistoryView: View {
                         stacksLabel: true)
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
-                    .buttonStyle(MenuPanelButtonStyle(kind: .tile, height: 47, fontSize: 12))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .tile, height: 42, fontSize: 11))
                 }
                 GridRow {
                     actionTile(title: "Transcript", systemImage: "doc.text") {
                         appState.pendingTranscriptSelectionURL = item.url
-                        openWindow(id: "transcript")
-                        NSApp.activate(ignoringOtherApps: true)
+                        MenuBarPanel.open("transcript", with: openWindow)
                     }
                     .disabled(!item.hasRichTranscript)
 

@@ -24,35 +24,35 @@ struct RecordingControlsView: View {
             if appState.isRecording || appState.isPaused {
                 HStack(alignment: .firstTextBaseline) {
                     Text(formattedDuration)
-                        .uiFont(.system(size: 30, weight: .semibold))
+                        .uiFont(.system(size: 26, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(palette.heading.color)
                     Spacer()
                     Text(appState.isPaused ? "Paused" : "Recording")
-                        .uiFont(.system(size: 12, weight: .medium))
+                        .uiFont(.system(size: 11, weight: .medium))
                         .foregroundStyle(appState.isPaused ? status.warning.color : status.danger.color)
                 }
                 .accessibilityElement(children: .combine)
 
-                MenuPanelLevelBars(level: appState.peakLevel, active: appState.isRecording, height: 37)
+                MenuPanelLevelBars(level: appState.peakLevel, active: appState.isRecording, height: 30)
 
                 HStack(spacing: 8) {
                     if appState.isRecording {
                         Button { recordingManager.pauseRecording() } label: {
                             Label("Pause", systemImage: "pause")
                         }
-                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 35))
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
                     } else {
                         Button { try? recordingManager.resumeRecording() } label: {
                             Label("Resume", systemImage: "play")
                         }
-                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 35))
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
                     }
 
                     Button { Task { await recordingManager.stopRecording() } } label: {
                         Label("Stop", systemImage: "stop")
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 35))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 32))
                 }
                 .environment(\.controlActiveState, .active)
 
@@ -98,11 +98,11 @@ struct RecordingControlsView: View {
             }
         } label: {
             HStack(spacing: 9) {
-                RecordGlyph(size: 20, color: palette.onPrimary.color)
+                RecordGlyph(size: 15, color: palette.onPrimary.color)
                 Text("Record meeting")
             }
         }
-        .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 58))
+        .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 40))
         .help("Start recording (\(appSettings.recordHotkey.displayString))")
     }
 
@@ -110,7 +110,7 @@ struct RecordingControlsView: View {
         @Bindable var settings = appSettings
         return HStack(spacing: 8) {
             Text("Profile")
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
             Menu {
                 ForEach(settings.profiles) { profile in
@@ -156,15 +156,14 @@ struct RecordingControlsView: View {
 
             if recordingManager.hasSystemAudioPermission {
                 Label("System audio", systemImage: "speaker.wave.2")
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(status.success.color)
             }
             Spacer(minLength: 0)
             if appState.isLiveTranscribing {
                 Button {
                     appState.pendingLiveTranscriptSelection = true
-                    openWindow(id: "transcript")
-                    NSApp.activate(ignoringOtherApps: true)
+                    MenuBarPanel.open("transcript", with: openWindow)
                 } label: {
                     Label("Live", systemImage: "text.viewfinder")
                 }
@@ -180,7 +179,7 @@ struct RecordingControlsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label("Error", systemImage: "exclamationmark.circle.fill")
-                    .uiFont(.system(size: 12, weight: .semibold))
+                    .uiFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(status.danger.color)
                 Spacer()
                 Button("Copy") {
@@ -198,7 +197,7 @@ struct RecordingControlsView: View {
             .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22))
             ScrollView {
                 Text(error)
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.text.color)
                     .textSelection(.enabled)
                     .lineLimit(nil)
@@ -220,7 +219,7 @@ struct RecordingControlsView: View {
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 6) {
                 Text(notice)
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.text.color)
                     .fixedSize(horizontal: false, vertical: true)
                 if warning {
@@ -236,7 +235,7 @@ struct RecordingControlsView: View {
                             NSWorkspace.shared.open(InterruptedSessionStore.defaultRootURL)
                         }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 12, fillsWidth: false))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
                 }
             }
             Spacer(minLength: 4)

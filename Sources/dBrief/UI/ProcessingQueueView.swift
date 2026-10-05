@@ -43,7 +43,7 @@ struct ProcessingQueueView: View {
                             .frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(job.recording.meetingTitleDraft)
-                                .uiFont(.system(size: 13, weight: .medium))
+                                .uiFont(.system(size: 12, weight: .medium))
                                 .foregroundStyle(palette.heading.color)
                                 .lineLimit(1)
                             RecordingListStatus(title: "Processing", systemImage: "arrow.triangle.2.circlepath",
@@ -79,7 +79,7 @@ struct ProcessingQueueView: View {
 
                 if let error = manager.queueLoadError {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .uiFont(.system(size: 12)).foregroundStyle(status.danger.color)
+                        .uiFont(.system(size: 11)).foregroundStyle(status.danger.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if hasPendingWork {
@@ -103,14 +103,14 @@ struct ProcessingQueueView: View {
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
                         Button("Process queue") { Task { await manager.startProcessingQueue() } }
-                            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 33, fontSize: 13, fillsWidth: false))
+                            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
                             .disabled(manager.queueLoadError != nil)
                     }
                 }
                 .disabled(editing)
             }
         }
-        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33, fontSize: 13, fillsWidth: false))
+        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 12, fillsWidth: false))
         .task { await manager.refreshWorkQueue() }
         .onChange(of: appState.processingJob?.id) { _, _ in Task { await manager.refreshWorkQueue() } }
         .onChange(of: appState.queuedCount) { _, _ in Task { await manager.refreshWorkQueue() } }
@@ -153,7 +153,7 @@ struct ProcessingQueueView: View {
             } actions: {
                 VStack(alignment: .leading, spacing: 6) {
                     if let message = attempt.message {
-                        Text(message).uiFont(.system(size: 12)).foregroundStyle(palette.text.color)
+                        Text(message).uiFont(.system(size: 11)).foregroundStyle(palette.text.color)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     HStack(spacing: 6) {
@@ -174,7 +174,7 @@ struct ProcessingQueueView: View {
         return RecordingListRow(title: title, expanded: expandedItem == key, toggle: {
             expandedItem = expandedItem == key ? nil : key
         }) {
-            Text("\(index + 1)").uiFont(.system(size: 13).monospacedDigit()).foregroundStyle(palette.secondary.color)
+            Text("\(index + 1)").uiFont(.system(size: 12).monospacedDigit()).foregroundStyle(palette.secondary.color)
                 .accessibilityLabel("Queue position \(index + 1)")
         } metadata: {
             HStack(spacing: 6) {

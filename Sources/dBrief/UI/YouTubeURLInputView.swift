@@ -32,7 +32,7 @@ struct YouTubeURLInputView: View {
             // Header
             HStack {
                 Text("YouTube / Video URL")
-                    .uiFont(.system(size: 13, weight: .semibold))
+                    .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 Button {
@@ -51,7 +51,7 @@ struct YouTubeURLInputView: View {
                 TextField("Video URL", text: $urlText,
                           prompt: Text("https://youtube.com/watch?v=…").foregroundStyle(palette.secondary.color))
                     .textFieldStyle(.plain)
-                    .uiFont(.system(size: 13))
+                    .uiFont(.system(size: 12))
                     .foregroundStyle(palette.heading.color)
                     .padding(.horizontal, 10)
                     .frame(height: 33)
@@ -71,7 +71,7 @@ struct YouTubeURLInputView: View {
                         Text("Go")
                     }
                 }
-                .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 33, fontSize: 13))
+                .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12))
                 .frame(width: 52)
                 .disabled(
                     !ytDlpAvailable
@@ -143,7 +143,7 @@ struct YouTubeURLInputView: View {
                             systemImage: "arrow.down.circle"
                         )
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 11, fillsWidth: false))
                 }
 
                 Text("Or install manually: brew install yt-dlp")
@@ -165,7 +165,7 @@ struct YouTubeURLInputView: View {
                         } label: {
                             Label("Update yt-dlp", systemImage: "arrow.down.circle")
                         }
-                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 12, fillsWidth: false))
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 11, fillsWidth: false))
                         .disabled(isLoading)
                         Text("The update is stored in dBrief's support folder.")
                             .uiFont(.system(size: 11))
@@ -182,7 +182,7 @@ struct YouTubeURLInputView: View {
                     Button("Check again") {
                         Task { await checkYtDlpUpdate() }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 12, fillsWidth: false))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 28, fontSize: 11, fillsWidth: false))
                 }
 
                 if let error = ytDlpDownloadError {

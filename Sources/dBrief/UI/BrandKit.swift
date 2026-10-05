@@ -280,7 +280,7 @@ struct ParticipantPill: View {
             if let onEdit {
                 Button(action: onEdit) {
                     Text(name)
-                        .uiFont(.system(size: 13))
+                        .uiFont(.system(size: 12))
                         .foregroundStyle(palette.heading.color)
                         .underline(hovering, color: palette.secondary.color)
                 }
@@ -289,7 +289,7 @@ struct ParticipantPill: View {
                 .help("Click to edit this name")
             } else {
                 Text(name)
-                    .uiFont(.system(size: 13))
+                    .uiFont(.system(size: 12))
                     .foregroundStyle(palette.heading.color)
             }
             Button(action: onRemove) {
@@ -339,7 +339,7 @@ struct BrandCheckRow: View {
                     }
                 }
                 Text(title)
-                    .uiFont(.system(size: 13))
+                    .uiFont(.system(size: 12))
                     .foregroundStyle(palette.text.color)
                 Spacer(minLength: 0)
             }

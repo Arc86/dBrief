@@ -23,7 +23,7 @@ struct RecordingListSectionHeader<Actions: View>: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(title)
-                                .uiFont(.system(size: 13, weight: .semibold))
+                                .uiFont(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(palette.heading.color)
                             if let count {
                                 Text("\(count)")
@@ -109,9 +109,9 @@ struct RecordingListPlayButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(status.accentMark.color)
-                .frame(width: 30, height: 30)
+                .frame(width: 26, height: 26)
                 .background(palette.surface.color, in: Circle())
                 .overlay(Circle().strokeBorder(status.accentBorder.color, lineWidth: 1))
                 .contentShape(Circle())
@@ -135,13 +135,13 @@ struct RecordingListRow<Leading: View, Metadata: View, Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                leading.frame(width: 30, height: 30)
+                leading.frame(width: 26, height: 26)
                 // Playback and disclosure are siblings, never nested buttons.
                 Button(action: toggle) {
                     HStack(spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(title)
-                                .uiFont(.system(size: 13, weight: .medium))
+                                .uiFont(.system(size: 12, weight: .medium))
                                 .foregroundStyle(palette.heading.color)
                                 .lineLimit(1)
                                 .help(title)
@@ -191,7 +191,7 @@ struct RecordingListAction: View {
         }
         .buttonStyle(MenuPanelButtonStyle(
             kind: destructive ? (style == .tile ? .dangerTile : .danger) : (style == .tile ? .tile : .secondary),
-            height: style == .tile ? 47 : 28, fontSize: 12, fillsWidth: style == .tile))
+            height: style == .tile ? 47 : 28, fontSize: 11, fillsWidth: style == .tile))
     }
 }
 
@@ -202,7 +202,7 @@ struct RecordingListTileLabel: View {
 
     var body: some View {
         VStack(spacing: 5) {
-            Image(systemName: systemImage).font(.system(size: 14)).frame(height: 18)
+            Image(systemName: systemImage).font(.system(size: 13)).frame(height: 16)
             Text(title).lineLimit(1).minimumScaleFactor(0.85)
         }
         .padding(.vertical, 6)
@@ -223,10 +223,10 @@ struct RecordingListEmptyState: View {
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .uiFont(.system(size: 13, weight: .semibold))
+                    .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Text(message)
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -24,37 +24,48 @@ struct TranscriptionProgressView: View {
         }
     }
 
+    /// Shown only under real memory pressure: the system says critical, or more
+    /// than 85 % of RAM is in use. Otherwise memory is not the user's concern.
     @ViewBuilder
     private var memoryBar: some View {
         if let stats = memStats, stats.total > 0 {
             let fraction = Double(stats.used) / Double(stats.total)
-            let usedGB = Double(stats.used) / 1_073_741_824
-            let totalGB = Double(stats.total) / 1_073_741_824
-            let color = fraction > 0.85 ? status.danger.color : fraction > 0.6 ? status.warning.color : status.success.color
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Memory")
-                    Spacer()
-                    Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
-                        .monospacedDigit()
-                }
-                .uiFont(.system(size: 11))
-                .foregroundStyle(palette.secondary.color)
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(palette.divider.color)
-                        Capsule()
-                            .fill(color)
-                            .frame(width: geo.size.width * CGFloat(min(fraction, 1.0)))
-                            .animation(.linear(duration: 0.3), value: fraction)
+            if appState.memoryPressureLevel == .critical || fraction > 0.85 {
+                let usedGB = Double(stats.used) / 1_073_741_824
+                let totalGB = Double(stats.total) / 1_073_741_824
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "memorychip")
+                            .foregroundStyle(status.warning.color)
+                        Text("Memory is running low")
+                            .uiFont(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(palette.heading.color)
+                        Spacer()
+                        Text(String(format: "%.1f / %.0f GB", usedGB, totalGB))
+                            .uiFont(.system(size: 11))
+                            .monospacedDigit()
+                            .foregroundStyle(palette.secondary.color)
                     }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(palette.divider.color)
+                            Capsule()
+                                .fill(status.warning.color)
+                                .frame(width: geo.size.width * CGFloat(min(fraction, 1.0)))
+                                .animation(.linear(duration: 0.3), value: fraction)
+                        }
+                    }
+                    .frame(height: 3)
+                    Text("Processing may slow down. Closing other apps helps.")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
                 }
-                .frame(height: 4)
+                .padding(10)
+                .background(status.warning.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Memory is running low")
+                .accessibilityValue(String(format: "%.1f of %.0f gigabytes used", usedGB, totalGB))
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Memory")
-            .accessibilityValue(String(format: "%.1f of %.0f gigabytes used", usedGB, totalGB))
         }
     }
 
@@ -62,12 +73,12 @@ struct TranscriptionProgressView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(isComplete ? "Processing complete" : "Processing recording")
-                    .uiFont(.system(size: 16, weight: .semibold))
+                    .uiFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 if let done = MenuPanelProgress.doneLabel(appState.processingSteps) {
                     Text(done)
-                        .uiFont(.system(size: 12))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(palette.secondary.color)
                 }
             }
@@ -101,7 +112,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label(MenuPanelProgress.stopProcessingTitle(isCapturing: !appState.isIdle), systemImage: "stop")
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 33, fillsWidth: false))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30, fillsWidth: false))
                     .accessibilityLabel("Stop processing")
                     .help("Stop processing; saved progress remains available for recovery")
                 }
@@ -109,12 +120,11 @@ struct TranscriptionProgressView: View {
                 if let title = appState.processingJob?.transcriptButtonTitle {
                     Button {
                         appState.pendingLiveTranscriptSelection = true
-                        openWindow(id: "transcript")
-                        NSApp.activate(ignoringOtherApps: true)
+                        MenuBarPanel.open("transcript", with: openWindow)
                     } label: {
                         Label(title, systemImage: "text.viewfinder")
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                 }
 
                 if appState.pendingSpeakerReview != nil {
@@ -123,7 +133,7 @@ struct TranscriptionProgressView: View {
                     } label: {
                         Label("Review speakers", systemImage: "person.crop.circle.badge.questionmark")
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 33, fontSize: 13))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -156,12 +166,12 @@ struct TranscriptionProgressView: View {
                             }
                         }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
 
                     Button("Close") {
                         appState.processingSteps.removeAll()
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                 }
             }
         }
@@ -185,14 +195,9 @@ struct TranscriptionProgressView: View {
                 stepIcon(for: step.status)
                     .frame(width: 18, height: 18)
                 Text(step.name)
-                    .uiFont(.system(size: 14))
+                    .uiFont(.system(size: 13))
                     .foregroundStyle(isDone(step.status) ? palette.secondary.color : palette.heading.color)
                 Spacer()
-                if case .inProgress = step.status, appState.memoryPressureLevel == .critical {
-                    Text("Low RAM")
-                        .uiFont(.system(size: 11, weight: .medium))
-                        .foregroundStyle(status.warning.color)
-                }
             }
             if case .inProgress = step.status, let progress = step.progress {
                 ProgressView(value: progress, total: 1.0)
@@ -205,14 +210,14 @@ struct TranscriptionProgressView: View {
             }
             if case .inProgress = step.status, let detail = step.detail, !detail.isEmpty {
                 Text(detail)
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
                     .padding(.leading, 28)
             }
             if case .failed(let message) = step.status, !message.isEmpty {
                 ScrollView {
                     Text(message)
-                        .uiFont(.system(size: 12))
+                        .uiFont(.system(size: 11))
                         .foregroundStyle(status.danger.color)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)

@@ -35,41 +35,8 @@ struct ResultsView: View {
                 preflightBanner(warning)
             }
 
-            if let summary = recording.summary {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Summary")
-                        .uiFont(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(palette.heading.color)
-                    Text(.init(summary))
-                        .uiFont(.system(size: 14))
-                        .foregroundStyle(palette.text.color)
-                        .lineLimit(showDetails ? nil : 4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-            } else if let transcription = recording.transcription {
-                // AI failed or was off but transcription succeeded — show the transcript.
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Transcript")
-                        .uiFont(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(palette.heading.color)
-                    Text(.init(transcription.text))
-                        .uiFont(.system(size: 14))
-                        .foregroundStyle(palette.text.color)
-                        .lineLimit(showDetails ? 30 : 4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-            }
-
-            if MenuPanelProgress.offersMoreDetails(
-                summary: recording.summary,
-                transcriptFallback: recording.summary == nil && recording.transcription != nil,
-                actionCount: recording.actionItems?.count ?? 0,
-                tagCount: recording.tags?.count ?? 0,
-                hasSentiment: recording.sentiment != nil
-            ) {
-                detailsDisclosure(recording: recording)
+            if recording.summary != nil || recording.transcription != nil {
+                briefBody(recording: recording)
             }
 
             actions(recording: recording, markdownURL: markdownURL)
@@ -78,12 +45,9 @@ struct ResultsView: View {
                 failureRow
             }
 
-            Button("Dismiss brief") {
-                appState.processingSteps.removeAll()
-                appState.preflightWarning = nil
-            }
-            .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 28, fontSize: 13))
-            .frame(maxWidth: .infinity)
+            Button("Done") { finishBrief() }
+                .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 32, fontSize: 13))
+                .help("Clear this brief from the menu; the recording stays in your library")
         }
     }
 
@@ -92,7 +56,7 @@ struct ResultsView: View {
     private func header(recording: Recording, markdownURL: URL?) -> some View {
         VStack(spacing: 6) {
             Text(recording.generatedTitle ?? recording.meetingTitleDraft)
-                .uiFont(.system(size: 22, weight: .semibold))
+                .uiFont(.system(size: 18, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
@@ -100,7 +64,7 @@ struct ResultsView: View {
             Text([recording.date.formatted(date: .abbreviated, time: .omitted),
                   recording.duration > 0 ? recording.formattedDuration : nil]
                 .compactMap { $0 }.joined(separator: " · "))
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
             if let contents = MenuPanelProgress.briefContents(
                 summary: recording.summary != nil,
@@ -113,7 +77,7 @@ struct ResultsView: View {
                 } icon: {
                     Image(systemName: "checkmark.circle").foregroundStyle(status.success.color)
                 }
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
             }
         }
         .frame(maxWidth: .infinity)
@@ -121,63 +85,105 @@ struct ResultsView: View {
 
     // MARK: - Details
 
-    private func detailsDisclosure(recording: Recording) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { showDetails.toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: showDetails ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(showDetails ? "Fewer details" : "More details")
-                        .uiFont(.system(size: 13))
-                    Spacer(minLength: 0)
+    /// Summary (or the transcript when there is no summary) with a Show all / Show less
+    /// toggle in its header, so the control stays put whatever the length. Expanded
+    /// content scrolls inside a capped box instead of stretching the panel.
+    private func briefBody(recording: Recording) -> some View {
+        let isTranscript = recording.summary == nil
+        let expandable = MenuPanelProgress.offersMoreDetails(
+            summary: recording.summary,
+            transcriptFallback: isTranscript,
+            actionCount: recording.actionItems?.count ?? 0,
+            tagCount: recording.tags?.count ?? 0,
+            hasSentiment: recording.sentiment != nil
+        )
+        let text = recording.summary ?? recording.transcription?.text ?? ""
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(isTranscript ? "Transcript" : "Summary")
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                Spacer()
+                if expandable {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { showDetails.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(showDetails ? "Show less" : "Show all")
+                            Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22, fontSize: 11))
+                    .accessibilityValue(showDetails ? "expanded" : "collapsed")
                 }
-                .foregroundStyle(palette.secondary.color)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityValue(showDetails ? "expanded" : "collapsed")
-
             if showDetails {
-                if let items = recording.actionItems, !items.isEmpty {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Action items (\(items.count))")
-                            .uiFont(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(palette.heading.color)
-                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text("•").foregroundStyle(palette.secondary.color)
-                                Text(item).foregroundStyle(palette.text.color)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .uiFont(.system(size: 13))
-                        }
+                MenuPanelBoundedScroll(maxHeight: 280) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        briefText(text)
+                        details(recording: recording)
                     }
+                    .padding(.trailing, 6)
                 }
-                if let tags = recording.tags, !tags.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(recording.sentiment.map { "Tags · \($0)" } ?? "Tags")
-                            .uiFont(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(palette.heading.color)
-                        FlowLayout(spacing: 6) {
-                            ForEach(tags, id: \.self) { tag in
-                                Text(tag)
-                                    .uiFont(.system(size: 12))
-                                    .foregroundStyle(palette.accentText.color)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 3)
-                                    .background(palette.selected.color, in: Capsule())
-                            }
-                        }
+            } else {
+                briefText(text).lineLimit(4)
+            }
+        }
+    }
+
+    private func briefText(_ text: String) -> some View {
+        Text(.init(text))
+            .uiFont(.system(size: 12))
+            .foregroundStyle(palette.text.color)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func details(recording: Recording) -> some View {
+        if let items = recording.actionItems, !items.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Action items (\(items.count))")
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("•").foregroundStyle(palette.secondary.color)
+                        Text(item).foregroundStyle(palette.text.color)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                } else if let sentiment = recording.sentiment {
-                    Text("Sentiment · \(sentiment)")
-                        .uiFont(.system(size: 12))
-                        .foregroundStyle(palette.secondary.color)
+                    .uiFont(.system(size: 12))
                 }
             }
         }
+        if let tags = recording.tags, !tags.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(recording.sentiment.map { "Tags · \($0)" } ?? "Tags")
+                    .uiFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                FlowLayout(spacing: 6) {
+                    ForEach(tags, id: \.self) { tag in
+                        Text(tag)
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.accentText.color)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
+                            .background(palette.selected.color, in: Capsule())
+                    }
+                }
+            }
+        } else if let sentiment = recording.sentiment {
+            Text("Sentiment · \(sentiment)")
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
+        }
+    }
+
+    private func finishBrief() {
+        appState.processingSteps.removeAll()
+        appState.preflightWarning = nil
     }
 
     // MARK: - Actions
@@ -187,19 +193,20 @@ struct ResultsView: View {
             if let transcript = recording.richTranscript, !transcript.segments.isEmpty,
                let audioURL = recording.finalizedAudioURL {
                 Button {
+                    // Opening the transcript finishes the brief and gets the panel out of the way.
                     appState.pendingTranscriptSelectionURL = audioURL
-                    openWindow(id: "transcript")
-                    NSApp.activate(ignoringOtherApps: true)
+                    finishBrief()
+                    MenuBarPanel.open("transcript", with: openWindow)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "text.viewfinder")
                         Text("View transcript")
                         Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold))
                     }
-                    .uiFont(.system(size: 15, weight: .medium))
+                    .uiFont(.system(size: 14, weight: .medium))
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(ViewerBrandButtonStyle(height: 40))
+                .buttonStyle(ViewerBrandButtonStyle(height: 34))
             }
 
             HStack(spacing: 8) {
@@ -218,7 +225,7 @@ struct ResultsView: View {
                 .disabled(markdownURL == nil)
                 .help(markdownURL == nil ? "No Markdown file was written for this recording" : "Open the Markdown notes")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 33))
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
         }
     }
 
@@ -235,7 +242,7 @@ struct ResultsView: View {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(status.warning.color)
                 Text("Didn’t finish: " + failedSteps.map(\.name).joined(separator: " · "))
-                    .uiFont(.system(size: 12))
+                    .uiFont(.system(size: 11))
                     .foregroundStyle(palette.text.color)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
@@ -247,7 +254,7 @@ struct ResultsView: View {
                             await recordingManager.retryAIAnalysis(for: recording)
                         }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 12, fillsWidth: false))
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
                     .help("Retry AI analysis with the remote endpoint")
                 }
             }
@@ -262,7 +269,7 @@ struct ResultsView: View {
                 .foregroundStyle(status.warning.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Low available memory")
-                    .uiFont(.system(size: 12, weight: .semibold))
+                    .uiFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Text("\(warning.modelName) requires \(String(format: "%.1f", warning.requiredGB)) GB but only \(String(format: "%.1f", warning.availableGB)) GB is available. Processing will still be attempted, but it may run slowly or fail under memory pressure. Close other apps\(warning.hasRemoteEndpoint ? " or retry with a remote endpoint" : "") if it stalls.")
                     .uiFont(.system(size: 11))

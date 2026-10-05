@@ -11,12 +11,12 @@ struct ObsidianFolderPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .uiFont(.system(size: 12))
+                .uiFont(.system(size: 11))
                 .foregroundStyle(palette.secondary.color)
 
             HStack(spacing: 8) {
                 Text(appSettings.obsidianFolderDisplayName(relativePath: currentRelativePath))
-                    .uiFont(.system(size: 13))
+                    .uiFont(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(palette.text.color)
@@ -27,7 +27,7 @@ struct ObsidianFolderPicker: View {
                         onSelect(relativePath)
                     }
                 }
-                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 35, fillsWidth: false))
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32, fillsWidth: false))
                 .disabled(appSettings.obsidianVaultURL == nil)
             }
 
@@ -48,7 +48,7 @@ struct ObsidianFolderPicker: View {
         panel.canCreateDirectories = true
         panel.directoryURL = vaultURL
         panel.message = "Choose a folder inside your Obsidian vault"
-        if panel.runModal() == .OK, let url = panel.url {
+        if MenuBarPanel.runModal(panel) == .OK, let url = panel.url {
             guard let relativePath = appSettings.obsidianRelativePath(for: url) else { return }
             completion(relativePath)
         }

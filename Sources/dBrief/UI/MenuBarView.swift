@@ -17,7 +17,7 @@ struct MenuBarView: View {
     @State private var showRecentRecordings = true
     @State private var contentHeight: CGFloat = 0
 
-    static let panelWidth: CGFloat = 360
+    static let panelWidth: CGFloat = 340
 
     var body: some View {
         Group {
@@ -30,7 +30,6 @@ struct MenuBarView: View {
                     header
                     MenuPanelHairline()
                     boundedContent
-                    footer
                 }
                 .frame(width: Self.panelWidth)
             }
@@ -62,25 +61,32 @@ struct MenuBarView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 9) {
-            BrandBarsMark(height: 24)
+        HStack(spacing: 8) {
+            BrandBarsMark(height: 20)
             Text("dBrief")
-                .uiFont(.system(size: 17, weight: .semibold))
+                .uiFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
-            HStack(spacing: 6) {
-                MenuPanelStatusDot(tone: status.tone, pulse: status == .recording)
-                Text(status.label)
-                    .uiFont(.system(size: 12))
-                    .foregroundStyle(palette.secondary.color)
-                    .lineLimit(1)
+            // Idle needs no badge; only capture and processing states earn one.
+            if status != .ready {
+                HStack(spacing: 5) {
+                    MenuPanelStatusDot(tone: status.tone, pulse: status == .recording, size: 6)
+                    Text(status.label)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Status: \(status.label)")
             }
             Spacer(minLength: 0)
+            MenuBarSettingsMenu {
+                MenuBarPanel.close()
+                openWindow(id: "settings")
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 17)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("dBrief, \(status.label)")
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 
     // MARK: - Sections
@@ -133,21 +139,20 @@ struct MenuBarView: View {
 
                 // Primary library entry stays visible independently of list
                 // disclosure, processing progress, and completion results.
-                MenuPanelSection(verticalPadding: 12) {
+                MenuPanelSection(verticalPadding: 10) {
                     Button {
-                        openWindow(id: "transcript")
-                        NSApp.activate(ignoringOtherApps: true)
+                        MenuBarPanel.open("transcript", with: openWindow)
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "rectangle.split.2x1")
-                            Text("Transcript viewer")
+                            Image(systemName: "rectangle.stack")
+                            Text("Recording library")
                             Spacer(minLength: 0)
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 11, weight: .semibold))
                         }
                     }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .row, height: 36))
-                    .help("Open the transcript viewer")
+                    .buttonStyle(MenuPanelButtonStyle(kind: .row, height: 30))
+                    .help("Open the recording library: every recording with its summary, transcript and assistant")
                 }
 
                 if appState.isIdle, !appState.hasProcessingResults {
@@ -190,36 +195,33 @@ struct MenuBarView: View {
         }
     }
 
-    // MARK: - Footer
+}
 
-    private var footer: some View {
-        HStack {
-            Button {
-                closeMenuBarExtraWindow()
-                openWindow(id: "settings")
-                NSApp.activate(ignoringOtherApps: true)
-            } label: {
-                Label("Settings…", systemImage: "gearshape")
-            }
-            .keyboardShortcut(",", modifiers: .command)
-            .help("Open Settings")
+/// Settings and Quit, tucked behind a gear in the panel header.
+struct MenuBarSettingsMenu: View {
+    let onSettings: () -> Void
+    @Environment(\.viewerPalette) private var palette
 
-            Spacer()
-
+    var body: some View {
+        Menu {
+            Button("Settings…", action: onSettings)
+                .keyboardShortcut(",", modifiers: .command)
+            Divider()
             Button("Quit dBrief") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q", modifiers: .command)
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(palette.secondary.color)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 25))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(palette.canvas.color)
-        .overlay(alignment: .top) { MenuPanelHairline() }
-    }
-
-    private func closeMenuBarExtraWindow() {
-        for window in NSApp.windows where window.level == .statusBar {
-            window.orderOut(nil)
-        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Settings and app controls")
+        .help("Settings and app controls")
     }
 }
 
