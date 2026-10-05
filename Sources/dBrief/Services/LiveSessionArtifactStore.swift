@@ -160,6 +160,7 @@ actor LiveSessionArtifactStore {
     private let payloadLimit: Int
     private let queueByteLimit: Int
     private let chatPayloadLimit: Int
+    private let capturePersistenceAllowed: Bool
     private let fm = FileManager.default
     private var queue: [Job] = []
     private var inFlight: Job?
@@ -175,9 +176,11 @@ actor LiveSessionArtifactStore {
          payloadReservation: LiveRecordingPayloadBudget.Lease? = nil,
          payloadLimit: Int = maxArtifactBytes, queueByteLimit: Int = maxQueuedBytes,
          chatPayloadLimit: Int = maxArtifactBytes,
-         beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in }) {
+         beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
+         capturePersistenceAllowed: Bool = true) {
         self.identity = identity; self.rootURL = rootURL.standardizedFileURL; self.beforeStage = beforeStage
         self.validity = validity
+        self.capturePersistenceAllowed = capturePersistenceAllowed
         self.payloadReservation = payloadReservation
         self.payloadLimit = min(Self.maxArtifactBytes, max(1, payloadLimit))
         self.chatPayloadLimit = min(self.payloadLimit, max(1, chatPayloadLimit))
@@ -234,6 +237,7 @@ actor LiveSessionArtifactStore {
         return receipt
     }
     func commitRecordingRetention(_ ticket: ProcessingPipeline.FileDeletionTicket) async throws -> DeletionReceipt {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         try ticket.validateRetentionScope()
         guard case .deletion(let receipt) = try await submitControl(.recordingRetentionIntent(ticket), allowingDeleted: true) else { throw LiveArtifactError.verificationFailed }
         return receipt
@@ -299,6 +303,7 @@ actor LiveSessionArtifactStore {
         return values.filter { seen.insert("\($0.kind.rawValue):\($0.fingerprint.sha256)").inserted }
     }
     private func validateAdmission(_ payload: Payload, control: Bool) throws {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         try validity.withValidResult {}
         guard !isDeleted else { throw LiveArtifactError.deleted }
         guard payload.data.count <= payloadLimit else { throw LiveArtifactError.artifactTooLarge }
@@ -328,6 +333,7 @@ actor LiveSessionArtifactStore {
         }
     }
     private func submitControl(_ operation: Operation, allowingDeleted: Bool = false, allowingRetiredCleanup: Bool = false) async throws -> Outcome? {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         if !allowingRetiredCleanup { try validity.withValidResult {} }
         guard allowingDeleted || !isDeleted else { throw LiveArtifactError.deleted }
         guard controls < 8, retainedPayloads().reduce(0, { $0 + $1.data.count }) <= queueByteLimit else { throw LiveArtifactError.queueFull }
@@ -903,16 +909,26 @@ actor LiveSessionArtifactStore {
     }
     private func requireOwner(_ audio: URL, inspectionClaim: UUID? = nil) throws {
         func inspect() throws {
-            struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }
             try validateBindingPaths(audio)
-            try requireSafeParents(audio)
-            guard try read(audio, maximum: 0, contents: false) != nil,
-                  let metadata: Owner = try RecordingDeletionAuthority.readHeader(audio.deletingPathExtension().appendingPathExtension("json"),
-                    maximumBytes: min(payloadLimit, 3 * 1_024 * 1_024), tokenLimit: 1_048_576),
-                  metadata.recordingID == identity.recordingID && metadata.masterFileName == audio.lastPathComponent else { throw LiveArtifactError.wrongOwner }
+            try Self.requireRecordingMaster(audio, recordingID: identity.recordingID,
+                maximumMetadataBytes: min(payloadLimit, 3 * 1_024 * 1_024))
         }
         if let inspectionClaim { try RecordingResultMutation.withClaimedInspection(of: audio, attemptID: inspectionClaim, inspect) }
         else { try RecordingResultMutation.withDeletion(of: audio, inspect) }
+    }
+    /// Verifies the saved master only; it grants no artifact/deletion authority.
+    /// RAM callers must never inspect a configured artifact namespace.
+    nonisolated static func requireRecordingMaster(_ audio: URL, recordingID: UUID,
+                                                   maximumMetadataBytes: Int = 3 * 1_024 * 1_024) throws {
+        struct Owner: Decodable { let recordingID: UUID; let masterFileName: String }
+        guard RecordingDeletionAuthority.isNormalizedFileURL(audio),
+              RetentionCleanup.audioExtensions.contains(audio.pathExtension.lowercased()),
+              !audio.deletingPathExtension().lastPathComponent.isEmpty else { throw LiveArtifactError.unsafePath }
+        try requireSafeParents(audio)
+        guard try readFile(audio, maximum: 0, contents: false) != nil,
+              let metadata: Owner = try RecordingDeletionAuthority.readHeader(audio.deletingPathExtension().appendingPathExtension("json"),
+                maximumBytes: maximumMetadataBytes, tokenLimit: 1_048_576),
+              metadata.recordingID == recordingID && metadata.masterFileName == audio.lastPathComponent else { throw LiveArtifactError.wrongOwner }
     }
     private func validateBindingPaths(_ audio: URL) throws {
         guard RecordingDeletionAuthority.isNormalizedFileURL(audio),
@@ -1018,6 +1034,9 @@ actor LiveSessionArtifactStore {
         }
     }
     private func read(_ url: URL, maximum: Int = maxArtifactBytes, contents: Bool = true) throws -> Data? {
+        try Self.readFile(url, maximum: min(maximum, payloadLimit), contents: contents)
+    }
+    nonisolated private static func readFile(_ url: URL, maximum: Int, contents: Bool) throws -> Data? {
         try requireSafeParents(url)
         let stamp = try RecordingDeletionAuthority.Stamp.read(url)
         let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
@@ -1030,7 +1049,6 @@ actor LiveSessionArtifactStore {
         var info = stat()
         guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw LiveArtifactError.unsafePath }
         guard contents else { return Data() }
-        let maximum = min(maximum, payloadLimit)
         guard info.st_size >= 0 && info.st_size <= maximum else { throw LiveArtifactError.artifactTooLarge }
         let bytes = try handle.read(upToCount: maximum + 1) ?? Data()
         guard bytes.count <= maximum, bytes.count == info.st_size else { throw LiveArtifactError.verificationFailed }

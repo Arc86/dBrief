@@ -66,6 +66,7 @@ import dBriefWire
     let identity: LiveSessionIdentity
     let writer: LiveSessionArtifactStore
     let isNative: Bool
+    let capturePersistenceAllowed: Bool
     private let store: LiveTranscriptStore
     private let validity: RecordingDerivativeValidity
     private let afterCheckpoint: @Sendable () async -> Void
@@ -110,6 +111,7 @@ import dBriefWire
     private(set) var failure: String?
     private(set) var growthRetired = false
     var isDurable: Bool {
+        guard capturePersistenceAllowed else { return false }
         if isNonpersistingFinalOnly { return !retired && failure == nil }
         return started && !deletionPending && failure == nil && queue.isEmpty && drain == nil && durableRevision == acceptedRevision
             && durableChatRevision == acceptedChatRevision && chatLoad == nil
@@ -123,17 +125,24 @@ import dBriefWire
 
     init(identity: LiveSessionIdentity, store: LiveTranscriptStore, validity: RecordingDerivativeValidity,
          native: Bool, rootURL: URL, payloadReservation: LiveRecordingPayloadBudget.Lease,
+         capturePersistenceAllowed: Bool = true,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
          afterCheckpoint: @escaping @Sendable () async -> Void = {}, recoveredWriter: LiveSessionArtifactStore? = nil) {
         self.identity = identity; self.store = store; self.validity = validity; isNative = native
+        self.capturePersistenceAllowed = capturePersistenceAllowed
         self.afterCheckpoint = afterCheckpoint
-        writer = recoveredWriter ?? LiveSessionArtifactStore(identity: identity, rootURL: rootURL, validity: validity,
-            payloadReservation: payloadReservation, payloadLimit: Self.envelopeLimit, queueByteLimit: Self.envelopeLimit,
-            chatPayloadLimit: Self.chatHistoryLimit, beforeStage: beforeStage)
+        if capturePersistenceAllowed, let recoveredWriter {
+            writer = recoveredWriter
+        } else {
+            writer = LiveSessionArtifactStore(identity: identity, rootURL: rootURL, validity: validity,
+                payloadReservation: payloadReservation, payloadLimit: Self.envelopeLimit, queueByteLimit: Self.envelopeLimit,
+                chatPayloadLimit: Self.chatHistoryLimit, beforeStage: beforeStage, capturePersistenceAllowed: capturePersistenceAllowed)
+        }
     }
     /// The recovered writer already verified the persisted prefix. Hydration
     /// starts no observer and writes no closure or schema migration.
     func hydrate(_ restored: LiveSessionArtifactStore.Restored) throws {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         guard !started, !restored.deleted, (restored.transcriptValue?.identity ?? identity) == identity else { throw LiveArtifactError.wrongOwner }
         if let value = restored.transcriptValue {
             _ = try value.encoded(generation: nil, limit: Self.envelopeLimit)
@@ -175,7 +184,7 @@ import dBriefWire
     }
     func reopenAfterFailedReplacement() { if !retired { replacementSealed = false } }
     func attachChatService(_ service: TranscriptChatService) -> Bool {
-        guard !terminationSealed, !retired, !deletionPending, !replacementSealed, !isNonpersistingFinalOnly, (try? validity.withValidResult {}) != nil,
+        guard capturePersistenceAllowed, !terminationSealed, !retired, !deletionPending, !replacementSealed, !isNonpersistingFinalOnly, (try? validity.withValidResult {}) != nil,
               chatService == nil || chatService === service else { return false }
         chatService = service; return true
     }
@@ -193,6 +202,7 @@ import dBriefWire
         try validity.withValidResult {}
         guard !terminationSealed else { throw LiveArtifactError.terminating }
         guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
+        guard capturePersistenceAllowed else { return nil }
         if chatReady { return currentChat }
         let task: Task<ChatHistory?, any Error>
         let loadID: UUID
@@ -288,6 +298,7 @@ import dBriefWire
         return value
     }
     private func requireChatAdmission() throws {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         try validity.withValidResult {}
         guard !terminationSealed else { throw LiveArtifactError.terminating }
         guard !retired, !deletionPending, !replacementSealed else { throw LiveArtifactError.deleted }
@@ -295,7 +306,7 @@ import dBriefWire
     }
 
     func start() {
-        guard !started, !retired, !terminationSealed, !isNonpersistingFinalOnly else { return }
+        guard capturePersistenceAllowed, !started, !retired, !terminationSealed, !isNonpersistingFinalOnly else { return }
         started = true
         if isNative {
             observer = Task { [weak self, store] in
@@ -352,6 +363,17 @@ import dBriefWire
         guard captureClosed, !retired, !deletionPending else { throw LiveArtifactError.bindingPending }
         guard controlCount < 8 else { throw LiveArtifactError.queueFull }
         _ = try LiveArtifactEncoding.estimatedBytes(audioURL, limit: 4_096)
+        if !capturePersistenceAllowed {
+            guard !replacementSealed else { throw LiveArtifactError.deleted }
+            try RecordingResultMutation.withDeletion(of: audioURL) {
+                try LiveSessionArtifactStore.requireRecordingMaster(audioURL, recordingID: identity.recordingID)
+                if let admittedAudioURL {
+                    guard try RecordingDeletionAuthority.canonical(admittedAudioURL) == RecordingDeletionAuthority.canonical(audioURL) else { throw LiveArtifactError.wrongOwner }
+                }
+                admittedAudioURL = audioURL
+            }
+            return
+        }
         if !recoveredOwner { try checkpoint(urgent: false) }
         queue.append(.bind(audioURL.standardizedFileURL))
         admittedAudioURL = audioURL
@@ -361,6 +383,10 @@ import dBriefWire
     func retry() throws {
         try validity.withValidResult {}
         guard !retired, !deletionPending else { throw LiveArtifactError.deleted }
+        if !capturePersistenceAllowed {
+            guard !terminationSealed else { throw LiveArtifactError.terminating }
+            return
+        }
         retryWriter = true; failure = nil; onFailure?(nil)
         startDrain(urgent: true)
     }
@@ -368,6 +394,7 @@ import dBriefWire
     /// One admitted control follows earlier writes/Bind. Caller cancellation
     /// does not abandon a physical intent or its verified return value.
     func commitDeletionIntent(retention: ProcessingPipeline.FileDeletionTicket? = nil) async throws -> LiveSessionArtifactStore.DeletionReceipt {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         try validity.withValidResult {}
         guard !terminationSealed else { throw LiveArtifactError.terminating }
         guard started, captureClosed, !retired, !deletionPending else { throw LiveArtifactError.deleted }
@@ -385,6 +412,10 @@ import dBriefWire
     /// This never participates in the hardware Stop latch.
     func flush() async throws {
         try validity.withValidResult {}
+        if !capturePersistenceAllowed {
+            guard !retired else { throw LiveArtifactError.deleted }
+            return
+        }
         if isNonpersistingFinalOnly { return }
         if !started { start() }
         if failure == nil, !recoveredOwner, !terminationSealed { try checkpoint(urgent: true) }
@@ -447,7 +478,9 @@ import dBriefWire
     /// Freeze every admitted value/control before the first artifact await.
     /// Failed final-history admission still seals and pins this failed target.
     func freezeForTermination() -> TerminationTarget? {
-        guard started, !retired, !terminationSealed, !isNonpersistingFinalOnly else { return nil }
+        guard !retired, !terminationSealed else { return nil }
+        if !capturePersistenceAllowed { terminationSealed = true; return nil }
+        guard started, !isNonpersistingFinalOnly else { return nil }
         let pin = pin()
         do {
             try validity.withValidResult {}
@@ -468,6 +501,7 @@ import dBriefWire
     /// A sealed retention owner drains only previously admitted controls.
     /// Creating another checkpoint here would reset an expired file's age.
     func flushAdmittedWrites() async throws {
+        guard capturePersistenceAllowed else { throw LiveArtifactError.missingEvidence }
         try validity.withValidResult {}
         guard started, !retired, failure == nil else { throw LiveArtifactError.verificationFailed }
         startDrain(urgent: true); await waitForSubmittedWrites()
@@ -482,16 +516,21 @@ import dBriefWire
     }
 
     func legacyContext() throws -> TranscriptContextSnapshot {
-        try validity.withValidResult {}
-        guard !isNative, !retired else { throw LiveArtifactError.deleted }
+        try requireContextAdmission()
+        guard !isNative else { throw LiveArtifactError.deleted }
         guard !sourceUnavailable else { throw LiveArtifactError.missingEvidence }
         return try LiveTranscriptArtifact(identity: identity, revision: acceptedRevision, legacy: legacy,
             captureClosed: captureClosed).legacyContext().retaining(contextOwnership())
     }
 
-    func finalContext() throws -> TranscriptContextSnapshot? {
+    private func requireContextAdmission() throws {
         try validity.withValidResult {}
-        guard !retired else { throw LiveArtifactError.deleted }
+        guard !terminationSealed else { throw LiveArtifactError.terminating }
+        guard !retired, !deletionPending, !replacementSealed else { throw LiveArtifactError.deleted }
+    }
+
+    func finalContext() throws -> TranscriptContextSnapshot? {
+        try requireContextAdmission()
         return finalPublication?.context(identity: identity).retaining(contextOwnership())
     }
 
@@ -543,7 +582,11 @@ import dBriefWire
         try requireCapacity(legacyBytes: legacyBytes, chatBytes: tailInterval?.chatBytes ?? 0,
             finalBytes: Self.finalPublicationLimit)
         finalPublication = value
-        if isNonpersistingFinalOnly { acceptedRevision += 1; durableRevision = acceptedRevision; return }
+        if isNonpersistingFinalOnly {
+            acceptedRevision += 1
+            if capturePersistenceAllowed { durableRevision = acceptedRevision }
+            return
+        }
         try checkpoint(urgent: true)
     }
 
@@ -576,7 +619,7 @@ import dBriefWire
             finalPublication = nil; nativeFinalAnchor = nil; finalCommitted = false; needsTextOnlyFallback = false
             if !isNonpersistingFinalOnly { try checkpoint(urgent: true) }
         }
-        if isNonpersistingFinalOnly { return }
+        if !capturePersistenceAllowed || isNonpersistingFinalOnly { return }
         tailInterval?.publicationAuthority = result.authority
         try await flush()
         try result.validateAuthority()
@@ -614,6 +657,7 @@ import dBriefWire
         guard acceptedRevision < .max else { throw LiveArtifactError.staleRevision }
         acceptedRevision += 1
         hydratedReadOnly = false
+        guard capturePersistenceAllowed else { return }
         if let last = queue.last, case .checkpoint(let value) = last {
             value.hasTranscript = true
             value.revision = acceptedRevision; value.legacy = isNative ? nil : legacy

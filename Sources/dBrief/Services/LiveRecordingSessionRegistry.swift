@@ -17,7 +17,7 @@ final class LiveRecordingSessionRegistry {
         private(set) var captureClosed = false
         private(set) var isValid = true
         private(set) var coordinator: LiveCaptureSessionCoordinator?
-        fileprivate init(identity: LiveSessionIdentity, native: Bool, root: URL,
+        fileprivate init(identity: LiveSessionIdentity, native: Bool, root: URL, capturePersistenceAllowed: Bool = true,
                          reservation: LiveRecordingPayloadBudget.Lease,
                          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
                          afterCheckpoint: @escaping @Sendable () async -> Void) {
@@ -25,7 +25,8 @@ final class LiveRecordingSessionRegistry {
             self.store = LiveTranscriptStore(identity: identity,validity: validity,
                 retainedEvidenceLimit: LiveRecordingArtifactOwner.evidenceLimit, payloadReservation: reservation)
             artifacts = LiveRecordingArtifactOwner(identity: identity, store: store, validity: validity,
-                native: native, rootURL: root, payloadReservation: reservation, beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+                native: native, rootURL: root, payloadReservation: reservation, capturePersistenceAllowed: capturePersistenceAllowed,
+                beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
         }
         fileprivate init(identity: LiveSessionIdentity, restored: LiveSessionArtifactStore.Restored,
                          writer: LiveSessionArtifactStore, validity: RecordingDerivativeValidity,
@@ -102,6 +103,8 @@ final class LiveRecordingSessionRegistry {
         var retentionCommitted: Bool { isRetention && retiredOriginal }
         fileprivate(set) var discardCompleted = false
         fileprivate var nonpersisting = false
+        fileprivate var capturePersistenceAllowed: Bool
+        fileprivate var ramCandidate: Entry?
         fileprivate var finishTask: Task<Entry?, any Error>?
         fileprivate var finishWaiters = 0
         fileprivate let finalAnchor: (id: UUID, revision: UInt64)?
@@ -109,6 +112,7 @@ final class LiveRecordingSessionRegistry {
             self.recordingID = recordingID; self.authority = authority; self.original = original; self.isRetention = isRetention
             identity = original?.identity; pin = original?.artifacts.pin()
             nonpersisting = original.map { !$0.artifacts.persistenceStarted } ?? false
+            capturePersistenceAllowed = original?.artifacts.capturePersistenceAllowed ?? true
             finalAnchor = original?.artifacts.finalAnchor
         }
     }
@@ -168,7 +172,9 @@ final class LiveRecordingSessionRegistry {
     func register(_ identity: LiveSessionIdentity) throws -> Entry {
         try register(identity, native: true)
     }
-    func registerLegacy(_ identity: LiveSessionIdentity) throws -> Entry { try register(identity, native: false) }
+    func registerLegacy(_ identity: LiveSessionIdentity, capturePersistenceAllowed: Bool = true) throws -> Entry {
+        try register(identity, native: false, capturePersistenceAllowed: capturePersistenceAllowed)
+    }
     func startPersistence(_ identity: LiveSessionIdentity) { entry(identity: identity)?.artifacts.start() }
     func owns(recordingID: UUID) -> Bool { captureOwners.values.contains(recordingID) }
     func noteUnavailable(_ identity: LiveSessionIdentity) {
@@ -177,22 +183,23 @@ final class LiveRecordingSessionRegistry {
         captureOwners[identity.captureSessionID] = identity.recordingID
         unavailableRecordings.insert(identity.recordingID)
     }
-    private func register(_ identity: LiveSessionIdentity, native: Bool) throws -> Entry {
+    private func register(_ identity: LiveSessionIdentity, native: Bool, capturePersistenceAllowed: Bool = true) throws -> Entry {
         guard !terminationStarted else { throw LiveArtifactError.terminating }
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }
         guard !unavailableRecordings.contains(identity.recordingID) else { throw Failure.unavailable }
         if let entry = entries[identity.recordingID] {
-            guard entry.identity == identity, entry.artifacts.isNative == native else { throw Failure.identityConflict }
+            guard entry.identity == identity, entry.artifacts.isNative == native,
+                  entry.artifacts.capturePersistenceAllowed == capturePersistenceAllowed else { throw Failure.identityConflict }
             return entry
         }
         guard captureOwners[identity.captureSessionID] == nil else { throw Failure.identityConflict }
         try admitNamespace(identity)
         guard hints[identity.recordingID] == nil,
-              !FileManager.default.fileExists(atPath: artifactRoot.appendingPathComponent(identity.captureSessionID.uuidString).path) else { throw Failure.unavailable }
+              !capturePersistenceAllowed || !FileManager.default.fileExists(atPath: artifactRoot.appendingPathComponent(identity.captureSessionID.uuidString).path) else { throw Failure.unavailable }
         if !budget.canReserve { evictOneDurableOwner() }
         guard entries.count < ownerLimit else { throw Failure.capacity }
         let reservation = try budget.reserve()
-        let entry = Entry(identity: identity, native: native, root: artifactRoot, reservation: reservation,
+        let entry = Entry(identity: identity, native: native, root: artifactRoot, capturePersistenceAllowed: capturePersistenceAllowed, reservation: reservation,
             beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
         entries[identity.recordingID] = entry; captureOwners[identity.captureSessionID] = identity.recordingID
         return entry
@@ -229,7 +236,8 @@ final class LiveRecordingSessionRegistry {
         terminationStarted = true
         let pending = loads.values.compactMap(\.task)
         for load in loads.values { load.validity.invalidate() }
-        let targets = entries.values.compactMap { $0.artifacts.freezeForTermination() }
+        let candidates = replacements.values.compactMap(\.ramCandidate)
+        let targets = (Array(entries.values) + candidates).compactMap { $0.artifacts.freezeForTermination() }
         return (targets, pending)
     }
 
@@ -277,6 +285,7 @@ final class LiveRecordingSessionRegistry {
             try requireReplacement(phase)
             phase.original = entry; phase.identity = entry?.identity; phase.pin = entry?.artifacts.pin()
             phase.nonpersisting = entry.map { !$0.artifacts.persistenceStarted } ?? false
+            phase.capturePersistenceAllowed = entry?.artifacts.capturePersistenceAllowed ?? true
             try entry?.artifacts.sealForReplacement()
         }
         try requireReplacement(phase)
@@ -334,13 +343,23 @@ final class LiveRecordingSessionRegistry {
         if phase.nonpersisting, let identity = phase.identity {
             guard entries[phase.recordingID] == nil else { throw Failure.identityConflict }
             if !budget.canReserve { evictOneDurableOwner() }
-            let entry = Entry(identity: identity, native: false, root: artifactRoot, reservation: try budget.reserve(),
-                beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+            guard phase.ramCandidate == nil else { throw Failure.unavailable }
+            let entry = Entry(identity: identity, native: false, root: artifactRoot, capturePersistenceAllowed: phase.capturePersistenceAllowed,
+                reservation: try budget.reserve(), beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
             entry.configureNonpersistingFinalOnly(audioURL: phase.authority.audioURL, anchor: phase.finalAnchor)
+            var installed = false
+            if !phase.capturePersistenceAllowed { phase.ramCandidate = entry }
+            defer {
+                if !phase.capturePersistenceAllowed {
+                    if !installed { entry.invalidate() }
+                    if phase.ramCandidate === entry { phase.ramCandidate = nil }
+                }
+            }
             try await onHydration?(entry)
             guard !terminationStarted else { throw LiveArtifactError.terminating }
             try requireReplacement(phase)
             entries[phase.recordingID] = entry; replacements[phase.recordingID] = nil
+            installed = true
             return entry
         }
         // Private resolution and the hydration callback run before admission
@@ -394,6 +413,7 @@ final class LiveRecordingSessionRegistry {
     func prepareHistoryExport(recordingID: UUID, audioURL: URL?) async throws -> LiveHistoryExportSnapshot {
         guard exports[recordingID] == nil, exports.count < 8, replacements[recordingID] == nil,
               !isKnownDeleted(recordingID: recordingID) else { throw Failure.unavailable }
+        guard entries[recordingID]?.artifacts.capturePersistenceAllowed != false else { throw LiveArtifactError.missingEvidence }
         let token = RecordingDerivativeValidity(), original = entries[recordingID]
         let pin = original?.artifacts.pin()
         let reservation = try reserveReprocessingInspection()
@@ -552,7 +572,9 @@ final class LiveRecordingSessionRegistry {
                 for hint in values.values {
                     guard captureOwners[hint.identity.captureSessionID] == nil || captureOwners[hint.identity.captureSessionID] == hint.identity.recordingID,
                           entries[hint.identity.recordingID] == nil || entries[hint.identity.recordingID]?.identity == hint.identity,
-                          hints[hint.identity.recordingID] == nil || hints[hint.identity.recordingID]?.identity == hint.identity else { throw Failure.identityConflict }
+                          hints[hint.identity.recordingID] == nil || hints[hint.identity.recordingID]?.identity == hint.identity,
+                          entries[hint.identity.recordingID]?.artifacts.capturePersistenceAllowed != false,
+                          replacements[hint.identity.recordingID]?.capturePersistenceAllowed != false else { throw Failure.identityConflict }
                 }
                 let newIDs = values.keys.reduce(0) { $0 + (hints[$1] == nil ? 1 : 0) }
                 func effective(_ proposed: LiveManagedArtifactCatalogue.Hint) -> LiveManagedArtifactCatalogue.Hint {
