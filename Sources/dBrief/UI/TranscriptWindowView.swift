@@ -350,7 +350,9 @@ struct TranscriptDetailView: View {
         }
         .sheet(item: $spokenSummaryService) { service in
             SpokenSummaryPlayerView(
-                service: service,
+                phase: service.phase,
+                isSaved: service.resultIsSaved,
+                recordingTitle: recording.generatedTitle ?? recording.meetingTitleDraft,
                 audioPlayer: spokenSummaryPlayer,
                 onSave: {
                     guard !isReprocessing else { return }
@@ -369,7 +371,7 @@ struct TranscriptDetailView: View {
                 },
                 onRetry: { startSpokenSummary() }
             )
-            .environment(\.calmAppearance, context.appSettings.reduceNeon)
+            .modifier(ViewerAppearanceScope(settings: context.appSettings))
         }
         .confirmationDialog("Delete this recording?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
