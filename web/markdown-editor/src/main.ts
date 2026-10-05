@@ -9,6 +9,7 @@ import "@milkdown/crepe/theme/common/table.css";
 import "@milkdown/crepe/theme/common/toolbar.css";
 import "./theme.css";
 import { type BridgeMessage, type EditorAPI, mountEditor, shortcutFor } from "./editor";
+import { measureHeight } from "./height";
 
 declare global {
   interface Window {
@@ -30,9 +31,30 @@ window.addEventListener("keydown", (event) => {
   post({ type: "shortcut", name });
 });
 
-new ResizeObserver(() => {
-  post({ type: "height", value: Math.ceil(root.getBoundingClientRect().height) });
-}).observe(root);
+// The reported height covers the document and any open floating menu (slash
+// menu, toolbar, link tooltip), which Crepe positions outside `#editor`'s box.
+let reportedHeight = -1;
+let pendingFrame = 0;
+const reportHeight = () => {
+  pendingFrame = 0;
+  const value = measureHeight(root, window.scrollY);
+  if (value === reportedHeight) return;
+  reportedHeight = value;
+  post({ type: "height", value });
+};
+const scheduleHeight = () => {
+  if (pendingFrame === 0) pendingFrame = requestAnimationFrame(reportHeight);
+};
+new ResizeObserver(scheduleHeight).observe(root);
+// Menus show/hide via `data-show` and move via inline `style`; mounting adds children.
+new MutationObserver(scheduleHeight).observe(document.body, {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  attributeFilter: ["data-show", "style", "class"],
+});
+// The block handle animates its position; measure again once it settles.
+document.addEventListener("transitionend", scheduleHeight, true);
 
 // `ready` only after window.dbrief exists, so Swift's first calls always land.
 mountEditor(root, post).then((api) => {
