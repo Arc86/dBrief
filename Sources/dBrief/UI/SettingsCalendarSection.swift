@@ -176,7 +176,7 @@ struct SettingsCalendarSection: View {
                     isOn: $settings.showAllMeetingsFromRecordingDay
                 )
             } header: {
-                Text("Meeting matching")
+                SettingsSectionTitle("Meeting matching")
             } footer: {
                 Text("Overlapping meetings match automatically. The window also permits nearby starts; other meetings appear only in the picker.")
             }

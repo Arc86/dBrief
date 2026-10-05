@@ -82,7 +82,7 @@ struct SettingsCalendarCLISection: View {
                     .disabled(!config.isConfigured)
                 }
             } header: {
-                Text("Connection")
+                SettingsSectionTitle("Connection")
             } footer: {
                 Text("Uses your Claude login and Microsoft 365 connector. Calendar name is optional; first use may request approval in Terminal.")
             }
@@ -142,7 +142,7 @@ struct SettingsCalendarCLISection: View {
                         }
                 }
             } header: {
-                Text("Meeting list")
+                SettingsSectionTitle("Meeting list")
             } footer: {
                 Text(config.listFreshnessSeconds == 0
                      ? "Meetings load only when you press Refresh."
@@ -174,7 +174,7 @@ struct SettingsCalendarCLISection: View {
                     }
                 }
             } header: {
-                Text("Meeting attendees")
+                SettingsSectionTitle("Meeting attendees")
             } footer: {
                 Text(config.attendeePolicy == .never
                      ? "Attendee rosters are never loaded. Invite bodies are never saved."

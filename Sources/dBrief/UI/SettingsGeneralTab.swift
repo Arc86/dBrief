@@ -18,7 +18,7 @@ struct SettingsGeneralTab: View {
                 }
                 .listRowBackground(Color.clear)
 
-                Section("App behavior") {
+                Section(settingsTitle: "App behavior") {
                     Toggle("Start at login", isOn: Binding(
                         get: { startAtLogin },
                         set: { newValue in

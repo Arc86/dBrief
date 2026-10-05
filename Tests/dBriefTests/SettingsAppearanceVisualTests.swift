@@ -61,7 +61,7 @@ private struct AppearanceFixture: View {
     @State private var typography: AppTypographyPreferences?
     var body: some View {
         Form {
-                Section("Appearance") {
+                Section("Appearance", settingsSearch: .appearance) {
                     SettingsAppearanceEditor(preferences: $preferences,
                         typography: Binding(get: { typography ?? initialTypography }, set: { typography = $0 }),
                         nonNeon: $nonNeon)
@@ -69,7 +69,7 @@ private struct AppearanceFixture: View {
                 .listRowBackground(Color.clear)
 
                 // A plain section beside it: the editor must share its column width.
-                Section("App behavior") {
+                Section(settingsTitle: "App behavior") {
                     Toggle("Start at login", isOn: .constant(false))
                 }
         }

@@ -78,7 +78,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var obsidianDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle(isOn: binding({ appSettings.obsidianEnabled }, { appSettings.obsidianEnabled = $0 })) {
                 Label("Enable Obsidian", systemImage: "diamond.fill")
             }
@@ -130,7 +130,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var appleNotesDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Apple Notes", isOn: binding(
                 { appSettings.integrations.appleNotes.enabled },
                 { appSettings.integrations.appleNotes.enabled = $0 }
@@ -156,7 +156,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var appleRemindersDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Apple Reminders", isOn: binding(
                 { appSettings.integrations.appleReminders.enabled },
                 { appSettings.integrations.appleReminders.enabled = $0 }
@@ -176,7 +176,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var notionDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Notion", isOn: binding(
                 { appSettings.integrations.notion.enabled },
                 { appSettings.integrations.notion.enabled = $0 }
@@ -215,7 +215,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var evernoteDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Evernote", isOn: binding(
                 { appSettings.integrations.evernote.enabled },
                 { appSettings.integrations.evernote.enabled = $0 }
@@ -247,7 +247,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var googleKeepDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Google Keep", isOn: binding(
                 { appSettings.integrations.googleKeep.enabled },
                 { appSettings.integrations.googleKeep.enabled = $0 }
@@ -278,7 +278,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var oneNoteDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Microsoft OneNote", isOn: binding(
                 { appSettings.integrations.oneNote.enabled },
                 { appSettings.integrations.oneNote.enabled = $0 }
@@ -312,7 +312,7 @@ struct SettingsIntegrationsTab: View {
     @ViewBuilder
     private var credentialStorageStatus: some View {
         if let message = appSettings.integrationPersistenceError {
-            Section("Credential storage") {
+            Section(settingsTitle: "Credential storage") {
                 Text(message)
                     .foregroundStyle(.orange)
                 Button("Retry credential storage") {
@@ -323,7 +323,7 @@ struct SettingsIntegrationsTab: View {
     }
 
     private var webhookDetail: some View {
-        Section("Configuration") {
+        Section(settingsTitle: "Configuration") {
             Toggle("Enable Webhook", isOn: binding(
                 { appSettings.integrations.webhook.enabled },
                 { appSettings.integrations.webhook.enabled = $0 }

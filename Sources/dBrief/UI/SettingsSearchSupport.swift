@@ -43,6 +43,7 @@ struct SettingsSearchHeading: View {
 
     var body: some View {
         text
+            .uiFont(.headline)
             .id(section)
             .focusable(request?.section == section)
             .focused($keyboardFocused)
@@ -67,5 +68,28 @@ extension Section where Parent == SettingsSearchHeading, Content: View, Footer =
         self.init(content: content) {
             SettingsSearchHeading(title, section: section)
         }
+    }
+}
+
+/// Title of a grouped-Form section. The app-wide UI font in the environment
+/// replaces the system's bold header style, so titles set the headline style
+/// back explicitly (`SettingsSearchHeading` does the same).
+struct SettingsSectionTitle: View {
+    private let text: Text
+
+    init(_ title: LocalizedStringKey) { text = Text(title) }
+    init(_ text: Text) { self.text = text }
+
+    var body: some View {
+        text
+            .uiFont(.headline)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension Section where Parent == SettingsSectionTitle, Content: View, Footer == EmptyView {
+    @MainActor
+    init(settingsTitle title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
+        self.init(content: content) { SettingsSectionTitle(title) }
     }
 }

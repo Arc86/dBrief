@@ -144,7 +144,7 @@ private struct ReprocessingEditor: View {
     }
 
     @ViewBuilder private var transcriptionControls: some View {
-        Section("Transcription") {
+        Section(settingsTitle: "Transcription") {
             if options.engine == .appleSpeech {
                 AppleSpeechLanguagePicker(selection: $options.spokenLanguage, title: "Spoken language")
             } else {
@@ -205,7 +205,7 @@ private struct ReprocessingEditor: View {
     }
 
     private var analysisControls: some View {
-        Section("AI analysis") {
+        Section(settingsTitle: "AI analysis") {
             LabeledContent("AI engine", value: options.aiEngine.displayName)
             if supportsCalendarReload {
                 Toggle("Refresh selected calendar attendees", isOn: Binding(
@@ -225,7 +225,7 @@ private struct ReprocessingEditor: View {
     }
 
     private var destinationDisclosure: some View {
-        Section("Processing destinations") {
+        Section(settingsTitle: "Processing destinations") {
             if options.requiresTranscription && options.engine == .remoteEndpoint {
                 Text("Audio → \(destination(options.transcriptionEndpoint))")
             }

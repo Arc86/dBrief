@@ -22,7 +22,7 @@ struct SettingsWatchedFoldersTab: View {
             .listRowBackground(Color.clear)
 
             if appSettings.watchedFoldersEnabled {
-                Section("Folders") {
+                Section(settingsTitle: "Folders") {
                     if appSettings.watchedFolders.isEmpty {
                         Text("No folders yet. Add one to start watching for dropped-in audio.")
                             .uiFont(.caption)
@@ -42,7 +42,7 @@ struct SettingsWatchedFoldersTab: View {
                 }
                 .listRowBackground(Color.clear)
 
-                Section("Options") {
+                Section(settingsTitle: "Options") {
                     Toggle("Notify when a new file is detected", isOn: $settings.watchedFolderNotifyOnDetect)
                     Text("New files use your global processing preferences (Settings → AI Analysis). Only files added **after** a folder is watched are processed — existing files are left alone. Files are picked up once they finish copying.")
                         .uiFont(.caption)

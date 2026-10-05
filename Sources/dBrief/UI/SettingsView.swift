@@ -211,12 +211,13 @@ struct SettingsView: View {
             .background(canvasColor.ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { focus = .search } label: { Image(systemName: "magnifyingglass") }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .accessibilityLabel("Search settings")
-            }
+        // ⌘F focuses the sidebar search field; no toolbar button duplicates it.
+        .background {
+            Button("") { focus = .search }
+                .keyboardShortcut("f", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
         .applyWindowAppearanceWhenAvailable(canvasColor)
         .onChange(of: searchText) { _, _ in

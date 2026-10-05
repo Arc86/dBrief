@@ -50,7 +50,7 @@ struct SettingsPermissionsTab: View {
             }
             .listRowBackground(Color.clear)
 
-            Section("Manage Access") {
+            Section(settingsTitle: "Manage Access") {
                 LabeledContent("Open System Settings") {
                     HStack {
                         Button("Microphone") {
