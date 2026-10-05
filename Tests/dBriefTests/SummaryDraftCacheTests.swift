@@ -54,6 +54,25 @@ struct SummaryDraftCacheTests {
         #expect(state.isStale(currentSummary: nil))
     }
 
+    @Test("A summary already holding the draft text is not stale (retry after a partial save)")
+    func partialSaveRetryIsNotStale() {
+        var state = SummaryEditState(insights: makeInsights(summary: "Old summary"))
+        state.draft.apply(.loaded(markdown: "Old summary\n"))
+        state.draft.apply(.changed(markdown: "Edited summary\n"))
+        // The sidecar write succeeded, the Markdown rewrite failed: insights now hold the draft.
+        #expect(!state.isStale(currentSummary: "Edited summary"))
+        #expect(!state.isStale(currentSummary: "Edited summary\n"))
+    }
+
+    @Test("A summary regenerated to other text is still stale while a draft exists")
+    func regeneratedWhileDraftIsStale() {
+        var state = SummaryEditState(insights: makeInsights(summary: "Old summary"))
+        state.draft.apply(.loaded(markdown: "Old summary\n"))
+        state.draft.apply(.changed(markdown: "Edited summary\n"))
+        #expect(state.isStale(currentSummary: "Regenerated summary"))
+        #expect(state.isStale(currentSummary: nil))
+    }
+
     @Test("A new edit starts from the stored summary, clean")
     func initialState() {
         let state = SummaryEditState(insights: makeInsights(summary: "Overview"))

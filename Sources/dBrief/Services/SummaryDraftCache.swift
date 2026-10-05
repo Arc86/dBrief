@@ -13,8 +13,17 @@ struct SummaryEditState: Equatable, Sendable {
 
     /// True when the stored summary changed since editing began (e.g. reprocessing
     /// regenerated it) — saving the draft would silently overwrite newer analysis.
+    /// A stored summary that already equals the draft is not stale: an earlier save
+    /// wrote the sidecar but failed later (e.g. the linked Markdown note), so the
+    /// retry must go through.
     func isStale(currentSummary: String?) -> Bool {
-        currentSummary != insightsBaseline.summary
+        guard currentSummary != insightsBaseline.summary else { return false }
+        guard let currentSummary else { return true }
+        return Self.trimmed(currentSummary) != Self.trimmed(draft.current)
+    }
+
+    private static func trimmed(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

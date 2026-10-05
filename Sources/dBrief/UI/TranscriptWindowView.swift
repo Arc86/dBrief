@@ -1278,7 +1278,8 @@ struct TranscriptDetailView: View {
             copyTranscript()
             return
         case .summary:
-            text = insights?.summary ?? ""
+            // While editing, copy the draft: the stale-save advice tells the user to copy it.
+            text = summaryEdit?.draft.current ?? insights?.summary ?? ""
         case .actions:
             text = insights?.actionItems.map { action in
                 "- [\(insights?.completedActions.contains(action) == true ? "x" : " ")] \(action)"
