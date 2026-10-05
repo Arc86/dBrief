@@ -1,7 +1,12 @@
 import SwiftUI
 
+/// The document header: title, tabs, utility icons, commands and the assistant
+/// toggle. States without a finished transcript (live, not yet transcribed) pass
+/// no `tabs`, and live capture passes no `onDelete`.
 struct ViewerHeader<Commands: View>: View {
     let title: String
+    let tabs: [ViewerDocumentMode]
+    let showsAssistantToggle: Bool
     @Binding private var mode: ViewerDocumentMode
     @Binding private var readingOptionsPresented: Bool
     @Binding private var readingPreferences: ViewerAppearancePreferences
@@ -9,7 +14,7 @@ struct ViewerHeader<Commands: View>: View {
     let assistantOpen: Bool
     let onToggleAssistant: () -> Void
     let onPrivacyReceipt: () -> Void
-    let onDelete: () -> Void
+    let onDelete: (() -> Void)?
 
     @Environment(\.viewerPalette) private var palette
     @FocusState private var focusedMode: ViewerDocumentMode?
@@ -18,6 +23,8 @@ struct ViewerHeader<Commands: View>: View {
 
     init(
         title: String,
+        tabs: [ViewerDocumentMode] = ViewerDocumentMode.allCases,
+        showsAssistantToggle: Bool = true,
         mode: Binding<ViewerDocumentMode>,
         readingOptionsPresented: Binding<Bool>,
         readingPreferences: Binding<ViewerAppearancePreferences>,
@@ -25,10 +32,12 @@ struct ViewerHeader<Commands: View>: View {
         assistantOpen: Bool,
         onToggleAssistant: @escaping () -> Void,
         onPrivacyReceipt: @escaping () -> Void,
-        onDelete: @escaping () -> Void,
+        onDelete: (() -> Void)?,
         @ViewBuilder commands: @escaping () -> Commands
     ) {
         self.title = title
+        self.tabs = tabs
+        self.showsAssistantToggle = showsAssistantToggle
         self._mode = mode
         self._readingOptionsPresented = readingOptionsPresented
         self._readingPreferences = readingPreferences
@@ -90,6 +99,7 @@ struct ViewerHeader<Commands: View>: View {
                 }
             }
         }
+        .frame(minHeight: 36)
         .padding(.bottom, 9)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -104,13 +114,10 @@ struct ViewerHeader<Commands: View>: View {
             singleLineTabs
 
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    tabButton(.summary)
-                    tabButton(.transcript)
-                }
-                HStack(spacing: 5) {
-                    tabButton(.actions)
-                    tabButton(.meetingInsights)
+                ForEach(Array(stride(from: 0, to: tabs.count, by: 2)), id: \.self) { start in
+                    HStack(spacing: 5) {
+                        ForEach(tabs[start..<min(start + 2, tabs.count)], id: \.self) { tabButton($0) }
+                    }
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
@@ -119,7 +126,7 @@ struct ViewerHeader<Commands: View>: View {
 
     private var singleLineTabs: some View {
         HStack(spacing: 5) {
-            ForEach(ViewerDocumentMode.allCases, id: \.self) { tabButton($0) }
+            ForEach(tabs, id: \.self) { tabButton($0) }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -184,11 +191,11 @@ struct ViewerHeader<Commands: View>: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 commands()
-                assistantToggle
+                if showsAssistantToggle { assistantToggle }
             }
             VStack(alignment: .trailing, spacing: 8) {
                 commands()
-                assistantToggle
+                if showsAssistantToggle { assistantToggle }
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -204,7 +211,7 @@ struct ViewerHeader<Commands: View>: View {
             }
         }
         HeaderIconButton(symbol: "lock.shield", label: "Privacy receipt", action: onPrivacyReceipt)
-        HeaderDeleteButton(action: onDelete)
+        if let onDelete { HeaderDeleteButton(action: onDelete) }
     }
 
     private var assistantToggle: some View {

@@ -196,18 +196,42 @@ struct TranscriptDetailView: View {
                     .environment(context.appState)
             } else if isLive {
                 // In-progress recording: keep the real-time transcript visible and
-                // slide chat in as a right-hand side panel, so you can watch the
+                // slide chat in as the right-hand assistant, so you can watch the
                 // transcript grow while chatting with it.
-                HStack(spacing: 0) {
+                ViewerDocumentLayout {
+                    viewerHeader(tabs: [], canDelete: false, assistantOpen: showLiveChat,
+                                 onToggleAssistant: toggleLiveChat) { EmptyView() }
+                } document: {
                     liveTranscriptContent
-                        .frame(maxWidth: .infinity)
-                    if showLiveChat {
-                        Divider()
-                        liveChatPanel
+                } playback: {
+                    EmptyView()
+                } assistant: {
+                    // Live chat is built only when first opened, as before.
+                    assistantColumn(isOpen: showLiveChat, mountsChat: showLiveChat || chatService != nil) {
+                        showLiveChat = false
                     }
                 }
+                .background(palette.canvas.color)
             } else if loadFailed {
-                failedState
+                ViewerDocumentLayout {
+                    viewerHeader(tabs: [], showsAssistantToggle: false, assistantOpen: false,
+                                 onToggleAssistant: {}) {
+                        ReprocessingMenu(recording: recording, hasTranscript: false, label: "Transcribe")
+                            .environment(context.appSettings)
+                            .environment(context.recordingManager)
+                            .environment(context.appState)
+                            .uiFont(.system(size: 12))
+                            .buttonStyle(ViewerCommandButtonStyle())
+                            .tint(palette.accentText.color)
+                    }
+                } document: {
+                    noTranscriptState
+                } playback: {
+                    if recording.finalizedAudioURL != nil { playerBar }
+                } assistant: {
+                    EmptyView()
+                }
+                .background(palette.canvas.color)
             } else if richTranscript != nil {
                 ViewerDocumentLayout {
                     documentHeader
@@ -229,19 +253,7 @@ struct TranscriptDetailView: View {
                         playerBar.transition(documentModeTransition)
                     }
                 } assistant: {
-                    HStack(spacing: 0) {
-                        assistantResizeHandle
-                        assistantPanel.padding(.vertical, 20).padding(.trailing, 20)
-                    }
-                    .frame(width: assistantOpen
-                        ? (assistantPanelLiveWidth ?? assistantPanelWidth) + 21
-                        : 0)
-                    .opacity(assistantOpen ? 1 : 0)
-                    .clipped()
-                    .allowsHitTesting(assistantOpen)
-                    .disabled(!assistantOpen)
-                    .accessibilityHidden(!assistantOpen)
-                    .animation(reduceMotion ? nil : ViewerMotion.panel, value: assistantOpen)
+                    assistantColumn(isOpen: assistantOpen) { assistantOpen = false }
                 }
                 .background(palette.canvas.color)
                 .animation(reduceMotion ? nil : ViewerMotion.document, value: mode)
@@ -254,9 +266,6 @@ struct TranscriptDetailView: View {
         // centered toolbar label, so an empty string (not titleVisibility) is
         // what actually removes the duplicate.
         .navigationTitle("")
-        .toolbar {
-            if (context.recordingManager.reprocessingRecoveryReady || isCaptureLive) && (isLive || loadFailed) { toolbarContent }
-        }
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
         }
@@ -378,23 +387,44 @@ struct TranscriptDetailView: View {
     // MARK: - Document header
 
     private var documentHeader: some View {
+        viewerHeader(assistantOpen: assistantOpen, onToggleAssistant: {
+            assistantOpen.toggle()
+            if assistantOpen, chatService == nil { buildChatService() }
+        }) {
+            documentCommands
+        }
+    }
+
+    /// The one document header for every state. Live and not-yet-transcribed
+    /// recordings pass no tabs; delete is withheld while the recording is live.
+    private func viewerHeader<Commands: View>(
+        tabs: [ViewerDocumentMode] = ViewerDocumentMode.allCases,
+        showsAssistantToggle: Bool = true,
+        canDelete: Bool = true,
+        assistantOpen: Bool,
+        onToggleAssistant: @escaping () -> Void,
+        @ViewBuilder commands: @escaping () -> Commands
+    ) -> some View {
         ViewerHeader(
             title: recording.generatedTitle ?? recording.meetingTitleDraft,
+            tabs: tabs,
+            showsAssistantToggle: showsAssistantToggle,
             mode: $mode,
             readingOptionsPresented: $showReadingOptions,
             readingPreferences: readingPreferencesBinding,
             unfinishedActions: insights?.unfinishedActionItems.count ?? 0,
             assistantOpen: assistantOpen,
-            onToggleAssistant: {
-                assistantOpen.toggle()
-                if assistantOpen, chatService == nil { buildChatService() }
-            },
+            onToggleAssistant: onToggleAssistant,
             onPrivacyReceipt: { showPrivacyReceipt = true },
-            onDelete: { showDeleteConfirm = true }
-        ) {
-            documentCommands
-        }
+            onDelete: canDelete ? { showDeleteConfirm = true } : nil,
+            commands: commands
+        )
         .frame(maxWidth: 920)
+    }
+
+    private func toggleLiveChat() {
+        showLiveChat.toggle()
+        if showLiveChat, chatService == nil { buildChatService() }
     }
 
     private var documentCommands: some View {
@@ -475,118 +505,6 @@ struct TranscriptDetailView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 12)
         .padding(.top, 8)
-    }
-
-    // MARK: - Toolbar
-
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .principal) {
-            if isLive {
-                // Live recording: a single chat toggle that slides the chat panel in
-                // beside the transcript, instead of the summary/transcript/chat tabs.
-                Button {
-                    showLiveChat.toggle()
-                    if showLiveChat, chatService == nil { buildChatService() }
-                } label: {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .symbolVariant(showLiveChat ? .fill : .none)
-                        .foregroundStyle(showLiveChat ? palette.accentText.color : palette.secondary.color)
-                }
-                .help(showLiveChat ? "Hide chat" : "Chat with the live transcript")
-                .accessibilityLabel(showLiveChat ? "Hide live chat" : "Show live chat")
-                .disabled(isReprocessing)
-                .accessibilityAddTraits(showLiveChat ? .isSelected : [])
-            } else {
-                Picker("View", selection: $mode) {
-                    Text("Summary").tag(ViewerDocumentMode.summary)
-                    Text("Transcript").tag(ViewerDocumentMode.transcript)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 200)
-            }
-        }
-
-        ToolbarItemGroup(placement: .primaryAction) {
-            if !isLive {
-                Button {
-                    assistantOpen.toggle()
-                    if assistantOpen, chatService == nil { buildChatService() }
-                } label: {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                        .symbolVariant(assistantOpen ? .fill : .none)
-                }
-                .foregroundStyle(assistantOpen ? palette.accentText.color : palette.secondary.color)
-                .help(assistantOpen ? "Hide assistant" : "Chat with this transcript")
-                .accessibilityAddTraits(assistantOpen ? .isSelected : [])
-            }
-
-            Button {
-                copyTranscript()
-            } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .foregroundStyle(copied ? Color.green : Color.secondary)
-            }
-            .disabled(richTranscript == nil)
-            .help("Copy full transcript")
-            .accessibilityLabel(copied ? "Transcript copied" : "Copy full transcript")
-
-            if !isLive {
-                ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil)
-                    .environment(context.appSettings)
-                    .environment(context.recordingManager)
-                    .environment(context.appState)
-            }
-
-            Button { showReadingOptions.toggle() } label: {
-                Image(systemName: "textformat.size")
-            }
-            .help("Display options")
-            .accessibilityLabel("Display options")
-            .popover(isPresented: $showReadingOptions) {
-                ViewerPopoverContent {
-                    ViewerReadingOptions(preferences: readingPreferencesBinding)
-                }
-            }
-
-            Button {
-                showPrivacyReceipt = true
-            } label: {
-                Label("Privacy receipt", systemImage: "hand.raised")
-            }
-            .help("Show processing evidence for this recording")
-            .accessibilityLabel("Privacy receipt")
-
-            Button(role: .destructive) {
-                showDeleteConfirm = true
-            } label: {
-                Image(systemName: "trash")
-            }
-            .help("Delete recording")
-
-            // Search match counter + prev/next for the transcript's in-pane
-            // search bar, so they stay reachable from the toolbar.
-            if isSearching {
-                Divider()
-                Text(searchCounterLabel)
-                    .uiFont(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help("Search matches")
-                Button { gotoPrevMatch() } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Previous match (⌘⇧G)")
-                .accessibilityLabel("Previous search match")
-                Button { gotoNextMatch() } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .disabled(searchResult.matches.isEmpty)
-                .help("Next match (⌘G)")
-                .accessibilityLabel("Next search match")
-            }
-        }
     }
 
     // MARK: - Body (mode-switched content the inspector sits beside)
@@ -930,10 +848,30 @@ struct TranscriptDetailView: View {
         }
     }
 
-    private var assistantPanel: some View {
+    /// The assistant slot beside the document. It stays mounted and animates its
+    /// width, so chat state survives hiding.
+    private func assistantColumn(isOpen: Bool, mountsChat: Bool = true,
+                                 onClose: @escaping () -> Void) -> some View {
+        HStack(spacing: 0) {
+            assistantResizeHandle
+            assistantPanel(mountsChat: mountsChat, onClose: onClose)
+                .padding(.vertical, 20).padding(.trailing, 20)
+        }
+        .frame(width: isOpen
+            ? (assistantPanelLiveWidth ?? assistantPanelWidth) + 21
+            : 0)
+        .opacity(isOpen ? 1 : 0)
+        .clipped()
+        .allowsHitTesting(isOpen)
+        .disabled(!isOpen)
+        .accessibilityHidden(!isOpen)
+        .animation(reduceMotion ? nil : ViewerMotion.panel, value: isOpen)
+    }
+
+    private func assistantPanel(mountsChat: Bool, onClose: @escaping () -> Void) -> some View {
         ViewerAssistantPanel(
             onDevice: isOnDeviceAI,
-            onClose: { assistantOpen = false },
+            onClose: onClose,
             onClearChat: { chatService?.clearMessages() },
             clearChatDisabled: isReprocessing || chatService?.isStreaming != false || chatService?.messages.isEmpty != false,
             onPromptSelected: { template in chatService?.draftInput = template.prompt },
@@ -947,7 +885,7 @@ struct TranscriptDetailView: View {
                 }
             )
         ) {
-            chatContent
+            if mountsChat { chatContent } else { Color.clear }
         }
         .frame(width: assistantPanelLiveWidth ?? assistantPanelWidth)
     }
@@ -1022,45 +960,16 @@ struct TranscriptDetailView: View {
 
     // MARK: - Live transcript
 
-    /// Chat as a right-hand side panel during live recording — reuses `chatContent`
-    /// (so it runs against the live transcript provider) inside a fixed-width column
-    /// with its own header + close button, keeping the live transcript visible.
-    private var liveChatPanel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .foregroundStyle(.secondary)
-                Text("Chat")
-                    .uiFont(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    showLiveChat = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Hide chat")
-                .accessibilityLabel("Hide live chat")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.bar)
-            Divider()
-            chatContent
-        }
-        .frame(width: 360)
-    }
-
+    /// Same card as the finished transcript, with the live status where the
+    /// search bar sits.
     @ViewBuilder
     private var liveTranscriptContent: some View {
         VStack(spacing: 0) {
             liveStatusBanner
-            Divider()
+            Divider().overlay(palette.divider.color)
             liveTranscriptList
         }
+        .modifier(ViewerCard())
         // This observer must live outside the conditional empty/list branches:
         // the first arriving segment is what makes the list exist at all.
         .onChange(of: liveSegments.count, initial: true) { _, _ in refreshLiveTurns() }
@@ -1072,32 +981,30 @@ struct TranscriptDetailView: View {
             if case .inProgress = $0.status { return true }
             return false
         } : nil
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(isProcessingLive ? Color.orange : Color.red)
-                    .frame(width: 9, height: 9)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                PulsingDot(color: isProcessingLive ? Brand.processing : Brand.recording, size: 8)
                 Text(isProcessingLive ? (step?.name ?? "Processing…") : "Recording — live transcript")
-                    .uiFont(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
                 Spacer()
                 Text("\(liveSegments.count) segments")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.caption.monospacedDigit())
+                    .foregroundStyle(palette.secondary.color)
             }
             if let progress = step?.progress {
                 ProgressView(value: progress, total: 1)
                     .progressViewStyle(.linear)
+                    .tint(palette.accentText.color)
             }
             if let detail = step?.detail, !detail.isEmpty {
                 Text(detail)
                     .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondary.color)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(16)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -1122,7 +1029,9 @@ struct TranscriptDetailView: View {
                     }
                     Color.clear.frame(height: 1).id("live-bottom")
                 }
-                .listStyle(.inset)
+                .listStyle(.plain)
+                .contentMargins(.vertical, 12, for: .scrollContent)
+                .overlayScrollers()
                 .scrollContentBackground(.hidden)
                 .onChange(of: liveSegments.count) { _, _ in
                     // A new finalized segment: refresh the cached turns (a volatile
@@ -1237,17 +1146,49 @@ struct TranscriptDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var failedState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Text("Transcript unavailable")
-                .foregroundStyle(.secondary)
-            Button("Rebuild") { rebuildTranscript() }
-                .buttonStyle(.typographyBordered)
-                .disabled(isReprocessing)
-            Spacer()
+    /// No transcript to show. A recording that was never transcribed offers
+    /// Transcribe; a saved transcript whose view failed to load offers Rebuild.
+    private var noTranscriptState: some View {
+        let canRebuild = recording.transcription != nil
+        let busy = isReprocessing || !context.recordingManager.reprocessingRecoveryReady
+        return VStack(spacing: 13) {
+            Image(systemName: canRebuild ? "exclamationmark.triangle" : "waveform")
+                .font(.system(size: 25, weight: .regular))
+                .foregroundStyle(palette.secondary.color)
+                .accessibilityHidden(true)
+            Text(isReprocessing ? "Transcription pending"
+                 : canRebuild ? "Transcript view couldn't be loaded" : "Not transcribed yet")
+                .uiFont(.system(size: 17, weight: .semibold))
+                .foregroundStyle(palette.heading.color)
+                .multilineTextAlignment(.center)
+            Text(isReprocessing ? "Manage the pending attempt in Queue & Recovery."
+                 : canRebuild ? "The transcript text is saved. Rebuild the view from it."
+                 : "Transcribe this recording to see its transcript, summary and actions.")
+                .uiFont(.system(size: 13))
+                .foregroundStyle(palette.secondary.color)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if !isReprocessing {
+                Group {
+                    if canRebuild {
+                        Button { rebuildTranscript() } label: {
+                            Label("Rebuild transcript", systemImage: "arrow.clockwise")
+                        }
+                    } else {
+                        Button { reprocessingOperation = .transcribe } label: {
+                            Label("Transcribe…", systemImage: "text.badge.plus")
+                        }
+                    }
+                }
+                .buttonStyle(ViewerBrandButtonStyle(height: 38))
+                .disabled(busy)
+                .padding(.top, 3)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .padding(30)
+        .modifier(ViewerCard())
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Speaker assignment
