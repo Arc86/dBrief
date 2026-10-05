@@ -508,21 +508,22 @@ final class RecordingManager {
         }
         cancelAllActiveDownloads()
         let recordingID = UUID()
-        let liveEngine = appSettings.liveTranscriptionEngine
-        let liveEnabled = appSettings.liveTranscriptionEnabled
-        let liveLanguage = appSettings.nemotronLiveLanguage
+        let live = appSettings.liveTranscriptionPreferences
+        let liveEngine = live.engine
+        let liveEnabled = live.enabled
+        let liveLanguage = live.nativeLanguage
         let sources: [LiveSource] = [captureCoordinator.hasMicrophonePermission ? .microphone : nil,
             captureCoordinator.hasSystemAudioPermission ? .system : nil].compactMap { $0 }
         let selected = liveEngine == .nemotron && liveEnabled
-            ? liveSelectionProvider(liveLanguage,appSettings.nemotronLiveChunkMs,sources) : nil
+            ? liveSelectionProvider(liveLanguage,live.chunkMs,sources) : nil
         let prewarmWhisper = liveEngine == .nemotron && liveEnabled ? nil
             : (appSettings.effectiveTranscriptionEngine == .localWhisper ? appSettings.whisperRuntimeConfig : nil)
         let request = CaptureCoordinator.Request(id: recordingID, startedAt: Date(),
             inputDeviceUID: appSettings.audioInputDeviceUID,
             acousticEchoCancellation: appSettings.acousticEchoCancellation,
             echoSuppression: appSettings.acousticEchoCancellation && AudioOutputRoute.currentOutputHasEchoPath(),
-            liveTranscription: liveEnabled, liveEngine: liveEngine,nemotronSelection: selected,
-            language: liveEngine == .nemotron ? liveLanguage.rawValue : appSettings.effectiveTranscriptionLanguage,
+            liveTranscription: liveEnabled, liveSpeakerLabelsEnabled: live.speakerLabels,
+            liveEngine: liveEngine,nemotronSelection: selected,language: live.language,
             associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
             prewarmWhisper: prewarmWhisper,
             privacyScope: RecordingPrivacyScope(recordingID: recordingID))

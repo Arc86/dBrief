@@ -116,14 +116,7 @@ struct SettingsTranscriptionTab: View {
     }
 
     private var liveTranscriptionSection: some View {
-        @Bindable var settings = appSettings
-        return Toggle(isOn: $settings.liveTranscriptionEnabled) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Transcribe live while recording")
-                Text("Real-time preview (and live chat) using Apple's on-device speech, with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
+        LiveTranscriptionSettingsSection()
     }
 
     @ViewBuilder

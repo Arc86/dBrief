@@ -79,7 +79,7 @@ private struct ACAssets: Sendable {
     let flag: URL
     init(copyGate: ACGate? = nil, ackGate: ACGate? = nil, evaluationGate: ACGate? = nil, claimGate: ACGate? = nil,
          available: UInt64 = 2000, workingBudget: LiveRecordingPayloadBudget? = nil,
-         mode: String = "live-capture-attribution", missingOptional: Bool = false, sources: [LiveSource] = [.system], inventory: String? = nil, optionalTransportAvailable: Bool = true,
+         labelsEnabled: Bool = true, mode: String = "live-capture-attribution", missingOptional: Bool = false, sources: [LiveSource] = [.system], inventory: String? = nil, optionalTransportAvailable: Bool = true,
          publicationGate: ACGate? = nil, publicationPhase: String = "registration") throws {
         asr = try ASRAssetsFixture();diar = try ACAssets(extraFiles: ACAssets.inventoryFiles(inventory));flag=diar.root.appendingPathComponent("retired")
         policy = .init(profiles:[.init(id:"capture",hardware:"fixture",modelRevision:"fixture-asr",chunkMs:1120,sourceCount:sources.count,
@@ -114,6 +114,7 @@ private struct ACAssets: Sendable {
         let id=UUID();var request=CaptureCoordinator.Request(id:id,startedAt:Date(),liveTranscription:true,language:"auto",
             privacyScope:.init(recordingID:id,store:.init(gapDirectoryURL:diar.root.appendingPathComponent("gaps")),pendingRootURL:diar.root.appendingPathComponent("privacy")))
         request.liveEngine = .nemotron
+        request.liveSpeakerLabelsEnabled = labelsEnabled
         request.nemotronSelection = .init(profileID:"capture",hardware:"fixture",sourceDirectory:asr.source,
             identity:ASRAssetsFixture.identity(),language:.auto,chunkMs:1120,sources:sources,captureQualified:true,
             diarization:.init(sourceDirectory:diar.source,identity:diar.identity))
@@ -153,6 +154,23 @@ private actor ACMeasurement {
     func snapshot() -> LiveResourceMeasurement { .init(availableBytes:2000,pressure:pressure) }
 }
 @MainActor @Suite struct LiveCaptureAttributionTests {
+    @Test func selectedOptionalIdentityDoesNotGrantPermissionOrChangeMandatoryProfileAdmission() async throws {
+        let f = try ACCapture(labelsEnabled: false); defer { Task { await f.clean() } }
+        #expect(f.prepared.ingress.input.diarization == nil)
+        #expect(await ACuntil { await f.core.readySources == [.system] })
+        #expect(await f.policy.reservedBytes == 500)
+        let working = await f.core.attributionWorkingBytes
+        let staged = try FileManager.default.contentsOfDirectory(atPath: f.diar.staging.path)
+        #expect(staged.isEmpty && working == 0)
+        #expect(!f.core.attributionContextWasAcknowledged)
+        try f.feed()
+        #expect(await ACuntil { (await f.entry.store.checkpoint()).lanes.first?.progress.effectiveASRConsumedSampleEnd ?? 0 >= 640 })
+        try await f.commit()
+        #expect(await ACuntil { !(await f.entry.store.checkpoint()).segments.isEmpty })
+        let checkpoint = await f.entry.store.checkpoint()
+        #expect(checkpoint.segments.allSatisfy { $0.diarizerContextID == nil } && checkpoint.annotations.isEmpty)
+        await f.stop(); #expect(await ACuntil { await f.policy.reservedBytes == 0 })
+    }
     @Test func lateOwnedCopyDoesNotDelayMandatoryCaptureOrReleaseItsOriginalWorkOnStop() async throws {
         let gate=ACGate();let f=try ACCapture(copyGate:gate)
         defer { Task { await gate.release();await f.clean() } }

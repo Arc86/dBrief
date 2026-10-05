@@ -68,7 +68,7 @@ struct LiveNemotronSelection: Sendable {
                   asr.configuration.chunkMs == selected.chunkMs else { return nil }
             let vad = try selected.vad.map { try LiveVADAssetPreparation(source: $0) }
             // Descriptor construction freezes paths only; copying is late and optional.
-            let optional = selected.sources.contains(.system) ? selected.diarization.flatMap { try? makeDiarizationAssets($0) } : nil
+            let optional = request.liveSpeakerLabelsEnabled && selected.sources.contains(.system) ? selected.diarization.flatMap { try? makeDiarizationAssets($0) } : nil
             let optionalOwner = UUID()
             let frozen = optional.flatMap { assets in selected.diarization?.identity == assets.configuration.identity
                 ? LiveDiarizationBegin(ownerID: optionalOwner,configuration: assets.configuration) : nil }

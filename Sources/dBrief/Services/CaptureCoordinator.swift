@@ -14,6 +14,7 @@ final class CaptureCoordinator {
         var acousticEchoCancellation = true
         var echoSuppression = false
         var liveTranscription = false
+        var liveSpeakerLabelsEnabled = false
         var liveEngine: LiveTranscriptionEngine = .appleSpeech
         var nemotronSelection: LiveNemotronSelection? = nil
         var language = ""

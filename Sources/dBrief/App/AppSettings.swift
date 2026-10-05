@@ -6,6 +6,8 @@ import dBriefWire
 @MainActor
 @Observable
 final class AppSettings {
+    @ObservationIgnored private let liveDefaults: UserDefaults
+
     static let calendarMatchWindowOptions = [0, 5, 10, 15, 30, 60]
 
     /// Maps stale or externally-written preferences to a value rendered by the Settings menu.
@@ -89,6 +91,8 @@ final class AppSettings {
         static let speakerIdMode = "speakerIdMode"
         static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
         static let liveTranscriptionEngine = "liveTranscriptionEngine"
+        static let appleLiveLanguage = "appleLiveLanguage"
+        static let liveSpeakerLabelsEnabled = "liveSpeakerLabelsEnabled"
         static let nemotronLiveLanguage = "nemotronLiveLanguage"
         static let nemotronLiveChunkMs = "nemotronLiveChunkMs"
         static let acousticEchoCancellation = "acousticEchoCancellation"
@@ -507,21 +511,28 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(speakerIdMode.rawValue, forKey: Keys.speakerIdMode) }
     }
 
-    /// Enable real-time transcription (and live chat) during recording using Apple's
-    /// in-process Speech framework. A preview only — the authoritative transcript is
-    /// still produced post-recording.
+    /// Requested live transcription is independent of post-recording processing.
+    /// The capture request freezes these preferences at each explicit boundary.
     var liveTranscriptionEnabled: Bool {
-        didSet { UserDefaults.standard.set(liveTranscriptionEnabled, forKey: Keys.liveTranscriptionEnabled) }
+        didSet { liveDefaults.set(liveTranscriptionEnabled, forKey: Keys.liveTranscriptionEnabled) }
     }
 
     var liveTranscriptionEngine: LiveTranscriptionEngine {
-        didSet { UserDefaults.standard.set(liveTranscriptionEngine.rawValue,forKey: Keys.liveTranscriptionEngine) }
+        didSet { liveDefaults.set(liveTranscriptionEngine.rawValue,forKey: Keys.liveTranscriptionEngine) }
     }
+    /// Independent of the final transcript's language/profile after migration.
+    var appleLiveLanguage: String {
+        didSet { liveDefaults.set(appleLiveLanguage, forKey: Keys.appleLiveLanguage) }
+    }
+    var liveSpeakerLabelsEnabled: Bool {
+        didSet { liveDefaults.set(liveSpeakerLabelsEnabled, forKey: Keys.liveSpeakerLabelsEnabled) }
+    }
+
     var nemotronLiveLanguage: LiveASRConfiguration.Language {
-        didSet { UserDefaults.standard.set(nemotronLiveLanguage.rawValue,forKey: Keys.nemotronLiveLanguage) }
+        didSet { liveDefaults.set(nemotronLiveLanguage.rawValue,forKey: Keys.nemotronLiveLanguage) }
     }
     var nemotronLiveChunkMs: Int {
-        didSet { UserDefaults.standard.set(nemotronLiveChunkMs,forKey: Keys.nemotronLiveChunkMs) }
+        didSet { liveDefaults.set(nemotronLiveChunkMs,forKey: Keys.nemotronLiveChunkMs) }
     }
 
     /// Enable Acoustic Echo Cancellation on the microphone input.
@@ -925,7 +936,8 @@ final class AppSettings {
 
     // MARK: - Init
 
-    init() {
+    init(liveDefaults: UserDefaults = .standard) {
+        self.liveDefaults = liveDefaults
         let defaults = UserDefaults.standard
 
         self.recordingFolderURL = Self.loadBookmarkURL(key: Keys.recordingFolderBookmark)
@@ -1047,10 +1059,12 @@ final class AppSettings {
         self.diarizationEnabled = defaults.object(forKey: Keys.diarizationEnabled) as? Bool ?? false
         self.speakerIdMode = defaults.string(forKey: Keys.speakerIdMode)
             .flatMap(SpeakerIdMode.init(rawValue:)) ?? .optimistic
-        self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
-        self.liveTranscriptionEngine = LiveTranscriptionEngine(rawValue: defaults.string(forKey: Keys.liveTranscriptionEngine) ?? "") ?? .appleSpeech
-        self.nemotronLiveLanguage = LiveASRConfiguration.Language(rawValue: defaults.string(forKey: Keys.nemotronLiveLanguage) ?? "") ?? .auto
-        let liveChunk = defaults.integer(forKey: Keys.nemotronLiveChunkMs)
+        self.liveTranscriptionEnabled = liveDefaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
+        self.liveTranscriptionEngine = LiveTranscriptionEngine(rawValue: liveDefaults.string(forKey: Keys.liveTranscriptionEngine) ?? "") ?? .appleSpeech
+        self.appleLiveLanguage = liveDefaults.string(forKey: Keys.appleLiveLanguage) ?? ""
+        self.liveSpeakerLabelsEnabled = liveDefaults.object(forKey: Keys.liveSpeakerLabelsEnabled) as? Bool ?? false
+        self.nemotronLiveLanguage = LiveASRConfiguration.Language(rawValue: liveDefaults.string(forKey: Keys.nemotronLiveLanguage) ?? "") ?? .auto
+        let liveChunk = liveDefaults.integer(forKey: Keys.nemotronLiveChunkMs)
         self.nemotronLiveChunkMs = [560,1120,2240].contains(liveChunk) ? liveChunk : 1120
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
@@ -1162,6 +1176,9 @@ final class AppSettings {
 
         self.profiles = loadedProfiles
         self.activeProfileId = resolvedActiveProfileId
+        // Seed once from the former effective language, after profile resolution.
+        self.appleLiveLanguage = LiveTranscriptionPreferences.migrateAppleLanguage(
+            in: liveDefaults, legacyEffectiveLanguage: effectiveTranscriptionLanguage)
     }
 }
 
