@@ -12,7 +12,12 @@ enum LiveManagedArtifactCatalogue {
         let identity: LiveSessionIdentity
         let audioURL: URL?
         let deleted: Bool
-        var charge: Int { 256 + (audioURL?.absoluteString.utf8.count ?? 0) * 6 }
+        let ram: LiveRAMSourceMetadata?
+        init(identity: LiveSessionIdentity, audioURL: URL?, deleted: Bool, ram: LiveRAMSourceMetadata? = nil) {
+            self.identity = identity; self.audioURL = audioURL; self.deleted = deleted; self.ram = ram
+        }
+        var capturePersistenceAllowed: Bool { ram == nil }
+        var charge: Int { 256 + (audioURL?.absoluteString.utf8.count ?? 0) * 6 + (ram?.charge ?? 0) }
     }
     private struct Header: Decodable {
         let version: Int

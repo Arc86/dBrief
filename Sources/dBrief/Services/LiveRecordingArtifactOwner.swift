@@ -67,6 +67,8 @@ import dBriefWire
     let writer: LiveSessionArtifactStore
     let isNative: Bool
     let capturePersistenceAllowed: Bool
+    private(set) var ramMetadata: LiveRAMSourceMetadata?
+    private let ramFinalClock: @MainActor () -> Date
     private let store: LiveTranscriptStore
     private let validity: RecordingDerivativeValidity
     private let afterCheckpoint: @Sendable () async -> Void
@@ -125,11 +127,14 @@ import dBriefWire
 
     init(identity: LiveSessionIdentity, store: LiveTranscriptStore, validity: RecordingDerivativeValidity,
          native: Bool, rootURL: URL, payloadReservation: LiveRecordingPayloadBudget.Lease,
-         capturePersistenceAllowed: Bool = true,
+         capturePersistenceAllowed: Bool = true, ramCapture: LiveRAMCaptureMetadata? = nil,
+         ramFinalClock: @escaping @MainActor () -> Date = { Date.now },
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
          afterCheckpoint: @escaping @Sendable () async -> Void = {}, recoveredWriter: LiveSessionArtifactStore? = nil) {
         self.identity = identity; self.store = store; self.validity = validity; isNative = native
         self.capturePersistenceAllowed = capturePersistenceAllowed
+        ramMetadata = capturePersistenceAllowed ? nil : .init(capture: ramCapture ?? .now())
+        self.ramFinalClock = ramFinalClock
         self.afterCheckpoint = afterCheckpoint
         if capturePersistenceAllowed, let recoveredWriter {
             writer = recoveredWriter
@@ -581,13 +586,18 @@ import dBriefWire
            old.speakerLabels == value.speakerLabels, old.fallbackText == value.fallbackText { return }
         try requireCapacity(legacyBytes: legacyBytes, chatBytes: tailInterval?.chatBytes ?? 0,
             finalBytes: Self.finalPublicationLimit)
+        // Only changed, bounded facts reach the clock. Sampling cannot refresh
+        // duplicate/read/flush age, and an invalid clock leaves the facts intact.
+        let acceptedRAM = try ramMetadata.map { try $0.acceptingFinal(at: ramFinalClock()) }
         finalPublication = value
         if isNonpersistingFinalOnly {
             acceptedRevision += 1
+            if let acceptedRAM { ramMetadata = acceptedRAM }
             if capturePersistenceAllowed { durableRevision = acceptedRevision }
             return
         }
         try checkpoint(urgent: true)
+        if let acceptedRAM { ramMetadata = acceptedRAM }
     }
 
     /// Reconcile an already durable canonical result before this generation is

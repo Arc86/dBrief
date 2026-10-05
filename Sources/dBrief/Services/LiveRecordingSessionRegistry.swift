@@ -18,15 +18,16 @@ final class LiveRecordingSessionRegistry {
         private(set) var isValid = true
         private(set) var coordinator: LiveCaptureSessionCoordinator?
         fileprivate init(identity: LiveSessionIdentity, native: Bool, root: URL, capturePersistenceAllowed: Bool = true,
-                         reservation: LiveRecordingPayloadBudget.Lease,
+                         ramCapture: LiveRAMCaptureMetadata? = nil, reservation: LiveRecordingPayloadBudget.Lease,
                          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void,
-                         afterCheckpoint: @escaping @Sendable () async -> Void) {
+                         afterCheckpoint: @escaping @Sendable () async -> Void,
+                         ramFinalClock: @escaping @MainActor () -> Date = { Date.now }) {
             self.identity = identity; validity = RecordingDerivativeValidity()
             self.store = LiveTranscriptStore(identity: identity,validity: validity,
                 retainedEvidenceLimit: LiveRecordingArtifactOwner.evidenceLimit, payloadReservation: reservation)
             artifacts = LiveRecordingArtifactOwner(identity: identity, store: store, validity: validity,
                 native: native, rootURL: root, payloadReservation: reservation, capturePersistenceAllowed: capturePersistenceAllowed,
-                beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+                ramCapture: ramCapture, ramFinalClock: ramFinalClock, beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
         }
         fileprivate init(identity: LiveSessionIdentity, restored: LiveSessionArtifactStore.Restored,
                          writer: LiveSessionArtifactStore, validity: RecordingDerivativeValidity,
@@ -104,6 +105,7 @@ final class LiveRecordingSessionRegistry {
         fileprivate(set) var discardCompleted = false
         fileprivate var nonpersisting = false
         fileprivate var capturePersistenceAllowed: Bool
+        fileprivate let ramCapture: LiveRAMCaptureMetadata?
         fileprivate var ramCandidate: Entry?
         fileprivate var finishTask: Task<Entry?, any Error>?
         fileprivate var finishWaiters = 0
@@ -113,6 +115,7 @@ final class LiveRecordingSessionRegistry {
             identity = original?.identity; pin = original?.artifacts.pin()
             nonpersisting = original.map { !$0.artifacts.persistenceStarted } ?? false
             capturePersistenceAllowed = original?.artifacts.capturePersistenceAllowed ?? true
+            ramCapture = original?.artifacts.ramMetadata?.capture
             finalAnchor = original?.artifacts.finalAnchor
         }
     }
@@ -137,6 +140,7 @@ final class LiveRecordingSessionRegistry {
     private let ownerLimit: Int
     private let beforeStage: @Sendable (LiveArtifactStage) async throws -> Void
     private let afterCheckpoint: @Sendable () async -> Void
+    private let ramFinalClock: @MainActor () -> Date
     private let budget: LiveRecordingPayloadBudget
     var reservedPayloadBytes: Int { budget.reservedBytes }
     func reserveAttributionWorking(_ identity: LiveSessionIdentity) throws -> LiveRecordingPayloadBudget.Lease {
@@ -163,17 +167,19 @@ final class LiveRecordingSessionRegistry {
     func hasPendingDeletion(recordingID: UUID) -> Bool { deletions[recordingID] != nil }
     init(artifactRoot: URL = AppSupportPaths.subdirectory("LiveSessions"), ownerLimit: Int = 8,
          beforeStage: @escaping @Sendable (LiveArtifactStage) async throws -> Void = { _ in },
-         afterCheckpoint: @escaping @Sendable () async -> Void = {}, payloadBudget: LiveRecordingPayloadBudget? = nil) {
+         afterCheckpoint: @escaping @Sendable () async -> Void = {}, payloadBudget: LiveRecordingPayloadBudget? = nil,
+         ramFinalClock: @escaping @MainActor () -> Date = { Date.now }) {
         self.artifactRoot = artifactRoot; self.ownerLimit = min(8, max(1, ownerLimit)); self.beforeStage = beforeStage
-        self.afterCheckpoint = afterCheckpoint
+        self.afterCheckpoint = afterCheckpoint; self.ramFinalClock = ramFinalClock
         budget = payloadBudget ?? LiveRecordingPayloadBudget(ownerLimit: ownerLimit)
     }
 
     func register(_ identity: LiveSessionIdentity) throws -> Entry {
         try register(identity, native: true)
     }
-    func registerLegacy(_ identity: LiveSessionIdentity, capturePersistenceAllowed: Bool = true) throws -> Entry {
-        try register(identity, native: false, capturePersistenceAllowed: capturePersistenceAllowed)
+    func registerLegacy(_ identity: LiveSessionIdentity, capturePersistenceAllowed: Bool = true,
+                        ramCapture: LiveRAMCaptureMetadata? = nil) throws -> Entry {
+        try register(identity, native: false, capturePersistenceAllowed: capturePersistenceAllowed, ramCapture: ramCapture)
     }
     func startPersistence(_ identity: LiveSessionIdentity) { entry(identity: identity)?.artifacts.start() }
     func owns(recordingID: UUID) -> Bool { captureOwners.values.contains(recordingID) }
@@ -183,13 +189,17 @@ final class LiveRecordingSessionRegistry {
         captureOwners[identity.captureSessionID] = identity.recordingID
         unavailableRecordings.insert(identity.recordingID)
     }
-    private func register(_ identity: LiveSessionIdentity, native: Bool, capturePersistenceAllowed: Bool = true) throws -> Entry {
+    private func register(_ identity: LiveSessionIdentity, native: Bool, capturePersistenceAllowed: Bool = true,
+                          ramCapture: LiveRAMCaptureMetadata? = nil) throws -> Entry {
         guard !terminationStarted else { throw LiveArtifactError.terminating }
+        guard replacements[identity.recordingID] == nil else { throw Failure.unavailable }
+        guard !capturePersistenceAllowed || ramCapture == nil else { throw Failure.identityConflict }
         guard !retiredRecordings.contains(identity.recordingID) else { throw Failure.retired }
         guard !unavailableRecordings.contains(identity.recordingID) else { throw Failure.unavailable }
         if let entry = entries[identity.recordingID] {
             guard entry.identity == identity, entry.artifacts.isNative == native,
-                  entry.artifacts.capturePersistenceAllowed == capturePersistenceAllowed else { throw Failure.identityConflict }
+                  entry.artifacts.capturePersistenceAllowed == capturePersistenceAllowed,
+                  ramCapture == nil || entry.artifacts.ramMetadata?.capture == ramCapture else { throw Failure.identityConflict }
             return entry
         }
         guard captureOwners[identity.captureSessionID] == nil else { throw Failure.identityConflict }
@@ -199,8 +209,8 @@ final class LiveRecordingSessionRegistry {
         if !budget.canReserve { evictOneDurableOwner() }
         guard entries.count < ownerLimit else { throw Failure.capacity }
         let reservation = try budget.reserve()
-        let entry = Entry(identity: identity, native: native, root: artifactRoot, capturePersistenceAllowed: capturePersistenceAllowed, reservation: reservation,
-            beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+        let entry = Entry(identity: identity, native: native, root: artifactRoot, capturePersistenceAllowed: capturePersistenceAllowed,
+            ramCapture: ramCapture, reservation: reservation, beforeStage: beforeStage, afterCheckpoint: afterCheckpoint, ramFinalClock: ramFinalClock)
         entries[identity.recordingID] = entry; captureOwners[identity.captureSessionID] = identity.recordingID
         return entry
     }
@@ -345,7 +355,8 @@ final class LiveRecordingSessionRegistry {
             if !budget.canReserve { evictOneDurableOwner() }
             guard phase.ramCandidate == nil else { throw Failure.unavailable }
             let entry = Entry(identity: identity, native: false, root: artifactRoot, capturePersistenceAllowed: phase.capturePersistenceAllowed,
-                reservation: try budget.reserve(), beforeStage: beforeStage, afterCheckpoint: afterCheckpoint)
+                ramCapture: phase.ramCapture, reservation: try budget.reserve(), beforeStage: beforeStage, afterCheckpoint: afterCheckpoint,
+                ramFinalClock: ramFinalClock)
             entry.configureNonpersistingFinalOnly(audioURL: phase.authority.audioURL, anchor: phase.finalAnchor)
             var installed = false
             if !phase.capturePersistenceAllowed { phase.ramCandidate = entry }
@@ -406,7 +417,10 @@ final class LiveRecordingSessionRegistry {
     func isExplicitReprocessingReplacement(recordingID: UUID) -> Bool { replacements[recordingID]?.isRetention == false }
     var retentionHints: [LiveManagedArtifactCatalogue.Hint] {
         var values = hints
-        for entry in entries.values { values[entry.identity.recordingID] = .init(identity: entry.identity, audioURL: entry.artifacts.admittedAudioURL, deleted: false) }
+        for entry in entries.values {
+            values[entry.identity.recordingID] = .init(identity: entry.identity, audioURL: entry.artifacts.admittedAudioURL,
+                deleted: false, ram: entry.artifacts.ramMetadata)
+        }
         return Array(values.values)
     }
 
