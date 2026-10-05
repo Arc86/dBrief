@@ -318,16 +318,30 @@ enum MenuBarPanel {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Opens a file or folder in its app (Finder, an editor) in front of the panel.
+    /// Opens a file or folder in its app (Finder, an editor), brought to the front.
     static func open(_ url: URL) {
         close()
-        NSWorkspace.shared.open(url)
+        // macOS only lets another app come forward when the active app hands over
+        // activation. The menu panel doesn't make dBrief active, so take activation
+        // first (the click in the panel allows it), then yield it.
+        NSApp.activate()
+        if let appURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+           let bundleID = Bundle(url: appURL)?.bundleIdentifier {
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleID)
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(url, configuration: configuration)
     }
 
-    /// Reveals a file in Finder in front of the panel.
+    /// Reveals a file in Finder, brought to the front.
     static func reveal(_ url: URL) {
         close()
+        let finder = "com.apple.finder"
+        NSApp.activate()
+        NSApp.yieldActivation(toApplicationWithBundleIdentifier: finder)
         NSWorkspace.shared.activateFileViewerSelecting([url])
+        NSRunningApplication.runningApplications(withBundleIdentifier: finder).first?.activate()
     }
 
     /// Runs an open/save panel in front of other apps' windows.
