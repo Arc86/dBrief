@@ -244,6 +244,15 @@ actor MLXInsightsService {
         #endif
     }
 
+    /// Peak MLX allocation since process start, for the eval harness.
+    static func peakMemoryBytes() -> Int {
+        #if canImport(MLX)
+        return MLX.Memory.peakMemory
+        #else
+        return 0
+        #endif
+    }
+
     func purgeModels() async throws {
         await unload()
         let base = try llmDownloadBaseURL()

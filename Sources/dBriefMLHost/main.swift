@@ -16,6 +16,10 @@ if let i = args.firstIndex(of: "--support-base"), i + 1 < args.count {
     exit(2)
 }
 
+if args.contains("--eval-insights") {
+    exit(await GemmaEval.run(arguments: args))
+}
+
 // One writer shared by request replies and broadcast state events, so frames
 // never interleave on the output pipe.
 let writer = StdoutWriter(.standardOutput)
