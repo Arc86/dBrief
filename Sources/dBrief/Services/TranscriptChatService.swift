@@ -495,7 +495,7 @@ final class TranscriptChatService {
         var prompt = "You are an assistant analyzing a meeting transcript. The complete "
         prompt += "transcript is included in full below — you already have it. Never ask the "
         prompt += "user to provide the transcript; always answer from the text between the markers.\n\n"
-        prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n"
+        prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n\nEach line starts with [hh:mm:ss] and the speaker's name. When you answer, cite the timestamp(s) you relied on, like [00:12:34].\n"
         if !speakerLabels.isEmpty {
             prompt += "\nSPEAKER LEGEND:\n"
             for label in speakerLabels {

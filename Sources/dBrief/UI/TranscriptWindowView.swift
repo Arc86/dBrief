@@ -1319,8 +1319,16 @@ struct TranscriptDetailView: View {
                 recording: recording
             )
         } else {
-            let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-                ?? recording.transcription?.text ?? ""
+            let names = Dictionary(labels.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+            let text: String = {
+                guard let segments = richTranscript?.segments, !segments.isEmpty else {
+                    return recording.transcription?.text ?? ""
+                }
+                let turns = ChatTranscript.turns(segments.map {
+                    (start: $0.start, end: $0.end, speaker: $0.speakerId.map { names[$0] ?? $0 }, text: $0.text)
+                })
+                return ChatTranscript.format(turns)
+            }()
             service = TranscriptChatService(
                 transcriptText: text,
                 speakerLabels: labels,
