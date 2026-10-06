@@ -41,7 +41,14 @@ jobs:
           swift test --skip "$TIMING_SENSITIVE"
 
       - name: Run timing-sensitive tests
-        run: swift test --filter "$TIMING_SENSITIVE"
+        run: |
+          swift build --build-tests
+          # TEMP diagnostic: capture where the test process sits during the stall.
+          ( sleep 45; for pid in $(pgrep -f 'dBriefPackageTests|swiftpm-testing-helper'); do
+              echo "=== sample $pid: $(ps -o command= -p $pid | cut -c1-120)"
+              sample "$pid" 5 -mayDie 2>&1 | grep -vE '^\s*$' | head -400
+            done ) &
+          swift test --skip-build --filter "$TIMING_SENSITIVE"
 
       - name: Assemble beta app
         run: make beta CODESIGN_IDENTITY=-
