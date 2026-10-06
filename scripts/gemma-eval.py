@@ -53,6 +53,7 @@ def main():
         os.unlink(tmp.name)  # planted transcript holds private content
     if out.returncode != 0 or not out.stdout.strip():
         print(f"helper failed, return code {out.returncode}")
+        print("\n".join(l for l in out.stdout.splitlines() if l.startswith('{"error"')))
         print("\n".join(out.stderr.splitlines()[-20:]))
         sys.exit(1)
     # mlx-swift-lm prints warnings to stdout after the report; take the last JSON line
