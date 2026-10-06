@@ -77,12 +77,10 @@ extension ProcessingPipeline {
                     let fresh = try await steps.transcribe()
                     try await validatePreparation(steps)
                     result = fresh.transcription
-                    perf.time = now().timeIntervalSince(start)
-                    perf.inference = result.inferenceTime
-                    perf.diarization = result.diarizationTime
-                    perf.spellCorrection = fresh.spellCorrectionTime
-                    perf.model = fresh.model
-                    perf.audioDuration = fresh.audioDuration
+                    let finalization = perf.finalization
+                    perf = TranscriptionPerf(fresh: result, model: fresh.model, audioDuration: fresh.audioDuration,
+                        spellCorrection: fresh.spellCorrectionTime, elapsed: now().timeIntervalSince(start))
+                    perf.finalization = finalization
                 }
                 try await steps.publishTranscript(result, saved != nil)
                 try await validatePreparation(steps)

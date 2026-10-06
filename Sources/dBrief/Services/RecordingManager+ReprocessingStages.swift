@@ -41,8 +41,12 @@ extension RecordingManager {
         switch stage {
         case .transcription:
             let config = try options.transcriptionSettings(settings: appSettings)
+            let start = Date()
             let output = try await transcribeRecordingAudio(recording: job.recording, stepIndex: index, settings: config)
             try requireProcessingOwnership(job)
+            let perf = TranscriptionPerf(fresh: output.transcription, model: config.modelDisplayName,
+                audioDuration: job.recording.duration, spellCorrection: output.spellCorrectionTime,
+                elapsed: Date().timeIntervalSince(start))
             let raw = output.transcription
             job.recording.transcription = raw
             let rich = RichTranscriptBuilder().build(from: raw, participants: job.recording.participants,
@@ -50,6 +54,10 @@ extension RecordingManager {
             job.recording.richTranscript = rich
             try await reprocessingStore.stage(JSONEncoder().encode(raw), suffix: "transcript.json", attemptID: job.id)
             try await reprocessingStore.stage(JSONEncoder().encode(rich), suffix: "richtranscript.json", attemptID: job.id)
+            appSettings.lifetimeTranscribedSeconds += job.recording.duration
+            logModelPerformance(label: performanceLabel(for: job.recording), transcriptionModel: perf.model,
+                audioDuration: perf.audioDuration, transcriptionTime: perf.time, inferenceTime: perf.inference,
+                diarizationTime: perf.diarization, aiModel: nil, aiTime: nil, spellCorrectionTime: perf.spellCorrection)
             result = .completed
         case .speakers:
             result = try await reprocessSpeakers(job: job, options: options)

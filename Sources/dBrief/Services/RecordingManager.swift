@@ -2801,7 +2801,7 @@ final class RecordingManager {
     /// Best-available display title for the per-recording Benchmark list: the
     /// AI-generated title (sans its leading "YYYY-MM-DD - " date prefix) when set,
     /// else the user's draft title, else the audio filename.
-    private func performanceLabel(for recording: Recording) -> String {
+    func performanceLabel(for recording: Recording) -> String {
         if let generated = recording.generatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
            !generated.isEmpty {
             // Strip a leading ISO-date prefix ("2026-06-17 - ") that persistGeneratedTitle adds.
@@ -2818,7 +2818,7 @@ final class RecordingManager {
 
     /// Append a performance record for the session, if either pass produced
     /// timing. Fire-and-forget — never blocks or fails the pipeline.
-    private func logModelPerformance(
+    func logModelPerformance(
         label: String? = nil,
         transcriptionModel: String?,
         audioDuration: TimeInterval?,
