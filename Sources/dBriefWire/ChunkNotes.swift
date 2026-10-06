@@ -27,10 +27,26 @@ public enum ChunkNotesMerger {
         for item in notes.flatMap(\.actionItems) {
             let trimmed = item.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = normalize(trimmed)
-            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            guard !key.isEmpty, !isPlaceholderActionItem(trimmed), seen.insert(key).inserted else { continue }
             out.append(trimmed)
         }
         return out
+    }
+
+    /// True for filler such as "No action items were assigned in this segment." or
+    /// "[Unassigned] None." that a model writes instead of an empty list; these would
+    /// otherwise become fake reminders. Deliberately narrow: an item is never dropped
+    /// just for lacking a `[WHO]` prefix.
+    public static func isPlaceholderActionItem(_ item: String) -> Bool {
+        var text = item.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let owner = text.range(of: #"^\[[^\]]*\]"#, options: .regularExpression) {
+            text.removeSubrange(owner)
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).lowercased()
+        if text.isEmpty || ["none", "n/a", "geen", "nvt"].contains(text) { return true }
+        guard text.hasPrefix("no ") || text.hasPrefix("none") || text.hasPrefix("geen") else { return false }
+        let topics = ["action item", "task", "commitment", "actiepunt", "taken", "afspraken"]
+        return topics.contains { text.contains($0) }
     }
 
     /// Renders notes for the reduce prompt. When over `maxTokens`, drops the

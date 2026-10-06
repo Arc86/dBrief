@@ -22,6 +22,31 @@ import dBriefWire
         #expect(ChunkNotesMerger.mergedActionItems(notes).count == 12)
     }
 
+    @Test(arguments: ["No action items were assigned in this segment.", "[Unassigned] No action items.",
+                      "Geen actiepunten in dit deel.", "None", "n/a", "-", "[Unassigned] none.", "No tasks or commitments."])
+    func placeholderActionItemsAreRecognized(item: String) {
+        #expect(ChunkNotesMerger.isPlaceholderActionItem(item))
+    }
+
+    @Test(arguments: ["[Ann] to make sure no tasks are left open before Friday", "[Bo] to send the deck",
+                      "Send the deck to legal", "[Cy] to note that no budget remains"])
+    func realActionItemsAreKept(item: String) {
+        #expect(!ChunkNotesMerger.isPlaceholderActionItem(item))
+    }
+
+    @Test func mergedActionItemsExcludesPlaceholdersAndKeepsOrder() {
+        let a = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[Ann] to send deck", "No action items were assigned in this segment."], people: [])
+        let b = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["None"], people: [])
+        let c = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[Unassigned] No action items.", "[Bo] to book room"], people: [])
+        #expect(ChunkNotesMerger.mergedActionItems([a, b, c]) == ["[Ann] to send deck", "[Bo] to book room"])
+    }
+
+    @Test func chunkPromptForbidsPlaceholdersForDecisionsAndActions() {
+        let sys = UnifiedInsightsPrompt.chunkNotesSystemPrompt(outputLanguage: .english, customVocabulary: "", guidance: nil)
+        #expect(sys.contains("never write a placeholder such as 'No action items'"))
+        #expect(sys.contains("never write a placeholder such as 'No decisions'"))
+    }
+
     @Test func reduceInputIsOrderedAndLabelled() {
         let notes = [ChunkNotes(keyPoints: ["first"], decisions: ["d1"], actionItems: [], people: ["Ann"]),
                      ChunkNotes(keyPoints: ["second"], decisions: [], actionItems: ["[Bo] to x"], people: [])]

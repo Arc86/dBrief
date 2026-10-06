@@ -218,8 +218,8 @@ public enum UnifiedInsightsPrompt {
 
         ### RULES
         1. **key_points:** Every distinct topic, fact, number, name, product, risk and concern discussed in this part, one specific sentence each. Do not compress details away.
-        2. **decisions:** Every decision or agreement reached in this part.
-        3. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown.
+        2. **decisions:** Every decision or agreement reached in this part. If this part contains no decisions, return an empty list — never write a placeholder such as 'No decisions'.
+        3. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If this part contains no commitments, return an empty list — never write a placeholder such as 'No action items'.
         4. **people:** Names of everyone who speaks or is mentioned in this part.
         5. The part may begin or end mid-conversation. Record only what is actually said; never invent.
         \(vocabularyBlock(customVocabulary))

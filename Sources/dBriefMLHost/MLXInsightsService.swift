@@ -341,13 +341,14 @@ actor MLXInsightsService {
             ctx.tokenizer.encode(text: context + "\n\n" + transcript, addSpecialTokens: false).count
         }
         Logger.ai.info("Gemma insights input: \(inputTokens) tokens")
-        if inputTokens <= GemmaGenerationConfig.singlePassTokenBudget {
-            let user = buildUserPrompt(transcript: context.isEmpty ? transcript : context + "\n\n" + transcript)
-            return try await generateInsightsJSON(
+        let singlePass = {
+            let user = self.buildUserPrompt(transcript: context.isEmpty ? transcript : context + "\n\n" + transcript)
+            return try await self.generateInsightsJSON(
                 container: container,
-                system: buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
+                system: self.buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
                 user: user, onDelta: onDelta)
         }
+        if inputTokens <= GemmaGenerationConfig.singlePassTokenBudget { return try await singlePass() }
 
         let parts = await container.perform { ctx in
             TranscriptChunkPlanner.plan(
@@ -356,6 +357,9 @@ actor MLXInsightsService {
                 overlapLines: GemmaGenerationConfig.chunkOverlapLines,
                 countTokens: { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count })
         }
+        // A large context can push a short transcript over the budget; one part gains
+        // nothing from map-reduce, so keep the single streamed pass.
+        if parts.count <= 1 { return try await singlePass() }
         Logger.ai.info("Gemma map-reduce: \(parts.count) parts")
         let mapSystem = UnifiedInsightsPrompt.chunkNotesSystemPrompt(
             outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)

@@ -130,7 +130,7 @@ extension ProcessingStepProgress {
                 step.name = "Analyzing long recording in \(total) parts" // engine-neutral: Apple Intelligence emits it too (Task 8)
                 step.detail = (index > total ? "Combining \(total) parts" : "Part \(index) of \(total)")
                     + " · \(LongAnalysisNotice.text)"
-                step.progress = Double(index - 1) / Double(total + 1)
+                step.progress = min(1, max(0, Double(index - 1) / Double(max(total, 1) + 1)))
             case .downloading(let progress, let stage):
                 step.progress = progress
                 switch stage {

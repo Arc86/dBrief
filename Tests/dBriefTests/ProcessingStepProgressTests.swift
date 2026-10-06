@@ -127,6 +127,14 @@ struct ProcessingStepProgressTests {
         #expect(state.processingSteps[0].detail == "Combining 5 parts · \(LongAnalysisNotice.text)")
     }
 
+    @Test func longAnalysisProgressIsClampedToUnitRange() {
+        let (state, _, progress) = fixture()
+        #expect(progress.applyPluginState(.analyzingPart(index: 9, total: 5)))
+        #expect(state.processingSteps[0].progress == 1)
+        #expect(progress.applyPluginState(.analyzingPart(index: 0, total: 5)))
+        #expect(state.processingSteps[0].progress == 0)
+    }
+
     @Test func singlePassAnalysisDoesNotShowLongAnalysisNotice() {
         let (state, _, progress) = fixture()
         #expect(progress.applyPluginState(.analyzing))
