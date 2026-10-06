@@ -86,6 +86,19 @@ public enum UnifiedInsightsPrompt {
         return trimmed
     }
 
+    private static func languageInstruction(_ outputLanguage: OutputLanguage) -> String {
+        switch outputLanguage {
+        case .english:
+            return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
+        case .dutch:
+            return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
+        case .custom(let code):
+            return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
+        case .matchInput:
+            return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
+        }
+    }
+
     /// Shared analysis rules + output-language instruction, WITHOUT any output-format
     /// section. Used directly by the FoundationModels guided-generation path (where the
     /// `@Generable` schema defines the shape) and composed with the JSON block for the
@@ -104,19 +117,6 @@ public enum UnifiedInsightsPrompt {
         actionItemsGuidance: String? = nil,
         tagsGuidance: String? = nil
     ) -> String {
-        let languageInstruction: String = {
-            switch outputLanguage {
-            case .english:
-                return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
-            case .dutch:
-                return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
-            case .custom(let code):
-                return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
-            case .matchInput:
-                return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
-            }
-        }()
-
         let summaryRule = guidance(summaryGuidance)
             ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
         let actionItemsRule = guidance(actionItemsGuidance)
@@ -127,7 +127,7 @@ public enum UnifiedInsightsPrompt {
         return """
         You are an expert Senior Executive Assistant. Your goal is to extract structured meeting data from a transcript.
 
-        \(languageInstruction)
+        \(languageInstruction(outputLanguage))
 
         ### RULES
         1. **NO REPETITION:** If a point is made twice, record it once.
@@ -202,5 +202,66 @@ public enum UnifiedInsightsPrompt {
           "sentiment": "Positive" | "Neutral" | "Negative"
         }
         """
+    }
+
+    // MARK: - Long-transcript map-reduce (local Gemma)
+
+    public static func chunkNotesSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
+                                              guidance: InsightsGuidance?) -> String {
+        let actionRule = Self.guidance(guidance?.actionItems)
+            ?? "Format each as \"[WHO] to [TASK] [CONTEXT/DEADLINE]\"."
+        return """
+        You are taking detailed notes on ONE PART of a long meeting transcript. A later step merges \
+        the notes from every part, so capture everything from THIS part and nothing else.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        1. **key_points:** Every distinct topic, fact, number, name, product, risk and concern discussed in this part, one specific sentence each. Do not compress details away.
+        2. **decisions:** Every decision or agreement reached in this part.
+        3. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown.
+        4. **people:** Names of everyone who speaks or is mentioned in this part.
+        5. The part may begin or end mid-conversation. Record only what is actually said; never invent.
+        \(vocabularyBlock(customVocabulary))
+
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
+        """
+    }
+
+    public static func chunkNotesUserPrompt(context: String, chunk: TranscriptChunk) -> String {
+        let header = context.isEmpty ? "" : context + "\n\n"
+        return """
+        \(header)TRANSCRIPT PART \(chunk.index) OF \(chunk.total):
+        \(chunk.text)
+        """
+    }
+
+    public static func reduceSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
+                                          guidance: InsightsGuidance?) -> String {
+        let summaryRule = Self.guidance(guidance?.summary)
+            ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
+        let tagsRule = Self.guidance(guidance?.tags)
+            ?? "Provide 5-10 single words capturing the key topics discussed, and choose a sentiment of \"Positive\", \"Neutral\", or \"Negative\" based on the overall tone."
+        return """
+        You are an expert Senior Executive Assistant. You receive notes taken from consecutive parts \
+        of ONE long meeting, in order. Write the final meeting record from them.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        1. **SUMMARY:** \(summaryRule) Cover the beginning, middle AND end of the meeting; keep specific names, numbers, decisions and deadlines.
+        2. **NO REPETITION:** Neighbouring parts overlap slightly; state each point once.
+        3. **TITLE CONCEPT:** A short, 3-6 word descriptive title concept.
+        4. **TAGS & SENTIMENT:** \(tagsRule)
+        \(vocabularyBlock(customVocabulary))
+        Respond with a single JSON object with the keys "title_concept", "summary", "tags" and "sentiment". \
+        Put any headings, bullets or line breaks the SUMMARY rule asks for inside the "summary" string (use "\\n"). \
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
+        """
+    }
+
+    public static func reduceUserPrompt(context: String, notes: String) -> String {
+        let header = context.isEmpty ? "" : context + "\n\n"
+        return "\(header)MEETING NOTES BY PART:\n\(notes)"
     }
 }

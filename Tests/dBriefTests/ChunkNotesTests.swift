@@ -1,0 +1,65 @@
+import Foundation
+import Testing
+import dBriefWire
+
+@Suite struct ChunkNotesTests {
+    let count: (String) -> Int = { ($0.count + 3) / 4 }
+
+    @Test func decodesSnakeCase() throws {
+        let json = #"{"key_points":["a"],"decisions":[],"action_items":["[A] to x"],"people":["A"]}"#
+        let notes = try JSONDecoder().decode(ChunkNotes.self, from: Data(json.utf8))
+        #expect(notes.actionItems == ["[A] to x"])
+    }
+
+    @Test func mergedActionItemsKeepsOrderAndDropsOverlapDuplicates() {
+        let a = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[Ann] to send deck", "[Bo] to book room"], people: [])
+        let b = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[ann] to send deck.", "[Cy] to file report"], people: [])
+        #expect(ChunkNotesMerger.mergedActionItems([a, b]) == ["[Ann] to send deck", "[Bo] to book room", "[Cy] to file report"])
+    }
+
+    @Test func mergedActionItemsNeverDropsDistinctItems() {
+        let notes = (1...12).map { ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[P\($0)] to do task \($0)"], people: []) }
+        #expect(ChunkNotesMerger.mergedActionItems(notes).count == 12)
+    }
+
+    @Test func reduceInputIsOrderedAndLabelled() {
+        let notes = [ChunkNotes(keyPoints: ["first"], decisions: ["d1"], actionItems: [], people: ["Ann"]),
+                     ChunkNotes(keyPoints: ["second"], decisions: [], actionItems: ["[Bo] to x"], people: [])]
+        let text = ChunkNotesMerger.reduceInput(notes, maxTokens: 10_000, countTokens: count)
+        #expect(text.contains("PART 1 OF 2") && text.contains("PART 2 OF 2"))
+        #expect(text.range(of: "first")!.lowerBound < text.range(of: "second")!.lowerBound)
+    }
+
+    @Test func reduceInputTrimsKeyPointsButKeepsDecisionsAndActions() {
+        let long = (1...200).map { "Key point \($0) with plenty of descriptive words" }
+        let notes = [ChunkNotes(keyPoints: long, decisions: ["KEEP-DECISION"], actionItems: ["[A] KEEP-ACTION"], people: [])]
+        let text = ChunkNotesMerger.reduceInput(notes, maxTokens: 400, countTokens: count)
+        #expect(count(text) <= 400)
+        #expect(text.contains("KEEP-DECISION") && text.contains("KEEP-ACTION"))
+        #expect(text.contains("Key point 1 ")) // earliest points survive
+    }
+
+    @Test func chunkPromptsCarryLanguageGuidanceAndContext() {
+        let g = InsightsGuidance(summary: "Use ## headings", actionItems: "ACTION-GUIDE", tags: "TAG-GUIDE")
+        let sys = UnifiedInsightsPrompt.chunkNotesSystemPrompt(outputLanguage: .dutch, customVocabulary: "dBrief", guidance: g)
+        #expect(sys.contains("DUTCH") && sys.contains("ACTION-GUIDE") && sys.contains("dBrief"))
+        let user = UnifiedInsightsPrompt.chunkNotesUserPrompt(context: "People likely in this meeting: Ann.",
+            chunk: TranscriptChunk(index: 2, total: 5, text: "Ann: hi"))
+        #expect(user.contains("PART 2 OF 5") && user.contains("Ann: hi") && user.contains("People likely"))
+    }
+
+    @Test func reducePromptKeepsSummaryAndTagGuidanceWithoutActionItemRule() {
+        let g = InsightsGuidance(summary: "Use ## headings", actionItems: "ACTION-GUIDE", tags: "TAG-GUIDE")
+        let sys = UnifiedInsightsPrompt.reduceSystemPrompt(outputLanguage: .english, customVocabulary: "", guidance: g)
+        #expect(sys.contains("Use ## headings") && sys.contains("TAG-GUIDE"))
+        #expect(!sys.contains("ACTION-GUIDE"))
+        #expect(!sys.contains("action_items"))
+    }
+
+    @Test func mapAndReducePromptsForbidDoubleQuotesInJSONStrings() {
+        let map = UnifiedInsightsPrompt.chunkNotesSystemPrompt(outputLanguage: .english, customVocabulary: "", guidance: nil)
+        let reduce = UnifiedInsightsPrompt.reduceSystemPrompt(outputLanguage: .english, customVocabulary: "", guidance: nil)
+        #expect(map.contains("never use the double-quote character"))
+        #expect(reduce.contains("never use the double-quote character"))
+    }
+}
