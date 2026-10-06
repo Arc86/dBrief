@@ -15,6 +15,18 @@ public struct ChunkNotes: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case keyPoints = "key_points", decisions, actionItems = "action_items", people
     }
+
+    /// Removes exact repeats inside each list (same normalization as
+    /// `ChunkNotesMerger.mergedActionItems`), keeping first-seen order. Collapses a
+    /// runaway list that repeats one item until the output cap.
+    public func deduplicated() -> ChunkNotes {
+        func unique(_ items: [String]) -> [String] {
+            var seen = Set<String>()
+            return items.filter { seen.insert(ChunkNotesMerger.normalize($0)).inserted }
+        }
+        return ChunkNotes(keyPoints: unique(keyPoints), decisions: unique(decisions),
+                          actionItems: unique(actionItems), people: unique(people))
+    }
 }
 
 public enum ChunkNotesMerger {
@@ -80,7 +92,7 @@ public enum ChunkNotesMerger {
         }.joined(separator: "\n\n")
     }
 
-    private static func normalize(_ s: String) -> String {
+    static func normalize(_ s: String) -> String {
         s.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }

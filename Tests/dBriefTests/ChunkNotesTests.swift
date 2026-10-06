@@ -47,6 +47,22 @@ import dBriefWire
         #expect(sys.contains("never write a placeholder such as 'No decisions'"))
     }
 
+    @Test func deduplicatedCollapsesRunawayRepeats() {
+        let runaway = Array(repeating: "The CHRO role is evolving.", count: 50)
+        let notes = ChunkNotes(keyPoints: runaway + ["the chro role is evolving"], decisions: ["D", "d."],
+                               actionItems: ["[A] to x", "[a] to x"], people: ["Ann", "ann", "Bo"])
+        let d = notes.deduplicated()
+        #expect(d.keyPoints == ["The CHRO role is evolving."])
+        #expect(d.decisions == ["D"])
+        #expect(d.actionItems == ["[A] to x"])
+        #expect(d.people == ["Ann", "Bo"])
+    }
+
+    @Test func deduplicatedKeepsDistinctItemsInOrder() {
+        let notes = ChunkNotes(keyPoints: ["c", "a", "b"], decisions: ["2", "1"], actionItems: ["[Z] z", "[Y] y"], people: ["Bo", "Ann"])
+        #expect(notes.deduplicated() == notes)
+    }
+
     @Test func reduceInputIsOrderedAndLabelled() {
         let notes = [ChunkNotes(keyPoints: ["first"], decisions: ["d1"], actionItems: [], people: ["Ann"]),
                      ChunkNotes(keyPoints: ["second"], decisions: [], actionItems: ["[Bo] to x"], people: [])]

@@ -311,9 +311,12 @@ actor MLXInsightsService {
         onDelta: @escaping @Sendable (String) -> Void
     ) async throws -> String {
         do {
-            return try await GuidedJSONGenerator.generate(
+            let output = try await GuidedJSONGenerator.generate(
                 system: system, user: user, schema: InsightsSchema.unified,
+                maxTokens: GemmaGenerationConfig.maxOutputTokens,
                 container: container, onDelta: onDelta)
+            if output.closedAtCap { Self.diagnostic("Gemma insights closed at output cap") }
+            return output.json
         } catch let failure as GuidedJSONGenerator.FailedBeforeOutput {
             Logger.ai.warning("Guided generation unavailable, falling back to free text: \(String(describing: failure.underlying))")
             if Task.isCancelled { throw CancellationError() }
@@ -384,11 +387,14 @@ actor MLXInsightsService {
             // Decisions, action items and people are never trimmed, so they alone can exceed it.
             Logger.ai.warning("Gemma reduce input is \(notesTokens) tokens, over the \(GemmaGenerationConfig.reduceInputTokenBudget)-token budget")
         }
-        let reduceJSON = try await GuidedJSONGenerator.generate(
+        let reduceOutput = try await GuidedJSONGenerator.generate(
             system: UnifiedInsightsPrompt.reduceSystemPrompt(
                 outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
             user: UnifiedInsightsPrompt.reduceUserPrompt(context: context, notes: notesText),
-            schema: InsightsSchema.reduce, container: container)
+            schema: InsightsSchema.reduce, maxTokens: GemmaGenerationConfig.reduceMaxTokens,
+            container: container)
+        if reduceOutput.closedAtCap { Self.diagnostic("Gemma reduce closed at output cap") }
+        let reduceJSON = reduceOutput.json
         try Task.checkCancellation()
         let reduced = try JSONDecoder().decode(ReduceOutput.self, from: Data(reduceJSON.utf8))
         let result = LocalInsightsResult(
@@ -400,27 +406,56 @@ actor MLXInsightsService {
         return json
     }
 
-    /// One retry: guided output always parses, so a failure here is transient
-    /// (e.g. memory pressure). A second failure fails the analysis loudly rather
-    /// than silently omitting a part.
+    /// Notes for one part. On any non-cancellation failure the part is re-planned
+    /// into halves (greedy decoding would make an identical retry fail identically)
+    /// and each half is mapped once; a failing half fails the analysis loudly, so a
+    /// part is never silently omitted.
     private func mapPart(_ part: TranscriptChunk, system: String, context: String,
                          container: ModelContainer) async throws -> ChunkNotes {
-        let user = UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part)
-        var lastError: Error?
-        for _ in 0..<2 {
-            try Task.checkCancellation()
-            do {
-                let json = try await GuidedJSONGenerator.generate(
-                    system: system, user: user, schema: InsightsSchema.chunkNotes, container: container)
-                return try JSONDecoder().decode(ChunkNotes.self, from: Data(json.utf8))
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                lastError = error
-                Logger.ai.warning("Gemma part \(part.index)/\(part.total) failed: \(String(describing: error))")
-            }
+        do {
+            return try await mapOnce(part, system: system, context: context, container: container)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Self.diagnostic("Gemma part \(part.index) split after failure: \(error)")
         }
-        throw lastError ?? CancellationError()
+        let text = part.text
+        let halves = await container.perform { ctx in
+            let count: (String) -> Int = { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count }
+            // Half of this part's own size, so even a short (last) part really splits.
+            let half = max(1_000, (min(count(text), GemmaGenerationConfig.chunkTokenBudget) + 1) / 2)
+            return TranscriptChunkPlanner.plan(text, maxTokensPerChunk: half, overlapLines: 0, countTokens: count)
+        }
+        var merged = ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: [])
+        for half in halves {
+            try Task.checkCancellation()
+            let notes = try await mapOnce(
+                TranscriptChunk(index: part.index, total: part.total, text: half.text),
+                system: system, context: context, container: container)
+            merged.keyPoints += notes.keyPoints
+            merged.decisions += notes.decisions
+            merged.actionItems += notes.actionItems
+            merged.people += notes.people
+        }
+        return merged.deduplicated()
+    }
+
+    private func mapOnce(_ part: TranscriptChunk, system: String, context: String,
+                         container: ModelContainer) async throws -> ChunkNotes {
+        try Task.checkCancellation()
+        let output = try await GuidedJSONGenerator.generate(
+            system: system, user: UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part),
+            schema: InsightsSchema.chunkNotes, maxTokens: GemmaGenerationConfig.chunkNotesMaxTokens,
+            container: container)
+        if output.closedAtCap { Self.diagnostic("Gemma part \(part.index) closed at output cap") }
+        return try JSONDecoder().decode(ChunkNotes.self, from: Data(output.json.utf8)).deduplicated()
+    }
+
+    /// Map-reduce diagnostics: unified log plus stderr, so the eval harness sees them.
+    /// Messages carry counts and error names only, never transcript text.
+    private nonisolated static func diagnostic(_ message: String) {
+        Logger.ai.warning("\(message, privacy: .public)")
+        FileHandle.standardError.write(Data("dBriefMLHost: \(message)\n".utf8))
     }
 
     private struct ReduceOutput: Decodable {

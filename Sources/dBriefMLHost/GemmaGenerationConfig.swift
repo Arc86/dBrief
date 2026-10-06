@@ -12,7 +12,17 @@ enum GemmaGenerationConfig {
         strategy: .turboQuant(.balanced),
         compatibility: .allowPartial)
 
+    /// Output cap for the single-pass unified insights call.
     static let maxOutputTokens = 8192
+    /// Output caps for map-reduce: notes for one ~10K-token part, and the final reduce.
+    static let chunkNotesMaxTokens = 2048
+    static let reduceMaxTokens = 4096
+
+    /// Guided closure zones, floors on top of `CompletionReserve.estimate`. The hard
+    /// zone must fit closing a mid-list string plus every remaining required key; at
+    /// 32 tokens a runaway list hit the cap unclosed and threw `incompleteOutput`.
+    static let minCompletionReserve = 512
+    static let minHardReserve = 192
 
     // Long-transcript strategy (Task 7). Token counts from Gemma's own tokenizer.
     static let singlePassTokenBudget = 24_000
