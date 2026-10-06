@@ -18,16 +18,20 @@ Open a recording in the [transcript viewer](../history/transcript-viewer.md) and
 
 After you save it, the button changes to **Play Spoken**. It replays the saved audio without generating it again.
 
-## Choosing a voice
+## Choosing a language and voice
 
-Voices are configured in **Settings → Spoken Summary**. Pick a **voice engine** first:
+Spoken summaries are configured in **Settings → Spoken Summary**. Pick a **voice engine** first:
 
-- **Kokoro** (default) — fast, on-device, and **English-only**. A single natural voice ("Heart"). Best if your summaries are in English.
-- **Qwen3** — multilingual, with a choice of **9 voices** and **10 languages**, plus an editable voice-style instruction (calm, measured, etc.). The 1.7B model sounds the most natural and follows the style instruction; the 0.6B model is lighter on memory. (Qwen3 requires macOS 26 or later.)
+- **Kokoro** (default) — fast and on-device. Speaks **English, Spanish, French, and Japanese**, with 28 English voices (American and British; "Heart" is the default), 3 Spanish, 1 French, and 5 Japanese.
+- **Qwen3** — speaks **10 languages** with a choice of **9 voices**, plus an editable voice-style instruction (calm, measured, etc.). The 1.7B model sounds the most natural and follows the style instruction; the 0.6B model is lighter on memory. (Qwen3 requires macOS 26 or later.)
 
-Use the **Preview voice** button to audition the current voice with a short sample before committing.
+Then choose a **Language**. It sets both the language the AI writes the briefing in and the language it's spoken in, whatever language the meeting was held in. The list shows the languages your voice engine speaks. If you switch to an engine that doesn't speak your chosen language, dBrief uses English and says so under the picker.
 
-> **Language note:** Multi-language TTS support is still limited, so by default the spoken script is written in **English** regardless of the meeting's language. Power users can edit the Spoken Summary prompt under Settings → Spoken Summary to change this.
+With Kokoro, the voice list shows only the voices for the chosen language, and changing the language moves you to that language's default voice. English voices download the first time you use them (about 510 KB each). Japanese uses its own voice model (about 217 MB), also downloaded on first use. After that, everything works offline. British voices currently use US pronunciation rules.
+
+Use the **Preview voice** button to hear the current voice speak a short sample in the chosen language.
+
+Power users can also edit the prompt that writes the spoken script under **Settings → Spoken Summary**. dBrief adds the language instruction to your prompt automatically, so a custom prompt still follows the **Language** setting.
 
 ## Which AI engine writes the script
 

@@ -37,7 +37,7 @@ Locally built apps aren't quarantined, so there's no Gatekeeper step.
 
 dBrief updates itself in-app via [Sparkle](https://sparkle-project.org), so you don't have to watch the releases page.
 
-- **Automatic checks** — by default, dBrief checks once when it launches (at most once a day). It stays quiet unless a newer version exists. You can turn this off in **Settings → General → Software update**.
+- **Automatic checks** — by default, dBrief checks for updates every 12 hours while it's running, so fixes reach you within about half a day. It stays quiet unless a newer version exists. You can turn this off in **Settings → General → Software update**.
 - **Check manually** — open **Settings → General → Software update** and click **Check Now**. The last-checked time is shown there.
 - **One-click install** — when a newer version is available, dBrief offers to download and install it for you, verifies the signed download, and relaunches into the new version — no Gatekeeper prompt, no manual re-download.
 

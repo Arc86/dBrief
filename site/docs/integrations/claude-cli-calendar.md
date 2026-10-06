@@ -45,12 +45,13 @@ Calendar calls are independent of AI analysis settings:
 
 - **Model**: Claude default (recommended), Haiku, Sonnet, or a custom model ID.
 - **Timeout**: 30–300 seconds per CLI invocation (default 90) — one call covers all connector pages plus structured output.
-- **Advanced command**: leave empty to use the managed command; custom commands must not redeclare output/tool flags.
+- **Claude launcher** (Advanced): replaces only the `claude` program in the managed command, for example `cswap run 1 --` to fetch the calendar with a different Claude account. dBrief still adds its own output and tool-allowlist flags after it, so the read-only boundary described above stays the same. A launcher must not add those flags itself.
+- **CLI command** (Advanced): replaces the whole managed command. Leave it empty to use the managed command; a custom command must not redeclare output/tool flags. When a CLI command is set, the launcher is ignored.
 
 ## Offline and account switching
 
 - **Offline / CLI unavailable**: cached day lists remain readable, marked by their last successful refresh. Nothing is lost; refreshes fail softly.
-- **Switching Claude accounts**: the connector login isn't observable offline. Clear the cache and re-run **Test connection** after switching accounts so stale data from the old mailbox can't be presented.
+- **Switching Claude accounts**: the connector login isn't observable offline. Clear the cache and re-run **Test connection** after switching accounts (or changing the **Claude launcher**) so stale data from the old mailbox can't be presented.
 - **Clear cache** removes cached day lists and rosters. Metadata already attached to saved recordings is untouched.
 
 ## Privacy receipt

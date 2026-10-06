@@ -39,7 +39,7 @@ the automatic limit to 4,096; an explicit override stays in place until cleared.
 
 | Provider and model | dBrief default | Published output limit |
 |---|---:|---:|
-| Anthropic / Claude Sonnet 4.6 | 16,384 | [128K](https://platform.claude.com/docs/en/models/sonnet-4-6/overview) |
+| Anthropic / Claude Sonnet 5.5 | 16,384 | [128K](https://platform.claude.com/docs/en/models/sonnet-5-5/overview) |
 | Google / Gemini 2.5 Flash | 16,384 | [65,536](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash) |
 | OpenAI / GPT-4o | 16,384 | [16,384](https://developers.openai.com/api/docs/models/gpt-4o) |
 | Groq / Llama 3.3 70B Versatile | 16,384 | [32,768](https://console.groq.com/docs/model/llama-3.3-70b-versatile) |
@@ -47,11 +47,15 @@ the automatic limit to 4,096; an explicit override stays in place until cleared.
 | OpenRouter / z-ai/glm-5.3-flash | 16,384 | [131,072](https://openrouter.ai/z-ai/glm-5.3-flash) |
 | Unknown provider/model | 4,096 | Not assumed |
 
-Provider documentation checked on September 17, 2026. The dBrief default is an
+Provider documentation checked on October 6, 2026 (Anthropic) and September 17, 2026 (others). The dBrief default is an
 application allowance, not necessarily the model's maximum. A larger allowance can
 prevent truncation, but longer generated answers can take more time and cost more.
 The request timeout scales with the allowance: at least 2 minutes, 10 minutes at
 16,384 tokens, and at most 30 minutes. Providers still enforce their own limits.
+
+## Claude models
+
+The Anthropic preset uses **Claude Sonnet 5.5** by default. Newer Claude models (Sonnet 5 and later, Opus 4.7 and later, and Fable) reject custom sampling settings such as `temperature`, so dBrief only sends a temperature to older Claude models that accept it. You don't need to change anything when switching between Claude models.
 
 ## Reasoning models
 

@@ -33,11 +33,14 @@ If a recording wasn't diarized during transcription — or you want to try again
 
 By default, dBrief labels confident voice matches and gets straight on with the AI analysis. If you'd rather check who's who first, switch the **speaker recognition mode** to *confirm first* in [Settings → Transcription](../transcription/transcription-overview.md).
 
-In that mode, once a recording (or a re-run of **Detect Speakers**) has been diarized, dBrief pops up a short **speaker review**:
+In that mode, once a recording (or a re-run of **Detect Speakers**) has been diarized, dBrief opens a **Who's speaking?** review:
 
-- One card per voice, each with a snippet you can **play** to hear who it is.
-- Suggested names from your [Voice Library](voice-library.md) when there's a likely match.
-- Edit any name, then **Confirm** — the corrected names flow into the summary, action items, and the exported note. **Cancel** keeps dBrief's best guess.
+- The review lists the **detected speakers**. Choose one to review it, and play its voice sample to hear who it is.
+- Name the voice from the **meeting participants** (the attendees of the matching calendar event), from your [Voice Library](voice-library.md), or with **Search meeting & library**, which finds people by name or company. Likely Voice Library matches are suggested.
+- Not on either list? Choose **Enter a name manually**. Or choose **Keep as Speaker N** to leave the voice unnamed.
+- A counter shows how many speakers you've reviewed. When you're done, click **Confirm speakers** — the names flow into the summary, action items, and the exported note. **Cancel** keeps dBrief's best guess.
+
+Naming a speaker yourself, or keeping them unnamed, clears any identity the Voice Library had suggested for that voice.
 
 ## Renaming speakers
 

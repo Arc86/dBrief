@@ -41,7 +41,8 @@ action items, tags, and sentiment for a recording.
 
 Below the model cards, **Recent Transcriptions** lists your individual recent
 recordings (newest first) so you can confirm whether a particular one was actually
-slow — not just how the model averages out.
+slow — not just how the model averages out. Re-transcribing a saved recording also
+adds a row here.
 
 Each row collapses to the recording's title, date, the **audio length**, a **speed
 badge** (⚡ fast, 🐢 slow) showing how far above or below real-time the transcription
@@ -73,8 +74,8 @@ selected range.
 ## Total transcribed by dBrief
 
 The header shows a running total — e.g. **"12h 34m transcribed by dBrief"** — of all
-the audio dBrief has turned into text on your Mac. This is a lifetime odometer: it
-only ever counts up.
+the audio dBrief has turned into text on your Mac, including re-transcriptions. This
+is a lifetime odometer: it only ever counts up.
 
 ## Clearing stats
 
