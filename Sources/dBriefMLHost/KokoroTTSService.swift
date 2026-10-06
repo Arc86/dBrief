@@ -40,14 +40,8 @@ final class KokoroTTSService: @unchecked Sendable {
         }
         let voiceID = voice?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedVoice = (voiceID?.isEmpty ?? true) ? KokoroAneConstants.defaultVoice : voiceID!
+        // Japanese has its own text frontend since FluidAudio 0.17 (plain text in).
         let variant = Self.variant(for: resolvedVoice)
-
-        guard variant != .japanese else {
-            // The Japanese KokoroAne variant ships no text→IPA frontend
-            // (synthesizeDetailed/phonemes(for:) throw); it needs pre-computed
-            // IPA. We don't offer Japanese voices, but guard defensively.
-            throw WireError(kind: .generic, message: "Kokoro: Japanese voices are not supported.")
-        }
 
         if variant == .english {
             guard let selectedVoice = KokoroVoice(rawValue: resolvedVoice) else {
@@ -187,11 +181,14 @@ final class KokoroTTSService: @unchecked Sendable {
 
     // MARK: - Loading
 
-    /// Maps a Kokoro voice id to its KokoroAne variant by id prefix
-    /// (`zf_`/`zm_` → Mandarin, `jf_`/`jm_` → Japanese, else English).
-    private static func variant(for voice: String) -> KokoroAneVariant {
+    /// Maps a Kokoro voice id to its KokoroAne variant by id prefix, so each voice
+    /// gets its own language's pronunciation frontend (`ef_`/`em_` → Spanish,
+    /// `ff_` → French, `jf_`/`jm_` → Japanese, `zf_`/`zm_` → Mandarin, else English).
+    static func variant(for voice: String) -> KokoroAneVariant {
         let prefix = voice.prefix(2).lowercased()
         switch prefix {
+        case "ef", "em": return .spanish
+        case "ff": return .french
         case "zf", "zm": return .mandarin
         case "jf", "jm": return .japanese
         default: return .english

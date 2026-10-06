@@ -26,6 +26,8 @@ struct PromptPreviewRequest: Equatable, Sendable {
     let summaryGuidance: String
     let actionItemsGuidance: String
     let tagsGuidance: String
+    /// Language the spoken-summary preview is written in, matching real generation.
+    var spokenSummaryLanguage: TTSLanguage = .english
 
     var guidance: InsightsGuidance {
         .init(summary: identity.kind == .summary ? draftText : summaryGuidance,

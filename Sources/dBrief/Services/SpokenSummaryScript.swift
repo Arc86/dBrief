@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 /// Strips markdown / list / emphasis artifacts from an AI-generated script and
 /// normalizes punctuation so the text-to-speech engine reads clean, fluent
@@ -68,5 +69,14 @@ enum SpokenSummaryScript {
             return true
         }
         return String(String.UnicodeScalarView(scalars))
+    }
+}
+
+/// Builds the spoken-summary rewrite prompt. The language instruction goes last, after
+/// the user's (possibly customized) prompt, so the chosen language always applies.
+enum SpokenSummaryPrompt {
+    static func systemPrompt(base: String, language: TTSLanguage) -> String {
+        base.trimmingCharacters(in: .whitespacesAndNewlines)
+            + "\n\nWrite the spoken briefing in \(language.displayName), regardless of the language of the input."
     }
 }

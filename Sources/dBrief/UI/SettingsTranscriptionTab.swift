@@ -14,7 +14,11 @@ struct SettingsTranscriptionTab: View {
     @State private var availableModels: [String] = []
     @State private var isLoadingModels = false
     @State private var purgeMessage: String?
-    @State private var whisperModels: [WhisperModelInfo] = []
+    // Start from the built-in list so the model card (and its change-model button,
+    // which also picks Parakeet / Apple Speech) never waits on the network.
+    private static let offlineWhisperModels = WhisperModelInfo.fallbackModelNames
+        .map { WhisperModelInfo.parse($0) }.sorted()
+    @State private var whisperModels: [WhisperModelInfo] = Self.offlineWhisperModels
     @State private var isFetchingWhisperModels = false
     @State private var whisperModelFetchError: String?
     @State private var showWhisperComparison = false
@@ -37,8 +41,7 @@ struct SettingsTranscriptionTab: View {
         Task {
             let modelNames = await recordingManager.fetchAvailableWhisperModels()
             if modelNames.isEmpty {
-                whisperModels = WhisperModelInfo.fallbackModelNames
-                    .map { WhisperModelInfo.parse($0) }.sorted()
+                whisperModels = Self.offlineWhisperModels
                 whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
             } else {
                 whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
@@ -77,7 +80,7 @@ struct SettingsTranscriptionTab: View {
             }
             .settingsFormStyle()
             .sheet(isPresented: $showWhisperComparison) {
-                WhisperModelPicker(modelIDs: whisperModels.isEmpty ? WhisperModelInfo.fallbackModelNames : whisperModels.map(\.id),
+                WhisperModelPicker(modelIDs: whisperModels.map(\.id),
                     selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
                         whisper: appSettings.whisperModelName, parakeet: appSettings.parakeetModelVariant),
                     language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in
@@ -224,20 +227,9 @@ struct SettingsTranscriptionTab: View {
             }
 
             // — Model card —
-            if isFetchingWhisperModels && whisperModels.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading models…").uiFont(.caption).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .secondarySystemFill)))
-            } else {
-                TranscriptionModelCard(modelID: settings.whisperModelName,
-                                       onChangeModel: { showWhisperComparison = true }) {
-                    ModelDownloadButton(kind: .whisper, compact: true)
-                }
+            TranscriptionModelCard(modelID: settings.whisperModelName,
+                                   onChangeModel: { showWhisperComparison = true }) {
+                ModelDownloadButton(kind: .whisper, compact: true)
             }
 
             HStack {
