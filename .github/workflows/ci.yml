@@ -18,6 +18,12 @@ jobs:
     name: Test and package beta
     runs-on: macos-26
     timeout-minutes: 90
+    env:
+      # These suites await async work against wall-clock deadlines. Run alongside
+      # the full suite on the 3-core runner, blocking disk I/O in other tests
+      # saturates the cooperative pool and starves them past their deadlines, so
+      # they get a separate, near-idle pass of their own.
+      TIMING_SENSITIVE: "\\.(CaptureCoordinatorTests|FFmpegProcessRunnerTests|LibraryIndexTests|LibraryModelSmartViewTests|LibrarySmartFactsTests|LocalCLIServiceTests|PrivacyHTTPTraceTests|ReprocessingManagerTests|TranscribeRetryTests|TranscriptChatCancellationTests)\\b"
 
     steps:
       - name: Check out repository
@@ -32,7 +38,10 @@ jobs:
       - name: Run test suite
         run: |
           python3 scripts/test_beta_build.py
-          swift test
+          swift test --skip "$TIMING_SENSITIVE"
+
+      - name: Run timing-sensitive tests
+        run: swift test --filter "$TIMING_SENSITIVE"
 
       - name: Assemble beta app
         run: make beta CODESIGN_IDENTITY=-
