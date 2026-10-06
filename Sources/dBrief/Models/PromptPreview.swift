@@ -65,7 +65,7 @@ enum PromptPreviewError: Error, LocalizedError, Equatable {
         let contextMessages: Set<String> = [
             AIServiceError.contextWindowExceeded.localizedDescription,
             PromptAIError.contextLimit.localizedDescription,
-            "The transcript is too long for Apple Intelligence. Try a shorter recording or a different AI engine."
+            "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."
         ]
         if contextMessages.contains(message) { return .contextLimit }
         return .analysisFailure(SettingsErrorSanitizer.details(for: message))

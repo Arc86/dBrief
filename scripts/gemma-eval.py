@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Needle-recall eval for local Gemma insights.
+"""Needle-recall eval for local Gemma (and Apple Intelligence) insights.
 
 Usage: scripts/gemma-eval.py <transcript.txt> [--app dBrief-Beta.app] [--label baseline]
+                             [--engine gemma|apple]
 
 Plants 3 unique facts at 10% / 50% / 90% of the transcript's lines, runs the
 helper's --eval-insights mode, and reports recall per position, a repetition ratio,
 elapsed time and peak MLX memory. Appends one line per run to
 docs/diagnostics/gemma-eval.jsonl so phases can be compared.
+
+--engine apple runs the in-process Apple Intelligence analysis through the env-gated
+AppleAnalysisEvalTests (`swift test`), from the repository root. A run that fails is
+logged as a row with an `error` field and 0/3 recall.
 """
 import argparse, json, os, re, subprocess, sys, tempfile, datetime
 
@@ -35,22 +40,12 @@ def summary_complete(summary):
     s = summary.strip()
     return bool(s) and s[-1] in ".!?…)]'’”\""
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("transcript"); p.add_argument("--app", default="dBrief-Beta.app")
-    p.add_argument("--label", default="run"); p.add_argument("--language", default="match")
-    a = p.parse_args()
+def run_gemma(a, transcript_path):
+    """Returns (report, diagnostics_text) from the helper's --eval-insights mode."""
     base = os.path.expanduser("~/Library/Application Support/com.dbrief.app.beta/LocalAIPlugin")
-    with open(a.transcript) as f:
-        planted = plant(f.read())
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
-        tmp.write(planted)
     helper = os.path.join(a.app, "Contents/MacOS/dBriefMLHost")
-    try:
-        out = subprocess.run([helper, "--support-base", base, "--eval-insights", tmp.name, "--language", a.language],
-                             capture_output=True, text=True)
-    finally:
-        os.unlink(tmp.name)  # planted transcript holds private content
+    out = subprocess.run([helper, "--support-base", base, "--eval-insights", transcript_path, "--language", a.language],
+                         capture_output=True, text=True)
     if out.returncode != 0 or not out.stdout.strip():
         print(f"helper failed, return code {out.returncode}")
         print("\n".join(l for l in out.stdout.splitlines() if l.startswith('{"error"')))
@@ -62,27 +57,62 @@ def main():
         print("helper produced no JSON report on stdout")
         print("\n".join(out.stderr.splitlines()[-20:]))
         sys.exit(1)
-    last = json_lines[-1]
-    report = json.loads(last)
+    report = json.loads(json_lines[-1])
     if "error" in report:
         print(report["error"]); sys.exit(1)
+    return report, out.stderr
+
+def run_apple(a, transcript_path):
+    """Returns (report, diagnostics_text) from AppleAnalysisEvalTests via `swift test`."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, DBRIEF_APPLE_EVAL="1", DBRIEF_EVAL_TRANSCRIPT=transcript_path)
+    out = subprocess.run(["swift", "test", "--filter", "AppleAnalysisEvalTests"],
+                         cwd=repo, env=env, capture_output=True, text=True)
+    combined = out.stdout + "\n" + out.stderr
+    lines = [l for l in combined.splitlines() if l.startswith("APPLE_ANALYSIS ")]
+    if not lines:
+        print(f"swift test produced no APPLE_ANALYSIS report, return code {out.returncode}")
+        print("\n".join(combined.splitlines()[-30:]))
+        sys.exit(1)
+    report = json.loads(lines[-1][len("APPLE_ANALYSIS "):])
+    report.setdefault("peak_memory_mb", None)
+    return report, combined
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("transcript"); p.add_argument("--app", default="dBrief-Beta.app")
+    p.add_argument("--label", default="run"); p.add_argument("--language", default="match")
+    p.add_argument("--engine", choices=["gemma", "apple"], default="gemma")
+    a = p.parse_args()
+    with open(a.transcript) as f:
+        planted = plant(f.read())
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
+        tmp.write(planted)
+    try:
+        report, diagnostics = (run_apple if a.engine == "apple" else run_gemma)(a, tmp.name)
+    finally:
+        os.unlink(tmp.name)  # planted transcript holds private content
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results_dir = os.path.expanduser("~/gemma-eval/results")
     os.makedirs(results_dir, exist_ok=True)
     name = f"{a.label}-{os.path.splitext(os.path.basename(a.transcript))[0]}-{stamp}.json"
     with open(os.path.join(results_dir, name), "w") as f:
-        f.write(last + "\n")
-    r = report["result"]
-    haystack = "\n".join([r.get("title_concept", ""), r["summary"], *r["action_items"], *r.get("tags", [])]).lower()
-    recall = {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES}
+        f.write(json.dumps(report) + "\n")
     # Map-reduce path: the eval harness prints each `analyzingPart` state to stderr.
-    parts = re.findall(r"analyzingPart\(index: \d+, total: (\d+)\)", out.stderr)
+    parts = re.findall(r"analyzingPart\(index: \d+, total: (\d+)\)", diagnostics)
     path = f"map-reduce ({parts[0]} parts)" if parts else "single-pass"
-    row = {"label": a.label, "date": datetime.date.today().isoformat(), "input_chars": report["input_chars"],
-           "elapsed_s": round(report["elapsed_s"], 1), "peak_memory_mb": report["peak_memory_mb"],
-           "recall": recall, "repetition": round(repetition_ratio(r["summary"]), 3),
-           "path": path, "action_items": len(r["action_items"]),
-           "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])}
+    row = {"label": a.label, "engine": a.engine, "date": datetime.date.today().isoformat(),
+           "input_chars": report["input_chars"], "elapsed_s": round(report["elapsed_s"], 1),
+           "peak_memory_mb": report.get("peak_memory_mb"), "path": path}
+    if "error" in report:  # Apple only: a failed run scores 0/3
+        row.update({"recall": {f"{int(frac*100)}%": False for frac, _, _ in NEEDLES}, "error": report["error"],
+                    "action_items": 0, "summary_chars": 0, "summary_complete": False})
+    else:
+        r = report["result"]
+        haystack = "\n".join([r.get("title_concept", ""), r["summary"], *r["action_items"], *r.get("tags", [])]).lower()
+        row.update({"recall": {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES},
+                    "repetition": round(repetition_ratio(r["summary"]), 3), "action_items": len(r["action_items"]),
+                    "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])})
     print(json.dumps(row, indent=2))
     os.makedirs("docs/diagnostics", exist_ok=True)
     with open("docs/diagnostics/gemma-eval.jsonl", "a") as log:

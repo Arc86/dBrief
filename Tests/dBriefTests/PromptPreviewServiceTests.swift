@@ -47,7 +47,7 @@ extension PromptPreviewServiceTests {
     @Test func preservesKnownContextErrorsAfterPipelineFlattensThem() async {
         let messages = [AIServiceError.contextWindowExceeded.localizedDescription,
                         PromptAIError.contextLimit.localizedDescription,
-                        "The transcript is too long for Apple Intelligence. Try a shorter recording or a different AI engine."]
+                        "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."]
         for message in messages {
             let service = PromptPreviewService(backends: .init(unified: { _ in throw PreviewBackendError(message: message) }), completion: PreviewCompletion())
             await #expect(throws: PromptPreviewError.contextLimit) { try await service.run(request()) }

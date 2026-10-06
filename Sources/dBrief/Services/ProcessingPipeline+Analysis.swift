@@ -85,7 +85,8 @@ extension ProcessingPipeline {
                       }
                       #if canImport(FoundationModels)
                       if #available(macOS 26, *) {
-                          return try await LocalAIService().analyzeTranscript(input.augmentedTranscription, outputLanguage: input.outputLanguage,
+                          return try await LocalAIService().analyzeTranscript(input.transcription, context: input.context,
+                              outputLanguage: input.outputLanguage,
                               customVocabulary: input.vocabulary, summaryGuidance: input.guidance.summary,
                               actionItemsGuidance: input.guidance.actionItems, tagsGuidance: input.guidance.tags)
                       }

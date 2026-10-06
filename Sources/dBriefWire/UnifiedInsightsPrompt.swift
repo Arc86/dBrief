@@ -236,13 +236,15 @@ public enum UnifiedInsightsPrompt {
         """
     }
 
+    /// `forGuidedGeneration` omits the JSON-format paragraph: Apple Intelligence's
+    /// `@Generable` schema defines the shape instead.
     public static func reduceSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
-                                          guidance: InsightsGuidance?) -> String {
+                                          guidance: InsightsGuidance?, forGuidedGeneration: Bool = false) -> String {
         let summaryRule = Self.guidance(guidance?.summary)
             ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
         let tagsRule = Self.guidance(guidance?.tags)
             ?? "Provide 5-10 single words capturing the key topics discussed, and choose a sentiment of \"Positive\", \"Neutral\", or \"Negative\" based on the overall tone."
-        return """
+        let rules = """
         You are an expert Senior Executive Assistant. You receive notes taken from consecutive parts \
         of ONE long meeting, in order. Write the final meeting record from them.
 
@@ -254,9 +256,28 @@ public enum UnifiedInsightsPrompt {
         3. **TITLE CONCEPT:** A short, 3-6 word descriptive title concept.
         4. **TAGS & SENTIMENT:** \(tagsRule)
         \(vocabularyBlock(customVocabulary))
+        """
+        if forGuidedGeneration { return rules }
+        return rules + """
+
         Respond with a single JSON object with the keys "title_concept", "summary", "tags" and "sentiment". \
         Put any headings, bullets or line breaks the SUMMARY rule asks for inside the "summary" string (use "\\n"). \
         Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
+        """
+    }
+
+    /// Merges the notes of several consecutive parts into one shorter set (Apple
+    /// Intelligence hierarchical reduce, when all notes don't fit its window at once).
+    public static func condenseNotesSystemPrompt(outputLanguage: OutputLanguage) -> String {
+        """
+        You merge notes taken from consecutive parts of ONE meeting into a single, shorter set of notes.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        1. Keep every decision.
+        2. Keep specific names, numbers, products and deadlines.
+        3. Remove only repetition between parts; never invent.
         """
     }
 
