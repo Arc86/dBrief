@@ -32,9 +32,6 @@ jobs:
       - name: Run test suite
         run: |
           python3 scripts/test_beta_build.py
-          # TEMP diagnostic: sample the test process during its stall.
-          ( for i in $(seq 1 3000); do pid=$(pgrep -f swiftpm-testing-helper | head -1); [ -n "$pid" ] && break; sleep 0.5; done
-            for t in 15 20; do sleep $t; echo "=== SAMPLE pid=$pid"; sample "$pid" 3 -mayDie 2>&1 | head -2500; done ) &
           swift test
 
       - name: Assemble beta app
