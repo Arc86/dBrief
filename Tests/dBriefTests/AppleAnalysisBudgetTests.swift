@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import dBriefWire
 
@@ -52,5 +53,21 @@ import dBriefWire
     @Test func condensePromptKeepsDecisionsAndLanguage() {
         let p = UnifiedInsightsPrompt.condenseNotesSystemPrompt(outputLanguage: .dutch)
         #expect(p.contains("DUTCH") && p.contains("decision"))
+    }
+}
+
+@Suite struct EvalNotesDumpTests {
+    @Test func doesNotWriteWithoutEvalMode() throws {
+        let path = NSTemporaryDirectory() + "dump-\(UUID().uuidString).json"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let saved = EvalNotesDump.evalModeEnabled
+        defer { EvalNotesDump.evalModeEnabled = saved }
+        let notes = [ChunkNotes(keyPoints: ["a"], decisions: [], actionItems: [], people: [])]
+        EvalNotesDump.evalModeEnabled = false
+        EvalNotesDump.write(notes, environment: ["DBRIEF_EVAL_NOTES_DUMP": path])
+        #expect(!FileManager.default.fileExists(atPath: path))
+        EvalNotesDump.evalModeEnabled = true
+        EvalNotesDump.write(notes, environment: ["DBRIEF_EVAL_NOTES_DUMP": path])
+        #expect(FileManager.default.fileExists(atPath: path))
     }
 }

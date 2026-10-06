@@ -14,8 +14,7 @@ import MLXLMCommon
 
     @Test func budgetsAreOrdered() {
         #expect(GemmaGenerationConfig.chunkTokenBudget < GemmaGenerationConfig.singlePassTokenBudget)
-        // The reduce prompt may exceed the (eval-tuned, small) single-pass threshold, but must stay
-        // within the ~24K-token inputs Gemma was already handling comfortably.
-        #expect(GemmaGenerationConfig.reduceInputTokenBudget <= 24_000)
+        // The reduce prompt may exceed the small eval-tuned single-pass threshold, but not the model's prompt limit.
+        #expect(GemmaGenerationConfig.reduceInputTokenBudget <= GemmaGenerationConfig.maxPromptTokens)
     }
 }

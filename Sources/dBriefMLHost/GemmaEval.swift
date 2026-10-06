@@ -11,6 +11,7 @@ enum GemmaEval {
             guard let l = args.firstIndex(of: "--language"), l + 1 < args.count else { return .matchInput }
             switch args[l + 1] { case "en": return .english; case "nl": return .dutch; default: return .matchInput }
         }()
+        EvalNotesDump.evalModeEnabled = true
         do {
             let text = try String(contentsOfFile: args[i + 1], encoding: .utf8)
             let service = MLXInsightsService(stateHandler: { state in

@@ -106,11 +106,13 @@ def main():
     dump_path = os.path.join(tempfile.gettempdir(), f"dbrief-notes-dump-{os.getpid()}.json")
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
         tmp.write(planted)
+    hits = None
     try:
         os.environ["DBRIEF_EVAL_NOTES_DUMP"] = dump_path
         report, diagnostics = (run_apple if a.engine == "apple" else run_gemma)(a, tmp.name)
     finally:
         os.unlink(tmp.name)  # planted transcript holds private content
+        hits = part_hits(dump_path)  # also deletes the dump, even if the run failed or exited
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results_dir = os.path.expanduser("~/gemma-eval/results")
     os.makedirs(results_dir, exist_ok=True)
@@ -132,7 +134,6 @@ def main():
         row.update({"recall": {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES},
                     "repetition": round(repetition_ratio(r["summary"]), 3), "action_items": len(r["action_items"]),
                     "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])})
-    hits = part_hits(dump_path)
     if hits is not None:
         row["part_hits"] = hits
     print(json.dumps(row, indent=2))

@@ -13,6 +13,7 @@ import dBriefWire
         guard #available(macOS 26, *) else { return }
         let path = try #require(ProcessInfo.processInfo.environment["DBRIEF_EVAL_TRANSCRIPT"])
         let text = try String(contentsOfFile: path, encoding: .utf8)
+        EvalNotesDump.evalModeEnabled = true
         let start = ContinuousClock.now
         var report: [String: Any] = ["input_chars": text.count]
         // Map-reduce marker for the eval script: one stderr line per part state.

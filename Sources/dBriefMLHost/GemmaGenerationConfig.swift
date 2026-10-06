@@ -30,6 +30,9 @@ enum GemmaGenerationConfig {
     // on ~55K tokens 10K parts recalled 1/3 in 401 s, 6K parts 1/3 in 667 s, 4K parts 2/3 in 679 s.
     static let singlePassTokenBudget = 8_000
     static let chunkTokenBudget = 4_000
+    /// Largest prompt Gemma handled comfortably in the earlier single-pass eval; the
+    /// reduce prompt (notes) must stay within it.
+    static let maxPromptTokens = 24_000
     static let reduceInputTokenBudget = 12_000
     static let chunkOverlapLines = 2
 }
