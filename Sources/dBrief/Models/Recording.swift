@@ -15,6 +15,8 @@ final class Recording: Identifiable {
     var tags: [String]?
     var sentiment: String?
     var analysisModelProvenance: AnalysisModelProvenance?
+    /// Raw per-part notes from map-reduce analysis (long recordings); persisted in the insights sidecar.
+    var partNotes: [ChunkNotes]?
     var generatedTitle: String?
     /// True when the user typed/kept a custom meeting title (not the default fallback and
     /// not the matched calendar event's title). When true, AI title generation is skipped so
@@ -98,6 +100,7 @@ final class Recording: Identifiable {
     /// Publish successful analysis fields and their generation origin together.
     /// Failure/progress/title events cannot relabel retained analysis content.
     func applyAnalysisField(_ event: ProcessingPipeline.AnalysisEvent, modelName: String?) {
+        if case .partNotes(let notes) = event { partNotes = notes; return }
         var provenance = analysisModelProvenance ?? .init()
         switch event {
         case .summary(let value):

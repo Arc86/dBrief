@@ -26,7 +26,8 @@ public enum LocalInsightsDecoder {
             summary: decoded.summary.trimmingCharacters(in: .whitespacesAndNewlines),
             actionItems: normalizedActionItems,
             tags: normalizedTags,
-            sentiment: normalizedSentiment
+            sentiment: normalizedSentiment,
+            partNotes: decoded.partNotes
         )
     }
 

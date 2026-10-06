@@ -247,7 +247,8 @@ actor LocalAIService {
         let actionItems = ChunkNotesMerger.mergedActionItems(notes)
         log.info("Apple Intelligence map-reduce complete: parts=\(parts.count) summaryLength=\(record.summary.count) actions=\(actionItems.count)")
         return LocalInsightsResult(titleConcept: record.titleConcept, summary: record.summary,
-                                   actionItems: actionItems, tags: record.tags, sentiment: record.sentiment)
+                                   actionItems: actionItems, tags: record.tags, sentiment: record.sentiment,
+                                   partNotes: notes) // raw per-part notes, not the condensed level
     }
 
     private struct FinalRecord { let summary: String, tags: [String], sentiment: String, titleConcept: String }

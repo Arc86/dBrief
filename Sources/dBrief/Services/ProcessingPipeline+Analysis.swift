@@ -60,10 +60,11 @@ extension ProcessingPipeline {
         var failures: [AnalysisField: String] = [:]
         var duration: TimeInterval?
         var modelDisplayName: String?
+        var partNotes: [ChunkNotes]?
     }
     enum AnalysisEvent: Sendable, Equatable {
         case summary(String), actionItems([String]), tags([String], String)
-        case titleConcept(String), failed(AnalysisField, String), liveText(String)
+        case titleConcept(String), partNotes([ChunkNotes]), failed(AnalysisField, String), liveText(String)
     }
     struct AnalysisBackends: Sendable {
         var summary: @Sendable (RemoteAnalysisRequest) async throws -> String = { _ in throw AIServiceError.invalidEndpoint }
@@ -202,6 +203,10 @@ extension ProcessingPipeline {
                 }
                 try await sendAnalysisEvent(.titleConcept(insights.titleConcept), to: onEvent)
                 output.titleConcept = insights.titleConcept
+                if let notes = insights.partNotes {
+                    try await sendAnalysisEvent(.partNotes(notes), to: onEvent)
+                    output.partNotes = notes
+                }
                 if request.fields.contains(.actionItems) {
                     try await sendAnalysisEvent(.actionItems(insights.actionItems), to: onEvent)
                     output.actionItems = insights.actionItems

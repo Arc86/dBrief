@@ -402,7 +402,8 @@ actor MLXInsightsService {
             titleConcept: reduced.titleConcept, summary: reduced.summary,
             // Decisions are not merged deterministically: they reach the final record only via the reduce summary.
             actionItems: ChunkNotesMerger.mergedActionItems(allNotes),
-            tags: reduced.tags, sentiment: reduced.sentiment)
+            tags: reduced.tags, sentiment: reduced.sentiment,
+            partNotes: allNotes) // raw (deduplicated) per-part notes, for Transcript Chat
         let json = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
         onDelta(json) // single document for the app's concatenating decoder
         return json

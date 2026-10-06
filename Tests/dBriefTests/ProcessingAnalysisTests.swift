@@ -89,6 +89,23 @@ struct ProcessingAnalysisTests {
         #expect(await events.values.contains(.liveText(json)))
     }
 
+    @Test func streamedPartNotesArePublishedAndReturned() async throws {
+        let events = Events()
+        let notes = [ChunkNotes(keyPoints: ["k"], decisions: [], actionItems: ["Do it"], people: ["A"])]
+        let withNotes = LocalInsightsResult(titleConcept: unified.titleConcept, summary: unified.summary,
+            actionItems: unified.actionItems, tags: unified.tags, sentiment: unified.sentiment, partNotes: notes)
+        let json = String(decoding: try JSONEncoder().encode(withNotes), as: UTF8.self)
+        let backends = ProcessingPipeline.AnalysisBackends(stream: { _ in
+            AsyncThrowingStream { $0.yield(json); $0.finish() }
+        })
+        let result = try await ProcessingPipeline().analyze(request(engine: .qwenLocal), using: backends, onEvent: { await events.add($0) })
+        #expect(result.partNotes == notes)
+        #expect(await events.values.contains(.partNotes(notes)))
+        let plain = try await ProcessingPipeline().analyze(request(engine: .localCLI),
+            using: .init(unified: { _ in unified }), onEvent: { await events.add($0) })
+        #expect(plain.partNotes == nil)
+    }
+
     @Test func unavailableOrUnrequestedAnalysisNeverCallsBackend() async throws {
         let backends = ProcessingPipeline.AnalysisBackends(summary: { _ in Issue.record("Unexpected remote call"); return "" },
             unified: { _ in Issue.record("Unexpected unified call"); return unified })
