@@ -199,7 +199,15 @@ struct SettingsCalendarCLISection: View {
                         set: { settings.calendarCLIConfig = config.updating(command: $0.isEmpty ? nil : $0) }
                     ), prompt: Text("Managed Claude command"))
                     .onSubmit { configurationChanged() }
-                    if let command = config.command, !command.isEmpty, !config.validateCommand() {
+                    TextField("Claude launcher", text: Binding(
+                        get: { config.launcher ?? "" },
+                        set: { settings.calendarCLIConfig = config.updating(launcher: .some($0)) }
+                    ), prompt: Text("claude"))
+                    .onSubmit { configurationChanged() }
+                    Text("Replaces `claude` in the managed command, e.g. `cswap run 1 --` to use another Claude account. Ignored when a CLI command is set.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !config.validateCommand() {
                         Label("The command conflicts with managed Claude options.", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
                     }

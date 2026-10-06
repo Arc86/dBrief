@@ -82,6 +82,14 @@ struct CalendarCLISettingsTests {
         #expect(loaded.validateCommand())
     }
 
+    @Test("Launcher roundtrips and blank launchers clear")
+    func launcherRoundtrip() {
+        let config = CalendarCLIConfig.default.updating(launcher: "  cswap run 1 --  ")
+        #expect(Self.roundtrip(config).launcher == "cswap run 1 --")
+        #expect(Self.roundtrip(config.updating(launcher: .some("   "))).launcher == nil)
+        #expect(Self.roundtrip(.default).launcher == nil)
+    }
+
     @Test("Explicit nil clears a saved calendar model")
     func clearModelOverride() {
         let config = CalendarCLIConfig.default.updating(modelID: "sonnet")

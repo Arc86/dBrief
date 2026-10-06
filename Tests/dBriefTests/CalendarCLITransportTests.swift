@@ -261,3 +261,41 @@ extension CalendarCLITransportTests {
         }
     }
 }
+
+extension CalendarCLITransportTests {
+    @Test("A launcher replaces claude and keeps every managed flag")
+    func launcherKeepsManagedFlags() {
+        let command = CalendarCLIConfig.managedCommand(
+            allowedTool: CalendarCLIPrompt.calendarSearchTool, modelID: nil, launcher: "  cswap run 1 --  ")
+        #expect(command.hasPrefix("cswap run 1 -- -p --no-session-persistence"))
+        #expect(command.contains(#"--json-schema "$DBRIEF_CALENDAR_SCHEMA""#))
+        #expect(command.contains("--allowedTools \(CalendarCLIPrompt.calendarSearchTool)"))
+        #expect(command.contains("--permission-prompts none"))
+        #expect(CalendarCLIConfig.managedCommand(
+            allowedTool: CalendarCLIPrompt.calendarSearchTool, modelID: nil, launcher: " ")
+            .hasPrefix("claude -p "))
+    }
+
+    @Test("Launchers with conflicting flags are rejected")
+    func conflictingLauncherRejected() {
+        for flag in ["--model haiku", "--allowedTools x", "--permission-mode bypassPermissions"] {
+            #expect(!Self.configured().updating(launcher: "cswap run 1 -- \(flag)").validateCommand(),
+                    "expected rejection for \(flag)")
+        }
+        #expect(Self.configured().updating(launcher: "cswap run 1 --").validateCommand())
+    }
+
+    @Test("The launcher receives the managed flags end to end")
+    func launcherReceivesManagedFlags() async throws {
+        let script = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: script) }
+        let content = "#!/bin/zsh\n"
+            + #"[[ "$1" == "-p" && " $* " == *" --allowedTools \#(CalendarCLIPrompt.calendarSearchTool) --permission-prompts none "* ]] || exit 9; "#
+            + Self.echoListCommand + "\n"
+        try content.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let config = Self.configured().updating(launcher: "'\(script.path)'")
+        let result = try await CalendarCLITransport().list(window: Self.window(), config: config)
+        #expect(result.completeness == .complete)
+    }
+}
