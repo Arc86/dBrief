@@ -217,6 +217,7 @@ actor LocalAIService {
             notes.append(try await notesForPart(part, system: mapSystem, context: context, budget: budget))
         }
 
+        EvalNotesDump.write(notes)
         // Hierarchical reduce: condense consecutive notes until they fit one reduce prompt
         // (which also carries the context).
         try Task.checkCancellation()

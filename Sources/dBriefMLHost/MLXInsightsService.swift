@@ -374,6 +374,7 @@ actor MLXInsightsService {
             notes.append(try await mapPart(part, system: mapSystem, context: context, container: container))
         }
 
+        EvalNotesDump.write(notes)
         try Task.checkCancellation()
         stateHandler(.analyzingPart(index: parts.count + 1, total: parts.count))
         let allNotes = notes

@@ -14,7 +14,7 @@ enum GemmaGenerationConfig {
 
     /// Output cap for the single-pass unified insights call.
     static let maxOutputTokens = 8192
-    /// Output caps for map-reduce: notes for one ~10K-token part, and the final reduce.
+    /// Output caps for map-reduce: notes for one ~4K-token part, and the final reduce.
     static let chunkNotesMaxTokens = 2048
     static let reduceMaxTokens = 4096
 
@@ -24,9 +24,12 @@ enum GemmaGenerationConfig {
     static let minCompletionReserve = 512
     static let minHardReserve = 192
 
-    // Long-transcript strategy (Task 7). Token counts from Gemma's own tokenizer.
-    static let singlePassTokenBudget = 24_000
-    static let chunkTokenBudget = 10_000
+    // Long-transcript strategy. Token counts from Gemma's own tokenizer. Tuned on the
+    // planted-needle eval (recall of 3 needles at 10/50/90%): on a ~24K-token
+    // transcript single pass recalled 1/3, map-reduce 2/3 (so map-reduce starts at 8K);
+    // on ~55K tokens 10K parts recalled 1/3 in 401 s, 6K parts 1/3 in 667 s, 4K parts 2/3 in 679 s.
+    static let singlePassTokenBudget = 8_000
+    static let chunkTokenBudget = 4_000
     static let reduceInputTokenBudget = 12_000
     static let chunkOverlapLines = 2
 }

@@ -40,6 +40,23 @@ def summary_complete(summary):
     s = summary.strip()
     return bool(s) and s[-1] in ".!?…)]'’”\""
 
+def part_hits(dump_path):
+    """Per-part needle presence (booleans only) from the dev-only notes dump; the dump
+    holds private content, so it is deleted here."""
+    try:
+        with open(dump_path) as f:
+            parts = json.load(f)
+    except (OSError, ValueError):
+        return None
+    finally:
+        try: os.unlink(dump_path)
+        except OSError: pass
+    out = []
+    for n in parts:
+        text = json.dumps(n).lower()
+        out.append({f"{int(frac*100)}%": probe in text for frac, _, probe in NEEDLES})
+    return out
+
 def run_gemma(a, transcript_path):
     """Returns (report, diagnostics_text) from the helper's --eval-insights mode."""
     base = os.path.expanduser("~/Library/Application Support/com.dbrief.app.beta/LocalAIPlugin")
@@ -86,9 +103,11 @@ def main():
     a = p.parse_args()
     with open(a.transcript) as f:
         planted = plant(f.read())
+    dump_path = os.path.join(tempfile.gettempdir(), f"dbrief-notes-dump-{os.getpid()}.json")
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
         tmp.write(planted)
     try:
+        os.environ["DBRIEF_EVAL_NOTES_DUMP"] = dump_path
         report, diagnostics = (run_apple if a.engine == "apple" else run_gemma)(a, tmp.name)
     finally:
         os.unlink(tmp.name)  # planted transcript holds private content
@@ -113,6 +132,9 @@ def main():
         row.update({"recall": {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES},
                     "repetition": round(repetition_ratio(r["summary"]), 3), "action_items": len(r["action_items"]),
                     "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])})
+    hits = part_hits(dump_path)
+    if hits is not None:
+        row["part_hits"] = hits
     print(json.dumps(row, indent=2))
     os.makedirs("docs/diagnostics", exist_ok=True)
     with open("docs/diagnostics/gemma-eval.jsonl", "a") as log:

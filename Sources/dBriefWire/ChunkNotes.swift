@@ -119,3 +119,15 @@ public enum ChunkNotesMerger {
             .joined(separator: " ")
     }
 }
+
+/// Dev-only diagnostic: when `DBRIEF_EVAL_NOTES_DUMP=<path>` is set (by
+/// `scripts/gemma-eval.py`), the map step writes its per-part notes there as a JSON
+/// array so the eval can report which planted facts survived each part. Inert unless
+/// the variable is set; the file holds transcript content, so the eval deletes it.
+public enum EvalNotesDump {
+    public static func write(_ notes: [ChunkNotes]) {
+        guard let path = ProcessInfo.processInfo.environment["DBRIEF_EVAL_NOTES_DUMP"], !path.isEmpty,
+              let data = try? JSONEncoder().encode(notes) else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
+    }
+}

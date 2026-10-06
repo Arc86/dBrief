@@ -21,8 +21,9 @@ public struct InsightsGuidance: Sendable, Codable, Equatable {
 /// `action_items`, `tags`, `sentiment`) parsed by `LocalInsightsDecoder`. Lives in
 /// `dBriefWire` so both targets share one schema and stay in lockstep.
 public enum UnifiedInsightsPrompt {
-    // Transcript budgeting. Gemma 4 E4B has a 128K context (~25K input tokens at
-    // ~4 chars/token); agentic CLIs are typically large-context too. Keep a small
+    // Transcript budgeting for the single-call truncating path (Local CLI). Gemma no
+    // longer truncates: it switches to map-reduce above `singlePassTokenBudget`. Agentic
+    // CLIs are typically large-context (~38K tokens at ~4 chars/token). Keep a small
     // intro slice for context, then the full tail — meetings load substance in the
     // middle and end, so dropping the head preserves detail.
     public static let transcriptCharLimit = 150_000
