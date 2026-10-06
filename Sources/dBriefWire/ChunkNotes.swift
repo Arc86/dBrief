@@ -51,7 +51,11 @@ public enum ChunkNotesMerger {
     /// never dropped: the owner must be absent or a non-person ("[Unassigned]",
     /// "[Nobody]", ...) AND the text must be a bare "none"-style word or open with an
     /// anchored "no (further) action items / tasks / ..." phrase.
+    /// Also true for an echo of the prompt's format template (any item containing one of
+    /// `templatePlaceholders`, case-insensitively): such an item is never a real commitment.
     public static func isPlaceholderActionItem(_ item: String) -> Bool {
+        let lowered = item.lowercased()
+        if templatePlaceholders.contains(where: { lowered.contains($0) }) { return true }
         var text = item.trimmingCharacters(in: .whitespacesAndNewlines)
         if let ownerRange = text.range(of: #"^\[[^\]]*\]"#, options: .regularExpression) {
             let owner = text[ownerRange].dropFirst().dropLast()
@@ -69,6 +73,8 @@ public enum ChunkNotesMerger {
         return text.range(of: placeholderPhrase, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    /// Literal format placeholders from the action-item prompts, lowercased.
+    private static let templatePlaceholders = ["[task]", "[context/deadline]", "[who]", "[who 1/who 2]", "[context]"]
     private static let placeholderOwners: Set<String> =
         ["unassigned", "none", "n/a", "nobody", "no one", "niemand", "onbekend", "geen"]
     private static let placeholderWords: Set<String> = ["none", "n/a", "-", "geen", "nvt"]

@@ -24,7 +24,9 @@ import dBriefWire
 
     @Test(arguments: ["No action items were assigned in this segment.", "[Unassigned] No action items.",
                       "Geen actiepunten in dit deel.", "None", "n/a", "-", "[Unassigned] none.", "No tasks or commitments.",
-                      "[Nobody] No tasks.", "No further action items."])
+                      "[Nobody] No tasks.", "No further action items.",
+                      "[Unassigned] to [TASK] [CONTEXT/DEADLINE]", "[WHO] to [TASK]", "[who 1/who 2] to [task] [context]",
+                      "[Ann] to [TASK]"])
     func placeholderActionItemsAreRecognized(item: String) {
         #expect(ChunkNotesMerger.isPlaceholderActionItem(item))
     }
@@ -35,7 +37,8 @@ import dBriefWire
                       "[Piet] Geen nieuwe taken aannemen tot de release",
                       "[Ann] No later than Friday, finish the task list",
                       "[Unassigned] No owner yet for the vendor contract task; assign one",
-                      "No decision taken yet; [Ann] to follow up"])
+                      "No decision taken yet; [Ann] to follow up",
+                      "[Ann] to send the [draft] task list", "[Bo] to update the [WHO-list] context doc"])
     func realActionItemsAreKept(item: String) {
         #expect(!ChunkNotesMerger.isPlaceholderActionItem(item))
     }
@@ -45,6 +48,12 @@ import dBriefWire
         let b = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["None"], people: [])
         let c = ChunkNotes(keyPoints: [], decisions: [], actionItems: ["[Unassigned] No action items.", "[Bo] to book room"], people: [])
         #expect(ChunkNotesMerger.mergedActionItems([a, b, c]) == ["[Ann] to send deck", "[Bo] to book room"])
+    }
+
+    @Test func mergedActionItemsDropsTemplateEchoes() {
+        let notes = ChunkNotes(keyPoints: [], decisions: [],
+                               actionItems: ["[Unassigned] to [TASK] [CONTEXT/DEADLINE]", "[Ann] to send the [draft] task list"], people: [])
+        #expect(ChunkNotesMerger.mergedActionItems([notes]) == ["[Ann] to send the [draft] task list"])
     }
 
     @Test func chunkPromptForbidsPlaceholdersForDecisionsAndActions() {
