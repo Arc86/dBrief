@@ -34,43 +34,64 @@ actor GemmaChatSessions {
     /// `retrievedContext` is prepended to this turn only.
     func respond(systemPrompt: String, history: [ChatTurnMessage], question: String,
                  retrievedContext: String = "", onDelta: @Sendable (String) -> Void) async throws {
+        // Lifetime: the ChatSession (KV cache) and the ModelContainer are only ever
+        // held as locals inside `prepareSession`/`streamTurn`, which have returned
+        // or thrown before `drop()` runs below. So on the error path the stored
+        // `session` is the last strong reference; `drop()` nils it before
+        // `insights.unload()` clears MLX's buffer cache, and the multi-GB buffers
+        // are freed before that clear, not parked in the cache afterwards.
+        try await prepareSession(systemPrompt: systemPrompt, history: history)
+        // Only after a successful load: a failed load leaves any idle drop scheduled.
         idleTask?.cancel()
         idleTask = nil
-        let container = try await insights.loadForChat()
-        let live: ChatSession
-        if let session, let key, key.canContinue(systemPrompt: systemPrompt, history: history) {
-            live = session
-        } else {
-            Logger.ai.info("Gemma chat: rebuilding session (history \(history.count) messages)")
-            let replay = history.map { m -> Chat.Message in
-                m.role == .user ? .user(m.content) : .assistant(m.content)
-            }
-            live = ChatSession(container, instructions: systemPrompt, history: replay,
-                               generateParameters: insights.chatGenerationParameters())
-            session = live
-            key = ChatSessionCacheKey(systemPrompt: systemPrompt, history: history)
+        let prompt = retrievedContext.isEmpty ? question : retrievedContext + "\n\nQUESTION: " + question
+        let answer: String
+        do {
+            answer = try await streamTurn(prompt, onDelta: onDelta)
+        } catch {
+            await drop()                       // unknown KV state after an error → rebuild next time
+            throw error
         }
+        key?.record(question: question, answer: answer)
+        scheduleIdleDrop()
+    }
+
+    /// Keeps the live session when the key continues; otherwise rebuilds it from `history`.
+    private func prepareSession(systemPrompt: String, history: [ChatTurnMessage]) async throws {
+        let container = try await insights.loadForChat()
+        if session != nil, let key, key.canContinue(systemPrompt: systemPrompt, history: history) { return }
+        Logger.ai.info("Gemma chat: rebuilding session (history \(history.count) messages)")
+        let replay = history.map { m -> Chat.Message in
+            m.role == .user ? .user(m.content) : .assistant(m.content)
+        }
+        session = ChatSession(container, instructions: systemPrompt, history: replay,
+                              generateParameters: insights.chatGenerationParameters())
+        key = ChatSessionCacheKey(systemPrompt: systemPrompt, history: history)
+    }
+
+    /// Streams one turn on the stored session. Throws on error or cancellation,
+    /// always after `synchronize()`, so a half-answered turn is never recorded.
+    private func streamTurn(_ prompt: String, onDelta: @Sendable (String) -> Void) async throws -> String {
+        guard let session else { throw CancellationError() }   // unreachable: prepareSession set it
         // ChatSession is not Sendable; synchronize() is a nonisolated async call.
         // Safe: the session is only touched under the orchestrator mutex, one turn at a time.
-        nonisolated(unsafe) let chat = live
-        let prompt = retrievedContext.isEmpty ? question : retrievedContext + "\n\nQUESTION: " + question
+        nonisolated(unsafe) let chat = session
         var answer = ""
         do {
+            // A request cancelled during a cold load must not start GPU work.
+            try Task.checkCancellation()
             for try await chunk in chat.streamResponse(to: prompt) {
                 answer += chunk
                 onDelta(chunk)
             }
-            // A cancelled stream may end without throwing; treat it as a failure
-            // so a half-answered turn is never recorded in the key.
+            // A cancelled stream may end without throwing; treat it as a failure.
             try Task.checkCancellation()
         } catch {
             await chat.synchronize()
-            await drop()                       // unknown KV state after an error → rebuild next time
             throw error
         }
         await chat.synchronize()
-        key?.record(question: question, answer: answer)
-        scheduleIdleDrop()
+        return answer
     }
 
     /// Releases the session, its KV cache and the Gemma model. Callers must hold
