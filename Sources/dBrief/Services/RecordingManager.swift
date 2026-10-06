@@ -533,7 +533,8 @@ final class RecordingManager {
             associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
             prewarmWhisper: prewarmWhisper,
             privacyScope: RecordingPrivacyScope(recordingID: recordingID,
-                store: capturePrivacyStore, pendingRootURL: capturePrivacyPendingRoot))
+                store: capturePrivacyStore, pendingRootURL: capturePrivacyPendingRoot),
+            intendedRecordingFolderURL: appSettings.effectiveRecordingFolderURL)
         try await captureCoordinator.start(request)
     }
 
@@ -3631,23 +3632,37 @@ final class RecordingManager {
               !recoveryMaintenanceInProgress, !processingCancellationInProgress, !queueMutationInProgress, !reviewingIntegrationDeliveries else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording and processing to finish, then retry cleanup."])
         }
+        let registry = appState.liveRecordingSessions
+        func requireRAMReplacementIdle() throws {
+            guard !registry.hasPendingRAMReplacement else { throw LiveRecordingSessionRegistry.Failure.unavailable }
+        }
+        // A failed or privately hydrating RAM replacement need not have a public
+        // hint. Its original immutable policy protects the whole sweep.
+        try requireRAMReplacementIdle()
         recoveryMaintenanceInProgress = true
         defer { recoveryMaintenanceInProgress = false; RecordingLibraryChange.notify() }
-        let registry = appState.liveRecordingSessions
         let inspection = try registry.reserveReprocessingInspection()
         defer { withExtendedLifetime(inspection) {} }
         // Establish both finite output ownership and managed namespaces before
         // recovery reconciliation can mutate a snapshot or metadata sidecar.
         let (timestamp, ownership) = try await processingPipeline.retentionOwnership(folders: folders)
+        try requireRAMReplacementIdle()
         try await processingPipeline.validateRetentionFolders(configuredQueueFolders)
+        try requireRAMReplacementIdle()
         let lifecycle = RecoveryLifecycle(jobs: processingJobStore, deliveries: integrationDeliveryStore)
         try await deletionPrivacyStore.preflightRetention()
+        try requireRAMReplacementIdle()
         let pending = try await lifecycle.pendingRetentionBases()
+        try requireRAMReplacementIdle()
         try await registry.discover(refresh: true)
+        try requireRAMReplacementIdle()
         let attempts = try await reprocessingStore.discoverForRetention()
+        try requireRAMReplacementIdle()
         guard reprocessingRecoveryReady, attempts.allSatisfy({ $0.status == .completed }), !reprocessingAdmissionBusy else { throw ReprocessingError.pendingAttempt }
         let cutoff = timestamp.addingTimeInterval(-Double(days) * 86_400)
         let queueBases = try await processingPipeline.retentionQueueBases(folders: folders)
+        try requireRAMReplacementIdle()
+        let hints = registry.retentionHints
         let blocked = pending.union(queueBases)
         var protected = ownership.opaqueLiveBases.union(blocked), deferred = blocked.union(ownership.opaqueLiveBases), result = RetentionCleanupResult()
         var associations: [UUID: URL] = [:]
@@ -3655,7 +3670,65 @@ final class RecordingManager {
             guard associations[id] == nil || associations[id] == audio else { throw LiveArtifactError.wrongOwner }
             associations[id] = audio
         }
-        for hint in registry.retentionHints {
+        let ramIDs = Set(hints.filter { $0.ram != nil }.map { $0.identity.recordingID })
+        // Qualify the requested physical scope inside the retained inspection.
+        // The registry lookup itself stays pure; arbitrary aliases cannot join.
+        let ramRetryFolders: [URL] = try ramIDs.isEmpty ? [] : folders.map { folder in
+            let probe = folder.appendingPathComponent("probe")
+            try LiveSessionArtifactStore.requireSafeParents(probe)
+            return try RecordingDeletionAuthority.canonical(probe).deletingLastPathComponent()
+        }
+        var ramReferences = Set<URL>()
+        for hint in hints where hint.ram != nil {
+            // Disk associations supply protection only. They cannot turn an
+            // unassociated capture into a physical RAM removal ticket.
+            for reference in [hint.audioURL, associations[hint.identity.recordingID]].compactMap({ $0 }) {
+                let audio = try RecordingDeletionAuthority.canonical(reference)
+                ramReferences.insert(audio)
+                let base = audio.deletingPathExtension().path
+                protected.insert(base); deferred.insert(base)
+            }
+        }
+        let ramPrivateProtection = try Set(attempts.compactMap { attempt -> String? in
+            guard !ramIDs.isEmpty else { return nil }
+            let audio = try RecordingDeletionAuthority.canonical(attempt.audioURL)
+            guard attempt.authority?.recordingID == nil || attempt.authority?.recordingID.map({ ramIDs.contains($0) }) == true
+                    || ramReferences.contains(audio) else { return nil }
+            return audio.deletingPathExtension().path
+        })
+        protected.formUnion(ramPrivateProtection); deferred.formUnion(ramPrivateProtection)
+        for hint in hints {
+            try requireRAMReplacementIdle()
+            if let ram = hint.ram {
+                guard category == .transcripts, !hint.deleted else { continue }
+                let references = try [hint.audioURL, associations[hint.identity.recordingID]].compactMap { reference -> URL? in
+                    try reference.map { try RecordingDeletionAuthority.canonical($0) }
+                }
+                guard !references.contains(where: {
+                    ownership.opaqueLiveBases.contains($0.deletingPathExtension().path)
+                        || RetentionCleanup.isProtectedByQueue($0, queuedBases: blocked)
+                }) else { continue }
+                let phase: LiveRecordingSessionRegistry.RAMTranscriptRetention?
+                if let existing = try registry.ramTranscriptRetention(recordingID: hint.identity.recordingID, folders: folders)
+                    ?? registry.ramTranscriptRetention(recordingID: hint.identity.recordingID, folders: ramRetryFolders) {
+                    phase = existing
+                } else if !ram.sourceRetired {
+                    phase = try registry.beginRAMTranscriptRetention(recordingID: hint.identity.recordingID, olderThan: cutoff, folders: folders)
+                } else { phase = nil }
+                guard let phase else { continue }
+                do {
+                    try requireRAMReplacementIdle()
+                    try await registry.runRAMTranscriptRetention(phase)
+                    try requireRAMReplacementIdle()
+                    let progress = await registry.ramTranscriptRetentionProgress(phase)
+                    try requireRAMReplacementIdle()
+                    if phase.intentCommitted, progress.cleanupComplete {
+                        result.historiesRetired += 1
+                        result.filesDeleted += progress.removedFiles; result.bytesFreed += progress.bytesRemoved
+                    }
+                } catch { registry.abandonRAMTranscriptRetention(phase); throw error }
+                continue
+            }
             guard let reference = hint.audioURL ?? associations[hint.identity.recordingID] else { continue }
             let audio = try RecordingDeletionAuthority.canonical(reference)
             let base = audio.deletingPathExtension().path
@@ -3676,19 +3749,24 @@ final class RecordingManager {
                 changed = try await expireLiveRecording(hint.identity.recordingID, audio: audio, cutoff: cutoff, ownership: ownership,
                     deleted: hint.deleted, lifecycle: lifecycle, result: &result)
             }
+            try requireRAMReplacementIdle()
             if !changed { deferred.insert(base) }
             else if category == .transcripts { result.historiesRetired += 1; deferred.remove(base) }
         }
+        try requireRAMReplacementIdle()
         let conventional = try await processingPipeline.cleanupRetention(category: category, days: days,
             folders: folders, lifecycle: lifecycle, store: deletionPrivacyStore, protectedBases: protected)
+        try requireRAMReplacementIdle()
         result.filesDeleted += conventional.filesDeleted; result.bytesFreed += conventional.bytesFreed
         result.privacyCleanupFailures += conventional.privacyCleanupFailures
-        try await reprocessingStore.purgeCompletedForMissingAudio(protectedBases: deferred, bounded: true)
+        try await reprocessingStore.purgeCompletedForMissingAudio(protectedBases: deferred.union(ramPrivateProtection), bounded: true)
+        try requireRAMReplacementIdle()
         if category == .transcripts {
-            // Opaque/unknown bases and every deferred managed owner keep their
-            // private completed backups as well as their canonical files.
+            // The immutable RAM census survives a successful durable owner's
+            // removal from deferred, and protects unknown private backups.
             try await reprocessingStore.purgeCompletedTranscriptHistory(olderThan: cutoff, in: folders,
-                protectedBases: deferred, bounded: true)
+                protectedBases: deferred.union(ramPrivateProtection), bounded: true)
+            try requireRAMReplacementIdle()
         }
         await refreshWorkQueue(boundedRetention: true)
         return result
@@ -3859,7 +3937,7 @@ final class RecordingManager {
               audioURL.map({ !isReprocessing($0) }) ?? true else { throw ReprocessingError.pendingAttempt }
         let registry = appState.liveRecordingSessions
         let entry = try await registry.resolve(recordingID: recordingID, audioURL: audioURL)
-        guard let entry, entry.captureClosed else { return entry }
+        guard let entry, entry.artifacts.capturePersistenceAllowed, entry.captureClosed else { return entry }
         let pin = entry.artifacts.pin(); defer { pin.release() }
         if entry.artifacts.failure != nil { try entry.artifacts.retry(); try await entry.artifacts.flush() }
         if entry.artifacts.admittedAudioURL != nil {

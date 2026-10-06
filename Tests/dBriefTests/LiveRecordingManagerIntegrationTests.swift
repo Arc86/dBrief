@@ -2395,4 +2395,543 @@ private actor ReprocessingHydrationFault {
         await f.ordinary.shutdown()
         }
     }
+
+
+    // RAM manager prerequisite: all older methods/helpers above remain unchanged.
+    private func ramManagerOwner(_ f: LiveManagerFixture, physical: Bool = false, bound: Bool = false,
+                                 closed: Bool = true, folder: Bool = true, fresh: Bool = false)
+        throws -> (LiveRecordingSessionRegistry.Entry, URL) {
+        let root = f.settings.recordingFolderURL
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let identity = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())
+        let date = fresh ? Date.now : Date.now.addingTimeInterval(-30 * 86_400)
+        let capture = try LiveRAMCaptureMetadata(startedAt: date, intendedFolder: folder ? root : nil)
+        let owner = try f.state.liveRecordingSessions.registerLegacy(identity, capturePersistenceAllowed: false, ramCapture: capture)
+        try owner.artifacts.appendLegacy([.init(start: 0, end: 1, text: "Original RAM evidence")])
+        let audio = root.appendingPathComponent("ram-\(identity.recordingID.uuidString).wav")
+        if physical || bound {
+            try Data("Model-free RAM master".utf8).write(to: audio)
+            let metadata = RecordingMetadataPayload(recordingID: identity.recordingID,
+                dateISO8601: ISO8601DateFormatter().string(from: date), durationSeconds: 1, meetingTitle: "RAM",
+                masterFileName: audio.lastPathComponent, segmentFileNames: [], warnings: [])
+            try JSONEncoder().encode(metadata).write(to: audio.deletingPathExtension().appendingPathExtension("json"))
+        }
+        if closed { try f.state.liveRecordingSessions.captureDidClose(identity) }
+        if bound { try owner.artifacts.bind(to: audio) }
+        return (owner, audio)
+    }
+    private func ramCompletedBackup(_ f: LiveManagerFixture, recording: Recording, authority: Bool)
+        async throws -> (ReprocessingStore.Attempt, URL) {
+        let audio = try #require(recording.finalizedAudioURL)
+        var options = ReprocessingOptions(settings: f.settings, operation: .transcribe)
+        options.diarizationEnabled = false; options.regenerateAI = false
+        let request = ReprocessingRequest(options: options, recordingID: recording.id, date: recording.date,
+            title: recording.meetingTitleDraft, duration: 1, participants: [], calendarEvent: nil)
+        let physical = try authority ? RecordingDeletionAuthority(audioURL: audio, expectedRecordingID: recording.id) : nil
+        let attempt = try await f.manager.reprocessingStore.prepare(audioURL: audio,
+            configuration: JSONEncoder().encode(request), authority: physical)
+        try await f.manager.reprocessingStore.stage(JSONEncoder().encode(TranscriptionResult(text: "New canonical result")),
+            suffix: "transcript.json", attemptID: attempt.id)
+        try await f.manager.reprocessingStore.commit(attemptID: attempt.id)
+        #expect(try await f.manager.reprocessingStore.load(attemptID: attempt.id).status == .completed)
+        let manifest = f.files.root.appendingPathComponent("reprocessing/\(attempt.id.uuidString)/manifest.json")
+        var old = try JSONDecoder().decode(ReprocessingStore.Attempt.self, from: Data(contentsOf: manifest))
+        old.updatedAt = Date.now.addingTimeInterval(-30 * 86_400)
+        try JSONEncoder().encode(old).write(to: manifest, options: .atomic)
+        return (old, f.files.root.appendingPathComponent("reprocessing/\(attempt.id.uuidString)/original/transcript.json"))
+    }
+
+    @Test(arguments: [false, true]) func ramManagerExpiresNoFileSourceWithoutAdoptingPlausibleAudio(physical: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, physical: physical)
+            let unknown = f.settings.recordingFolderURL.appendingPathComponent("unknown.txt")
+            try Data("Keep unknown data".utf8).write(to: unknown)
+            var preserved = [unknown]
+            if physical {
+                let transcript = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+                try JSONEncoder().encode(TranscriptionResult(text: "Disk lookalike")).write(to: transcript)
+                try age([transcript]); preserved += [audio, audio.deletingPathExtension().appendingPathExtension("json"), transcript]
+            }
+            let bytes = try preserved.map { try Data(contentsOf: $0) }
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL])
+            #expect(result.historiesRetired == 1 && result.filesDeleted == 0)
+            #expect(!owner.isValid && owner.artifacts.admittedAudioURL == nil)
+            #expect(!f.state.liveRecordingSessions.isKnownDeleted(recordingID: owner.identity.recordingID))
+            let hint = try #require(f.state.liveRecordingSessions.retentionHints.first { $0.identity == owner.identity })
+            #expect(hint.ram?.sourceRetired == true && !hint.capturePersistenceAllowed)
+            #expect(try preserved.map { try Data(contentsOf: $0) } == bytes)
+            await #expect(throws: LiveArtifactError.missingEvidence) { _ = try await f.manager.prepareLiveHistory(recordingID: owner.identity.recordingID, audioURL: nil) }
+            await #expect(throws: LiveArtifactError.missingEvidence) { _ = try await f.manager.prepareLiveHistoryExport(recordingID: owner.identity.recordingID, audioURL: nil) }
+            let again = try await f.manager.runRetentionCleanup(category: .recordings, days: 0, folders: [f.settings.recordingFolderURL])
+            #expect(again.filesDeleted == 0)
+            #expect(try preserved.map { try Data(contentsOf: $0) } == bytes)
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["wrong", "missing", "open", "pin", "fresh"]) func ramManagerDefersIneligibleSources(kind: String) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, _) = try ramManagerOwner(f, closed: kind != "open", folder: kind != "missing")
+            if kind == "fresh" { try owner.artifacts.publishFinal(.init(text: "Fresh accepted final")) }
+            let pin = kind == "pin" ? owner.artifacts.pin() : nil
+            let requested = kind == "wrong" ? f.files.root.appendingPathComponent("other") : f.settings.recordingFolderURL
+            try FileManager.default.createDirectory(at: requested, withIntermediateDirectories: true)
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [requested])
+            #expect(result.historiesRetired == 0 && owner.isValid)
+            #expect(f.state.liveRecordingSessions.entry(identity: owner.identity) === owner)
+            #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+            pin?.release()
+            if kind == "pin" {
+                let after = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [requested])
+                #expect(after.historiesRetired == 1 && !owner.isValid)
+            }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func ramManagerRemovesOnlyAgedAssociatedConventionalOutputs() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, bound: true)
+            let base = audio.deletingPathExtension(), transcript = base.appendingPathExtension("transcript.json")
+            let chat = base.appendingPathExtension("chat.json"), markdown = base.appendingPathExtension("md")
+            let insights = base.appendingPathExtension("insights.json"), newer = base.appendingPathExtension("richtranscript.json")
+            let privacy = base.appendingPathExtension("privacy.json"), unknown = base.appendingPathExtension("custom.bin")
+            try JSONEncoder().encode(TranscriptionResult(text: "Aged output")).write(to: transcript)
+            try JSONEncoder().encode(ChatHistory(messages: [.init(role: .assistant, content: "Aged ordinary answer", outcome: .completed)])).write(to: chat)
+            try Data("Owned linked note".utf8).write(to: markdown)
+            try JSONEncoder().encode(RecordingInsights(summary: "", actionItems: [], tags: [], sentiment: "neutral", markdownPath: markdown.path)).write(to: insights)
+            try JSONEncoder().encode(RichTranscript(segments: [])).write(to: newer)
+            try Data("Privacy sentinel".utf8).write(to: privacy); try Data("Unknown sentinel".utf8).write(to: unknown)
+            let selected = [transcript, chat, markdown, insights]
+            let selectedBytes = try selected.reduce(Int64(0)) { try $0 + Int64(Data(contentsOf: $1).count) }
+            try age(selected)
+            let preserved = [audio, base.appendingPathExtension("json"), newer, privacy, unknown]
+            let before = try preserved.map { try Data(contentsOf: $0) }
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL])
+            #expect(result.historiesRetired == 1 && result.filesDeleted == selected.count && result.bytesFreed == selectedBytes)
+            #expect(selected.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+            #expect(try preserved.map { try Data(contentsOf: $0) } == before && !owner.isValid)
+            #expect(!owner.artifacts.capturePersistenceAllowed && !owner.artifacts.persistenceStarted)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func ramManagerKeepsCompletedPrivateBackupAfterNoFileExpiry(proven: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, physical: true)
+            let transcript = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Original private result")).write(to: transcript)
+            let recording = Recording(id: owner.identity.recordingID, fileURL: audio, finalizedAudioURL: audio)
+            let (_, backup) = try await ramCompletedBackup(f, recording: recording, authority: proven)
+            let bytes = try Data(contentsOf: backup)
+            try FileManager.default.removeItem(at: audio)
+            try FileManager.default.removeItem(at: audio.deletingPathExtension().appendingPathExtension("json"))
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL])
+            #expect(result.historiesRetired == 1 && !owner.isValid)
+            #expect(FileManager.default.fileExists(atPath: backup.path))
+            if FileManager.default.fileExists(atPath: backup.path) { #expect(try Data(contentsOf: backup) == bytes) }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func ramPrivateProtectionSurvivesSuccessfulTrueOwnerRetirement(ramPresent: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, syntheticAudio: true)
+        do {
+            let (recording, owner, audio, chat) = try await prepareForDeletion(f, bound: true)
+            let transcript = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Private original")).write(to: transcript)
+            let (_, backup) = try await ramCompletedBackup(f, recording: recording, authority: false)
+            let bytes = try Data(contentsOf: backup)
+            var ram: LiveRecordingSessionRegistry.Entry?
+            if ramPresent { ram = try ramManagerOwner(f, fresh: true).0 }
+            try age([audio.deletingPathExtension().appendingPathExtension("live-transcript.json"), chat, transcript])
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [audio.deletingLastPathComponent()])
+            #expect(result.historiesRetired == 1 && !owner.isValid && ram?.isValid != false)
+            #expect(FileManager.default.fileExists(atPath: backup.path) == ramPresent)
+            if ramPresent, FileManager.default.fileExists(atPath: backup.path) { #expect(try Data(contentsOf: backup) == bytes) }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func ramResidentHistoryPreparationNeverLearnsAPlausibleDiskAssociation() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, physical: true)
+            let files = [audio, audio.deletingPathExtension().appendingPathExtension("json")]
+            let before = try files.map { try Data(contentsOf: $0) }
+            let result = try await f.manager.prepareLiveHistory(recordingID: owner.identity.recordingID, audioURL: nil)
+            #expect(result === owner && owner.artifacts.admittedAudioURL == nil)
+            #expect(try files.map { try Data(contentsOf: $0) } == before)
+            #expect(!owner.artifacts.persistenceStarted && !owner.artifacts.isDurable)
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [LiveArtifactStage.ramRetentionPrepared, .retentionCompleted])
+    func ramManagerCancellationRetainsActualPhaseAndInspectionThroughCallback(stage: LiveArtifactStage) async throws {
+        let gate = LiveArtifactGate(stage: stage), budget = LiveRecordingPayloadBudget(ownerLimit: 8)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: { try await gate.enter($0) },
+            payloadBudget: budget, artifactPersistence: false)
+        var sweep: Task<RetentionCleanupResult, any Error>?
+        do {
+            let (owner, _) = try ramManagerOwner(f)
+            let before = budget.reservedBytes
+            let task = Task { try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL]) }; sweep = task
+            try await gate.waitForArrival()
+            #expect(f.manager.recoveryMaintenanceInProgress && f.state.isIdle)
+            #expect(budget.reservedBytes == before + 32 * 1_024 * 1_024 + 224 * 1_024)
+            #expect(f.state.liveRecordingSessions.entry(identity: owner.identity) == nil)
+            await #expect(throws: (any Error).self) { try await f.manager.startRecording() }
+            await #expect(throws: (any Error).self) { _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL]) }
+            task.cancel()
+            for _ in 0..<20 { await Task.yield() }
+            #expect(f.manager.recoveryMaintenanceInProgress && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1)
+            #expect(budget.reservedBytes == before + 32 * 1_024 * 1_024 + 224 * 1_024)
+            await gate.release()
+            await #expect(throws: CancellationError.self) { _ = try await task.value }
+            #expect(!owner.isValid && !f.manager.recoveryMaintenanceInProgress)
+            #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0 && budget.reservedBytes == before)
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func ramManagerRetryKeepsOriginalResultsAndScope(recreate: Bool) async throws {
+        let fault = LiveArtifactFault(stage: .ramRetentionRemoved)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: { try await fault.check($0) }, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, bound: true)
+            let raw = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            let rich = audio.deletingPathExtension().appendingPathExtension("richtranscript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Raw")).write(to: raw)
+            try JSONEncoder().encode(RichTranscript(segments: [])).write(to: rich)
+            try age([raw, rich]); let originals = try [raw, rich].map { ($0, try Data(contentsOf: $0)) }
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL])
+            }
+            #expect(!owner.isValid && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1)
+            let removed = try #require(originals.first { !FileManager.default.fileExists(atPath: $0.0.path) })
+            if recreate { try removed.1.write(to: removed.0, options: .atomic) }
+            let late = audio.deletingPathExtension().appendingPathExtension("spokensummary.json")
+            try Data("Late output never admitted".utf8).write(to: late); try age([late])
+            let other = f.files.root.appendingPathComponent("wrong-retry-folder")
+            try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+            let wrong = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [other])
+            #expect(wrong.historiesRetired == 0 && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1)
+            if recreate {
+                await #expect(throws: LiveArtifactError.wrongOwner) {
+                    _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [f.settings.recordingFolderURL])
+                }
+                #expect(try Data(contentsOf: removed.0) == removed.1)
+            } else {
+                let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [f.settings.recordingFolderURL])
+                #expect(result.historiesRetired == 1 && result.filesDeleted == 2)
+                #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+            }
+            #expect(try Data(contentsOf: late) == Data("Late output never admitted".utf8))
+            #expect(!f.state.liveRecordingSessions.isKnownDeleted(recordingID: owner.identity.recordingID))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: [false, true]) func ramManagerPreparationCannotInheritReplacedMasterOrMetadata(metadata: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .ramRetentionPrepared)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: { try await gate.enter($0) }, artifactPersistence: false)
+        var sweep: Task<RetentionCleanupResult, any Error>?
+        do {
+            let (owner, audio) = try ramManagerOwner(f, bound: true)
+            let raw = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Protected old output")).write(to: raw); try age([raw])
+            let before = try Data(contentsOf: raw)
+            let task = Task { try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL]) }; sweep = task
+            try await gate.waitForArrival()
+            let original = metadata ? audio.deletingPathExtension().appendingPathExtension("json") : audio
+            try Data(contentsOf: original).write(to: original, options: .atomic)
+            await gate.release()
+            await #expect(throws: LiveArtifactError.wrongOwner) { _ = try await task.value }
+            #expect(owner.isValid && f.state.liveRecordingSessions.entry(identity: owner.identity) === owner)
+            #expect(try Data(contentsOf: raw) == before && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+            let request = try owner.artifacts.beginChatRequest(); request.release()
+            await f.clean()
+        } catch { sweep?.cancel(); await gate.release(); _ = try? await sweep?.value; await f.clean(); throw error }
+    }
+
+    @Test func ramManagerInspectionCannotSilentlyExceedSharedPayloadBudget() async throws {
+        let budget = LiveRecordingPayloadBudget(ownerLimit: 8)
+        let f = try LiveManagerFixture(engine: .appleSpeech, payloadBudget: budget, artifactPersistence: false)
+        do {
+            let entries = try (0..<3).map { _ in try ramManagerOwner(f).0 }
+            let before = budget.reservedBytes
+            #expect(before > 96 * 1_024 * 1_024 && before < 128 * 1_024 * 1_024)
+            await #expect(throws: (any Error).self) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [f.settings.recordingFolderURL])
+            }
+            #expect(entries.allSatisfy(\.isValid) && budget.reservedBytes == before)
+            #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+            #expect(throws: (any Error).self) { _ = try ramManagerOwner(f) }
+            #expect(budget.reservedBytes == before)
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test func actualCaptureRequestFreezesIntendedFolderBeforeHeldCreate() async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        var start: Task<Void, any Error>?
+        do {
+            let original = f.settings.effectiveRecordingFolderURL
+            let task = Task { try await f.manager.startRecording() }; start = task
+            try #require(await eventually { f.probe.createEntered })
+            let changed = f.files.root.appendingPathComponent("later-folder")
+            f.settings.recordingFolderURL = changed
+            f.probe.releaseCreate(); try await task.value
+            let request = try #require(f.probe.request)
+            #expect(request.intendedRecordingFolderURL == original && f.settings.effectiveRecordingFolderURL == changed)
+            #expect(f.state.liveRecordingSessions.entry(recordingID: request.id) == nil)
+            #expect(f.state.recordingState == .recording)
+            await f.manager.stopRecording()
+            #expect(f.state.recordingState == .idle && f.probe.hardwareStops == 1)
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await f.clean()
+        } catch { f.probe.releaseCreate(); _ = try? await start?.value; await f.clean(); throw error }
+    }
+
+    @Test(arguments: [RetentionCategory.transcripts, .recordings], [false, true])
+    func ramManagerRejectsFailedPrivateReplacementBeforeAnyCleanup(category: RetentionCategory, held: Bool) async throws {
+        let gate = LiveArtifactGate(stage: .ownerHydration), budget = LiveRecordingPayloadBudget(ownerLimit: 8)
+        let f = try LiveManagerFixture(engine: .appleSpeech, payloadBudget: budget, artifactPersistence: false)
+        var retry: Task<LiveRecordingSessionRegistry.Entry?, any Error>?
+        do {
+            var original: LiveRecordingSessionRegistry.Entry?
+            let audio = try { let value = try ramManagerOwner(f, bound: true); original = value.0; return value.1 }()
+            let identity = try #require(original?.identity)
+            let recording = Recording(id: identity.recordingID, fileURL: audio, duration: 1, finalizedAudioURL: audio)
+            let canonical = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Original backup")).write(to: canonical)
+            let attempt = try await stageModelFreeReplacement(f, recording: recording, audio: audio, text: "Actually published RAM final")
+            let hydrate = f.state.liveRecordingSessions.onHydration
+            f.state.liveRecordingSessions.onHydration = { entry in
+                try await hydrate?(entry); throw LiveArtifactFixtureFailure.injected
+            }
+            await f.manager.refreshReprocessingAttempts(); await f.manager.resumeReprocessing(attempt.id)
+            let job = try #require(f.state.processingJob, "\(f.state.lastError ?? "no processing job")")
+            await job.task?.value
+            #expect(try await f.manager.reprocessingStore.load(attemptID: attempt.id).status == .completed)
+            #expect(original?.isValid == false && f.state.liveRecordingSessions.entry(recordingID: identity.recordingID) == nil)
+            #expect(f.state.liveRecordingSessions.retentionHints.isEmpty && f.state.liveRecordingSessions.pendingReplacements.count == 1)
+            original = nil
+            let baseline = budget.reservedBytes
+            let backup = f.files.root.appendingPathComponent("reprocessing/\(attempt.id.uuidString)/original/transcript.json")
+            let preserved = [audio, audio.deletingPathExtension().appendingPathExtension("json"), canonical,
+                audio.deletingPathExtension().appendingPathExtension("richtranscript.json"), backup]
+            let bytes = try preserved.map { try Data(contentsOf: $0) }
+            if held {
+                let registry = f.state.liveRecordingSessions, store = f.manager.reprocessingStore
+                registry.onHydration = { [weak registry] entry in
+                    guard let registry else { throw CancellationError() }
+                    let inspection = try registry.reserveReprocessingInspection()
+                    defer { withExtendedLifetime(inspection) {} }
+                    let result = try #require(try await store.managedFinal(audioURL: audio, identity: identity, nonpersistingReplacement: true))
+                    try await entry.artifacts.reconcileFinal(result)
+                    defer { withExtendedLifetime(result) {} }
+                    try await gate.enter(.ownerHydration)
+                }
+                let task = Task { try await f.manager.prepareLiveHistory(recordingID: identity.recordingID, audioURL: audio) }; retry = task
+                try await gate.waitForArrival()
+                #expect(budget.reservedBytes == baseline + 64 * 1_024 * 1_024)
+                #expect(!f.manager.recoveryMaintenanceInProgress && !f.manager.reprocessingAdmissionBusy && f.state.processingJob == nil)
+                task.cancel()
+            }
+            let protected = budget.reservedBytes
+            await #expect(throws: LiveRecordingSessionRegistry.Failure.unavailable) {
+                _ = try await f.manager.runRetentionCleanup(category: category, days: 0, folders: [audio.deletingLastPathComponent()])
+            }
+            #expect(budget.reservedBytes == protected && f.state.liveRecordingSessions.pendingReplacements.count == 1)
+            #expect(try preserved.map { try Data(contentsOf: $0) } == bytes)
+            if held {
+                await gate.release()
+                await #expect(throws: CancellationError.self) { _ = try await retry?.value }
+                let fresh = try #require(f.state.liveRecordingSessions.entry(recordingID: identity.recordingID))
+                #expect(!fresh.artifacts.capturePersistenceAllowed && fresh.artifacts.ramMetadata?.sourceRetired == false)
+                #expect(try fresh.artifacts.finalContext()?.segments.map(\.text) == ["Actually published RAM final"])
+                #expect(f.state.liveRecordingSessions.pendingReplacements.isEmpty && budget.reservedBytes == baseline + 32 * 1_024 * 1_024)
+                let safe = try await f.manager.runRetentionCleanup(category: category, days: 7, folders: [audio.deletingLastPathComponent()])
+                #expect(safe.historiesRetired == 0 && safe.filesDeleted == 0 && fresh.isValid)
+                #expect(try preserved.map { try Data(contentsOf: $0) } == bytes)
+            }
+            await f.clean()
+        } catch { retry?.cancel(); await gate.release(); _ = try? await retry?.value; await f.clean(); throw error }
+    }
+
+
+    @Test(arguments: ["healthy", "audio", "metadata", "unsupported", "foreign", "offline", "duplicate"])
+    func ramManagerAssociatedScopeCannotDowngradeToIntendedFolder(kind: String) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, intendedAudio) = try ramManagerOwner(f, physical: true)
+            let intended = f.settings.recordingFolderURL, saved = f.files.root.appendingPathComponent("saved-B")
+            try FileManager.default.createDirectory(at: saved, withIntermediateDirectories: true)
+            let audio = saved.appendingPathComponent(intendedAudio.lastPathComponent)
+            let metadata = audio.deletingPathExtension().appendingPathExtension("json")
+            try FileManager.default.moveItem(at: intendedAudio, to: audio)
+            try FileManager.default.moveItem(at: intendedAudio.deletingPathExtension().appendingPathExtension("json"), to: metadata)
+            try owner.artifacts.bind(to: audio)
+            #expect(owner.artifacts.ramMetadata?.capture.intendedFolder == intended)
+            let raw = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            let lookalike = intendedAudio.deletingPathExtension().appendingPathExtension("transcript.json")
+            try JSONEncoder().encode(TranscriptionResult(text: "Exact B output")).write(to: raw)
+            try JSONEncoder().encode(TranscriptionResult(text: "Never adopt A output")).write(to: lookalike)
+            try age([raw, lookalike])
+            let rawBytes = try Data(contentsOf: raw), lookalikeBytes = try Data(contentsOf: lookalike)
+            let wrong = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [intended])
+            #expect(wrong.historiesRetired == 0 && wrong.filesDeleted == 0 && owner.isValid)
+            #expect(try Data(contentsOf: raw) == rawBytes && Data(contentsOf: lookalike) == lookalikeBytes)
+            await #expect(throws: LiveArtifactError.wrongOwner) {
+                _ = try await f.manager.prepareLiveHistory(recordingID: owner.identity.recordingID, audioURL: intendedAudio)
+            }
+            if kind != "healthy" {
+                // A now has a plausible matching UUID, but B remains the one
+                // admitted physical association, including when B is missing.
+                try Data(contentsOf: audio).write(to: intendedAudio)
+                try Data(contentsOf: metadata).write(to: intendedAudio.deletingPathExtension().appendingPathExtension("json"))
+            }
+            if kind == "audio" { try FileManager.default.removeItem(at: audio) }
+            if kind == "metadata" { try FileManager.default.removeItem(at: metadata) }
+            if kind == "unsupported" { try Data("{}".utf8).write(to: metadata, options: .atomic) }
+            if kind == "foreign" {
+                let previous = try JSONDecoder().decode(RecordingMetadataPayload.self, from: Data(contentsOf: metadata))
+                let foreign = RecordingMetadataPayload(recordingID: UUID(), dateISO8601: previous.dateISO8601,
+                    durationSeconds: previous.durationSeconds, meetingTitle: previous.meetingTitle,
+                    masterFileName: previous.masterFileName, segmentFileNames: previous.segmentFileNames, warnings: previous.warnings)
+                try JSONEncoder().encode(foreign).write(to: metadata, options: .atomic)
+            }
+            let offline = f.files.root.appendingPathComponent("offline-B")
+            if kind == "offline" { try FileManager.default.moveItem(at: saved, to: offline) }
+            let actualRaw = kind == "offline" ? offline.appendingPathComponent(raw.lastPathComponent) : raw
+            if kind == "healthy" {
+                let recordingSweep = try await f.manager.runRetentionCleanup(category: .recordings, days: 0, folders: [intended, saved])
+                #expect(recordingSweep.filesDeleted == 0 && owner.isValid)
+                let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [saved])
+                #expect(result.historiesRetired == 1 && result.filesDeleted == 1 && result.bytesFreed == Int64(rawBytes.count))
+                #expect(!owner.isValid && !FileManager.default.fileExists(atPath: raw.path))
+                #expect(FileManager.default.fileExists(atPath: audio.path) && FileManager.default.fileExists(atPath: metadata.path))
+            } else {
+                // Discovery may reject duplicate, foreign, or offline storage;
+                // every such rejection must precede any cleanup effect.
+                do {
+                    let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [intended, saved])
+                    #expect(result.historiesRetired == 0 && result.filesDeleted == 0)
+                } catch {}
+                #expect(owner.isValid && owner.artifacts.admittedAudioURL?.path == audio.path)
+                #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+                #expect(try Data(contentsOf: actualRaw) == rawBytes)
+                #expect(FileManager.default.fileExists(atPath: intendedAudio.path))
+            }
+            #expect(try Data(contentsOf: lookalike) == lookalikeBytes)
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["queue.json", "live-transcript.json"], [false, true])
+    func ramManagerDefersQueuedOrOpaqueResidentSources(marker: String, bound: Bool) async throws {
+        let f = try LiveManagerFixture(engine: .appleSpeech, artifactPersistence: false)
+        do {
+            let (owner, audio) = try ramManagerOwner(f, physical: true, bound: bound)
+            let output = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            let opaque = audio.deletingPathExtension().appendingPathExtension(marker)
+            try JSONEncoder().encode(TranscriptionResult(text: "Protected conventional output")).write(to: output)
+            try Data("Unknown opaque admission".utf8).write(to: opaque); try age([output, opaque])
+            let files = [audio, audio.deletingPathExtension().appendingPathExtension("json"), output, opaque]
+            let before = try files.map { try Data(contentsOf: $0) }
+            for category in [RetentionCategory.transcripts, .recordings] {
+                let result = try await f.manager.runRetentionCleanup(category: category, days: 0, folders: [f.settings.recordingFolderURL])
+                #expect(result.historiesRetired == 0 && result.filesDeleted == 0 && owner.isValid)
+                #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0)
+                #expect(try files.map { try Data(contentsOf: $0) } == before)
+            }
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
+
+    @Test(arguments: ["tmp", "var"], [0, 1, 2, 3])
+    func ramManagerRetryUsesOriginalPhysicalScopeAcrossFixedSystemAliases(rootKind: String, mode: Int) async throws {
+        let bound = mode & 1 != 0, reverse = mode & 2 != 0
+        let fault = LiveArtifactFault(stage: .retentionCompleted), budget = LiveRecordingPayloadBudget(ownerLimit: 8)
+        let f = try LiveManagerFixture(engine: .appleSpeech, stage: { try await fault.check($0) },
+            payloadBudget: budget, artifactPersistence: false)
+        let real = rootKind == "tmp" ? f.files.root.appendingPathComponent("alias-scope")
+            : FileManager.default.temporaryDirectory.appendingPathComponent("ram-manager-alias-\(UUID())")
+        let sibling = real.deletingLastPathComponent().appendingPathComponent(real.lastPathComponent + "-sibling")
+        defer { try? FileManager.default.removeItem(at: real); try? FileManager.default.removeItem(at: sibling) }
+        do {
+            try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+            f.settings.recordingFolderURL = real
+            let physicalPath = try RecordingDeletionAuthority.canonical(real.appendingPathComponent("probe")).deletingLastPathComponent().path
+            let plainPath = physicalPath.hasPrefix("/private/") ? String(physicalPath.dropFirst("/private".count)) : physicalPath
+            try #require(plainPath.hasPrefix(rootKind == "tmp" ? "/tmp/" : "/var/"))
+            let plain = URL(fileURLWithPath: plainPath, isDirectory: true)
+            let privateFolder = URL(fileURLWithPath: "/private" + plainPath, isDirectory: true)
+            let captureFolder = reverse ? privateFolder : plain, selectedFolder = reverse ? plain : privateFolder
+            let identity = LiveSessionIdentity(recordingID: UUID(), captureSessionID: UUID())
+            let old = Date.now.addingTimeInterval(-30 * 86_400)
+            var owner: LiveRecordingSessionRegistry.Entry? = try f.state.liveRecordingSessions.registerLegacy(identity,
+                capturePersistenceAllowed: false, ramCapture: .init(startedAt: old, intendedFolder: captureFolder))
+            try owner?.artifacts.appendLegacy([.init(start: 0, end: 1, text: "Alias-scoped original")])
+            #expect(owner?.artifacts.ramMetadata?.capture.intendedFolder?.path == captureFolder.path)
+            let audio = captureFolder.appendingPathComponent("alias-\(identity.recordingID.uuidString).wav")
+            let metadata = audio.deletingPathExtension().appendingPathExtension("json")
+            let raw = audio.deletingPathExtension().appendingPathExtension("transcript.json")
+            let rawBytes = try JSONEncoder().encode(TranscriptionResult(text: "Original closed output"))
+            if bound {
+                try Data("Actual alias master".utf8).write(to: audio)
+                let value = RecordingMetadataPayload(recordingID: identity.recordingID,
+                    dateISO8601: ISO8601DateFormatter().string(from: old), durationSeconds: 1, meetingTitle: "Alias",
+                    masterFileName: audio.lastPathComponent, segmentFileNames: [], warnings: [])
+                try JSONEncoder().encode(value).write(to: metadata)
+                try rawBytes.write(to: raw); try age([raw])
+            }
+            try f.state.liveRecordingSessions.captureDidClose(identity)
+            if bound { try owner?.artifacts.bind(to: audio) }
+            weak var original = owner
+            let before = budget.reservedBytes
+            owner = nil
+            await #expect(throws: LiveArtifactFixtureFailure.injected) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 7, folders: [selectedFolder])
+            }
+            #expect(original?.isValid == false && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1)
+            #expect(budget.reservedBytes == before + 224 * 1_024)
+            #expect(f.state.liveRecordingSessions.retentionHints.first { $0.identity == identity }?.ram?.sourceRetired == true)
+            if bound { #expect(!FileManager.default.fileExists(atPath: raw.path)) }
+            let late = audio.deletingPathExtension().appendingPathExtension("spokensummary.json")
+            let lateBytes = Data("Late output outside original ticket".utf8)
+            try lateBytes.write(to: late); try age([late])
+            let wrong = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [sibling])
+            #expect(wrong.historiesRetired == 0 && wrong.filesDeleted == 0 && f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1)
+            let link = f.files.root.appendingPathComponent("ram-retry-arbitrary-link")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+            await #expect(throws: LiveArtifactError.unsafePath) {
+                _ = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [link])
+            }
+            #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 1 && budget.reservedBytes == before + 224 * 1_024)
+            let result = try await f.manager.runRetentionCleanup(category: .transcripts, days: 0, folders: [selectedFolder])
+            #expect(result.historiesRetired == 1 && result.filesDeleted == (bound ? 1 : 0))
+            #expect(result.bytesFreed == (bound ? Int64(rawBytes.count) : 0))
+            #expect(f.state.liveRecordingSessions.pendingRAMTranscriptRetentions == 0 && original == nil)
+            #expect(budget.reservedBytes == before - 32 * 1_024 * 1_024)
+            #expect(try Data(contentsOf: late) == lateBytes)
+            if bound { #expect(FileManager.default.fileExists(atPath: audio.path) && FileManager.default.fileExists(atPath: metadata.path)) }
+            #expect(!f.state.liveRecordingSessions.isKnownDeleted(recordingID: identity.recordingID))
+            await #expect(throws: LiveArtifactError.missingEvidence) {
+                _ = try await f.manager.prepareLiveHistory(recordingID: identity.recordingID, audioURL: nil)
+            }
+            #expect(!FileManager.default.fileExists(atPath: f.files.root.appendingPathComponent("LiveSessions").path))
+            await f.clean()
+        } catch { await f.clean(); throw error }
+    }
 }

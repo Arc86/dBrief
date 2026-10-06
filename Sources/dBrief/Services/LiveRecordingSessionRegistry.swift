@@ -122,6 +122,7 @@ final class LiveRecordingSessionRegistry {
         }
     }
     private var replacements: [UUID: Replacement] = [:]
+    var hasPendingRAMReplacement: Bool { replacements.values.contains { !$0.capturePersistenceAllowed } }
     @MainActor final class RAMTranscriptRetention {
         let identity: LiveSessionIdentity
         fileprivate let validity: RecordingDerivativeValidity
@@ -150,6 +151,17 @@ final class LiveRecordingSessionRegistry {
     var pendingRAMTranscriptRetentions: Int { ramRetentions.count }
     var pendingRAMRetentionWaiters: Int { ramRetentions.values.reduce(0) { $0 + $1.waiters } }
     private let beforeRAMDirectorySync: @Sendable (URL) throws -> Void
+
+    /// A retry can only join the original phase in its exact frozen folder.
+    /// This lookup validates lexical bounds without learning disk authority.
+    func ramTranscriptRetention(recordingID: UUID, folders: [URL]) throws -> RAMTranscriptRetention? {
+        guard folders.count <= 32 else { throw LiveArtifactError.artifactTooLarge }
+        for folder in folders { _ = try LiveRAMCaptureMetadata(startedAt: Date(timeIntervalSinceReferenceDate: 0), intendedFolder: folder) }
+        guard let phase = ramRetentions[recordingID],
+              let parent = phase.witness?.folder.url ?? phase.admittedAudio?.deletingLastPathComponent() ?? phase.metadata.capture.intendedFolder,
+              folders.contains(where: { $0.path == parent.path }) else { return nil }
+        return phase
+    }
 
     func beginRAMTranscriptRetention(recordingID: UUID, olderThan cutoff: Date, folders: [URL]) throws -> RAMTranscriptRetention? {
         guard !terminationStarted else { throw LiveArtifactError.terminating }

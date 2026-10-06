@@ -23,6 +23,7 @@ final class CaptureCoordinator {
         var showMiniPlayer = false
         var prewarmWhisper: WhisperRuntimeConfig? = nil
         var privacyScope: RecordingPrivacyScope? = nil
+        var intendedRecordingFolderURL: URL? = nil
     }
     struct LiveStreams: Sendable {
         let mic: AsyncStream<LiveAudioBuffer>
