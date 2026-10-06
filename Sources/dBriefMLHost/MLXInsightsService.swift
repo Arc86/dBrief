@@ -239,7 +239,7 @@ actor MLXInsightsService {
         MLX.Memory.clearCache()
         // Drain any in-flight Metal command buffers so the GPU is idle
         // before the process exits.
-        Stream().synchronize()
+        Stream.gpu.synchronize()
         Logger.ai.info("MLX force-unloaded for app termination")
         #endif
     }
@@ -328,7 +328,7 @@ actor MLXInsightsService {
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
-            prefillStepSize: 256
+            prefill: .init(stepSize: 256)
         )
     }
 

@@ -19,7 +19,8 @@ CONTENTS = $(APP_BUNDLE)/Contents
 MACOS = $(CONTENTS)/MacOS
 RESOURCES = $(CONTENTS)/Resources
 MACOS_RESOURCES = $(MACOS)/Resources
-MLX_PREBUILT_VERSION = 0.31.6
+# The prebuilt metallib must match the resolved mlx-swift, or kernels mismatch at runtime.
+MLX_PREBUILT_VERSION := $(shell python3 -c "import json; print(next(p['state']['version'] for p in json.load(open('Package.resolved'))['pins'] if p['identity'] == 'mlx-swift'))")
 MLX_PREBUILT_ZIP = .build/mlx-prebuilt/Cmlx-$(MLX_PREBUILT_VERSION).xcframework.zip
 MLX_PREBUILT_METALLIB_PATH = Cmlx.xcframework/macos-arm64_x86_64/Cmlx.framework/Versions/A/Resources/default.metallib
 

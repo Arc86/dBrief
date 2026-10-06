@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 /// One detected voice in the confirm-first review.
 struct SpeakerReviewItem: Identifiable, Equatable, Sendable {
@@ -33,6 +34,16 @@ struct TranscriptionPerf: Sendable {
     var spellCorrection: TimeInterval? = nil
     var finalization: TimeInterval? = nil
     var audioDuration: TimeInterval? = nil
+}
+
+extension TranscriptionPerf {
+    /// Timings of a transcription that just ran (not one loaded from a sidecar).
+    init(fresh result: TranscriptionResult, model: String?, audioDuration: TimeInterval,
+         spellCorrection: TimeInterval?, elapsed: TimeInterval) {
+        self.init(model: model, time: elapsed, inference: result.inferenceTime,
+                  diarization: result.diarizationTime, spellCorrection: spellCorrection,
+                  audioDuration: audioDuration)
+    }
 }
 
 /// A bump observed by an open transcript viewer so it reloads the committed

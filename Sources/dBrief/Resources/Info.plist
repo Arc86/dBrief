@@ -49,5 +49,7 @@
 	<string>https://github.com/Arc86/dBrief/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>6fnsC0BNteXyMAHepJ2OLtprdaRvSokq2hdXYKQjvR8=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>43200</integer>
 </dict>
 </plist>
