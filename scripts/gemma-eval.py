@@ -49,7 +49,12 @@ def main():
         print("\n".join(out.stderr.splitlines()[-20:]))
         sys.exit(1)
     # mlx-swift-lm prints warnings to stdout after the report; take the last JSON line
-    last = [l for l in out.stdout.strip().splitlines() if l.startswith("{")][-1]
+    json_lines = [l for l in out.stdout.strip().splitlines() if l.startswith("{")]
+    if not json_lines:
+        print("helper produced no JSON report on stdout")
+        print("\n".join(out.stderr.splitlines()[-20:]))
+        sys.exit(1)
+    last = json_lines[-1]
     report = json.loads(last)
     if "error" in report:
         print(report["error"]); sys.exit(1)

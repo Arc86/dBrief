@@ -4,7 +4,7 @@ import dBriefWire
 /// `--eval-insights <file>`: one Gemma analysis outside the request loop, for
 /// measuring long-context behavior (see scripts/gemma-eval.py). Dev tooling only.
 enum GemmaEval {
-    static func run(arguments args: [String]) async -> Int32 {
+    static func run(arguments args: [String], output: FileHandle) async -> Int32 {
         guard let i = args.firstIndex(of: "--eval-insights"), i + 1 < args.count else { return 2 }
         let language: OutputLanguage = {
             guard let l = args.firstIndex(of: "--language"), l + 1 < args.count else { return .matchInput }
@@ -26,11 +26,11 @@ enum GemmaEval {
                 "result": resultJSON,
             ]
             let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
-            FileHandle.standardOutput.write(data + Data("\n".utf8))
+            output.write(data + Data("\n".utf8))
             return 0
         } catch {
             let data = (try? JSONSerialization.data(withJSONObject: ["error": "\(error)"])) ?? Data()
-            FileHandle.standardOutput.write(data + Data("\n".utf8))
+            output.write(data + Data("\n".utf8))
             return 1
         }
     }

@@ -1,7 +1,7 @@
 import MLXLMCommon
 
 /// Single home for local-Gemma tuning. Values are tuned with scripts/gemma-eval.py;
-/// see for the measurements behind them.
+/// the measurements behind them are in the commit messages.
 enum GemmaGenerationConfig {
     /// TurboQuant on Gemma 4's global-attention layers (the only layers whose cache
     /// grows; the 512-token sliding layers stay fp16). `.balanced` (fp8 keys + 3-bit
