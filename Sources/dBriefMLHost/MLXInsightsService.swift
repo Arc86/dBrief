@@ -412,17 +412,20 @@ actor MLXInsightsService {
     /// halves (greedy decoding would make an identical retry behave identically) and
     /// each half is mapped once. A half that closes at the cap keeps its valid notes
     /// (no further splitting); a failing half fails the analysis loudly, so a part is
-    /// never silently omitted.
+    /// never silently omitted. A part too small to split (one piece at the 1000-token
+    /// floor) is not re-run: a capped result keeps its notes, a failure is rethrown.
     private func mapPart(_ part: TranscriptChunk, system: String, context: String,
                          container: ModelContainer) async throws -> ChunkNotes {
+        enum FirstPass { case capped(ChunkNotes), failed(Error) }
+        let firstPass: FirstPass
         do {
             let first = try await mapOnce(part, system: system, context: context, container: container)
             guard first.closedAtCap else { return first.notes }
-            Self.diagnostic("Gemma part \(part.index) closed at output cap; splitting")
+            firstPass = .capped(first.notes)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            Self.diagnostic("Gemma part \(part.index) split after failure: \(error)")
+            firstPass = .failed(error)
         }
         let text = part.text
         let halves = await container.perform { ctx in
@@ -430,6 +433,19 @@ actor MLXInsightsService {
             // Half of this part's own size, so even a short (last) part really splits.
             let half = max(1_000, (min(count(text), GemmaGenerationConfig.chunkTokenBudget) + 1) / 2)
             return TranscriptChunkPlanner.plan(text, maxTokensPerChunk: half, overlapLines: 0, countTokens: count)
+        }
+        switch (firstPass, halves.count > 1) {
+        // One piece: greedy decoding would repeat the identical result, so do not re-run.
+        case (.capped(let notes), false):
+            Self.diagnostic("Gemma part \(part.index) closed at output cap; too small to split, keeping its notes")
+            return notes
+        case (.failed(let error), false):
+            Self.diagnostic("Gemma part \(part.index) failed and is too small to split: \(error)")
+            throw error
+        case (.capped, true):
+            Self.diagnostic("Gemma part \(part.index) closed at output cap; splitting")
+        case (.failed(let error), true):
+            Self.diagnostic("Gemma part \(part.index) split after failure: \(error)")
         }
         var merged = ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: [])
         for (offset, half) in halves.enumerated() {

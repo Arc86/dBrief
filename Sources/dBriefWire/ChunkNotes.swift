@@ -47,19 +47,33 @@ public enum ChunkNotesMerger {
 
     /// True for filler such as "No action items were assigned in this segment." or
     /// "[Unassigned] None." that a model writes instead of an empty list; these would
-    /// otherwise become fake reminders. Deliberately narrow: an item is never dropped
-    /// just for lacking a `[WHO]` prefix.
+    /// otherwise become fake reminders. Deliberately narrow, so a real commitment is
+    /// never dropped: the owner must be absent or a non-person ("[Unassigned]",
+    /// "[Nobody]", ...) AND the text must be a bare "none"-style word or open with an
+    /// anchored "no (further) action items / tasks / ..." phrase.
     public static func isPlaceholderActionItem(_ item: String) -> Bool {
         var text = item.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let owner = text.range(of: #"^\[[^\]]*\]"#, options: .regularExpression) {
-            text.removeSubrange(owner)
+        if let ownerRange = text.range(of: #"^\[[^\]]*\]"#, options: .regularExpression) {
+            let owner = text[ownerRange].dropFirst().dropLast()
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard placeholderOwners.contains(owner) else { return false }
+            text.removeSubrange(ownerRange)
         }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).lowercased()
-        if text.isEmpty || ["none", "n/a", "geen", "nvt"].contains(text) { return true }
-        guard text.hasPrefix("no ") || text.hasPrefix("none") || text.hasPrefix("geen") else { return false }
-        let topics = ["action item", "task", "commitment", "actiepunt", "taken", "afspraken"]
-        return topics.contains { text.contains($0) }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var bare = text
+        while let last = bare.unicodeScalars.last, CharacterSet.punctuationCharacters.contains(last) {
+            bare.removeLast()
+        }
+        bare = bare.trimmingCharacters(in: .whitespacesAndNewlines)
+        if placeholderWords.contains(bare) || placeholderWords.contains(text) { return true }
+        return text.range(of: placeholderPhrase, options: [.regularExpression, .caseInsensitive]) != nil
     }
+
+    private static let placeholderOwners: Set<String> =
+        ["unassigned", "none", "n/a", "nobody", "no one", "niemand", "onbekend", "geen"]
+    private static let placeholderWords: Set<String> = ["none", "n/a", "-", "geen", "nvt"]
+    private static let placeholderPhrase =
+        #"^(no|none|geen)(\s+(further|new|open|specific|other|more|verdere|nieuwe|concrete|open))?\s+(action\s+items?|tasks?|commitments?|actiepunt(en)?|taken|afspraken)\b"#
 
     /// Renders notes for the reduce prompt. When over `maxTokens`, drops the
     /// latest key points from the largest part first; decisions, action items and

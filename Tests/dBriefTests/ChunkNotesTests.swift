@@ -23,13 +23,19 @@ import dBriefWire
     }
 
     @Test(arguments: ["No action items were assigned in this segment.", "[Unassigned] No action items.",
-                      "Geen actiepunten in dit deel.", "None", "n/a", "-", "[Unassigned] none.", "No tasks or commitments."])
+                      "Geen actiepunten in dit deel.", "None", "n/a", "-", "[Unassigned] none.", "No tasks or commitments.",
+                      "[Nobody] No tasks.", "No further action items."])
     func placeholderActionItemsAreRecognized(item: String) {
         #expect(ChunkNotesMerger.isPlaceholderActionItem(item))
     }
 
     @Test(arguments: ["[Ann] to make sure no tasks are left open before Friday", "[Bo] to send the deck",
-                      "Send the deck to legal", "[Cy] to note that no budget remains"])
+                      "Send the deck to legal", "[Cy] to note that no budget remains",
+                      "[Piet] geen afspraken meer plannen voor vrijdag",
+                      "[Piet] Geen nieuwe taken aannemen tot de release",
+                      "[Ann] No later than Friday, finish the task list",
+                      "[Unassigned] No owner yet for the vendor contract task; assign one",
+                      "No decision taken yet; [Ann] to follow up"])
     func realActionItemsAreKept(item: String) {
         #expect(!ChunkNotesMerger.isPlaceholderActionItem(item))
     }
