@@ -27,7 +27,7 @@ final class MarkdownEditorController: NSObject {
         self.latestMarkdown = markdown
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = MarkdownEditorWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.configuration.userContentController.add(WeakScriptMessageHandler(self), name: "dbrief")
         webView.navigationDelegate = self
@@ -154,6 +154,19 @@ extension MarkdownEditorController: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         Logger.app.error("Summary editor web content process terminated; reloading")
         load()
+    }
+}
+
+/// The page never scrolls itself (it is sized to its content), but WKWebView
+/// still consumes wheel and trackpad events, so the summary would only scroll
+/// via the scroll bar. Hand them to the enclosing SwiftUI scroll view instead.
+private final class MarkdownEditorWebView: WKWebView {
+    override func scrollWheel(with event: NSEvent) {
+        if let scrollView = enclosingScrollView {
+            scrollView.scrollWheel(with: event)
+        } else {
+            nextResponder?.scrollWheel(with: event)
+        }
     }
 }
 

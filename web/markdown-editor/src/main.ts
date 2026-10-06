@@ -10,6 +10,7 @@ import "@milkdown/crepe/theme/common/toolbar.css";
 import "./theme.css";
 import { type BridgeMessage, type EditorAPI, mountEditor, shortcutFor } from "./editor";
 import { measureHeight } from "./height";
+import { animateReorder, displacements, snapshotBlocks } from "./reorder";
 
 declare global {
   interface Window {
@@ -55,6 +56,25 @@ new MutationObserver(scheduleHeight).observe(document.body, {
 });
 // The block handle animates its position; measure again once it settles.
 document.addEventListener("transitionend", scheduleHeight, true);
+
+// Block drag: dim the dragged block while it moves, then glide the blocks that
+// shifted into place and flash the one that landed. Capture phase runs before
+// ProseMirror's own drop handler, so the snapshot is the pre-drop layout.
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const endDrag = () => document.body.classList.remove("dbrief-dragging");
+document.addEventListener("dragstart", () => document.body.classList.add("dbrief-dragging"), true);
+document.addEventListener("dragend", endDrag, true);
+document.addEventListener(
+  "drop",
+  () => {
+    endDrag();
+    const blocks = root.querySelector(".ProseMirror");
+    if (!blocks) return;
+    const before = snapshotBlocks(blocks);
+    requestAnimationFrame(() => animateReorder(displacements(before, blocks), { reduceMotion: reduceMotion.matches }));
+  },
+  true,
+);
 
 // `ready` only after window.dbrief exists, so Swift's first calls always land.
 mountEditor(root, post).then((api) => {

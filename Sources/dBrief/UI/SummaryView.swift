@@ -17,6 +17,7 @@ struct SummaryView: View {
     @Environment(\.viewerPalette) private var palette
     @Environment(\.viewerReading) private var reading
     @Environment(\.viewerMode) private var mode
+    @Environment(\.viewerNonNeon) private var nonNeon
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isSummaryCollapsed = false
     @State private var isSaving = false
@@ -149,6 +150,12 @@ struct SummaryView: View {
                 Text("Summary")
                     .uiFont(.system(size: 16, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
+                Label("Editing", systemImage: "pencil")
+                    .uiFont(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.accentText.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(palette.primary.color.opacity(0.12), in: Capsule())
                 Spacer(minLength: 8)
                 Button("Cancel") { requestCancel() }
                     .keyboardShortcut(isCurrentTab ? KeyboardShortcut.cancelAction : nil)
@@ -163,6 +170,10 @@ struct SummaryView: View {
             }
             .uiFont(.system(size: 12))
             .buttonStyle(ViewerCommandButtonStyle())
+
+            Text("Type / to add a block · drag a block's handle to move it · ⌘S saves · Esc cancels")
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
 
             if isReadOnly {
                 Label("Reprocessing is in progress. Your draft is kept; editing is paused.", systemImage: "lock")
@@ -179,6 +190,13 @@ struct SummaryView: View {
         }
         .padding(24)
         .modifier(ViewerCard())
+        // An accent frame marks the card as editable, distinct from the read view.
+        .overlay {
+            RoundedRectangle(cornerRadius: palette.readingCardCornerRadius)
+                .strokeBorder(palette.primary.color, lineWidth: 2)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: palette.primary.color.opacity(nonNeon ? 0 : 0.18), radius: 12)
         .confirmationDialog("Discard changes to the summary?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard Changes", role: .destructive) { edit = nil }
             Button("Keep Editing", role: .cancel) {}

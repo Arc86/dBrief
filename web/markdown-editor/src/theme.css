@@ -49,3 +49,54 @@ html .milkdown .ProseMirror {
   padding: 4px 8px 12px 36px;
   line-height: var(--dbrief-line-height);
 }
+
+/* Crepe hides the native caret and draws a 2px "virtual cursor" in the pale
+   outline color, which disappears against body text; draw it in the accent. */
+html .milkdown .ProseMirror-focused {
+  --prosemirror-virtual-cursor-color: var(--crepe-color-primary);
+}
+
+/* Drop target: Crepe's default is a half-transparent outline-colored bar. */
+html .milkdown .crepe-drop-cursor {
+  background-color: var(--crepe-color-primary);
+  opacity: 1;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--crepe-color-primary), transparent 75%);
+}
+
+/* The block picked up by its handle. */
+html .milkdown .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--crepe-color-primary), transparent 40%);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+body.dbrief-dragging .milkdown .ProseMirror .ProseMirror-selectednode {
+  opacity: 0.35;
+}
+
+/* The block that just landed. */
+@keyframes dbrief-dropped {
+  from {
+    background-color: color-mix(in srgb, var(--crepe-color-primary), transparent 80%);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+html .milkdown .ProseMirror .dbrief-dropped {
+  border-radius: 4px;
+  animation: dbrief-dropped 900ms ease-out;
+}
+
+/* The web view grows to fit an open menu (see height.ts), and its wheel events
+   scroll the surrounding page, so the slash menu must not scroll internally. */
+html .milkdown .milkdown-slash-menu .menu-groups {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html .milkdown .ProseMirror .dbrief-dropped {
+    animation: none;
+  }
+}

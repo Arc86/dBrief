@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import dBrief
@@ -39,6 +40,27 @@ struct MarkdownEditorControllerTests {
         controller.simulateWebContentCrashForTesting()
         let reloaded = try #require(await firstLoaded(from: controller))
         #expect(reloaded.contains("Eerste versie"))
+    }
+
+    /// Stands in for the enclosing SwiftUI scroll view in the responder chain.
+    private final class ScrollRecorder: NSResponder {
+        var received = 0
+        override func scrollWheel(with event: NSEvent) { received += 1 }
+    }
+
+    @Test("Trackpad and wheel scrolling over the editor scroll the page around it")
+    func scrollWheelReachesEnclosingScroll() throws {
+        let index = try #require(MarkdownEditorResources.indexURL(in: MarkdownEditorSourceBundle.resources))
+        let controller = MarkdownEditorController(indexURL: index, markdown: "Tekst")
+        defer { controller.tearDown() }
+        let recorder = ScrollRecorder()
+        controller.webView.nextResponder = recorder
+
+        let cgEvent = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: -12, wheel2: 0, wheel3: 0))
+        let event = try #require(NSEvent(cgEvent: cgEvent))
+        controller.webView.scrollWheel(with: event)
+
+        #expect(recorder.received == 1)
     }
 
     private func proseMirrorHasFocus(_ controller: MarkdownEditorController) async -> Bool {
