@@ -69,23 +69,9 @@ actor MLXInsightsService {
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
                     self.stateHandler(.analyzing)
-                    let session = ChatSession(
-                        container,
-                        instructions: systemPrompt,
-                        generateParameters: self.generationParameters()
-                    )
-
-                    var output = ""
-                    do {
-                        for try await chunk in session.streamResponse(to: userPrompt) {
-                            output += chunk
-                            continuation.yield(chunk)
-                        }
-                    } catch {
-                        await session.synchronize()
-                        throw error
-                    }
-                    await session.synchronize()
+                    let output = try await self.generateInsightsJSON(
+                        container: container, system: systemPrompt, user: userPrompt,
+                        onDelta: { continuation.yield($0) })
                     self.isInferencing = false
 
                     _ = try LocalInsightsDecoder.decodeAndNormalize(output)
@@ -130,24 +116,10 @@ actor MLXInsightsService {
             let container = try await loadModelContainerIfNeeded()
             stateHandler(.analyzing)
             let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
-            let session = ChatSession(
-                container,
-                instructions: systemPrompt,
-                generateParameters: generationParameters()
-            )
-
             let truncatedText = Self.truncateTranscript(text)
             let userPrompt = buildUserPrompt(transcript: truncatedText)
-            var raw = ""
-            do {
-                for try await chunk in session.streamResponse(to: userPrompt) {
-                    raw += chunk
-                }
-            } catch {
-                await session.synchronize()
-                throw error
-            }
-            await session.synchronize()
+            let raw = try await generateInsightsJSON(
+                container: container, system: systemPrompt, user: userPrompt, onDelta: { _ in })
             isInferencing = false
             let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
             #if canImport(MLX)
@@ -332,6 +304,30 @@ actor MLXInsightsService {
 
     private func buildSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) -> String {
         UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+    }
+
+    /// Guided JSON first; free-text ChatSession only if guided failed before
+    /// emitting anything (so a stream never carries two JSON documents, F10).
+    private func generateInsightsJSON(
+        container: ModelContainer, system: String, user: String,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        do {
+            return try await GuidedJSONGenerator.generate(
+                system: system, user: user, schema: InsightsSchema.unified,
+                container: container, onDelta: onDelta)
+        } catch let failure as GuidedJSONGenerator.FailedBeforeOutput {
+            Logger.ai.warning("Guided generation unavailable, falling back to free text: \(String(describing: failure.underlying))")
+            let session = ChatSession(container, instructions: system, generateParameters: generationParameters())
+            var raw = ""
+            do {
+                for try await chunk in session.streamResponse(to: user) { raw += chunk; onDelta(chunk) }
+            } catch {
+                await session.synchronize(); throw error
+            }
+            await session.synchronize()
+            return raw
+        }
     }
 
     private func generationParameters() -> GenerateParameters {
