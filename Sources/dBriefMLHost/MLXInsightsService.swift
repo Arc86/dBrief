@@ -399,6 +399,7 @@ actor MLXInsightsService {
         let reduced = try JSONDecoder().decode(ReduceOutput.self, from: Data(reduceJSON.utf8))
         let result = LocalInsightsResult(
             titleConcept: reduced.titleConcept, summary: reduced.summary,
+            // Decisions are not merged deterministically: they reach the final record only via the reduce summary.
             actionItems: ChunkNotesMerger.mergedActionItems(allNotes),
             tags: reduced.tags, sentiment: reduced.sentiment)
         let json = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
@@ -406,14 +407,18 @@ actor MLXInsightsService {
         return json
     }
 
-    /// Notes for one part. On any non-cancellation failure the part is re-planned
-    /// into halves (greedy decoding would make an identical retry fail identically)
-    /// and each half is mapped once; a failing half fails the analysis loudly, so a
-    /// part is never silently omitted.
+    /// Notes for one part. On any non-cancellation failure, or a closure at the
+    /// output cap (whose later lists may be cut short), the part is re-planned into
+    /// halves (greedy decoding would make an identical retry behave identically) and
+    /// each half is mapped once. A half that closes at the cap keeps its valid notes
+    /// (no further splitting); a failing half fails the analysis loudly, so a part is
+    /// never silently omitted.
     private func mapPart(_ part: TranscriptChunk, system: String, context: String,
                          container: ModelContainer) async throws -> ChunkNotes {
         do {
-            return try await mapOnce(part, system: system, context: context, container: container)
+            let first = try await mapOnce(part, system: system, context: context, container: container)
+            guard first.closedAtCap else { return first.notes }
+            Self.diagnostic("Gemma part \(part.index) closed at output cap; splitting")
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -427,28 +432,31 @@ actor MLXInsightsService {
             return TranscriptChunkPlanner.plan(text, maxTokensPerChunk: half, overlapLines: 0, countTokens: count)
         }
         var merged = ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: [])
-        for half in halves {
+        for (offset, half) in halves.enumerated() {
             try Task.checkCancellation()
-            let notes = try await mapOnce(
+            let result = try await mapOnce(
                 TranscriptChunk(index: part.index, total: part.total, text: half.text),
                 system: system, context: context, container: container)
-            merged.keyPoints += notes.keyPoints
-            merged.decisions += notes.decisions
-            merged.actionItems += notes.actionItems
-            merged.people += notes.people
+            if result.closedAtCap {
+                Self.diagnostic("Gemma part \(part.index) half \(offset + 1)/\(halves.count) closed at output cap; keeping its notes")
+            }
+            merged.keyPoints += result.notes.keyPoints
+            merged.decisions += result.notes.decisions
+            merged.actionItems += result.notes.actionItems
+            merged.people += result.notes.people
         }
         return merged.deduplicated()
     }
 
     private func mapOnce(_ part: TranscriptChunk, system: String, context: String,
-                         container: ModelContainer) async throws -> ChunkNotes {
+                         container: ModelContainer) async throws -> (notes: ChunkNotes, closedAtCap: Bool) {
         try Task.checkCancellation()
         let output = try await GuidedJSONGenerator.generate(
             system: system, user: UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part),
             schema: InsightsSchema.chunkNotes, maxTokens: GemmaGenerationConfig.chunkNotesMaxTokens,
             container: container)
-        if output.closedAtCap { Self.diagnostic("Gemma part \(part.index) closed at output cap") }
-        return try JSONDecoder().decode(ChunkNotes.self, from: Data(output.json.utf8)).deduplicated()
+        let notes = try JSONDecoder().decode(ChunkNotes.self, from: Data(output.json.utf8)).deduplicated()
+        return (notes, output.closedAtCap)
     }
 
     /// Map-reduce diagnostics: unified log plus stderr, so the eval harness sees them.

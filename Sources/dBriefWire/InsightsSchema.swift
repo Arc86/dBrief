@@ -25,11 +25,14 @@ public enum InsightsSchema {
     "additionalProperties":false}
     """
 
+    /// Property order is generation order (xgrammar keeps declaration order), so the
+    /// high-value lists come first and survive a closure at the output cap; the
+    /// open-ended key points go last.
     public static let chunkNotes = """
     {"type":"object","properties":{\
-    "key_points":\(stringArray),"decisions":\(stringArray),\
-    "action_items":\(stringArray),"people":\(stringArray)},\
-    "required":["key_points","decisions","action_items","people"],\
+    "action_items":\(stringArray),"decisions":\(stringArray),\
+    "people":\(stringArray),"key_points":\(stringArray)},\
+    "required":["action_items","decisions","people","key_points"],\
     "additionalProperties":false}
     """
 }

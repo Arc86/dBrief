@@ -32,6 +32,16 @@ import dBriefWire
 
     @Test func chunkNotesSchemaKeys() throws {
         let required = try #require(try object(InsightsSchema.chunkNotes)["required"] as? [String])
-        #expect(Set(required) == ["key_points", "decisions", "action_items", "people"])
+        #expect(required == ["action_items", "decisions", "people", "key_points"])
+    }
+
+    /// xgrammar emits properties in declaration order (ordered picojson keys), so the
+    /// high-value lists come first and survive a closure at the output cap.
+    @Test func chunkNotesSchemaDeclaresHighValueListsFirst() throws {
+        let schema = InsightsSchema.chunkNotes
+        let positions = try ["\"action_items\":", "\"decisions\":", "\"people\":", "\"key_points\":"].map {
+            try #require(schema.range(of: $0)).lowerBound
+        }
+        #expect(positions == positions.sorted())
     }
 }

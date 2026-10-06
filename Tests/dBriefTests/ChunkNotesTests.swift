@@ -63,6 +63,14 @@ import dBriefWire
         #expect(notes.deduplicated() == notes)
     }
 
+    @Test func chunkPromptRulesFollowSchemaOrder() throws {
+        let sys = UnifiedInsightsPrompt.chunkNotesSystemPrompt(outputLanguage: .english, customVocabulary: "", guidance: nil)
+        let positions = try ["**action_items:**", "**decisions:**", "**people:**", "**key_points:**"].map {
+            try #require(sys.range(of: $0)).lowerBound
+        }
+        #expect(positions == positions.sorted())
+    }
+
     @Test func reduceInputIsOrderedAndLabelled() {
         let notes = [ChunkNotes(keyPoints: ["first"], decisions: ["d1"], actionItems: [], people: ["Ann"]),
                      ChunkNotes(keyPoints: ["second"], decisions: [], actionItems: ["[Bo] to x"], people: [])]
