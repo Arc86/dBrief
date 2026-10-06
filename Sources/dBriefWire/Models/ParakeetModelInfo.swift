@@ -1,7 +1,7 @@
 import Foundation
 
 public struct ParakeetModelInfo: Identifiable, Sendable {
-    public let id: String          // "v2", "v3", "ultra" or "redux"
+    public let id: String          // "v2", "v3", "ultra", "redux" or "phonon2"
     public let displayName: String
     public let estimatedMemoryMB: Int
     public let isEnglishOnly: Bool
@@ -42,6 +42,15 @@ public struct ParakeetModelInfo: Identifiable, Sendable {
             id: "redux",
             displayName: "Parakeet Redux (Multilingual, smallest download)",
             estimatedMemoryMB: 1_200,
+            minimumMacOSMajor: 15
+        ),
+        // Quantization-aware re-training of v3 for English (~360 MB download); fastest
+        // v3-family encoder on the ANE. Palettized weights need macOS 15.
+        ParakeetModelInfo(
+            id: "phonon2",
+            displayName: "Parakeet Phonon-2 (English, fastest)",
+            estimatedMemoryMB: 1_500,
+            isEnglishOnly: true,
             minimumMacOSMajor: 15
         ),
     ]
