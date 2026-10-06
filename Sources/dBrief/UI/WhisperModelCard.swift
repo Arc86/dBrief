@@ -25,6 +25,7 @@ extension TranscriptionCardPresentation {
         let summary = switch model.id {
         case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; ratings are family estimates."
         case "redux": "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes."
+        case "phonon2": "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra."
         default: "Parakeet / FluidAudio · fast transcription; ratings are family estimates."
         }
         return .init(title: model.displayName, language: model.isEnglishOnly ? "English only" : "25 European languages",

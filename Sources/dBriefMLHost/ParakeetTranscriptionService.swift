@@ -243,6 +243,7 @@ actor ParakeetTranscriptionService {
         case "v2": .v2
         case "ultra": .ultra
         case "redux": .redux
+        case "phonon2": .phonon2
         default: .v3
         }
     }
