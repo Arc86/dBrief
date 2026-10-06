@@ -69,6 +69,7 @@ let package = Package(
                 "dBriefMLHost",
                 "dBriefWire",
                 "FluidAudio",
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),

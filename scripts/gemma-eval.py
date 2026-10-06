@@ -48,7 +48,8 @@ def main():
         print(f"helper failed, return code {out.returncode}")
         print("\n".join(out.stderr.splitlines()[-20:]))
         sys.exit(1)
-    last = out.stdout.strip().splitlines()[-1]
+    # mlx-swift-lm prints warnings to stdout after the report; take the last JSON line
+    last = [l for l in out.stdout.strip().splitlines() if l.startswith("{")][-1]
     report = json.loads(last)
     if "error" in report:
         print(report["error"]); sys.exit(1)

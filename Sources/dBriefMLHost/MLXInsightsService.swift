@@ -314,6 +314,9 @@ actor MLXInsightsService {
             id: Self.modelID
         )
         self.modelContainer = container
+        if let status = try? await container.cacheStatus(parameters: generationParameters()) {
+            Logger.ai.info("Gemma KV plan: strategy=\(status.requestedStrategy?.description ?? "none") layers=\(status.layers.count) pending=\(status.pendingLayerCount)")
+        }
         return container
     }
 
@@ -333,7 +336,8 @@ actor MLXInsightsService {
 
     private func generationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 8192,
+            maxTokens: GemmaGenerationConfig.maxOutputTokens,
+            kvCache: GemmaGenerationConfig.kvCache,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
