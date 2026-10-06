@@ -28,6 +28,13 @@ def repetition_ratio(text):
     sentences = [s.strip().lower() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 20]
     return 0.0 if not sentences else 1 - len(set(sentences)) / len(sentences)
 
+def summary_complete(summary):
+    """Simple truncation check: the stripped summary must end with sentence-final
+    punctuation, optionally followed by closing brackets/quotes (so `.)` and `."`
+    pass). A mid-sentence cut such as "(e.g.," fails."""
+    s = summary.strip()
+    return bool(s) and s[-1] in ".!?…)]'’”\""
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("transcript"); p.add_argument("--app", default="dBrief-Beta.app")
@@ -70,7 +77,8 @@ def main():
     row = {"label": a.label, "date": datetime.date.today().isoformat(), "input_chars": report["input_chars"],
            "elapsed_s": round(report["elapsed_s"], 1), "peak_memory_mb": report["peak_memory_mb"],
            "recall": recall, "repetition": round(repetition_ratio(r["summary"]), 3),
-           "action_items": len(r["action_items"])}
+           "action_items": len(r["action_items"]),
+           "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])}
     print(json.dumps(row, indent=2))
     os.makedirs("docs/diagnostics", exist_ok=True)
     with open("docs/diagnostics/gemma-eval.jsonl", "a") as log:

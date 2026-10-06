@@ -193,6 +193,7 @@ public enum UnifiedInsightsPrompt {
         Place the full summary text, INCLUDING any bullet points, headings, or line breaks the rules call for,
         inside the "summary" string (use "\\n" for line breaks). Put each action item as its own string in the
         "action_items" array, and the topic tags in the "tags" array.
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
         {
           "title_concept": "Short Descriptive Title",
           "summary": "The summary text, formatted as the SUMMARY rule requires...",

@@ -318,6 +318,7 @@ actor MLXInsightsService {
                 container: container, onDelta: onDelta)
         } catch let failure as GuidedJSONGenerator.FailedBeforeOutput {
             Logger.ai.warning("Guided generation unavailable, falling back to free text: \(String(describing: failure.underlying))")
+            if Task.isCancelled { throw CancellationError() }
             let session = ChatSession(container, instructions: system, generateParameters: generationParameters())
             var raw = ""
             do {
