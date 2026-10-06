@@ -93,6 +93,13 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
+    /// One Gemma chat turn on the helper's warm session (see `MLRequest.chatTurn`).
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
+        PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
+            await connection.stream(.chatTurn(systemPrompt: systemPrompt, history: history, question: question, retrievedContext: retrievedContext))
+        }
+    }
+
     func copyToClipboard(transcript: String, insights: LocalInsightsResult) async -> String {
         // Formatting is pure + needs the AppKit pasteboard — keep it in-process.
         let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)

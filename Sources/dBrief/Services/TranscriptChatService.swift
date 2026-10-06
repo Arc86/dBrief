@@ -259,11 +259,20 @@ final class TranscriptChatService {
         let assistantIdx = messages.count - 1
 
         let systemPrompt = buildSystemPrompt()
-        let fullUserMessage = buildContextualUserMessage(currentMessage: trimmed)
         var limiter = ChatResponseLimiter()
 
         do {
-            let stream = await buildStream(systemPrompt: systemPrompt, userMessage: fullUserMessage)
+            let stream: AsyncThrowingStream<String, Error>
+            if resolvedChatEngine == .qwenLocal, let plugin = localPlugin {
+                // Gemma keeps a warm session: send structured turns (history excludes the
+                // just-appended user message and assistant placeholder) instead of flattened text.
+                let history = ChatContextPlanner.history(from: messages.dropLast(2).map {
+                    (role: $0.role == .user ? ChatTurnMessage.Role.user : .assistant, content: $0.content)
+                })
+                stream = await plugin.chatTurn(systemPrompt: systemPrompt, history: history, question: trimmed, retrievedContext: "")
+            } else {
+                stream = await buildStream(systemPrompt: systemPrompt, userMessage: buildContextualUserMessage(currentMessage: trimmed))
+            }
             for try await chunk in stream {
                 guard !invalidated, !Task.isCancelled, activeSendID == sendID,
                       messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
@@ -420,6 +429,11 @@ final class TranscriptChatService {
     }
 
     // MARK: - Private
+
+    /// The engine chat actually runs on: Local CLI can't stream, so it maps to the fallback.
+    private var resolvedChatEngine: AppSettings.AIEngine {
+        appSettings.effectiveAIEngine == .localCLI ? appSettings.chatFallbackEngine : appSettings.effectiveAIEngine
+    }
 
     private func buildStream(systemPrompt: String, userMessage: String) async -> AsyncThrowingStream<String, Error> {
         // The Local CLI is one-shot and can't stream chat, so route to the
