@@ -88,6 +88,8 @@ final class AppSettings {
         static let diarizationEnabled = "diarizationEnabled"
         static let speakerIdMode = "speakerIdMode"
         static let liveTranscriptionEnabled = "liveTranscriptionEnabled"
+        static let liveTranscriptionEngine = "liveTranscriptionEngine"
+        static let liveChunkSeconds = "liveChunkSeconds"
         static let acousticEchoCancellation = "acousticEchoCancellation"
         static let prewarmWhisperOnLaunch = "prewarmWhisperOnLaunch"
         static let showMiniRecordingView = "showMiniRecordingView"
@@ -228,6 +230,20 @@ final class AppSettings {
 
     var aiProcessingEnabled: Bool {
         didSet { UserDefaults.standard.set(aiProcessingEnabled, forKey: Keys.aiProcessingEnabled) }
+    }
+
+    /// Engine for the live preview during recording (independent of the final engine).
+    enum LiveTranscriptionEngine: String, CaseIterable, Codable, Hashable, Sendable {
+        case appleSpeech
+        /// Chunked Parakeet in the ML helper — multilingual (incl. Dutch), a few seconds behind.
+        case parakeet
+
+        var displayName: String {
+            switch self {
+            case .appleSpeech: "Apple Speech"
+            case .parakeet: "Parakeet (multilingual)"
+            }
+        }
     }
 
     // MARK: - Transcription Language
@@ -509,6 +525,29 @@ final class AppSettings {
     /// still produced post-recording.
     var liveTranscriptionEnabled: Bool {
         didSet { UserDefaults.standard.set(liveTranscriptionEnabled, forKey: Keys.liveTranscriptionEnabled) }
+    }
+
+    var liveTranscriptionEngine: LiveTranscriptionEngine {
+        didSet { UserDefaults.standard.set(liveTranscriptionEngine.rawValue, forKey: Keys.liveTranscriptionEngine) }
+    }
+
+    /// Target chunk length for live Parakeet: shorter = text sooner, longer =
+    /// more context per chunk (better accuracy). Chunks also end at long pauses.
+    var liveChunkSeconds: Double {
+        didSet { UserDefaults.standard.set(liveChunkSeconds, forKey: Keys.liveChunkSeconds) }
+    }
+    static let liveChunkSecondsOptions: [Double] = [3, 6, 10]
+
+    /// The live engine for the next capture. Parakeet always uses a multilingual
+    /// variant — the English-only v2 falls back to the default (v3).
+    var liveEngineSelection: LiveEngineSelection {
+        switch liveTranscriptionEngine {
+        case .appleSpeech: return .appleSpeech
+        case .parakeet:
+            let selected = ParakeetModelInfo.find(parakeetModelVariant)
+            let variant = selected.isEnglishOnly ? ParakeetModelInfo.defaultID : selected.id
+            return .parakeet(variant: variant, chunkSeconds: liveChunkSeconds)
+        }
     }
 
     /// Enable Acoustic Echo Cancellation on the microphone input.
@@ -1035,6 +1074,9 @@ final class AppSettings {
         self.speakerIdMode = defaults.string(forKey: Keys.speakerIdMode)
             .flatMap(SpeakerIdMode.init(rawValue:)) ?? .optimistic
         self.liveTranscriptionEnabled = defaults.object(forKey: Keys.liveTranscriptionEnabled) as? Bool ?? false
+        self.liveTranscriptionEngine = defaults.string(forKey: Keys.liveTranscriptionEngine)
+            .flatMap(LiveTranscriptionEngine.init(rawValue:)) ?? .appleSpeech
+        self.liveChunkSeconds = defaults.object(forKey: Keys.liveChunkSeconds) as? Double ?? 6
         self.acousticEchoCancellation = defaults.object(forKey: Keys.acousticEchoCancellation) as? Bool ?? true
         self.prewarmWhisperOnLaunch = defaults.object(forKey: Keys.prewarmWhisperOnLaunch) as? Bool ?? false
         self.showMiniRecordingView = defaults.object(forKey: Keys.showMiniRecordingView) as? Bool ?? true

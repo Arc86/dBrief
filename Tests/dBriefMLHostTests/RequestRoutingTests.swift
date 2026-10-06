@@ -155,6 +155,17 @@ actor MockBackend: MLBackend {
             request: .parakeetTranscribe(path: "/p.m4a", modelVariant: "v2", diarize: false)))
         #expect(collected.events.allSatisfy { $0.channel == .parakeet })
     }
+
+    @Test func liveParakeetChunkUsesLiveChannelSoProgressStaysOutOfProcessingUI() async throws {
+        let collected = EventCollector()
+        let router = RequestRouter(backend: MockBackend(exerciseProgress: true)) { env in collected.append(env) }
+        await router.handle(RequestEnvelope(id: UUID(),
+            request: .parakeetTranscribeChunk(path: "/chunk.wav", modelVariant: "v3")))
+        #expect(collected.events.allSatisfy { $0.channel == .live })
+        #expect(collected.events.contains { if case let .transcriptionResult(r) = $0.event { r.text == "pk" } else { false } })
+        #expect(collected.events.contains { if case .state = $0.event { true } else { false } })
+        #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+    }
 }
 
 final class EventCollector: @unchecked Sendable {

@@ -115,13 +115,44 @@ struct SettingsTranscriptionTab: View {
         return String(format: "%.1f GB", gb)
     }
 
+    @ViewBuilder
     private var liveTranscriptionSection: some View {
         @Bindable var settings = appSettings
-        return Toggle(isOn: $settings.liveTranscriptionEnabled) {
+        Toggle(isOn: $settings.liveTranscriptionEnabled) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Transcribe live while recording")
-                Text("Real-time preview (and live chat) using Apple's on-device speech, with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
+                Text("Real-time preview (and live chat), with your mic and the meeting audio labeled separately. The final transcript still uses your chosen engine.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if settings.liveTranscriptionEnabled {
+            Picker(selection: $settings.liveTranscriptionEngine) {
+                ForEach(AppSettings.LiveTranscriptionEngine.allCases, id: \.self) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live engine")
+                    Text(settings.liveTranscriptionEngine == .parakeet
+                         ? "On-device and multilingual (incl. Dutch). Text appears in chunks a few seconds behind speech. Uses your multilingual Parakeet model (v3 if English-only v2 is selected) — download it under Engine first."
+                         : "Instant, word-by-word preview in a single language. Not every language is supported.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .pickerStyle(.menu)
+            if settings.liveTranscriptionEngine == .parakeet {
+                Picker(selection: $settings.liveChunkSeconds) {
+                    ForEach(AppSettings.liveChunkSecondsOptions, id: \.self) { seconds in
+                        Text("\(Int(seconds)) s").tag(seconds)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Chunk length")
+                        Text("Shorter shows text sooner; longer gives the model more context. Chunks also end early when the speaker pauses.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .pickerStyle(.menu)
             }
         }
     }

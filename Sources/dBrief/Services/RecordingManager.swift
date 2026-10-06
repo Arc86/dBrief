@@ -14,6 +14,7 @@ final class RecordingManager {
     let appSettings: AppSettings
     @ObservationIgnored private lazy var captureCoordinator = CaptureCoordinator(
         hardware: .live(AudioCaptureManager()), persistence: .live(captureSessionStore),
+        preview: .live(parakeet: ParakeetLiveBackend.live(parakeetService)),
         onEvent: { [weak self] event in self?.applyCaptureEvent(event) })
     @ObservationIgnored private lazy var recordingReviewSlot = RecordingReviewSlot(
         appState: appState, action: postRecordingAction,
@@ -414,7 +415,8 @@ final class RecordingManager {
             inputDeviceUID: appSettings.audioInputDeviceUID,
             acousticEchoCancellation: appSettings.acousticEchoCancellation,
             echoSuppression: appSettings.acousticEchoCancellation && AudioOutputRoute.currentOutputHasEchoPath(),
-            liveTranscription: appSettings.liveTranscriptionEnabled, language: appSettings.effectiveTranscriptionLanguage,
+            liveTranscription: appSettings.liveTranscriptionEnabled, liveEngine: appSettings.liveEngineSelection,
+            language: appSettings.effectiveTranscriptionLanguage,
             associatedApp: associatedApp, callBundleID: callBundleId, showMiniPlayer: appSettings.showMiniRecordingView,
             prewarmWhisper: appSettings.effectiveTranscriptionEngine == .localWhisper ? appSettings.whisperRuntimeConfig : nil,
             privacyScope: RecordingPrivacyScope(recordingID: recordingID))

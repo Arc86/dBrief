@@ -26,6 +26,16 @@ final class ParakeetTranscriptionService: Sendable {
         }
     }
 
+    /// One live-preview chunk (see `ParakeetLiveChannel`). Never downloads:
+    /// callers check `isModelDownloaded` first. The privacy receipt is recorded
+    /// once per live channel by the caller, not per chunk.
+    func transcribeLiveChunk(fileURL: URL, modelVariant: String) async throws -> TranscriptionResult {
+        guard case let .transcriptionResult(r) = try await connection.call(
+            .parakeetTranscribeChunk(path: fileURL.path, modelVariant: modelVariant)
+        ) else { throw WireError(kind: .generic, message: "no transcription") }
+        return r
+    }
+
     func prepareModel(variant: String) async throws { _ = try await connection.call(.downloadParakeet(variant: variant)) }
     func purgeModels() async throws { _ = try await connection.call(.purgeParakeet) }
     func isModelDownloaded(variant: String) async -> Bool {

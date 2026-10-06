@@ -11,6 +11,7 @@ protocol MLBackend: Sendable {
     func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
+    func parakeetTranscribeChunk(path: String, modelVariant: String) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
     func downloadWhisper(config: WhisperRuntimeConfig) async throws
@@ -30,6 +31,13 @@ protocol MLBackend: Sendable {
     func forceUnload() async
 }
 
+extension MLBackend {
+    /// Backends without a dedicated live path fall back to a plain transcription.
+    func parakeetTranscribeChunk(path: String, modelVariant: String) async throws -> TranscriptionResult {
+        try await parakeetTranscribe(path: path, modelVariant: modelVariant, diarize: false)
+    }
+}
+
 /// Maps one inbound request to backend calls and emits tagged events.
 /// Channel selection: Parakeet ops use `.parakeet`; everything else `.plugin`.
 final class RequestRouter: Sendable {
@@ -46,6 +54,7 @@ final class RequestRouter: Sendable {
         let channel: MLChannel = {
             switch envelope.request {
             case .parakeetTranscribe, .downloadParakeet, .isParakeetCached, .purgeParakeet: .parakeet
+            case .parakeetTranscribeChunk: .live
             default: .plugin
             }
         }()
@@ -84,6 +93,8 @@ final class RequestRouter: Sendable {
                         send(.finished)
                     case let .parakeetTranscribe(path, variant, diarize):
                         send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
+                    case let .parakeetTranscribeChunk(path, variant):
+                        send(.transcriptionResult(try await backend.parakeetTranscribeChunk(path: path, modelVariant: variant))); send(.finished)
                     case let .synthesizeSpeech(text, outputPath, voice, language, instruction, model, engine):
                         let r = try await backend.synthesizeSpeech(text: text, outputPath: outputPath, voice: voice, language: language, instruction: instruction, model: model, engine: engine)
                         send(.speechResult(r)); send(.finished)

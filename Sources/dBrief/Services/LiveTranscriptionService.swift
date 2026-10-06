@@ -15,6 +15,8 @@ private let log = Logger.localTranscription
 /// streaming API (volatile + finalized results). On macOS 14–25 it falls back to
 /// `SFSpeechAudioBufferRecognitionRequest`. This is a *preview*: the authoritative
 /// high-quality transcript is still produced post-recording from the merged CAF.
+/// With `init(parakeet:)`, a capture can instead select chunked Parakeet
+/// (`ParakeetLiveChannel`) — for languages Apple's live recognizer lacks.
 actor LiveTranscriptionService {
     /// Speaker labels used for the two live channels.
     enum Channel: String, Sendable {
@@ -33,13 +35,30 @@ actor LiveTranscriptionService {
         let onFinalized: @Sendable ([LiveTranscriptSegment]) -> Void
         let onVolatile: @Sendable (String, String) -> Void
         let onStatus: @Sendable (String) -> Void
+        var engine: LiveEngineSelection = .appleSpeech
     }
     private let run: @Sendable (ChannelRequest) async -> Void
 
-    init(runChannel: @escaping @Sendable (ChannelRequest) async -> Void = { request in
-        await LiveTranscriptionService.runChannel(audio: request.audio, channel: request.channel, language: request.language,
-                              onFinalized: request.onFinalized, onVolatile: request.onVolatile, onStatus: request.onStatus)
-    }) { self.run = runChannel }
+    init(runChannel: @escaping @Sendable (ChannelRequest) async -> Void = { await LiveTranscriptionService.appleSpeechChannel($0) }) {
+        self.run = runChannel
+    }
+
+    /// Routes each channel to Apple Speech or, when selected, chunked Parakeet.
+    init(parakeet: ParakeetLiveBackend) {
+        self.init(runChannel: { request in
+            switch request.engine {
+            case .appleSpeech:
+                await LiveTranscriptionService.appleSpeechChannel(request)
+            case let .parakeet(variant, chunkSeconds):
+                await ParakeetLiveChannel.run(request, variant: variant, chunkSeconds: chunkSeconds, backend: parakeet)
+            }
+        })
+    }
+
+    static func appleSpeechChannel(_ request: ChannelRequest) async {
+        await runChannel(audio: request.audio, channel: request.channel, language: request.language,
+                         onFinalized: request.onFinalized, onVolatile: request.onVolatile, onStatus: request.onStatus)
+    }
 
     /// Starts live transcription on the supplied channels. Pass `nil` for a channel
     /// that has no audio source (e.g. no screen-recording permission → no system audio).
@@ -51,6 +70,7 @@ actor LiveTranscriptionService {
         mic: AsyncStream<LiveAudioBuffer>?,
         system: AsyncStream<LiveAudioBuffer>?,
         language: String,
+        engine: LiveEngineSelection = .appleSpeech,
         onFinalized: @escaping @Sendable ([LiveTranscriptSegment]) -> Void,
         onVolatile: @escaping @Sendable (String, String) -> Void,
         onStatus: @escaping @Sendable (String) -> Void
@@ -63,7 +83,7 @@ actor LiveTranscriptionService {
         for (channel, audio) in [(Channel.mic, mic), (.system, system)] {
             guard let audio else { continue }
             let request = ChannelRequest(audio: audio, channel: channel, language: language,
-                onFinalized: onFinalized, onVolatile: onVolatile, onStatus: onStatus)
+                onFinalized: onFinalized, onVolatile: onVolatile, onStatus: onStatus, engine: engine)
             channelTasks.append(Task { await run(request) })
         }
     }

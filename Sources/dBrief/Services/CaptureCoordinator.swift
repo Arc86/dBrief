@@ -12,6 +12,7 @@ final class CaptureCoordinator {
         var acousticEchoCancellation = true
         var echoSuppression = false
         var liveTranscription = false
+        var liveEngine: LiveEngineSelection = .appleSpeech
         var language = ""
         var associatedApp: String? = nil
         var callBundleID: String? = nil
@@ -288,7 +289,8 @@ final class CaptureCoordinator {
     private func startPreview(_ owned: Attempt, streams: LiveStreams, state: CaptureSessionStore.CaptureState) {
         let session = preview.make(), prepare = preview.prepare
         let input = CaptureLivePreview.Inputs(mic: state.microphoneEnabled ? streams.mic : nil,
-            system: state.systemAudioEnabled ? streams.system : nil, language: owned.request.language)
+            system: state.systemAudioEnabled ? streams.system : nil, language: owned.request.language,
+            engine: owned.request.liveEngine)
         owned.preview = session
         owned.previewStart = Task { @MainActor [weak self, weak owned] in
             guard !Task.isCancelled, let self, let owned, self.acceptsEvents(owned) else { return }

@@ -222,6 +222,16 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
+    /// Live-preview chunk. Leaves Whisper/Gemma resident (a recording may have
+    /// prewarmed Whisper for its final transcript) and keeps Parakeet loaded for
+    /// the next chunk; memory-pressure purge still reclaims it.
+    func parakeetTranscribeChunk(path: String, modelVariant: String) async throws -> TranscriptionResult {
+        try await withModelAccess { [self] in
+            try await parakeetService.transcribe(fileURL: URL(fileURLWithPath: path), language: nil,
+                                                 modelVariant: modelVariant).result
+        }
+    }
+
     // MARK: - Text-to-speech (scaffold)
 
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {

@@ -8,6 +8,7 @@ struct CaptureLivePreview: Sendable {
         let mic: AsyncStream<LiveAudioBuffer>?
         let system: AsyncStream<LiveAudioBuffer>?
         let language: String
+        var engine: LiveEngineSelection = .appleSpeech
     }
     enum Event: Sendable {
         case finalized([LiveTranscriptSegment])
@@ -21,16 +22,18 @@ struct CaptureLivePreview: Sendable {
     var prepare: @Sendable (CaptureCoordinator.Request) async -> PrivacyTrace.Context?
     var make: @MainActor @Sendable () -> Session
 
-    static func live() -> Self {
+    /// `parakeet` enables the chunked-Parakeet live engine; without it every
+    /// capture uses Apple Speech.
+    static func live(parakeet: ParakeetLiveBackend? = nil) -> Self {
         .init(prepare: { request in
             guard let scope = request.privacyScope else { return nil }
             let context = await scope.context()
             if !PrivacyTrace.coversAllProcessingStages { await scope.store.noteGap(at: scope.pendingReceiptURL) }
             return context
         }, make: {
-            let service = LiveTranscriptionService()
+            let service = parakeet.map { LiveTranscriptionService(parakeet: $0) } ?? LiveTranscriptionService()
             return .init(start: { input, emit in
-                await service.start(mic: input.mic, system: input.system, language: input.language,
+                await service.start(mic: input.mic, system: input.system, language: input.language, engine: input.engine,
                     onFinalized: { emit(.finalized($0)) }, onVolatile: { emit(.volatile($0, $1)) },
                     onStatus: { emit(.status($0)) })
             }, stop: { await service.stop() })

@@ -3,6 +3,7 @@ import Foundation
 public enum MLChannel: String, Sendable, Codable {
     case plugin     // WhisperKit + SpeakerKit + MLX state stream
     case parakeet   // Parakeet state stream
+    case live       // live-preview chunks; progress is not surfaced to the processing UI
 }
 
 public enum MLRequest: Sendable, Codable {
@@ -16,6 +17,10 @@ public enum MLRequest: Sendable, Codable {
     case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
     case chatStream(systemPrompt: String, userMessage: String)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
+    /// A short live-preview chunk: keeps Parakeet resident between chunks and,
+    /// unlike `parakeetTranscribe`, never evicts other loaded models (e.g. the
+    /// Whisper model prewarmed for the final transcript).
+    case parakeetTranscribeChunk(path: String, modelVariant: String)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels
     case downloadWhisper(config: WhisperRuntimeConfig)
