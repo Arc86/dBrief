@@ -72,7 +72,9 @@ cp dBrief-<version>.dmg /tmp/dbrief-appcast/
 # DMG's basename (dBrief-<version>) so generate_appcast pairs it with this item;
 # --embed-release-notes inlines the Markdown in the appcast's
 # <description sparkle:format="markdown">, so there is no extra asset to upload.
-cp RELEASE_NOTES.md /tmp/dbrief-appcast/dBrief-<version>.md
+# Only the newest section (everything above the first `---`) goes in, so the
+# update dialog and the GitHub release show this version's notes, not the history.
+awk '/^---$/{exit} {print}' RELEASE_NOTES.md > /tmp/dbrief-appcast/dBrief-<version>.md
 /tmp/sparkle-tools/bin/generate_appcast \
   --ed-key-file ~/dbrief-sparkle-private-key.txt \
   --download-url-prefix "https://github.com/Arc86/dBrief/releases/download/v<version>/" \
@@ -93,10 +95,10 @@ git tag v<version>
 git push origin v<version>
 gh release create v<version> dBrief-<version>.dmg /tmp/dbrief-appcast/appcast.xml \
   --title "dBrief <version>" \
-  --notes-file RELEASE_NOTES.md
+  --notes-file /tmp/dbrief-appcast/dBrief-<version>.md
 ```
 
-Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, once/day) or via **Settings → General → Software update → Check Now**.
+Upload **both** the DMG and the `appcast.xml`. Because `SUFeedURL` points at `releases/latest/download/appcast.xml`, the feed always resolves to the newest release. Add `--draft` if you want to review before it goes live. Once published, existing installs detect it on their next check (auto, every 12 hours) or via **Settings → General → Software update → Check Now**.
 
 ## 6. Update the Homebrew tap
 
