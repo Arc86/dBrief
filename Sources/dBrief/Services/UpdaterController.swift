@@ -36,7 +36,8 @@ final class UpdaterController {
         }
 
         // startingUpdater: true → Sparkle starts its scheduler immediately, so the
-        // automatic launch / once-per-day checks happen without extra wiring.
+        // automatic launch / every-12-hours checks (Info.plist SUScheduledCheckInterval)
+        // happen without extra wiring.
         let started = SPUStandardUpdaterController(
             startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         controller = started
