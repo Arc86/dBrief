@@ -21,23 +21,43 @@ actor MLOrchestrator: MLBackend {
     private let ttsService: TTSService
     private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
+    /// The warm multi-turn Gemma chat (see `chatTurn`). Every model operation
+    /// except `chatTurn` drops it first via `withModelAccess(keepChat: false)`.
+    private let chatSessions: GemmaChatSessions
 
     init(mutex: AsyncMutex = AsyncMutex(), diagnostics: MLLifecycleDiagnostics? = nil, emit: @escaping @Sendable (MLChannel, LocalAIPluginState) -> Void) {
         self.mutex = mutex
         self.diagnostics = diagnostics
         self.fallbackEmit = emit
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
-        self.insightsService = MLXInsightsService { state in emit(.plugin, state) }
+        let insightsService = MLXInsightsService { state in emit(.plugin, state) }
+        self.insightsService = insightsService
+        // The idle drop takes the same model mutex as every operation, so it can
+        // never unload Gemma while another operation (or a chat turn) runs. A
+        // chat turn that wins the mutex first cancels the idle task, which then
+        // fails `withLock`'s cancellation check and drops nothing. Capturing the
+        // mutex (not `self`) avoids an orchestrator ↔ sessions retain cycle.
+        self.chatSessions = GemmaChatSessions(insights: insightsService) { [mutex, diagnostics] sessions in
+            try? await mutex.withLock {
+                diagnostics?.record(.operationStarted, operation: "chatIdleDrop")
+                await sessions.drop()
+                diagnostics?.record(.operationFinished, operation: "chatIdleDrop")
+            }
+        }
         self.ttsService = TTSService { state in emit(.plugin, state) }
         self.kokoroService = KokoroTTSService { state in emit(.plugin, state) }
         self.parakeetService = ParakeetTranscriptionService { state in emit(.parakeet, state) }
     }
 
+    /// `keepChat: false` (every operation but `chatTurn`) first drops the warm
+    /// chat session and unloads Gemma, so other work never shares memory with it.
     private func withModelAccess<T: Sendable>(
         _ name: String = #function,
+        keepChat: Bool = false,
         operation: @Sendable () async throws -> T
     ) async throws -> T {
         try await mutex.withLock { [self] in
+            if !keepChat { await chatSessions.drop() }
             await operationStarted(name)
             do {
                 let result = try await operation()
@@ -272,6 +292,20 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
+    /// One turn of a multi-turn transcript chat on a session kept warm across
+    /// turns, so follow-ups prefill only the new turn. Gemma stays loaded until
+    /// the idle timeout or the next non-chat operation.
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String,
+                  retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws {
+        try await withModelAccess(keepChat: true) { [self] in
+            await whisperService.unload()
+            emit(.plugin, .analyzing)
+            defer { emit(.plugin, .idle) }
+            try await chatSessions.respond(systemPrompt: systemPrompt, history: history, question: question,
+                                           retrievedContext: retrievedContext, onDelta: emitToken)
+        }
+    }
+
     // MARK: - Model management
 
     func prepareModels() async {
@@ -300,7 +334,8 @@ actor MLOrchestrator: MLBackend {
             // Refresh re-loads to recompile GPU/ANE state after sleep eviction.
             if refresh { await whisperService.unload() }
             // Best-effort: do NOT unload the LLM here — prewarm must not evict an
-            // in-use insights/chat model just to warm Whisper.
+            // in-use insights/chat model just to warm Whisper. (A warm *idle* chat
+            // session is still dropped by withModelAccess's keepChat default.)
             try await whisperService.prewarm(config: config)
         }
     }
@@ -375,6 +410,7 @@ actor MLOrchestrator: MLBackend {
     /// Called only while holding the model-access lock.
     private func unloadForMemoryPressure() async {
         diagnostics?.record(.cleanupStarted)
+        await chatSessions.drop()
         await whisperService.unload()
         await insightsService.unload()
         await parakeetService.unload()
@@ -388,6 +424,7 @@ actor MLOrchestrator: MLBackend {
         // RequestLoop cancels and drains requests before shutdown. The lock also
         // protects direct callers from unloading a model used by active work.
         try? await mutex.withLock { [self] in
+            await chatSessions.drop()
             await insightsService.forceUnload()
             await whisperService.unload()
             await parakeetService.unload()

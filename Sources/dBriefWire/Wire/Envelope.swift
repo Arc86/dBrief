@@ -15,6 +15,10 @@ public enum MLRequest: Sendable, Codable {
     case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
     case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
     case chatStream(systemPrompt: String, userMessage: String)
+    /// One turn of a multi-turn transcript chat. The helper keeps the Gemma
+    /// session warm between turns (keyed on `systemPrompt` + the bare user
+    /// questions in `history`); `retrievedContext` applies to this turn only.
+    case chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels

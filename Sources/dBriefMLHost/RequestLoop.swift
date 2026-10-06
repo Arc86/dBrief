@@ -10,6 +10,7 @@ protocol MLBackend: Sendable {
     func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
     func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
@@ -81,6 +82,10 @@ final class RequestRouter: Sendable {
                         send(.finished)
                     case let .chatStream(system, user):
                         try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)
+                        send(.finished)
+                    case let .chatTurn(system, history, question, context):
+                        try await backend.chatTurn(systemPrompt: system, history: history, question: question,
+                                                   retrievedContext: context, emitToken: emitToken)
                         send(.finished)
                     case let .parakeetTranscribe(path, variant, diarize):
                         send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)

@@ -335,7 +335,8 @@ actor MLXInsightsService {
         Self.sharedGenerationParameters()
     }
 
-    /// Model container for the chat eval harness (`--eval-chat`).
+    /// Model container for multi-turn chat (`GemmaChatSessions`) and the chat eval
+    /// harness (`--eval-chat`). `unload()` releases it once the session is dropped.
     func loadForChat() async throws -> ModelContainer { try await loadModelContainerIfNeeded() }
 
     /// Identical to `generationParameters()` (same kvCache); usable off the actor.

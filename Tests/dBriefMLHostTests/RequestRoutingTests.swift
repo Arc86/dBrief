@@ -41,6 +41,12 @@ actor MockBackend: MLBackend {
     }
     func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws { captureProgress(); emitToken("a"); emitToken("b") }
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws { emitToken("hi") }
+    var lastChatTurn: (system: String, history: [ChatTurnMessage], question: String, context: String)?
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws {
+        lastChatTurn = (systemPrompt, history, question, retrievedContext)
+        emitToken("a"); emitToken("b")
+    }
+    func chatTurnArguments() -> (system: String, history: [ChatTurnMessage], question: String, context: String)? { lastChatTurn }
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult { captureProgress(); return TranscriptionResult(text: "pk") }
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {
         SpeechSynthesisResult(outputPath: outputPath, durationSeconds: 1.0, sampleRate: 24000)
@@ -136,6 +142,36 @@ actor MockBackend: MLBackend {
         let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
         #expect(tokens == ["a", "b"])
         #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+    }
+
+    @Test func chatTurnRoutesArgumentsAndEmitsTokensThenFinished() async throws {
+        let collected = EventCollector()
+        let backend = MockBackend()
+        let router = RequestRouter(backend: backend) { env in collected.append(env) }
+        let history = [ChatTurnMessage(role: .user, content: "Q1"), ChatTurnMessage(role: .assistant, content: "A1")]
+        let id = UUID()
+        await router.handle(RequestEnvelope(id: id,
+            request: .chatTurn(systemPrompt: "S", history: history, question: "Q2", retrievedContext: "ctx")))
+        let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
+        #expect(tokens == ["a", "b"])
+        #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+        #expect(collected.events.allSatisfy { $0.id == id && $0.channel == .plugin })
+        let args = await backend.chatTurnArguments()
+        #expect(args?.system == "S")
+        #expect(args?.history == history)
+        #expect(args?.question == "Q2")
+        #expect(args?.context == "ctx")
+    }
+
+    @Test func chatTurnRequestRoundTripsThroughCodable() throws {
+        let history = [ChatTurnMessage(role: .user, content: "Q1"), ChatTurnMessage(role: .assistant, content: "A1")]
+        let data = try JSONEncoder().encode(RequestEnvelope(id: UUID(),
+            request: .chatTurn(systemPrompt: "S", history: history, question: "Q2", retrievedContext: "")))
+        let decoded = try JSONDecoder().decode(RequestEnvelope.self, from: data)
+        guard case let .chatTurn(system, decodedHistory, question, context) = decoded.request else {
+            Issue.record("expected chatTurn"); return
+        }
+        #expect(system == "S" && decodedHistory == history && question == "Q2" && context.isEmpty)
     }
 
     @Test func prewarmEmitsVoidThenFinishedOnPluginChannel() async {

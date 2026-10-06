@@ -50,23 +50,28 @@ enum GemmaEval {
             let transcript = try String(contentsOfFile: path, encoding: .utf8)
             let questions = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: qPath)))
             let service = MLXInsightsService(stateHandler: { _ in })
-            let container = try await service.loadForChat()
             let system = fullModePrompt(transcript)
-            var session = ChatSession(container, instructions: system, generateParameters: service.chatGenerationParameters())
+            // Reuse path: the production GemmaChatSessions with a growing history,
+            // so the real cache key decides reuse vs rebuild. This eval owns the
+            // service exclusively, so the idle drop may call drop() directly.
+            let sessions = GemmaChatSessions(insights: service) { await $0.drop() }
+            var history: [ChatTurnMessage] = []
             var answers: [[String: Any]] = []
             for q in questions {
-                if fresh {
-                    session = ChatSession(container, instructions: system, generateParameters: service.chatGenerationParameters())
-                }
                 let start = ContinuousClock.now
-                var first: Duration?
-                var answer = ""
-                for try await chunk in session.streamResponse(to: q) {
-                    if first == nil { first = ContinuousClock.now - start }
-                    answer += chunk
+                let collector = DeltaCollector(start: start)
+                if fresh {
+                    let container = try await service.loadForChat()
+                    let session = ChatSession(container, instructions: system, generateParameters: service.chatGenerationParameters())
+                    for try await chunk in session.streamResponse(to: q) { collector.append(chunk) }
+                    await session.synchronize()
+                } else {
+                    try await sessions.respond(systemPrompt: system, history: history, question: q,
+                                               onDelta: { collector.append($0) })
                 }
-                await session.synchronize()
                 let total = ContinuousClock.now - start
+                let (answer, first) = collector.result
+                history += [ChatTurnMessage(role: .user, content: q), ChatTurnMessage(role: .assistant, content: answer)]
                 answers.append(["q": q, "answer": answer,
                                 "first_token_s": seconds(first ?? total), "total_s": seconds(total)])
             }
@@ -80,6 +85,22 @@ enum GemmaEval {
             output.write(data + Data("\n".utf8))
             return 1
         }
+    }
+
+    /// Accumulates streamed deltas and the time to the first one (`onDelta` is @Sendable).
+    private final class DeltaCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private let start: ContinuousClock.Instant
+        private var text = ""
+        private var first: Duration?
+        init(start: ContinuousClock.Instant) { self.start = start }
+        func append(_ chunk: String) {
+            lock.withLock {
+                if first == nil { first = ContinuousClock.now - start }
+                text += chunk
+            }
+        }
+        var result: (String, Duration?) { lock.withLock { (text, first) } }
     }
 
     /// Same wording as TranscriptChatService.buildSystemPrompt (full-transcript mode).
