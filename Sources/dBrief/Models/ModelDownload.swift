@@ -22,7 +22,7 @@ enum ModelDownloadPhase: Equatable, Sendable {
         switch state {
         case .downloading(let progress, let stage):
             return .downloading(progress: progress, label: stage.downloadLabel)
-        case .idle, .transcribing, .newSegments, .diarizing, .analyzing:
+        case .idle, .transcribing, .newSegments, .diarizing, .analyzing, .analyzingPart:
             return nil
         }
     }

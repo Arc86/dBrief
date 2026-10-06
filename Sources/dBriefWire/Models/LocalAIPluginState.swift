@@ -22,11 +22,14 @@ public enum LocalAIPluginState: Sendable, Codable {
     case newSegments([LiveTranscriptSegment])
     case diarizing
     case analyzing
+    /// Long-transcript (map-reduce) analysis. `index` is 1-based; `index == total + 1`
+    /// means the combine (reduce) step is running.
+    case analyzingPart(index: Int, total: Int)
 
     private enum Kind: String, Codable {
-        case idle, downloading, transcribing, newSegments, diarizing, analyzing
+        case idle, downloading, transcribing, newSegments, diarizing, analyzing, analyzingPart
     }
-    private enum CodingKeys: String, CodingKey { case kind, progress, stage, segments }
+    private enum CodingKeys: String, CodingKey { case kind, progress, stage, segments, index, total }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -42,6 +45,9 @@ public enum LocalAIPluginState: Sendable, Codable {
             )
         case .newSegments:
             self = .newSegments(try c.decode([LiveTranscriptSegment].self, forKey: .segments))
+        case .analyzingPart:
+            self = .analyzingPart(index: try c.decode(Int.self, forKey: .index),
+                                  total: try c.decode(Int.self, forKey: .total))
         }
     }
 
@@ -59,6 +65,10 @@ public enum LocalAIPluginState: Sendable, Codable {
         case let .newSegments(segments):
             try c.encode(Kind.newSegments, forKey: .kind)
             try c.encode(segments, forKey: .segments)
+        case let .analyzingPart(index, total):
+            try c.encode(Kind.analyzingPart, forKey: .kind)
+            try c.encode(index, forKey: .index)
+            try c.encode(total, forKey: .total)
         }
     }
 }

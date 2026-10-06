@@ -74,10 +74,13 @@ def main():
     r = report["result"]
     haystack = "\n".join([r.get("title_concept", ""), r["summary"], *r["action_items"], *r.get("tags", [])]).lower()
     recall = {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES}
+    # Map-reduce path: the eval harness prints each `analyzingPart` state to stderr.
+    parts = re.findall(r"analyzingPart\(index: \d+, total: (\d+)\)", out.stderr)
+    path = f"map-reduce ({parts[0]} parts)" if parts else "single-pass"
     row = {"label": a.label, "date": datetime.date.today().isoformat(), "input_chars": report["input_chars"],
            "elapsed_s": round(report["elapsed_s"], 1), "peak_memory_mb": report["peak_memory_mb"],
            "recall": recall, "repetition": round(repetition_ratio(r["summary"]), 3),
-           "action_items": len(r["action_items"]),
+           "path": path, "action_items": len(r["action_items"]),
            "summary_chars": len(r["summary"]), "summary_complete": summary_complete(r["summary"])}
     print(json.dumps(row, indent=2))
     os.makedirs("docs/diagnostics", exist_ok=True)

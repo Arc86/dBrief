@@ -11,8 +11,8 @@ import MLX
 
 actor MLXInsightsService {
     private static let modelID = "mlx-community/gemma-4-e4b-it-4bit"
-    // Transcript truncation budget lives in `UnifiedInsightsPrompt` (shared with
-    // the Local CLI engine).
+    // Long transcripts are never truncated here: above `singlePassTokenBudget` they
+    // go through map-reduce (`runInsights`).
 
     private let fileManager = FileManager.default
     private let fallbackStateHandler: MLProgress.Sink
@@ -59,10 +59,6 @@ actor MLXInsightsService {
             }
         }
 
-        let truncatedText = Self.truncateTranscript(text)
-        let userPrompt = buildUserPrompt(transcript: context.isEmpty ? truncatedText : context + "\n\n" + truncatedText)
-        let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
-
         return AsyncThrowingStream { continuation in
             let task = Task {
                 defer { self.generationTask = nil }
@@ -70,8 +66,9 @@ actor MLXInsightsService {
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
                     self.stateHandler(.analyzing)
-                    let output = try await self.generateInsightsJSON(
-                        container: container, system: systemPrompt, user: userPrompt,
+                    let output = try await self.runInsights(
+                        container: container, transcript: text, context: context,
+                        outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance,
                         onDelta: { continuation.yield($0) })
                     self.isInferencing = false
 
@@ -117,11 +114,10 @@ actor MLXInsightsService {
             isInferencing = true
             let container = try await loadModelContainerIfNeeded()
             stateHandler(.analyzing)
-            let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
-            let truncatedText = Self.truncateTranscript(text)
-            let userPrompt = buildUserPrompt(transcript: context.isEmpty ? truncatedText : context + "\n\n" + truncatedText)
-            let raw = try await generateInsightsJSON(
-                container: container, system: systemPrompt, user: userPrompt, onDelta: { _ in })
+            let raw = try await runInsights(
+                container: container, transcript: text, context: context,
+                outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance,
+                onDelta: { _ in })
             isInferencing = false
             let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
             #if canImport(MLX)
@@ -333,6 +329,101 @@ actor MLXInsightsService {
         }
     }
 
+    /// Token-aware analysis. Within `singlePassTokenBudget`: one guided pass, streamed
+    /// live. Above it: map (notes per part) → reduce, emitted as ONE final JSON document
+    /// (F10). Nothing in the transcript is dropped on either path.
+    private func runInsights(
+        container: ModelContainer, transcript: String, context: String,
+        outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let inputTokens = await container.perform { ctx in
+            ctx.tokenizer.encode(text: context + "\n\n" + transcript, addSpecialTokens: false).count
+        }
+        Logger.ai.info("Gemma insights input: \(inputTokens) tokens")
+        if inputTokens <= GemmaGenerationConfig.singlePassTokenBudget {
+            let user = buildUserPrompt(transcript: context.isEmpty ? transcript : context + "\n\n" + transcript)
+            return try await generateInsightsJSON(
+                container: container,
+                system: buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
+                user: user, onDelta: onDelta)
+        }
+
+        let parts = await container.perform { ctx in
+            TranscriptChunkPlanner.plan(
+                transcript,
+                maxTokensPerChunk: GemmaGenerationConfig.chunkTokenBudget,
+                overlapLines: GemmaGenerationConfig.chunkOverlapLines,
+                countTokens: { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count })
+        }
+        Logger.ai.info("Gemma map-reduce: \(parts.count) parts")
+        let mapSystem = UnifiedInsightsPrompt.chunkNotesSystemPrompt(
+            outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+
+        var notes: [ChunkNotes] = []
+        for part in parts {
+            try Task.checkCancellation()
+            stateHandler(.analyzingPart(index: part.index, total: part.total))
+            notes.append(try await mapPart(part, system: mapSystem, context: context, container: container))
+        }
+
+        try Task.checkCancellation()
+        stateHandler(.analyzingPart(index: parts.count + 1, total: parts.count))
+        let allNotes = notes
+        let (notesText, notesTokens) = await container.perform { ctx in
+            let count: (String) -> Int = { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count }
+            let text = ChunkNotesMerger.reduceInput(
+                allNotes, maxTokens: GemmaGenerationConfig.reduceInputTokenBudget, countTokens: count)
+            return (text, count(text))
+        }
+        if notesTokens > GemmaGenerationConfig.reduceInputTokenBudget {
+            // Decisions, action items and people are never trimmed, so they alone can exceed it.
+            Logger.ai.warning("Gemma reduce input is \(notesTokens) tokens, over the \(GemmaGenerationConfig.reduceInputTokenBudget)-token budget")
+        }
+        let reduceJSON = try await GuidedJSONGenerator.generate(
+            system: UnifiedInsightsPrompt.reduceSystemPrompt(
+                outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
+            user: UnifiedInsightsPrompt.reduceUserPrompt(context: context, notes: notesText),
+            schema: InsightsSchema.reduce, container: container)
+        try Task.checkCancellation()
+        let reduced = try JSONDecoder().decode(ReduceOutput.self, from: Data(reduceJSON.utf8))
+        let result = LocalInsightsResult(
+            titleConcept: reduced.titleConcept, summary: reduced.summary,
+            actionItems: ChunkNotesMerger.mergedActionItems(allNotes),
+            tags: reduced.tags, sentiment: reduced.sentiment)
+        let json = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        onDelta(json) // single document for the app's concatenating decoder
+        return json
+    }
+
+    /// One retry: guided output always parses, so a failure here is transient
+    /// (e.g. memory pressure). A second failure fails the analysis loudly rather
+    /// than silently omitting a part.
+    private func mapPart(_ part: TranscriptChunk, system: String, context: String,
+                         container: ModelContainer) async throws -> ChunkNotes {
+        let user = UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part)
+        var lastError: Error?
+        for _ in 0..<2 {
+            try Task.checkCancellation()
+            do {
+                let json = try await GuidedJSONGenerator.generate(
+                    system: system, user: user, schema: InsightsSchema.chunkNotes, container: container)
+                return try JSONDecoder().decode(ChunkNotes.self, from: Data(json.utf8))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                Logger.ai.warning("Gemma part \(part.index)/\(part.total) failed: \(String(describing: error))")
+            }
+        }
+        throw lastError ?? CancellationError()
+    }
+
+    private struct ReduceOutput: Decodable {
+        let titleConcept: String, summary: String, tags: [String], sentiment: String
+        enum CodingKeys: String, CodingKey { case titleConcept = "title_concept", summary, tags, sentiment }
+    }
+
     private func generationParameters() -> GenerateParameters {
         Self.sharedGenerationParameters()
     }
@@ -364,10 +455,6 @@ actor MLXInsightsService {
     /// reference; see
     /// https://huggingface.co/mlx-community/gemma-4-31b-8bit/discussions/1
     private static let gemma4ChatTemplate = "{%- set ns = namespace(prev_message_type=None) -%}{%- set loop_messages = messages -%}{{ bos_token }}{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}{{ '<|turn>system\\n' }}{%- if enable_thinking is defined and enable_thinking -%}{{ '<|think|>' }}{%- set ns.prev_message_type = 'think' -%}{%- endif -%}{%- if messages[0]['role'] in ['system', 'developer'] -%}{{ messages[0]['content'] | trim }}{%- set loop_messages = messages[1:] -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endif %}{%- for message in loop_messages -%}{%- set ns.prev_message_type = None -%}{%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}{{ '<|turn>' + role + '\\n' }}{%- if message['content'] is string -%}{%- if role == 'model' -%}{{ message['content'] | trim }}{%- else -%}{{ message['content'] | trim }}{%- endif -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endfor -%}{%- if add_generation_prompt -%}{{ '<|turn>model\\n' }}{%- endif -%}"
-
-    private static func truncateTranscript(_ transcript: String) -> String {
-        UnifiedInsightsPrompt.truncate(transcript)
-    }
 
 
     private func clearGPUCacheIfAvailable() {
