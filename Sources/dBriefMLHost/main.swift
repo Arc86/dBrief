@@ -30,6 +30,9 @@ let protocolOutput = FileHandle(fileDescriptor: protocolFD, closeOnDealloc: fals
 if args.contains("--eval-insights") {
     exit(await GemmaEval.run(arguments: args, output: protocolOutput))
 }
+if args.contains("--eval-chat") {
+    exit(await GemmaEval.runChat(arguments: args, output: protocolOutput))
+}
 
 // One writer shared by request replies and broadcast state events, so frames
 // never interleave on the output pipe.

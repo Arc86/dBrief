@@ -332,6 +332,18 @@ actor MLXInsightsService {
     }
 
     private func generationParameters() -> GenerateParameters {
+        Self.sharedGenerationParameters()
+    }
+
+    /// Model container for the chat eval harness (`--eval-chat`).
+    func loadForChat() async throws -> ModelContainer { try await loadModelContainerIfNeeded() }
+
+    /// Identical to `generationParameters()` (same kvCache); usable off the actor.
+    nonisolated func chatGenerationParameters() -> GenerateParameters {
+        Self.sharedGenerationParameters()
+    }
+
+    private nonisolated static func sharedGenerationParameters() -> GenerateParameters {
         .init(
             maxTokens: GemmaGenerationConfig.maxOutputTokens,
             kvCache: GemmaGenerationConfig.kvCache,
