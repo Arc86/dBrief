@@ -39,13 +39,27 @@ def main():
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
         tmp.write(planted)
     helper = os.path.join(a.app, "Contents/MacOS/dBriefMLHost")
-    out = subprocess.run([helper, "--support-base", base, "--eval-insights", tmp.name, "--language", a.language],
-                         capture_output=True, text=True)
-    report = json.loads(out.stdout.strip().splitlines()[-1])
+    try:
+        out = subprocess.run([helper, "--support-base", base, "--eval-insights", tmp.name, "--language", a.language],
+                             capture_output=True, text=True)
+    finally:
+        os.unlink(tmp.name)  # planted transcript holds private content
+    if out.returncode != 0 or not out.stdout.strip():
+        print(f"helper failed, return code {out.returncode}")
+        print("\n".join(out.stderr.splitlines()[-20:]))
+        sys.exit(1)
+    last = out.stdout.strip().splitlines()[-1]
+    report = json.loads(last)
     if "error" in report:
         print(report["error"]); sys.exit(1)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    results_dir = os.path.expanduser("~/gemma-eval/results")
+    os.makedirs(results_dir, exist_ok=True)
+    name = f"{a.label}-{os.path.splitext(os.path.basename(a.transcript))[0]}-{stamp}.json"
+    with open(os.path.join(results_dir, name), "w") as f:
+        f.write(last + "\n")
     r = report["result"]
-    haystack = (r["summary"] + "\n" + "\n".join(r["action_items"])).lower()
+    haystack = "\n".join([r.get("title_concept", ""), r["summary"], *r["action_items"], *r.get("tags", [])]).lower()
     recall = {f"{int(frac*100)}%": probe in haystack for frac, _, probe in NEEDLES}
     row = {"label": a.label, "date": datetime.date.today().isoformat(), "input_chars": report["input_chars"],
            "elapsed_s": round(report["elapsed_s"], 1), "peak_memory_mb": report["peak_memory_mb"],
