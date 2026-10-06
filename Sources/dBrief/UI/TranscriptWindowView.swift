@@ -1319,7 +1319,7 @@ struct TranscriptDetailView: View {
                 recording: recording
             )
         } else {
-            let names = Dictionary(labels.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+            let names = ChatTranscript.speakerNames(labels.map { (id: $0.id, displayName: $0.displayName) })
             let text: String = {
                 guard let segments = richTranscript?.segments, !segments.isEmpty else {
                     return recording.transcription?.text ?? ""
