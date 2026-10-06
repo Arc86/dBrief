@@ -6,7 +6,7 @@ import Testing
 struct PrivacyHTTPTraceTests {
     @Test("Real URLSession redirects distinguish forwarded audio from GET/query-only requests", arguments: [302, 307])
     func redirectChain(status: Int) async throws {
-        let server = try ReceiptRedirectServer(status: status)
+        let server = try await ReceiptRedirectServer.start(status: status)
         defer { server.stop() }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("receipt-http-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -44,7 +44,7 @@ struct PrivacyHTTPTraceTests {
 
     @Test(arguments: [true, false], ["data", "file", "stream", "untraced"])
     func crossOriginRedirectIsRejectedWithOrWithoutTracing(tracing: Bool, transport: String) async throws {
-        let server = try ReceiptRedirectServer(status: 307, crossOrigin: true)
+        let server = try await ReceiptRedirectServer.start(status: 307, crossOrigin: true)
         defer { server.stop() }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("blocked-redirect-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -130,11 +130,22 @@ struct PrivacyHTTPTraceTests {
 /// Synthetic, loopback-only receiver. Using a real HTTP server verifies that
 /// URLSession invokes the per-task delegate and actually replays/removes bodies.
 /// Python is already a repository build/test dependency (beta versioning tools).
-private final class ReceiptRedirectServer {
+private final class ReceiptRedirectServer: @unchecked Sendable {
     let process: Process
     let url: URL
 
-    init(status: Int, crossOrigin: Bool = false) throws {
+    /// Waiting for the port is a blocking pipe read, so it runs on a GCD thread:
+    /// on a 3-core CI runner a few of these parked on the cooperative pool starve
+    /// every other test in the process.
+    static func start(status: Int, crossOrigin: Bool = false) async throws -> ReceiptRedirectServer {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(with: Result { try ReceiptRedirectServer(status: status, crossOrigin: crossOrigin) })
+            }
+        }
+    }
+
+    private init(status: Int, crossOrigin: Bool) throws {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -162,7 +173,7 @@ private final class ReceiptRedirectServer {
     }
 
     private static let script = #"""
-import http.server, json, sys
+import http.server, json, socketserver, sys
 status = int(sys.argv[1])
 methods, lengths, keys = [], [], []
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -177,16 +188,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         lengths.append(length)
         if self.path.startswith('/start'):
             self.send_response(status)
-            self.send_header('Location', f'http://{sys.argv[2]}:{self.server.server_port}/middle?initial_prompt=private-redirect-text')
+            self.send_header('Location', f'http://{sys.argv[2]}:{self.server.server_address[1]}/middle?initial_prompt=private-redirect-text')
         elif self.path.startswith('/middle'):
             self.send_response(status)
-            self.send_header('Location', f'http://127.0.0.1:{self.server.server_port}/finish')
+            self.send_header('Location', f'http://127.0.0.1:{self.server.server_address[1]}/finish')
         else:
             self.send_response(200)
         self.end_headers()
         self.wfile.write(json.dumps({'methods': methods, 'lengths': lengths, 'keys': keys}).encode())
-with http.server.HTTPServer(('127.0.0.1', 0), Handler) as server:
-    print(server.server_port, flush=True)
+# Plain TCPServer: HTTPServer's bind does a reverse-DNS lookup (getfqdn) that
+# stalls for tens of seconds on CI runners.
+with socketserver.TCPServer(('127.0.0.1', 0), Handler) as server:
+    print(server.server_address[1], flush=True)
     server.serve_forever()
 """#
 }
