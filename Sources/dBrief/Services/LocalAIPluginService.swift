@@ -72,18 +72,18 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return (turns, embeddings)
     }
 
-    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
+    func analyzeTranscript(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
         return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) {
-            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
+            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
                 throw WireError(kind: .generic, message: "no insights")
             }
             return r
         }
     }
 
-    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
+    func analyzeTranscriptStream(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
         PrivacyTrace.stream(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
-            await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
+            await connection.stream(.analyzeStream(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
         }
     }
 

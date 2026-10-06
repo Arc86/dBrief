@@ -262,21 +262,21 @@ actor MLOrchestrator: MLBackend {
 
     // MARK: - Analysis
 
-    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
+    func analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
         try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
-            let result = try await insightsService.analyzeTranscript(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+            let result = try await insightsService.analyzeTranscript(text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
             await insightsService.unload()
             return result
         }
     }
 
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws {
+    func analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws {
         try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             await whisperService.unload()
-            let upstream = await insightsService.analyzeTranscriptStream(text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+            let upstream = await insightsService.analyzeTranscriptStream(text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
             for try await chunk in upstream { emitToken(chunk) }
             await insightsService.unload()
         }

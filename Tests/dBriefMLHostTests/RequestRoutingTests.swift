@@ -36,10 +36,10 @@ actor MockBackend: MLBackend {
     }
     func diarize(path: String) async throws -> [DiarizedTurn] { [] }
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) { ([], [:]) }
-    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
+    func analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
         LocalInsightsResult(summary: "s", actionItems: [], tags: [], sentiment: "Neutral")
     }
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws { captureProgress(); emitToken("a"); emitToken("b") }
+    func analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws { captureProgress(); emitToken("a"); emitToken("b") }
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws { emitToken("hi") }
     var lastChatTurn: (system: String, history: [ChatTurnMessage], question: String, context: String)?
     func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws {
@@ -79,7 +79,7 @@ actor MockBackend: MLBackend {
         await router.handle(.init(id: first, request: .transcribe(path: "/synthetic.wav", initialPrompt: nil,
             config: .default, safeMode: false, unloadAfter: false)))
         await router.handle(.init(id: second, request: .parakeetTranscribe(path: "/synthetic.wav", modelVariant: "v2", diarize: false)))
-        await router.handle(.init(id: third, request: .analyzeStream(text: "Synthetic", outputLanguage: .matchInput,
+        await router.handle(.init(id: third, request: .analyzeStream(text: "Synthetic", context: "", outputLanguage: .matchInput,
             customVocabulary: "", guidance: nil)))
         let callbacks = await backend.savedProgress()
         #expect(callbacks.count == 3)
@@ -138,7 +138,7 @@ actor MockBackend: MLBackend {
         let collected = EventCollector()
         let router = RequestRouter(backend: MockBackend()) { env in collected.append(env) }
         await router.handle(RequestEnvelope(id: UUID(),
-            request: .analyzeStream(text: "t", outputLanguage: .matchInput, customVocabulary: "", guidance: nil)))
+            request: .analyzeStream(text: "t", context: "", outputLanguage: .matchInput, customVocabulary: "", guidance: nil)))
         let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
         #expect(tokens == ["a", "b"])
         #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)

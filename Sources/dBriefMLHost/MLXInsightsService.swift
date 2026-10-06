@@ -46,6 +46,7 @@ actor MLXInsightsService {
 
     func analyzeTranscriptStream(
         _ text: String,
+        context: String,
         outputLanguage: OutputLanguage,
         customVocabulary: String = "",
         guidance: InsightsGuidance? = nil
@@ -59,7 +60,7 @@ actor MLXInsightsService {
         }
 
         let truncatedText = Self.truncateTranscript(text)
-        let userPrompt = buildUserPrompt(transcript: truncatedText)
+        let userPrompt = buildUserPrompt(transcript: context.isEmpty ? truncatedText : context + "\n\n" + truncatedText)
         let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
 
         return AsyncThrowingStream { continuation in
@@ -97,6 +98,7 @@ actor MLXInsightsService {
 
     func analyzeTranscript(
         _ text: String,
+        context: String,
         outputLanguage: OutputLanguage,
         customVocabulary: String = "",
         guidance: InsightsGuidance? = nil
@@ -117,7 +119,7 @@ actor MLXInsightsService {
             stateHandler(.analyzing)
             let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
             let truncatedText = Self.truncateTranscript(text)
-            let userPrompt = buildUserPrompt(transcript: truncatedText)
+            let userPrompt = buildUserPrompt(transcript: context.isEmpty ? truncatedText : context + "\n\n" + truncatedText)
             let raw = try await generateInsightsJSON(
                 container: container, system: systemPrompt, user: userPrompt, onDelta: { _ in })
             isInferencing = false

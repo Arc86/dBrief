@@ -17,7 +17,7 @@ enum GemmaEval {
                 FileHandle.standardError.write(Data("state: \(state)\n".utf8))
             })
             let start = ContinuousClock.now
-            let result = try await service.analyzeTranscript(text, outputLanguage: language)
+            let result = try await service.analyzeTranscript(text, context: "", outputLanguage: language)
             let elapsed = ContinuousClock.now - start
             let resultJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result))
             let report: [String: Any] = [

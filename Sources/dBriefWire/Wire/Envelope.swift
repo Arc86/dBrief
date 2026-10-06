@@ -12,8 +12,8 @@ public enum MLRequest: Sendable, Codable {
     case transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool)
     case diarize(path: String)
     case diarizeWithEmbeddings(path: String)
-    case analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
-    case analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
+    case analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
+    case analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?)
     case chatStream(systemPrompt: String, userMessage: String)
     /// One turn of a multi-turn transcript chat. The helper keeps the Gemma
     /// session warm between turns (keyed on `systemPrompt` + the bare user
