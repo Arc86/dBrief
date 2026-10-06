@@ -44,6 +44,12 @@ import dBriefWire
         #expect(ChunkNotesTextFormat.parse(text) == ChunkNotes(keyPoints: ["x"], decisions: [], actionItems: [], people: ["Ian"]))
     }
 
+    @Test func bulletedHeadingsStartASection() {
+        let text = "- **Action Items:**\n- [Ann] to send the deck\n* DECISIONS:\n- Ship in May"
+        #expect(ChunkNotesTextFormat.parse(text) == ChunkNotes(keyPoints: [], decisions: ["Ship in May"],
+                                                               actionItems: ["[Ann] to send the deck"], people: []))
+    }
+
     @Test func textWithoutAnyHeadingIsNotNotes() {
         #expect(ChunkNotesTextFormat.parse("I apologize, but I cannot fulfill this request.") == nil)
         #expect(ChunkNotesTextFormat.parse("PEOPLE:\n") == ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: []))
@@ -53,5 +59,19 @@ import dBriefWire
         for heading in ["ACTION ITEMS:", "DECISIONS:", "PEOPLE:", "KEY POINTS:"] {
             #expect(ChunkNotesTextFormat.instruction.contains(heading))
         }
+    }
+}
+
+@Suite struct RefusalTextTests {
+    @Test func recognisesShortApologies() {
+        #expect(RefusalText.isRefusal("I apologize, but I cannot fulfill this request."))
+        #expect(RefusalText.isRefusal("  I'm sorry, I can’t help with that."))
+        #expect(RefusalText.isRefusal("Sorry, but I can't assist."))
+    }
+
+    @Test func keepsRealSummaries() {
+        #expect(!RefusalText.isRefusal("The team agreed to move the Halcyon launch to March 14th."))
+        #expect(!RefusalText.isRefusal("I cannot stress enough" + String(repeating: " how much the team discussed the launch plan", count: 6)))
+        #expect(!RefusalText.isRefusal(""))
     }
 }

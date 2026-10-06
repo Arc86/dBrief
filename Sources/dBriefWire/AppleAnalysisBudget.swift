@@ -94,8 +94,9 @@ public enum ChunkNotesTextFormat {
             }
         }
         for raw in text.components(separatedBy: .newlines) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if let bulletless = stripBullet(line) { add(bulletless); continue }
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if let bulletless = stripBullet(line) { line = bulletless }
+            // A heading may itself be bulleted ("- **Action Items:**").
             if let (heading, rest) = heading(line) { section = heading; add(rest); continue }
             add(line)
         }
@@ -122,5 +123,18 @@ public enum ChunkNotesTextFormat {
             .replacingOccurrences(of: "_", with: " ")
         guard let section = headings[key] else { return nil }
         return (section, parts.count > 1 ? String(parts[1]) : "")
+    }
+}
+
+/// Recognises a model's short refusal sentence returned as plain text (the free-text
+/// fallback answers "I apologize, but I cannot fulfill this request." instead of
+/// throwing), so it is never saved as a summary. English only: the on-device model
+/// refuses in English. Pure.
+public enum RefusalText {
+    private static let openings = ["i apologize", "i'm sorry", "i’m sorry", "i am sorry", "sorry", "i cannot", "i can't", "i can’t"]
+
+    public static func isRefusal(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !t.isEmpty && t.count < 200 && openings.contains { t.hasPrefix($0) }
     }
 }

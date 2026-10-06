@@ -55,12 +55,13 @@ actor LocalAIService {
         var titleConcept: String
     }
 
-    /// Notes for one transcript part (map step) or a merged group of parts (condense).
-    /// Declared actions-first: generation follows declaration order, so the high-value
-    /// lists are produced before the open-ended key-points list can run long.
+    /// Notes for one transcript part (map step). Declared actions-first: generation
+    /// follows declaration order, so the high-value lists are produced before the
+    /// open-ended key-points list can run long. List caps bound the response so it fits
+    /// `notesResponseTokens`; `listsAtCap` reports a list that may have been cut short.
     @Generable
-    struct PartNotes {
-        @Guide(description: "Every commitment or task, following the action_items rule in the instructions. One short line each, in your own words; never copy transcript text.", .maximumCount(10))
+    struct PartNotes: AppleNotesSchema {
+        @Guide(description: "Only explicit commitments, following the action_items rule in the instructions; usually none, or one or two. One short line each (at most 20 words), keeping the speaker's wording for the task.", .maximumCount(10))
         var actionItems: [String]
 
         @Guide(description: "Every decision or agreement reached in this part, one short sentence each, in your own words.", .maximumCount(8))
@@ -75,6 +76,35 @@ actor LocalAIService {
         var chunkNotes: ChunkNotes {
             ChunkNotes(keyPoints: keyPoints, decisions: decisions, actionItems: actionItems, people: people).deduplicated()
         }
+
+        var listsAtCap: [String] {
+            [("action items", actionItems.count, 10), ("decisions", decisions.count, 8),
+             ("people", people.count, 12), ("key points", keyPoints.count, 10)]
+                .filter { $0.1 >= $0.2 }.map(\.0)
+        }
+    }
+
+    /// Condense step: merges several parts' notes. No action items (merged deterministically
+    /// from the map notes) and room for every decision the parts carry.
+    @Generable
+    struct CondensedNotes: AppleNotesSchema {
+        @Guide(description: "Every decision or agreement in the notes, one short sentence each.", .maximumCount(40))
+        var decisions: [String]
+
+        @Guide(description: "Only the names of everyone in the notes.", .maximumCount(30))
+        var people: [String]
+
+        @Guide(description: "The distinct topics, facts, numbers, names and concerns in the notes, one short specific sentence each (at most 25 words).", .maximumCount(10))
+        var keyPoints: [String]
+
+        var chunkNotes: ChunkNotes {
+            ChunkNotes(keyPoints: keyPoints, decisions: decisions, actionItems: [], people: people).deduplicated()
+        }
+
+        var listsAtCap: [String] {
+            [("decisions", decisions.count, 40), ("people", people.count, 30), ("key points", keyPoints.count, 10)]
+                .filter { $0.1 >= $0.2 }.map(\.0)
+        }
     }
 
     /// The final record for the map-reduce path; action items come from the map notes.
@@ -83,6 +113,18 @@ actor LocalAIService {
         @Guide(description: "The meeting summary, written and formatted exactly as the SUMMARY rule in the instructions requires.")
         var summary: String
 
+        @Guide(description: "The topic tags, following the TAGS rule in the instructions.")
+        var tags: [String]
+
+        var sentiment: Sentiment
+
+        @Guide(description: "A short, 3-6 word descriptive title for the meeting.")
+        var titleConcept: String
+    }
+
+    /// Labels for a summary written as free text (the reduce fallback after a refusal).
+    @Generable
+    struct MeetingLabels {
         @Guide(description: "The topic tags, following the TAGS rule in the instructions.")
         var tags: [String]
 
@@ -115,12 +157,17 @@ actor LocalAIService {
         let guidance = InsightsGuidance(summary: summaryGuidance, actionItems: actionItemsGuidance, tags: tagsGuidance)
         do {
             if await Self.tokens(full) <= budget.singlePassTranscriptTokens {
-                return try await singlePass(full, outputLanguage: outputLanguage, customVocabulary: customVocabulary,
-                                            guidance: guidance, maxResponse: budget.finalResponseTokens)
+                do {
+                    return try await singlePass(full, outputLanguage: outputLanguage, customVocabulary: customVocabulary,
+                                                guidance: guidance, maxResponse: budget.finalResponseTokens)
+                } catch where AppleGenerationFailure.classify(error) == .overflow {
+                    // Long instructions (user guidance) can overflow a transcript that fits on its own.
+                    Self.diagnostic("single pass overflowed; using map-reduce")
+                }
             }
             return try await mapReduce(transcript, context: context, budget: budget, outputLanguage: outputLanguage,
                                        customVocabulary: customVocabulary, guidance: guidance)
-        } catch let error as LanguageModelSession.GenerationError {
+        } catch where AppleGenerationFailure.classify(error) != nil {
             throw LocalAIError.generation(Self.describe(error))
         }
     }
@@ -160,7 +207,8 @@ actor LocalAIService {
                                                 overlapLines: 1, countTokens: AppleAnalysisBudget.estimateTokens)
         log.info("Apple Intelligence map-reduce: \(parts.count) parts")
         let mapSystem = UnifiedInsightsPrompt.chunkNotesSystemPrompt(
-            outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+            outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance,
+            commitments: .explicitOnly)
 
         var notes: [ChunkNotes] = []
         for part in parts {
@@ -169,13 +217,14 @@ actor LocalAIService {
             notes.append(try await notesForPart(part, system: mapSystem, context: context, budget: budget))
         }
 
-        // Hierarchical reduce: condense consecutive notes until they fit one reduce prompt.
+        // Hierarchical reduce: condense consecutive notes until they fit one reduce prompt
+        // (which also carries the context).
         try Task.checkCancellation()
         MLProgress.sink?(.analyzingPart(index: parts.count + 1, total: parts.count))
+        let notesBudget = max(400, budget.reduceInputTokens - contextTokens)
         var level = NotesReducePlanner.withoutActions(notes)
         while true {
-            let groups = NotesReducePlanner.groups(level, budget: budget.reduceInputTokens,
-                                                   countTokens: AppleAnalysisBudget.estimateTokens)
+            let groups = NotesReducePlanner.groups(level, budget: notesBudget, countTokens: AppleAnalysisBudget.estimateTokens)
             guard groups.count > 1, groups.count < level.count else { break } // fits, or no further merging possible
             Self.diagnostic("condensing \(level.count) notes into \(groups.count)")
             var condensed: [ChunkNotes] = []
@@ -187,25 +236,68 @@ actor LocalAIService {
             }
             level = condensed
         }
-        let notesText = ChunkNotesMerger.reduceInput(level, maxTokens: max(400, budget.reduceInputTokens - contextTokens),
-                                                     countTokens: AppleAnalysisBudget.estimateTokens)
+        let notesText = ChunkNotesMerger.reduceInput(level, maxTokens: notesBudget, countTokens: AppleAnalysisBudget.estimateTokens)
         try Task.checkCancellation()
-        let record: MeetingRecord
-        do {
-            record = try await respond(
-                instructions: UnifiedInsightsPrompt.reduceSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary,
-                                                                       guidance: guidance, forGuidedGeneration: true),
-                prompt: UnifiedInsightsPrompt.reduceUserPrompt(context: context, notes: notesText),
-                generating: MeetingRecord.self, maxResponse: budget.finalResponseTokens)
-        } catch let error as LanguageModelSession.GenerationError {
-            Self.diagnostic("final record failed: \(Self.caseName(error))")
-            throw error
-        }
+        let record = try await finalRecord(
+            instructions: UnifiedInsightsPrompt.reduceSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary,
+                                                                   guidance: guidance, forGuidedGeneration: true),
+            prompt: UnifiedInsightsPrompt.reduceUserPrompt(context: context, notes: notesText), budget: budget)
+        try Task.checkCancellation()
         let actionItems = ChunkNotesMerger.mergedActionItems(notes)
         log.info("Apple Intelligence map-reduce complete: parts=\(parts.count) summaryLength=\(record.summary.count) actions=\(actionItems.count)")
         return LocalInsightsResult(titleConcept: record.titleConcept, summary: record.summary,
-                                   actionItems: actionItems,
-                                   tags: record.tags, sentiment: record.sentiment.canonical)
+                                   actionItems: actionItems, tags: record.tags, sentiment: record.sentiment)
+    }
+
+    private struct FinalRecord { let summary: String, tags: [String], sentiment: String, titleConcept: String }
+
+    /// The guided final record. If the model refuses it (as it does for some benign
+    /// meetings), the summary is written as free text with permissive guardrails and the
+    /// labels are generated from that summary; a refusal there too fails loudly.
+    private func finalRecord(instructions: String, prompt: String, budget: AppleAnalysisBudget) async throws -> FinalRecord {
+        let refusal: Error
+        do {
+            let r = try await respond(instructions: instructions, prompt: prompt, generating: MeetingRecord.self,
+                                      maxResponse: budget.finalResponseTokens)
+            return FinalRecord(summary: r.summary, tags: r.tags, sentiment: r.sentiment.canonical, titleConcept: r.titleConcept)
+        } catch {
+            guard let failure = AppleGenerationFailure.classify(error) else { throw error }
+            Self.diagnostic("final record failed (\(failure))")
+            guard failure.retryAsText else { throw error }
+            refusal = error
+        }
+        try Task.checkCancellation()
+        Self.diagnostic("writing the summary as text")
+        let summary = try await permissiveText(
+            instructions: instructions + "\n\nWrite only the meeting summary, as the SUMMARY rule requires. No title, tags or sentiment.",
+            prompt: prompt, maxResponse: budget.finalResponseTokens)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, !RefusalText.isRefusal(summary) else {
+            Self.diagnostic("summary refused as text too")
+            throw refusal
+        }
+        try Task.checkCancellation()
+        let labels: MeetingLabels
+        do {
+            labels = try await respond(instructions: instructions, prompt: "MEETING SUMMARY:\n\(summary)",
+                                       generating: MeetingLabels.self, maxResponse: budget.notesResponseTokens)
+        } catch where AppleGenerationFailure.classify(error)?.retryAsText == true {
+            Self.diagnostic("labels refused")
+            throw refusal
+        }
+        return FinalRecord(summary: summary, tags: labels.tags, sentiment: labels.sentiment.canonical,
+                           titleConcept: labels.titleConcept)
+    }
+
+    /// Free-text generation with permissive content-transformation guardrails (fallbacks only).
+    private func permissiveText(instructions: String, prompt: String, maxResponse: Int) async throws -> String {
+        let session = LanguageModelSession(model: SystemLanguageModel(guardrails: .permissiveContentTransformations),
+                                           instructions: instructions)
+        let options = GenerationOptions(temperature: 0.3, maximumResponseTokens: maxResponse)
+        return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata],
+                                                    destination: .local(provider: .appleIntelligence))) {
+            try await session.respond(to: prompt, options: options).content
+        }
     }
 
     /// Notes for one part. When the part fails (overflows the window, its notes run past
@@ -214,29 +306,32 @@ actor LocalAIService {
     /// still fails, or a part too small to split, fails the whole analysis with a clear error.
     private func notesForPart(_ part: TranscriptChunk, system: String, context: String,
                               budget: AppleAnalysisBudget) async throws -> ChunkNotes {
-        let firstError: LanguageModelSession.GenerationError
+        let firstError: Error
+        let firstFailure: AppleGenerationFailure
         do {
-            return try await notes(system: system, prompt: UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part),
+            return try await notes(PartNotes.self, system: system,
+                                   prompt: UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part),
                                    budget: budget, label: "part \(part.index)/\(part.total)")
-        } catch let error as LanguageModelSession.GenerationError where Self.splitMayHelp(error) {
-            firstError = error
+        } catch {
+            guard let failure = AppleGenerationFailure.classify(error), failure.splitMayHelp else { throw error }
+            (firstError, firstFailure) = (error, failure)
         }
         let halves = TranscriptChunkPlanner.plan(
             part.text, maxTokensPerChunk: max(200, (AppleAnalysisBudget.estimateTokens(part.text) + 1) / 2),
             overlapLines: 0, countTokens: AppleAnalysisBudget.estimateTokens)
         guard halves.count > 1 else { throw Self.partFailure(part, firstError) }
-        Self.diagnostic("part \(part.index)/\(part.total) failed (\(Self.caseName(firstError))); splitting into \(halves.count)")
+        Self.diagnostic("part \(part.index)/\(part.total) failed (\(firstFailure)); splitting into \(halves.count)")
         var merged = ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: [])
         for (offset, half) in halves.enumerated() {
             try Task.checkCancellation()
             let notes: ChunkNotes
             do {
                 notes = try await self.notes(
-                    system: system,
+                    PartNotes.self, system: system,
                     prompt: UnifiedInsightsPrompt.chunkNotesUserPrompt(
                         context: context, chunk: TranscriptChunk(index: part.index, total: part.total, text: half.text)),
                     budget: budget, label: "part \(part.index)/\(part.total) half \(offset + 1)/\(halves.count)")
-            } catch let error as LanguageModelSession.GenerationError {
+            } catch where AppleGenerationFailure.classify(error) != nil {
                 throw Self.partFailure(part, error)
             }
             merged.keyPoints += notes.keyPoints
@@ -252,13 +347,15 @@ actor LocalAIService {
         let input = ChunkNotesMerger.reduceInput(group, maxTokens: budget.reduceInputTokens,
                                                  countTokens: AppleAnalysisBudget.estimateTokens)
         do {
-            let merged = try await notes(system: UnifiedInsightsPrompt.condenseNotesSystemPrompt(outputLanguage: outputLanguage),
+            let merged = try await notes(CondensedNotes.self,
+                                         system: UnifiedInsightsPrompt.condenseNotesSystemPrompt(outputLanguage: outputLanguage),
                                          prompt: "NOTES TO MERGE:\n\(input)", budget: budget, label: "condense")
             return NotesReducePlanner.withoutActions([merged])[0]
-        } catch let error as LanguageModelSession.GenerationError where Self.splitMayHelp(error) {
+        } catch {
+            guard let failure = AppleGenerationFailure.classify(error), failure.splitMayHelp else { throw error }
             // Keep the group's notes merged verbatim instead: nothing is dropped here, and
             // `ChunkNotesMerger.reduceInput` trims only key points if they don't fit.
-            Self.diagnostic("condense failed (\(Self.caseName(error))); merging \(group.count) notes without the model")
+            Self.diagnostic("condense failed (\(failure)); merging \(group.count) notes without the model")
             return NotesReducePlanner.merged(group)
         }
     }
@@ -267,25 +364,22 @@ actor LocalAIService {
     /// generation of benign meeting text ("May contain sensitive content") yet answers the
     /// same request as free text, so a refusal or guardrail block is retried once as text
     /// with permissive content-transformation guardrails and parsed by `ChunkNotesTextFormat`.
-    private func notes(system: String, prompt: String, budget: AppleAnalysisBudget, label: String) async throws -> ChunkNotes {
-        let refusal: LanguageModelSession.GenerationError
+    private func notes<Schema: AppleNotesSchema>(_ schema: Schema.Type, system: String, prompt: String,
+                                                  budget: AppleAnalysisBudget, label: String) async throws -> ChunkNotes {
+        let refusal: Error
         do {
-            return try await respond(instructions: system, prompt: prompt, generating: PartNotes.self,
-                                     maxResponse: budget.notesResponseTokens).chunkNotes
-        } catch let error as LanguageModelSession.GenerationError {
-            switch error {
-            case .refusal, .guardrailViolation: refusal = error
-            default: throw error
-            }
+            let result = try await respond(instructions: system, prompt: prompt, generating: Schema.self,
+                                           maxResponse: budget.notesResponseTokens)
+            let capped = result.listsAtCap
+            if !capped.isEmpty { Self.diagnostic("\(label) reached the list cap: \(capped.joined(separator: ", "))") }
+            return result.chunkNotes
+        } catch {
+            guard let failure = AppleGenerationFailure.classify(error), failure.retryAsText else { throw error }
+            Self.diagnostic("\(label) refused as guided notes (\(failure)); retrying as text")
+            refusal = error
         }
-        Self.diagnostic("\(label) refused as guided notes (\(Self.caseName(refusal))); retrying as text")
-        let session = LanguageModelSession(model: SystemLanguageModel(guardrails: .permissiveContentTransformations),
-                                           instructions: system + "\n\n" + ChunkNotesTextFormat.instruction)
-        let options = GenerationOptions(temperature: 0.3, maximumResponseTokens: budget.notesResponseTokens)
-        let text = try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata],
-                                                        destination: .local(provider: .appleIntelligence))) {
-            try await session.respond(to: prompt, options: options).content
-        }
+        let text = try await permissiveText(instructions: system + "\n\n" + ChunkNotesTextFormat.instruction,
+                                            prompt: prompt, maxResponse: budget.notesResponseTokens)
         // A refusal sentence instead of notes: surface the original refusal.
         guard let notes = ChunkNotesTextFormat.parse(text) else {
             Self.diagnostic("\(label) refused as text too")
@@ -304,27 +398,13 @@ actor LocalAIService {
         }
     }
 
-    /// Content-dependent failures a smaller part can avoid; availability, rate-limit and
-    /// language errors would only fail again.
-    private static func splitMayHelp(_ error: LanguageModelSession.GenerationError) -> Bool {
-        switch error {
-        case .exceededContextWindowSize, .decodingFailure, .guardrailViolation, .refusal: true
-        default: false
-        }
-    }
-
-    private static func partFailure(_ part: TranscriptChunk, _ error: LanguageModelSession.GenerationError) -> LocalAIError {
-        diagnostic("part \(part.index)/\(part.total) failed after splitting (\(caseName(error)))")
+    private static func partFailure(_ part: TranscriptChunk, _ error: Error) -> LocalAIError {
+        diagnostic("part \(part.index)/\(part.total) failed after splitting (\(AppleGenerationFailure.classify(error).map { "\($0)" } ?? "unknown"))")
         return .generation("Apple Intelligence could not analyze part \(part.index) of \(part.total) of this recording, even after splitting it. \(describe(error))")
     }
 
-    /// The error's case name only: a `GenerationError`'s description can quote transcript text.
-    private static func caseName(_ error: LanguageModelSession.GenerationError) -> String {
-        String(String(describing: error).prefix(while: { $0 != "(" }))
-    }
-
     /// Map-reduce diagnostics: unified log plus stderr, so the eval harness sees them.
-    /// Messages carry counts, stages and error case names only, never transcript text.
+    /// Messages carry counts, stages and error kinds only, never transcript text.
     private static func diagnostic(_ message: String) {
         log.warning("Apple Intelligence \(message, privacy: .public)")
         FileHandle.standardError.write(Data("LocalAIService: \(message)\n".utf8))
@@ -386,20 +466,86 @@ actor LocalAIService {
         }
     }
 
-    private static func describe(_ error: LanguageModelSession.GenerationError) -> String {
-        switch error {
-        case .exceededContextWindowSize:
-            return "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."
-        case .guardrailViolation:
-            return "Apple Intelligence blocked this content with its safety guardrails."
-        case .unsupportedLanguageOrLocale:
-            return "Apple Intelligence does not support this language. Choose a different output language or AI engine."
-        case .decodingFailure:
-            return "Apple Intelligence returned an incomplete result. Try again or choose a different AI engine."
-        case .refusal:
-            return "Apple Intelligence declined to analyze this content. Try again or choose a different AI engine."
-        default:
-            return error.localizedDescription
+    private static func describe(_ error: Error) -> String {
+        AppleGenerationFailure.classify(error)?.message ?? error.localizedDescription
+    }
+}
+
+/// A guided notes schema for the map-reduce path (`PartNotes`, `CondensedNotes`).
+@available(macOS 26, *)
+protocol AppleNotesSchema: Generable {
+    var chunkNotes: ChunkNotes { get }
+    /// Names of the lists that came back exactly at their `.maximumCount` (possibly cut short).
+    var listsAtCap: [String] { get }
+}
+
+/// FoundationModels failures, classified once so the split, text-fallback and message
+/// decisions don't depend on which error type the OS throws: macOS 26 uses
+/// `LanguageModelSession.GenerationError`; macOS 27 deprecates it in favour of
+/// `LanguageModelError` and `GeneratedContent.ParsingError`.
+@available(macOS 26, *)
+enum AppleGenerationFailure: Equatable, CustomStringConvertible {
+    case overflow, refusal, guardrail, decoding, unsupportedLanguage, other
+
+    /// `nil` for errors that are not model failures (cancellation, our own errors).
+    static func classify(_ error: Error) -> AppleGenerationFailure? {
+        if let error = error as? LanguageModelSession.GenerationError {
+            switch error {
+            case .exceededContextWindowSize: return .overflow
+            case .refusal: return .refusal
+            case .guardrailViolation: return .guardrail
+            case .decodingFailure: return .decoding
+            case .unsupportedLanguageOrLocale: return .unsupportedLanguage
+            default: return .other
+            }
+        }
+        if #available(macOS 27, *) {
+            if let error = error as? LanguageModelError {
+                switch error {
+                case .contextSizeExceeded: return .overflow
+                case .refusal: return .refusal
+                case .guardrailViolation: return .guardrail
+                case .unsupportedLanguageOrLocale: return .unsupportedLanguage
+                default: return .other
+                }
+            }
+            if error is GeneratedContent.ParsingError { return .decoding }
+        }
+        return nil
+    }
+
+    /// Content-dependent failures a smaller part can avoid; availability, rate-limit and
+    /// language errors would only fail again.
+    var splitMayHelp: Bool {
+        switch self {
+        case .overflow, .refusal, .guardrail, .decoding: true
+        case .unsupportedLanguage, .other: false
+        }
+    }
+
+    /// The model sometimes refuses guided generation of benign text but answers as free text.
+    var retryAsText: Bool { self == .refusal || self == .guardrail }
+
+    /// User-facing message; `nil` falls back to the error's own description.
+    var message: String? {
+        switch self {
+        case .overflow: "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."
+        case .refusal: "Apple Intelligence declined to analyze this content. Try again or choose a different AI engine."
+        case .guardrail: "Apple Intelligence blocked this content with its safety guardrails."
+        case .decoding: "Apple Intelligence returned an incomplete result. Try again or choose a different AI engine."
+        case .unsupportedLanguage: "Apple Intelligence does not support this language. Choose a different output language or AI engine."
+        case .other: nil
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .overflow: "overflow"
+        case .refusal: "refusal"
+        case .guardrail: "guardrail"
+        case .decoding: "decoding"
+        case .unsupportedLanguage: "unsupportedLanguage"
+        case .other: "other"
         }
     }
 }

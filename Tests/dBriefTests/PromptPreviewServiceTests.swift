@@ -94,7 +94,10 @@ extension PromptPreviewServiceTests {
             #expect(request(kind: .spokenSummary, configuration: configuration, transcript: long, summary: long).shorteningNotice == nil)
         }
         #expect(request(kind: .voiceStyle, transcript: long, summary: long).shorteningNotice == nil)
-        #expect(request(transcript: long).shorteningNotice != nil)
+        // Apple Intelligence and Gemma analyze long transcripts in parts; only Local CLI still shortens them.
+        #expect(request(transcript: long).shorteningNotice == nil)
+        #expect(request(configuration: .localModel, transcript: long).shorteningNotice == nil)
+        #expect(request(configuration: .localCLI(.default), transcript: long).shorteningNotice != nil)
     }
 }
 

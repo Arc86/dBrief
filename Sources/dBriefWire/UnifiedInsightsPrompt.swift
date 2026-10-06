@@ -206,10 +206,24 @@ public enum UnifiedInsightsPrompt {
 
     // MARK: - Long-transcript map-reduce (local Gemma)
 
+    /// Which commitments the map step records as action items. `.inclusive` (Gemma) asks
+    /// for every commitment, task or follow-up; `.explicitOnly` (Apple Intelligence, whose
+    /// small model otherwise turns topics and suggestions into tasks) asks only for things
+    /// someone says they or a named person WILL do.
+    public enum CommitmentPolicy: Sendable { case inclusive, explicitOnly }
+
     public static func chunkNotesSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
-                                              guidance: InsightsGuidance?) -> String {
+                                              guidance: InsightsGuidance?,
+                                              commitments: CommitmentPolicy = .inclusive) -> String {
         let actionRule = Self.guidance(guidance?.actionItems)
             ?? "Format each as \"[WHO] to [TASK] [CONTEXT/DEADLINE]\"."
+        let actionsLine: String
+        switch commitments {
+        case .inclusive:
+            actionsLine = "1. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If this part contains no commitments, return an empty list — never write a placeholder such as 'No action items'."
+        case .explicitOnly:
+            actionsLine = "1. **action_items:** Only explicit commitments: someone says they, or a named person, WILL do something. Not topics, suggestions, questions, or work already done. Most parts have none, or one or two. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If there are none, return an empty list — never write a placeholder."
+        }
         return """
         You are taking detailed notes on ONE PART of a long meeting transcript. A later step merges \
         the notes from every part, so capture everything from THIS part and nothing else.
@@ -217,7 +231,7 @@ public enum UnifiedInsightsPrompt {
         \(languageInstruction(outputLanguage))
 
         ### RULES
-        1. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If this part contains no commitments, return an empty list — never write a placeholder such as 'No action items'.
+        \(actionsLine)
         2. **decisions:** Every decision or agreement reached in this part. If this part contains no decisions, return an empty list — never write a placeholder such as 'No decisions'.
         3. **people:** Names of everyone who speaks or is mentioned in this part.
         4. **key_points:** Every distinct topic, fact, number, name, product, risk and concern discussed in this part, one specific sentence each. Do not compress details away.
