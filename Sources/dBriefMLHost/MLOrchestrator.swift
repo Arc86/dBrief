@@ -21,7 +21,7 @@ actor MLOrchestrator: MLBackend {
     private let ttsService: TTSService
     private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
-    /// EmbeddingGemma for transcript-chat retrieval. Owned here, unloaded by
+    /// Transcript-chat retrieval embedder (`EmbeddingPrompt.current`). Owned here, unloaded by
     /// `chatSessions.drop()` (every `keepChat: false` operation, the idle drop,
     /// memory pressure) and explicitly by `forceUnload`.
     private let embeddingService: EmbeddingService

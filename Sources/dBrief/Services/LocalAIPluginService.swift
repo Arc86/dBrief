@@ -100,8 +100,9 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
-    /// EmbeddingGemma vectors (768-d, L2-normalized) for transcript-chat retrieval,
-    /// one per text in order. Runs on the helper beside a warm Gemma chat.
+    /// Retrieval vectors from `EmbeddingPrompt.current` (L2-normalized; width is
+    /// model-defined) for transcript chat, one per text in order. Runs on the
+    /// helper beside a warm Gemma chat.
     func embed(_ texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
         try await PrivacyTrace.perform(.init(stage: .chat, data: [.text], destination: .local(provider: .localModel))) {
             guard case let .embeddingsResult(vectors) = try await connection.call(.embed(texts: texts, role: role)) else {

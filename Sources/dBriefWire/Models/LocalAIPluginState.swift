@@ -13,7 +13,7 @@ public enum DownloadStage: String, Sendable, Codable {
     case ttsModelLoading      // Cached TTS model loading into memory
     case kokoroTTSModel       // Downloading FluidAudio Kokoro CoreML model from HuggingFace
     case kokoroTTSModelLoading // Cached Kokoro model loading into memory
-    case embeddingModel       // Downloading EmbeddingGemma (transcript-chat search model)
+    case embeddingModel       // Downloading the transcript-chat search (embedding) model
 }
 
 public enum LocalAIPluginState: Sendable, Codable {
