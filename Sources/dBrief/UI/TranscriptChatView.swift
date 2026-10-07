@@ -170,7 +170,7 @@ struct TranscriptChatView: View {
                     scrollFollow.resumeFollowing()
                     Task { await chatService.scanWholeRecording(for: question) }
                 } label: {
-                    Label("Check the whole recording (takes a few minutes)", systemImage: "text.magnifyingglass")
+                    Label("Check the whole recording (\(chatService.scanEstimateLabel))", systemImage: "text.magnifyingglass")
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.text.color)
                         .padding(.vertical, 7)

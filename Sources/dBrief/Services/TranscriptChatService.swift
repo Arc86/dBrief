@@ -795,6 +795,12 @@ final class TranscriptChatService {
         await runExclusive(trimmed) { sendID in await self.scanInRecordingContext(trimmed, sendID: sendID) }
     }
 
+    /// Button wording for the scan, e.g. "about 8 minutes" (Gemma) or "takes a few minutes".
+    var scanEstimateLabel: String {
+        ChatScanEstimate.label(isGemma: resolvedChatEngine == .qwenLocal,
+                               transcriptTokens: ChatEngineProfile.estimateTokens(transcriptProvider()))
+    }
+
     private func clearScanState() {
         scanProgress = nil
         scanStatus = nil

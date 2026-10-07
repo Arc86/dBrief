@@ -3,6 +3,7 @@
 
 Usage: scripts/chat-eval.py <transcript.txt> [--app dBrief-Beta.app] --label baseline-per-message [--fresh-session-per-question]
        scripts/chat-eval.py <transcript.txt> --mode long --label gemma-long-v1 [--dump-index ~/gemma-eval/L-index.json]
+       scripts/chat-eval.py <transcript.txt> --engine apple --label apple-long-v1 [--reuse-index] [--apple-configs default,p40,baseline]
        scripts/chat-eval.py <transcript.txt> --retrieval [--embed-model <hf-id>]...
 
 --retrieval plants the same 3 facts, runs the helper's --eval-retrieval mode once per
@@ -15,6 +16,13 @@ overview + hybrid (e5 + BM25, RRF) excerpts on one warm session. It also writes 
 index dump ({windows, vectors, queries, summary, actionItems, partNotes}) for the
 Apple Intelligence eval; that file holds transcript text, so it must stay under
 ~/gemma-eval/ (default ~/gemma-eval/<transcript>-index.json).
+
+--engine apple runs the helper in long mode (writing the index dump, unless --reuse-index
+reuses an existing one), then `swift test --filter AppleChatEvalTests` over that dump with
+DBRIEF_APPLE_EVAL=1, and scores the answers with the same probes (one row per config:
+default = shipped profile (excerpts 30% / overview 25%), p40 = excerpts 40% / overview 15%, baseline = old head+tail
+truncation). Answers go to a results file only, never stdout. The dump is deleted
+afterwards (--keep-index to keep it) since it holds private transcript text.
 
 Plants 3 facts (see gemma-eval.py), asks 4 questions, scores each answer by probe
 substrings (all must be present, case-insensitive). Raw results go to
@@ -73,6 +81,39 @@ def run_retrieval(a, base, name):
         print(f"{r['model']:40} {r['dims']:>5} {r['windows']:>4} {r['embed_docs_s']:>7.1f}  "
               + "  ".join(f"{c:^17}" for c in cells) + f"  {fmt(total)}")
 
+def run_apple(a, name, dump):
+    results_dir = os.path.expanduser("~/gemma-eval/results"); os.makedirs(results_dir, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path = os.path.join(results_dir, f"chat-{a.label}-{name}-{stamp}.json")
+    env = dict(os.environ, DBRIEF_APPLE_EVAL="1", DBRIEF_EVAL_INDEX=dump, DBRIEF_APPLE_EVAL_OUT=out_path,
+               DBRIEF_APPLE_EVAL_CONFIGS=a.apple_configs)
+    try:
+        proc = subprocess.run(["swift", "test", "--filter", "AppleChatEvalTests"], env=env, capture_output=True, text=True)
+    finally:
+        if not a.keep_index and os.path.exists(dump):
+            os.unlink(dump)  # holds private transcript text
+    if not os.path.exists(out_path):
+        print(json.dumps({"label": a.label, "error": f"no apple report, rc={proc.returncode}",
+                          "stderr_tail": " | ".join((proc.stdout + proc.stderr).splitlines()[-4:])[:400]}))
+        return 1
+    with open(out_path) as f:
+        report = json.load(f)
+    os.makedirs("docs/diagnostics", exist_ok=True)
+    for cfg in report["configs"]:
+        row = {"label": f"{a.label}-{cfg['config']}", "transcript": name, "date": datetime.date.today().isoformat(),
+               "mode": "apple-long", "excerpt_budget": cfg["excerpt_budget"], "overview_budget": cfg["overview_budget"],
+               "questions": []}
+        for (q, probes), ans in zip(QUESTIONS, cfg["answers"]):
+            low = ans.get("answer", "").lower()
+            row["questions"].append({"hit": all(x in low for x in probes), "total_s": round(ans["total_s"], 2),
+                                     **({"overflow_retry": True} if ans.get("overflow_retry") else {}),
+                                     **({"error": ans["error"]} if "error" in ans else {}),
+                                     "excerpt_tokens": ans.get("excerpt_tokens", 0), "answer_chars": len(low)})
+        print(json.dumps(row, indent=2))
+        with open("docs/diagnostics/chat-eval.jsonl", "a") as log:
+            log.write(json.dumps(row) + "\n")
+    return 0
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("transcript"); p.add_argument("--app", default="dBrief-Beta.app")
@@ -81,11 +122,23 @@ def main():
     p.add_argument("--retrieval", action="store_true")
     p.add_argument("--embed-model", action="append")
     p.add_argument("--dump-index")
+    p.add_argument("--engine", default="gemma", choices=["gemma", "apple"])
+    p.add_argument("--reuse-index", action="store_true"); p.add_argument("--keep-index", action="store_true")
+    p.add_argument("--apple-configs", default="default")
     a = p.parse_args()
     base = os.path.expanduser("~/Library/Application Support/com.dbrief.app.beta/LocalAIPlugin")
     name = os.path.splitext(os.path.basename(a.transcript))[0]
     if a.retrieval:
         return run_retrieval(a, base, name)
+    if a.engine == "apple":
+        a.mode = "long"
+        a.dump_index = a.dump_index or f"~/gemma-eval/{name}-index.json"
+        dump = os.path.realpath(os.path.expanduser(a.dump_index))
+        if a.reuse_index:
+            if not dump.startswith(os.path.realpath(os.path.expanduser("~/gemma-eval")) + os.sep):
+                sys.exit("--dump-index must be under ~/gemma-eval/")
+            return run_apple(a, name, dump)
+        a.label = "gemma-" + a.label
     with open(a.transcript) as f:
         planted = plant(f.read())
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tmp:
@@ -136,6 +189,9 @@ def main():
     os.makedirs("docs/diagnostics", exist_ok=True)
     with open("docs/diagnostics/chat-eval.jsonl", "a") as log:
         log.write(json.dumps(row) + "\n")
+    if a.engine == "apple" and "error" not in row:
+        a.label = a.label[len("gemma-"):]
+        return run_apple(a, name, dump)
 
 if __name__ == "__main__":
     main()

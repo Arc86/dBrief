@@ -49,6 +49,7 @@ enum GemmaEval {
         switch value("--mode") ?? "full" {
         case "full": break
         case "long": return await runLongChat(path: path, questionsPath: qPath, dumpPath: value("--dump-index"), output: output)
+        case "scan": return await runScan(path: path, questionsPath: qPath, output: output)
         default: return 2
         }
         let fresh = args.contains("--fresh-session-per-question")
@@ -110,7 +111,14 @@ enum GemmaEval {
             let text = try String(contentsOfFile: path, encoding: .utf8)
             let questions = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: questionsPath)))
             let service = MLXInsightsService(stateHandler: { _ in })
-            let profile = ChatEngineProfile.gemma
+            // Tuning only: DBRIEF_EVAL_EXCERPT_TOKENS overrides the excerpt budget for this run.
+            var profile = ChatEngineProfile.gemma
+            if let raw = ProcessInfo.processInfo.environment["DBRIEF_EVAL_EXCERPT_TOKENS"], let n = Int(raw) {
+                profile = ChatEngineProfile(fullTranscriptTokens: profile.fullTranscriptTokens, excerptTokens: n,
+                                            overviewTokens: profile.overviewTokens, historyTokens: profile.historyTokens,
+                                            scanPartTokens: profile.scanPartTokens, scanFindingsTokens: profile.scanFindingsTokens,
+                                            reusesSession: profile.reusesSession)
+            }
             let count = ChatEngineProfile.estimateTokens
 
             var clock = ContinuousClock.now
@@ -163,6 +171,7 @@ enum GemmaEval {
                     "windows": windows.map { ["index": $0.index, "start": $0.start, "end": $0.end, "text": $0.text] },
                     "vectors": vectors, "queries": queries,
                     "summary": insights.summary, "actionItems": insights.actionItems,
+                    "transcript": ChatTranscript.format(turns),
                     "partNotes": try JSONSerialization.jsonObject(with: JSONEncoder().encode(insights.partNotes ?? [])),
                 ]
                 try FileManager.default.createDirectory(at: dumpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -172,10 +181,67 @@ enum GemmaEval {
             let overviewSource = overview.hasPrefix("MEETING NOTES") ? "notes" : (overview.isEmpty ? "none" : "summary")
             let report: [String: Any] = [
                 "mode": "long", "planned_mode": "\(plannedMode)", "answers": answers,
+                "excerpt_budget": profile.excerptTokens,
                 "input_chars": text.count, "transcript_tokens": transcriptTokens,
                 "windows": windows.count, "part_notes": insights.partNotes?.count ?? 0,
                 "overview_source": overviewSource, "overview_tokens": count(overview),
                 "analysis_s": seconds(analysisElapsed), "index_s": seconds(indexElapsed),
+                "peak_memory_mb": MLXInsightsService.peakMemoryBytes() / 1_048_576,
+            ]
+            output.write(try JSONSerialization.data(withJSONObject: report) + Data("\n".utf8))
+            return 0
+        } catch {
+            let data = (try? JSONSerialization.data(withJSONObject: ["error": "\(error)"])) ?? Data()
+            output.write(data + Data("\n".utf8))
+            return 1
+        }
+    }
+
+    /// "Check the whole recording" on Gemma as Transcript Chat runs it: every part asked for
+    /// evidence through the one-shot `chatStream` (which reloads the model per call, as in
+    /// production), non-NONE findings grouped by `scanFinalPrompts`, then the answer. Uses the
+    /// first question only. Reports parts, findings, stage timings and the answer.
+    private static func runScan(path: String, questionsPath: String, output: FileHandle) async -> Int32 {
+        do {
+            let text = try String(contentsOfFile: path, encoding: .utf8)
+            let questions = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: questionsPath)))
+            guard let question = questions.first else { return 2 }
+            let service = MLXInsightsService(stateHandler: { _ in })
+            let profile = ChatEngineProfile.gemma
+            let count = ChatEngineProfile.estimateTokens
+            func ask(system: String, user: String) async throws -> String {
+                var out = ""
+                for try await chunk in await service.chatStream(systemPrompt: system, userMessage: user) { out += chunk }
+                if let r = out.range(of: "</think>") { out = String(out[r.upperBound...]) } // drop <think>
+                return out.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let transcript = ChatTranscript.format(retrievalTurns(text))
+            let parts = TranscriptChunkPlanner.plan(transcript, maxTokensPerChunk: profile.scanPartTokens,
+                                                    overlapLines: 1, countTokens: count)
+            let start = ContinuousClock.now
+            var findings: [(part: TranscriptChunk, text: String)] = []
+            var partTimes: [Double] = []
+            for part in parts {
+                let t = ContinuousClock.now
+                let prompt = ChatContextPlanner.scanPartPrompt(question: question, part: part)
+                let answer = try await ask(system: prompt.system, user: prompt.user)
+                partTimes.append(seconds(ContinuousClock.now - t))
+                if !answer.isEmpty, !ChatContextPlanner.isNoneFinding(answer) { findings.append((part, answer)) }
+            }
+            let mapElapsed = ContinuousClock.now - start
+            let reduceStart = ContinuousClock.now
+            var answer = ""
+            let groups = ChatContextPlanner.scanFinalPrompts(question: question, findings: findings,
+                                                             budget: profile.scanFindingsTokens, countTokens: count)
+            for g in groups {
+                answer += (answer.isEmpty ? "" : "\n\n") + (try await ask(system: g.system, user: g.user))
+            }
+            let total = ContinuousClock.now - start
+            let report: [String: Any] = [
+                "mode": "scan", "question": question, "answer": answer, "parts": parts.count,
+                "findings": findings.count, "groups": groups.count, "input_chars": text.count,
+                "map_s": seconds(mapElapsed), "reduce_s": seconds(ContinuousClock.now - reduceStart),
+                "total_s": seconds(total), "part_s": partTimes,
                 "peak_memory_mb": MLXInsightsService.peakMemoryBytes() / 1_048_576,
             ]
             output.write(try JSONSerialization.data(withJSONObject: report) + Data("\n".utf8))

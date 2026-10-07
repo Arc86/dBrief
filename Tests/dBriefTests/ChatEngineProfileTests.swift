@@ -89,4 +89,10 @@ import dBriefWire
         #expect(user.contains("Q1") && user.contains("[00:01:00]") && user.hasSuffix("QUESTION: Q2"))
         #expect(!ChatContextPlanner.freshSessionPrompt(history: "", excerpts: "e", question: "q").contains("Previous conversation"))
     }
+
+    @Test func scanEstimateIsConcreteForGemmaOnly() {
+        #expect(ChatScanEstimate.label(isGemma: true, transcriptTokens: 75_000) == "about 8 minutes")
+        #expect(ChatScanEstimate.label(isGemma: true, transcriptTokens: 1_000) == "about a minute")
+        #expect(ChatScanEstimate.label(isGemma: false, transcriptTokens: 75_000) == "takes a few minutes")
+    }
 }

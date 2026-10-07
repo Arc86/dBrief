@@ -19,7 +19,7 @@ public struct ChatTurnMessage: Codable, Sendable, Equatable {
 public struct ChatSessionCacheKey: Sendable, Equatable {
     /// Most estimated tokens a live session may add to its KV cache after it was
     /// built before it is rebuilt from the bare-question history. Long-mode turns
-    /// leave ~6K tokens of excerpts cached each. Only growth counts: a large
+    /// leave ~4K tokens of excerpts cached each. Only growth counts: a large
     /// full-transcript system prompt must not force a rebuild on every turn.
     public static let maxGrowthTokens = 32_000
 
