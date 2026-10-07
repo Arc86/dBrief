@@ -74,4 +74,32 @@ import dBriefWire
         #expect(text == "small window text")
         #expect(count(text) <= 50)
     }
+
+    @Test func tokenizeHandlesDutchDiacritics() {
+        #expect(TranscriptRetrieval.tokenize("financiën, naïef, 's avonds") == ["financien", "naief", "s", "avonds"])
+    }
+
+    @Test func giantSingleTurnWithLongSpeakerIsPreservedAndFits() {
+        let words = (0..<600).map { "word\($0)" }
+        let t = TranscriptTurn(start: 0, end: 59, speaker: "Dr. Alexandra Bartholomew-Fitzgerald III",
+                               text: words.joined(separator: " ") + ".")
+        let w = TranscriptRetrieval.windows([t], targetTokens: 60, overlapTurns: 0, countTokens: count)
+        #expect(w.count > 1)
+        #expect(w.allSatisfy { count($0.text) <= 60 })
+        let joined = w.map(\.text).joined(separator: " ")
+        var from = joined.startIndex
+        for word in words {
+            let r = joined.range(of: word + " ", range: from..<joined.endIndex)
+                ?? joined.range(of: word + ".", range: from..<joined.endIndex)
+            #expect(r != nil, "\(word)")
+            if let r { from = r.upperBound }
+        }
+    }
+
+    @Test func excerptsFallBackToHitAloneWhenNeighborsOverflow() {
+        let ws = (0..<3).map { TranscriptWindow(index: $0, start: Double($0), end: Double($0), text: String(repeating: "abcd ", count: 20)) }
+        // each window ~25 tokens (+2); hit+2 neighbours = 81 > 60, hit alone = 27.
+        let text = TranscriptRetrieval.excerpts([1], windows: ws, budgetTokens: 60, neighbors: 1, countTokens: count)
+        #expect(text == ws[1].text)
+    }
 }

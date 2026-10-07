@@ -18,7 +18,9 @@ public enum TranscriptRetrieval {
         let units: [TranscriptTurn] = turns.flatMap { turn -> [TranscriptTurn] in
             let line = ChatTranscript.format([turn])
             guard countTokens(line) > targetTokens else { return [turn] }
-            let pieces = TranscriptChunkPlanner.plan(turn.text, maxTokensPerChunk: max(16, targetTokens - 16),
+            let prefixCost = countTokens(ChatTranscript.format([
+                TranscriptTurn(start: turn.start, end: turn.end, speaker: turn.speaker, text: "")]))
+            let pieces = TranscriptChunkPlanner.plan(turn.text, maxTokensPerChunk: max(8, targetTokens - prefixCost - 1),
                                                      overlapLines: 0, countTokens: countTokens)
             return pieces.map { TranscriptTurn(start: turn.start, end: turn.end, speaker: turn.speaker, text: $0.text) }
         }
@@ -64,7 +66,8 @@ public enum TranscriptRetrieval {
             for t in doc where terms.contains(t) { tf[t, default: 0] += 1 }
             let lengthNorm: Double = 1 - b + b * Double(doc.count) / avgLen
             var score = 0.0
-            for (term, count) in tf {
+            for term in terms.sorted() {
+                guard let count = tf[term] else { continue }
                 let d = Double(df[term] ?? 0)
                 let idf: Double = log(1 + (n - d + 0.5) / (d + 0.5))
                 let f = Double(count)
@@ -103,11 +106,16 @@ public enum TranscriptRetrieval {
         var used = 0
         let radius = max(neighbors, 0)
         for hit in ranked {
-            let group = (hit - radius...hit + radius).filter { windows.indices.contains($0) && !chosen.contains($0) }
-            let cost = group.reduce(0) { $0 + countTokens(windows[$1].text) + 2 }
-            guard !group.isEmpty, used + cost <= budgetTokens else { continue }
-            chosen.formUnion(group)
-            used += cost
+            guard windows.indices.contains(hit) else { continue }
+            func candidate(_ r: Int) -> (group: [Int], cost: Int) {
+                let group = (hit - r...hit + r).filter { windows.indices.contains($0) && !chosen.contains($0) }
+                return (group, group.reduce(0) { $0 + countTokens(windows[$1].text) + 2 })
+            }
+            var pick = candidate(radius)
+            if used + pick.cost > budgetTokens, radius > 0 { pick = candidate(0) }
+            guard !pick.group.isEmpty, used + pick.cost <= budgetTokens else { continue }
+            chosen.formUnion(pick.group)
+            used += pick.cost
         }
         var parts: [String] = []
         var previous: Int?
