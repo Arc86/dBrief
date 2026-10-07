@@ -2,11 +2,19 @@
 """Transcript-chat eval for local Gemma (dBriefMLHost --eval-chat).
 
 Usage: scripts/chat-eval.py <transcript.txt> [--app dBrief-Beta.app] --label baseline-per-message [--fresh-session-per-question]
+       scripts/chat-eval.py <transcript.txt> --mode long --label gemma-long-v1 [--dump-index ~/gemma-eval/L-index.json]
        scripts/chat-eval.py <transcript.txt> --retrieval [--embed-model <hf-id>]...
 
 --retrieval plants the same 3 facts, runs the helper's --eval-retrieval mode once per
 --embed-model (default: every candidate below) and prints the 1-based rank of the
 window holding each needle under cosine / BM25 / fused (RRF). Never prints text.
+
+--mode long first runs the map-reduce analysis (for part notes, as processing does),
+then asks every question the way Transcript Chat does for a long recording on Gemma:
+overview + hybrid (e5 + BM25, RRF) excerpts on one warm session. It also writes the
+index dump ({windows, vectors, queries, summary, actionItems, partNotes}) for the
+Apple Intelligence eval; that file holds transcript text, so it must stay under
+~/gemma-eval/ (default ~/gemma-eval/<transcript>-index.json).
 
 Plants 3 facts (see gemma-eval.py), asks 4 questions, scores each answer by probe
 substrings (all must be present, case-insensitive). Raw results go to
@@ -72,6 +80,7 @@ def main():
     p.add_argument("--fresh-session-per-question", action="store_true")
     p.add_argument("--retrieval", action="store_true")
     p.add_argument("--embed-model", action="append")
+    p.add_argument("--dump-index")
     a = p.parse_args()
     base = os.path.expanduser("~/Library/Application Support/com.dbrief.app.beta/LocalAIPlugin")
     name = os.path.splitext(os.path.basename(a.transcript))[0]
@@ -87,6 +96,13 @@ def main():
            "--eval-chat", tmp.name, "--questions", qf.name, "--mode", a.mode]
     if a.fresh_session_per_question:
         cmd.append("--fresh-session-per-question")
+    if a.mode == "long":
+        eval_dir = os.path.realpath(os.path.expanduser("~/gemma-eval"))
+        dump = os.path.realpath(os.path.expanduser(a.dump_index or f"~/gemma-eval/{name}-index.json"))
+        if not dump.startswith(eval_dir + os.sep):
+            os.unlink(tmp.name); os.unlink(qf.name)
+            sys.exit("--dump-index must be under ~/gemma-eval/ (it holds transcript text)")
+        cmd += ["--dump-index", dump]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True)
     finally:
@@ -104,12 +120,17 @@ def main():
         row["stderr_tail"] = " | ".join(out.stderr.splitlines()[-3:])[:300]
     else:
         row.update(mode=report["mode"], input_chars=report["input_chars"], peak_memory_mb=report["peak_memory_mb"])
+        for k in ("planned_mode", "transcript_tokens", "windows", "part_notes", "overview_source",
+                  "overview_tokens", "analysis_s", "index_s"):
+            if k in report:
+                row[k] = round(report[k], 2) if isinstance(report[k], float) else report[k]
         row["questions"] = []
         for (q, probes), ans in zip(QUESTIONS, report["answers"]):
             low = ans["answer"].lower()
             row["questions"].append({"hit": all(x in low for x in probes),
                                      "first_token_s": round(ans["first_token_s"], 2),
                                      "total_s": round(ans["total_s"], 2),
+                                     **({"excerpt_tokens": ans["excerpt_tokens"]} if "excerpt_tokens" in ans else {}),
                                      "answer_chars": len(ans["answer"])})
     print(json.dumps(row, indent=2))
     os.makedirs("docs/diagnostics", exist_ok=True)

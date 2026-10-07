@@ -1320,21 +1320,22 @@ struct TranscriptDetailView: View {
             )
         } else {
             let names = ChatTranscript.speakerNames(labels.map { (id: $0.id, displayName: $0.displayName) })
-            let text: String = {
-                guard let segments = richTranscript?.segments, !segments.isEmpty else {
-                    return recording.transcription?.text ?? ""
-                }
-                let turns = ChatTranscript.turns(segments.map {
-                    (start: $0.start, end: $0.end, speaker: $0.speakerId.map { names[$0] ?? $0 }, text: $0.text)
-                })
-                return ChatTranscript.format(turns)
-            }()
+            let turns = ChatTranscript.turns((richTranscript?.segments ?? []).map {
+                (start: $0.start, end: $0.end, speaker: $0.speakerId.map { names[$0] ?? $0 }, text: $0.text)
+            })
+            let text = turns.isEmpty ? (recording.transcription?.text ?? "") : ChatTranscript.format(turns)
+            // Long recordings on Gemma answer from part notes + retrieved excerpts. The
+            // service reads the insights sidecar itself when this view hasn't loaded it yet.
             service = TranscriptChatService(
                 transcriptText: text,
                 speakerLabels: labels,
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin,
-                recording: recording
+                recording: recording,
+                turns: turns,
+                insights: insights,
+                insightsURL: recording.insightsSidecarURL,
+                indexURL: recording.chatIndexSidecarURL
             )
             // A finished recording has a stable sidecar location: bind it for
             // on-disk persistence and adopt any previously-saved conversation.

@@ -37,15 +37,20 @@ enum GemmaEval {
         }
     }
 
-    /// `--eval-chat <transcript> --questions <q.json> [--mode full] [--fresh-session-per-question]`:
-    /// asks each question against the full transcript and reports timings. Dev tooling only.
+    /// `--eval-chat <transcript> --questions <q.json> [--mode full|long] [--fresh-session-per-question]
+    /// [--dump-index <~/gemma-eval/…json>]`: asks each question against the full transcript
+    /// (`full`) or through long mode (`long`, see `runLongChat`) and reports timings. Dev tooling only.
     static func runChat(arguments args: [String], output: FileHandle) async -> Int32 {
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
         guard let path = value("--eval-chat"), let qPath = value("--questions") else { return 2 }
-        guard (value("--mode") ?? "full") == "full" else { return 2 } // long: Task 10
+        switch value("--mode") ?? "full" {
+        case "full": break
+        case "long": return await runLongChat(path: path, questionsPath: qPath, dumpPath: value("--dump-index"), output: output)
+        default: return 2
+        }
         let fresh = args.contains("--fresh-session-per-question")
         do {
             let transcript = try String(contentsOfFile: path, encoding: .utf8)
@@ -86,6 +91,109 @@ enum GemmaEval {
             output.write(data + Data("\n".utf8))
             return 1
         }
+    }
+
+    struct DumpPathOutsideEvalDir: Error, CustomStringConvertible {
+        let path: String
+        var description: String { "--dump-index must be under ~/gemma-eval/ (it holds transcript text): \(path)" }
+    }
+
+    /// Long mode as Transcript Chat runs it for a finished long recording on Gemma:
+    /// map-reduce analysis first (for part notes, like processing does), then the
+    /// overview, windows and an in-process e5 index, then each question through
+    /// `GemmaChatSessions.respond(…, retrievedContext:)` with one stable system prompt.
+    /// `first_token_s`/`total_s` include the query embedding and retrieval.
+    private static func runLongChat(path: String, questionsPath: String, dumpPath: String?,
+                                    output: FileHandle) async -> Int32 {
+        do {
+            let dumpURL = try dumpPath.map(evalDumpURL)
+            let text = try String(contentsOfFile: path, encoding: .utf8)
+            let questions = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: questionsPath)))
+            let service = MLXInsightsService(stateHandler: { _ in })
+            let profile = ChatEngineProfile.gemma
+            let count = ChatEngineProfile.estimateTokens
+
+            var clock = ContinuousClock.now
+            let insights = try await service.analyzeTranscript(text, context: "", outputLanguage: .matchInput)
+            let analysisElapsed = ContinuousClock.now - clock
+
+            let turns = retrievalTurns(text)
+            let transcriptTokens = count(ChatTranscript.format(turns))
+            let overview = ChatOverview.make(notes: insights.partNotes, summary: insights.summary,
+                                             actionItems: insights.actionItems, budget: profile.overviewTokens,
+                                             countTokens: count)
+            let plannedMode = ChatContextPlanner.mode(transcriptTokens: transcriptTokens, profile: profile,
+                                                      hasOverview: !overview.isEmpty)
+            let windows = TranscriptRetrieval.windows(turns, targetTokens: 350, overlapTurns: 1, countTokens: count)
+            let embedder = EmbeddingService(stateHandler: { state in
+                FileHandle.standardError.write(Data("state: \(state)\n".utf8))
+            })
+            clock = ContinuousClock.now
+            let vectors = try await embedder.embed(windows.map(\.text), role: .document)
+            let indexElapsed = ContinuousClock.now - clock
+
+            // Speaker names are inline in each line; the eval transcript has no label IDs.
+            let system = ChatContextPlanner.longModeSystemPrompt(overview: overview, speakerLegend: "")
+            let sessions = GemmaChatSessions(insights: service) { await $0.drop() }
+            var history: [ChatTurnMessage] = []
+            var answers: [[String: Any]] = []
+            var queries: [[String: Any]] = []
+            for q in questions {
+                let start = ContinuousClock.now
+                let collector = DeltaCollector(start: start)
+                let qv = try await embedder.embed([q], role: .query).first
+                let found = TranscriptRetrieval.hybridExcerpts(question: q, queryVector: qv, windows: windows,
+                                                               vectors: vectors, budgetTokens: profile.excerptTokens,
+                                                               countTokens: count)
+                try await sessions.respond(systemPrompt: system, history: history, question: q,
+                                           retrievedContext: ChatContextPlanner.retrievedContextBlock(found),
+                                           onDelta: { collector.append($0) })
+                let total = ContinuousClock.now - start
+                let (answer, first) = collector.result
+                history += [ChatTurnMessage(role: .user, content: q), ChatTurnMessage(role: .assistant, content: answer)]
+                answers.append(["q": q, "answer": answer, "excerpt_tokens": count(found),
+                                "first_token_s": seconds(first ?? total), "total_s": seconds(total)])
+                queries.append(["q": q, "vector": qv ?? []])
+            }
+            await embedder.unload()
+
+            if let dumpURL {
+                let dump: [String: Any] = [
+                    "model": EmbeddingPrompt.current.id,
+                    "windows": windows.map { ["index": $0.index, "start": $0.start, "end": $0.end, "text": $0.text] },
+                    "vectors": vectors, "queries": queries,
+                    "summary": insights.summary, "actionItems": insights.actionItems,
+                    "partNotes": try JSONSerialization.jsonObject(with: JSONEncoder().encode(insights.partNotes ?? [])),
+                ]
+                try FileManager.default.createDirectory(at: dumpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: dump).write(to: dumpURL, options: .atomic)
+            }
+
+            let overviewSource = overview.hasPrefix("MEETING NOTES") ? "notes" : (overview.isEmpty ? "none" : "summary")
+            let report: [String: Any] = [
+                "mode": "long", "planned_mode": "\(plannedMode)", "answers": answers,
+                "input_chars": text.count, "transcript_tokens": transcriptTokens,
+                "windows": windows.count, "part_notes": insights.partNotes?.count ?? 0,
+                "overview_source": overviewSource, "overview_tokens": count(overview),
+                "analysis_s": seconds(analysisElapsed), "index_s": seconds(indexElapsed),
+                "peak_memory_mb": MLXInsightsService.peakMemoryBytes() / 1_048_576,
+            ]
+            output.write(try JSONSerialization.data(withJSONObject: report) + Data("\n".utf8))
+            return 0
+        } catch {
+            let data = (try? JSONSerialization.data(withJSONObject: ["error": "\(error)"])) ?? Data()
+            output.write(data + Data("\n".utf8))
+            return 1
+        }
+    }
+
+    /// The index dump holds private transcript text, so it may only go under ~/gemma-eval/.
+    static func evalDumpURL(_ path: String) throws -> URL {
+        let root = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("gemma-eval", isDirectory: true).standardizedFileURL.path + "/"
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+        guard url.path.hasPrefix(root) else { throw DumpPathOutsideEvalDir(path: path) }
+        return url
     }
 
     /// `--eval-embed <query> <doc> [<doc>…] [--embed-model <hf-id>]`: embeds the query

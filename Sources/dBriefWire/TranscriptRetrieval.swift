@@ -100,6 +100,21 @@ public enum TranscriptRetrieval {
         return score.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
     }
 
+    /// Transcript chat retrieval for one question, shared by the app and the eval:
+    /// the top 30 BM25 windows, plus the top 30 by cosine when a query vector and
+    /// document vectors exist, fused with RRF and assembled with one neighbour on
+    /// each side within `budgetTokens`. With no vectors this is BM25 only.
+    public static func hybridExcerpts(question: String, queryVector: [Float]?, windows: [TranscriptWindow],
+                                      vectors: [[Float]], budgetTokens: Int,
+                                      countTokens: (String) -> Int) -> String {
+        var rankings = [Array(bm25Ranking(query: question, windows: windows).prefix(30))]
+        if let queryVector, !vectors.isEmpty {
+            rankings.insert(Array(cosineRanking(query: queryVector, vectors: vectors).prefix(30)), at: 0)
+        }
+        return excerpts(fuse(rankings), windows: windows, budgetTokens: budgetTokens, neighbors: 1,
+                        countTokens: countTokens)
+    }
+
     public static func excerpts(_ ranked: [Int], windows: [TranscriptWindow], budgetTokens: Int,
                                 neighbors: Int, countTokens: (String) -> Int) -> String {
         var chosen = Set<Int>()

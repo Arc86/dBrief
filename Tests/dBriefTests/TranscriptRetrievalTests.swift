@@ -102,4 +102,28 @@ import dBriefWire
         let text = TranscriptRetrieval.excerpts([1], windows: ws, budgetTokens: 60, neighbors: 1, countTokens: count)
         #expect(text == ws[1].text)
     }
+
+    private func lettered() -> [TranscriptWindow] {
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf"].enumerated().map {
+            TranscriptWindow(index: $0.offset, start: Double($0.offset), end: Double($0.offset), text: "w \($0.element)")
+        }
+    }
+
+    @Test func hybridExcerptsWithoutVectorsUseKeywordsOnly() {
+        let ws = lettered()
+        // Only the keyword hit and its neighbours, although the budget has room for more.
+        let text = TranscriptRetrieval.hybridExcerpts(question: "echo?", queryVector: nil, windows: ws, vectors: [],
+                                                      budgetTokens: 100, countTokens: count)
+        #expect(text == [ws[3].text, ws[4].text, ws[5].text].joined(separator: "\n"))
+    }
+
+    @Test func hybridExcerptsAddSemanticHitsWithoutKeywordOverlap() {
+        let ws = lettered()
+        // Window 0 is the only vector near the query, and shares no word with it.
+        let vectors: [[Float]] = ws.indices.map { $0 == 0 ? [1, 0] : [0, 1] }
+        let text = TranscriptRetrieval.hybridExcerpts(question: "echo?", queryVector: [1, 0], windows: ws, vectors: vectors,
+                                                      budgetTokens: 100, countTokens: count)
+        #expect(text.contains(ws[0].text))
+        #expect(text.contains(ws[4].text))
+    }
 }

@@ -114,11 +114,19 @@ struct TranscriptChatView: View {
                         .id(message.id)
                     }
 
+                    if chatService.coverage == .relevantParts, let last = chatService.messages.last,
+                       last.role == .assistant, !last.content.isEmpty {
+                        Text("Answered from the most relevant parts of this long recording.")
+                            .uiFont(.caption)
+                            .foregroundStyle(palette.secondary.color)
+                            .padding(.horizontal, 16)
+                    }
+
                     if chatService.isStreaming, let last = chatService.messages.last, last.role == .assistant && last.content.isEmpty {
                         HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Thinking…")
+                            Text(chatService.indexingStatus ?? "Thinking…")
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
                         }

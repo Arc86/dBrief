@@ -26,6 +26,7 @@ actor ChatIndexStore {
             return existing
         }
         let vectors = try await embed(windows.map(\.text))
+        try Task.checkCancellation() // a retired chat session must not write a sidecar
         let index = ChatIndex(windows: windows, vectors: vectors, model: model)
         if index.dims > 0 {
             do { try save(index, to: url) } catch {

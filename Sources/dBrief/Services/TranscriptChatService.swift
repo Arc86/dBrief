@@ -1,4 +1,5 @@
 import Foundation
+import os
 import dBriefWire
 #if canImport(FoundationModels)
 import FoundationModels
@@ -22,6 +23,13 @@ final class RecordingDerivativeValidity: @unchecked Sendable {
         guard valid else { throw CancellationError() }
         return try body()
     }
+}
+
+/// How much of the transcript the latest answer was grounded in.
+enum ChatCoverage: Equatable, Sendable {
+    case full
+    /// Long recording: a whole-meeting overview plus excerpts retrieved per question.
+    case relevantParts
 }
 
 @MainActor
@@ -50,6 +58,10 @@ final class TranscriptChatService {
     private(set) var isStreaming = false
     private(set) var streamingError: String? = nil
     private(set) var streamingNotice: String? = nil
+    /// Grounding of the latest answer; nil for engines without long mode.
+    private(set) var coverage: ChatCoverage?
+    /// Shown inline while the long-recording search index is built.
+    private(set) var indexingStatus: String?
     /// A draft belongs to this recording's existing session, so hiding its
     /// inspector does not discard it. It is deliberately not a sidecar field.
     var draftInput = ""
@@ -139,6 +151,22 @@ final class TranscriptChatService {
     private let aiService: AIService
     private let privacyRecording: Recording?
 
+    /// Speaker-attributed turns of a finished recording (empty for live chat), the
+    /// source of retrieval windows in long mode.
+    private let chatTurns: [TranscriptTurn]
+    /// Analysis sidecar contents. Loaded lazily from `insightsURL` when not supplied,
+    /// so a chat built before the viewer finished loading still gets part notes.
+    private var insights: RecordingInsights?
+    private let insightsURL: URL?
+    private var didLoadInsights = false
+    private let indexURL: URL?
+    private var chatIndex: ChatIndex?
+    private var indexTask: Task<ChatIndex?, Never>?
+    private let chatIndexStore = ChatIndexStore()
+    /// Long-mode system prompt, built once per session: it must stay byte-stable so
+    /// the helper's warm Gemma session (keyed on prompt + history) is reused.
+    private var longModePrompt: String?
+
     /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
     /// that have no stable sidecar location yet (e.g. a still-recording live
     /// session, until it finishes and rebinds to the authoritative transcript).
@@ -169,6 +197,10 @@ final class TranscriptChatService {
         sendTask?.cancel()
         saveTask?.cancel()
         loadTask?.cancel()
+        indexTask?.cancel()
+        indexTask = nil
+        chatIndex = nil
+        indexingStatus = nil
         sendTask = nil
         activeSendID = nil
         saveTask = nil
@@ -186,7 +218,11 @@ final class TranscriptChatService {
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?,
         recording: Recording? = nil,
-        aiService: AIService = AIService()
+        aiService: AIService = AIService(),
+        turns: [TranscriptTurn] = [],
+        insights: RecordingInsights? = nil,
+        insightsURL: URL? = nil,
+        indexURL: URL? = nil
     ) {
         self.transcriptProvider = transcriptProvider
         self.speakerLabels = speakerLabels
@@ -194,6 +230,11 @@ final class TranscriptChatService {
         self.localPlugin = localPlugin
         self.privacyRecording = recording
         self.aiService = aiService
+        self.chatTurns = turns
+        self.insights = insights
+        self.didLoadInsights = insights != nil
+        self.insightsURL = insightsURL
+        self.indexURL = indexURL
         Self.activeServices.removeAll { $0.value == nil }
         Self.activeServices.append(WeakService(self))
     }
@@ -205,7 +246,11 @@ final class TranscriptChatService {
         appSettings: AppSettings,
         localPlugin: LocalAIPluginService?,
         recording: Recording? = nil,
-        aiService: AIService = AIService()
+        aiService: AIService = AIService(),
+        turns: [TranscriptTurn] = [],
+        insights: RecordingInsights? = nil,
+        insightsURL: URL? = nil,
+        indexURL: URL? = nil
     ) {
         self.init(
             transcriptProvider: { transcriptText },
@@ -213,7 +258,11 @@ final class TranscriptChatService {
             appSettings: appSettings,
             localPlugin: localPlugin,
             recording: recording,
-            aiService: aiService
+            aiService: aiService,
+            turns: turns,
+            insights: insights,
+            insightsURL: insightsURL,
+            indexURL: indexURL
         )
     }
 
@@ -269,8 +318,28 @@ final class TranscriptChatService {
                 let history = ChatContextPlanner.history(from: messages.dropLast(2).map {
                     (role: $0.role == .user ? ChatTurnMessage.Role.user : .assistant, content: $0.content)
                 })
-                stream = await plugin.chatTurn(systemPrompt: systemPrompt, history: history, question: trimmed, retrievedContext: "")
+                let profile = ChatEngineProfile.gemma
+                await loadInsightsIfNeeded()
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
+                let overviewText = Self.overview(insights: insights, profile: profile)
+                switch Self.chatMode(transcriptTokens: ChatEngineProfile.estimateTokens(transcriptProvider()),
+                                     profile: profile, hasOverview: !overviewText.isEmpty,
+                                     canRetrieve: !chatTurns.isEmpty) {
+                case .fullTranscript:
+                    coverage = .full
+                    stream = await plugin.chatTurn(systemPrompt: systemPrompt, history: history, question: trimmed, retrievedContext: "")
+                case .overviewAndRetrieval, .retrievalOnly:
+                    coverage = .relevantParts
+                    let found = await excerpts(for: trimmed, profile: profile)
+                    guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
+                    let longPrompt = longModePrompt ?? ChatContextPlanner.longModeSystemPrompt(
+                        overview: overviewText, speakerLegend: speakerLegendText)
+                    longModePrompt = longPrompt
+                    stream = await plugin.chatTurn(systemPrompt: longPrompt, history: history, question: trimmed,
+                                                   retrievedContext: ChatContextPlanner.retrievedContextBlock(found))
+                }
             } else {
+                coverage = nil
                 stream = await buildStream(systemPrompt: systemPrompt, userMessage: buildContextualUserMessage(currentMessage: trimmed))
             }
             for try await chunk in stream {
@@ -402,6 +471,7 @@ final class TranscriptChatService {
     func rebindTranscript(text: String, speakerLabels: [SpeakerLabel]) {
         transcriptProvider = { text }
         self.speakerLabels = speakerLabels
+        longModePrompt = nil
     }
 
     /// True once the conversation has at least one exchange — used to decide whether a
@@ -511,15 +581,97 @@ final class TranscriptChatService {
         prompt += "user to provide the transcript; always answer from the text between the markers.\n\n"
         prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n\nEach line starts with [hh:mm:ss] and the speaker's name. When you answer, cite the timestamp(s) you relied on, like [00:12:34].\n"
         if !speakerLabels.isEmpty {
-            prompt += "\nSPEAKER LEGEND:\n"
-            for label in speakerLabels {
-                prompt += "- \(label.id): \(label.displayName)\n"
-            }
+            prompt += "\nSPEAKER LEGEND:\n\(speakerLegendText)\n"
         }
         prompt += "\nAnswer concisely in the transcript's language. When asked to summarize, list "
         prompt += "action items, or transform the transcript, do so directly from the text above — "
         prompt += "without preamble and without asking for more information."
         return prompt
+    }
+
+    /// One "- id: name" line per speaker, shared by the full and long-mode prompts.
+    private var speakerLegendText: String {
+        speakerLabels.map { "- \($0.id): \($0.displayName)" }.joined(separator: "\n")
+    }
+
+    // MARK: - Long recordings (overview + retrieval)
+
+    /// Long mode needs retrieval windows; without turns (live chat, no segments) a
+    /// long transcript keeps today's full-transcript behaviour.
+    static func chatMode(transcriptTokens: Int, profile: ChatEngineProfile, hasOverview: Bool,
+                         canRetrieve: Bool) -> ChatMode {
+        guard canRetrieve else { return .fullTranscript }
+        return ChatContextPlanner.mode(transcriptTokens: transcriptTokens, profile: profile, hasOverview: hasOverview)
+    }
+
+    /// Whole-meeting overview from the insights sidecar. Part notes are used only
+    /// when they describe the current transcript (not a pre-retranscription one).
+    static func overview(insights: RecordingInsights?, profile: ChatEngineProfile) -> String {
+        let notes = insights?.basedOnPreviousTranscript == true ? nil : insights?.partNotes
+        return ChatOverview.make(notes: notes, summary: insights?.summary, actionItems: insights?.actionItems ?? [],
+                                 budget: profile.overviewTokens, countTokens: ChatEngineProfile.estimateTokens)
+    }
+
+    /// Reads the insights sidecar once (never `Recording.partNotes`, which can be
+    /// stale after a retry). A missing or unreadable sidecar means no overview.
+    private func loadInsightsIfNeeded() async {
+        guard !didLoadInsights else { return }
+        didLoadInsights = true
+        guard let insightsURL else { return }
+        do {
+            insights = try await InsightsStore().load(from: insightsURL)
+        } catch {
+            Logger.ai.warning("Chat: insights sidecar unreadable, no overview: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// The chat index, built once per session. The build runs in its own task so
+    /// stopping a question doesn't abandon it (the next question reuses it), and a
+    /// later question waits for the same build instead of starting a second one.
+    private func ensureIndex() async -> ChatIndex? {
+        if let chatIndex { return chatIndex }
+        if indexTask == nil {
+            guard let indexURL, let plugin = localPlugin, !chatTurns.isEmpty else { return nil }
+            let windows = TranscriptRetrieval.windows(chatTurns, targetTokens: 350, overlapTurns: 1,
+                                                      countTokens: ChatEngineProfile.estimateTokens)
+            let store = chatIndexStore
+            indexTask = Task {
+                do {
+                    return try await store.index(for: windows, at: indexURL) { texts in
+                        try await plugin.embed(texts, role: .document)
+                    }
+                } catch {
+                    if Task.isCancelled { return nil } // retired session
+                    Logger.ai.warning("Chat index unavailable, using keyword search only: \(error.localizedDescription, privacy: .public)")
+                    return ChatIndex(windows: windows, vectors: [], model: "none") // BM25-only, never saved
+                }
+            }
+        }
+        guard let task = indexTask else { return nil }
+        indexingStatus = "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)"
+        let index = await task.value
+        indexingStatus = nil
+        if indexTask == task { indexTask = nil }
+        if let index, !invalidated { chatIndex = index }
+        return index
+    }
+
+    /// Transcript excerpts for one question: cosine (when the index has vectors)
+    /// and BM25 rankings fused with RRF, with neighbours, within the excerpt budget.
+    private func excerpts(for question: String, profile: ChatEngineProfile) async -> String {
+        guard let index = await ensureIndex() else { return "" }
+        let vectors = index.vectors
+        var queryVector: [Float]?
+        if !vectors.isEmpty, let plugin = localPlugin {
+            do {
+                queryVector = try await plugin.embed([question], role: .query).first
+            } catch {
+                Logger.ai.warning("Chat query embedding failed, using keyword search only: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return TranscriptRetrieval.hybridExcerpts(question: question, queryVector: queryVector, windows: index.windows,
+                                                  vectors: vectors, budgetTokens: profile.excerptTokens,
+                                                  countTokens: ChatEngineProfile.estimateTokens)
     }
 
     private func buildContextualUserMessage(currentMessage: String) -> String {
