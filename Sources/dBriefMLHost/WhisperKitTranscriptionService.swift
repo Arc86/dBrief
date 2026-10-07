@@ -293,7 +293,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
 
     /// Fetch the list of available model variant names from the given HuggingFace repo.
     static func fetchAvailableModels(repo: String) async throws -> [String] {
-        try await WhisperKit.fetchAvailableModels(from: repo)
+        try await WhisperKit.fetchAvailableModels(from: repo, token: HubAuth.anonymousToken)
     }
 
     func prepareModelIfNeeded() async throws {
@@ -346,16 +346,19 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
     /// Returns the cached SpeakerKit instance, building it on first use.
     private func loadSpeakerKit() async throws -> SpeakerKit {
         if let speakerKit { return speakerKit }
-        let downloadBase = try speakerKitDownloadBaseURL()
-        let skConfig = PyannoteConfig(
-            downloadBase: downloadBase.path,
+        let sk = try await SpeakerKit(Self.speakerKitConfig(downloadBase: try speakerKitDownloadBaseURL().path))
+        self.speakerKit = sk
+        return sk
+    }
+
+    static func speakerKitConfig(downloadBase: String) -> PyannoteConfig {
+        PyannoteConfig(
+            downloadBase: downloadBase,
+            modelToken: HubAuth.anonymousToken,
             download: true,
             load: true,
             verbose: true
         )
-        let sk = try await SpeakerKit(skConfig)
-        self.speakerKit = sk
-        return sk
     }
 
     func purgeModels() async throws {
@@ -399,6 +402,7 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
                 variant: config.modelName,
                 downloadBase: downloadBase,
                 from: Self.modelRepo,
+                token: HubAuth.anonymousToken,
                 progressCallback: { [stateHandler] progress in
                     stateHandler(.downloading(progress: progress.fractionCompleted, stage: .whisperModel))
                 }

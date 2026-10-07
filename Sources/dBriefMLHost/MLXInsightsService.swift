@@ -294,7 +294,7 @@ actor MLXInsightsService {
         Logger.ai.info("MLX memory before load: \(MLX.Memory.snapshot().description)")
         #endif
 
-        let hub = HubApi(downloadBase: try llmDownloadBaseURL())
+        let hub = HubApi(downloadBase: try llmDownloadBaseURL(), hfToken: HubAuth.anonymousToken)
         let downloader = GemmaModelDownloader(base: HubApiDownloader(hub: hub), stateHandler: stateHandler)
         let tokenizerLoader = TransformersTokenizerLoader(
             fallbackChatTemplate: Self.gemma4ChatTemplate
