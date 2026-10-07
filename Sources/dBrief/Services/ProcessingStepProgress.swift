@@ -164,6 +164,8 @@ extension ProcessingStepProgress {
                 case .kokoroTTSModelLoading:
                     step.name = "Loading Kokoro voice model…"
                     step.progress = nil
+                case .embeddingModel:
+                    step.name = "Downloading search model…"
                 }
             }
         }

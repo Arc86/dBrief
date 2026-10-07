@@ -11,6 +11,7 @@ protocol MLBackend: Sendable {
     func analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
     func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws
+    func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]]
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
@@ -87,6 +88,8 @@ final class RequestRouter: Sendable {
                         try await backend.chatTurn(systemPrompt: system, history: history, question: question,
                                                    retrievedContext: context, emitToken: emitToken)
                         send(.finished)
+                    case let .embed(texts, role):
+                        send(.embeddingsResult(try await backend.embed(texts: texts, role: role))); send(.finished)
                     case let .parakeetTranscribe(path, variant, diarize):
                         send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
                     case let .synthesizeSpeech(text, outputPath, voice, language, instruction, model, engine):

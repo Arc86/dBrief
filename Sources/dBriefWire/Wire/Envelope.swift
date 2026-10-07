@@ -19,6 +19,8 @@ public enum MLRequest: Sendable, Codable {
     /// session warm between turns (keyed on `systemPrompt` + the bare user
     /// questions in `history`); `retrievedContext` applies to this turn only.
     case chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String)
+    /// EmbeddingGemma vectors (768-d, L2-normalized), one per text, in order.
+    case embed(texts: [String], role: EmbeddingRole)
     case parakeetTranscribe(path: String, modelVariant: String, diarize: Bool)
     case synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?)
     case prepareModels
@@ -49,6 +51,7 @@ public enum MLEvent: Sendable, Codable {
     case diarizeWithEmbeddingsResult(turns: [DiarizedTurn], embeddings: [String: [Float]])
     case speechResult(SpeechSynthesisResult)
     case insightsResult(LocalInsightsResult)
+    case embeddingsResult([[Float]])
     case boolResult(Bool)
     case stringsResult([String])
     case voidResult                             // terminal success for no-value ops

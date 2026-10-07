@@ -21,6 +21,10 @@ actor MLOrchestrator: MLBackend {
     private let ttsService: TTSService
     private let kokoroService: KokoroTTSService
     private let embeddingExtractor = SpeakerEmbeddingExtractor()
+    /// EmbeddingGemma for transcript-chat retrieval. Owned here, unloaded by
+    /// `chatSessions.drop()` (every `keepChat: false` operation, the idle drop,
+    /// memory pressure) and explicitly by `forceUnload`.
+    private let embeddingService: EmbeddingService
     /// The warm multi-turn Gemma chat (see `chatTurn`). Every model operation
     /// except `chatTurn` drops it first via `withModelAccess(keepChat: false)`.
     private let chatSessions: GemmaChatSessions
@@ -32,12 +36,14 @@ actor MLOrchestrator: MLBackend {
         self.whisperService = WhisperKitTranscriptionService { state in emit(.plugin, state) }
         let insightsService = MLXInsightsService { state in emit(.plugin, state) }
         self.insightsService = insightsService
+        let embeddingService = EmbeddingService { state in emit(.plugin, state) }
+        self.embeddingService = embeddingService
         // The idle drop takes the same model mutex as every operation, so it can
         // never unload Gemma while another operation (or a chat turn) runs. A
         // chat turn that wins the mutex first cancels the idle task, which then
         // fails `withLock`'s cancellation check and drops nothing. Capturing the
         // mutex (not `self`) avoids an orchestrator ↔ sessions retain cycle.
-        self.chatSessions = GemmaChatSessions(insights: insightsService) { [mutex, diagnostics] sessions in
+        self.chatSessions = GemmaChatSessions(insights: insightsService, embeddings: embeddingService) { [mutex, diagnostics] sessions in
             try? await mutex.withLock {
                 diagnostics?.record(.operationStarted, operation: "chatIdleDrop")
                 await sessions.drop()
@@ -306,6 +312,19 @@ actor MLOrchestrator: MLBackend {
         }
     }
 
+    /// Retrieval embeddings for transcript chat. `keepChat: true`, so embedding
+    /// a query never evicts the warm Gemma chat session it is about to feed.
+    /// Whisper is left alone: the embedder is small and a segmented
+    /// transcription may be keeping Whisper warm between parts.
+    func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
+        try await withModelAccess(keepChat: true) { [self] in
+            defer { emit(.plugin, .idle) }
+            let vectors = try await embeddingService.embed(texts, role: role)
+            await chatSessions.noteEmbeddingActivity()
+            return vectors
+        }
+    }
+
     // MARK: - Model management
 
     func prepareModels() async {
@@ -425,6 +444,7 @@ actor MLOrchestrator: MLBackend {
         // protects direct callers from unloading a model used by active work.
         try? await mutex.withLock { [self] in
             await chatSessions.drop()
+            await embeddingService.unload()   // drop() already did; explicit for shutdown
             await insightsService.forceUnload()
             await whisperService.unload()
             await parakeetService.unload()

@@ -164,6 +164,12 @@ while true {
             send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.diarizing)))
             send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
         default: // echo: emit a state, then a result
+            if case let .embed(texts, _) = env.request {
+                send(EventEnvelope(id: env.id, channel: .plugin,
+                    event: .embeddingsResult([[Float]](repeating: [1, 0], count: texts.count))))
+                send(EventEnvelope(id: env.id, channel: .plugin, event: .finished))
+                continue
+            }
             send(EventEnvelope(id: env.id, channel: .plugin, event: .state(.transcribing)))
             send(EventEnvelope(id: env.id, channel: .plugin,
                 event: .transcriptionResult(TranscriptionResult(text: "echo"))))

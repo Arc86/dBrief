@@ -88,6 +88,41 @@ enum GemmaEval {
         }
     }
 
+    /// `--eval-embed <query> <doc> [<doc>…]`: embeds the query (query role) and each
+    /// doc (document role) with EmbeddingGemma and reports cosine(query, doc) per doc.
+    /// Dev tooling only (retrieval smoke test).
+    static func runEmbed(arguments args: [String], output: FileHandle) async -> Int32 {
+        guard let i = args.firstIndex(of: "--eval-embed"), args.count > i + 2 else { return 2 }
+        let query = args[i + 1]
+        let docs = Array(args[(i + 2)...].prefix { !$0.hasPrefix("--") })
+        do {
+            let service = EmbeddingService(stateHandler: { state in
+                FileHandle.standardError.write(Data("state: \(state)\n".utf8))
+            })
+            let start = ContinuousClock.now
+            let q = try await service.embed([query], role: .query)[0]
+            let d = try await service.embed(docs, role: .document)
+            let elapsed = ContinuousClock.now - start
+            let sims = d.map { cosine(q, $0) }
+            let report: [String: Any] = [
+                "query": query, "docs": docs, "dims": q.count,
+                "similarities": sims, "elapsed_s": seconds(elapsed),
+            ]
+            output.write(try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) + Data("\n".utf8))
+            return 0
+        } catch {
+            let data = (try? JSONSerialization.data(withJSONObject: ["error": "\(error)"])) ?? Data()
+            output.write(data + Data("\n".utf8))
+            return 1
+        }
+    }
+
+    private static func cosine(_ a: [Float], _ b: [Float]) -> Double {
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for (x, y) in zip(a, b) { dot += x * y; na += x * x; nb += y * y }
+        return Double(dot / max((na * nb).squareRoot(), 1e-12))
+    }
+
     /// Accumulates streamed deltas and the time to the first one (`onDelta` is @Sendable).
     private final class DeltaCollector: @unchecked Sendable {
         private let lock = NSLock()

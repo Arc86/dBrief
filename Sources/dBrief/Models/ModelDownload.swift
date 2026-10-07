@@ -40,6 +40,8 @@ extension DownloadStage {
             return "Loading…"
         case .speakerKitModel:
             return "Downloading speakers…"
+        case .embeddingModel:
+            return "Downloading search model…"
         }
     }
 }

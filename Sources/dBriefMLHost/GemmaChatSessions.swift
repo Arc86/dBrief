@@ -19,12 +19,16 @@ actor GemmaChatSessions {
     private var key: ChatSessionCacheKey?
     private var idleTask: Task<Void, Never>?
     private let insights: MLXInsightsService
+    /// The retrieval embedder lives and dies with the chat: `drop()` unloads it too.
+    private let embeddings: EmbeddingService?
     private let idleTimeout: Duration
     private let onIdle: @Sendable (GemmaChatSessions) async -> Void
 
-    init(insights: MLXInsightsService, idleTimeout: Duration = GemmaChatSessions.idleTimeout,
+    init(insights: MLXInsightsService, embeddings: EmbeddingService? = nil,
+         idleTimeout: Duration = GemmaChatSessions.idleTimeout,
          onIdle: @escaping @Sendable (GemmaChatSessions) async -> Void) {
         self.insights = insights
+        self.embeddings = embeddings
         self.idleTimeout = idleTimeout
         self.onIdle = onIdle
     }
@@ -94,8 +98,9 @@ actor GemmaChatSessions {
         return answer
     }
 
-    /// Releases the session, its KV cache and the Gemma model. Callers must hold
-    /// the orchestrator's model mutex (or own the service exclusively, as the eval does).
+    /// Releases the session, its KV cache, the Gemma model and the retrieval
+    /// embedder. Callers must hold the orchestrator's model mutex (or own the
+    /// service exclusively, as the eval does).
     func drop() async {
         idleTask?.cancel()
         idleTask = nil
@@ -103,9 +108,18 @@ actor GemmaChatSessions {
         session = nil
         key = nil
         if hadSession { await insights.unload() }
+        await embeddings?.unload()
+    }
+
+    /// A retrieval embedding ran (under the model mutex): restart the idle
+    /// timer so a resident embedder — e.g. for Apple Intelligence chat, which
+    /// never opens a Gemma session — is still released after `idleTimeout`.
+    func noteEmbeddingActivity() {
+        scheduleIdleDrop()
     }
 
     private func scheduleIdleDrop() {
+        idleTask?.cancel()
         let timeout = idleTimeout
         idleTask = Task { [weak self] in
             try? await Task.sleep(for: timeout)

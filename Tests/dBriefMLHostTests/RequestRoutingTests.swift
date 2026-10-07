@@ -47,6 +47,12 @@ actor MockBackend: MLBackend {
         emitToken("a"); emitToken("b")
     }
     func chatTurnArguments() -> (system: String, history: [ChatTurnMessage], question: String, context: String)? { lastChatTurn }
+    var lastEmbed: (texts: [String], role: EmbeddingRole)?
+    func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
+        lastEmbed = (texts, role)
+        return texts.indices.map { [Float($0), 1] }
+    }
+    func embedArguments() -> (texts: [String], role: EmbeddingRole)? { lastEmbed }
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult { captureProgress(); return TranscriptionResult(text: "pk") }
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {
         SpeechSynthesisResult(outputPath: outputPath, durationSeconds: 1.0, sampleRate: 24000)
@@ -172,6 +178,35 @@ actor MockBackend: MLBackend {
             Issue.record("expected chatTurn"); return
         }
         #expect(system == "S" && decodedHistory == history && question == "Q2" && context.isEmpty)
+    }
+
+    @Test func embedRoutesArgumentsAndEmitsVectorsThenFinished() async throws {
+        let collected = EventCollector()
+        let backend = MockBackend()
+        let router = RequestRouter(backend: backend) { env in collected.append(env) }
+        let id = UUID()
+        await router.handle(RequestEnvelope(id: id, request: .embed(texts: ["a", "b"], role: .document)))
+        let events = collected.events.filter { if case .privacy = $0.event { false } else { true } }
+        guard events.count == 2, case let .embeddingsResult(vectors) = events[0].event,
+              case .finished = events[1].event else {
+            Issue.record("expected embeddingsResult then finished, got \(events.map(\.event))"); return
+        }
+        #expect(vectors == [[0, 1], [1, 1]])
+        #expect(collected.events.allSatisfy { $0.id == id && $0.channel == .plugin })
+        let args = await backend.embedArguments()
+        #expect(args?.texts == ["a", "b"])
+        #expect(args?.role == .document)
+    }
+
+    @Test func embedRequestAndResultRoundTripThroughCodable() throws {
+        let request = try JSONDecoder().decode(RequestEnvelope.self, from: JSONEncoder().encode(
+            RequestEnvelope(id: UUID(), request: .embed(texts: ["q"], role: .query))))
+        guard case let .embed(texts, role) = request.request else { Issue.record("expected embed"); return }
+        #expect(texts == ["q"] && role == .query)
+        let event = try JSONDecoder().decode(EventEnvelope.self, from: JSONEncoder().encode(
+            EventEnvelope(id: UUID(), channel: .plugin, event: .embeddingsResult([[0.5, -0.25]]))))
+        guard case let .embeddingsResult(vectors) = event.event else { Issue.record("expected vectors"); return }
+        #expect(vectors == [[0.5, -0.25]])
     }
 
     @Test func prewarmEmitsVoidThenFinishedOnPluginChannel() async {

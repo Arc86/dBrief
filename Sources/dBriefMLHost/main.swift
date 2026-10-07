@@ -33,6 +33,9 @@ if args.contains("--eval-insights") {
 if args.contains("--eval-chat") {
     exit(await GemmaEval.runChat(arguments: args, output: protocolOutput))
 }
+if args.contains("--eval-embed") {
+    exit(await GemmaEval.runEmbed(arguments: args, output: protocolOutput))
+}
 
 // One writer shared by request replies and broadcast state events, so frames
 // never interleave on the output pipe.
