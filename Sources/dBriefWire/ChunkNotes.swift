@@ -48,9 +48,9 @@ public enum ChunkNotesMerger {
     /// True for filler such as "No action items were assigned in this segment." or
     /// "[Unassigned] None." that a model writes instead of an empty list; these would
     /// otherwise become fake reminders. Deliberately narrow, so a real commitment is
-    /// never dropped: the owner must be absent or a non-person ("[Unassigned]",
-    /// "[Nobody]", ...) AND the text must be a bare "none"-style word or open with an
-    /// anchored "no (further) action items / tasks / ..." phrase.
+    /// never dropped: the owner must be absent, empty ("[ ]") or a non-person
+    /// ("[Unassigned]", "[Nobody]", ...) AND the text must be empty, a bare "none"-style
+    /// word, or open with an anchored "no (further) action items / tasks / ..." phrase.
     /// Also true for an echo of the prompt's format template (any item containing one of
     /// `templatePlaceholders`, case-insensitively): such an item is never a real commitment.
     public static func isPlaceholderActionItem(_ item: String) -> Bool {
@@ -69,6 +69,8 @@ public enum ChunkNotesMerger {
             bare.removeLast()
         }
         bare = bare.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Nothing left after a non-person owner (or no owner): "[Unassigned]", "[ ]".
+        if bare.isEmpty { return true }
         if placeholderWords.contains(bare) || placeholderWords.contains(text) { return true }
         return text.range(of: placeholderPhrase, options: [.regularExpression, .caseInsensitive]) != nil
     }
@@ -76,7 +78,7 @@ public enum ChunkNotesMerger {
     /// Literal format placeholders from the action-item prompts, lowercased.
     private static let templatePlaceholders = ["[task]", "[context/deadline]", "[who]", "[who 1/who 2]", "[context]"]
     private static let placeholderOwners: Set<String> =
-        ["unassigned", "none", "n/a", "nobody", "no one", "niemand", "onbekend", "geen"]
+        ["", "unassigned", "none", "n/a", "nobody", "no one", "niemand", "onbekend", "geen"]
     private static let placeholderWords: Set<String> = ["none", "n/a", "-", "geen", "nvt"]
     private static let placeholderPhrase =
         #"^(no|none|geen)(\s+(further|new|open|specific|other|more|verdere|nieuwe|concrete|open))?\s+(action\s+items?|tasks?|commitments?|actiepunt(en)?|taken|afspraken)\b"#

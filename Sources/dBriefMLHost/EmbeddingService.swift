@@ -17,7 +17,6 @@ actor EmbeddingService {
     private let fallbackStateHandler: MLProgress.Sink
     nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
     static let batchSize = 8 // bounds peak activation memory beside a resident Gemma
-    static let maxTokens = 1024 // windows are ~350 tokens; capped further by the model's position limit
 
     init(spec: EmbeddingModelSpec = EmbeddingPrompt.current, stateHandler: @escaping MLProgress.Sink = { _ in }) {
         self.spec = spec
@@ -44,7 +43,7 @@ actor EmbeddingService {
             out += await container.perform { ctx in
                 // Truncate ourselves so the pooling mask always matches the model's
                 // sequence (encoders like XLM-R would otherwise truncate internally).
-                let limit = min(Self.maxTokens, ctx.model.maxPositionEmbeddings ?? Self.maxTokens)
+                let limit = Self.tokenLimit(spec: spec, maxPositionEmbeddings: ctx.model.maxPositionEmbeddings)
                 let encoded = batch.map { Self.truncate(ctx.tokenizer.encode(text: $0, addSpecialTokens: true), to: limit) }
                 let maxLen = max(encoded.map(\.count).max() ?? 1, 1)
                 // Right padding with the tokenizer's own <pad> id (Gemma: 0, XLM-R: 1).
@@ -71,6 +70,13 @@ actor EmbeddingService {
             }
         }
         return out
+    }
+
+    /// Encoding length cap: the spec's own limit (which accounts for XLM-R's
+    /// padding-aware positions), never above the model's position table. Windows
+    /// are ~350 tokens, so this only bites on unusually long text.
+    static func tokenLimit(spec: EmbeddingModelSpec, maxPositionEmbeddings: Int?) -> Int {
+        min(spec.maxInputTokens, maxPositionEmbeddings ?? spec.maxInputTokens)
     }
 
     /// HF-style truncation: keep the first `limit - 1` tokens plus the final

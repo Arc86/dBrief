@@ -24,12 +24,18 @@ public struct EmbeddingModelSpec: Sendable, Equatable {
     public let queryPrefix: String
     public let documentPrefix: String
     public let pooling: Pooling
+    /// Longest encoding (special tokens included) the model accepts. Padding-aware
+    /// XLM-R/RoBERTa models start positions at `padTokenID + 1`, so they fit
+    /// `maxPositionEmbeddings - padTokenID - 1` tokens (514 positions → 512).
+    public let maxInputTokens: Int
 
-    public init(id: String, queryPrefix: String, documentPrefix: String, pooling: Pooling) {
+    public init(id: String, queryPrefix: String, documentPrefix: String, pooling: Pooling,
+                maxInputTokens: Int = 1024) {
         self.id = id
         self.queryPrefix = queryPrefix
         self.documentPrefix = documentPrefix
         self.pooling = pooling
+        self.maxInputTokens = maxInputTokens
     }
 
     /// EmbeddingGemma-300M, 4-bit. Prefixes from the model card's "search result" task.
@@ -40,7 +46,7 @@ public struct EmbeddingModelSpec: Sendable, Equatable {
     /// Multilingual E5 small (bidirectional XLM-R encoder), mean pooled.
     public static let multilingualE5Small = EmbeddingModelSpec(
         id: "intfloat/multilingual-e5-small",
-        queryPrefix: "query: ", documentPrefix: "passage: ", pooling: .mean)
+        queryPrefix: "query: ", documentPrefix: "passage: ", pooling: .mean, maxInputTokens: 512)
     /// BGE-M3 dense retrieval (XLM-R large), CLS pooled, no prefixes. Not in `known`:
     /// its repo has no root *.safetensors (pytorch_model.bin + onnx/ only), so it can't load.
     public static let bgeM3 = EmbeddingModelSpec(

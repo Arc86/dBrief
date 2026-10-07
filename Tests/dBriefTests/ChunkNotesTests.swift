@@ -26,7 +26,7 @@ import dBriefWire
                       "Geen actiepunten in dit deel.", "None", "n/a", "-", "[Unassigned] none.", "No tasks or commitments.",
                       "[Nobody] No tasks.", "No further action items.",
                       "[Unassigned] to [TASK] [CONTEXT/DEADLINE]", "[WHO] to [TASK]", "[who 1/who 2] to [task] [context]",
-                      "[Ann] to [TASK]"])
+                      "[Ann] to [TASK]", "[Unassigned]", "[ ]", "[ ] No action items", "[] none"])
     func placeholderActionItemsAreRecognized(item: String) {
         #expect(ChunkNotesMerger.isPlaceholderActionItem(item))
     }
@@ -38,7 +38,8 @@ import dBriefWire
                       "[Ann] No later than Friday, finish the task list",
                       "[Unassigned] No owner yet for the vendor contract task; assign one",
                       "No decision taken yet; [Ann] to follow up",
-                      "[Ann] to send the [draft] task list", "[Bo] to update the [WHO-list] context doc"])
+                      "[Ann] to send the [draft] task list", "[Bo] to update the [WHO-list] context doc",
+                      "[ ] Send the deck", "[Ann] to send the deck", "[Ann]"])
     func realActionItemsAreKept(item: String) {
         #expect(!ChunkNotesMerger.isPlaceholderActionItem(item))
     }
