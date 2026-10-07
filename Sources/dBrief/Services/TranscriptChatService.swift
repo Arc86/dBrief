@@ -691,8 +691,17 @@ final class TranscriptChatService {
     /// Complete Q&A pairs before the in-flight question (excludes the just-appended
     /// user message and assistant placeholder).
     private var priorHistory: [ChatTurnMessage] {
-        ChatContextPlanner.history(from: messages.dropLast(2).map {
-            (role: $0.role == .user ? ChatTurnMessage.Role.user : .assistant, content: $0.content)
+        Self.modelHistory(from: Array(messages.dropLast(2)))
+    }
+
+    /// Q&A pairs fed to the model. A stopped scan or an "Error: …" reply is not an
+    /// answer: its content maps to "", so `history(from:)` drops the pair.
+    nonisolated static func modelHistory(from messages: [ChatMessage]) -> [ChatTurnMessage] {
+        ChatContextPlanner.history(from: messages.map { message in
+            let notAnAnswer = message.role == .assistant
+                && (message.content == scanStoppedNote || message.content.hasPrefix("Error: "))
+            return (role: message.role == .user ? ChatTurnMessage.Role.user : .assistant,
+                    content: notAnAnswer ? "" : message.content)
         })
     }
 
@@ -764,7 +773,7 @@ final class TranscriptChatService {
 
     // MARK: - Whole-recording scan ("Check the whole recording")
 
-    static let scanStoppedNote = "Stopped. The whole-recording check was cancelled before it finished, so there is no answer."
+    nonisolated static let scanStoppedNote = "Stopped. The whole-recording check was cancelled before it finished, so there is no answer."
 
     private enum ScanEngine {
         case gemma(LocalAIPluginService)
@@ -848,7 +857,7 @@ final class TranscriptChatService {
                 switch engine {
                 case .gemma(let plugin):
                     let prompt = ChatContextPlanner.scanPartPrompt(question: question, part: part)
-                    texts = [try await gemmaText(plugin, system: prompt.system, user: prompt.user, sendID: sendID)]
+                    texts = [try await gemmaText(plugin, system: prompt.system, user: prompt.user, sendID: sendID).text]
                 case .appleIntelligence:
                     #if canImport(FoundationModels)
                     if #available(macOS 26, *) {
@@ -875,9 +884,12 @@ final class TranscriptChatService {
             scanStatus = "Writing the answer from what was found…"
             var budget = profile.scanFindingsTokens
             var answer = ""
+            var evidenceShortened = false
             answerLoop: while true {
-                let prompts = ChatContextPlanner.scanFinalPrompts(question: question, findings: findings, budget: budget,
-                                                                   countTokens: ChatEngineProfile.estimateTokens)
+                let grouped = ChatContextPlanner.scanFinalPromptsReport(
+                    question: question, findings: findings, budget: budget, countTokens: ChatEngineProfile.estimateTokens)
+                let prompts = grouped.prompts
+                evidenceShortened = grouped.clipped
                 answer = ""
                 do {
                     for prompt in prompts {
@@ -885,9 +897,10 @@ final class TranscriptChatService {
                         switch engine {
                         case .gemma(let plugin):
                             let prefix = answer + heading
-                            let text = try await gemmaText(plugin, system: prompt.system, user: prompt.user,
-                                                           sendID: sendID) { publish(prefix + $0) }
-                            answer = prefix + text
+                            let result = try await gemmaText(plugin, system: prompt.system, user: prompt.user,
+                                                             sendID: sendID) { publish(prefix + $0) }
+                            answer = prefix + result.text
+                            if let reason = result.stopReason { streamingNotice = reason.message }
                         case .appleIntelligence:
                             #if canImport(FoundationModels)
                             if #available(macOS 26, *) {
@@ -905,6 +918,7 @@ final class TranscriptChatService {
                     guard usesApple, budget == profile.scanFindingsTokens, isAppleOverflow(error) else { throw error }
                     try checkScan(sendID)
                     Logger.ai.info("Whole-recording scan: answer step overflowed; regrouping findings")
+                    publish("") // drop answers of the abandoned grouping
                     budget /= 2
                 }
             }
@@ -918,6 +932,7 @@ final class TranscriptChatService {
             if declinedParts > 0 {
                 note += " Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing."
             }
+            if evidenceShortened { note += " Some long evidence was shortened." }
             scanFootnote = (assistantID, note)
         } catch {
             guard !invalidated, !Task.isCancelled, activeSendID == sendID,
@@ -941,7 +956,8 @@ final class TranscriptChatService {
     /// `keepChat: false`, which drops that warm session, so the next normal question
     /// rebuilds it (a one-time prefill); the scan itself never reads or extends it.
     private func gemmaText(_ plugin: LocalAIPluginService, system: String, user: String, sendID: UUID,
-                           onText: (String) -> Void = { _ in }) async throws -> String {
+                           onText: (String) -> Void = { _ in }) async throws
+        -> (text: String, stopReason: ChatResponseLimiter.StopReason?) {
         var limiter = ChatResponseLimiter()
         var text = ""
         for try await chunk in await plugin.chatStream(systemPrompt: system, userMessage: user) {
@@ -952,7 +968,7 @@ final class TranscriptChatService {
             await Task.yield()
         }
         try checkScan(sendID)
-        return text
+        return (text, limiter.stopReason)
     }
 
     private func isAppleOverflow(_ error: Error) -> Bool {

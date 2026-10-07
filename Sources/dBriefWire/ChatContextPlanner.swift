@@ -95,10 +95,18 @@ extension ChatContextPlanner {
 
     /// Groups findings so each final prompt fits `budget`; one group on Gemma, several on Apple Intelligence.
     /// Findings keep their order and each lands in exactly one group. A multi-group result
-    /// labels each group "Parts a–b" so the answers can be joined under headings.
+    /// labels each group "Part a" or "Parts a–b" so the answers can be joined under headings.
     public static func scanFinalPrompts(question: String, findings: [(part: TranscriptChunk, text: String)],
                                         budget: Int, countTokens: (String) -> Int)
         -> [(label: String, system: String, user: String)] {
+        scanFinalPromptsReport(question: question, findings: findings, budget: budget, countTokens: countTokens).prompts
+    }
+
+    /// `scanFinalPrompts` plus `clipped`: true when a last-resort clip shortened some
+    /// evidence (only a single unsplittable line larger than the budget can need it).
+    public static func scanFinalPromptsReport(question: String, findings: [(part: TranscriptChunk, text: String)],
+                                              budget: Int, countTokens: (String) -> Int)
+        -> (prompts: [(label: String, system: String, user: String)], clipped: Bool) {
         let system = """
         You answer a question about a long meeting from evidence collected across its parts.
         Use every relevant item; do not drop any. Cite timestamps like [00:12:34]. Answer in the transcript's language.
@@ -107,22 +115,37 @@ extension ChatContextPlanner {
             let body = group.map { "### PART \($0.part.index) OF \($0.part.total)\n\($0.text)" }.joined(separator: "\n\n")
             return "QUESTION: \(question)\n\nEVIDENCE:\n\(body.isEmpty ? "(no relevant evidence found)" : body)"
         }
-        var groups: [[(part: TranscriptChunk, text: String)]] = [[]]
+        // A finding too large for a prompt of its own is split on line boundaries first,
+        // each piece keeping its part, so grouping never has to cut evidence.
+        var pieces: [(part: TranscriptChunk, text: String)] = []
         for finding in findings {
-            let candidate = groups[groups.count - 1] + [finding]
+            guard countTokens(system + user([finding])) > budget else { pieces.append(finding); continue }
+            let overhead = max(countTokens(system + user([])), countTokens(system + user([(finding.part, "")])))
+            pieces += TranscriptChunkPlanner.plan(finding.text, maxTokensPerChunk: max(1, budget - overhead - 1),
+                                                  overlapLines: 0, countTokens: countTokens)
+                .map { (part: finding.part, text: $0.text) }
+        }
+        var groups: [[(part: TranscriptChunk, text: String)]] = [[]]
+        for piece in pieces {
+            let candidate = groups[groups.count - 1] + [piece]
             if !groups[groups.count - 1].isEmpty, countTokens(system + user(candidate)) > budget {
-                groups.append([finding])
+                groups.append([piece])
             } else {
                 groups[groups.count - 1] = candidate
             }
         }
-        // A single finding larger than the budget is clipped (rare: one part's evidence > budget).
-        return groups.map { group in
+        // Last-resort guard: a single unsplittable line (one enormous word) can still exceed the budget.
+        var clipped = false
+        let prompts = groups.map { group in
             var u = user(group)
-            while countTokens(system + u) > budget, u.count > 200 { u = String(u.prefix(u.count * 9 / 10)) + "…" }
-            let label = groups.count == 1 ? ""
-                : "Parts \(group.first?.part.index ?? 0)–\(group.last?.part.index ?? 0)"
+            while countTokens(system + u) > budget, u.count > 200 {
+                u = String(u.prefix(u.count * 9 / 10)) + "…"
+                clipped = true
+            }
+            let first = group.first?.part.index ?? 0, last = group.last?.part.index ?? 0
+            let label = groups.count == 1 ? "" : first == last ? "Part \(first)" : "Parts \(first)–\(last)"
             return (label: label, system: system, user: u)
         }
+        return (prompts, clipped)
     }
 }

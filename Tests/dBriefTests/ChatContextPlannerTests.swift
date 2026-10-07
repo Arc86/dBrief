@@ -1,4 +1,6 @@
 import Testing
+import Foundation
+@testable import dBrief
 import dBriefWire
 
 @Suite struct ChatContextPlannerTests {
@@ -95,5 +97,64 @@ import dBriefWire
         let prompts = ChatContextPlanner.scanFinalPrompts(question: "Q", findings: [],
                                                           budget: 600, countTokens: ChatEngineProfile.estimateTokens)
         #expect(prompts.count == 1 && prompts[0].user.contains("no relevant evidence found"))
+    }
+
+    /// An oversized multi-line finding is split on line boundaries before grouping:
+    /// every line survives, in order, and no prompt exceeds the budget.
+    @Test func oversizedFindingIsSplitNotClipped() {
+        let lines = (1...40).map { String(format: "[00:%02d:00] Owner L%02d agreed to deliver item ", $0, $0) + String(repeating: "z", count: 30) }
+        let part = TranscriptChunk(index: 3, total: 9, text: "")
+        let report = ChatContextPlanner.scanFinalPromptsReport(question: "Who owns what?", findings: [(part, lines.joined(separator: "\n"))],
+                                                               budget: 500, countTokens: ChatEngineProfile.estimateTokens)
+        #expect(report.prompts.count > 1)
+        #expect(!report.clipped)
+        #expect(report.prompts.allSatisfy { ChatEngineProfile.estimateTokens($0.system + $0.user) <= 500 })
+        let joined = report.prompts.map(\.user).joined(separator: "\n")
+        var cursor = joined.startIndex
+        for line in lines {
+            guard let r = joined.range(of: line, range: cursor..<joined.endIndex) else {
+                Issue.record("line lost or out of order: \(line.prefix(16))"); return
+            }
+            cursor = r.upperBound
+        }
+        #expect(report.prompts.allSatisfy { $0.label == "Part 3" })
+    }
+
+    /// Only a single unsplittable line may still be clipped, and that is reported.
+    @Test func unsplittableLineIsClippedAndReported() {
+        let part = TranscriptChunk(index: 1, total: 2, text: "")
+        let report = ChatContextPlanner.scanFinalPromptsReport(question: "Q", findings: [(part, String(repeating: "x", count: 5_000))],
+                                                               budget: 400, countTokens: ChatEngineProfile.estimateTokens)
+        #expect(report.clipped)
+        #expect(report.prompts.allSatisfy { ChatEngineProfile.estimateTokens($0.system + $0.user) <= 400 })
+        let fits = ChatContextPlanner.scanFinalPromptsReport(question: "Q", findings: [(part, "[00:01:00] short")],
+                                                             budget: 400, countTokens: ChatEngineProfile.estimateTokens)
+        #expect(!fits.clipped)
+    }
+
+    @Test func groupLabelsNameSinglePartsAndRanges() {
+        let parts = (1...3).map { TranscriptChunk(index: $0, total: 3, text: "") }
+        let findings = parts.map { ($0, String(repeating: "evidence ", count: 50) + "F\($0.index)") }
+        let prompts = ChatContextPlanner.scanFinalPrompts(question: "Q", findings: findings,
+                                                          budget: 250, countTokens: ChatEngineProfile.estimateTokens)
+        #expect(prompts.map(\.label) == ["Part 1", "Part 2", "Part 3"])
+    }
+
+    /// Mirrors `TranscriptChatService.priorHistory`: a stopped scan and an error reply
+    /// are not answers, so neither pair reaches the model's history.
+    @Test @MainActor func stoppedScanAndErrorRepliesAreNotModelHistory() {
+        let messages: [ChatMessage] = [
+            .init(role: .user, content: "Q1"), .init(role: .assistant, content: "A1"),
+            .init(role: .user, content: "List every owner"),
+            .init(role: .assistant, content: TranscriptChatService.scanStoppedNote),
+            .init(role: .user, content: "Q3"), .init(role: .assistant, content: "Error: helper crashed"),
+            .init(role: .user, content: "Q4"), .init(role: .assistant, content: "A4"),
+            .init(role: .user, content: "Q5"), .init(role: .assistant, content: ""), // in flight
+        ]
+        let h = TranscriptChatService.modelHistory(from: Array(messages.dropLast(2)))
+        #expect(h == [
+            .init(role: .user, content: "Q1"), .init(role: .assistant, content: "A1"),
+            .init(role: .user, content: "Q4"), .init(role: .assistant, content: "A4"),
+        ])
     }
 }
