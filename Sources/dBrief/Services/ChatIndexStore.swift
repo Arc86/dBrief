@@ -1,4 +1,5 @@
 import Foundation
+import os
 import dBriefWire
 
 actor ChatIndexStore {
@@ -26,7 +27,11 @@ actor ChatIndexStore {
         }
         let vectors = try await embed(windows.map(\.text))
         let index = ChatIndex(windows: windows, vectors: vectors, model: model)
-        if index.dims > 0 { try save(index, to: url) }
+        if index.dims > 0 {
+            do { try save(index, to: url) } catch {
+                Logger.ai.warning("Chat index save failed; using in-memory index: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         return index
     }
 }

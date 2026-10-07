@@ -41,7 +41,7 @@ actor ReprocessingStore {
         var progress: Double
         var message: String?
         let sourceFingerprint: Fingerprint
-        let resultFingerprints: [String: Fingerprint]
+        var resultFingerprints: [String: Fingerprint]
         var stagedFingerprints: [String: Fingerprint]
         /// Full target set persisted BEFORE the first canonical mutation. Kept after
         /// completion so Restore can reject changes made since publication.
@@ -429,7 +429,15 @@ actor ReprocessingStore {
         try requireDirectory(directory(id))
         let url = directory(id).appendingPathComponent("manifest.json")
         try requireRegularOrMissing(url)
-        let attempt = try JSONDecoder().decode(Attempt.self, from: Data(contentsOf: url))
+        var attempt = try JSONDecoder().decode(Attempt.self, from: Data(contentsOf: url))
+        // Manifests persisted before a derivative suffix existed lack its key;
+        // treat it as absent. Core suffixes stay mandatory and unknown keys stay errors.
+        for suffix in Self.derivativeSuffixes {
+            if attempt.resultFingerprints[suffix] == nil { attempt.resultFingerprints[suffix] = .missing }
+            if attempt.publishedFingerprints != nil, attempt.publishedFingerprints?[suffix] == nil {
+                attempt.publishedFingerprints?[suffix] = .missing
+            }
+        }
         guard attempt.id == id, attempt.audioURL.isFileURL,
               attempt.audioURL == canonicalAudio(attempt.audioURL),
               Set(attempt.resultFingerprints.keys) == Self.allowedSuffixes,

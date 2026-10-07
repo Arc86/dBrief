@@ -75,10 +75,27 @@ struct ReprocessingStoreTests {
         #expect(FileManager.default.fileExists(atPath: f.audio.path))
     }
 
+    @Test func legacyManifestWithoutChatIndexKeyStillLoads() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        try f.write("old transcript", "transcript.json")
+        let store = ReprocessingStore(root: f.storeRoot)
+        let attempt = try await store.prepare(audioURL: f.audio, configuration: Data())
+        let manifest = f.storeRoot.appendingPathComponent(attempt.id.uuidString).appendingPathComponent("manifest.json")
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])
+        var results = try #require(json["resultFingerprints"] as? [String: Any])
+        #expect(results.removeValue(forKey: "chatindex.json") != nil)
+        json["resultFingerprints"] = results
+        try JSONSerialization.data(withJSONObject: json).write(to: manifest, options: .atomic)
+        let reopened = ReprocessingStore(root: f.storeRoot)
+        let found = try #require(try await reopened.discover().first)
+        #expect(found.id == attempt.id)
+        #expect(found.resultFingerprints["chatindex.json"] == .missing)
+    }
+
     @Test func restoreAllowsNewDerivativesAndNeverResurrectsOldOnes() async throws {
         let f = try Fixture(); defer { f.clean() }
         try f.write("old transcript", "transcript.json")
-        let derivatives = ["chat.json", "spokensummary.json", "spokensummary.m4a"]
+        let derivatives = ["chat.json", "chatindex.json", "spokensummary.json", "spokensummary.m4a"]
         for suffix in derivatives { try f.write("old derivative", suffix) }
         let store = ReprocessingStore(root: f.storeRoot)
         let attempt = try await store.prepare(audioURL: f.audio, configuration: Data())

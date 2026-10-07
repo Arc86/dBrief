@@ -73,4 +73,4 @@ import dBriefWire
     }
 }
 
-actor Counter { var value = 0; func bump() { value += 1 } }
+private actor Counter { var value = 0; func bump() { value += 1 } }
