@@ -7,12 +7,24 @@ struct ViewerLibraryLayout<Sidebar: View, Detail: View>: View {
     var sidebarOpen: Bool
     var onToggleSidebar: (() -> Void)? = nil
     var width: Binding<CGFloat>? = nil
-    @ViewBuilder var sidebar: () -> Sidebar
-    @ViewBuilder var detail: () -> Detail
+    /// Built once by the parent (not closures called from `body`): a width drag
+    /// re-runs this body every frame, and re-invoking the builders there would
+    /// rebuild the whole sidebar and detail pane on each frame.
+    private let sidebar: Sidebar
+    private let detail: Detail
     @State private var rememberedWidth: CGFloat = 300
     @State private var dragStartWidth: CGFloat?
     @Environment(\.viewerPalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(sidebarOpen: Bool, onToggleSidebar: (() -> Void)? = nil, width: Binding<CGFloat>? = nil,
+         @ViewBuilder sidebar: () -> Sidebar, @ViewBuilder detail: () -> Detail) {
+        self.sidebarOpen = sidebarOpen
+        self.onToggleSidebar = onToggleSidebar
+        self.width = width
+        self.sidebar = sidebar()
+        self.detail = detail()
+    }
 
     private var sidebarWidth: CGFloat { min(max(width?.wrappedValue ?? rememberedWidth, 220), 360) }
 
@@ -22,7 +34,7 @@ struct ViewerLibraryLayout<Sidebar: View, Detail: View>: View {
                 GeometryReader { column in
                     VStack(spacing: 0) {
                         if onToggleSidebar != nil { Color.clear.frame(height: 32) }
-                        sidebar()
+                        sidebar
                     }
                     .frame(width: column.size.width, height: column.size.height)
                     .background(palette.sidebarTop.color)
@@ -49,7 +61,7 @@ struct ViewerLibraryLayout<Sidebar: View, Detail: View>: View {
                     .accessibilityHidden(!sidebarOpen)
 
                 GeometryReader { column in
-                    detail()
+                    detail
                         .padding(.top, !sidebarOpen && onToggleSidebar != nil ? 52 : 0)
                         .frame(width: column.size.width, height: column.size.height)
                         .clipped()

@@ -205,6 +205,7 @@ struct TranscriptBrowserView: View {
                 recording: recording,
                 onDeleted: { handleDeleted(recording.fileURL) }
             )
+            .equatable()
             .id(recording.fileURL)
         } else {
             ContentUnavailableView(
@@ -295,7 +296,7 @@ struct TranscriptBrowserView: View {
     @ViewBuilder private func smartResults(statusMenu: ViewerSidebarStatusFilterMenu) -> some View {
         switch library.selectedView {
         case .all:
-            VStack(alignment: .leading, spacing: 2) {
+            Group {
                 let thisWeek = thisWeekItems
                 let earlier = earlierItems
                 LibrarySectionHeader(title: "This week", count: thisWeek.isEmpty ? nil : thisWeek.count) { statusMenu }
@@ -314,18 +315,18 @@ struct TranscriptBrowserView: View {
                 }
             }
         case .unfinishedActions:
-            VStack(alignment: .leading, spacing: 2) {
+            Group {
                 LibrarySectionHeader(title: "Unfinished actions", count: filteredItems.count) { statusMenu }
                 ForEach(filteredItems) { row(for: $0) }
             }
         case .recentlyProcessed:
-            VStack(alignment: .leading, spacing: 2) {
+            Group {
                 LibrarySectionHeader(title: "Recently processed", count: filteredItems.count) { statusMenu }
                 // Preserve SQL processing-time ordering for Recently Processed.
                 ForEach(filteredItems) { row(for: $0) }
             }
         case .failedJobs, .queuedInterrupted:
-            VStack(alignment: .leading, spacing: 2) {
+            Group {
                 LibrarySectionHeader(
                     title: library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
                     count: library.workMatches.count
@@ -339,7 +340,7 @@ struct TranscriptBrowserView: View {
                 }
             }
         case .peopleThisMonth:
-            VStack(alignment: .leading, spacing: 2) {
+            Group {
                 LibrarySectionHeader(title: "People this month", count: library.peopleGroups.count) { statusMenu }
                 ForEach(library.peopleGroups) { group in
                     DisclosureGroup {
@@ -379,11 +380,9 @@ struct TranscriptBrowserView: View {
     }
 
     private func row(for item: RecordingBrowserItem) -> some View {
-        SidebarRecordingRow(
-            item: item,
-            isSelected: selection == item.url,
-            onTap: { selectRecording(item.url) })
-        .contextMenu { ReprocessingMenu(recording: makeRecording(from: item), hasTranscript: item.hasTranscript, presentationStyle: .window) }
+        LibraryRecordingRow(item: item, isSelected: selection == item.url,
+                            onSelect: { selectRecording(item.url) })
+            .equatable()
     }
 
     // MARK: - Helpers
@@ -409,7 +408,7 @@ struct TranscriptBrowserView: View {
             // On completion, failure or Stop, leave the staged object behind and
             // reload the published recording, even though its URL is unchanged.
             if detailIsProcessingPreview || detailRecording?.fileURL != item.url {
-                detailRecording = makeRecording(from: item)
+                detailRecording = Self.makeRecording(from: item)
             }
         } else {
             detailRecording = nil
@@ -443,7 +442,7 @@ struct TranscriptBrowserView: View {
         if detailRecording?.fileURL == url { detailRecording = nil }
     }
 
-    private func makeRecording(from item: RecordingBrowserItem) -> Recording {
+    fileprivate static func makeRecording(from item: RecordingBrowserItem) -> Recording {
         let recording = Recording(
             date: item.date,
             fileURL: item.url,
@@ -459,5 +458,28 @@ struct TranscriptBrowserView: View {
         // meeting (participants + calendar attendees) and not just the voice library.
         recording.participants = item.meetingNames
         return recording
+    }
+}
+
+/// A library row plus its Reprocess context menu. Equatable over the row's data,
+/// so a selection change re-renders only the two rows whose `isSelected` flipped
+/// instead of every row and every context menu (each menu wraps a fresh
+/// `Recording` and a `ReprocessingMenu`, which `.contextMenu` builds eagerly).
+private struct LibraryRecordingRow: View, Equatable {
+    let item: RecordingBrowserItem
+    let isSelected: Bool
+    /// Not compared: it only selects `item.url`, which `item` already covers.
+    let onSelect: () -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item && lhs.isSelected == rhs.isSelected
+    }
+
+    var body: some View {
+        SidebarRecordingRow(item: item, isSelected: isSelected, onTap: onSelect)
+            .contextMenu {
+                ReprocessingMenu(recording: TranscriptBrowserView.makeRecording(from: item),
+                                 hasTranscript: item.hasTranscript, presentationStyle: .window)
+            }
     }
 }

@@ -84,20 +84,11 @@ struct ViewerHeader<Commands: View>: View {
     }
 
     private var navigationRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                singleLineTabs
-                Spacer(minLength: 8)
-                navigationActions
-            }
-
-            VStack(alignment: .leading, spacing: 7) {
-                modeTabs
-                HStack {
-                    Spacer(minLength: 0)
-                    navigationActions
-                }
-            }
+        // Tabs on the left and the utility icons pinned right; narrow windows wrap
+        // the tabs and drop the icons to their own row.
+        ViewerWrapLayout(spacing: 5, lineSpacing: 6, pinsLastToTrailing: true) {
+            ForEach(tabs, id: \.self) { tabButton($0) }
+            navigationActions
         }
         .frame(minHeight: 36)
         .padding(.bottom, 9)
@@ -107,28 +98,6 @@ struct ViewerHeader<Commands: View>: View {
                 .frame(height: 1)
                 .allowsHitTesting(false)
         }
-    }
-
-    private var modeTabs: some View {
-        ViewThatFits(in: .horizontal) {
-            singleLineTabs
-
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(stride(from: 0, to: tabs.count, by: 2)), id: \.self) { start in
-                    HStack(spacing: 5) {
-                        ForEach(tabs[start..<min(start + 2, tabs.count)], id: \.self) { tabButton($0) }
-                    }
-                }
-            }
-            .fixedSize(horizontal: true, vertical: false)
-        }
-    }
-
-    private var singleLineTabs: some View {
-        HStack(spacing: 5) {
-            ForEach(tabs, id: \.self) { tabButton($0) }
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func tabButton(_ destination: ViewerDocumentMode) -> some View {
@@ -187,16 +156,10 @@ struct ViewerHeader<Commands: View>: View {
     }
 
     private var commandRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                commands()
-                if showsAssistantToggle { assistantToggle }
-            }
-            VStack(alignment: .trailing, spacing: 8) {
-                commands()
-                if showsAssistantToggle { assistantToggle }
-            }
+        // `commands` may be several groups; each stays whole and the groups wrap.
+        ViewerWrapLayout(alignment: .trailing, spacing: 8, lineSpacing: 8) {
+            commands()
+            if showsAssistantToggle { assistantToggle }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

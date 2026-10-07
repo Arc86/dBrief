@@ -179,27 +179,15 @@ private struct TranscriptPlayerControls<TimelineContent: View>: View {
     let timeline: () -> TimelineContent
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                playButton
-                currentTimeLabel
-                timeline()
-                    .frame(minWidth: 220, maxWidth: .infinity)
-                durationLabel
-                speedMenu
-            }
-
-            VStack(spacing: 9) {
-                HStack(spacing: 12) {
-                    playButton
-                    currentTimeLabel
-                    Spacer(minLength: 6)
-                    durationLabel
-                    speedMenu
-                }
-                timeline()
-                    .frame(maxWidth: .infinity)
-            }
+        // One instance of each control (a `ViewThatFits` here built the timeline
+        // and both menus twice); the layout moves the timeline to its own row
+        // when the window is too narrow for it.
+        PlayerControlsLayout {
+            playButton
+            currentTimeLabel
+            timeline()
+            durationLabel
+            speedMenu
         }
     }
 
@@ -259,6 +247,68 @@ private struct TranscriptPlayerControls<TimelineContent: View>: View {
 
     private func speedLabel(_ speed: Float) -> String {
         speed == 1.0 ? "1×" : String(format: "%g×", speed)
+    }
+}
+
+/// `[play][elapsed][timeline][duration][speed]` on one row while the timeline
+/// gets at least `minTimelineWidth`; otherwise the controls stay on the first
+/// row (duration and speed trailing) and the timeline takes a full second row.
+private struct PlayerControlsLayout: Layout {
+    var spacing: CGFloat = 12
+    var lineSpacing: CGFloat = 9
+    var minTimelineWidth: CGFloat = 220
+    private static let timelineIndex = 2
+
+    private func controlSizes(_ subviews: Subviews) -> [CGSize] {
+        subviews.indices.map { $0 == Self.timelineIndex ? .zero : subviews[$0].sizeThatFits(.unspecified) }
+    }
+
+    private func controlsWidth(_ sizes: [CGSize]) -> CGFloat {
+        sizes.reduce(0) { $0 + $1.width } + spacing * CGFloat(sizes.count - 2)
+    }
+
+    private func isSingleRow(width: CGFloat, sizes: [CGSize]) -> Bool {
+        width >= controlsWidth(sizes) + spacing + minTimelineWidth
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 5 else { return .zero }
+        let sizes = controlSizes(subviews)
+        let rowHeight = sizes.map(\.height).max() ?? 0
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+            ?? controlsWidth(sizes) + spacing + minTimelineWidth
+        if isSingleRow(width: width, sizes: sizes) {
+            let timeline = subviews[Self.timelineIndex].sizeThatFits(
+                ProposedViewSize(width: width - controlsWidth(sizes) - spacing, height: nil))
+            return CGSize(width: width, height: max(rowHeight, timeline.height))
+        }
+        let timeline = subviews[Self.timelineIndex].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(width: width, height: rowHeight + lineSpacing + timeline.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 5 else { return }
+        let sizes = controlSizes(subviews)
+        let single = isSingleRow(width: bounds.width, sizes: sizes)
+        let rowHeight = sizes.map(\.height).max() ?? 0
+        let timelineWidth = single ? bounds.width - controlsWidth(sizes) - spacing : bounds.width
+        let timelineHeight = subviews[Self.timelineIndex]
+            .sizeThatFits(ProposedViewSize(width: timelineWidth, height: nil)).height
+        let firstRowHeight = single ? max(rowHeight, timelineHeight) : rowHeight
+        func place(_ index: Int, x: CGFloat) {
+            subviews[index].place(at: CGPoint(x: x, y: bounds.minY + (firstRowHeight - sizes[index].height) / 2),
+                                  proposal: ProposedViewSize(sizes[index]))
+        }
+        place(0, x: bounds.minX)
+        place(1, x: bounds.minX + sizes[0].width + spacing)
+        place(4, x: bounds.maxX - sizes[4].width)
+        place(3, x: bounds.maxX - sizes[4].width - spacing - sizes[3].width)
+        let timelineOrigin = single
+            ? CGPoint(x: bounds.minX + sizes[0].width + sizes[1].width + 2 * spacing,
+                      y: bounds.minY + (firstRowHeight - timelineHeight) / 2)
+            : CGPoint(x: bounds.minX, y: bounds.minY + rowHeight + lineSpacing)
+        subviews[Self.timelineIndex].place(at: timelineOrigin,
+            proposal: ProposedViewSize(width: timelineWidth, height: timelineHeight))
     }
 }
 

@@ -7,11 +7,27 @@ import dBriefWire
 /// sits above Summary, Transcript, Actions, or Meeting Insights. Chat remains
 /// an independent inspector. The initial document is Summary when available,
 /// otherwise Transcript.
-struct TranscriptDetailView: View {
+struct TranscriptDetailView: View, Equatable {
     let recording: Recording
     /// Called after the recording's files are deleted, so the browser can drop
     /// it from the sidebar and clear selection.
     var onDeleted: () -> Void = {}
+    /// Everything else this view shows comes from its own state and observed
+    /// models, so the recording's identity is its whole input. Comparing only
+    /// that lets the browser re-render (selection, sidebar drag, library
+    /// refresh) without re-running this body; `onDeleted` is a fresh closure on
+    /// every browser render and would otherwise never compare equal.
+    private let recordingIdentity: ObjectIdentifier
+
+    init(recording: Recording, onDeleted: @escaping () -> Void = {}) {
+        self.recording = recording
+        self.onDeleted = onDeleted
+        self.recordingIdentity = ObjectIdentifier(recording)
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.recordingIdentity == rhs.recordingIdentity
+    }
 
     @Environment(AppContext.self) private var context
     @Environment(AudioPlayer.self) private var audioPlayer
@@ -440,15 +456,11 @@ struct TranscriptDetailView: View {
         if showLiveChat, chatService == nil { buildChatService() }
     }
 
+    /// Two command groups; the header's wrap layout keeps each group on one row.
     private var documentCommands: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { Spacer(minLength: 0); copyAndEditCommands; processingCommands }
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) { Spacer(minLength: 0); copyAndEditCommands }
-                HStack(spacing: 8) { Spacer(minLength: 0); processingCommands }
-            }
-            VStack(alignment: .trailing, spacing: 8) { copyAndEditCommands; processingCommands }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+        Group {
+            HStack(spacing: 8) { copyAndEditCommands }
+            HStack(spacing: 8) { processingCommands }
         }
         .uiFont(.system(size: 12))
         .buttonStyle(ViewerCommandButtonStyle())
