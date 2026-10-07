@@ -307,7 +307,6 @@ final class TranscriptChatService {
         messages.append(assistantMessage)
         let assistantIdx = messages.count - 1
 
-        let systemPrompt = buildSystemPrompt()
         var limiter = ChatResponseLimiter()
 
         do {
@@ -315,9 +314,7 @@ final class TranscriptChatService {
             if resolvedChatEngine == .qwenLocal, let plugin = localPlugin {
                 // Gemma keeps a warm session: send structured turns (history excludes the
                 // just-appended user message and assistant placeholder) instead of flattened text.
-                let history = ChatContextPlanner.history(from: messages.dropLast(2).map {
-                    (role: $0.role == .user ? ChatTurnMessage.Role.user : .assistant, content: $0.content)
-                })
+                let history = priorHistory
                 let profile = ChatEngineProfile.gemma
                 await loadInsightsIfNeeded()
                 guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
@@ -327,7 +324,8 @@ final class TranscriptChatService {
                                      canRetrieve: !chatTurns.isEmpty) {
                 case .fullTranscript:
                     coverage = .full
-                    stream = await plugin.chatTurn(systemPrompt: systemPrompt, history: history, question: trimmed, retrievedContext: "")
+                    stream = await plugin.chatTurn(systemPrompt: buildSystemPrompt(), history: history, question: trimmed,
+                                                   retrievedContext: "")
                 case .overviewAndRetrieval, .retrievalOnly:
                     coverage = .relevantParts
                     let found = await excerpts(for: trimmed, profile: profile)
@@ -338,9 +336,12 @@ final class TranscriptChatService {
                     stream = await plugin.chatTurn(systemPrompt: longPrompt, history: history, question: trimmed,
                                                    retrievedContext: ChatContextPlanner.retrievedContextBlock(found))
                 }
+            } else if resolvedChatEngine == .appleIntelligence {
+                stream = await appleStream(question: trimmed, history: priorHistory, sendID: sendID)
             } else {
                 coverage = nil
-                stream = await buildStream(systemPrompt: systemPrompt, userMessage: buildContextualUserMessage(currentMessage: trimmed))
+                stream = await buildStream(systemPrompt: buildSystemPrompt(),
+                                           userMessage: buildContextualUserMessage(currentMessage: trimmed))
             }
             for try await chunk in stream {
                 guard !invalidated, !Task.isCancelled, activeSendID == sendID,
@@ -525,27 +526,8 @@ final class TranscriptChatService {
             return await plugin.chatStream(systemPrompt: systemPrompt, userMessage: userMessage)
 
         case .appleIntelligence:
-            #if canImport(FoundationModels)
-            if #available(macOS 26, *) {
-                return AsyncThrowingStream { continuation in
-                    let task = Task {
-                        do {
-                            let session = LanguageModelSession(instructions: systemPrompt)
-                            let options = GenerationOptions(temperature: 0.5)
-                            let response = try await PrivacyTrace.perform(.init(stage: .chat, data: [.text, .metadata], destination: .local(provider: .appleIntelligence))) {
-                                try await session.respond(to: userMessage, options: options)
-                            }
-                            continuation.yield(response.content)
-                            continuation.finish()
-                        } catch {
-                            continuation.finish(throwing: error)
-                        }
-                    }
-                    continuation.onTermination = { @Sendable _ in task.cancel() }
-                }
-            }
-            #endif
-            return errorStream("Apple Intelligence requires macOS 26 or later")
+            // Routed to `appleStream` by `sendInRecordingContext` (fresh session per question).
+            return errorStream("Apple Intelligence chat is not available here")
 
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
@@ -566,20 +548,18 @@ final class TranscriptChatService {
     }
 
     private func buildSystemPrompt() -> String {
-        let engine = appSettings.effectiveAIEngine == .localCLI
-            ? appSettings.chatFallbackEngine
-            : appSettings.effectiveAIEngine
-        // Apple Intelligence (FoundationModels) has a ~4096-token context window — a full
-        // transcript in the instructions overflows it and chat errors out immediately.
-        // Truncate for that engine; Gemma (128K) and remote endpoints keep the full text.
-        let transcriptText = transcriptProvider()
-        let transcript = engine == .appleIntelligence
-            ? UnifiedInsightsPrompt.truncateForFoundationModels(transcriptText)
-            : transcriptText
+        fullTranscriptSystemPrompt(transcriptProvider())
+    }
 
-        var prompt = "You are an assistant analyzing a meeting transcript. The complete "
-        prompt += "transcript is included in full below — you already have it. Never ask the "
-        prompt += "user to provide the transcript; always answer from the text between the markers.\n\n"
+    /// Instructions carrying the whole transcript. Apple Intelligence reaches this only
+    /// when the transcript fits its profile; longer ones use long mode instead.
+    /// `recentPartOnly`: a live recording too long for Apple Intelligence, cut to its end.
+    private func fullTranscriptSystemPrompt(_ transcript: String, recentPartOnly: Bool = false) -> String {
+        var prompt = "You are an assistant analyzing a meeting transcript. "
+        prompt += recentPartOnly
+            ? "Only the most recent part of the transcript fits below; if a question is about an earlier part, say so plainly. "
+            : "The complete transcript is included in full below — you already have it. "
+        prompt += "Never ask the user to provide the transcript; always answer from the text between the markers.\n\n"
         prompt += "===== TRANSCRIPT START =====\n\(transcript)\n===== TRANSCRIPT END =====\n\nEach line starts with [hh:mm:ss] and the speaker's name. When you answer, cite the timestamp(s) you relied on, like [00:12:34].\n"
         if !speakerLabels.isEmpty {
             prompt += "\nSPEAKER LEGEND:\n\(speakerLegendText)\n"
@@ -681,6 +661,80 @@ final class TranscriptChatService {
         return TranscriptRetrieval.hybridExcerpts(question: question, queryVector: queryVector, windows: index.windows,
                                                   vectors: vectors, budgetTokens: profile.excerptTokens,
                                                   countTokens: ChatEngineProfile.estimateTokens)
+    }
+
+    /// Complete Q&A pairs before the in-flight question (excludes the just-appended
+    /// user message and assistant placeholder).
+    private var priorHistory: [ChatTurnMessage] {
+        ChatContextPlanner.history(from: messages.dropLast(2).map {
+            (role: $0.role == .user ? ChatTurnMessage.Role.user : .assistant, content: $0.content)
+        })
+    }
+
+    /// Apple Intelligence chat: a fresh session per question, sized by its profile. The
+    /// whole transcript when it fits; otherwise the overview + excerpts for the question,
+    /// plus compact history. One overflow retry with a shrunk profile.
+    private func appleStream(question: String, history: [ChatTurnMessage],
+                             sendID: UUID) async -> AsyncThrowingStream<String, Error> {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) {
+            await loadInsightsIfNeeded()
+            var attempt: AppleChatAttempt = .first
+            while true {
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream("Cancelled") }
+                let baseProfile = AppleChatBackend.profile
+                let profile = attempt == .first ? baseProfile : baseProfile.shrunk()
+                let historyText = ChatContextPlanner.compactHistory(history, budget: profile.historyTokens,
+                                                                    countTokens: ChatEngineProfile.estimateTokens)
+                let transcript = transcriptProvider()
+                let overviewText = Self.overview(insights: insights, profile: profile)
+                let instructions: String
+                let prompt: String
+                let transcriptTokens = await AppleChatBackend.tokenCount(transcript)
+                switch Self.chatMode(transcriptTokens: transcriptTokens, profile: profile,
+                                     hasOverview: !overviewText.isEmpty, canRetrieve: !chatTurns.isEmpty) {
+                case .fullTranscript where transcriptTokens <= profile.fullTranscriptTokens:
+                    coverage = .full
+                    instructions = fullTranscriptSystemPrompt(transcript)
+                    prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: "", question: question)
+                case .fullTranscript:
+                    // Too long and nothing to retrieve from (live chat): the most recent part.
+                    coverage = .relevantParts
+                    let budget = attempt == .first ? profile.fullTranscriptTokens : profile.fullTranscriptTokens / 2
+                    instructions = fullTranscriptSystemPrompt(AppleChatContext.recentTail(
+                        transcript, budgetTokens: budget, countTokens: ChatEngineProfile.estimateTokens),
+                                                              recentPartOnly: true)
+                    prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: "", question: question)
+                case .overviewAndRetrieval, .retrievalOnly:
+                    coverage = .relevantParts
+                    instructions = ChatContextPlanner.longModeSystemPrompt(overview: overviewText,
+                                                                          speakerLegend: speakerLegendText)
+                    let found = await excerpts(for: question, profile: profile)
+                    prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: found, question: question)
+                }
+                guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return errorStream("Cancelled") }
+                do {
+                    let answer = try await AppleChatBackend.respond(instructions: instructions, prompt: prompt)
+                    return AsyncThrowingStream { continuation in
+                        continuation.yield(answer)
+                        continuation.finish()
+                    }
+                } catch {
+                    guard let next = AppleChatAttempt.next(after: error, attempt: attempt,
+                                                           isOverflow: AppleChatBackend.isContextOverflow) else {
+                        if !Task.isCancelled {
+                            let kind = AppleGenerationFailure.classify(error)?.description ?? String(describing: type(of: error))
+                            Logger.ai.warning("Apple Intelligence chat failed (\(kind, privacy: .public))")
+                        }
+                        return errorStream(AppleChatBackend.userMessage(for: error))
+                    }
+                    Logger.ai.info("Apple Intelligence chat overflowed; retrying with a smaller context")
+                    attempt = next
+                }
+            }
+        }
+        #endif
+        return errorStream("Apple Intelligence requires macOS 26 or later")
     }
 
     private func buildContextualUserMessage(currentMessage: String) -> String {
