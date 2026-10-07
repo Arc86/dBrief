@@ -16,7 +16,7 @@ actor EmbeddingService {
     private var container: EmbedderModelContainer?
     private let fallbackStateHandler: MLProgress.Sink
     nonisolated private var stateHandler: MLProgress.Sink { MLProgress.sink ?? fallbackStateHandler }
-    static let batchSize = 16
+    static let batchSize = 8 // bounds peak activation memory beside a resident Gemma
     static let maxTokens = 1024 // windows are ~350 tokens; capped further by the model's position limit
 
     init(spec: EmbeddingModelSpec = EmbeddingPrompt.current, stateHandler: @escaping MLProgress.Sink = { _ in }) {
@@ -32,6 +32,9 @@ actor EmbeddingService {
         guard !texts.isEmpty else { return [] }
         let container = try await loadIfNeeded()
         let spec = self.spec
+        // Release MLX's buffer cache once the vectors are copied out as [Float],
+        // so transient activations don't stay parked beside a warm Gemma.
+        defer { MLX.Memory.clearCache() }
         var out: [[Float]] = []
         out.reserveCapacity(texts.count)
         for start in stride(from: 0, to: texts.count, by: Self.batchSize) {
@@ -42,10 +45,11 @@ actor EmbeddingService {
                 // Truncate ourselves so the pooling mask always matches the model's
                 // sequence (encoders like XLM-R would otherwise truncate internally).
                 let limit = min(Self.maxTokens, ctx.model.maxPositionEmbeddings ?? Self.maxTokens)
-                let encoded = batch.map { Array(ctx.tokenizer.encode(text: $0, addSpecialTokens: true).prefix(limit)) }
+                let encoded = batch.map { Self.truncate(ctx.tokenizer.encode(text: $0, addSpecialTokens: true), to: limit) }
                 let maxLen = max(encoded.map(\.count).max() ?? 1, 1)
-                // Right padding with the tokenizer's own <pad> (Gemma: 0, XLM-R: 1);
-                // padding-aware position ids (RoBERTa family) key on this id.
+                // Right padding with the tokenizer's own <pad> id (Gemma: 0, XLM-R: 1).
+                // Pad positions are excluded by the mask below; the id only has to
+                // be a real pad token so the model treats those slots as padding.
                 let padID = ctx.tokenizer.convertTokenToId("<pad>") ?? 0
                 let ids = MLXArray(encoded.flatMap { row in
                     row.map(Int32.init) + Array(repeating: Int32(padID), count: maxLen - row.count)
@@ -55,7 +59,10 @@ actor EmbeddingService {
                 let mask = MLXArray(encoded.flatMap {
                     Array(repeating: Int32(1), count: $0.count) + Array(repeating: Int32(0), count: maxLen - $0.count)
                 }).reshaped(encoded.count, maxLen)
-                let output = ctx.model(ids, positionIds: nil, tokenTypeIds: nil, attentionMask: mask)
+                // BERT-family models add token-type embeddings only when ids are
+                // supplied; HF always adds type 0, so pass zeros (Gemma ignores it).
+                let output = ctx.model(ids, positionIds: nil, tokenTypeIds: MLXArray.zeros(like: ids),
+                                       attentionMask: mask)
                 let pooled = Self.pool(output, mask: mask, pooling: spec.pooling)
                 let f = pooled.asType(.float32)
                 let normalized = f / MLX.maximum(sqrt(sum(f * f, axis: -1, keepDims: true)), MLXArray(Float(1e-6)))
@@ -64,6 +71,13 @@ actor EmbeddingService {
             }
         }
         return out
+    }
+
+    /// HF-style truncation: keep the first `limit - 1` tokens plus the final
+    /// special token ([SEP] / </s> / <eos>) of the full encoding.
+    static func truncate(_ tokens: [Int], to limit: Int) -> [Int] {
+        guard tokens.count > limit, limit > 1, let last = tokens.last else { return tokens }
+        return Array(tokens.prefix(limit - 1)) + [last]
     }
 
     /// Explicit per-model pooling. The library's generic `Pooling` is not used:

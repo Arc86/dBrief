@@ -319,9 +319,16 @@ actor MLOrchestrator: MLBackend {
     func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
         try await withModelAccess(keepChat: true) { [self] in
             defer { emit(.plugin, .idle) }
-            let vectors = try await embeddingService.embed(texts, role: role)
-            await chatSessions.noteEmbeddingActivity()
-            return vectors
+            // Re-arm the idle drop on success and failure alike, so a loaded
+            // embedder is always released after the idle timeout.
+            do {
+                let vectors = try await embeddingService.embed(texts, role: role)
+                await chatSessions.noteEmbeddingActivity()
+                return vectors
+            } catch {
+                await chatSessions.noteEmbeddingActivity()
+                throw error
+            }
         }
     }
 

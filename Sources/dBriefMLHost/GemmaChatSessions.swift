@@ -124,7 +124,7 @@ actor GemmaChatSessions {
         idleTask = Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled, let self else { return }
-            Logger.ai.info("Gemma chat: idle timeout, unloading")
+            Logger.ai.info("ML chat/embedder idle timeout, unloading")
             await self.onIdle(self)
         }
     }

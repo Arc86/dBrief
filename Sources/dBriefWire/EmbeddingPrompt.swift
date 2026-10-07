@@ -41,11 +41,12 @@ public struct EmbeddingModelSpec: Sendable, Equatable {
     public static let multilingualE5Small = EmbeddingModelSpec(
         id: "intfloat/multilingual-e5-small",
         queryPrefix: "query: ", documentPrefix: "passage: ", pooling: .mean)
-    /// BGE-M3 dense retrieval (XLM-R large), CLS pooled, no prefixes.
+    /// BGE-M3 dense retrieval (XLM-R large), CLS pooled, no prefixes. Not in `known`:
+    /// its repo has no root *.safetensors (pytorch_model.bin + onnx/ only), so it can't load.
     public static let bgeM3 = EmbeddingModelSpec(
         id: "BAAI/bge-m3", queryPrefix: "", documentPrefix: "", pooling: .cls)
 
-    public static let known: [EmbeddingModelSpec] = [embeddingGemma300m4bit, multilingualE5Small, bgeM3]
+    public static let known: [EmbeddingModelSpec] = [embeddingGemma300m4bit, multilingualE5Small]
 
     /// Lookup by Hugging Face id (eval tooling only; production uses `EmbeddingPrompt.current`).
     public static func named(_ id: String) -> EmbeddingModelSpec? {

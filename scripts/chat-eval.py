@@ -26,7 +26,8 @@ QUESTIONS = [
     ("List every action item and owner mentioned in the meeting.", ["marisol", "priya"]),  # exhaustive
 ]
 
-EMBED_MODELS = ["mlx-community/embeddinggemma-300m-4bit", "intfloat/multilingual-e5-small", "BAAI/bge-m3"]
+# BAAI/bge-m3 omitted: its repo has no root *.safetensors (pytorch_model.bin + onnx/ only), so it can't load.
+EMBED_MODELS = ["mlx-community/embeddinggemma-300m-4bit", "intfloat/multilingual-e5-small"]
 
 def run_retrieval(a, base, name):
     with open(a.transcript) as f:

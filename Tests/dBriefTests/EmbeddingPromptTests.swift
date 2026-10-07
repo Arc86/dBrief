@@ -25,5 +25,6 @@ import dBriefWire
         #expect(EmbeddingModelSpec.named("intfloat/multilingual-e5-small") == .multilingualE5Small)
         #expect(EmbeddingModelSpec.named(EmbeddingPrompt.current.id) == EmbeddingPrompt.current)
         #expect(EmbeddingModelSpec.named("nope/unknown") == nil)
+        #expect(EmbeddingModelSpec.named(EmbeddingModelSpec.bgeM3.id) == nil) // can't load: no root safetensors
     }
 }
