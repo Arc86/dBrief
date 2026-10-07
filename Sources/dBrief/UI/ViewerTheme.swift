@@ -64,6 +64,7 @@ struct ViewerAppearanceScope: ViewModifier {
         let reading = settings.viewerAppearance
         let mode = reading.effectiveMode(systemIsDark: systemScheme == .dark)
         let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: reading.sourceAccentHex, nonNeon: settings.reduceNeon)
+            .withSoftDividers(mode: mode)
         content
             .environment(\.viewerPalette, palette)
             .environment(\.viewerReading, reading)

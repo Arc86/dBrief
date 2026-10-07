@@ -7,6 +7,7 @@ import SwiftUI
 struct MenuBarView: View {
     @Environment(\.openWindow) var openWindow
     @Environment(\.viewerPalette) private var palette
+    @Environment(\.viewerMode) private var mode
 
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
@@ -35,6 +36,8 @@ struct MenuBarView: View {
             }
         }
         .background(palette.surface.color)
+        // Quieter hairlines and control borders than the shared viewer palette in dark themes.
+        .environment(\.viewerPalette, palette.withSoftDividers(mode: mode))
         .task {
             await recordingManager.refreshQueuedCount()
         }

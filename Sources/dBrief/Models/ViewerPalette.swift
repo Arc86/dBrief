@@ -198,3 +198,32 @@ enum ViewerThemeResolver {
         let mixFraction: Double
     }
 }
+
+extension ViewerPalette {
+    /// How far the menu panel and recording viewer pull their hairlines toward the
+    /// surface in dark themes. Against a dark surface the base divider reads as a
+    /// bright line on every section edge and control border.
+    static let darkDividerSoftening = 0.4
+
+    /// The palette with quieter dividers in dark themes; light themes are unchanged.
+    /// Used by the menu bar panel and the recording viewer.
+    func withSoftDividers(mode: ViewerAppearanceMode) -> ViewerPalette {
+        guard mode.isDark else { return self }
+        return ViewerPalette(
+            canvas: canvas,
+            surface: surface,
+            heading: heading,
+            text: text,
+            secondary: secondary,
+            divider: ViewerRGB(hex: divider.mixed(with: surface, fraction: Self.darkDividerSoftening).hex)!,
+            sidebarTop: sidebarTop,
+            sidebarBottom: sidebarBottom,
+            primary: primary,
+            onPrimary: onPrimary,
+            accentText: accentText,
+            selected: selected,
+            brandStops: brandStops,
+            readingCardCornerRadius: readingCardCornerRadius
+        )
+    }
+}

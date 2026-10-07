@@ -54,4 +54,17 @@ import Testing
             #expect(ViewerThemeResolver.contrast(panel.accentMark, base.surface) >= 3, "accent mark \(accent) in \(mode)")
         }
     }
+
+    @Test func softDividersApplyOnlyInDarkThemes() {
+        for mode in ViewerAppearanceMode.allCases {
+            let base = ViewerThemeResolver.resolve(mode: mode, sourceHex: "#1268F5", nonNeon: false)
+            let panel = base.withSoftDividers(mode: mode)
+            if mode.isDark {
+                #expect(ViewerThemeResolver.contrast(panel.divider, base.surface) < ViewerThemeResolver.contrast(base.divider, base.surface), "divider not softer in \(mode)")
+                #expect(panel.divider != base.surface, "divider vanished in \(mode)")
+            } else {
+                #expect(panel == base, "light theme changed in \(mode)")
+            }
+        }
+    }
 }
