@@ -243,7 +243,7 @@ extension RecordingManager {
                             try await store.stage(JSONEncoder().encode(insights), suffix: "insights.json", attemptID: job.id)
                         }
                     }
-                    for suffix in ["chat.json", "spokensummary.json", "spokensummary.m4a"] {
+                    for suffix in ["chat.json", "chatindex.json", "spokensummary.json", "spokensummary.m4a"] {
                         try await store.stageRemoval(suffix: suffix, attemptID: job.id)
                     }
                     var provenance = options

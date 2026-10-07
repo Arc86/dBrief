@@ -11,11 +11,11 @@ import Foundation
 /// independent edits, but cannot eliminate the final external-writer TOCTOU window.
 actor ReprocessingStore {
     static let allowedSuffixes: Set<String> = [
-        "transcript.json", "richtranscript.json", "insights.json", "chat.json",
+        "transcript.json", "richtranscript.json", "insights.json", "chat.json", "chatindex.json",
         "spokensummary.json", "spokensummary.m4a", "reprocessing.json",
     ]
     private static let derivativeSuffixes: Set<String> = [
-        "chat.json", "spokensummary.json", "spokensummary.m4a",
+        "chat.json", "chatindex.json", "spokensummary.json", "spokensummary.m4a",
     ]
 
     enum Status: String, Codable, Sendable {

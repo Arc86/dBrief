@@ -152,6 +152,11 @@ final class Recording: Identifiable {
             .appendingPathExtension("chat.json")
     }
 
+    var chatIndexSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("chatindex.json")
+    }
+
     var spokenSummaryScriptURL: URL? {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("spokensummary.json")
