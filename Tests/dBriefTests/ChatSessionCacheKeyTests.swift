@@ -28,15 +28,16 @@ import dBriefWire
         #expect(key.canContinue(systemPrompt: "S", history: [u1, a1]))
     }
 
-    @Test func continuesUnderTheTokenCap() {
-        var key = ChatSessionCacheKey(systemPrompt: String(repeating: "s", count: 3_000), history: [])
-        #expect(key.cachedTokens == ChatEngineProfile.estimateTokens(String(repeating: "s", count: 3_000)))
+    @Test func continuesUnderTheGrowthCap() {
+        var key = ChatSessionCacheKey(systemPrompt: "S", history: [])
+        #expect(key.grownTokens == 0)
         key.record(question: "Q1", answer: "A1", extraTokens: 6_000)
-        #expect(key.canContinue(systemPrompt: String(repeating: "s", count: 3_000), history: [u1, a1], incomingTokens: 6_000))
+        #expect(key.grownTokens == 6_000 + ChatEngineProfile.estimateTokens("Q1") + ChatEngineProfile.estimateTokens("A1"))
+        #expect(key.canContinue(systemPrompt: "S", history: [u1, a1], incomingTokens: 6_000))
     }
 
     @Test func refusesOnceRecordedExcerptsPushItOverTheCap() {
-        let cap = ChatSessionCacheKey.maxCachedTokens
+        let cap = ChatSessionCacheKey.maxGrowthTokens
         var key = ChatSessionCacheKey(systemPrompt: "S", history: [])
         key.record(question: "Q1", answer: "A1", extraTokens: cap - 100)
         #expect(key.canContinue(systemPrompt: "S", history: [u1, a1], incomingTokens: 50))
@@ -44,13 +45,21 @@ import dBriefWire
         #expect(key.exceedsCap(incomingTokens: 200))
     }
 
-    @Test func aKeyRebuiltFromBareHistoryStartsSmallAgain() {
+    @Test func aKeyRebuiltFromBareHistoryStartsAtZero() {
         var grown = ChatSessionCacheKey(systemPrompt: "S", history: [])
-        grown.record(question: "Q1", answer: "A1", extraTokens: ChatSessionCacheKey.maxCachedTokens)
+        grown.record(question: "Q1", answer: "A1", extraTokens: ChatSessionCacheKey.maxGrowthTokens)
         let rebuilt = ChatSessionCacheKey(systemPrompt: "S", history: [u1, a1])
-        #expect(rebuilt.cachedTokens == ChatEngineProfile.estimateTokens("S") + ChatEngineProfile.estimateTokens("Q1")
-                + ChatEngineProfile.estimateTokens("A1"))
+        #expect(rebuilt.grownTokens == 0)
         #expect(rebuilt.canContinue(systemPrompt: "S", history: [u1, a1], incomingTokens: 6_000))
         #expect(!grown.canContinue(systemPrompt: "S", history: [u1, a1], incomingTokens: 6_000))
+    }
+
+    @Test func aHugeFullTranscriptPromptStillContinuesForSmallTurns() {
+        // ~60K estimated tokens: a full-transcript system prompt must not count toward the cap.
+        let transcript = String(repeating: "x", count: 180_000)
+        #expect(ChatEngineProfile.estimateTokens(transcript) >= 60_000)
+        var key = ChatSessionCacheKey(systemPrompt: transcript, history: [])
+        key.record(question: "Q1", answer: "A1")
+        #expect(key.canContinue(systemPrompt: transcript, history: [u1, a1], incomingTokens: 20))
     }
 }

@@ -63,14 +63,14 @@ actor GemmaChatSessions {
     }
 
     /// Keeps the live session when the key continues; otherwise rebuilds it from `history`.
-    /// Over `ChatSessionCacheKey.maxCachedTokens` it rebuilds too: the bare-question
+    /// Past `ChatSessionCacheKey.maxGrowthTokens` it rebuilds too: the bare-question
     /// history drops the excerpts earlier turns left in the KV cache.
     private func prepareSession(systemPrompt: String, history: [ChatTurnMessage], incomingTokens: Int) async throws {
         let container = try await insights.loadForChat()
         if session != nil, let key {
             if key.canContinue(systemPrompt: systemPrompt, history: history, incomingTokens: incomingTokens) { return }
             if key.exceedsCap(incomingTokens: incomingTokens) {
-                Logger.ai.info("Gemma chat: KV cache would exceed \(ChatSessionCacheKey.maxCachedTokens) tokens (\(key.cachedTokens) + \(incomingTokens)); rebuilding")
+                Logger.ai.info("Gemma chat: KV cache would grow past \(ChatSessionCacheKey.maxGrowthTokens) tokens (\(key.grownTokens) + \(incomingTokens)); rebuilding")
             }
         }
         Logger.ai.info("Gemma chat: rebuilding session (history \(history.count) messages)")
