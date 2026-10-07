@@ -53,6 +53,7 @@ public enum ChatOverview {
         if countTokens(summaryBlock + actions) <= budget { return summaryBlock + actions }
         if countTokens(summaryBlock) <= budget { return summaryBlock }
         var kept = "MEETING SUMMARY:\n"
+        guard countTokens(kept + "…") <= budget else { return "" }
         let sentences = summary.split(separator: " ").reduce(into: [String]()) { acc, word in
             if let last = acc.last, !(last.hasSuffix(".") || last.hasSuffix("!") || last.hasSuffix("?")) {
                 acc[acc.count - 1] = last + " " + word

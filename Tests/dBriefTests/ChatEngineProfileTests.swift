@@ -54,6 +54,20 @@ import dBriefWire
         #expect(o.contains("Sentence 1 of") && o.hasSuffix("…"))
     }
 
+    @Test func overviewEmptyWhenEvenTheHeaderCannotFit() {
+        let o = ChatOverview.make(notes: nil, summary: "A real summary. It has two sentences.", actionItems: [], budget: 3, countTokens: count)
+        #expect(o.isEmpty && count(o) <= 3)
+    }
+
+    @Test func overviewSummaryOnlyFallbackDropsActionsWhole() {
+        let summary = "The team approved the budget."
+        let actions = (1...50).map { "[Ann] to send deck number \($0) to everyone" }
+        let o = ChatOverview.make(notes: nil, summary: summary, actionItems: actions, budget: 30, countTokens: count)
+        #expect(o.contains("approved the budget"))
+        #expect(!o.contains("ACTION ITEMS") && !o.contains("deck number"))
+        #expect(count(o) <= 30)
+    }
+
     @Test func overviewEmptyWhenNothingAvailable() {
         #expect(ChatOverview.make(notes: nil, summary: nil, actionItems: [], budget: 600, countTokens: count).isEmpty)
     }
