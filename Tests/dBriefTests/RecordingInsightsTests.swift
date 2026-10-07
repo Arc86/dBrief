@@ -93,4 +93,20 @@ struct RecordingInsightsTests {
         let md = MarkdownInsightsUpdater.update(markdown: "## \u{1F4DD} Summary\n\nOld\n", with: saved)
         #expect(md.contains("New summary"))
     }
+
+    @MainActor @Test func reanalysisClearsStalePartNotesBeforePersisting() {
+        let recording = Recording(fileURL: URL(fileURLWithPath: "/tmp/a.m4a"), duration: 1, fileSize: 1)
+        recording.partNotes = [ChunkNotes(keyPoints: ["old"], decisions: [], actionItems: [], people: [])]
+        recording.beginAnalysis()
+        // A single-pass result emits no .partNotes event.
+        recording.applyAnalysisField(.summary("S"), modelName: nil)
+        let insights = RecordingInsights(summary: recording.summary ?? "", actionItems: [], tags: [], sentiment: "",
+                                         markdownPath: nil, partNotes: recording.partNotes)
+        #expect(insights.partNotes == nil)
+        // A map-reduce run sets them again.
+        let fresh = [ChunkNotes(keyPoints: ["new"], decisions: [], actionItems: [], people: [])]
+        recording.beginAnalysis()
+        recording.applyAnalysisField(.partNotes(fresh), modelName: nil)
+        #expect(recording.partNotes == fresh)
+    }
 }

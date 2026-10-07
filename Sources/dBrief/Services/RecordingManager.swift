@@ -2610,6 +2610,7 @@ final class RecordingManager {
         let tagsIndex = tags ? appendAIStep(labelForTags(engine: engine)) : nil
         let fields = Set<ProcessingPipeline.AnalysisField>(
             (summary ? [.summary] : []) + (actionItems ? [.actionItems] : []) + (tags ? [.tags] : []))
+        if !fields.isEmpty { recording.beginAnalysis() }
         let appleUnavailable: String? = {
             #if canImport(FoundationModels)
             guard #available(macOS 26, *) else { return "Apple Intelligence requires macOS 26+." }

@@ -99,6 +99,11 @@ final class Recording: Identifiable {
 
     /// Publish successful analysis fields and their generation origin together.
     /// Failure/progress/title events cannot relabel retained analysis content.
+    /// Each analysis run is authoritative for part notes: clear stale notes before it starts so a
+    /// single-pass or other-engine re-analysis can never re-persist an earlier map-reduce's notes.
+    /// A map-reduce run sets them again through the `.partNotes` event.
+    func beginAnalysis() { partNotes = nil }
+
     func applyAnalysisField(_ event: ProcessingPipeline.AnalysisEvent, modelName: String?) {
         if case .partNotes(let notes) = event { partNotes = notes; return }
         var provenance = analysisModelProvenance ?? .init()
