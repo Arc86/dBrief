@@ -44,11 +44,12 @@ actor GemmaChatSessions {
         // `session` is the last strong reference; `drop()` nils it before
         // `insights.unload()` clears MLX's buffer cache, and the multi-GB buffers
         // are freed before that clear, not parked in the cache afterwards.
-        try await prepareSession(systemPrompt: systemPrompt, history: history)
+        let prompt = retrievedContext.isEmpty ? question : retrievedContext + "\n\nQUESTION: " + question
+        try await prepareSession(systemPrompt: systemPrompt, history: history,
+                                 incomingTokens: ChatEngineProfile.estimateTokens(prompt))
         // Only after a successful load: a failed load leaves any idle drop scheduled.
         idleTask?.cancel()
         idleTask = nil
-        let prompt = retrievedContext.isEmpty ? question : retrievedContext + "\n\nQUESTION: " + question
         let answer: String
         do {
             answer = try await streamTurn(prompt, onDelta: onDelta)
@@ -56,14 +57,22 @@ actor GemmaChatSessions {
             await drop()                       // unknown KV state after an error → rebuild next time
             throw error
         }
-        key?.record(question: question, answer: answer)
+        key?.record(question: question, answer: answer,
+                    extraTokens: ChatEngineProfile.estimateTokens(prompt) - ChatEngineProfile.estimateTokens(question))
         scheduleIdleDrop()
     }
 
     /// Keeps the live session when the key continues; otherwise rebuilds it from `history`.
-    private func prepareSession(systemPrompt: String, history: [ChatTurnMessage]) async throws {
+    /// Over `ChatSessionCacheKey.maxCachedTokens` it rebuilds too: the bare-question
+    /// history drops the excerpts earlier turns left in the KV cache.
+    private func prepareSession(systemPrompt: String, history: [ChatTurnMessage], incomingTokens: Int) async throws {
         let container = try await insights.loadForChat()
-        if session != nil, let key, key.canContinue(systemPrompt: systemPrompt, history: history) { return }
+        if session != nil, let key {
+            if key.canContinue(systemPrompt: systemPrompt, history: history, incomingTokens: incomingTokens) { return }
+            if key.exceedsCap(incomingTokens: incomingTokens) {
+                Logger.ai.info("Gemma chat: KV cache would exceed \(ChatSessionCacheKey.maxCachedTokens) tokens (\(key.cachedTokens) + \(incomingTokens)); rebuilding")
+            }
+        }
         Logger.ai.info("Gemma chat: rebuilding session (history \(history.count) messages)")
         let replay = history.map { m -> Chat.Message in
             m.role == .user ? .user(m.content) : .assistant(m.content)

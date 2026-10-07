@@ -188,10 +188,15 @@ enum GemmaEval {
     }
 
     /// The index dump holds private transcript text, so it may only go under ~/gemma-eval/.
+    /// Symlinks are resolved on the root and on the target's parent, so a symlinked
+    /// ~/gemma-eval works and a link out of it is rejected.
     static func evalDumpURL(_ path: String) throws -> URL {
         let root = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("gemma-eval", isDirectory: true).standardizedFileURL.path + "/"
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+            .appendingPathComponent("gemma-eval", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+        let url = target.deletingLastPathComponent().resolvingSymlinksInPath()
+            .appendingPathComponent(target.lastPathComponent)
         guard url.path.hasPrefix(root) else { throw DumpPathOutsideEvalDir(path: path) }
         return url
     }

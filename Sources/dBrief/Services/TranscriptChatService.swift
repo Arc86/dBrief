@@ -360,6 +360,7 @@ final class TranscriptChatService {
                   messages.indices.contains(assistantIdx), messages[assistantIdx].id == assistantMessage.id else { return }
             streamingError = error.localizedDescription
             if assistantMessage.content.isEmpty {
+                coverage = nil // no "relevant parts" footer under an error
                 messages[assistantIdx].content = "Error: \(error.localizedDescription)"
             } else {
                 streamingNotice = "Response interrupted: \(error.localizedDescription)"
@@ -625,7 +626,8 @@ final class TranscriptChatService {
         }
     }
 
-    /// The chat index, built once per session. The build runs in its own task so
+    /// The chat index, built once per session (a failed build is retried by the next
+    /// question). The build runs in its own task so
     /// stopping a question doesn't abandon it (the next question reuses it), and a
     /// later question waits for the same build instead of starting a second one.
     private func ensureIndex() async -> ChatIndex? {
@@ -635,10 +637,12 @@ final class TranscriptChatService {
             let windows = TranscriptRetrieval.windows(chatTurns, targetTokens: 350, overlapTurns: 1,
                                                       countTokens: ChatEngineProfile.estimateTokens)
             let store = chatIndexStore
-            indexTask = Task {
+            indexTask = Task { [weak self] in
                 do {
-                    return try await store.index(for: windows, at: indexURL) { texts in
-                        try await plugin.embed(texts, role: .document)
+                    return try await store.index(for: windows, at: indexURL) { [weak self] texts in
+                        // Only when embedding runs, not when a saved index loads.
+                        await self?.showIndexingStatus()
+                        return try await plugin.embed(texts, role: .document)
                     }
                 } catch {
                     if Task.isCancelled { return nil } // retired session
@@ -648,12 +652,17 @@ final class TranscriptChatService {
             }
         }
         guard let task = indexTask else { return nil }
-        indexingStatus = "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)"
         let index = await task.value
         indexingStatus = nil
         if indexTask == task { indexTask = nil }
-        if let index, !invalidated { chatIndex = index }
+        // The BM25-only fallback answers this question; the next one retries the build.
+        if let index, index.dims > 0, !invalidated { chatIndex = index }
         return index
+    }
+
+    private func showIndexingStatus() {
+        guard !invalidated else { return }
+        indexingStatus = "Preparing chat for this long recording… (the first time downloads a ~480 MB on-device search model)"
     }
 
     /// Transcript excerpts for one question: cosine (when the index has vectors)
