@@ -9,8 +9,13 @@ import FoundationModels
 enum AppleChatAttempt: Equatable {
     case first, retryShrunk
 
-    static let overflowMessage = "This question needs more of the recording than Apple Intelligence can hold at once. "
-        + "Try a narrower question, or use “Check the whole recording”."
+    static let overflowMessage = overflowMessage(canScan: true)
+
+    /// `canScan`: the "Check the whole recording" button is offered (a finished recording).
+    static func overflowMessage(canScan: Bool) -> String {
+        "This question needs more of the recording than Apple Intelligence can hold at once. "
+            + (canScan ? "Try a narrower question, or use “Check the whole recording”." : "Try a narrower question.")
+    }
 
     static func next(after error: Error, attempt: AppleChatAttempt, isOverflow: (Error) -> Bool) -> AppleChatAttempt? {
         attempt == .first && isOverflow(error) ? .retryShrunk : nil
@@ -77,11 +82,12 @@ enum AppleChatBackend {
     }
 
     /// What the chat shows for a failed answer; never a raw framework error.
-    static func userMessage(for error: Error) -> String {
+    /// `canScan`: whether an overflow may point to "Check the whole recording".
+    static func userMessage(for error: Error, canScan: Bool = true) -> String {
         guard let failure = AppleGenerationFailure.classify(error) else { return error.localizedDescription }
         switch failure {
         case .overflow:
-            return AppleChatAttempt.overflowMessage
+            return AppleChatAttempt.overflowMessage(canScan: canScan)
         case .refusal:
             return "Apple Intelligence declined to answer this question. Try rephrasing it, or choose a different AI engine."
         case .guardrail:

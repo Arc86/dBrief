@@ -67,6 +67,31 @@ import dBriefWire
         await #expect(throws: (any Error).self) { try await store.save(index, to: url) }
     }
 
+    @Test func retiredSessionNeverWritesButKeepsInMemoryIndex() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".chatindex.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let validity = RecordingDerivativeValidity()
+        validity.invalidate()
+        let index = try await ChatIndexStore().index(for: windows, at: url, validity: validity,
+                                                     embed: { texts in texts.map { _ in [1, 0] } })
+        #expect(index.dims == 2)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func saveIsRefusedWhileReprocessingOwnsTheRecording() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let audio = dir.appendingPathComponent("meeting.m4a")
+        let url = dir.appendingPathComponent("meeting.chatindex.json")
+        let attempt = UUID()
+        try RecordingResultMutation.claim(audioURL: audio, attemptID: attempt)
+        defer { RecordingResultMutation.release(audioURL: audio, attemptID: attempt) }
+        let index = ChatIndex(windows: windows, vectors: [[1, 0], [0, 1]], model: "m")
+        await #expect(throws: (any Error).self) { try await ChatIndexStore().save(index, to: url) }
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
     @Test func sidecarIsRegisteredForCleanup() {
         #expect(RetentionCleanup.transcriptSuffixes.contains(".chatindex.json"))
         #expect(ReprocessingStore.allowedSuffixes.contains("chatindex.json"))

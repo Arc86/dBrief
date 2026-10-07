@@ -3,7 +3,7 @@ import Foundation
 /// Per-engine token budgets for transcript chat. Gemma's are fixed (tuned on the 75K-token
 /// eval recording: 4K of excerpts kept recall while cutting follow-up latency);
 /// Apple Intelligence's are fractions of the on-device model's context window, which
-/// covers instructions + prompt + answer, so ~30% is left free for the answer.
+/// covers instructions + prompt + answer, so ~35% is left free for the answer.
 public struct ChatEngineProfile: Sendable, Equatable {
     public let fullTranscriptTokens: Int
     public let excerptTokens: Int
@@ -33,9 +33,10 @@ public struct ChatEngineProfile: Sendable, Equatable {
             historyTokens: pct(10), scanPartTokens: pct(55), scanFindingsTokens: pct(60), reusesSession: false)
     }
 
-    /// Used for one retry after a context-overflow error.
+    /// Used for one retry after a context-overflow error. The full-transcript budget
+    /// shrinks too, so a transcript that only just fit can fall into long mode.
     public func shrunk() -> ChatEngineProfile {
-        ChatEngineProfile(fullTranscriptTokens: fullTranscriptTokens, excerptTokens: excerptTokens / 2,
+        ChatEngineProfile(fullTranscriptTokens: fullTranscriptTokens * 3 / 4, excerptTokens: excerptTokens / 2,
                           overviewTokens: overviewTokens / 2, historyTokens: 0, scanPartTokens: scanPartTokens * 3 / 4,
                           scanFindingsTokens: scanFindingsTokens * 3 / 4, reusesSession: reusesSession)
     }

@@ -18,6 +18,12 @@ import Testing
     @Test func overflowMessagePointsToFullScan() {
         #expect(AppleChatAttempt.overflowMessage.contains("Check the whole recording"))
     }
+
+    /// Live chat (and the scan's own errors) has no scan button to point to.
+    @Test func overflowMessageWithoutScanDoesNotMentionIt() {
+        #expect(!AppleChatAttempt.overflowMessage(canScan: false).contains("Check the whole recording"))
+        #expect(AppleChatAttempt.overflowMessage(canScan: true) == AppleChatAttempt.overflowMessage)
+    }
 }
 
 @Suite struct AppleChatContextTests {

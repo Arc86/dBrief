@@ -120,7 +120,8 @@ struct TranscriptChatView: View {
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
                                 .padding(.horizontal, 16)
-                        } else if chatService.coverage == .relevantParts {
+                        } else if chatService.coverage == .relevantParts || chatService.coverage == .recentPart
+                                    || chatService.offerScan {
                             coverageFooter(after: last)
                         }
                     }
@@ -158,14 +159,17 @@ struct TranscriptChatView: View {
         .frame(minHeight: 0, maxHeight: .infinity)
     }
 
-    /// "Relevant parts" note, plus the opt-in exhaustive scan of the whole recording
-    /// for the question that produced `answer`.
+    /// Coverage note ("relevant parts" / "most recent part"), plus the opt-in exhaustive
+    /// scan of the whole recording for the question that produced `answer` when the
+    /// service offers it (a long-mode answer or an Apple overflow error).
     private func coverageFooter(after answer: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Answered from the most relevant parts of this long recording.")
-                .uiFont(.caption)
-                .foregroundStyle(palette.secondary.color)
-            if !chatService.isStreaming, let question = question(answeredBy: answer) {
+            if let note = coverageNote {
+                Text(note)
+                    .uiFont(.caption)
+                    .foregroundStyle(palette.secondary.color)
+            }
+            if chatService.offerScan, !chatService.isStreaming, let question = question(answeredBy: answer) {
                 Button {
                     scrollFollow.resumeFollowing()
                     Task { await chatService.scanWholeRecording(for: question) }
@@ -183,6 +187,14 @@ struct TranscriptChatView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    private var coverageNote: String? {
+        switch chatService.coverage {
+        case .relevantParts?: "Answered from the most relevant parts of this long recording."
+        case .recentPart?: "Answered from the most recent part of this live recording."
+        case .full?, nil: nil
+        }
     }
 
     /// The user question directly before `answer`, if any.

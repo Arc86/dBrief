@@ -30,6 +30,14 @@ enum ChatCoverage: Equatable, Sendable {
     case full
     /// Long recording: a whole-meeting overview plus excerpts retrieved per question.
     case relevantParts
+    /// Live recording too long for the engine: only its most recent part was read.
+    case recentPart
+}
+
+/// An Apple Intelligence context overflow that survived the shrunk retry.
+private struct ChatContextOverflow: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 @MainActor
@@ -60,6 +68,10 @@ final class TranscriptChatService {
     private(set) var streamingNotice: String? = nil
     /// Grounding of the latest answer; nil for engines without long mode.
     private(set) var coverage: ChatCoverage?
+    /// Whether to offer "Check the whole recording" under the latest answer: after a
+    /// long-mode answer, or after an Apple Intelligence overflow error, of a finished
+    /// recording (one with turns). See `offersScan`.
+    private(set) var offerScan = false
     /// Shown inline while the long-recording search index is built.
     private(set) var indexingStatus: String?
     /// Part being checked by a running whole-recording scan; nil otherwise.
@@ -150,30 +162,34 @@ final class TranscriptChatService {
     /// Provides the transcript text at send-time. A closure (rather than a stored
     /// string) so the chat can read a *live, growing* transcript during recording —
     /// each `send()` rebuilds the prompt from the current snapshot. Mutable so a live
-    /// chat can be re-pointed at the authoritative transcript when recording finishes
-    /// (see `rebindTranscript`).
+    /// chat can be re-pointed at the current transcript after it changes (see `rebind`).
     private var transcriptProvider: @MainActor () -> String
-    private var speakerLabels: [SpeakerLabel]
+    /// The fixed transcript text, nil while reading a live provider.
+    private var fixedTranscriptText: String?
+    private(set) var speakerLabels: [SpeakerLabel]
     private let appSettings: AppSettings
     private let localPlugin: LocalAIPluginService?
     private let aiService: AIService
     private let privacyRecording: Recording?
 
     /// Speaker-attributed turns of a finished recording (empty for live chat), the
-    /// source of retrieval windows in long mode.
-    private let chatTurns: [TranscriptTurn]
+    /// source of retrieval windows in long mode. Replaced by `rebind`.
+    private(set) var chatTurns: [TranscriptTurn]
     /// Analysis sidecar contents. Loaded lazily from `insightsURL` when not supplied,
     /// so a chat built before the viewer finished loading still gets part notes.
     private var insights: RecordingInsights?
-    private let insightsURL: URL?
+    private var insightsURL: URL?
     private var didLoadInsights = false
-    private let indexURL: URL?
+    private var indexURL: URL?
     private var chatIndex: ChatIndex?
     private var indexTask: Task<ChatIndex?, Never>?
     private let chatIndexStore = ChatIndexStore()
-    /// Long-mode system prompt, built once per session: it must stay byte-stable so
+    /// Long-mode system prompt, built once per transcript: it must stay byte-stable so
     /// the helper's warm Gemma session (keyed on prompt + history) is reused.
     private var longModePrompt: String?
+    /// Bumped by `rebind`, so work started against the previous transcript (an index
+    /// build, a long-mode prompt) is never adopted after it.
+    private var transcriptGeneration = 0
 
     /// On-disk persistence handle. Set via `enablePersistence`; nil for sessions
     /// that have no stable sidecar location yet (e.g. a still-recording live
@@ -274,6 +290,7 @@ final class TranscriptChatService {
             insightsURL: insightsURL,
             indexURL: indexURL
         )
+        fixedTranscriptText = transcriptText
     }
 
     func send(_ userText: String) async {
@@ -290,6 +307,7 @@ final class TranscriptChatService {
         isStreaming = true
         streamingError = nil
         streamingNotice = nil
+        offerScan = false
         let task = Task { [weak self] in
             guard let self, !self.invalidated, self.activeSendID == sendID else { return }
             let context = await self.privacyRecording?.privacyContext()
@@ -345,11 +363,13 @@ final class TranscriptChatService {
                                                    retrievedContext: "")
                 case .overviewAndRetrieval, .retrievalOnly:
                     coverage = .relevantParts
+                    offerScan = true
+                    let generation = transcriptGeneration
                     let found = await excerpts(for: trimmed, profile: profile)
                     guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
                     let longPrompt = longModePrompt ?? ChatContextPlanner.longModeSystemPrompt(
                         overview: overviewText, speakerLegend: speakerLegendText)
-                    longModePrompt = longPrompt
+                    if generation == transcriptGeneration { longModePrompt = longPrompt }
                     stream = await plugin.chatTurn(systemPrompt: longPrompt, history: history, question: trimmed,
                                                    retrievedContext: ChatContextPlanner.retrievedContextBlock(found))
                 }
@@ -379,6 +399,8 @@ final class TranscriptChatService {
             streamingError = error.localizedDescription
             if assistantMessage.content.isEmpty {
                 coverage = nil // no "relevant parts" footer under an error
+                offerScan = Self.offersScan(coverage: nil, appleOverflowed: error is ChatContextOverflow,
+                                            canRetrieve: !chatTurns.isEmpty)
                 messages[assistantIdx].content = "Error: \(error.localizedDescription)"
             } else {
                 streamingNotice = "Response interrupted: \(error.localizedDescription)"
@@ -396,6 +418,7 @@ final class TranscriptChatService {
             // A stopped scan discards its partial findings and any partial answer.
             messages[idx].content = Self.scanStoppedNote
             coverage = nil
+            offerScan = false
             streamingNotice = "Stopped checking the whole recording."
         } else {
             streamingNotice = "Stopped generating."
@@ -491,15 +514,44 @@ final class TranscriptChatService {
         }
     }
 
-    /// Re-point this chat at a fixed transcript while keeping the conversation so far.
-    /// Used when a live recording finishes: the in-memory live preview is gone, so the
-    /// chat switches to the authoritative on-disk transcript, but the live Q&A history
-    /// is preserved (those earlier answers were grounded in the rough live preview).
-    func rebindTranscript(text: String, speakerLabels: [SpeakerLabel]) {
-        transcriptProvider = { text }
+    /// Re-point this chat at a changed transcript while keeping the conversation so far:
+    /// after a speaker rename, moved turns or a speaker review, and when a live recording
+    /// finishes (its Q&A carries over to the authoritative transcript, with turns, so long
+    /// mode works). Drops everything derived from the old text (the search index, the
+    /// long-mode prompt, the cached insights); the helper's warm Gemma session sees a new
+    /// system prompt and rebuilds by itself. A no-op when nothing the model sees changed,
+    /// so the built index survives e.g. a voice-library link.
+    func rebind(turns: [TranscriptTurn], transcriptText: String, speakerLabels: [SpeakerLabel],
+                insightsURL: URL?, indexURL: URL?) {
+        guard !invalidated else { return }
+        if fixedTranscriptText == transcriptText, chatTurns == turns,
+           ChatTranscriptContent.legendKey(self.speakerLabels) == ChatTranscriptContent.legendKey(speakerLabels),
+           self.insightsURL == insightsURL, self.indexURL == indexURL { return }
+        transcriptGeneration += 1
+        transcriptProvider = { transcriptText }
+        fixedTranscriptText = transcriptText
+        chatTurns = turns
         self.speakerLabels = speakerLabels
+        self.insightsURL = insightsURL
+        self.indexURL = indexURL
+        indexTask?.cancel()
+        indexTask = nil
+        chatIndex = nil
+        indexingStatus = nil
         longModePrompt = nil
+        if insightsURL != nil { // reloaded from the sidecar on the next question
+            insights = nil
+            didLoadInsights = false
+        }
     }
+
+    func rebind(_ content: ChatTranscriptContent, insightsURL: URL?, indexURL: URL?) {
+        rebind(turns: content.turns, transcriptText: content.text, speakerLabels: content.speakerLabels,
+               insightsURL: insightsURL, indexURL: indexURL)
+    }
+
+    /// The transcript text the next question reads (live or fixed).
+    var currentTranscriptText: String { transcriptProvider() }
 
     /// True once the conversation has at least one exchange — used to decide whether a
     /// finished recording should preserve and reopen the carried-over live chat.
@@ -563,13 +615,19 @@ final class TranscriptChatService {
     }
 
     private func errorStream(_ message: String) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            continuation.finish(throwing: NSError(
-                domain: "TranscriptChatService",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: message]
-            ))
-        }
+        errorStream(NSError(domain: "TranscriptChatService", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: message]))
+    }
+
+    private func errorStream(_ error: Error) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in continuation.finish(throwing: error) }
+    }
+
+    /// The scan button needs retrieval turns (a finished recording, not live chat): it
+    /// follows a long-mode answer, or an Apple Intelligence overflow whose message
+    /// points to it.
+    nonisolated static func offersScan(coverage: ChatCoverage?, appleOverflowed: Bool, canRetrieve: Bool) -> Bool {
+        canRetrieve && (coverage == .relevantParts || appleOverflowed)
     }
 
     private func buildSystemPrompt() -> String {
@@ -642,9 +700,10 @@ final class TranscriptChatService {
             let windows = TranscriptRetrieval.windows(chatTurns, targetTokens: 350, overlapTurns: 1,
                                                       countTokens: ChatEngineProfile.estimateTokens)
             let store = chatIndexStore
+            let validity = validity
             indexTask = Task { [weak self] in
                 do {
-                    return try await store.index(for: windows, at: indexURL) { [weak self] texts in
+                    return try await store.index(for: windows, at: indexURL, validity: validity) { [weak self] texts in
                         // Only when embedding runs, not when a saved index loads.
                         await self?.showIndexingStatus()
                         return try await plugin.embed(texts, role: .document)
@@ -657,9 +716,11 @@ final class TranscriptChatService {
             }
         }
         guard let task = indexTask else { return nil }
+        let generation = transcriptGeneration
         let index = await task.value
-        indexingStatus = nil
         if indexTask == task { indexTask = nil }
+        guard generation == transcriptGeneration else { return index } // rebound meanwhile
+        indexingStatus = nil
         // The BM25-only fallback answers this question; the next one retries the build.
         if let index, index.dims > 0, !invalidated { chatIndex = index }
         return index
@@ -729,11 +790,13 @@ final class TranscriptChatService {
                                      hasOverview: !overviewText.isEmpty, canRetrieve: !chatTurns.isEmpty) {
                 case .fullTranscript where transcriptTokens <= profile.fullTranscriptTokens:
                     coverage = .full
+                    offerScan = false
                     instructions = fullTranscriptSystemPrompt(transcript)
                     prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: "", question: question)
                 case .fullTranscript:
                     // Too long and nothing to retrieve from (live chat): the most recent part.
-                    coverage = .relevantParts
+                    coverage = .recentPart
+                    offerScan = false
                     let budget = attempt == .first ? profile.fullTranscriptTokens : profile.fullTranscriptTokens / 2
                     instructions = fullTranscriptSystemPrompt(AppleChatContext.recentTail(
                         transcript, budgetTokens: budget, countTokens: ChatEngineProfile.estimateTokens),
@@ -741,6 +804,7 @@ final class TranscriptChatService {
                     prompt = ChatContextPlanner.freshSessionPrompt(history: historyText, excerpts: "", question: question)
                 case .overviewAndRetrieval, .retrievalOnly:
                     coverage = .relevantParts
+                    offerScan = true
                     instructions = ChatContextPlanner.longModeSystemPrompt(overview: overviewText,
                                                                           speakerLegend: speakerLegendText)
                     let found = await excerpts(for: question, profile: profile)
@@ -760,7 +824,12 @@ final class TranscriptChatService {
                             let kind = AppleGenerationFailure.classify(error)?.description ?? String(describing: type(of: error))
                             Logger.ai.warning("Apple Intelligence chat failed (\(kind, privacy: .public))")
                         }
-                        return errorStream(AppleChatBackend.userMessage(for: error))
+                        let canScan = !chatTurns.isEmpty
+                        let message = AppleChatBackend.userMessage(for: error, canScan: canScan)
+                        if AppleChatBackend.isContextOverflow(error) {
+                            return errorStream(ChatContextOverflow(message: message))
+                        }
+                        return errorStream(message)
                     }
                     Logger.ai.info("Apple Intelligence chat overflowed; retrying with a smaller context")
                     attempt = next
@@ -838,6 +907,7 @@ final class TranscriptChatService {
         messages.append(placeholder)
         scanAssistantID = assistantID
         coverage = nil // no "relevant parts" footer while the scan answer streams
+        offerScan = false
         scanFootnote = nil
         var usesApple = false
 
@@ -986,7 +1056,7 @@ final class TranscriptChatService {
 
     private func appleUserMessage(for error: Error) -> String {
         #if canImport(FoundationModels)
-        if #available(macOS 26, *) { return AppleChatBackend.userMessage(for: error) }
+        if #available(macOS 26, *) { return AppleChatBackend.userMessage(for: error, canScan: false) }
         #endif
         return error.localizedDescription
     }
@@ -1035,7 +1105,7 @@ final class TranscriptChatService {
                     if let text = try await ask(piece) { texts.append(text) } else { declined = true }
                 } catch where !(error is CancellationError) && !Task.isCancelled {
                     throw ScanFailure(message: "Checking the whole recording stopped at part \(part.index) of \(part.total). "
-                                      + AppleChatBackend.userMessage(for: error))
+                                      + AppleChatBackend.userMessage(for: error, canScan: false))
                 }
             }
             return (texts, declined)

@@ -184,11 +184,28 @@ struct TranscriptDetailView: View {
     }
 
     /// Assigns the transcript and its display turns in the same update, so no
-    /// frame renders new segments with the previous turn grouping.
+    /// frame renders new segments with the previous turn grouping. Every transcript
+    /// mutation (rename, moved turns, speaker-review reload) passes through here, so
+    /// this is also where an open chat is re-pointed at the new text.
     private func setTranscript(_ transcript: RichTranscript?) {
         richTranscript = transcript
         transcriptRevision += 1
         displayedTurns = transcript?.speakerTurns() ?? []
+        rebindChat()
+    }
+
+    /// What a finished recording's chat reads; the one builder for new and rebound sessions.
+    private var chatTranscriptContent: ChatTranscriptContent {
+        .make(richTranscript: richTranscript, fallbackText: recording.transcription?.text ?? "")
+    }
+
+    /// Re-point this recording's chat session (open or cached) at the current transcript,
+    /// keeping its messages. No-op while live, or when nothing the model sees changed.
+    private func rebindChat() {
+        guard !isLive, let session = chatService ?? chatStore.session(for: recording.fileURL),
+              !session.isInvalidatedForReprocessing else { return }
+        session.rebind(chatTranscriptContent, insightsURL: recording.insightsSidecarURL,
+                       indexURL: recording.chatIndexSidecarURL)
     }
 
     var body: some View {
@@ -319,9 +336,9 @@ struct TranscriptDetailView: View {
             Task {
                 await loadTranscript()
                 if let liveChat, liveChat.hasHistory {
-                    let text = richTranscript?.segments.map { $0.text }.joined(separator: "\n")
-                        ?? recording.transcription?.text ?? ""
-                    liveChat.rebindTranscript(text: text, speakerLabels: richTranscript?.speakerLabels ?? [])
+                    // Turns + `[hh:mm:ss] Name:` text, so the carried-over chat gets long mode.
+                    liveChat.rebind(chatTranscriptContent, insightsURL: recording.insightsSidecarURL,
+                                    indexURL: recording.chatIndexSidecarURL)
                     // The recording is finalized now, so a stable sidecar exists:
                     // bind persistence and flush the carried-over conversation.
                     if let url = recording.chatSidecarURL {
@@ -1301,6 +1318,7 @@ struct TranscriptDetailView: View {
         // survives switching recordings and coming back.
         if let existing = chatStore.session(for: recording.fileURL), !existing.isInvalidatedForReprocessing {
             chatService = existing
+            rebindChat() // it may have been built from an older transcript
             return
         }
         chatStore.remove(for: recording.fileURL)
@@ -1319,20 +1337,16 @@ struct TranscriptDetailView: View {
                 recording: recording
             )
         } else {
-            let names = ChatTranscript.speakerNames(labels.map { (id: $0.id, displayName: $0.displayName) })
-            let turns = ChatTranscript.turns((richTranscript?.segments ?? []).map {
-                (start: $0.start, end: $0.end, speaker: $0.speakerId.map { names[$0] ?? $0 }, text: $0.text)
-            })
-            let text = turns.isEmpty ? (recording.transcription?.text ?? "") : ChatTranscript.format(turns)
+            let content = chatTranscriptContent
             // Long recordings on Gemma answer from part notes + retrieved excerpts. The
             // service reads the insights sidecar itself when this view hasn't loaded it yet.
             service = TranscriptChatService(
-                transcriptText: text,
-                speakerLabels: labels,
+                transcriptText: content.text,
+                speakerLabels: content.speakerLabels,
                 appSettings: context.appSettings,
                 localPlugin: context.recordingManager.localPlugin,
                 recording: recording,
-                turns: turns,
+                turns: content.turns,
                 insights: insights,
                 insightsURL: recording.insightsSidecarURL,
                 indexURL: recording.chatIndexSidecarURL

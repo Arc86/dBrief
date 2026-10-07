@@ -23,6 +23,17 @@ import dBriefWire
         #expect(p.excerptTokens == ChatEngineProfile.appleIntelligence(contextSize: 4096).excerptTokens / 2)
     }
 
+    /// A transcript that only just fit full mode must be able to fall into long mode on
+    /// the overflow retry (estimated tokens can undercount).
+    @Test func shrunkCutsFullTranscriptBudgetSoRetryCanUseLongMode() {
+        let base = ChatEngineProfile.appleIntelligence(contextSize: 4096)
+        let p = base.shrunk()
+        #expect(p.fullTranscriptTokens == base.fullTranscriptTokens * 3 / 4)
+        let nearlyFull = base.fullTranscriptTokens - 10
+        #expect(ChatContextPlanner.mode(transcriptTokens: nearlyFull, profile: base, hasOverview: true) == .fullTranscript)
+        #expect(ChatContextPlanner.mode(transcriptTokens: nearlyFull, profile: p, hasOverview: true) == .overviewAndRetrieval)
+    }
+
     @Test func modeSelection() {
         let apple = ChatEngineProfile.appleIntelligence(contextSize: 4096)
         #expect(ChatContextPlanner.mode(transcriptTokens: 1_000, profile: apple, hasOverview: false) == .fullTranscript)
