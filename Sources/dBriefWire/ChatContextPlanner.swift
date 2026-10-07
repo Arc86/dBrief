@@ -73,3 +73,56 @@ extension ChatContextPlanner {
         return parts.joined(separator: "\n\n")
     }
 }
+
+// MARK: - Whole-recording scan ("Check the whole recording")
+
+extension ChatContextPlanner {
+    /// Map step: ask for every relevant statement in ONE part, or exactly `NONE`.
+    public static func scanPartPrompt(question: String, part: TranscriptChunk) -> (system: String, user: String) {
+        (system: """
+         You extract evidence from ONE PART of a long meeting transcript. Lines start with [hh:mm:ss] and the speaker.
+         List every statement in this part that helps answer the question, each with its timestamp.
+         If nothing in this part is relevant, reply with exactly: NONE
+         """,
+         user: "QUESTION: \(question)\n\nTRANSCRIPT PART \(part.index) OF \(part.total):\n\(part.text)")
+    }
+
+    /// True when a part's reply means "nothing relevant" (`NONE`, ignoring case,
+    /// surrounding whitespace and punctuation such as `None.` or `**NONE**`).
+    public static func isNoneFinding(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased() == "NONE"
+    }
+
+    /// Groups findings so each final prompt fits `budget`; one group on Gemma, several on Apple Intelligence.
+    /// Findings keep their order and each lands in exactly one group. A multi-group result
+    /// labels each group "Parts a–b" so the answers can be joined under headings.
+    public static func scanFinalPrompts(question: String, findings: [(part: TranscriptChunk, text: String)],
+                                        budget: Int, countTokens: (String) -> Int)
+        -> [(label: String, system: String, user: String)] {
+        let system = """
+        You answer a question about a long meeting from evidence collected across its parts.
+        Use every relevant item; do not drop any. Cite timestamps like [00:12:34]. Answer in the transcript's language.
+        """
+        func user(_ group: [(part: TranscriptChunk, text: String)]) -> String {
+            let body = group.map { "### PART \($0.part.index) OF \($0.part.total)\n\($0.text)" }.joined(separator: "\n\n")
+            return "QUESTION: \(question)\n\nEVIDENCE:\n\(body.isEmpty ? "(no relevant evidence found)" : body)"
+        }
+        var groups: [[(part: TranscriptChunk, text: String)]] = [[]]
+        for finding in findings {
+            let candidate = groups[groups.count - 1] + [finding]
+            if !groups[groups.count - 1].isEmpty, countTokens(system + user(candidate)) > budget {
+                groups.append([finding])
+            } else {
+                groups[groups.count - 1] = candidate
+            }
+        }
+        // A single finding larger than the budget is clipped (rare: one part's evidence > budget).
+        return groups.map { group in
+            var u = user(group)
+            while countTokens(system + u) > budget, u.count > 200 { u = String(u.prefix(u.count * 9 / 10)) + "…" }
+            let label = groups.count == 1 ? ""
+                : "Parts \(group.first?.part.index ?? 0)–\(group.last?.part.index ?? 0)"
+            return (label: label, system: system, user: u)
+        }
+    }
+}

@@ -114,19 +114,23 @@ struct TranscriptChatView: View {
                         .id(message.id)
                     }
 
-                    if chatService.coverage == .relevantParts, let last = chatService.messages.last,
-                       last.role == .assistant, !last.content.isEmpty {
-                        Text("Answered from the most relevant parts of this long recording.")
-                            .uiFont(.caption)
-                            .foregroundStyle(palette.secondary.color)
-                            .padding(.horizontal, 16)
+                    if let last = chatService.messages.last, last.role == .assistant, !last.content.isEmpty {
+                        if let footnote = chatService.scanFootnote, footnote.messageID == last.id {
+                            Text(footnote.text)
+                                .uiFont(.caption)
+                                .foregroundStyle(palette.secondary.color)
+                                .padding(.horizontal, 16)
+                        } else if chatService.coverage == .relevantParts {
+                            coverageFooter(after: last)
+                        }
                     }
 
-                    if chatService.isStreaming, let last = chatService.messages.last, last.role == .assistant && last.content.isEmpty {
+                    if chatService.isStreaming, let last = chatService.messages.last, last.role == .assistant,
+                       last.content.isEmpty || chatService.scanStatus != nil {
                         HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text(chatService.indexingStatus ?? "Thinking…")
+                            Text(chatService.scanStatus ?? chatService.indexingStatus ?? "Thinking…")
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
                         }
@@ -152,6 +156,40 @@ struct TranscriptChatView: View {
             }
         }
         .frame(minHeight: 0, maxHeight: .infinity)
+    }
+
+    /// "Relevant parts" note, plus the opt-in exhaustive scan of the whole recording
+    /// for the question that produced `answer`.
+    private func coverageFooter(after answer: ChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Answered from the most relevant parts of this long recording.")
+                .uiFont(.caption)
+                .foregroundStyle(palette.secondary.color)
+            if !chatService.isStreaming, let question = question(answeredBy: answer) {
+                Button {
+                    scrollFollow.resumeFollowing()
+                    Task { await chatService.scanWholeRecording(for: question) }
+                } label: {
+                    Label("Check the whole recording (takes a few minutes)", systemImage: "text.magnifyingglass")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.text.color)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 9)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(palette.canvas.color))
+                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(palette.divider.color, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Ask this question of every part of the recording, so nothing is missed. Stop cancels it.")
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// The user question directly before `answer`, if any.
+    private func question(answeredBy answer: ChatMessage) -> String? {
+        guard let idx = chatService.messages.lastIndex(where: { $0.id == answer.id }), idx > 0 else { return nil }
+        let previous = chatService.messages[idx - 1]
+        return previous.role == .user ? previous.content : nil
     }
 
     // MARK: - Input

@@ -62,6 +62,14 @@ final class TranscriptChatService {
     private(set) var coverage: ChatCoverage?
     /// Shown inline while the long-recording search index is built.
     private(set) var indexingStatus: String?
+    /// Part being checked by a running whole-recording scan; nil otherwise.
+    private(set) var scanProgress: (index: Int, total: Int)?
+    /// Status line while a scan runs: "Checking part i of n…", then the answer step.
+    private(set) var scanStatus: String?
+    /// Footer under a finished scan's answer ("Checked the whole recording.").
+    private(set) var scanFootnote: (messageID: UUID, text: String)?
+    /// The assistant message a running scan writes into, so Stop can mark it stopped.
+    private var scanAssistantID: UUID?
     /// A draft belongs to this recording's existing session, so hiding its
     /// inspector does not discard it. It is deliberately not a sidecar field.
     var draftInput = ""
@@ -210,6 +218,8 @@ final class TranscriptChatService {
         persistenceURL = nil
         hasUnsavedChanges = false
         isStreaming = false
+        clearScanState()
+        scanFootnote = nil
     }
 
     init(
@@ -267,8 +277,14 @@ final class TranscriptChatService {
     }
 
     func send(_ userText: String) async {
+        await runExclusive(userText) { sendID in await self.sendInRecordingContext(userText, sendID: sendID) }
+    }
+
+    /// Runs one exchange (a question or a whole-recording scan) as the session's only
+    /// in-flight request, so Stop (`stopGenerating`) cancels either the same way.
+    private func runExclusive(_ text: String, _ body: @escaping @Sendable @MainActor (UUID) async -> Void) async {
         guard !invalidated, !Task.isCancelled, sendTask == nil,
-              !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isStreaming else { return }
         let sendID = UUID()
         activeSendID = sendID
         isStreaming = true
@@ -278,7 +294,7 @@ final class TranscriptChatService {
             guard let self, !self.invalidated, self.activeSendID == sendID else { return }
             let context = await self.privacyRecording?.privacyContext()
             guard !self.invalidated, !Task.isCancelled, self.activeSendID == sendID else { return }
-            await PrivacyTrace.$context.withValue(context) { await self.sendInRecordingContext(userText, sendID: sendID) }
+            await PrivacyTrace.$context.withValue(context) { await body(sendID) }
         }
         sendTask = task
         await withTaskCancellationHandler {
@@ -289,6 +305,7 @@ final class TranscriptChatService {
         sendTask = nil
         activeSendID = nil
         isStreaming = false
+        clearScanState()
         scheduleSave()
     }
 
@@ -375,10 +392,18 @@ final class TranscriptChatService {
         sendTask = nil
         isStreaming = false
         task.cancel()
-        streamingNotice = "Stopped generating."
-        if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
-            messages.removeLast()
+        if let scanID = scanAssistantID, let idx = messages.lastIndex(where: { $0.id == scanID }) {
+            // A stopped scan discards its partial findings and any partial answer.
+            messages[idx].content = Self.scanStoppedNote
+            coverage = nil
+            streamingNotice = "Stopped checking the whole recording."
+        } else {
+            streamingNotice = "Stopped generating."
+            if messages.last?.role == .assistant, messages.last?.content.isEmpty == true {
+                messages.removeLast()
+            }
         }
+        clearScanState()
         // Save from the user's action, before the cancelled task unwinds.
         scheduleSave()
     }
@@ -736,6 +761,265 @@ final class TranscriptChatService {
         #endif
         return errorStream("Apple Intelligence requires macOS 26 or later")
     }
+
+    // MARK: - Whole-recording scan ("Check the whole recording")
+
+    static let scanStoppedNote = "Stopped. The whole-recording check was cancelled before it finished, so there is no answer."
+
+    private enum ScanEngine {
+        case gemma(LocalAIPluginService)
+        case appleIntelligence
+    }
+
+    /// A scan failure whose message is already user-facing.
+    private struct ScanFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// Answers `question` from every part of the transcript, not just the retrieved
+    /// excerpts: each part (sized by the engine's `scanPartTokens`) is asked for its
+    /// evidence, non-NONE findings are kept, and the answer is written from them,
+    /// one group at a time when they don't fit one prompt. Persisted like any exchange.
+    func scanWholeRecording(for question: String) async {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        await runExclusive(trimmed) { sendID in await self.scanInRecordingContext(trimmed, sendID: sendID) }
+    }
+
+    private func clearScanState() {
+        scanProgress = nil
+        scanStatus = nil
+        scanAssistantID = nil
+    }
+
+    /// Throws when this scan was stopped, superseded, or its session retired.
+    private func checkScan(_ sendID: UUID) throws {
+        guard !invalidated, !Task.isCancelled, activeSendID == sendID else { throw CancellationError() }
+    }
+
+    private func scanEngine() throws -> (engine: ScanEngine, profile: ChatEngineProfile) {
+        switch resolvedChatEngine {
+        case .qwenLocal:
+            guard let plugin = localPlugin else { throw ScanFailure(message: "Local AI plugin not available") }
+            return (.gemma(plugin), .gemma)
+        case .appleIntelligence:
+            #if canImport(FoundationModels)
+            if #available(macOS 26, *) { return (.appleIntelligence, AppleChatBackend.profile) }
+            #endif
+            throw ScanFailure(message: "Apple Intelligence requires macOS 26 or later")
+        case .remoteEndpoint, .localCLI:
+            throw ScanFailure(message: "Checking the whole recording needs Gemma or Apple Intelligence as the chat engine.")
+        }
+    }
+
+    private func scanInRecordingContext(_ question: String, sendID: UUID) async {
+        guard !question.isEmpty, activeSendID == sendID else { return }
+        await loadTask?.value
+        guard !invalidated, !Task.isCancelled, activeSendID == sendID else { return }
+
+        messages.append(ChatMessage(role: .user, content: question))
+        let placeholder = ChatMessage(role: .assistant, content: "")
+        let assistantID = placeholder.id
+        messages.append(placeholder)
+        scanAssistantID = assistantID
+        coverage = nil // no "relevant parts" footer while the scan answer streams
+        scanFootnote = nil
+        var usesApple = false
+
+        func publish(_ text: String) {
+            guard let idx = messages.lastIndex(where: { $0.id == assistantID }) else { return }
+            messages[idx].content = text
+        }
+
+        do {
+            let (engine, profile) = try scanEngine()
+            if case .appleIntelligence = engine { usesApple = true }
+            let parts = TranscriptChunkPlanner.plan(transcriptProvider(), maxTokensPerChunk: profile.scanPartTokens,
+                                                    overlapLines: 1, countTokens: ChatEngineProfile.estimateTokens)
+
+            // Map: evidence per part. Findings live only here, so a stopped scan drops them.
+            var findings: [(part: TranscriptChunk, text: String)] = []
+            var declinedParts = 0
+            for part in parts {
+                try checkScan(sendID)
+                scanProgress = (part.index, part.total)
+                scanStatus = "Checking part \(part.index) of \(part.total)…"
+                let texts: [String]
+                switch engine {
+                case .gemma(let plugin):
+                    let prompt = ChatContextPlanner.scanPartPrompt(question: question, part: part)
+                    texts = [try await gemmaText(plugin, system: prompt.system, user: prompt.user, sendID: sendID)]
+                case .appleIntelligence:
+                    #if canImport(FoundationModels)
+                    if #available(macOS 26, *) {
+                        let result = try await appleScanPart(question: question, part: part, sendID: sendID)
+                        texts = result.texts
+                        if result.declined { declinedParts += 1 }
+                    } else { texts = [] }
+                    #else
+                    texts = []
+                    #endif
+                }
+                for text in texts {
+                    let answer = ChatMessage(role: .assistant, content: text).displayParts.answer // drop <think>
+                    if !answer.isEmpty, !ChatContextPlanner.isNoneFinding(answer) { findings.append((part, answer)) }
+                }
+            }
+            try checkScan(sendID)
+            if declinedParts > 0 {
+                Logger.ai.info("Whole-recording scan: Apple Intelligence declined \(declinedParts, privacy: .public) of \(parts.count, privacy: .public) parts")
+            }
+
+            // Reduce: answer from the findings, per group when they don't fit one prompt.
+            scanProgress = nil
+            scanStatus = "Writing the answer from what was found…"
+            var budget = profile.scanFindingsTokens
+            var answer = ""
+            answerLoop: while true {
+                let prompts = ChatContextPlanner.scanFinalPrompts(question: question, findings: findings, budget: budget,
+                                                                   countTokens: ChatEngineProfile.estimateTokens)
+                answer = ""
+                do {
+                    for prompt in prompts {
+                        let heading = prompt.label.isEmpty ? "" : (answer.isEmpty ? "" : "\n\n") + "**\(prompt.label)**\n\n"
+                        switch engine {
+                        case .gemma(let plugin):
+                            let prefix = answer + heading
+                            let text = try await gemmaText(plugin, system: prompt.system, user: prompt.user,
+                                                           sendID: sendID) { publish(prefix + $0) }
+                            answer = prefix + text
+                        case .appleIntelligence:
+                            #if canImport(FoundationModels)
+                            if #available(macOS 26, *) {
+                                let text = try await AppleChatBackend.respond(instructions: prompt.system, prompt: prompt.user)
+                                try checkScan(sendID)
+                                answer += heading + text
+                                publish(answer)
+                            }
+                            #endif
+                        }
+                    }
+                    break answerLoop
+                } catch {
+                    // Estimated tokens can undercount: regroup once at half the budget.
+                    guard usesApple, budget == profile.scanFindingsTokens, isAppleOverflow(error) else { throw error }
+                    try checkScan(sendID)
+                    Logger.ai.info("Whole-recording scan: answer step overflowed; regrouping findings")
+                    budget /= 2
+                }
+            }
+            try checkScan(sendID)
+            if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw ScanFailure(message: "The model returned an empty answer.")
+            }
+            publish(answer)
+            coverage = .full
+            var note = "Checked the whole recording."
+            if declinedParts > 0 {
+                note += " Apple Intelligence declined to read \(declinedParts) of \(parts.count) parts, so anything in them may be missing."
+            }
+            scanFootnote = (assistantID, note)
+        } catch {
+            guard !invalidated, !Task.isCancelled, activeSendID == sendID,
+                  messages.contains(where: { $0.id == assistantID }) else { return }
+            let message: String
+            if let failure = error as? ScanFailure {
+                message = failure.message
+            } else if usesApple {
+                message = appleUserMessage(for: error)
+            } else {
+                message = error.localizedDescription
+            }
+            streamingError = message
+            coverage = nil
+            publish("Error: \(message)")
+        }
+    }
+
+    /// One prompt through Gemma's ONE-SHOT `chatStream`, never `chatTurn`: scan prompts
+    /// must not enter the warm chat session. The helper runs `chatStream` with
+    /// `keepChat: false`, which drops that warm session, so the next normal question
+    /// rebuilds it (a one-time prefill); the scan itself never reads or extends it.
+    private func gemmaText(_ plugin: LocalAIPluginService, system: String, user: String, sendID: UUID,
+                           onText: (String) -> Void = { _ in }) async throws -> String {
+        var limiter = ChatResponseLimiter()
+        var text = ""
+        for try await chunk in await plugin.chatStream(systemPrompt: system, userMessage: user) {
+            try checkScan(sendID) // Stop cancels inside a part, not only between parts
+            text += limiter.append(chunk)
+            onText(text)
+            if limiter.stopReason != nil { break }
+            await Task.yield()
+        }
+        try checkScan(sendID)
+        return text
+    }
+
+    private func isAppleOverflow(_ error: Error) -> Bool {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) { return AppleGenerationFailure.classify(error) == .overflow }
+        #endif
+        return false
+    }
+
+    private func appleUserMessage(for error: Error) -> String {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) { return AppleChatBackend.userMessage(for: error) }
+        #endif
+        return error.localizedDescription
+    }
+
+    #if canImport(FoundationModels)
+    /// One part on Apple Intelligence. An overflowing part is re-split once with the
+    /// planner (into roughly halves) and each piece asked; a piece that still overflows
+    /// fails the scan loudly, so no part is ever skipped. A refusal or guardrail counts
+    /// as "no findings" for that part (`declined`), never as a failed scan.
+    @available(macOS 26, *)
+    private func appleScanPart(question: String, part: TranscriptChunk,
+                               sendID: UUID) async throws -> (texts: [String], declined: Bool) {
+        /// nil when the model declined the piece.
+        func ask(_ piece: TranscriptChunk) async throws -> String? {
+            let prompt = ChatContextPlanner.scanPartPrompt(question: question, part: piece)
+            do {
+                let text = try await AppleChatBackend.respond(instructions: prompt.system, prompt: prompt.user)
+                try checkScan(sendID)
+                return text
+            } catch {
+                switch AppleGenerationFailure.classify(error) {
+                case .refusal?, .guardrail?:
+                    try checkScan(sendID)
+                    return nil
+                default:
+                    throw error
+                }
+            }
+        }
+        do {
+            guard let text = try await ask(part) else { return ([], true) }
+            return ([text], false)
+        } catch where AppleGenerationFailure.classify(error) == .overflow {
+            try checkScan(sendID)
+            let tokens = ChatEngineProfile.estimateTokens(part.text)
+            // Pieces keep the part's own "PART i OF n" label; the planner splits on line boundaries.
+            let pieces = TranscriptChunkPlanner.plan(part.text, maxTokensPerChunk: max(1, tokens * 55 / 100), overlapLines: 0,
+                                                     countTokens: ChatEngineProfile.estimateTokens)
+                .map { TranscriptChunk(index: part.index, total: part.total, text: $0.text) }
+            Logger.ai.info("Whole-recording scan: part overflowed; retrying it as \(pieces.count, privacy: .public) pieces")
+            var texts: [String] = []
+            var declined = false
+            for piece in pieces {
+                try checkScan(sendID)
+                do {
+                    if let text = try await ask(piece) { texts.append(text) } else { declined = true }
+                } catch where !(error is CancellationError) && !Task.isCancelled {
+                    throw ScanFailure(message: "Checking the whole recording stopped at part \(part.index) of \(part.total). "
+                                      + AppleChatBackend.userMessage(for: error))
+                }
+            }
+            return (texts, declined)
+        }
+    }
+    #endif
 
     private func buildContextualUserMessage(currentMessage: String) -> String {
         let history = messages.dropLast()  // exclude the assistant placeholder we just added
