@@ -89,7 +89,9 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        // Pinned open: Settings has no sidebar toggle, so a remembered collapsed
+        // state (or a drag that collapses the column) must not hide the sidebar.
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             SettingsSidebar(
                 selection: destination.page,
                 badges: [.permissions: permissions.attentionCount(settings: appSettings)],
