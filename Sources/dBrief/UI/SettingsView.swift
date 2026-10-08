@@ -107,6 +107,9 @@ struct SettingsView: View {
                 searchResults.id(searchText)
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 320)
+            // Settings always shows its sidebar; the system toggle only drew a glass
+            // circle over the custom sidebar background.
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             // Keep long grouped forms inside the window's viewport. Without
             // this boundary, the header + form stack can report the form's full
