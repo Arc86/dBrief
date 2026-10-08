@@ -11,7 +11,10 @@ struct PromptTextEditor: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        // Let the card's surface (paper themes included) show through instead of white.
+        scroll.drawsBackground = false
         let text = PromptNativeTextView()
+        text.drawsBackground = false
         text.promptUndoManager = session.undoManager ?? UndoManager()
         text.isRichText = false
         // Model undo restores inheritance metadata together with the text.

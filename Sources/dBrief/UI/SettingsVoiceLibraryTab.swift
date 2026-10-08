@@ -144,6 +144,9 @@ struct SettingsVoiceLibraryTab: View {
                 } label: {
                     Label("Company", systemImage: "building.2")
                 }
+                // The page scaffold sets `.switch`; a switch can't render in a menu,
+                // so the company items would show disabled.
+                .toggleStyle(.automatic)
                 .menuStyle(.button)
                 .fixedSize()
 
@@ -189,8 +192,9 @@ struct SettingsVoiceLibraryTab: View {
     @ViewBuilder
     private func listRow(_ person: KnownPerson) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(person.name).uiFont(.system(size: 12.5, weight: .medium)).foregroundStyle(palette.heading.color)
-            Text(caption(person)).uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+            // Semantic styles, not palette colours: they turn white on the list's selection fill.
+            Text(person.name).uiFont(.system(size: 12.5, weight: .medium)).foregroundStyle(.primary)
+            Text(caption(person)).uiFont(.system(size: 11)).foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }

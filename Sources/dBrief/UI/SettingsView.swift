@@ -189,7 +189,9 @@ private extension View {
     @ViewBuilder
     func applyWindowAppearanceWhenAvailable(_ color: Color) -> some View {
         if #available(macOS 15.0, *) {
+            // The sidebar already says "Settings"; drop the duplicate window title.
             toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .toolbar(removing: .title)
                 .containerBackground(color, for: .window)
         } else {
             self

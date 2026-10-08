@@ -3,6 +3,18 @@ import SwiftUI
 // Settings building blocks on the Signature palette (shared with the menu panel and
 // transcript viewer). Native controls go inside rows; only containers are custom.
 
+enum SettingsPageLayout {
+    static let columnWidth: CGFloat = 680
+    static let sideInset: CGFloat = 32
+
+    /// Leading inset that centres the column in the *detail pane* (measured outside
+    /// the scroll view). Centring inside the scroll content instead lets a legacy
+    /// scroller, which appears only on long pages, shift those pages' column.
+    static func leadingInset(forPaneWidth width: CGFloat) -> CGFloat {
+        max(sideInset, (width - columnWidth) / 2)
+    }
+}
+
 struct SettingsPageScaffold<Notice: View, Content: View>: View {
     let page: SettingsPage
     @ViewBuilder var notice: Notice
@@ -16,39 +28,48 @@ struct SettingsPageScaffold<Notice: View, Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(spacing: 12) {
-                    Image(systemName: page.icon)
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(palette.accentText.color)
-                        .frame(width: 34, height: 34)
-                        .background(palette.selected.color, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(page.title)
-                            .uiFont(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(palette.heading.color)
-                            .accessibilityAddTraits(.isHeader)
-                        if !page.subtitle.isEmpty {
-                            Text(page.subtitle)
-                                .uiFont(.system(size: 12))
-                                .foregroundStyle(palette.secondary.color)
-                        }
-                    }
+        GeometryReader { pane in
+            let leading = SettingsPageLayout.leadingInset(forPaneWidth: pane.size.width)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header
+                    notice
+                    content
                 }
-                notice
-                content
+                .frame(maxWidth: SettingsPageLayout.columnWidth, alignment: .leading)
+                .padding(.top, 30)
+                .padding(.leading, leading)
+                .padding(.trailing, SettingsPageLayout.sideInset)
+                .padding(.bottom, 48)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlayScrollers()
             }
-            .frame(maxWidth: 680, alignment: .leading)
-            .padding(.top, 30)
-            .padding(.horizontal, 32)
-            .padding(.bottom, 48)
-            .frame(maxWidth: .infinity)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .scrollBounceBehavior(.basedOnSize)
         .toggleStyle(.switch)
         .controlSize(.small)
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: page.icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(palette.accentText.color)
+                .frame(width: 34, height: 34)
+                .background(palette.selected.color, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(page.title)
+                    .uiFont(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                    .accessibilityAddTraits(.isHeader)
+                if !page.subtitle.isEmpty {
+                    Text(page.subtitle)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                }
+            }
+        }
     }
 }
 

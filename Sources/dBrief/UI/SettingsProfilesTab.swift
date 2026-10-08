@@ -359,7 +359,8 @@ struct SettingsProfilesTab: View {
             }
 
             SettingsRow("Colour") {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 22), spacing: 8)], alignment: .leading, spacing: 8) {
+                // A row, not an adaptive grid: rows size controls to fit, which collapses a grid to one column.
+                HStack(spacing: 6) {
                     ForEach(Theme.profileColorOptions) { option in
                         let isSelected = option.key == profile.iconBackgroundColorKey
                         Button {

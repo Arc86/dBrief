@@ -7,7 +7,8 @@ import Testing
 /// Renders the real Settings window, one PNG per page and color scheme, for
 /// visual review. Opt in with `DBRIEF_SETTINGS_SNAPSHOT_DIR=<dir> swift test
 /// --filter SettingsPagesVisualTests`. Narrow with `DBRIEF_SETTINGS_SNAPSHOT_PAGES=a,b`
-/// and render the paper themes with `DBRIEF_SETTINGS_SNAPSHOT_PAPER=1`. Pages
+/// and render the paper themes with `DBRIEF_SETTINGS_SNAPSHOT_PAPER=1`; set the window
+/// width with `DBRIEF_SETTINGS_SNAPSHOT_WIDTH` (default 950). Pages
 /// that need the full `AppContext` (Speakers, Import, Profiles) are skipped;
 /// Benchmark renders its panel directly over seeded sample timings.
 @Suite("Settings pages native renders", .serialized) @MainActor
@@ -65,7 +66,8 @@ struct SettingsPagesVisualTests {
                     .environment(UpdaterController.shared)
                     .modifier(AppAppearanceScope(settings: settings))
                     .environment(\.colorScheme, scheme))
-                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 950, height: 900),
+                let width = Double(environment["DBRIEF_SETTINGS_SNAPSHOT_WIDTH"] ?? "") ?? 950
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
                                       styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 host.sizingOptions = []

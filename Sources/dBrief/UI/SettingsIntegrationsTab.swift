@@ -7,28 +7,42 @@ struct SettingsIntegrationsTab: View {
     let editProfile: (UUID) -> Void
     @State private var connectionMessages: [IntegrationDestination: String] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
+    @State private var openDestination: IntegrationDestination?
     private let integrationService = IntegrationDispatchService()
 
     var body: some View {
-        NavigationStack {
-            SettingsPageScaffold(page: .integrations, notice: {
-                VStack(spacing: 10) {
-                    credentialStorageNotice
+        // In-page detail instead of a NavigationStack: inside the split view a pushed
+        // page lands on the window's own navigation stack and stays on screen after
+        // switching to another settings page. This state resets with the page.
+        SettingsPageScaffold(page: .integrations, notice: {
+            VStack(spacing: 10) {
+                credentialStorageNotice
+                if openDestination == nil {
                     SettingsProfileScopeView(fields: SettingsPage.integrations.profileFields, editProfile: editProfile)
                 }
-            }) {
+            }
+        }) {
+            if let destination = openDestination {
+                Button {
+                    openDestination = nil
+                } label: {
+                    Label("All integrations", systemImage: "chevron.left")
+                }
+                .buttonStyle(.settingsSecondary)
+                .keyboardShortcut("[", modifiers: .command)
+                integrationDetail(destination)
+            } else {
                 SettingsCard("Send results to", section: .integrations) {
                     ForEach(IntegrationDestination.available, id: \.self) { destination in
-                        NavigationLink(value: destination) {
+                        Button {
+                            openDestination = destination
+                        } label: {
                             integrationRow(for: destination)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityHint("Opens \(destination.displayName) settings")
                     }
                 }
-            }
-            .navigationDestination(for: IntegrationDestination.self) { destination in
-                integrationDetail(destination)
-                    .navigationTitle(destination.displayName)
             }
         }
     }
@@ -135,30 +149,18 @@ struct SettingsIntegrationsTab: View {
 
     // MARK: Detail pages
 
+    @ViewBuilder
     private func integrationDetail(_ destination: IntegrationDestination) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                credentialStorageNotice
-                switch destination {
-                case .obsidian: obsidianDetail
-                case .appleNotes: appleNotesDetail
-                case .appleReminders: appleRemindersDetail
-                case .notion: notionDetail
-                case .evernote: evernoteDetail
-                case .googleKeep: googleKeepDetail
-                case .oneNote: oneNoteDetail
-                case .webhook: webhookDetail
-                }
-            }
-            .frame(maxWidth: 680, alignment: .leading)
-            .padding(.top, 24)
-            .padding(.horizontal, 32)
-            .padding(.bottom, 48)
-            .frame(maxWidth: .infinity)
+        switch destination {
+        case .obsidian: obsidianDetail
+        case .appleNotes: appleNotesDetail
+        case .appleReminders: appleRemindersDetail
+        case .notion: notionDetail
+        case .evernote: evernoteDetail
+        case .googleKeep: googleKeepDetail
+        case .oneNote: oneNoteDetail
+        case .webhook: webhookDetail
         }
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .background(palette.canvas.color)
     }
 
     private func enableRow(_ title: String, _ isOn: Binding<Bool>) -> some View {
