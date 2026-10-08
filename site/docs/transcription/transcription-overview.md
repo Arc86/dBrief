@@ -41,7 +41,7 @@ Recordings longer than 30 minutes are automatically split into 30-minute chunks 
 
 ## Transcription language
 
-For Apple Speech, Local Whisper, and remote endpoints, you can set the input language in **Settings → Transcription**. Leave it on **Auto-detect** to let the engine figure it out, or pick a specific language. Parakeet ignores language selection — choose the v2 (English) or v3 (multilingual) model variant instead.
+For Apple Speech, Local Whisper, and remote endpoints, you can set the input language in **Settings → Transcription**. Leave it on **Auto-detect** to let the engine figure it out, or pick a specific language. Parakeet ignores language selection — choose an English-only or multilingual [Parakeet variant](parakeet.md#model-variants) instead.
 
 ## Custom vocabulary
 

@@ -1,3 +1,34 @@
+## dBrief 1.4.7
+
+### Local transcription
+
+- **New Parakeet Phonon-2 model.** English only and the fastest Parakeet model, with a download of about 360 MB. Requires macOS 15 or later.
+- **Parakeet models are no longer re-downloaded during normal use.** Routine macOS memory warnings used to delete the downloaded Parakeet model, so the next transcription downloaded it again (about 600 MB for Ultra). The "Downloading Parakeet model" message also no longer appears when the model is already on your Mac.
+- Updated the on-device AI libraries (MLX and FluidAudio).
+
+### Spoken summaries in more languages
+
+- **Choose the spoken-summary language.** A new **Language** setting in Settings → Spoken Summary sets the language your briefing is written and spoken in.
+- **Kokoro now speaks Spanish, French, and Japanese**, with nine new voices. The voice list shows the voices for the language you chose. Voices download the first time you use them; Japanese uses its own voice model (about 217 MB).
+- **Preview voice** now speaks its sample sentence in the chosen language.
+
+### Calendar
+
+- **Claude launcher setting** for the Claude CLI calendar source (Settings → Calendar → Advanced). Replace just the `claude` command, for example with a wrapper that uses a different Claude account, while dBrief keeps its read-only safety settings.
+
+### Updates
+
+- dBrief now checks for updates every 12 hours instead of once a day, so fixes reach you sooner.
+
+### Fixes
+
+- **Settings → Transcription shows the model card straight away.** It used to wait for the online Whisper model list, which blocked switching models on a slow network.
+- **Playback keeps moving while a menu is open** in the transcript window: the time, playhead, and highlighted turn no longer freeze.
+- **Re-transcribed recordings appear in Benchmark** under Recent Transcriptions and count toward the lifetime "transcribed by dBrief" total.
+- The live transcript and the recent-recordings list no longer flicker when they refresh.
+
+---
+
 ## dBrief 1.4.6
 
 ### Switch microphones mid-recording

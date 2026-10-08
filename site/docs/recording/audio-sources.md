@@ -17,7 +17,7 @@ Choose which microphone dBrief records from in **Settings → Recording → Audi
 
 ### Switching device mid-recording
 
-You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. Click the **Mic** chip in the recording controls and pick a different input device. dBrief switches the live input without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed).
+You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. The **Mic** chip in the recording controls shows the microphone in use; click it and pick a different input device. dBrief switches straight away without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed). The short gap while devices change is kept as silence, so your voice stays in sync with the meeting audio.
 
 ### Automatic device follow
 
@@ -28,6 +28,15 @@ dBrief also adapts on its own when your audio devices change mid-recording, so y
 - A microphone you've explicitly picked stays selected as long as it's still connected.
 
 When dBrief switches microphones automatically, the floating recorder shows which mic it chose (for example, "Switched to MacBook Pro Microphone"). You can also switch manually with the **Mic** chip. Both use the same recording track.
+
+### Silent-microphone warnings
+
+dBrief tells you when your voice isn't being captured, instead of quietly recording silence:
+
+- If macOS has the selected microphone **muted** or its input level at zero, you'll see a note to check **System Settings → Sound**.
+- If a microphone stops delivering audio, dBrief tries another way to open it and then restarts it. If it still gets nothing, you'll see **"Microphone isn't delivering audio — check input device."**
+
+> **Tip for Bluetooth earbuds:** while their own microphone is in use, Bluetooth earbuds switch to a lower-quality call mode, for both what you hear and what they record. Listening on your earbuds while recording with your Mac's microphone keeps both at full quality.
 
 ## Echo cancellation
 

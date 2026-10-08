@@ -49,6 +49,12 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
     /// `validate()` rejects them.
     var command: String?
 
+    /// Optional launcher that replaces `claude` in the managed command, e.g. an
+    /// account switcher such as `cswap run 1 --`. The managed flags (schema,
+    /// tool allowlist, permission prompts) are still appended after it, so the
+    /// read-only tool boundary holds. Ignored when `command` is set.
+    var launcher: String?
+
     static let defaultTimeoutSeconds = 90
     static let defaultListFreshnessSeconds = 60 * 60
     static let defaultDetailFreshnessSeconds = 60 * 60
@@ -78,7 +84,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         detailFreshnessSeconds: Int,
         attendeePolicy: AttendeePolicy,
         maxAttendees: Int,
-        command: String?
+        command: String?,
+        launcher: String? = nil
     ) {
         self.modelID = modelID
         self.effort = effort
@@ -90,6 +97,7 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         self.attendeePolicy = attendeePolicy
         self.maxAttendees = maxAttendees
         self.command = command
+        self.launcher = launcher
     }
 
     /// Test-only construction without normalization (fast transport timeouts).
@@ -103,13 +111,14 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         detailFreshnessSeconds: Int = defaultDetailFreshnessSeconds,
         attendeePolicy: AttendeePolicy = .onDemand,
         maxAttendees: Int = defaultMaxAttendees,
-        command: String? = nil
+        command: String? = nil,
+        launcher: String? = nil
     ) -> CalendarCLIConfig {
         CalendarCLIConfig(
             raw: modelID, effort: effort, timeoutSeconds: timeoutSeconds, mailboxEmail: mailboxEmail,
             calendarName: calendarName, listFreshnessSeconds: listFreshnessSeconds,
             detailFreshnessSeconds: detailFreshnessSeconds, attendeePolicy: attendeePolicy,
-            maxAttendees: maxAttendees, command: command
+            maxAttendees: maxAttendees, command: command, launcher: launcher
         )
     }
 
@@ -124,7 +133,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         detailFreshnessSeconds: Int,
         attendeePolicy: AttendeePolicy,
         maxAttendees: Int,
-        command: String?
+        command: String?,
+        launcher: String? = nil
     ) {
         self.init(
             raw: Self.sanitizedModelID(modelID),
@@ -136,7 +146,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
             detailFreshnessSeconds: max(60, detailFreshnessSeconds),
             attendeePolicy: attendeePolicy,
             maxAttendees: Self.normalizedMaxAttendees(maxAttendees),
-            command: command
+            command: command,
+            launcher: Self.normalizedLauncher(launcher)
         )
     }
 
@@ -154,7 +165,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
             detailFreshnessSeconds: try container.decodeIfPresent(Int.self, forKey: .detailFreshnessSeconds) ?? Self.defaultDetailFreshnessSeconds,
             attendeePolicy: try container.decodeIfPresent(AttendeePolicy.self, forKey: .attendeePolicy) ?? .onDemand,
             maxAttendees: try container.decodeIfPresent(Int.self, forKey: .maxAttendees) ?? Self.defaultMaxAttendees,
-            command: try container.decodeIfPresent(String.self, forKey: .command)
+            command: try container.decodeIfPresent(String.self, forKey: .command),
+            launcher: try container.decodeIfPresent(String.self, forKey: .launcher)
         )
     }
 
@@ -200,6 +212,11 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         min(100, max(1, raw))
     }
 
+    static func normalizedLauncher(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
     /// Result replacement for an edited configuration.
     func updating(
         modelID: String?? = nil,
@@ -211,7 +228,8 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         detailFreshnessSeconds: Int? = nil,
         attendeePolicy: AttendeePolicy? = nil,
         maxAttendees: Int? = nil,
-        command: String?? = nil
+        command: String?? = nil,
+        launcher: String?? = nil
     ) -> CalendarCLIConfig {
         CalendarCLIConfig(
             modelID: modelID ?? self.modelID,
@@ -223,19 +241,23 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
             detailFreshnessSeconds: detailFreshnessSeconds ?? self.detailFreshnessSeconds,
             attendeePolicy: attendeePolicy ?? self.attendeePolicy,
             maxAttendees: maxAttendees ?? self.maxAttendees,
-            command: command ?? self.command
+            command: command ?? self.command,
+            launcher: launcher ?? self.launcher
         )
     }
 
     /// The managed command never embeds user data; dynamic values (schema,
     /// model) flow through quoted environment variables, prompt data on stdin.
-    static let managedCommandPrefix = #"claude -p --no-session-persistence --output-format json --json-schema "$DBRIEF_CALENDAR_SCHEMA""#
+    static let managedCommandPrefix = "claude" + managedFlags
+    static let managedFlags = #" -p --no-session-persistence --output-format json --json-schema "$DBRIEF_CALENDAR_SCHEMA""#
 
     /// Managed headless invocation: one allowlisted read-only connector tool,
     /// every other tool denied without prompting (`--permission-prompts none`).
     /// This is the read-only tool boundary; the prompt alone is not.
-    static func managedCommand(allowedTool: String, modelID: String?) -> String {
-        var command = managedCommandPrefix
+    /// A `launcher` (e.g. `cswap run 1 --`) replaces `claude`; the flags that
+    /// enforce the boundary are appended after it unchanged.
+    static func managedCommand(allowedTool: String, modelID: String?, launcher: String? = nil) -> String {
+        var command = (normalizedLauncher(launcher) ?? "claude") + managedFlags
         if sanitizedModelID(modelID) != nil {
             command += #" --model "$DBRIEF_CALENDAR_MODEL""#
         }
@@ -243,21 +265,25 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
         return command
     }
 
-    /// An advanced command must not re-declare flags the runner appends, and
-    /// must not carry environment expansion of unknown variables.
+    /// An advanced command or launcher must not re-declare flags the runner
+    /// appends, and must not carry environment expansion of unknown variables.
     func validateCommand() -> Bool {
-        guard let command, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
+        Self.isSafeOverride(command) && Self.isSafeOverride(launcher)
+    }
+
+    private static func isSafeOverride(_ value: String?) -> Bool {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
         let forbidden = [
             "--model", "--output-format", "--json-schema", "--effort", "--settings",
             "CLAUDE_CODE_EFFORT_LEVEL",
             "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools",
             "--permission-prompts", "--permission-mode",
         ]
-        return !forbidden.contains { command.contains($0) }
+        return !forbidden.contains { value.contains($0) }
     }
 
     private enum CodingKeys: String, CodingKey {
         case modelID, effort, timeoutSeconds, mailboxEmail, calendarName
-        case listFreshnessSeconds, detailFreshnessSeconds, attendeePolicy, maxAttendees, command
+        case listFreshnessSeconds, detailFreshnessSeconds, attendeePolicy, maxAttendees, command, launcher
     }
 }

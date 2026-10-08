@@ -2,6 +2,10 @@ import Foundation
 import Testing
 @testable import dBrief
 
+// Serialized: the commit-gate tests park a cooperative-pool thread on a
+// semaphore inside `beforeCommit`. Run in parallel, they can hold every thread
+// of a small CI runner's pool, so nothing is left to release the gate.
+@Suite(.serialized)
 struct LibraryIndexTests {
     private func fixture() throws -> (URL, URL, LibraryIndex) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
