@@ -13,114 +13,56 @@ struct SettingsCalendarSection: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        Section("Calendar", settingsSearch: .calendar) {
+        SettingsCard("Calendar", description: "Pre-fills title, attendees and agenda", section: .calendar) {
             // Display the coerced value so the selection always matches a rendered
-            // row (a stale `.outlook` shows as Off while Outlook is hidden); writes
+            // option (a stale `.outlook` shows as Off while Outlook is hidden); writes
             // persist the raw choice and self-restore once a client ID is configured.
-            Picker("Source", selection: Binding(
-                get: { settings.effectiveCalendarSource },
-                set: { settings.calendarSource = $0 }
-            )) {
-                Text("Off").tag(CalendarSource.disabled)
-                Text("iCal").tag(CalendarSource.iCal)
-                if MicrosoftAuthService.isConfigured {
-                    Text("Outlook (Microsoft)").tag(CalendarSource.outlook)
+            SettingsRow("Source") {
+                Picker("Source", selection: Binding(
+                    get: { settings.effectiveCalendarSource },
+                    set: { settings.calendarSource = $0 }
+                )) {
+                    Text("Off").tag(CalendarSource.disabled)
+                    Text("Calendar app").tag(CalendarSource.iCal)
+                    if MicrosoftAuthService.isConfigured {
+                        Text("Outlook").tag(CalendarSource.outlook)
+                    }
+                    Text("Claude CLI").tag(CalendarSource.claudeCLI)
                 }
-                Text("Claude CLI").tag(CalendarSource.claudeCLI)
+                .pickerStyle(.segmented)
             }
 
             switch settings.effectiveCalendarSource {
             case .iCal:
                 if calendarStatus == .fullAccess {
-                    Text("Looks up the matching calendar event when a recording stops and pre-fills title, participants, and agenda context.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-
-                    LabeledContent("Calendars") {
-                        Menu {
-                            Button {
-                                settings.selectedICalCalendarIDs = nil
-                            } label: {
-                                if settings.selectedICalCalendarIDs == nil {
-                                    Label("All Calendars", systemImage: "checkmark")
-                                } else {
-                                    Text("All Calendars")
-                                }
+                    SettingsRow("Calendars", caption: "Only these calendars are used for matching and the meeting picker.") {
+                        HStack(spacing: 8) {
+                            if settings.selectedICalCalendarIDs?.isEmpty == true {
+                                SettingsStatusPill("None selected", kind: .warning)
+                                    .help("iCal matching will return no meetings.")
+                            } else if unavailableICalCalendarCount > 0 {
+                                SettingsStatusPill(verbatim: "\(unavailableICalCalendarCount) unavailable", kind: .warning)
+                                    .help(unavailableICalCalendarMessage)
                             }
-
-                            Divider()
-
-                            if availableICalCalendars.isEmpty {
-                                Text("No calendars available")
-                            } else {
-                                ForEach(availableICalCalendars) { calendar in
-                                    Button {
-                                        toggleICalCalendar(calendar.id)
-                                    } label: {
-                                        let isSelected = settings.selectedICalCalendarIDs?
-                                            .contains(calendar.id) == true
-                                        Label {
-                                            Text(calendar.displayName)
-                                        } icon: {
-                                            Image(systemName: isSelected ? "checkmark" : "circle.fill")
-                                                .foregroundStyle(isSelected ? Color.primary : calendar.color)
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text(iCalCalendarSelectionSummary)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption2.weight(.semibold))
-                            }
+                            calendarMenu
                         }
-                        .buttonStyle(.typographyBordered)
-                    }
-
-                    Text("Only events from the selected calendars are considered for automatic matching and the post-recording Meeting picker.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if settings.selectedICalCalendarIDs?.isEmpty == true {
-                        Label(
-                            "No calendars selected. iCal matching will return no meetings.",
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .uiFont(.caption)
-                        .foregroundStyle(.orange)
-                    } else if unavailableICalCalendarCount > 0 {
-                        Label(
-                            unavailableICalCalendarMessage,
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .uiFont(.caption)
-                        .foregroundStyle(.orange)
                     }
                 } else {
-                    Text("Grant Calendar access in the Permissions tab to enable this.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsRow("Calendar access", caption: "Allow calendar access on the Permissions page.") {
+                        SettingsStatusPill("Not allowed", kind: .warning)
+                    }
                 }
 
             case .outlook:
                 if microsoftAuthService.isSignedIn {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(microsoftAuthService.accountInfo?.displayName ?? "Microsoft Account")
-                                .fontWeight(.medium)
-                            Text(microsoftAuthService.accountInfo?.email ?? "")
-                                .uiFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Sign out") {
-                            microsoftAuthService.signOut()
-                        }
-                        .buttonStyle(.typographyBordered)
+                    SettingsRow(verbatim: microsoftAuthService.accountInfo?.displayName ?? "Microsoft account",
+                                caption: microsoftAuthService.accountInfo?.email,
+                                systemImage: "person.crop.circle") {
+                        Button("Sign out") { microsoftAuthService.signOut() }
+                            .buttonStyle(.settingsSecondary)
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 6) {
+                    SettingsRow(verbatim: "Microsoft account", caption: outlookSignInError, systemImage: "person.crop.circle") {
                         Button("Sign in with Microsoft") {
                             outlookSignInError = nil
                             Task { @MainActor in
@@ -131,24 +73,14 @@ struct SettingsCalendarSection: View {
                                 }
                             }
                         }
-                        .buttonStyle(.typographyProminent)
-                        if let error = outlookSignInError {
-                            Text(error)
-                                .uiFont(.caption)
-                                .foregroundStyle(.red)
-                        }
+                        .buttonStyle(.settingsPrimary)
                     }
                 }
 
-            case .claudeCLI:
-                EmptyView()
-
-            case .disabled:
+            case .claudeCLI, .disabled:
                 EmptyView()
             }
-
         }
-        .listRowBackground(Color.clear)
         .onAppear {
             reloadICalCalendars()
         }
@@ -161,38 +93,76 @@ struct SettingsCalendarSection: View {
         }
 
         if settings.effectiveCalendarSource != .disabled {
-            Section {
-                Picker("Automatic match window", selection: $settings.calendarMatchWindowMinutes) {
-                    ForEach(AppSettings.calendarMatchWindowOptions, id: \.self) { minutes in
-                        if minutes == 0 {
-                            Text("Only overlapping").tag(minutes)
-                        } else {
-                            Text("\(minutes) minutes").tag(minutes)
+            SettingsCard("Meeting matching", section: .meetingMatching) {
+                SettingsRow("Match window",
+                            caption: "Overlapping meetings match automatically. The window also allows nearby starts.") {
+                    Picker("Match window", selection: $settings.calendarMatchWindowMinutes) {
+                        ForEach(AppSettings.calendarMatchWindowOptions, id: \.self) { minutes in
+                            if minutes == 0 {
+                                Text("Only overlapping").tag(minutes)
+                            } else {
+                                Text("\(minutes) minutes").tag(minutes)
+                            }
                         }
                     }
+                    .pickerStyle(.menu)
                 }
-                Toggle(
-                    "Show all meetings from recording day",
-                    isOn: $settings.showAllMeetingsFromRecordingDay
-                )
-            } header: {
-                SettingsSectionTitle("Meeting matching")
-            } footer: {
-                Text("Overlapping meetings match automatically. The window also permits nearby starts; other meetings appear only in the picker.")
+                SettingsRow("Show all meetings from that day", caption: "Adds the rest of the day to the meeting picker.") {
+                    Toggle("Show all meetings from that day", isOn: $settings.showAllMeetingsFromRecordingDay)
+                }
             }
         }
     }
 
+    private var calendarMenu: some View {
+        @Bindable var settings = appSettings
+        return Menu {
+            Button {
+                settings.selectedICalCalendarIDs = nil
+            } label: {
+                if settings.selectedICalCalendarIDs == nil {
+                    Label("All calendars", systemImage: "checkmark")
+                } else {
+                    Text("All calendars")
+                }
+            }
+
+            Divider()
+
+            if availableICalCalendars.isEmpty {
+                Text("No calendars available")
+            } else {
+                ForEach(availableICalCalendars) { calendar in
+                    Button {
+                        toggleICalCalendar(calendar.id)
+                    } label: {
+                        let isSelected = settings.selectedICalCalendarIDs?.contains(calendar.id) == true
+                        Label {
+                            Text(calendar.displayName)
+                        } icon: {
+                            Image(systemName: isSelected ? "checkmark" : "circle.fill")
+                                .foregroundStyle(isSelected ? Color.primary : calendar.color)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Text(iCalCalendarSelectionSummary)
+        }
+        .menuStyle(.button)
+        .fixedSize()
+    }
+
     private var iCalCalendarSelectionSummary: String {
         guard let selected = appSettings.selectedICalCalendarIDs else {
-            return "All Calendars"
+            return "All calendars"
         }
-        guard !selected.isEmpty else { return "No Calendars" }
+        guard !selected.isEmpty else { return "No calendars" }
         if selected.count == 1,
            let calendar = availableICalCalendars.first(where: { selected.contains($0.id) }) {
             return calendar.title
         }
-        return "\(selected.count) Calendars"
+        return "\(selected.count) calendars"
     }
 
     private var unavailableICalCalendarCount: Int {

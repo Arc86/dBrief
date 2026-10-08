@@ -26,38 +26,39 @@ struct ClaudeModelPicker: View {
     }
 
     var body: some View {
-        Picker("Model", selection: selection) {
-            Text("Claude default").tag("__default")
-            Section("Model families") {
-                ForEach(ClaudeModelCatalog.aliases) { choice in
-                    Text(choice.name).tag(choice.id)
-                }
-            }
-            Section("Versions") {
-                ForEach(ClaudeModelCatalog.versions) { choice in
-                    Text(choice.name).tag(choice.id)
-                }
-            }
-            Text("Custom model ID").tag("__custom")
-        }
-        .pickerStyle(.menu)
-
-        if selection.wrappedValue == "__custom" {
-            TextField("Custom model ID", text: $customModelID, prompt: Text("e.g. claude-opus-5-5"))
-                .onChange(of: customModelID) { _, value in
-                    if let sanitized = CalendarCLIConfig.sanitizedModelID(value) {
-                        modelID = sanitized
+        SettingsRow("Model", caption: "Families follow Claude's current aliases; versions stay pinned. Availability depends on your Claude account.") {
+            Picker("Model", selection: selection) {
+                Text("Claude default").tag("__default")
+                Section("Model families") {
+                    ForEach(ClaudeModelCatalog.aliases) { choice in
+                        Text(choice.name).tag(choice.id)
                     }
                 }
-            if !customModelID.isEmpty, CalendarCLIConfig.sanitizedModelID(customModelID) == nil {
-                Text("Use a model ID without spaces or shell characters. The previous selection is kept until the ID is valid.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                Section("Versions") {
+                    ForEach(ClaudeModelCatalog.versions) { choice in
+                        Text(choice.name).tag(choice.id)
+                    }
+                }
+                Text("Custom model ID").tag("__custom")
+            }
+            .pickerStyle(.menu)
+        }
+        .onAppear { customModelID = modelID ?? "" }
+
+        if selection.wrappedValue == "__custom" {
+            SettingsRow("Custom model ID",
+                        caption: !customModelID.isEmpty && CalendarCLIConfig.sanitizedModelID(customModelID) == nil
+                            ? "Use an ID without spaces or shell characters. The previous selection is kept until the ID is valid."
+                            : nil) {
+                TextField("Custom model ID", text: $customModelID, prompt: Text("e.g. claude-opus-5-5"))
+                    .settingsTextField()
+                    .frame(width: 220)
+                    .onChange(of: customModelID) { _, value in
+                        if let sanitized = CalendarCLIConfig.sanitizedModelID(value) {
+                            modelID = sanitized
+                        }
+                    }
             }
         }
-        Text("Model families follow Claude's current aliases. Versions stay pinned. Availability depends on your Claude account and provider.")
-            .uiFont(.caption)
-            .foregroundStyle(.secondary)
-            .onAppear { customModelID = modelID ?? "" }
     }
 }

@@ -26,6 +26,15 @@ struct SettingsView: View {
     /// The Signature workspace colour, shared with the transcript viewer.
     private var canvasColor: Color { palette.canvas.color }
 
+    /// Pages that show the profile-override notice in their own scaffold. Temporary:
+    /// removed once every app-defaults page has migrated.
+    private static let pagesWithOwnNotice: Set<SettingsPage> = [.meetings]
+
+    private func editProfile(_ id: UUID) {
+        profileToEdit = id
+        navigate(to: SettingsDestination(page: .profiles))
+    }
+
     private func navigate(to target: SettingsDestination) {
         destination = target
         searchRequest = nil
@@ -110,12 +119,12 @@ struct SettingsView: View {
                 let tab = destination.page
                 ScrollViewReader { scrollProxy in
                     VStack(spacing: 0) {
-                        if tab.editsAppDefaults {
-                            SettingsProfileScopeView(fields: tab.profileFields) { id in
-                                profileToEdit = id
-                                navigate(to: SettingsDestination(page: .profiles))
-                            }
-                            .id(tab)
+                        // Migrated pages render the notice inside their own scaffold.
+                        if tab.editsAppDefaults && !Self.pagesWithOwnNotice.contains(tab) {
+                            SettingsProfileScopeView(fields: tab.profileFields, editProfile: editProfile)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 10)
+                                .id(tab)
                         }
                         switch tab {
                         case .general:      SettingsGeneralTab()
@@ -134,7 +143,7 @@ struct SettingsView: View {
                         case .vocabulary:     SettingsVocabularyTab()
                         case .watchedFolders: SettingsWatchedFoldersTab()
                         case .integrations: SettingsIntegrationsTab()
-                        case .meetings:     SettingsMeetingsTab()
+                        case .meetings:     SettingsMeetingsTab(editProfile: editProfile)
                         case .speakers:     SettingsVoiceLibraryTab()
                         case .profiles:     SettingsProfilesTab(selectedProfileId: $profileToEdit)
                         case .benchmark:    SettingsBenchmarkTab()
