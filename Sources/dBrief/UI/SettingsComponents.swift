@@ -182,6 +182,10 @@ extension SettingsRow where Control == EmptyView {
     init(_ label: LocalizedStringKey, caption: LocalizedStringKey? = nil, systemImage: String? = nil) {
         self.init(label, caption: caption, systemImage: systemImage) { EmptyView() }
     }
+
+    init(verbatim label: String, caption: String? = nil, systemImage: String? = nil) {
+        self.init(verbatim: label, caption: caption, systemImage: systemImage) { EmptyView() }
+    }
 }
 
 /// A row whose content spans the card (lists, grids, editors).

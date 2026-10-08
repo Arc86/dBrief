@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Always-visible management surface for the on-device voice library
+/// The Speakers page's Known people pane: management surface for the on-device voice library
 /// (`VoiceLibraryStore`): a master-detail split with search, company filter/grouping,
 /// and sort in the list pane, and rename/merge/forget/per-voiceprint-delete plus an
 /// editable company field in the detail pane. Reads the actor into local state and
 /// reloads after every mutation.
 struct SettingsVoiceLibraryTab: View {
     @Environment(AppContext.self) private var context
+    @Environment(\.viewerPalette) private var palette
 
     @State private var library = VoiceLibrary()
     @State private var loaded = false
@@ -47,9 +48,10 @@ struct SettingsVoiceLibraryTab: View {
                 emptyLibraryView
             } else {
                 HSplitView {
-                    listPane.frame(minWidth: 240, idealWidth: 260, maxWidth: 340)
-                    detailPane.frame(minWidth: 320, maxWidth: .infinity)
+                    listPane.frame(minWidth: 220, idealWidth: 250, maxWidth: 320)
+                    detailPane.frame(minWidth: 280, maxWidth: .infinity)
                 }
+                .frame(height: 380)
             }
         }
         .task { if !loaded { await reload(); loaded = true } }
@@ -96,22 +98,9 @@ struct SettingsVoiceLibraryTab: View {
     // MARK: - Empty library (no people saved yet)
 
     private var emptyLibraryView: some View {
-        Form {
-            Section("Speaker Library", settingsSearch: .speakerLibrary) {
-                Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .listRowBackground(Color.clear)
-
-            Section(settingsTitle: "Known People") {
-                Text("No voices saved yet. A voice is added when you name a speaker in a transcript, or with \u{201C}Save voice to library\u{201D} from the speaker menu.")
-                    .uiFont(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .listRowBackground(Color.clear)
-        }
-        .settingsFormStyle()
+        SettingsRow("No voices saved yet",
+                    caption: "A voice is added when you name a speaker in a transcript, or with “Save voice to library” from the speaker menu.",
+                    systemImage: "person.wave.2")
     }
 
     /// Shown inside the list pane when the library has people but the current
@@ -120,17 +109,16 @@ struct SettingsVoiceLibraryTab: View {
     private var noSearchResultsView: some View {
         VStack(spacing: 6) {
             Text("No people match your search.")
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-            Text("Try a different name or company, or clear the filters below.")
-                .uiFont(.caption)
-                .foregroundStyle(.tertiary)
-            Button("Clear Filters") {
+                .uiFont(.system(size: 12))
+                .foregroundStyle(palette.heading.color)
+            Text("Try a different name or company.")
+                .uiFont(.system(size: 11.5))
+                .foregroundStyle(palette.secondary.color)
+            Button("Clear filters") {
                 query = ""
                 companyFilter.removeAll()
             }
-            .uiFont(.caption)
-            .buttonStyle(.link)
+            .buttonStyle(.settingsSecondary)
         }
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
@@ -141,8 +129,6 @@ struct SettingsVoiceLibraryTab: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsSearchHeading("Speaker Library", section: .speakerLibrary)
-                .uiFont(.headline)
             TextField("Search name or company", text: $query)
                 .settingsTextField()
 
@@ -153,13 +139,12 @@ struct SettingsVoiceLibraryTab: View {
                     }
                     if !companyFilter.isEmpty {
                         Divider()
-                        Button("Clear Filter") { companyFilter.removeAll() }
+                        Button("Clear filter") { companyFilter.removeAll() }
                     }
                 } label: {
                     Label("Company", systemImage: "building.2")
                 }
                 .menuStyle(.button)
-                .buttonStyle(.typographyBorderless)
                 .fixedSize()
 
                 Spacer()
@@ -196,27 +181,18 @@ struct SettingsVoiceLibraryTab: View {
                 .scrollContentBackground(.hidden)
                 .frame(maxHeight: .infinity)
             }
-
-            Divider()
-            privacyFooter
         }
         .padding(12)
+        .background(palette.canvas.color)
     }
 
     @ViewBuilder
     private func listRow(_ person: KnownPerson) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(person.name).uiFont(.body)
-            Text(caption(person)).uiFont(.caption).foregroundStyle(.secondary)
+            Text(person.name).uiFont(.system(size: 12.5, weight: .medium)).foregroundStyle(palette.heading.color)
+            Text(caption(person)).uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         }
         .padding(.vertical, 2)
-    }
-
-    private var privacyFooter: some View {
-        Text("dBrief learns each speaker\u{2019}s voice so it can recognize them in future recordings. Voiceprints are stored only on this Mac, are never uploaded, and can be forgotten at any time.")
-            .uiFont(.caption2)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Detail pane
@@ -237,31 +213,31 @@ struct SettingsVoiceLibraryTab: View {
 
     private var selectionPlaceholder: some View {
         Text("Select a person")
-            .uiFont(.callout)
-            .foregroundStyle(.secondary)
+            .uiFont(.system(size: 12))
+            .foregroundStyle(palette.secondary.color)
             .frame(maxWidth: .infinity, minHeight: 200, alignment: .center)
     }
 
     @ViewBuilder
     private func personDetail(_ person: KnownPerson) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(person.name).uiFont(.title2.bold())
-            Text(caption(person)).uiFont(.caption).foregroundStyle(.secondary)
+            Text(person.name).uiFont(.system(size: 17, weight: .semibold)).foregroundStyle(palette.heading.color)
+            Text(caption(person)).uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
         }
 
         HStack {
-            Text("Company").uiFont(.subheadline).foregroundStyle(.secondary)
+            Text("Company").uiFont(.system(size: 12, weight: .medium)).foregroundStyle(palette.heading.color)
             TextField("Add company", text: $companyDraft)
                 .settingsTextField()
                 .frame(width: 240)
                 .onSubmit { commitCompany() }
         }
 
-        Divider()
+        palette.divider.color.frame(height: 1)
 
         voiceprintsSection(person)
 
-        Divider()
+        palette.divider.color.frame(height: 1)
 
         actionsRow(person)
     }
@@ -278,7 +254,7 @@ struct SettingsVoiceLibraryTab: View {
             }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette.secondary.color)
 
         if isExpanded {
             // Index-based identity: capturedAt is not guaranteed unique (two prints
@@ -287,7 +263,7 @@ struct SettingsVoiceLibraryTab: View {
             ForEach(Array(person.voiceprints.enumerated()), id: \.offset) { _, vp in
                 HStack {
                     Text("Captured \(vp.capturedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .uiFont(.caption).foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
                     Spacer()
                     Button {
                         Task {
@@ -295,7 +271,8 @@ struct SettingsVoiceLibraryTab: View {
                             await reload()
                         }
                     } label: { Image(systemName: "trash") }
-                    .buttonStyle(.typographyBorderless)
+                    .buttonStyle(.settingsSecondary)
+                    .accessibilityLabel("Forget this voiceprint")
                 }
                 .padding(.leading, 16)
             }
@@ -304,13 +281,16 @@ struct SettingsVoiceLibraryTab: View {
 
     @ViewBuilder
     private func actionsRow(_ person: KnownPerson) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Button("Rename\u{2026}") { renameText = person.name; renaming = person }
+                .buttonStyle(.settingsSecondary)
             if library.people.count > 1 {
                 Button("Merge into\u{2026}") { mergeSource = person }
+                    .buttonStyle(.settingsSecondary)
             }
             Spacer()
             Button("Forget voice", role: .destructive) { deleteTarget = person }
+                .buttonStyle(.settingsDanger)
         }
     }
 

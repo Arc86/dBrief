@@ -28,7 +28,7 @@ struct SettingsView: View {
 
     /// Pages that show the profile-override notice in their own scaffold. Temporary:
     /// removed once every app-defaults page has migrated.
-    private static let pagesWithOwnNotice: Set<SettingsPage> = [.meetings]
+    private static let pagesWithOwnNotice: Set<SettingsPage> = [.meetings, .transcription, .vocabulary]
 
     private func editProfile(_ id: UUID) {
         profileToEdit = id
@@ -137,14 +137,14 @@ struct SettingsView: View {
                             }
                         case .permissions:  SettingsPermissionsTab()
                         case .recording:    SettingsRecordingTab()
-                        case .transcription: SettingsTranscriptionTab()
+                        case .transcription: SettingsTranscriptionTab(editProfile: editProfile)
                         case .ai:           SettingsAITab()
                         case .spokenVoice:  SettingsSpokenVoiceTab()
-                        case .vocabulary:     SettingsVocabularyTab()
+                        case .vocabulary:     SettingsVocabularyTab(editProfile: editProfile)
                         case .watchedFolders: SettingsWatchedFoldersTab()
                         case .integrations: SettingsIntegrationsTab()
                         case .meetings:     SettingsMeetingsTab(editProfile: editProfile)
-                        case .speakers:     SettingsVoiceLibraryTab()
+                        case .speakers:     SettingsSpeakersTab()
                         case .profiles:     SettingsProfilesTab(selectedProfileId: $profileToEdit)
                         case .benchmark:    SettingsBenchmarkTab()
                         case .about:        AboutTab()
