@@ -53,6 +53,28 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     func visibleSelection(advanced: Bool) -> Self {
         self == .benchmark && !advanced ? .general : self
     }
+    /// One line under the page title.
+    var subtitle: String {
+        switch self {
+        case .general: "Startup, updates and the setup guide."
+        case .appearance: "Theme, accent colour and interface text."
+        case .permissions: "What dBrief can access on this Mac."
+        case .recording: "Microphone, shortcut and what you see while recording."
+        case .watchedFolders: "Process audio files dropped into watched folders."
+        case .transcription: "Turn audio into text."
+        case .voiceLibrary: "Tell voices apart and recognise people you've named."
+        case .vocabulary: "Names and terms dBrief should spell exactly."
+        case .ai: "Summaries, action items, tags and Ask dBrief AI."
+        case .spokenVoice: "Listen to a recording's summary."
+        case .afterRecording: "What happens when you stop recording."
+        case .profiles: "Different settings for different kinds of meetings."
+        case .integrations: "Send results to the apps you work in."
+        case .storage: "Where files go and how long they stay."
+        case .benchmark: "How fast each model runs on this Mac."
+        case .about: ""
+        }
+    }
+
     var searchSection: SettingsSectionID {
         switch self {
         case .general: .appBehavior

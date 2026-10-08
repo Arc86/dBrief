@@ -28,22 +28,24 @@ extension EnvironmentValues {
 struct SettingsSearchHeading: View {
     private let text: Text
     let section: SettingsSectionID
+    var style: AppFontStyle = .headline
     @Environment(\.settingsSearchRequest) private var request
     @FocusState private var keyboardFocused: Bool
     @AccessibilityFocusState private var accessibilityFocused: Bool
 
-    init(_ title: LocalizedStringKey, section: SettingsSectionID) {
-        self.init(Text(title), section: section)
+    init(_ title: LocalizedStringKey, section: SettingsSectionID, style: AppFontStyle = .headline) {
+        self.init(Text(title), section: section, style: style)
     }
 
-    init(_ text: Text, section: SettingsSectionID) {
+    init(_ text: Text, section: SettingsSectionID, style: AppFontStyle = .headline) {
         self.text = text
         self.section = section
+        self.style = style
     }
 
     var body: some View {
         text
-            .uiFont(.headline)
+            .uiFont(style)
             .id(section)
             .focusable(request?.section == section)
             .focused($keyboardFocused)
