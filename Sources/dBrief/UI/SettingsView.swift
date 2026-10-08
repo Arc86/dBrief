@@ -9,11 +9,12 @@ struct SettingsView: View {
     @State private var profileToEdit: UUID?
     @State private var searchText = ""
     @State private var selectedSearchID: String?
-    @State private var revealAdvanced = false
     @State private var searchRequest: SettingsSearchRequest?
     @State private var navigationRevision = UUID()
     @FocusState private var focus: Focus?
-    private enum Focus: Hashable { case search, results }
+    @FocusState private var searchFocused: Bool
+    private enum Focus: Hashable { case results }
+    @Environment(\.viewerMode) private var viewerMode
     private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var results: [SettingsSearchEntry] { SettingsSearch.results(for: searchText) }
 
@@ -21,77 +22,49 @@ struct SettingsView: View {
         _destination = State(initialValue: SettingsDestination(page: page))
     }
 
-    // Match the detail canvas in macOS 27 System Settings. Its window color
-    // resolves to a noticeably grayer surface in our SwiftUI settings window.
-    private var canvasColor: Color {
-        appSettings.viewerAppearance.effectiveMode(systemIsDark: colorScheme == .dark).isPaper
-            ? palette.canvas.color
-            : (colorScheme == .dark ? Color(white: 28.0 / 255.0) : .white)
-    }
+    /// The Signature workspace colour, shared with the transcript viewer.
+    private var canvasColor: Color { palette.canvas.color }
 
     private func navigate(to target: SettingsDestination) {
         destination = target
         searchRequest = nil
-        revealAdvanced = false
         navigationRevision = UUID()
     }
 
     private func openResult(_ result: SettingsSearchEntry) {
         destination = result.destination
-        revealAdvanced = result.requiresAdvanced
         searchRequest = result.destination.section.map { SettingsSearchRequest(section: $0) }
         navigationRevision = UUID()
         focus = nil
+        searchFocused = false
     }
 
     private func clearSearch() {
         searchText = ""
         selectedSearchID = nil
-        revealAdvanced = false
         searchRequest = nil
-        let visible = destination.page.visibleSelection(advanced: appSettings.powerUserMode)
-        if visible != destination.page { navigate(to: SettingsDestination(page: visible)) }
-        focus = .search
+        searchFocused = true
     }
 
     private func openSelectedResult() {
         if let result = results.first(where: { $0.id == selectedSearchID }) ?? results.first { openResult(result) }
     }
 
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            TextField("Search settings", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Search settings")
-                .focused($focus, equals: .search)
-                .onSubmit { openSelectedResult() }
-                .onExitCommand { clearSearch() }
-                .onKeyPress(.downArrow) {
-                    guard !results.isEmpty else { return .ignored }
-                    selectedSearchID = results.first?.id
-                    focus = .results
-                    return .handled
-                }
-            if !searchText.isEmpty {
-                Button(action: clearSearch) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear settings search")
-            }
-        }
-        .padding(10)
-    }
-
     private var searchResults: some View {
         List(selection: $selectedSearchID) {
             if results.isEmpty {
                 Text("No settings found. Try another word.")
-                    .uiFont(.callout).foregroundStyle(.secondary)
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.secondary.color)
             } else {
                 ForEach(results) { result in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(result.title)
+                            .uiFont(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(palette.heading.color)
                         Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
-                            .uiFont(.caption).foregroundStyle(.secondary)
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 3)
@@ -111,56 +84,23 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            VStack(spacing: 0) {
-                searchField
-                if isSearching {
-                    searchResults
-                        .id(searchText)
-                } else {
-                List(selection: Binding<SettingsPage?>(
-                    get: { destination.page },
-                    set: { if let page = $0 { navigate(to: SettingsDestination(page: page)) } }
-                )) {
-                    ForEach(SettingsGroup.allCases) { group in
-                        Section(group.title) {
-                            ForEach(group.pages.filter { SettingsPage.visiblePages(advanced: appSettings.powerUserMode).contains($0) }) { page in
-                                HStack(spacing: 10) {
-                                    Image(systemName: page.icon)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 16, height: 16)
-                                        .foregroundStyle(.white)
-                                        .frame(width: 24, height: 24)
-                                        .background(page.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                    Text(page.title).uiFont(.system(size: 14))
-                                }
-                                .padding(.vertical, 3)
-                                .tag(page)
-                            }
-                        }
-                        .collapsible(false)
-                    }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                }
-                Divider()
-                if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-                    Text("dBrief v\(version)")
-                        .uiFont(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
-                }
+            SettingsSidebar(
+                selection: destination.page,
+                badges: [:],
+                searchText: $searchText,
+                searchFocused: $searchFocused,
+                onSelect: { navigate(to: SettingsDestination(page: $0)) },
+                onSubmitSearch: openSelectedResult,
+                onSearchDown: {
+                    guard !results.isEmpty else { return }
+                    selectedSearchID = results.first?.id
+                    focus = .results
+                },
+                onClearSearch: clearSearch
+            ) {
+                searchResults.id(searchText)
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
-            .background {
-                // System Settings uses a subtly tinted sidebar against its
-                // white/near-black detail canvas in both appearances.
-                canvasColor
-                    .overlay(Color.primary.opacity(colorScheme == .dark ? 0.04 : 0.07))
-                    .ignoresSafeArea()
-            }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 320)
         } detail: {
             // Keep long grouped forms inside the window's viewport. Without
             // this boundary, the header + form stack can report the form's full
@@ -201,7 +141,7 @@ struct SettingsView: View {
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                     .id(navigationRevision)
-                    .environment(\.settingsSearchRevealAdvanced, revealAdvanced)
+                    .environment(\.settingsSearchRevealAdvanced, searchRequest?.section != nil)
                     .environment(\.settingsSearchRequest, searchRequest)
                     .task(id: navigationRevision) {
                         if let section = destination.section {
@@ -217,9 +157,10 @@ struct SettingsView: View {
             .background(canvasColor.ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
+        .environment(\.viewerPalette, palette.withSoftDividers(mode: viewerMode))
         // ⌘F focuses the sidebar search field; no toolbar button duplicates it.
         .background {
-            Button("") { focus = .search }
+            Button("") { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .opacity(0)
                 .frame(width: 0, height: 0)
@@ -228,16 +169,7 @@ struct SettingsView: View {
         .applyWindowAppearanceWhenAvailable(canvasColor)
         .onChange(of: searchText) { _, _ in
             selectedSearchID = results.first?.id
-            if !isSearching {
-                revealAdvanced = false
-                searchRequest = nil
-                let visiblePage = destination.page.visibleSelection(advanced: appSettings.powerUserMode)
-                if visiblePage != destination.page { navigate(to: SettingsDestination(page: visiblePage)) }
-            }
-        }
-        .onChange(of: appSettings.powerUserMode) { _, enabled in
-            let visiblePage = destination.page.visibleSelection(advanced: enabled)
-            if visiblePage != destination.page && !revealAdvanced { navigate(to: SettingsDestination(page: visiblePage)) }
+            if !isSearching { searchRequest = nil }
         }
         .onAppear {
             if !appSettings.showDockIcon {

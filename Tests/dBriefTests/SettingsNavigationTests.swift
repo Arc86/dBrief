@@ -11,17 +11,6 @@ struct SettingsNavigationTests {
         }
     }
 
-    @Test func hidingAdvancedSettingsKeepsSelectionReachable() {
-        for page in SettingsPage.allCases {
-            let resolved = page.visibleSelection(advanced: false)
-            #expect(SettingsPage.visiblePages(advanced: false).contains(resolved))
-            #expect(page.visibleSelection(advanced: true) == page)
-            if page != .benchmark { #expect(resolved == page) }
-        }
-        #expect(SettingsPage.visiblePages(advanced: false).contains(.profiles))
-        #expect(SettingsPage.benchmark.visibleSelection(advanced: false) == .general)
-    }
-
     @Test func movedSectionsRouteToTheirOwningPage() {
         #expect(SettingsDestination(section: .recordingShortcut).page == .recording)
         #expect(SettingsDestination(section: .callDetection).page == .recording)
@@ -35,6 +24,14 @@ struct SettingsNavigationTests {
         #expect(profilePolicy.page == .profiles)
         #expect(profilePolicy.section == .profileAutomation)
         #expect(SettingsDestination(page: .profiles).section == nil)
+    }
+
+    @Test func adjacentPageClampsAtEnds() {
+        let order = SettingsPage.sidebarOrder
+        #expect(SettingsPage.adjacent(to: order[0], offset: -1) == order[0])
+        #expect(SettingsPage.adjacent(to: order[order.count - 1], offset: 1) == order[order.count - 1])
+        #expect(SettingsPage.adjacent(to: order[0], offset: 1) == order[1])
+        #expect(Set(order) == Set(SettingsPage.allCases))
     }
 
     @Test func profileHintsFollowMovedControls() {

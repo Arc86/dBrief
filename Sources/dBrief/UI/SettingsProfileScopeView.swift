@@ -4,54 +4,51 @@ import SwiftUI
 /// Navigation selects an editor without activating the profile.
 struct SettingsProfileScopeView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(\.viewerPalette) private var palette
     let fields: [SettingsProfileScope.Field]
     let editProfile: (UUID) -> Void
     @State private var showOverrides = false
 
+    static func visibleOverrides(_ summaries: [SettingsProfileScope.Summary]) -> [SettingsProfileScope.Summary] {
+        summaries.filter(\.isOverridden)
+    }
+
     var body: some View {
         let scope = SettingsProfileScope(settings: settings, fields: fields)
-        let overrides = scope.summaries.filter(\.isOverridden)
+        let overrides = Self.visibleOverrides(scope.summaries)
         if !overrides.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    DisclosureGroup(isExpanded: $showOverrides) {
-                        EmptyView()
-                    } label: {
-                        Text("\(scope.profile.name) overrides \(overrides.count) setting\(overrides.count == 1 ? "" : "s") on this page")
-                    }
-                    Spacer()
-                    Button("Edit profile…") { editProfile(scope.profile.id) }
-                }
-                if showOverrides {
-                    Text(scope.isAutomatic
-                         ? "This profile is temporarily selected automatically. Controls below edit app defaults."
-                         : "This is your saved profile. Controls below edit app defaults.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                    ScrollView {
+            SettingsNotice(Text("**\(scope.profile.name)** overrides \(overrides.count) setting\(overrides.count == 1 ? "" : "s") on this page.")) {
+                Button("Show") { showOverrides.toggle() }
+                    .buttonStyle(.settingsSecondary)
+                    .popover(isPresented: $showOverrides, arrowEdge: .bottom) {
                         VStack(alignment: .leading, spacing: 10) {
+                            Text(scope.isAutomatic
+                                 ? "Selected automatically for now. Controls on this page edit app defaults."
+                                 : "Your saved profile. Controls on this page edit app defaults.")
+                                .uiFont(.system(size: 11.5))
+                                .foregroundStyle(palette.secondary.color)
                             ForEach(overrides) { row in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.label).fontWeight(.medium)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.label)
+                                        .uiFont(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(palette.heading.color)
                                     Text("App default: \(row.defaultValue)").lineLimit(2).help(row.defaultValue)
-                                    Text("Profile setting: \(row.profileValue)").lineLimit(2).help(row.profileValue)
+                                    Text("Profile: \(row.profileValue)").lineLimit(2).help(row.profileValue)
                                     if let note = row.note {
-                                        Text(note).foregroundStyle(.secondary)
+                                        Text(note).foregroundStyle(palette.secondary.color)
                                     }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .uiFont(.system(size: 11.5))
+                                .foregroundStyle(palette.text.color)
                             }
                         }
-                        .uiFont(.caption)
+                        .padding(14)
+                        .frame(width: 300, alignment: .leading)
+                        .background(palette.surface.color)
                     }
-                    .frame(maxHeight: 170)
-                }
+                Button("Edit profile") { editProfile(scope.profile.id) }
+                    .buttonStyle(.settingsSecondary)
             }
-            .controlSize(.small)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .fixedSize(horizontal: false, vertical: true)
-            Divider()
         }
     }
 }

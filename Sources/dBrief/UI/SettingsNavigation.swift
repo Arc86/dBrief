@@ -41,17 +41,21 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     }
     var group: SettingsGroup {
         switch self {
-        case .general, .appearance, .storage, .permissions, .about: .app
+        case .general, .appearance, .storage, .permissions: .app
         case .recording, .watchedFolders: .recording
-        case .transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary, .benchmark: .processing
+        case .transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary: .processing
         case .afterRecording, .profiles, .integrations: .workflow
+        case .benchmark, .about: .footer
         }
     }
-    static func visiblePages(advanced: Bool) -> [Self] {
-        allCases.filter { $0 != .benchmark || advanced }
-    }
-    func visibleSelection(advanced: Bool) -> Self {
-        self == .benchmark && !advanced ? .general : self
+
+    /// Sidebar top-to-bottom, footer pages last; arrow keys walk this list.
+    static var sidebarOrder: [SettingsPage] { SettingsGroup.allCases.flatMap(\.pages) }
+
+    static func adjacent(to page: SettingsPage, offset: Int) -> SettingsPage {
+        let order = sidebarOrder
+        guard let index = order.firstIndex(of: page) else { return page }
+        return order[min(max(index + offset, 0), order.count - 1)]
     }
     /// One line under the page title.
     var subtitle: String {
@@ -159,7 +163,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
 
 
 enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
-    case app, recording, processing, workflow
+    case app, recording, processing, workflow, footer
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -167,14 +171,16 @@ enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
         case .recording: "Recording"
         case .processing: "Processing"
         case .workflow: "Workflow"
+        case .footer: ""
         }
     }
     var pages: [SettingsPage] {
         switch self {
-        case .app: [.general, .appearance, .storage, .permissions, .about]
+        case .app: [.general, .appearance, .storage, .permissions]
         case .recording: [.recording, .watchedFolders]
-        case .processing: [.transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary, .benchmark]
+        case .processing: [.transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary]
         case .workflow: [.afterRecording, .profiles, .integrations]
+        case .footer: [.benchmark, .about]
         }
     }
 }
