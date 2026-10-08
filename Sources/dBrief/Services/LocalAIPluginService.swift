@@ -72,24 +72,43 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return (turns, embeddings)
     }
 
-    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
+    func analyzeTranscript(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
         return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) {
-            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
+            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
                 throw WireError(kind: .generic, message: "no insights")
             }
             return r
         }
     }
 
-    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
+    func analyzeTranscriptStream(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
         PrivacyTrace.stream(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
-            await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
+            await connection.stream(.analyzeStream(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
         }
     }
 
     func chatStream(systemPrompt: String, userMessage: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
         PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
             await connection.stream(.chatStream(systemPrompt: systemPrompt, userMessage: userMessage))
+        }
+    }
+
+    /// One Gemma chat turn on the helper's warm session (see `MLRequest.chatTurn`).
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
+        PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
+            await connection.stream(.chatTurn(systemPrompt: systemPrompt, history: history, question: question, retrievedContext: retrievedContext))
+        }
+    }
+
+    /// Retrieval vectors from `EmbeddingPrompt.current` (L2-normalized; width is
+    /// model-defined) for transcript chat, one per text in order. Runs on the
+    /// helper beside a warm Gemma chat.
+    func embed(_ texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
+        try await PrivacyTrace.perform(.init(stage: .chat, data: [.text], destination: .local(provider: .localModel))) {
+            guard case let .embeddingsResult(vectors) = try await connection.call(.embed(texts: texts, role: role)) else {
+                throw WireError(kind: .generic, message: "no embeddings")
+            }
+            return vectors
         }
     }
 

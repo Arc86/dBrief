@@ -47,12 +47,25 @@ struct ProcessingAnalysisTests {
         #expect(values.dropFirst() == [.actionItems(["Do it"]), .tags(["planning"], "Positive")])
     }
 
+    @Test func augmentedTranscriptionMatchesLegacyAugment() {
+        let roster = AnalysisRoster.hint(participants: ["Alice", "Bob"], attendees: [])
+        let context = CalendarEvent.augment(prompt: "", with: nil, roster: roster)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = ProcessingPipeline.UnifiedAnalysisRequest(
+            engine: .localCLI, transcription: "Alice: hi", context: context,
+            outputLanguage: .matchInput, vocabulary: "", guidance: .init(), localCLIConfig: .default)
+        #expect(request.augmentedTranscription == CalendarEvent.augment(prompt: "Alice: hi", with: nil, roster: roster))
+    }
+
     @Test(arguments: [AppSettings.AIEngine.appleIntelligence, .localCLI])
     func unifiedEnginesRespectRequestedFieldsAndKeepInlineTitle(engine: AppSettings.AIEngine) async throws {
         let result = unified
         let backends = ProcessingPipeline.AnalysisBackends(unified: { input in
             #expect(input.engine == engine)
-            #expect(input.transcription.contains("Alice") && input.transcription.contains("Bob"))
+            #expect(input.transcription.contains("Alice"))          // speaker name in the transcript
+            #expect(!input.transcription.contains("Bob"))           // roster is no longer glued on
+            #expect(input.context.contains("Alice, Bob"))           // …it travels separately
+            #expect(input.augmentedTranscription == input.context + "\n\n" + input.transcription)
             #expect(input.vocabulary == "dBrief" && input.guidance.summary == "SUMMARY")
             return result
         })
@@ -74,6 +87,23 @@ struct ProcessingAnalysisTests {
         let result = try await ProcessingPipeline().analyze(request(engine: .qwenLocal), using: backends, onEvent: { await events.add($0) })
         #expect(result.summary == "Summary" && result.actionItems == ["Do it"])
         #expect(await events.values.contains(.liveText(json)))
+    }
+
+    @Test func streamedPartNotesArePublishedAndReturned() async throws {
+        let events = Events()
+        let notes = [ChunkNotes(keyPoints: ["k"], decisions: [], actionItems: ["Do it"], people: ["A"])]
+        let withNotes = LocalInsightsResult(titleConcept: unified.titleConcept, summary: unified.summary,
+            actionItems: unified.actionItems, tags: unified.tags, sentiment: unified.sentiment, partNotes: notes)
+        let json = String(decoding: try JSONEncoder().encode(withNotes), as: UTF8.self)
+        let backends = ProcessingPipeline.AnalysisBackends(stream: { _ in
+            AsyncThrowingStream { $0.yield(json); $0.finish() }
+        })
+        let result = try await ProcessingPipeline().analyze(request(engine: .qwenLocal), using: backends, onEvent: { await events.add($0) })
+        #expect(result.partNotes == notes)
+        #expect(await events.values.contains(.partNotes(notes)))
+        let plain = try await ProcessingPipeline().analyze(request(engine: .localCLI),
+            using: .init(unified: { _ in unified }), onEvent: { await events.add($0) })
+        #expect(plain.partNotes == nil)
     }
 
     @Test func unavailableOrUnrequestedAnalysisNeverCallsBackend() async throws {

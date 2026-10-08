@@ -38,10 +38,18 @@ extension ProcessingPipeline {
     struct UnifiedAnalysisRequest: Sendable {
         let engine: AppSettings.AIEngine
         let transcription: String
+        /// Roster + calendar agenda, kept apart so chunked analysis can repeat it per part.
+        let context: String
         let outputLanguage: OutputLanguage
         let vocabulary: String
         let guidance: InsightsGuidance
         let localCLIConfig: LocalCLIConfig
+
+        /// Context-prefixed transcript, byte-identical to the legacy
+        /// `CalendarEvent.augment(prompt:with:roster:)` for single-call engines.
+        var augmentedTranscription: String {
+            context.isEmpty ? transcription : context + "\n\n" + transcription
+        }
     }
     struct AnalysisOutput: Sendable {
         var summary: String?
@@ -52,10 +60,11 @@ extension ProcessingPipeline {
         var failures: [AnalysisField: String] = [:]
         var duration: TimeInterval?
         var modelDisplayName: String?
+        var partNotes: [ChunkNotes]?
     }
     enum AnalysisEvent: Sendable, Equatable {
         case summary(String), actionItems([String]), tags([String], String)
-        case titleConcept(String), failed(AnalysisField, String), liveText(String)
+        case titleConcept(String), partNotes([ChunkNotes]), failed(AnalysisField, String), liveText(String)
     }
     struct AnalysisBackends: Sendable {
         var summary: @Sendable (RemoteAnalysisRequest) async throws -> String = { _ in throw AIServiceError.invalidEndpoint }
@@ -70,21 +79,22 @@ extension ProcessingPipeline {
                   tags: { try await ai.analyzeTags(transcription: $0.transcription, endpoint: $0.endpoint, systemPrompt: $0.systemPrompt) },
                   unified: { input in
                       if input.engine == .localCLI {
-                          return try await cli.analyze(transcript: input.transcription, outputLanguage: input.outputLanguage,
+                          return try await cli.analyze(transcript: input.augmentedTranscription, outputLanguage: input.outputLanguage,
                               config: input.localCLIConfig, customVocabulary: input.vocabulary,
                               summaryGuidance: input.guidance.summary, actionItemsGuidance: input.guidance.actionItems,
                               tagsGuidance: input.guidance.tags)
                       }
                       #if canImport(FoundationModels)
                       if #available(macOS 26, *) {
-                          return try await LocalAIService().analyzeTranscript(input.transcription, outputLanguage: input.outputLanguage,
+                          return try await LocalAIService().analyzeTranscript(input.transcription, context: input.context,
+                              outputLanguage: input.outputLanguage,
                               customVocabulary: input.vocabulary, summaryGuidance: input.guidance.summary,
                               actionItemsGuidance: input.guidance.actionItems, tagsGuidance: input.guidance.tags)
                       }
                       #endif
                       throw AIServiceError.invalidEndpoint // Availability is reported before routing here.
                   }, stream: { input in
-                      await plugin.analyzeTranscriptStream(input.transcription, outputLanguage: input.outputLanguage,
+                      await plugin.analyzeTranscriptStream(input.transcription, context: input.context, outputLanguage: input.outputLanguage,
                                                            customVocabulary: input.vocabulary, guidance: input.guidance)
                   })
         }
@@ -157,8 +167,10 @@ extension ProcessingPipeline {
                 }
             }
         } else {
+            let context = CalendarEvent.augment(prompt: "", with: request.calendarEvent, roster: roster)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let input = UnifiedAnalysisRequest(engine: request.engine,
-                transcription: CalendarEvent.augment(prompt: transcription, with: request.calendarEvent, roster: roster),
+                transcription: transcription, context: context,
                 outputLanguage: request.outputLanguage, vocabulary: request.vocabulary, guidance: request.guidance,
                 localCLIConfig: request.localCLIConfig)
             do {
@@ -191,6 +203,10 @@ extension ProcessingPipeline {
                 }
                 try await sendAnalysisEvent(.titleConcept(insights.titleConcept), to: onEvent)
                 output.titleConcept = insights.titleConcept
+                if let notes = insights.partNotes {
+                    try await sendAnalysisEvent(.partNotes(notes), to: onEvent)
+                    output.partNotes = notes
+                }
                 if request.fields.contains(.actionItems) {
                     try await sendAnalysisEvent(.actionItems(insights.actionItems), to: onEvent)
                     output.actionItems = insights.actionItems

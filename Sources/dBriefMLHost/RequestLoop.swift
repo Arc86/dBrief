@@ -7,9 +7,11 @@ protocol MLBackend: Sendable {
     func transcribe(path: String, initialPrompt: String?, config: WhisperRuntimeConfig, safeMode: Bool, unloadAfter: Bool) async throws -> TranscriptionResult
     func diarize(path: String) async throws -> [DiarizedTurn]
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]])
-    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
+    func analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult
+    func analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws
+    func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]]
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult
     func prepareModels() async
@@ -74,14 +76,20 @@ final class RequestRouter: Sendable {
                     case let .diarizeWithEmbeddings(path):
                         let r = try await backend.diarizeWithEmbeddings(path: path)
                         send(.diarizeWithEmbeddingsResult(turns: r.turns, embeddings: r.embeddings)); send(.finished)
-                    case let .analyze(text, lang, vocab, guidance):
-                        send(.insightsResult(try await backend.analyze(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance))); send(.finished)
-                    case let .analyzeStream(text, lang, vocab, guidance):
-                        try await backend.analyzeStream(text: text, outputLanguage: lang, customVocabulary: vocab, guidance: guidance, emitToken: emitToken)
+                    case let .analyze(text, context, lang, vocab, guidance):
+                        send(.insightsResult(try await backend.analyze(text: text, context: context, outputLanguage: lang, customVocabulary: vocab, guidance: guidance))); send(.finished)
+                    case let .analyzeStream(text, context, lang, vocab, guidance):
+                        try await backend.analyzeStream(text: text, context: context, outputLanguage: lang, customVocabulary: vocab, guidance: guidance, emitToken: emitToken)
                         send(.finished)
                     case let .chatStream(system, user):
                         try await backend.chatStream(systemPrompt: system, userMessage: user, emitToken: emitToken)
                         send(.finished)
+                    case let .chatTurn(system, history, question, context):
+                        try await backend.chatTurn(systemPrompt: system, history: history, question: question,
+                                                   retrievedContext: context, emitToken: emitToken)
+                        send(.finished)
+                    case let .embed(texts, role):
+                        send(.embeddingsResult(try await backend.embed(texts: texts, role: role))); send(.finished)
                     case let .parakeetTranscribe(path, variant, diarize):
                         send(.transcriptionResult(try await backend.parakeetTranscribe(path: path, modelVariant: variant, diarize: diarize))); send(.finished)
                     case let .synthesizeSpeech(text, outputPath, voice, language, instruction, model, engine):

@@ -6,6 +6,8 @@ public struct LocalInsightsResult: Codable, Sendable {
     public let actionItems: [String]
     public let tags: [String]
     public let sentiment: String
+    /// Raw per-part notes from map-reduce analysis; nil for single-pass results.
+    public let partNotes: [ChunkNotes]?
 
     enum CodingKeys: String, CodingKey {
         case titleConcept = "title_concept"
@@ -13,6 +15,7 @@ public struct LocalInsightsResult: Codable, Sendable {
         case actionItems = "action_items"
         case tags
         case sentiment
+        case partNotes = "part_notes"
 
         // Backward compatibility with previous camelCase payloads.
         case legacyActionItems = "actionItems"
@@ -24,13 +27,15 @@ public struct LocalInsightsResult: Codable, Sendable {
         summary: String,
         actionItems: [String],
         tags: [String],
-        sentiment: String
+        sentiment: String,
+        partNotes: [ChunkNotes]? = nil
     ) {
         self.titleConcept = titleConcept
         self.summary = summary
         self.actionItems = actionItems
         self.tags = tags
         self.sentiment = sentiment
+        self.partNotes = partNotes
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,6 +49,7 @@ public struct LocalInsightsResult: Codable, Sendable {
         self.actionItems = newActionItems ?? legacyActionItems ?? []
         self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         self.sentiment = try container.decodeIfPresent(String.self, forKey: .sentiment) ?? "Neutral"
+        self.partNotes = try? container.decodeIfPresent([ChunkNotes].self, forKey: .partNotes)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -53,5 +59,6 @@ public struct LocalInsightsResult: Codable, Sendable {
         try container.encode(actionItems, forKey: .actionItems)
         try container.encode(tags, forKey: .tags)
         try container.encode(sentiment, forKey: .sentiment)
+        try container.encodeIfPresent(partNotes, forKey: .partNotes)
     }
 }

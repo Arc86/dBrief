@@ -29,6 +29,8 @@ let package = Package(
                 .product(name: "TTSKit", package: "argmax-oss-swift"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXEmbedders", package: "mlx-swift-lm"),
+                .product(name: "MLXGuidedGeneration", package: "mlx-swift-lm"),
                 "FluidAudio",
                 .product(name: "Hub", package: "swift-transformers"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
@@ -69,6 +71,7 @@ let package = Package(
                 "dBriefMLHost",
                 "dBriefWire",
                 "FluidAudio",
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Testing", package: "swift-testing"),
             ]
         ),

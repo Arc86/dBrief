@@ -21,8 +21,9 @@ public struct InsightsGuidance: Sendable, Codable, Equatable {
 /// `action_items`, `tags`, `sentiment`) parsed by `LocalInsightsDecoder`. Lives in
 /// `dBriefWire` so both targets share one schema and stay in lockstep.
 public enum UnifiedInsightsPrompt {
-    // Transcript budgeting. Gemma 4 E4B has a 128K context (~25K input tokens at
-    // ~4 chars/token); agentic CLIs are typically large-context too. Keep a small
+    // Transcript budgeting for the single-call truncating path (Local CLI). Gemma no
+    // longer truncates: it switches to map-reduce above `singlePassTokenBudget`. Agentic
+    // CLIs are typically large-context (~38K tokens at ~4 chars/token). Keep a small
     // intro slice for context, then the full tail — meetings load substance in the
     // middle and end, so dropping the head preserves detail.
     public static let transcriptCharLimit = 150_000
@@ -86,6 +87,19 @@ public enum UnifiedInsightsPrompt {
         return trimmed
     }
 
+    private static func languageInstruction(_ outputLanguage: OutputLanguage) -> String {
+        switch outputLanguage {
+        case .english:
+            return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
+        case .dutch:
+            return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
+        case .custom(let code):
+            return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
+        case .matchInput:
+            return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
+        }
+    }
+
     /// Shared analysis rules + output-language instruction, WITHOUT any output-format
     /// section. Used directly by the FoundationModels guided-generation path (where the
     /// `@Generable` schema defines the shape) and composed with the JSON block for the
@@ -104,19 +118,6 @@ public enum UnifiedInsightsPrompt {
         actionItemsGuidance: String? = nil,
         tagsGuidance: String? = nil
     ) -> String {
-        let languageInstruction: String = {
-            switch outputLanguage {
-            case .english:
-                return "OUTPUT LANGUAGE: ENGLISH (Must translate if transcript is different)."
-            case .dutch:
-                return "OUTPUT LANGUAGE: DUTCH (Must translate if transcript is different)."
-            case .custom(let code):
-                return "OUTPUT LANGUAGE: ISO Code \(code.uppercased())."
-            case .matchInput:
-                return "OUTPUT LANGUAGE: Match the language of the transcript exactly."
-            }
-        }()
-
         let summaryRule = guidance(summaryGuidance)
             ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
         let actionItemsRule = guidance(actionItemsGuidance)
@@ -127,7 +128,7 @@ public enum UnifiedInsightsPrompt {
         return """
         You are an expert Senior Executive Assistant. Your goal is to extract structured meeting data from a transcript.
 
-        \(languageInstruction)
+        \(languageInstruction(outputLanguage))
 
         ### RULES
         1. **NO REPETITION:** If a point is made twice, record it once.
@@ -193,6 +194,7 @@ public enum UnifiedInsightsPrompt {
         Place the full summary text, INCLUDING any bullet points, headings, or line breaks the rules call for,
         inside the "summary" string (use "\\n" for line breaks). Put each action item as its own string in the
         "action_items" array, and the topic tags in the "tags" array.
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
         {
           "title_concept": "Short Descriptive Title",
           "summary": "The summary text, formatted as the SUMMARY rule requires...",
@@ -201,5 +203,101 @@ public enum UnifiedInsightsPrompt {
           "sentiment": "Positive" | "Neutral" | "Negative"
         }
         """
+    }
+
+    // MARK: - Long-transcript map-reduce (local Gemma)
+
+    /// Which commitments the map step records as action items. `.inclusive` (Gemma) asks
+    /// for every commitment, task or follow-up; `.explicitOnly` (Apple Intelligence, whose
+    /// small model otherwise turns topics and suggestions into tasks) asks only for things
+    /// someone says they or a named person WILL do.
+    public enum CommitmentPolicy: Sendable { case inclusive, explicitOnly }
+
+    public static func chunkNotesSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
+                                              guidance: InsightsGuidance?,
+                                              commitments: CommitmentPolicy = .inclusive) -> String {
+        let actionRule = Self.guidance(guidance?.actionItems)
+            ?? "Format each as \"[WHO] to [TASK] [CONTEXT/DEADLINE]\"."
+        let actionsLine: String
+        switch commitments {
+        case .inclusive:
+            actionsLine = "1. **action_items:** Every commitment, task or follow-up. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If this part contains no commitments, return an empty list — never write a placeholder such as 'No action items'."
+        case .explicitOnly:
+            actionsLine = "1. **action_items:** Only explicit commitments: someone says they, or a named person, WILL do something. Not topics, suggestions, questions, or work already done. Most parts have none, or one or two. \(actionRule) Each MUST start with [WHO]; use [Unassigned] only if the owner is unknown. If there are none, return an empty list — never write a placeholder."
+        }
+        return """
+        You are taking detailed notes on ONE PART of a long meeting transcript. A later step merges \
+        the notes from every part, so capture everything from THIS part and nothing else.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        \(actionsLine)
+        2. **decisions:** Every decision or agreement reached in this part. If this part contains no decisions, return an empty list — never write a placeholder such as 'No decisions'.
+        3. **people:** Names of everyone who speaks or is mentioned in this part.
+        4. **key_points:** Every distinct topic, fact, number, name, product, risk and concern discussed in this part, one specific sentence each. Do not compress details away.
+        5. The part may begin or end mid-conversation. Record only what is actually said; never invent.
+        \(vocabularyBlock(customVocabulary))
+
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
+        """
+    }
+
+    public static func chunkNotesUserPrompt(context: String, chunk: TranscriptChunk) -> String {
+        let header = context.isEmpty ? "" : context + "\n\n"
+        return """
+        \(header)TRANSCRIPT PART \(chunk.index) OF \(chunk.total):
+        \(chunk.text)
+        """
+    }
+
+    /// `forGuidedGeneration` omits the JSON-format paragraph: Apple Intelligence's
+    /// `@Generable` schema defines the shape instead.
+    public static func reduceSystemPrompt(outputLanguage: OutputLanguage, customVocabulary: String,
+                                          guidance: InsightsGuidance?, forGuidedGeneration: Bool = false) -> String {
+        let summaryRule = Self.guidance(guidance?.summary)
+            ?? "Write a thorough, multi-paragraph summary covering ALL major discussion topics."
+        let tagsRule = Self.guidance(guidance?.tags)
+            ?? "Provide 5-10 single words capturing the key topics discussed, and choose a sentiment of \"Positive\", \"Neutral\", or \"Negative\" based on the overall tone."
+        let rules = """
+        You are an expert Senior Executive Assistant. You receive notes taken from consecutive parts \
+        of ONE long meeting, in order. Write the final meeting record from them.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        1. **SUMMARY:** \(summaryRule) Cover the beginning, middle AND end of the meeting; keep specific names, numbers, decisions and deadlines.
+        2. **NO REPETITION:** Neighbouring parts overlap slightly; state each point once.
+        3. **TITLE CONCEPT:** A short, 3-6 word descriptive title concept.
+        4. **TAGS & SENTIMENT:** \(tagsRule)
+        \(vocabularyBlock(customVocabulary))
+        """
+        if forGuidedGeneration { return rules }
+        return rules + """
+
+        Respond with a single JSON object with the keys "title_concept", "summary", "tags" and "sentiment". \
+        Put any headings, bullets or line breaks the SUMMARY rule asks for inside the "summary" string (use "\\n"). \
+        Inside every JSON string value, never use the double-quote character; when you need to quote something, use single quotes ('like this').
+        """
+    }
+
+    /// Merges the notes of several consecutive parts into one shorter set (Apple
+    /// Intelligence hierarchical reduce, when all notes don't fit its window at once).
+    public static func condenseNotesSystemPrompt(outputLanguage: OutputLanguage) -> String {
+        """
+        You merge notes taken from consecutive parts of ONE meeting into a single, shorter set of notes.
+
+        \(languageInstruction(outputLanguage))
+
+        ### RULES
+        1. Keep every decision.
+        2. Keep specific names, numbers, products and deadlines.
+        3. Remove only repetition between parts; never invent.
+        """
+    }
+
+    public static func reduceUserPrompt(context: String, notes: String) -> String {
+        let header = context.isEmpty ? "" : context + "\n\n"
+        return "\(header)MEETING NOTES BY PART:\n\(notes)"
     }
 }

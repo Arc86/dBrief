@@ -2610,6 +2610,7 @@ final class RecordingManager {
         let tagsIndex = tags ? appendAIStep(labelForTags(engine: engine)) : nil
         let fields = Set<ProcessingPipeline.AnalysisField>(
             (summary ? [.summary] : []) + (actionItems ? [.actionItems] : []) + (tags ? [.tags] : []))
+        if !fields.isEmpty { recording.beginAnalysis() }
         let appleUnavailable: String? = {
             #if canImport(FoundationModels)
             guard #available(macOS 26, *) else { return "Apple Intelligence requires macOS 26+." }
@@ -2667,6 +2668,7 @@ final class RecordingManager {
             if let tagsIndex { markCompleted(tagsIndex) }
         case .titleConcept(let value): applyGeneratedTitle(value, to: recording)
         case .liveText(let value): appState.liveInferenceText = value
+        case .partNotes: break // stored by `Recording.applyAnalysisField`
         case .failed(let field, let message):
             let index: Int? = switch field {
             case .summary: summaryIndex
@@ -3247,7 +3249,8 @@ final class RecordingManager {
             sentiment: recording.sentiment ?? "",
             generatedTitle: recording.generatedTitle,
             markdownPath: markdownURL?.path,
-            modelProvenance: recording.analysisModelProvenance
+            modelProvenance: recording.analysisModelProvenance,
+            partNotes: recording.partNotes
         )
         try await processingPipeline.saveAnalysis(insights, to: url, store: insightsStore)
         try requireProcessingOwnership(job)
@@ -3261,6 +3264,7 @@ final class RecordingManager {
         recording.sentiment = insights.sentiment
         recording.generatedTitle = insights.generatedTitle
         recording.analysisModelProvenance = insights.modelProvenance
+        recording.partNotes = insights.partNotes
     }
 
     private func resolveMarkdownOutputFolder(for recording: Recording) -> URL {

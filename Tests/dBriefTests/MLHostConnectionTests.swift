@@ -150,7 +150,7 @@ extension MLHostConnectionTests {
         let context = PrivacyTrace.Context(receiptURL: root.appendingPathComponent("privacy.json"), recordingID: UUID())
         let stream = await PrivacyTrace.$context.withValue(context) {
             await MLProgress.$sink.withValue({ streamAudit.append($0) }) {
-                await plugin.analyzeTranscriptStream("Synthetic", outputLanguage: .matchInput)
+                await plugin.analyzeTranscriptStream("Synthetic", context: "", outputLanguage: .matchInput)
             }
         }
         var tokens = ""

@@ -47,7 +47,7 @@ extension PromptPreviewServiceTests {
     @Test func preservesKnownContextErrorsAfterPipelineFlattensThem() async {
         let messages = [AIServiceError.contextWindowExceeded.localizedDescription,
                         PromptAIError.contextLimit.localizedDescription,
-                        "The transcript is too long for Apple Intelligence. Try a shorter recording or a different AI engine."]
+                        "Part of this recording was too dense for Apple Intelligence even after splitting. Try a different AI engine."]
         for message in messages {
             let service = PromptPreviewService(backends: .init(unified: { _ in throw PreviewBackendError(message: message) }), completion: PreviewCompletion())
             await #expect(throws: PromptPreviewError.contextLimit) { try await service.run(request()) }
@@ -94,7 +94,10 @@ extension PromptPreviewServiceTests {
             #expect(request(kind: .spokenSummary, configuration: configuration, transcript: long, summary: long).shorteningNotice == nil)
         }
         #expect(request(kind: .voiceStyle, transcript: long, summary: long).shorteningNotice == nil)
-        #expect(request(transcript: long).shorteningNotice != nil)
+        // Apple Intelligence and Gemma analyze long transcripts in parts; only Local CLI still shortens them.
+        #expect(request(transcript: long).shorteningNotice == nil)
+        #expect(request(configuration: .localModel, transcript: long).shorteningNotice == nil)
+        #expect(request(configuration: .localCLI(.default), transcript: long).shorteningNotice != nil)
     }
 }
 

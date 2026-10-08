@@ -290,7 +290,7 @@ extension RecordingManager {
               let actions = output.actionItems, let tags = output.tags else { throw ReprocessingError.analysisFailure(output) }
         var insights = RecordingInsights(summary: summary, actionItems: actions, tags: tags,
             sentiment: output.sentiment ?? "", generatedTitle: nil, markdownPath: nil,
-            modelProvenance: job.recording.analysisModelProvenance)
+            modelProvenance: job.recording.analysisModelProvenance, partNotes: output.partNotes)
         if let priorData = try await reprocessingStore.originalData(suffix: "insights.json", attemptID: job.id) {
             let prior = try JSONDecoder().decode(RecordingInsights.self, from: priorData)
             insights.generatedTitle = prior.generatedTitle

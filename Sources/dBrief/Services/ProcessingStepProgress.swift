@@ -1,6 +1,12 @@
 import Foundation
 import dBriefWire
 
+/// Shown while a long recording is analyzed in parts (map-reduce), which takes
+/// roughly twice as long as a single pass.
+enum LongAnalysisNotice {
+    static let text = "Long recordings take longer to analyze"
+}
+
 /// MainActor bridge for callbacks that may arrive after their backend has returned.
 /// A job, step and invocation must all still own the UI when the callback executes.
 /// Helper callers install `handler` in MLProgress for request-correlated delivery.
@@ -71,7 +77,7 @@ extension ProcessingStepProgress {
                 job.transcriptionStartedAt = nil
                 step.progress = nil
                 step.detail = nil
-            case .analyzing:
+            case .analyzing, .analyzingPart:
                 break
             case .downloading(let progress, let stage):
                 step.progress = progress
@@ -120,6 +126,11 @@ extension ProcessingStepProgress {
                 step.name = "Analyzing transcript (Gemma 4 E4B local)"
                 step.progress = nil
                 step.detail = nil
+            case let .analyzingPart(index, total):
+                step.name = "Analyzing long recording in \(total) parts" // engine-neutral: Apple Intelligence emits it too (Task 8)
+                step.detail = (index > total ? "Combining \(total) parts" : "Part \(index) of \(total)")
+                    + " · \(LongAnalysisNotice.text)"
+                step.progress = min(1, max(0, Double(index - 1) / Double(max(total, 1) + 1)))
             case .downloading(let progress, let stage):
                 step.progress = progress
                 switch stage {
@@ -153,6 +164,8 @@ extension ProcessingStepProgress {
                 case .kokoroTTSModelLoading:
                     step.name = "Loading Kokoro voice model…"
                     step.progress = nil
+                case .embeddingModel:
+                    step.name = "Downloading search model…"
                 }
             }
         }

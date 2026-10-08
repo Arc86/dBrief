@@ -15,6 +15,8 @@ final class Recording: Identifiable {
     var tags: [String]?
     var sentiment: String?
     var analysisModelProvenance: AnalysisModelProvenance?
+    /// Raw per-part notes from map-reduce analysis (long recordings); persisted in the insights sidecar.
+    var partNotes: [ChunkNotes]?
     var generatedTitle: String?
     /// True when the user typed/kept a custom meeting title (not the default fallback and
     /// not the matched calendar event's title). When true, AI title generation is skipped so
@@ -97,7 +99,13 @@ final class Recording: Identifiable {
 
     /// Publish successful analysis fields and their generation origin together.
     /// Failure/progress/title events cannot relabel retained analysis content.
+    /// Each analysis run is authoritative for part notes: clear stale notes before it starts so a
+    /// single-pass or other-engine re-analysis can never re-persist an earlier map-reduce's notes.
+    /// A map-reduce run sets them again through the `.partNotes` event.
+    func beginAnalysis() { partNotes = nil }
+
     func applyAnalysisField(_ event: ProcessingPipeline.AnalysisEvent, modelName: String?) {
+        if case .partNotes(let notes) = event { partNotes = notes; return }
         var provenance = analysisModelProvenance ?? .init()
         switch event {
         case .summary(let value):
@@ -142,6 +150,11 @@ final class Recording: Identifiable {
     var chatSidecarURL: URL? {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("chat.json")
+    }
+
+    var chatIndexSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("chatindex.json")
     }
 
     var spokenSummaryScriptURL: URL? {

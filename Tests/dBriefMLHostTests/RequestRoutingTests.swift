@@ -36,11 +36,23 @@ actor MockBackend: MLBackend {
     }
     func diarize(path: String) async throws -> [DiarizedTurn] { [] }
     func diarizeWithEmbeddings(path: String) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) { ([], [:]) }
-    func analyze(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
+    func analyze(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?) async throws -> LocalInsightsResult {
         LocalInsightsResult(summary: "s", actionItems: [], tags: [], sentiment: "Neutral")
     }
-    func analyzeStream(text: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws { captureProgress(); emitToken("a"); emitToken("b") }
+    func analyzeStream(text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?, emitToken: @Sendable (String) -> Void) async throws { captureProgress(); emitToken("a"); emitToken("b") }
     func chatStream(systemPrompt: String, userMessage: String, emitToken: @Sendable (String) -> Void) async throws { emitToken("hi") }
+    var lastChatTurn: (system: String, history: [ChatTurnMessage], question: String, context: String)?
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, emitToken: @Sendable (String) -> Void) async throws {
+        lastChatTurn = (systemPrompt, history, question, retrievedContext)
+        emitToken("a"); emitToken("b")
+    }
+    func chatTurnArguments() -> (system: String, history: [ChatTurnMessage], question: String, context: String)? { lastChatTurn }
+    var lastEmbed: (texts: [String], role: EmbeddingRole)?
+    func embed(texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
+        lastEmbed = (texts, role)
+        return texts.indices.map { [Float($0), 1] }
+    }
+    func embedArguments() -> (texts: [String], role: EmbeddingRole)? { lastEmbed }
     func parakeetTranscribe(path: String, modelVariant: String, diarize: Bool) async throws -> TranscriptionResult { captureProgress(); return TranscriptionResult(text: "pk") }
     func synthesizeSpeech(text: String, outputPath: String, voice: String?, language: String?, instruction: String?, model: String?, engine: String?) async throws -> SpeechSynthesisResult {
         SpeechSynthesisResult(outputPath: outputPath, durationSeconds: 1.0, sampleRate: 24000)
@@ -73,7 +85,7 @@ actor MockBackend: MLBackend {
         await router.handle(.init(id: first, request: .transcribe(path: "/synthetic.wav", initialPrompt: nil,
             config: .default, safeMode: false, unloadAfter: false)))
         await router.handle(.init(id: second, request: .parakeetTranscribe(path: "/synthetic.wav", modelVariant: "v2", diarize: false)))
-        await router.handle(.init(id: third, request: .analyzeStream(text: "Synthetic", outputLanguage: .matchInput,
+        await router.handle(.init(id: third, request: .analyzeStream(text: "Synthetic", context: "", outputLanguage: .matchInput,
             customVocabulary: "", guidance: nil)))
         let callbacks = await backend.savedProgress()
         #expect(callbacks.count == 3)
@@ -132,10 +144,69 @@ actor MockBackend: MLBackend {
         let collected = EventCollector()
         let router = RequestRouter(backend: MockBackend()) { env in collected.append(env) }
         await router.handle(RequestEnvelope(id: UUID(),
-            request: .analyzeStream(text: "t", outputLanguage: .matchInput, customVocabulary: "", guidance: nil)))
+            request: .analyzeStream(text: "t", context: "", outputLanguage: .matchInput, customVocabulary: "", guidance: nil)))
         let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
         #expect(tokens == ["a", "b"])
         #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+    }
+
+    @Test func chatTurnRoutesArgumentsAndEmitsTokensThenFinished() async throws {
+        let collected = EventCollector()
+        let backend = MockBackend()
+        let router = RequestRouter(backend: backend) { env in collected.append(env) }
+        let history = [ChatTurnMessage(role: .user, content: "Q1"), ChatTurnMessage(role: .assistant, content: "A1")]
+        let id = UUID()
+        await router.handle(RequestEnvelope(id: id,
+            request: .chatTurn(systemPrompt: "S", history: history, question: "Q2", retrievedContext: "ctx")))
+        let tokens = collected.events.compactMap { if case let .token(s) = $0.event { s } else { nil } }
+        #expect(tokens == ["a", "b"])
+        #expect(collected.events.last.map { if case .finished = $0.event { true } else { false } } == true)
+        #expect(collected.events.allSatisfy { $0.id == id && $0.channel == .plugin })
+        let args = await backend.chatTurnArguments()
+        #expect(args?.system == "S")
+        #expect(args?.history == history)
+        #expect(args?.question == "Q2")
+        #expect(args?.context == "ctx")
+    }
+
+    @Test func chatTurnRequestRoundTripsThroughCodable() throws {
+        let history = [ChatTurnMessage(role: .user, content: "Q1"), ChatTurnMessage(role: .assistant, content: "A1")]
+        let data = try JSONEncoder().encode(RequestEnvelope(id: UUID(),
+            request: .chatTurn(systemPrompt: "S", history: history, question: "Q2", retrievedContext: "")))
+        let decoded = try JSONDecoder().decode(RequestEnvelope.self, from: data)
+        guard case let .chatTurn(system, decodedHistory, question, context) = decoded.request else {
+            Issue.record("expected chatTurn"); return
+        }
+        #expect(system == "S" && decodedHistory == history && question == "Q2" && context.isEmpty)
+    }
+
+    @Test func embedRoutesArgumentsAndEmitsVectorsThenFinished() async throws {
+        let collected = EventCollector()
+        let backend = MockBackend()
+        let router = RequestRouter(backend: backend) { env in collected.append(env) }
+        let id = UUID()
+        await router.handle(RequestEnvelope(id: id, request: .embed(texts: ["a", "b"], role: .document)))
+        let events = collected.events.filter { if case .privacy = $0.event { false } else { true } }
+        guard events.count == 2, case let .embeddingsResult(vectors) = events[0].event,
+              case .finished = events[1].event else {
+            Issue.record("expected embeddingsResult then finished, got \(events.map(\.event))"); return
+        }
+        #expect(vectors == [[0, 1], [1, 1]])
+        #expect(collected.events.allSatisfy { $0.id == id && $0.channel == .plugin })
+        let args = await backend.embedArguments()
+        #expect(args?.texts == ["a", "b"])
+        #expect(args?.role == .document)
+    }
+
+    @Test func embedRequestAndResultRoundTripThroughCodable() throws {
+        let request = try JSONDecoder().decode(RequestEnvelope.self, from: JSONEncoder().encode(
+            RequestEnvelope(id: UUID(), request: .embed(texts: ["q"], role: .query))))
+        guard case let .embed(texts, role) = request.request else { Issue.record("expected embed"); return }
+        #expect(texts == ["q"] && role == .query)
+        let event = try JSONDecoder().decode(EventEnvelope.self, from: JSONEncoder().encode(
+            EventEnvelope(id: UUID(), channel: .plugin, event: .embeddingsResult([[0.5, -0.25]]))))
+        guard case let .embeddingsResult(vectors) = event.event else { Issue.record("expected vectors"); return }
+        #expect(vectors == [[0.5, -0.25]])
     }
 
     @Test func prewarmEmitsVoidThenFinishedOnPluginChannel() async {

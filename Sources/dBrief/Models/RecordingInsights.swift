@@ -1,4 +1,5 @@
 import Foundation
+import dBriefWire
 
 /// AI analysis output persisted alongside a recording as `<base>.insights.json`.
 /// Written during processing and rewritten when the user edits the analysis in
@@ -22,6 +23,9 @@ struct RecordingInsights: Codable, Sendable, Equatable {
     var markdownPath: String?
     var basedOnPreviousTranscript: Bool? = nil
     var modelProvenance: AnalysisModelProvenance? = nil
+    /// Raw per-part notes from map-reduce analysis of a long recording; nil for single-pass
+    /// analyses and older sidecars. Gives Transcript Chat a whole-meeting overview.
+    var partNotes: [ChunkNotes]? = nil
 
     var completedActions: Set<String> {
         Set(completedActionItems ?? []).intersection(actionItems)
@@ -40,7 +44,8 @@ struct RecordingInsights: Codable, Sendable, Equatable {
         sentiment: String,
         generatedTitle: String? = nil,
         markdownPath: String?,
-        modelProvenance: AnalysisModelProvenance? = nil
+        modelProvenance: AnalysisModelProvenance? = nil,
+        partNotes: [ChunkNotes]? = nil
     ) {
         self.version = version
         self.summary = summary
@@ -50,6 +55,28 @@ struct RecordingInsights: Codable, Sendable, Equatable {
         self.generatedTitle = generatedTitle
         self.markdownPath = markdownPath
         self.modelProvenance = modelProvenance
+        self.partNotes = partNotes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version, summary, actionItems, completedActionItems, tags, sentiment, generatedTitle
+        case markdownPath, basedOnPreviousTranscript, modelProvenance, partNotes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        summary = try c.decode(String.self, forKey: .summary)
+        actionItems = try c.decode([String].self, forKey: .actionItems)
+        completedActionItems = try c.decodeIfPresent([String].self, forKey: .completedActionItems)
+        tags = try c.decode([String].self, forKey: .tags)
+        sentiment = try c.decode(String.self, forKey: .sentiment)
+        generatedTitle = try c.decodeIfPresent(String.self, forKey: .generatedTitle)
+        markdownPath = try c.decodeIfPresent(String.self, forKey: .markdownPath)
+        basedOnPreviousTranscript = try c.decodeIfPresent(Bool.self, forKey: .basedOnPreviousTranscript)
+        modelProvenance = try c.decodeIfPresent(AnalysisModelProvenance.self, forKey: .modelProvenance)
+        // Lenient: a malformed or future-shaped notes payload must never make the sidecar unreadable.
+        partNotes = try? c.decodeIfPresent([ChunkNotes].self, forKey: .partNotes)
     }
 
     /// User-friendly plain text for the Copy button. Omits empty sections.
