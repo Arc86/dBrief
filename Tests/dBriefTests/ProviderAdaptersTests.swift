@@ -39,6 +39,10 @@ struct EndpointProviderTests {
         let groq = Endpoint(name: "", baseURL: "https://api.groq.com/openai", modelName: "whisper-large-v3-turbo")
         #expect(groq.transcriptionURL?.absoluteString == "https://api.groq.com/openai/v1/audio/transcriptions")
         #expect(!groq.isWhisperASR)
+
+        let openRouter = Endpoint(name: "", baseURL: "https://openrouter.ai/api", modelName: "openai/whisper-large-v3")
+        #expect(openRouter.transcriptionURL?.absoluteString == "https://openrouter.ai/api/v1/audio/transcriptions")
+        #expect(!openRouter.isWhisperASR)
     }
 }
 
