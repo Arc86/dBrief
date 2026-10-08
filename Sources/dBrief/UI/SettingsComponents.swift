@@ -16,31 +16,46 @@ enum SettingsPageLayout {
 }
 
 struct SettingsPageScaffold<Notice: View, Content: View>: View {
+    /// `.column` centres the page in the standard reading column. `.fill` spans the
+    /// whole pane and is at least as tall as it, so one flexible child (a table or
+    /// library) can take the leftover height with `.frame(maxHeight: .infinity)`.
+    enum Layout { case column, fill }
+
     let page: SettingsPage
+    var layout: Layout = .column
     @ViewBuilder var notice: Notice
     @ViewBuilder var content: Content
     @Environment(\.viewerPalette) private var palette
 
-    init(page: SettingsPage, @ViewBuilder notice: () -> Notice, @ViewBuilder content: () -> Content) {
+    init(page: SettingsPage, layout: Layout = .column,
+         @ViewBuilder notice: () -> Notice, @ViewBuilder content: () -> Content) {
         self.page = page
+        self.layout = layout
         self.notice = notice()
         self.content = content()
     }
 
+    private static var topPadding: CGFloat { 30 }
+    private static var bottomPadding: CGFloat { 48 }
+
     var body: some View {
         GeometryReader { pane in
-            let leading = SettingsPageLayout.leadingInset(forPaneWidth: pane.size.width)
+            let fills = layout == .fill
+            let bottom = fills ? SettingsPageLayout.sideInset : Self.bottomPadding
+            let leading = fills ? SettingsPageLayout.sideInset : SettingsPageLayout.leadingInset(forPaneWidth: pane.size.width)
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
                     notice
                     content
                 }
-                .frame(maxWidth: SettingsPageLayout.columnWidth, alignment: .leading)
-                .padding(.top, 30)
+                .frame(maxWidth: fills ? .infinity : SettingsPageLayout.columnWidth, alignment: .leading)
+                .frame(minHeight: fills ? max(0, pane.size.height - Self.topPadding - bottom) : nil,
+                       alignment: .top)
+                .padding(.top, Self.topPadding)
                 .padding(.leading, leading)
                 .padding(.trailing, SettingsPageLayout.sideInset)
-                .padding(.bottom, 48)
+                .padding(.bottom, bottom)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlayScrollers()
             }
@@ -74,8 +89,8 @@ struct SettingsPageScaffold<Notice: View, Content: View>: View {
 }
 
 extension SettingsPageScaffold where Notice == EmptyView {
-    init(page: SettingsPage, @ViewBuilder content: () -> Content) {
-        self.init(page: page, notice: { EmptyView() }, content: content)
+    init(page: SettingsPage, layout: Layout = .column, @ViewBuilder content: () -> Content) {
+        self.init(page: page, layout: layout, notice: { EmptyView() }, content: content)
     }
 }
 
@@ -382,4 +397,43 @@ extension ButtonStyle where Self == MenuPanelButtonStyle {
     static var settingsSecondary: MenuPanelButtonStyle { MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 12, fillsWidth: false) }
     static var settingsPrimary: MenuPanelButtonStyle { MenuPanelButtonStyle(kind: .hero, height: 26, fontSize: 12, fillsWidth: false) }
     static var settingsDanger: MenuPanelButtonStyle { MenuPanelButtonStyle(kind: .danger, height: 26, fontSize: 12, fillsWidth: false) }
+}
+
+/// A clickable list row on the palette: the sidebar's flat `selected` fill, a soft
+/// hover fill, and the click action. Use instead of `List(selection:)`, whose
+/// `NSTableView` always paints the system accent, never the app's.
+private struct SettingsSelectableRowModifier: ViewModifier {
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovered = false
+    @Environment(\.viewerPalette) private var palette
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+            .background(
+                isSelected ? palette.selected.color : hovered ? palette.divider.color.opacity(0.35) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .onHover { hovered = $0 }
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+extension View {
+    func settingsSelectableRow(isSelected: Bool, action: @escaping () -> Void) -> some View {
+        modifier(SettingsSelectableRowModifier(isSelected: isSelected, action: action))
+    }
+}
+
+/// The id an arrow key lands on in an ordered list: one step from `current`, clamped;
+/// the first id when nothing is selected.
+enum SettingsListNavigation {
+    static func step<ID: Equatable>(_ step: Int, in ids: [ID], from current: ID?) -> ID? {
+        guard !ids.isEmpty else { return nil }
+        guard let current, let index = ids.firstIndex(of: current) else { return ids[0] }
+        return ids[min(max(index + step, 0), ids.count - 1)]
+    }
 }
