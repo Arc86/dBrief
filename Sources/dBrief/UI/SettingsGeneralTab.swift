@@ -16,10 +16,6 @@ struct SettingsGeneralTab: View {
                 SettingsRow("Show dock icon", caption: "Settings always shows one while it's open.") {
                     Toggle("Show dock icon", isOn: $settings.showDockIcon)
                 }
-                // Removed together with powerUserMode once every page has its Advanced card.
-                SettingsRow("Show advanced settings", caption: "Shows model options and custom prompts.") {
-                    Toggle("Show advanced settings", isOn: $settings.powerUserMode)
-                }
             }
 
             SettingsCard("Updates", section: .softwareUpdate) {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Benchmark panel (Power User Mode → Settings → Benchmark). Aggregates every
+/// Performance page body (Settings → Performance). Aggregates every
 /// recorded session by model and time range, then highlights the fastest
 /// transcription model in a hero block and ranks all models in a leaderboard
 /// with relative-speed bars. AI-analysis models get a small comparison group.
@@ -9,6 +9,8 @@ struct ModelPerformanceView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppSettings.self) private var appSettings
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     @State private var records: [ModelPerformanceRecord] = []
     @State private var loaded = false
@@ -19,9 +21,8 @@ struct ModelPerformanceView: View {
     @State private var aiSort = [KeyPathComparator(\AIStat.avgTime, order: .forward)]
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 22) {
             header
-            Divider()
             content
         }
         .task {
@@ -30,7 +31,7 @@ struct ModelPerformanceView: View {
         }
         .confirmationDialog("Clear benchmark stats?",
                             isPresented: $showClearConfirm, titleVisibility: .visible) {
-            Button("Clear Stats", role: .destructive) {
+            Button("Clear stats", role: .destructive) {
                 Task {
                     await store.clear()
                     records = []
@@ -45,33 +46,28 @@ struct ModelPerformanceView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                SettingsSearchHeading("Model Performance", section: .benchmark)
-                    .uiFont(.headline)
-                Text("\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("", selection: $range) {
-                ForEach(PerformanceRange.allCases) { r in
-                    Text(r.label).tag(r)
+        SettingsCard(section: .benchmark) {
+            SettingsRow(verbatim: "\(Self.formatTotalDuration(appSettings.lifetimeTranscribedSeconds)) transcribed by dBrief",
+                        caption: "Timings are recorded every time a recording is transcribed or analysed.") {
+                HStack(spacing: 8) {
+                    Picker("Range", selection: $range) {
+                        ForEach(PerformanceRange.allCases) { r in
+                            Text(r.label).tag(r)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Button {
+                        showClearConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.settingsDanger)
+                    .help("Clear benchmark stats")
+                    .accessibilityLabel("Clear benchmark stats")
+                    .disabled(records.isEmpty)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
-            Button(role: .destructive) {
-                showClearConfirm = true
-            } label: {
-                Image(systemName: "trash")
-            }
-            .help("Clear benchmark stats")
-            .disabled(records.isEmpty)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     // MARK: - Content
@@ -83,12 +79,11 @@ struct ModelPerformanceView: View {
 
         if !loaded {
             ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 120)
         } else if txStats.isEmpty && aiStats.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 22) {
                     if let fastest = txStats.max(by: { $0.headlineSpeed < $1.headlineSpeed }) {
                         heroCard(fastest)
                     }
@@ -103,8 +98,6 @@ struct ModelPerformanceView: View {
                         recentTranscriptions(rows)
                     }
                 }
-                .padding(TranscriptDesignTokens.scrollPadding)
-            }
         }
     }
 
@@ -115,68 +108,46 @@ struct ModelPerformanceView: View {
     }
 
     private func recentTranscriptions(_ rows: [RecordingPerformanceRow]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Recent Transcriptions")
-            Text("Per-recording step timing — expand a row to see where the time went.")
-                .uiFont(.caption)
-                .foregroundStyle(.secondary)
-            VStack(spacing: 6) {
-                ForEach(rows) { row in
-                    RecentRecordingRow(row: row, colorScheme: colorScheme)
+        SettingsCard("Recent recordings", description: "Expand a row to see where the time went") {
+            SettingsStackedRow {
+                VStack(spacing: 6) {
+                    ForEach(rows) { row in
+                        RecentRecordingRow(row: row, colorScheme: colorScheme)
+                    }
                 }
             }
         }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "speedometer")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(records.isEmpty
-                 ? "No performance data yet."
-                 : "No sessions in this time range.")
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-            Text("Metrics are recorded automatically each time a recording is transcribed or analyzed.")
-                .uiFont(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+        SettingsCard {
+            SettingsRow(records.isEmpty ? "No performance data yet" : "No recordings in this time range",
+                        caption: "Timings appear after your next transcription.", systemImage: "gauge.with.dots.needle.33percent")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(40)
     }
 
     // MARK: - Hero (fastest model)
 
     private func heroCard(_ stat: TranscriptionStat) -> some View {
-        GroupBox {
+        SettingsCard("Fastest model", description: "\(stat.sessions) \(stat.sessions == 1 ? "session" : "sessions")") {
+            SettingsStackedRow {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label("Fastest Model", systemImage: "bolt.fill")
-                        .uiFont(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Spacer()
-                    Text("\(stat.sessions) \(stat.sessions == 1 ? "session" : "sessions")")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
                 Text(stat.model)
-                    .uiFont(.title3.weight(.semibold))
+                    .uiFont(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(String(format: "%.1f×", stat.headlineSpeed))
-                        .uiFont(.system(size: 46, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.accentColor)
+                        .uiFont(.system(size: 34, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(palette.accentText.color)
                     Text(stat.inferenceSpeedup != nil
                          ? "model speed, faster than real-time"
                          : "end-to-end, faster than real-time")
-                        .uiFont(.callout)
-                        .foregroundStyle(.secondary)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
                 }
 
-                Divider()
+                palette.divider.color.frame(height: 1)
 
                 Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
                     GridRow {
@@ -192,10 +163,10 @@ struct ModelPerformanceView: View {
                         }
                     }
                 }
-                .uiFont(.callout)
+                .uiFont(.system(size: 12))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
+            }
         }
     }
 
@@ -209,8 +180,7 @@ struct ModelPerformanceView: View {
         let fastestModel = stats.max(by: { $0.headlineSpeed < $1.headlineSpeed })?.model
         let showBadges = stats.count > 1
 
-        return VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Transcription Models")
+        return SettingsCard("Transcription models") {
             leaderboard {
                 GridRow {
                     sortHeader("Model", KeyPathComparator(\TranscriptionStat.model), sort: $txSort)
@@ -224,7 +194,7 @@ struct ModelPerformanceView: View {
                         HStack(spacing: 6) {
                             Text(stat.model).lineLimit(2)
                             if showBadges && stat.model == fastestModel {
-                                badge("FASTEST", accent: true)
+                                badge("Fastest", accent: true)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,7 +203,7 @@ struct ModelPerformanceView: View {
                                 EmptyView()
                             }
                             .gaugeStyle(.accessoryLinearCapacity)
-                            .tint(.accentColor)
+                            .tint(palette.primary.color)
                             Text(String(format: "%.1f×", stat.headlineSpeed))
                                 .uiFont(.callout.monospacedDigit())
                                 .foregroundStyle(.secondary)
@@ -250,8 +220,7 @@ struct ModelPerformanceView: View {
     // MARK: - AI comparison
 
     private func aiComparison(_ stats: [AIStat]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("AI Analysis Models")
+        SettingsCard("AI analysis models") {
             leaderboard {
                 GridRow {
                     sortHeader("Model", KeyPathComparator(\AIStat.model), sort: $aiSort)
@@ -276,12 +245,11 @@ struct ModelPerformanceView: View {
     }
 
     private func leaderboard<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
-        GroupBox {
+        SettingsStackedRow {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 9) {
                 rows()
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .uiFont(.system(size: 12))
         }
     }
 
@@ -311,7 +279,7 @@ struct ModelPerformanceView: View {
             HStack(spacing: 4) {
                 Text(title)
                     .uiFont(.callout.weight(active ? .semibold : .regular))
-                    .foregroundStyle(active ? .primary : .secondary)
+                    .foregroundStyle(active ? palette.heading.color : palette.secondary.color)
                 if active {
                     Image(systemName: order == .forward ? "chevron.up" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
@@ -328,21 +296,8 @@ struct ModelPerformanceView: View {
 
     // MARK: - Small views
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .uiFont(.headline)
-            .foregroundStyle(TranscriptDesignTokens.bodyText(scheme: colorScheme))
-    }
-
     private func badge(_ text: String, accent: Bool) -> some View {
-        Text(text)
-            .uiFont(.caption2.weight(.bold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule().fill((accent ? Color.accentColor : Color.secondary).opacity(0.18))
-            )
-            .foregroundStyle(accent ? Color.accentColor : Color.secondary)
+        SettingsStatusPill(verbatim: text, kind: accent ? .accent : .neutral)
             .accessibilityLabel("Fastest model")
     }
 
@@ -393,6 +348,8 @@ struct ModelPerformanceView: View {
 private struct RecentRecordingRow: View {
     let row: RecordingPerformanceRow
     let colorScheme: ColorScheme
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     @State private var expanded = false
 
     private static let dateFormatter: DateFormatter = {
@@ -423,7 +380,7 @@ private struct RecentRecordingRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                .fill(palette.canvas.color)
         )
     }
 
@@ -437,8 +394,8 @@ private struct RecentRecordingRow: View {
                 Text("slower than usual")
                     .uiFont(.caption2.weight(.semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.18)))
-                    .foregroundStyle(.orange)
+                    .background(Capsule().fill(status.warning.color.opacity(0.14)))
+                    .foregroundStyle(status.warning.color)
             }
             Text(headerContext)
                 .uiFont(.caption)

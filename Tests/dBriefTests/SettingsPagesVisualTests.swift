@@ -56,7 +56,7 @@ struct SettingsPagesVisualTests {
         for page in pages {
             for scheme in [ColorScheme.light, .dark] {
                 let root: AnyView = page == .benchmark
-                    ? AnyView(ModelPerformanceView(store: performance).background(.settingsCanvas))
+                    ? AnyView(SettingsPageScaffold(page: .benchmark) { ModelPerformanceView(store: performance) }.background(.settingsCanvas))
                     : AnyView(SettingsView(page: page))
                 let host = NSHostingView(rootView: root
                     .environment(settings)

@@ -81,7 +81,7 @@ final class AppSettings {
         static let showDockIcon = "showDockIcon"
         static let profiles = "profiles"
         static let activeProfileId = "activeProfileId"
-        static let powerUserMode = "powerUserMode"
+        // "powerUserMode" (removed 2026-10) may linger in UserDefaults; it is ignored.
         static let obsidianIncludeTranscript = "obsidianIncludeTranscript"
         static let whisperModelName = "whisperModelName"
         static let whisperComputeUnits = "whisperComputeUnits"
@@ -414,11 +414,6 @@ final class AppSettings {
             UserDefaults.standard.set(showDockIcon, forKey: Keys.showDockIcon)
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
         }
-    }
-
-    /// Reveals advanced settings and features across all tabs
-    var powerUserMode: Bool {
-        didSet { UserDefaults.standard.set(powerUserMode, forKey: Keys.powerUserMode) }
     }
 
     /// Global keyboard shortcut for toggling recording (user-configurable in Settings → Recording → Shortcut)
@@ -1037,7 +1032,6 @@ final class AppSettings {
 
         self.audioInputDeviceUID = defaults.string(forKey: Keys.audioInputDeviceUID) ?? ""
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) as? Bool ?? false
-        self.powerUserMode = defaults.object(forKey: Keys.powerUserMode) as? Bool ?? false
         self.recordHotkey = {
             if let data = defaults.data(forKey: Keys.recordHotkey),
                let hotkey = try? JSONDecoder().decode(RecordHotkey.self, from: data)

@@ -29,6 +29,7 @@ struct SettingsSearchTests {
         #expect(SettingsSearch.results(for: "benchmark").first?.requiresAdvanced == false)
         #expect(SettingsSearch.results(for: "claude launcher").first?.destination.section == .calendarCLIAdvanced)
         #expect(SettingsSearch.results(for: "show advanced settings").isEmpty)
+        #expect(SettingsSearch.results(for: "power user").isEmpty)
     }
 
     @Test func queriesAreNormalizedAndRequireAllTerms() {

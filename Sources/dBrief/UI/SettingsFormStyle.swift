@@ -1,18 +1,6 @@
 import AppKit
 import SwiftUI
 
-extension View {
-    /// The grouped-Form look every settings page shares. Pulls the form up so
-    /// its first section heading sits just below the window toolbar.
-    func settingsFormStyle() -> some View {
-        formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
-    }
-}
-
 /// A page background: the paper palette's canvas under a paper theme, otherwise
 /// `system`, or the white / near-black canvas of System Settings when nil.
 struct SettingsCanvasStyle: ShapeStyle {
