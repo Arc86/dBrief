@@ -6,13 +6,6 @@ struct SettingsTranscriptionTab: View {
     private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
-    @State private var selectedEndpointId: UUID?
-    @State private var isEditing = false
-    @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1")
-    @State private var isNew = false
-    @State private var testResult: TestResult?
-    @State private var availableModels: [String] = []
-    @State private var isLoadingModels = false
     @State private var purgeMessage: String?
     // Start from the built-in list so the model card (and its change-model button,
     // which also picks Parakeet / Apple Speech) never waits on the network.
@@ -51,9 +44,7 @@ struct SettingsTranscriptionTab: View {
     }
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
+        @Bindable var settings = appSettings
             Form {
                 Section("Engine", settingsSearch: .transcriptionEngine) { engineSection }
                     .listRowBackground(Color.clear)
@@ -64,8 +55,14 @@ struct SettingsTranscriptionTab: View {
                 Section("Live Transcription", settingsSearch: .transcriptionLive) { liveTranscriptionSection }
                     .listRowBackground(Color.clear)
                 if appSettings.transcriptionEngine == .remoteEndpoint || searchRequest?.section == .transcriptionServices || searchRequest?.section == .transcriptionChunking {
-                    Section("Transcription Services", settingsSearch: .transcriptionServices) { endpointsSection }
-                        .listRowBackground(Color.clear)
+                    Section("Transcription Services", settingsSearch: .transcriptionServices) {
+                        VStack(spacing: 0) {
+                            SettingsProviderList(kind: .transcription, endpoints: $settings.transcriptionEndpoints,
+                                                 defaultID: $settings.defaultTranscriptionEndpointId)
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                     if appSettings.powerUserMode || searchAdvanced {
                         Section("Large File Handling", settingsSearch: .transcriptionChunking) {
                             if appSettings.transcriptionEngine != .remoteEndpoint {
@@ -105,8 +102,6 @@ struct SettingsTranscriptionTab: View {
                     modernApple = supported
                 }
             }
-
-        }
     }
 
     private func formatMemory(_ mb: Int) -> String {
@@ -475,62 +470,6 @@ struct SettingsTranscriptionTab: View {
         newIgnoredPhrase = ""
     }
 
-    private var endpointsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if appSettings.transcriptionEndpoints.isEmpty {
-                Text("No transcription services configured. Click + to add one.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(Array(appSettings.transcriptionEndpoints.enumerated()), id: \.element.id) { index, endpoint in
-                    endpointRow(endpoint)
-                    if index < appSettings.transcriptionEndpoints.count - 1 {
-                        Divider()
-                    }
-                }
-            }
-
-            Divider()
-
-            HStack {
-                Menu {
-                    ForEach(ProviderPresets.transcription) { preset in
-                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
-                    }
-                    Divider()
-                    Button("Custom…") {
-                        beginAddEndpoint(Endpoint(name: "", baseURL: "http://localhost:8080", modelName: "whisper-1"))
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .menuStyle(.button)
-        .buttonStyle(.typographyBorderless)
-                .fixedSize()
-
-                Button {
-                    if let id = selectedEndpointId {
-                        appSettings.transcriptionEndpoints.removeAll { $0.id == id }
-                        selectedEndpointId = nil
-                    }
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.typographyBordered)
-
-                Spacer()
-
-                Button("Set as Default") {
-                    appSettings.defaultTranscriptionEndpointId = selectedEndpointId
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.typographyBordered)
-            }
-        }
-    }
-
     private var chunkingSection: some View {
         @Bindable var settings = appSettings
         return VStack(alignment: .leading, spacing: 8) {
@@ -573,184 +512,6 @@ struct SettingsTranscriptionTab: View {
             Text("Hosted providers may enforce a smaller upload limit. Files above the effective limit are split automatically when the endpoint supports it. Native cloud diarization uses a single file.")
                 .uiFont(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func endpointRow(_ endpoint: Endpoint) -> some View {
-        let isDefault = endpoint.id == appSettings.defaultTranscriptionEndpointId
-            || (appSettings.defaultTranscriptionEndpointId == nil
-                && endpoint.id == appSettings.transcriptionEndpoints.first?.id)
-        let isSelected = endpoint.id == selectedEndpointId
-
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(endpoint.name)
-                    .fontWeight(.medium)
-                Text(endpoint.baseURL)
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDefault {
-                Text("Default")
-                    .uiFont(.caption)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onTapGesture {
-            selectedEndpointId = endpoint.id
-        }
-        .onTapGesture(count: 2) {
-            editingEndpoint = endpoint
-            isNew = false
-            testResult = nil
-            availableModels = []
-            isEditing = true
-        }
-    }
-
-    private func beginAddEndpoint(_ endpoint: Endpoint) {
-        editingEndpoint = endpoint
-        isNew = true
-        testResult = nil
-        availableModels = []
-        isEditing = true
-    }
-
-    private var endpointEditor: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Text(isNew ? "Add Transcription Service" : "Edit Transcription Service")
-                .uiFont(.title3)
-                .fontWeight(.medium)
-
-            if editingEndpoint.provider == .deepgram || editingEndpoint.provider == .elevenLabs {
-                Text("\(editingEndpoint.provider == .deepgram ? "Deepgram" : "ElevenLabs") native API. Enter your model and API key; long files and (Deepgram) diarization are handled server-side.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
-                GridRow {
-                    Text("Name:")
-                    NativeTextField(placeholder: "My Whisper Server", text: $editingEndpoint.name, accessibilityName: "Transcription service name")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:8080", text: $editingEndpoint.baseURL, accessibilityName: "Transcription service base URL")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Model:")
-                    if availableModels.isEmpty {
-                        NativeTextField(placeholder: "whisper-1", text: $editingEndpoint.modelName, accessibilityName: "Transcription service model")
-                            .frame(height: 22)
-                    } else {
-                        Picker("Transcription service model", selection: $editingEndpoint.modelName) {
-                            ForEach(availableModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(height: 22)
-                    }
-                }
-                GridRow {
-                    Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "Transcription service API key (optional)")
-                        .frame(height: 22)
-                }
-            }
-            .frame(maxWidth: 350)
-
-            if isLoadingModels {
-                ProgressView("Loading models…")
-                    .controlSize(.small)
-            } else if !availableModels.isEmpty {
-                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let testResult {
-                HStack {
-                    switch testResult {
-                    case .testing:
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Testing…")
-                    case .success:
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Connection successful")
-                    case .failure(let error):
-                        SettingsErrorDetails(summary: "Connection failed", error: error)
-                    }
-                }
-                .uiFont(.callout)
-            }
-
-            HStack {
-                Button("Test Connection") {
-                    testAndLoadModels()
-                }
-                .buttonStyle(.typographyBordered)
-
-                Spacer()
-
-                Button("Cancel") {
-                    isEditing = false
-                }
-                .buttonStyle(.typographyBordered)
-
-                Button("Save") {
-                    if isNew {
-                        appSettings.transcriptionEndpoints.append(editingEndpoint)
-                    } else {
-                        if let idx = appSettings.transcriptionEndpoints.firstIndex(where: { $0.id == editingEndpoint.id }) {
-                            appSettings.transcriptionEndpoints[idx] = editingEndpoint
-                        }
-                    }
-                    isEditing = false
-                }
-                .buttonStyle(.typographyProminent)
-                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty)
-            }
-            .frame(maxWidth: 350)
-
-            Spacer()
-        }
-        .padding()
-    }
-
-    private func testAndLoadModels() {
-        testResult = .testing
-        isLoadingModels = true
-        Task {
-            do {
-                let service = TranscriptionService()
-                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
-                availableModels = models
-                if !models.isEmpty, !models.contains(editingEndpoint.modelName), let firstModel = models.first {
-                    editingEndpoint.modelName = firstModel
-                }
-                testResult = .success
-            } catch {
-                availableModels = []
-                testResult = .failure(error.localizedDescription)
-            }
-            isLoadingModels = false
         }
     }
 }

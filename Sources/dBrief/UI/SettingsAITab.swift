@@ -6,14 +6,6 @@ struct SettingsAITab: View {
     private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
-    @State private var selectedEndpointId: UUID?
-    @State private var isEditing = false
-    @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
-    @State private var outputTokenLimitText = ""
-    @State private var isNew = false
-    @State private var testResult: SettingsTranscriptionTab.TestResult?
-    @State private var availableModels: [String] = []
-    @State private var isLoadingModels = false
     @State private var purgeMessage: String?
     @State private var isTestingCLI = false
     @State private var cliTestSuccess: String?
@@ -21,9 +13,6 @@ struct SettingsAITab: View {
     @State private var cliConfigExpanded = false
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
             @Bindable var settings = appSettings
             Form {
                 Section {
@@ -139,13 +128,16 @@ struct SettingsAITab: View {
                 if searchRequest?.section == .aiProviders || appSettings.aiEngine == .remoteEndpoint
                     || (appSettings.aiEngine == .localCLI && appSettings.chatFallbackEngine == .remoteEndpoint) {
                     Section("AI Providers", settingsSearch: .aiProviders) {
-                        endpointsSection
+                        VStack(spacing: 0) {
+                            SettingsProviderList(kind: .ai, endpoints: $settings.aiEndpoints,
+                                                 defaultID: $settings.defaultAIEndpointId)
+                        }
                     }
-                        .listRowBackground(Color.clear)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
             }
             .settingsFormStyle()
-        }
     }
 
     private func engineDescription(for engine: AppSettings.AIEngine) -> String {
@@ -356,260 +348,6 @@ struct SettingsAITab: View {
                 cliTestError = error.localizedDescription
             }
             isTestingCLI = false
-        }
-    }
-
-    private var endpointsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if appSettings.aiEndpoints.isEmpty {
-                Text("No AI providers configured. Click + to add one.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(appSettings.aiEndpoints) { endpoint in
-                    endpointRow(endpoint)
-                }
-            }
-
-            HStack {
-                Menu {
-                    ForEach(ProviderPresets.ai) { preset in
-                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
-                    }
-                    Divider()
-                    Button("Custom…") { beginAddEndpoint(ProviderPresets.custom(modelPlaceholder: "llama3")) }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .menuStyle(.button)
-        .buttonStyle(.typographyBorderless)
-                .fixedSize()
-
-                Button {
-                    if let id = selectedEndpointId {
-                        appSettings.aiEndpoints.removeAll { $0.id == id }
-                        selectedEndpointId = nil
-                    }
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.typographyBordered)
-
-                Spacer()
-
-                Button("Set as Default") {
-                    appSettings.defaultAIEndpointId = selectedEndpointId
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.typographyBordered)
-            }
-        }
-    }
-
-    private func endpointRow(_ endpoint: Endpoint) -> some View {
-        let isDefault = endpoint.id == appSettings.defaultAIEndpointId
-            || (appSettings.defaultAIEndpointId == nil
-                && endpoint.id == appSettings.aiEndpoints.first?.id)
-        let isSelected = endpoint.id == selectedEndpointId
-
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(endpoint.name)
-                    .fontWeight(.medium)
-                Text("\(endpoint.baseURL) (\(endpoint.modelName))")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDefault {
-                Text("Default")
-                    .uiFont(.caption)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onTapGesture {
-            selectedEndpointId = endpoint.id
-        }
-        .onTapGesture(count: 2) {
-            editingEndpoint = endpoint
-            outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
-            isNew = false
-            testResult = nil
-            availableModels = []
-            isEditing = true
-        }
-    }
-
-    private func beginAddEndpoint(_ endpoint: Endpoint) {
-        editingEndpoint = endpoint
-        outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
-        isNew = true
-        testResult = nil
-        availableModels = []
-        isEditing = true
-    }
-
-    private var isOutputTokenLimitValid: Bool {
-        let value = outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty || (Int(value).map { $0 > 0 } ?? false)
-    }
-
-    private var endpointEditor: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Text(isNew ? "Add AI Provider" : "Edit AI Provider")
-                .uiFont(.title3)
-                .fontWeight(.medium)
-
-            if editingEndpoint.provider == .anthropic {
-                Text("Anthropic Messages API (native). Enter your model name and API key.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
-                GridRow {
-                    Text("Name:")
-                    NativeTextField(placeholder: "My LLM Server", text: $editingEndpoint.name, accessibilityName: "AI provider name")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:11434", text: $editingEndpoint.baseURL, accessibilityName: "AI provider base URL")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Model:")
-                    if availableModels.isEmpty {
-                        NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName, accessibilityName: "AI provider model")
-                            .frame(height: 22)
-                    } else {
-                        Picker("AI provider model", selection: $editingEndpoint.modelName) {
-                            ForEach(availableModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(height: 22)
-                    }
-                }
-                GridRow {
-                    Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "AI provider API key (optional)")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Output token limit:")
-                    NativeTextField(placeholder: "Automatic (\(editingEndpoint.recommendedMaxOutputTokens.formatted()))",
-                                    text: $outputTokenLimitText, accessibilityName: "AI provider output token limit")
-                        .frame(height: 22)
-                }
-            }
-            .frame(maxWidth: 350)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Leave blank for automatic: \(editingEndpoint.recommendedMaxOutputTokens.formatted()) tokens. Applies to analysis and chat, including reasoning. Higher limits allow longer answers and can increase cost.")
-                    .foregroundStyle(.secondary)
-                if !isOutputTokenLimitValid {
-                    Text("Enter a positive whole number, or leave blank for automatic.")
-                        .foregroundStyle(.red)
-                }
-            }
-            .uiFont(.caption)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 350, alignment: .leading)
-
-            if isLoadingModels {
-                ProgressView("Loading models…")
-                    .controlSize(.small)
-            } else if !availableModels.isEmpty {
-                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let testResult {
-                HStack {
-                    switch testResult {
-                    case .testing:
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Testing…")
-                    case .success:
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Connection successful")
-                    case .failure(let error):
-                        SettingsErrorDetails(summary: "Connection failed", error: error)
-                    }
-                }
-                .uiFont(.callout)
-            }
-
-            HStack {
-                Button("Test Connection") {
-                    testAndLoadModels()
-                }
-                .buttonStyle(.typographyBordered)
-
-                Spacer()
-
-                Button("Cancel") {
-                    isEditing = false
-                }
-                .buttonStyle(.typographyBordered)
-
-                Button("Save") {
-                    guard isOutputTokenLimitValid else { return }
-                    editingEndpoint.maxOutputTokens = Int(outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines))
-                    if isNew {
-                        appSettings.aiEndpoints.append(editingEndpoint)
-                    } else {
-                        if let idx = appSettings.aiEndpoints.firstIndex(where: { $0.id == editingEndpoint.id }) {
-                            appSettings.aiEndpoints[idx] = editingEndpoint
-                        }
-                    }
-                    isEditing = false
-                }
-                .buttonStyle(.typographyProminent)
-                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty || !isOutputTokenLimitValid)
-            }
-            .frame(maxWidth: 350)
-
-            Spacer()
-        }
-        .padding()
-    }
-
-    private func testAndLoadModels() {
-        testResult = .testing
-        isLoadingModels = true
-        Task {
-            do {
-                let service = AIService()
-                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
-                availableModels = models
-                if !models.contains(editingEndpoint.modelName), let firstModel = models.first {
-                    editingEndpoint.modelName = firstModel
-                }
-                testResult = .success
-            } catch {
-                availableModels = []
-                testResult = .failure(error.localizedDescription)
-            }
-            isLoadingModels = false
         }
     }
 }
