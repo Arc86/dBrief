@@ -294,6 +294,46 @@ struct MenuPanelLevelBars: View {
 
 /// The menu bar panel floats above every window, so anything it opens — a window,
 /// an open panel — must close it first or it ends up behind it.
+/// Gives the MenuBarExtra window the app's theme appearance. Unlike regular windows,
+/// the menu bar window ignores SwiftUI's `preferredColorScheme`, so with a dark app
+/// theme on a light system it kept the Aqua frame and its light outline around the
+/// dark panel.
+struct MenuPanelWindowAppearance: NSViewRepresentable {
+    let mode: ViewerAppearanceMode
+
+    static func appearanceName(for mode: ViewerAppearanceMode) -> NSAppearance.Name {
+        mode.isDark ? .darkAqua : .aqua
+    }
+
+    func makeNSView(context: Context) -> WindowView { WindowView(name: Self.appearanceName(for: mode)) }
+
+    func updateNSView(_ view: WindowView, context: Context) {
+        view.name = Self.appearanceName(for: mode)
+        view.apply()
+    }
+
+    final class WindowView: NSView {
+        var name: NSAppearance.Name
+
+        init(name: NSAppearance.Name) {
+            self.name = name
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        func apply() {
+            guard let window, window.appearance?.name != name else { return }
+            window.appearance = NSAppearance(named: name)
+        }
+    }
+}
+
 @MainActor
 enum MenuBarPanel {
     static func close() {

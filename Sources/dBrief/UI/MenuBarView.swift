@@ -36,6 +36,7 @@ struct MenuBarView: View {
             }
         }
         .background(palette.surface.color)
+        .background(MenuPanelWindowAppearance(mode: mode))
         // Quieter hairlines and control borders than the shared viewer palette in dark themes.
         .environment(\.viewerPalette, palette.withSoftDividers(mode: mode))
         .task {
