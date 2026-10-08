@@ -8,60 +8,55 @@ struct SettingsGeneralTab: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        Form {
-            Section("App Behavior", settingsSearch: .appBehavior) {
-                Toggle("Start at login", isOn: Binding(
-                    get: { startAtLogin },
-                    set: { newValue in
-                        if LoginItemManager.setEnabled(newValue) {
-                            startAtLogin = newValue
-                        } else {
-                            startAtLogin = LoginItemManager.isEnabled
-                        }
-                    }
-                ))
-                Toggle("Show dock icon", isOn: $settings.showDockIcon)
-                Toggle("Show advanced settings", isOn: $settings.powerUserMode)
-                Text("Shows benchmarks, model options, and custom prompts. Profiles are always available.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .listRowBackground(Color.clear)
-
-            Section("Software Update", settingsSearch: .softwareUpdate) {
-                LabeledContent("Check for updates") {
-                    Button("Check Now") {
-                        updaterController.checkForUpdates()
-                    }
-                    .disabled(!updaterController.canCheckForUpdates)
+        SettingsPageScaffold(page: .general) {
+            SettingsCard("Startup", section: .appBehavior) {
+                SettingsRow("Start at login") {
+                    Toggle("Start at login", isOn: startAtLoginBinding)
                 }
-
-                Toggle("Automatically check for updates", isOn: Binding(
-                    get: { updaterController.automaticallyChecksForUpdates },
-                    set: { updaterController.automaticallyChecksForUpdates = $0 }
-                ))
-
-                if let lastCheck = updaterController.lastUpdateCheckDate {
-                    Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                SettingsRow("Show dock icon", caption: "Settings always shows one while it's open.") {
+                    Toggle("Show dock icon", isOn: $settings.showDockIcon)
+                }
+                // Removed together with powerUserMode once every page has its Advanced card.
+                SettingsRow("Show advanced settings", caption: "Shows model options and custom prompts.") {
+                    Toggle("Show advanced settings", isOn: $settings.powerUserMode)
                 }
             }
-            .listRowBackground(Color.clear)
 
-            Section("Setup Guide", settingsSearch: .setupGuide) {
-                LabeledContent("Welcome and setup guide") {
-                    Button("Show Again") {
-                        appSettings.hasCompletedOnboarding = false
-                    }
-                    .buttonStyle(.typographyBordered)
+            SettingsCard("Updates", section: .softwareUpdate) {
+                SettingsRow("Check for updates automatically", caption: lastCheckedCaption) {
+                    Toggle("Check for updates automatically", isOn: Binding(
+                        get: { updaterController.automaticallyChecksForUpdates },
+                        set: { updaterController.automaticallyChecksForUpdates = $0 }
+                    ))
                 }
-                Text("Shows the welcome and setup guide again the next time you open the menu bar.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsRow("Check now") {
+                    Button("Check now") { updaterController.checkForUpdates() }
+                        .buttonStyle(.settingsSecondary)
+                        .disabled(!updaterController.canCheckForUpdates)
+                }
             }
-            .listRowBackground(Color.clear)
+
+            SettingsCard("Setup", section: .setupGuide) {
+                SettingsRow("Welcome and setup guide", caption: "Opens again the next time you open the menu bar.") {
+                    Button("Show again") { appSettings.hasCompletedOnboarding = false }
+                        .buttonStyle(.settingsSecondary)
+                }
+            }
         }
-        .settingsFormStyle()
+    }
+
+    private var startAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { startAtLogin },
+            set: { newValue in
+                startAtLogin = LoginItemManager.setEnabled(newValue) ? newValue : LoginItemManager.isEnabled
+            }
+        )
+    }
+
+    private var lastCheckedCaption: LocalizedStringKey? {
+        updaterController.lastUpdateCheckDate.map {
+            "Last checked \($0.formatted(date: .abbreviated, time: .shortened))."
+        }
     }
 }

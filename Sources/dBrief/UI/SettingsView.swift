@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var selectedSearchID: String?
     @State private var searchRequest: SettingsSearchRequest?
     @State private var navigationRevision = UUID()
+    @State private var permissions = SettingsPermissionStatus()
     @FocusState private var focus: Focus?
     @FocusState private var searchFocused: Bool
     private enum Focus: Hashable { case results }
@@ -86,7 +87,7 @@ struct SettingsView: View {
         NavigationSplitView {
             SettingsSidebar(
                 selection: destination.page,
-                badges: [:],
+                badges: [.permissions: permissions.attentionCount(settings: appSettings)],
                 searchText: $searchText,
                 searchFocused: $searchFocused,
                 onSelect: { navigate(to: SettingsDestination(page: $0)) },
@@ -171,7 +172,9 @@ struct SettingsView: View {
             selectedSearchID = results.first?.id
             if !isSearching { searchRequest = nil }
         }
+        .environment(permissions)
         .onAppear {
+            permissions.refresh()
             if !appSettings.showDockIcon {
                 NSApp.setActivationPolicy(.regular)
             }

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Visual appearance controls shared by Settings and native preview fixtures.
-/// Emits grouped-Form sections, so place it directly inside a `Form`.
+/// Emits `SettingsCard`s, so place it in a `SettingsPageScaffold` or a VStack.
 struct SettingsAppearanceEditor: View {
     @Binding var preferences: ViewerAppearancePreferences
     @Binding var typography: AppTypographyPreferences
@@ -16,50 +16,53 @@ struct SettingsAppearanceEditor: View {
     }
 
     var body: some View {
-        Section("Theme", settingsSearch: .appearance) {
-            themeControls
-            caption("Follow System switches between your light and dark theme with macOS.")
+        SettingsCard("Theme", description: "Follow System switches between your light and dark theme with macOS.",
+                     section: .appearance) {
+            SettingsStackedRow { themeControls }
         }
-        .listRowBackground(Color.clear)
 
-        Section("Accent Color", settingsSearch: .accentColor) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) {
-                    accentPresets
-                    Divider().frame(height: 22)
-                    customAccentControl
-                    Spacer(minLength: 0)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    accentPresets
-                    customAccentControl
+        SettingsCard("Accent", section: .accentColor) {
+            SettingsStackedRow {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) {
+                        accentPresets
+                        Divider().frame(height: 22)
+                        customAccentControl
+                        Spacer(minLength: 0)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        accentPresets
+                        customAccentControl
+                    }
                 }
             }
-            .padding(.vertical, 2)
-            Toggle("Reduce neon accents", isOn: $nonNeon)
-            caption("Uses solid accent colors instead of gradients and glows.")
-        }
-        .listRowBackground(Color.clear)
-
-        Section("Typography", settingsSearch: .typography) {
-            Picker("Interface font", selection: $typography.readingFont) {
-                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
-                    Text(font.displayName).tag(font)
-                }
+            SettingsRow("Non-neon", caption: "Uses the accent instead of the brand gradient on outlines and the AI sparkle.") {
+                Toggle("Non-neon", isOn: $nonNeon)
             }
-            LabeledContent("Text size") {
+        }
+
+        SettingsCard("Interface text", description: "Menus, transcripts and settings throughout dBrief.",
+                     section: .typography) {
+            SettingsRow("Font") {
+                Picker("Font", selection: $typography.readingFont) {
+                    ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                        Text(font.displayName).tag(font)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            SettingsRow("Text size") {
                 HStack(spacing: 6) {
-                    Text("\(typography.fontSize) pt").uiFont(.callout.monospacedDigit())
+                    Text("\(typography.fontSize) pt").uiFont(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(palette.text.color)
                     Stepper("Text size", value: $typography.fontSize,
                             in: AppTypographyPreferences.fontSizeRange)
                         .labelsHidden()
                         .accessibilityValue("\(typography.fontSize) points")
                 }
             }
-            fontPreview
-            caption("Applies to menus, transcripts, and settings throughout dBrief.")
+            SettingsStackedRow { fontPreview }
         }
-        .listRowBackground(Color.clear)
     }
 
     private var themeControls: some View {
@@ -100,14 +103,14 @@ struct SettingsAppearanceEditor: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(selected ? palette.accentText.color : .primary)
+            .foregroundStyle(selected ? palette.accentText.color : palette.heading.color)
             .frame(maxWidth: .infinity, minHeight: 30)
             .padding(8)
-            .background(selected ? palette.selected.color : Color.primary.opacity(0.035),
-                        in: RoundedRectangle(cornerRadius: 9))
+            .background(selected ? palette.selected.color : palette.canvas.color,
+                        in: RoundedRectangle(cornerRadius: 8))
             .overlay {
-                RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(selected ? palette.accentText.color.opacity(0.65) : Color.primary.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(selected ? palette.accentText.color.opacity(0.65) : palette.divider.color, lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -118,7 +121,7 @@ struct SettingsAppearanceEditor: View {
     private func themePair(dark: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(dark ? "Dark mode" : "Light mode")
-                .uiFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .uiFont(.system(size: 11, weight: .semibold)).foregroundStyle(palette.secondary.color)
             HStack(alignment: .top, spacing: 10) {
                 themeButton(dark ? .dark : .light)
                 themeButton(dark ? .darkPaper : .paper)
@@ -135,10 +138,10 @@ struct SettingsAppearanceEditor: View {
             VStack(spacing: 8) {
                 AppearanceThemePreview(mode: mode, accentHex: preferences.sourceAccentHex, nonNeon: nonNeon)
                     .frame(height: 74)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7)
-                            .strokeBorder(selected ? palette.accentText.color : Color.primary.opacity(0.12), lineWidth: selected ? 2 : 1)
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(selected ? palette.accentText.color : palette.divider.color, lineWidth: selected ? 2 : 1)
                     }
                 HStack(spacing: 5) {
                     Text(mode.displayName).uiFont(.callout)
@@ -149,7 +152,7 @@ struct SettingsAppearanceEditor: View {
                             .font(.system(size: 11)).foregroundStyle(palette.accentText.color)
                     }
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(palette.heading.color)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
@@ -171,7 +174,7 @@ struct SettingsAppearanceEditor: View {
 
     private var customAccentControl: some View {
         HStack(spacing: 8) {
-            Text("Custom…").uiFont(.callout)
+            Text("Custom…").uiFont(.system(size: 12)).foregroundStyle(palette.text.color)
             ColorPicker("Custom accent color", selection: customAccent, supportsOpacity: false)
                 .labelsHidden()
                 .frame(width: 36)
@@ -188,7 +191,7 @@ struct SettingsAppearanceEditor: View {
         } label: {
             Circle().fill(color.color)
                 .frame(width: 24, height: 24)
-                .overlay { Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1) }
+                .overlay { Circle().strokeBorder(palette.divider.color, lineWidth: 1) }
                 .overlay {
                     if selected {
                         Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
@@ -225,13 +228,9 @@ struct SettingsAppearanceEditor: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 9))
-        .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(palette.divider.color, lineWidth: 1) }
+        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.divider.color, lineWidth: 1) }
         .accessibilityLabel("Live preview, \(typography.readingFont.displayName), \(typography.fontSize) points")
-    }
-
-    private func caption(_ text: String) -> some View {
-        Text(text).uiFont(.caption).foregroundStyle(.secondary)
     }
 
     private var customAccent: Binding<Color> {

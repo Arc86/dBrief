@@ -60,19 +60,21 @@ private struct AppearanceFixture: View {
     @Environment(\.uiTypography) private var initialTypography
     @State private var typography: AppTypographyPreferences?
     var body: some View {
-        Form {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
                 SettingsAppearanceEditor(preferences: $preferences,
                     typography: Binding(get: { typography ?? initialTypography }, set: { typography = $0 }),
                     nonNeon: $nonNeon)
 
-                // A plain section beside it: the editor must share its column width.
-                Section(settingsTitle: "App Behavior") {
-                    Toggle("Start at login", isOn: .constant(false))
+                // A plain card beside it: the editor must share its column width.
+                SettingsCard("Startup") {
+                    SettingsRow("Start at login") { Toggle("Start at login", isOn: .constant(false)) }
                 }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .padding(16)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .padding(16)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }

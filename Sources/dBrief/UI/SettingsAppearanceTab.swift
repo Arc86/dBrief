@@ -5,13 +5,12 @@ struct SettingsAppearanceTab: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        Form {
+        SettingsPageScaffold(page: .appearance) {
             SettingsAppearanceEditor(
                 preferences: $settings.viewerAppearance,
                 typography: $settings.uiTypography,
                 nonNeon: $settings.reduceNeon
             )
         }
-        .settingsFormStyle()
     }
 }
