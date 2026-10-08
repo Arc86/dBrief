@@ -17,6 +17,10 @@ struct MenuPanelPalette: Equatable, Sendable {
     /// Accent for small marks (play glyph, level bars): the primary when it reads
     /// at 3:1 on the surface, otherwise the contrast-safe accent text colour.
     let accentMark: ViewerRGB
+    /// Soft accent tint behind the Recording library entry. Light themes reuse the
+    /// viewer's selected-row colour; dark themes need more accent, because that
+    /// colour sits at nearly the surface's own luminance there.
+    let libraryFill: ViewerRGB
 
     static func resolve(mode: ViewerAppearanceMode, base: ViewerPalette) -> MenuPanelPalette {
         let hex: (success: String, danger: String, dangerFill: String, dangerBorder: String, warning: String) = switch mode {
@@ -38,8 +42,20 @@ struct MenuPanelPalette: Equatable, Sendable {
             onDanger: onDanger,
             warning: rgb(hex.warning),
             accentBorder: visibleBorder(from: base.primary.mixed(with: base.surface, fraction: 0.5), on: base.surface),
-            accentMark: ViewerThemeResolver.contrast(base.primary, base.surface) >= 3 ? base.primary : base.accentText
+            accentMark: ViewerThemeResolver.contrast(base.primary, base.surface) >= 3 ? base.primary : base.accentText,
+            libraryFill: mode.isDark ? darkLibraryFill(base) : base.selected
         )
+    }
+
+    /// A quarter accent over the surface, lifted toward white when the accent is
+    /// too dark to separate from the surface on its own (e.g. a black accent).
+    private static func darkLibraryFill(_ base: ViewerPalette) -> ViewerRGB {
+        let white = rgb("#FFFFFF")
+        var fill = rounded(base.primary.mixed(with: base.surface, fraction: 0.76))
+        for _ in 0..<10 where ViewerThemeResolver.contrast(fill, base.surface) < 1.3 {
+            fill = rounded(fill.mixed(with: white, fraction: 0.05))
+        }
+        return fill
     }
 
     /// Pushes a border away from the surface (toward black or white, whichever

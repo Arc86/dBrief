@@ -67,4 +67,17 @@ import Testing
             }
         }
     }
+
+    @Test(arguments: ["#843D82", "#1268F5", "#E8590C", "#FFD60A", "#000000", "#FFFFFF"])
+    func libraryFillStandsOutButKeepsItsLabelReadable(accent: String) {
+        for (mode, base, panel) in palettes(accent: accent) {
+            #expect(ViewerThemeResolver.contrast(base.heading, panel.libraryFill) >= 4.5, "label \(accent) in \(mode)")
+            if mode.isDark {
+                // Visibly lifted off the surface, unlike the viewer's selected colour.
+                #expect(ViewerThemeResolver.contrast(panel.libraryFill, base.surface) >= 1.3, "fill \(accent) in \(mode)")
+            } else {
+                #expect(panel.libraryFill == base.selected, "light fill \(accent) in \(mode)")
+            }
+        }
+    }
 }

@@ -148,10 +148,12 @@ struct MenuBarView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "rectangle.stack")
+                                .foregroundStyle(palette.accentText.color)
                             Text("Recording library")
                             Spacer(minLength: 0)
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(palette.accentText.color)
                         }
                     }
                     .buttonStyle(MenuPanelLibraryButtonStyle(height: 32))

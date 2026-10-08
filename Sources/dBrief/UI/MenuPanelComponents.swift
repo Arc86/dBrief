@@ -74,11 +74,13 @@ struct MenuPanelButtonStyle: ButtonStyle {
     }
 }
 
-/// The Recording library entry: an accent-coloured outline, so it reads as the way
-/// into the app without competing with the brand moments (View transcript).
+/// The Recording library entry: a soft accent tint with no outline, so it reads
+/// as the way into the app while staying calm. Glyphs in the label take the
+/// accent; the text stays heading-coloured.
 struct MenuPanelLibraryButtonStyle: ButtonStyle {
     var height: CGFloat = 32
     @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
@@ -89,11 +91,7 @@ struct MenuPanelLibraryButtonStyle: ButtonStyle {
             .lineLimit(1)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: height)
-            .background(palette.surface.color, in: shape)
-            .overlay {
-                shape.strokeBorder(palette.primary.color, lineWidth: 1.25)
-                    .allowsHitTesting(false)
-            }
+            .background(status.libraryFill.color, in: shape)
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
             .contentShape(shape)
     }
