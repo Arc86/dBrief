@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var searchRequest: SettingsSearchRequest?
     @State private var navigationRevision = UUID()
     @State private var permissions = SettingsPermissionStatus()
+    /// Starts open every time, so a remembered collapsed sidebar can't hide navigation.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @FocusState private var focus: Focus?
     @FocusState private var searchFocused: Bool
     private enum Focus: Hashable { case results }
@@ -89,9 +91,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        // Pinned open: Settings has no sidebar toggle, so a remembered collapsed
-        // state (or a drag that collapses the column) must not hide the sidebar.
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SettingsSidebar(
                 selection: destination.page,
                 badges: [.permissions: permissions.attentionCount(settings: appSettings)],
@@ -108,8 +108,9 @@ struct SettingsView: View {
             ) {
                 searchResults.id(searchText)
             }
+            .frame(minWidth: 220, idealWidth: 236)
             .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 320)
-            // Settings always shows its sidebar; the system toggle only drew a glass
+            // Replaced by `SettingsSidebarToggle`: the system button draws a glass
             // circle over the custom sidebar background.
             .toolbar(removing: .sidebarToggle)
         } detail: {
@@ -161,6 +162,7 @@ struct SettingsView: View {
             .background(canvasColor.ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
+        .modifier(SettingsSidebarToggle(visibility: $columnVisibility))
         .environment(\.viewerPalette, palette.withSoftDividers(mode: viewerMode))
         // ⌘F focuses the sidebar search field; no toolbar button duplicates it.
         .background {
@@ -200,6 +202,37 @@ private extension View {
                 .containerBackground(color, for: .window)
         } else {
             self
+        }
+    }
+}
+
+/// Sidebar show/hide button without the toolbar's shared glass background.
+private struct SettingsSidebarToggle: ViewModifier {
+    @Binding var visibility: NavigationSplitViewVisibility
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var button: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                visibility = visibility == .detailOnly ? .all : .detailOnly
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+        }
+        .help(visibility == .detailOnly ? "Show sidebar" : "Hide sidebar")
+        .accessibilityLabel(visibility == .detailOnly ? "Show sidebar" : "Hide sidebar")
+    }
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbar {
+                ToolbarItem(placement: .navigation) { button }
+                    .sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                ToolbarItem(placement: .navigation) { button }
+            }
         }
     }
 }
