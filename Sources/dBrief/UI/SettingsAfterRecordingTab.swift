@@ -8,54 +8,38 @@ struct SettingsAfterRecordingTab: View {
         @Bindable var settings = appSettings
         let scope = SettingsProfileScope(settings: appSettings, fields: [])
 
-        Form {
-            Section {
-                Toggle("Preselect transcription after recording", isOn: $settings.autoTranscribe)
-                Toggle("Generate summary", isOn: $settings.autoSummary)
-                Toggle("Extract action items", isOn: $settings.autoActionItems)
-                Toggle("Analyze tags & sentiment", isOn: $settings.autoTags)
-                Toggle("Load calendar attendees during processing", isOn: $settings.autoLoadCalendarParticipants)
-            } header: {
-                SettingsSearchHeading("Task Defaults", section: .afterRecordingTasks)
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("These shared app defaults select the tasks offered after recording. Profiles can override each task in Profiles. The profile’s automation policy controls when those tasks start.")
-                    Text("Summary, action items, and tags require AI analysis. Transcription remains available when AI analysis is off, and saved task choices are kept.")
-                    Text("Calendar attendees can load during processing even when transcription and AI analysis are off.")
+        SettingsPageScaffold(page: .afterRecording, notice: {
+            SettingsProfileScopeView(fields: SettingsPage.afterRecording.profileFields, editProfile: editProfile)
+        }) {
+            SettingsCard("Default tasks", description: "Pre-selected after every recording", section: .afterRecordingTasks) {
+                SettingsRow("Transcribe", caption: "Available even when AI analysis is off.") {
+                    Toggle("Transcribe", isOn: $settings.autoTranscribe)
                 }
-                .uiFont(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .multilineTextAlignment(.leading)
+                SettingsRow("Write a summary", caption: "Needs AI analysis.") {
+                    Toggle("Write a summary", isOn: $settings.autoSummary)
+                }
+                SettingsRow("Extract action items", caption: "Needs AI analysis.") {
+                    Toggle("Extract action items", isOn: $settings.autoActionItems)
+                }
+                SettingsRow("Tags and sentiment", caption: "Needs AI analysis.") {
+                    Toggle("Tags and sentiment", isOn: $settings.autoTags)
+                }
+                SettingsRow("Load calendar attendees", caption: "Works even when transcription and AI analysis are off.") {
+                    Toggle("Load calendar attendees", isOn: $settings.autoLoadCalendarParticipants)
+                }
             }
-            .listRowBackground(Color.clear)
 
-            Section {
-                LabeledContent(scope.isAutomatic ? "Automatically selected profile" : "Selected profile") {
-                    Text(scope.profile.name)
+            SettingsCard("Active profile", description: "Profiles can override each task",
+                         section: .afterRecordingAutomation) {
+                SettingsRow(verbatim: scope.profile.name,
+                            caption: "\(scope.profile.postRecordingPolicy.title) · \(scope.isAutomatic ? "chosen automatically" : "saved profile")",
+                            systemImage: "person.3") {
+                    Button("Edit in Profiles") { editProfile(scope.profile.id) }
+                        .buttonStyle(.settingsSecondary)
                 }
-                LabeledContent("After recording") {
-                    Text(scope.profile.postRecordingPolicy.title)
-                }
-                Button("Edit \(scope.profile.name) in Profiles…") {
-                    editProfile(scope.profile.id)
-                }
-                .buttonStyle(.typographyBordered)
-                .controlSize(.small)
-            } header: {
-                SettingsSearchHeading("Profile Automation", section: .afterRecordingAutomation)
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Each profile chooses whether to review, process automatically, or queue automatically. Automatic actions wait 10 seconds so you can choose Review instead. Queued work waits for manual processing later.")
-                    Text("Edit the policy in Profiles. Opening the editor keeps your saved profile selection and automatic routing unchanged.")
-                }
-                .uiFont(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .multilineTextAlignment(.leading)
+                SettingsRow("How automation works",
+                            caption: "Automatic actions wait 10 seconds so you can choose Review instead. Queued work waits until you process it.")
             }
-            .listRowBackground(Color.clear)
         }
-        .settingsFormStyle()
     }
 }

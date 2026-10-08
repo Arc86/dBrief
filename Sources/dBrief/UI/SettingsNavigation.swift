@@ -96,13 +96,6 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var editsAppDefaults: Bool {
-        switch self {
-        case .permissions, .speakers, .profiles, .benchmark, .about: false
-        default: true
-        }
-    }
-
     var profileFields: [SettingsProfileScope.Field] {
         switch self {
         case .storage: [.recordingFolder, .transcriptFolder]

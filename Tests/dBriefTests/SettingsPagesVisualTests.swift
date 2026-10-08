@@ -8,7 +8,7 @@ import Testing
 /// visual review. Opt in with `DBRIEF_SETTINGS_SNAPSHOT_DIR=<dir> swift test
 /// --filter SettingsPagesVisualTests`. Narrow with `DBRIEF_SETTINGS_SNAPSHOT_PAGES=a,b`
 /// and render the paper themes with `DBRIEF_SETTINGS_SNAPSHOT_PAPER=1`. Pages
-/// that need the full `AppContext` (Voice Library, Automatic Import) are skipped;
+/// that need the full `AppContext` (Speakers, Import, Profiles) are skipped;
 /// Benchmark renders its panel directly over seeded sample timings.
 @Suite("Settings pages native renders", .serialized) @MainActor
 struct SettingsPagesVisualTests {
@@ -48,7 +48,7 @@ struct SettingsPagesVisualTests {
             await performance.append(ModelPerformanceRecord(label: "meeting", transcriptionModel: model,
                 audioDuration: audio, transcriptionTime: time, aiModel: "Local CLI", aiTime: 40))
         }
-        let skipped: Set<SettingsPage> = [.speakers, .watchedFolders]
+        let skipped: Set<SettingsPage> = [.speakers, .watchedFolders, .profiles]
         let pages = environment["DBRIEF_SETTINGS_SNAPSHOT_PAGES"]
             .map { $0.split(separator: ",").compactMap { SettingsPage(rawValue: String($0)) } }
             ?? SettingsPage.allCases.filter { !skipped.contains($0) }

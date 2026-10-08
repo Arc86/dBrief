@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsStorageTab: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
+    let editProfile: (UUID) -> Void
 
     // Retention / auto-delete UI state
     @State private var runningCleanup: RetentionCategory?
@@ -14,60 +15,38 @@ struct SettingsStorageTab: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        Form {
-            Section("Storage & Privacy", settingsSearch: .storageFolders) {
+        SettingsPageScaffold(page: .storage, notice: {
+            SettingsProfileScopeView(fields: SettingsPage.storage.profileFields, editProfile: editProfile)
+        }) {
+            SettingsCard("Folders", section: .storageFolders) {
                 folderRow(title: "Recordings", url: appSettings.recordingFolderURL) { url in
                     appSettings.recordingFolderURL = url
                 }
-
-                folderRow(title: "Transcriptions", url: appSettings.transcriptionFolderURL) { url in
+                folderRow(title: "Transcripts", url: appSettings.transcriptionFolderURL) { url in
                     appSettings.transcriptionFolderURL = url
                 }
+            }
 
-                retentionControls(
-                    title: "Auto-delete recordings",
-                    help: "Removes recordings identified by dBrief metadata that are older than the selected age. Unrecognized files, transcripts, and notes are kept.",
+            SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open") {
+                retentionRows(
+                    title: "Delete old recordings",
+                    help: "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept.",
                     enabled: $settings.autoDeleteRecordingsEnabled,
                     days: $settings.autoDeleteRecordingsDays,
                     category: .recordings
                 )
-
-                retentionControls(
-                    title: "Auto-delete transcripts",
-                    help: "Removes transcript files and linked Markdown exports identified by dBrief metadata that are older than the selected age. Unrecognized files and audio recordings are kept.",
+                retentionRows(
+                    title: "Delete old transcripts",
+                    help: "Transcripts and linked Markdown exports dBrief recognises. Audio and unknown files are kept.",
                     enabled: $settings.autoDeleteTranscriptsEnabled,
                     days: $settings.autoDeleteTranscriptsDays,
                     category: .transcripts
                 )
-
                 if appSettings.autoDeleteRecordingsEnabled || appSettings.autoDeleteTranscriptsEnabled {
-                    Text("Cleanup runs at launch and then daily while dBrief stays open.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if let lastRun = appSettings.lastRetentionCleanupDate {
-                        LabeledContent("Last cleanup") {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(lastRun.formatted(date: .abbreviated, time: .shortened))
-                                if !appSettings.lastRetentionCleanupSummary.isEmpty {
-                                    Text(appSettings.lastRetentionCleanupSummary)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .uiFont(.caption)
-                        }
-                    } else {
-                        LabeledContent("Last cleanup") {
-                            Text("Not run yet")
-                                .uiFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    SettingsRow(verbatim: "Last clean-up", caption: lastCleanupCaption)
                 }
             }
-            .listRowBackground(Color.clear)
         }
-        .settingsFormStyle()
         .confirmationDialog(
             "Delete \(pendingCleanup?.displayName ?? "files") older than the selected age?",
             isPresented: Binding(
@@ -83,63 +62,55 @@ struct SettingsStorageTab: View {
         }
     }
 
+    private var lastCleanupCaption: String {
+        guard let lastRun = appSettings.lastRetentionCleanupDate else { return "Not run yet." }
+        let date = lastRun.formatted(date: .abbreviated, time: .shortened)
+        let summary = appSettings.lastRetentionCleanupSummary
+        return summary.isEmpty ? date : "\(date) · \(summary)"
+    }
+
     @ViewBuilder
-    private func retentionControls(
+    private func retentionRows(
         title: String,
         help: String,
         enabled: Binding<Bool>,
         days: Binding<Int>,
         category: RetentionCategory
     ) -> some View {
-        Toggle(title, isOn: enabled)
-
+        SettingsRow(verbatim: title, caption: help) {
+            HStack(spacing: 8) {
+                if enabled.wrappedValue {
+                    Picker("Delete after", selection: days) {
+                        ForEach(retentionDayOptions, id: \.self) { value in
+                            Text("After \(retentionLabel(value))").tag(value)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                Toggle(title, isOn: enabled)
+            }
+        }
         if enabled.wrappedValue {
-            Picker("Delete after", selection: days) {
-                ForEach(retentionDayOptions, id: \.self) { value in
-                    Text(retentionLabel(value)).tag(value)
-                }
-            }
-            .pickerStyle(.menu)
-
-            LabeledContent("Clean up now") {
+            SettingsRow(verbatim: "Clean up now", caption: cleanupMessage[category]) {
                 HStack(spacing: 8) {
-                    if let message = cleanupMessage[category] {
-                        Text(message)
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
+                    if runningCleanup == category { ProgressView().controlSize(.small) }
+                    Button(category == .recordings ? "Delete old recordings…" : "Delete old transcripts…") {
+                        pendingCleanup = category
                     }
-
-                    if runningCleanup == category {
-                        ProgressView().controlSize(.small)
-                    }
-
-                    Button(category == .recordings ? "Delete old recordings…" : "Delete old transcripts…") { pendingCleanup = category }
-                        .buttonStyle(.typographyBordered)
-                        .controlSize(.small)
-                        .disabled(runningCleanup != nil)
+                    .buttonStyle(.settingsDanger)
+                    .disabled(runningCleanup != nil)
                 }
             }
-
-            Text(help)
-                .uiFont(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
-    @ViewBuilder
-    private func folderRow(
-        title: String,
-        url: URL,
-        onChoose: @escaping (URL) -> Void
-    ) -> some View {
-        LabeledContent(title) {
+    private func folderRow(title: String, url: URL, onChoose: @escaping (URL) -> Void) -> some View {
+        SettingsRow(verbatim: title, systemImage: "folder") {
             HStack(spacing: 8) {
                 FolderPathControl(url: url)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                Button("Choose…") {
-                    chooseFolder(completion: onChoose)
-                }
-                .buttonStyle(.typographyBordered)
+                    .frame(maxWidth: 280, alignment: .trailing)
+                Button("Choose…") { chooseFolder(completion: onChoose) }
+                    .buttonStyle(.settingsSecondary)
             }
         }
     }

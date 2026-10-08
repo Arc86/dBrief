@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsProfilesTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(\.settingsSearchRequest) private var searchRequest
+    @Environment(\.viewerPalette) private var palette
     @Binding var selectedProfileId: UUID?
     @State private var statusMessage: String?
     @State private var profilePendingDeletion: MeetingProfile?
@@ -14,10 +14,6 @@ struct SettingsProfilesTab: View {
 
     // Collapsible override groups — start collapsed; the "X of Y overridden"
     // badge surfaces state without expanding.
-    @State private var showTranscriptionOverrides = false
-    @State private var showAIOverrides = false
-    @State private var showTaskOverrides = false
-    @State private var showFolderOverrides = false
 
     // The symbol grid is hidden until the user taps the icon to change it.
     @State private var showSymbolPicker = false
@@ -31,15 +27,6 @@ struct SettingsProfilesTab: View {
         }
         .padding(.leading, 14)
         .onAppear { ensureSelection() }
-        .onChange(of: searchRequest, initial: true) { _, request in
-            switch request?.section {
-            case .profileTranscription: showTranscriptionOverrides = true
-            case .profileAI: showAIOverrides = true
-            case .profileTasks: showTaskOverrides = true
-            case .profileFolders: showFolderOverrides = true
-            default: break
-            }
-        }
         .onChange(of: appSettings.profiles.count) { _, _ in ensureSelection() }
         .onChange(of: selectedProfileId) { _, _ in
             ensureSelection()
@@ -59,7 +46,7 @@ struct SettingsProfilesTab: View {
             Text("This profile and its overrides will be removed. This can’t be undone.")
         }
         .alert("Restore shared defaults?", isPresented: $isConfirmingSharedReset) {
-            Button("Restore Defaults", role: .destructive) {
+            Button("Restore defaults", role: .destructive) {
                 appSettings.resetDefaultProfileToBuiltInDefaults()
                 statusMessage = "Shared settings and the Default profile restored."
             }
@@ -67,7 +54,7 @@ struct SettingsProfilesTab: View {
         } message: {
             Text("Restores shared language, vocabulary, AI prompts, post-recording task choices, recording and transcript folders, and Obsidian destination settings. Also resets the Default profile’s overrides, automation, matching rules, name, and icon. Other profiles keep their overrides, but inherited values change. Existing recordings and transcripts are kept. This can’t be undone.")
         }
-        .alert("Rename Profile", isPresented: Binding(
+        .alert("Rename profile", isPresented: Binding(
             get: { profilePendingRename != nil },
             set: { if !$0 { profilePendingRename = nil } }
         )) {
@@ -82,7 +69,8 @@ struct SettingsProfilesTab: View {
     private var profileListPane: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Profiles")
-                .uiFont(.headline)
+                .uiFont(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.heading.color)
                 .padding(.leading, 2)
 
             List(selection: $selectedProfileId) {
@@ -94,15 +82,16 @@ struct SettingsProfilesTab: View {
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
-            .background(.settingsSurface)
+            .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
             .frame(maxHeight: .infinity)
 
             bottomControlBar
 
             if let statusMessage {
                 Text(statusMessage)
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11.5))
+                    .foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -118,17 +107,13 @@ struct SettingsProfilesTab: View {
                     .lineLimit(1)
                 if profile.id == appSettings.activeProfileId {
                     Label("Saved selection", systemImage: "checkmark.seal.fill")
-                        .uiFont(.caption)
-                        .foregroundStyle(Color.accentColor)
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.accentText.color)
                 }
                 if profile.id == appSettings.automaticProfileId {
-                    Text("Automatic selection")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    noteRow("Automatic selection")
                 } else if profile.id != appSettings.activeProfileId && profile.preset == .custom {
-                    Text("Custom profile")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    noteRow("Custom profile")
                 }
             }
             Spacer(minLength: 0)
@@ -229,74 +214,90 @@ struct SettingsProfilesTab: View {
     @ViewBuilder
     private var editorPane: some View {
         if let selectedProfile {
-            Form {
-                Section {
-                    Text("Editing profile: \(selectedProfile.name)")
-                        .uiFont(.headline)
-                    Text("Overrides apply to recordings that use this profile. Opening this editor does not select it for recording. A running processing stage keeps its captured settings. Later stages may use updated settings.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                    if selectedProfile.id == appSettings.automaticProfileId {
-                        Text("Temporarily selected by automatic routing. Your saved profile selection is unchanged.")
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                identitySection(selectedProfile)
-                matchingSection(selectedProfile)
-                Section("After Recording", settingsSearch: .profileAutomation) {
-                    Picker("Action", selection: profileBinding(\.postRecordingPolicy, fallback: .review)) {
-                        ForEach(PostRecordingPolicy.allCases, id: \.self) { policy in
-                            Text(policy.title).tag(policy)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    SettingsNotice(Text(selectedProfile.id == appSettings.automaticProfileId
+                        ? "Editing **\(selectedProfile.name)**. It is selected automatically right now; your saved selection is unchanged."
+                        : "Editing **\(selectedProfile.name)**. Opening this editor doesn't select it for recording.")) { EmptyView() }
+                    identitySection(selectedProfile)
+                    matchingSection(selectedProfile)
+                    SettingsCard("After recording", section: .profileAutomation) {
+                        SettingsRow("Action",
+                                    caption: "Automatic actions wait 10 seconds so you can choose Review instead. Queue saves the work for later.") {
+                            Picker("Action", selection: profileBinding(\.postRecordingPolicy, fallback: .review)) {
+                                ForEach(PostRecordingPolicy.allCases, id: \.self) { policy in
+                                    Text(policy.title).tag(policy)
+                                }
+                            }
+                            .pickerStyle(.menu)
                         }
                     }
-                    Text("Automatic actions wait 10 seconds so you can choose Review instead. Processing uses this profile’s task defaults and configured destinations. Queue automatically saves the work for manual processing later.")
-                        .uiFont(.caption).foregroundStyle(.secondary)
+                    transcriptionOverridesSection
+                    aiOverridesSection
+                    taskOverridesSection
+                    folderOverridesSection
                 }
-                transcriptionOverridesSection
-                aiOverridesSection
-                taskOverridesSection
-                folderOverridesSection
+                .frame(maxWidth: 620, alignment: .leading)
+                .padding(.vertical, 28)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
             .scrollBounceBehavior(.basedOnSize)
+            .toggleStyle(.switch)
+            .controlSize(.small)
         } else {
-            ContentUnavailableView("No Profile Selected", systemImage: "person.3")
+            ContentUnavailableView("No profile selected", systemImage: "person.3")
         }
     }
 
     @ViewBuilder
     private func matchingSection(_ profile: MeetingProfile) -> some View {
-        Section("Automatic Profile Selection", settingsSearch: .profileMatching) {
-            Toggle("Select this profile when all conditions match", isOn: profileBinding(\.automaticMatchingEnabled, fallback: false))
+        SettingsCard("Automatic selection", section: .profileMatching) {
+            SettingsRow("Select this profile when all conditions match") {
+                Toggle("Select this profile when all conditions match", isOn: profileBinding(\.automaticMatchingEnabled, fallback: false))
+            }
             if profile.automaticMatchingEnabled {
-                Stepper("Priority: \(profile.matchPriority)", value: profileBinding(\.matchPriority, fallback: 0), in: -100...100)
-                ForEach(profile.matchingRules) { rule in
-                    HStack {
-                        Picker("Field", selection: ruleBinding(rule.id, \.field, fallback: rule.field)) {
-                            ForEach(ProfileMatchRule.Field.allCases, id: \.self) { field in Text(field.title).tag(field) }
-                        }
-                        .labelsHidden()
-                        .accessibilityLabel("Match field")
-                        TextField(rule.field == .attendeeDomain ? "Exact domain, e.g. acme.com" : "Contains text",
-                                  text: ruleBinding(rule.id, \.value, fallback: rule.value))
-                        Button {
-                            var rules = profile.matchingRules
-                            rules.removeAll { $0.id == rule.id }
-                            profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
-                        } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.typographyBorderless)
-                        .accessibilityLabel("Remove condition")
+                SettingsRow(verbatim: "Priority", caption: "Higher priority wins, then more conditions.") {
+                    HStack(spacing: 6) {
+                        Text("\(profile.matchPriority)")
+                            .uiFont(.system(size: 12).monospacedDigit())
+                            .foregroundStyle(palette.text.color)
+                        Stepper("Priority", value: profileBinding(\.matchPriority, fallback: 0), in: -100...100)
                     }
                 }
-                Button("Add condition", systemImage: "plus") {
-                    var rules = profile.matchingRules
-                    rules.append(.init(field: .title, value: ""))
-                    profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
+                ForEach(profile.matchingRules) { rule in
+                    SettingsStackedRow {
+                        HStack(spacing: 8) {
+                            Picker("Field", selection: ruleBinding(rule.id, \.field, fallback: rule.field)) {
+                                ForEach(ProfileMatchRule.Field.allCases, id: \.self) { field in Text(field.title).tag(field) }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .fixedSize()
+                            .accessibilityLabel("Match field")
+                            TextField(rule.field == .attendeeDomain ? "Exact domain, e.g. acme.com" : "Contains text",
+                                      text: ruleBinding(rule.id, \.value, fallback: rule.value))
+                                .settingsTextField()
+                            Button {
+                                var rules = profile.matchingRules
+                                rules.removeAll { $0.id == rule.id }
+                                profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
+                            } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.settingsSecondary)
+                            .accessibilityLabel("Remove condition")
+                        }
+                    }
                 }
-                Text("Every condition must match. Higher priority wins, then more conditions. Email domains match exactly. Empty conditions never match.")
-                    .uiFont(.caption).foregroundStyle(.secondary)
+                SettingsRow("Conditions", caption: "Every condition must match. Email domains match exactly. Empty conditions never match.") {
+                    Button {
+                        var rules = profile.matchingRules
+                        rules.append(.init(field: .title, value: ""))
+                        profileBinding(\.matchingRules, fallback: []).wrappedValue = rules
+                    } label: {
+                        Label("Add condition", systemImage: "plus")
+                    }
+                    .buttonStyle(.settingsSecondary)
+                }
             }
         }
     }
@@ -312,7 +313,8 @@ struct SettingsProfilesTab: View {
     }
 
     private func identitySection(_ profile: MeetingProfile) -> some View {
-        Section("Profile", settingsSearch: .profileIdentity) {
+        SettingsCard("Profile", section: .profileIdentity) {
+            SettingsStackedRow {
             HStack(spacing: 14) {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { showSymbolPicker.toggle() }
@@ -325,7 +327,7 @@ struct SettingsProfilesTab: View {
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "pencil.circle.fill")
                             .font(.system(size: 16))
-                            .foregroundStyle(.white, Color.accentColor)
+                            .foregroundStyle(.white, palette.primary.color)
                             .background(Circle().fill(.background))
                             .offset(x: 4, y: 4)
                     }
@@ -342,23 +344,21 @@ struct SettingsProfilesTab: View {
                     .frame(height: 22)
 
                     if profile.id == appSettings.activeProfileId {
-                        Label("Saved profile selection", systemImage: "checkmark.seal.fill")
-                            .uiFont(.caption)
-                            .foregroundStyle(Color.accentColor)
+                        SettingsStatusPill("Saved profile selection", kind: .accent)
                     } else {
                         Button("Use as saved profile") { appSettings.setActiveProfile(profile.id) }
-                            .controlSize(.small)
-                            .buttonStyle(.typographyBordered)
+                            .buttonStyle(.settingsSecondary)
                     }
                 }
             }
+            }
 
             if showSymbolPicker {
-                symbolGrid(profile)
+                SettingsStackedRow { symbolGrid(profile) }
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            LabeledContent("Color") {
+            SettingsRow("Colour") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 22), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(Theme.profileColorOptions) { option in
                         let isSelected = option.key == profile.iconBackgroundColorKey
@@ -383,16 +383,14 @@ struct SettingsProfilesTab: View {
             }
 
             if profile.isProtectedDefault {
-                Button("Restore shared defaults…") {
-                    isConfirmingSharedReset = true
+                SettingsRow("Shared defaults", caption: "Restores app-wide defaults and this profile's settings.") {
+                    Button("Restore shared defaults…") { isConfirmingSharedReset = true }
+                        .buttonStyle(.settingsDanger)
                 }
-                .buttonStyle(.typographyBordered)
             }
 
             ForEach(appSettings.warnings(for: profile), id: \.self) { warning in
-                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .uiFont(.caption)
-                    .foregroundStyle(.orange)
+                SettingsRow(verbatim: warning) { SettingsStatusPill("Check", kind: .warning) }
             }
         }
     }
@@ -438,8 +436,11 @@ struct SettingsProfilesTab: View {
     // MARK: Override groups
 
     private var transcriptionOverridesSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $showTranscriptionOverrides) {
+        let overridden = [isSet(\.transcriptionEngine), isSet(\.transcriptionLanguage),
+                    isSet(\.customVocabulary), isSet(\.transcriptionEndpointId)].filter { $0 }.count
+        let total = [isSet(\.transcriptionEngine), isSet(\.transcriptionLanguage),
+                    isSet(\.customVocabulary), isSet(\.transcriptionEndpointId)].count
+        return SettingsCard("Transcription", description: "\(overridden) of \(total) overridden", section: .profileTranscription) {
                 overrideRow("Transcription engine", \.transcriptionEngine,
                             defaultValue: appSettings.transcriptionEngine) {
                     Picker("Engine", selection: overrideBinding(\.transcriptionEngine,
@@ -454,9 +455,7 @@ struct SettingsProfilesTab: View {
                 overrideRow("Language", \.transcriptionLanguage,
                             defaultValue: appSettings.transcriptionLanguage) {
                     if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
-                        Text("Language override is inactive with Parakeet.")
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        noteRow("Language override is inactive with Parakeet.")
                     } else if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .appleSpeech {
                         AppleSpeechLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
                             fallback: appSettings.transcriptionLanguage))
@@ -469,9 +468,7 @@ struct SettingsProfilesTab: View {
                     }
                 }
                 if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
-                    Text("Parakeet ignores the language selection. Any saved override is kept for other engines.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    noteRow("Parakeet ignores the language selection. Any saved override is kept for other engines.")
                 }
 
                 overrideRow("Custom vocabulary", \.customVocabulary,
@@ -496,9 +493,7 @@ struct SettingsProfilesTab: View {
                 overrideRow("Transcription service", \.transcriptionEndpointId,
                             defaultValue: appSettings.defaultTranscriptionEndpoint?.id) {
                     if appSettings.transcriptionEndpoints.isEmpty {
-                        Text("No transcription services configured.")
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        noteRow("No transcription services configured.")
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.transcriptionEndpointId,
                                                                       fallback: appSettings.transcriptionEndpoints[0].id)) {
@@ -509,22 +504,19 @@ struct SettingsProfilesTab: View {
                         .pickerStyle(.menu)
                     }
                 }
-            } label: {
-                overrideGroupLabel("Transcription", section: .profileTranscription, keyPaths: [
-                    isSet(\.transcriptionEngine), isSet(\.transcriptionLanguage),
-                    isSet(\.customVocabulary), isSet(\.transcriptionEndpointId)
-                ])
-            }
         }
     }
 
     private var aiOverridesSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $showAIOverrides) {
+        let overridden = [isSet(\.aiProcessingEnabled), isSet(\.aiEngine), isSet(\.aiEndpointId),
+                    isSet(\.localCLIReasoningEffort), isSet(\.calendarCLIReasoningEffort),
+                    isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)].filter { $0 }.count
+        let total = [isSet(\.aiProcessingEnabled), isSet(\.aiEngine), isSet(\.aiEndpointId),
+                    isSet(\.localCLIReasoningEffort), isSet(\.calendarCLIReasoningEffort),
+                    isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)].count
+        return SettingsCard("AI analysis", description: "\(overridden) of \(total) overridden", section: .profileAI) {
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
-                    Text("AI analysis is off for this profile. You can configure its options for later use; transcription remains available.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    noteRow("AI analysis is off for this profile. You can configure its options for later use; transcription remains available.")
                 }
                 overrideRow("AI processing", \.aiProcessingEnabled,
                             defaultValue: appSettings.aiProcessingEnabled) {
@@ -544,9 +536,7 @@ struct SettingsProfilesTab: View {
                 overrideRow("AI provider", \.aiEndpointId,
                             defaultValue: appSettings.defaultAIEndpoint?.id) {
                     if appSettings.aiEndpoints.isEmpty {
-                        Text("No AI providers configured.")
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        noteRow("No AI providers configured.")
                     } else {
                         Picker("Endpoint", selection: overrideBinding(\.aiEndpointId,
                                                                       fallback: appSettings.aiEndpoints[0].id)) {
@@ -566,8 +556,7 @@ struct SettingsProfilesTab: View {
                         recommendation: .medium)
                 }
                 if appSettings.localCLIConfig.effortProvider == .commandDefault {
-                    Text("AI CLI effort is saved but inactive until Claude Code is selected as its effort provider.")
-                        .uiFont(.caption).foregroundStyle(.secondary)
+                    noteRow("AI CLI effort is saved but inactive until Claude Code is selected as its effort provider.")
                 }
 
                 overrideRow("Calendar CLI effort", \.calendarCLIReasoningEffort,
@@ -578,8 +567,7 @@ struct SettingsProfilesTab: View {
                         recommendation: .low)
                 }
                 if appSettings.calendarCLIConfig.modelID?.lowercased().contains("haiku") == true {
-                    Text("Calendar effort is saved but not applicable to the selected Haiku model.")
-                        .uiFont(.caption).foregroundStyle(.secondary)
+                    noteRow("Calendar effort is saved but not applicable to the selected Haiku model.")
                 }
 
                 if let profile = selectedProfile {
@@ -587,26 +575,20 @@ struct SettingsProfilesTab: View {
                     PromptSettingsRow(kind: .actionItems, scope: .profile(profile.id))
                     PromptSettingsRow(kind: .tags, scope: .profile(profile.id))
                 }
-            } label: {
-                overrideGroupLabel("AI Analysis", section: .profileAI, keyPaths: [
-                    isSet(\.aiProcessingEnabled), isSet(\.aiEngine), isSet(\.aiEndpointId),
-                    isSet(\.localCLIReasoningEffort), isSet(\.calendarCLIReasoningEffort),
-                    isSet(\.summaryPrompt), isSet(\.actionItemsPrompt), isSet(\.tagsPrompt)
-                ])
-            }
         }
     }
 
     private var taskOverridesSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $showTaskOverrides) {
-                Text("These are the default tasks after recording. The profile’s automation setting controls whether they start automatically.")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
+        let overridden = [isSet(\.autoTranscribe), isSet(\.autoSummary),
+                    isSet(\.autoActionItems), isSet(\.autoTags),
+                    isSet(\.autoLoadCalendarParticipants)].filter { $0 }.count
+        let total = [isSet(\.autoTranscribe), isSet(\.autoSummary),
+                    isSet(\.autoActionItems), isSet(\.autoTags),
+                    isSet(\.autoLoadCalendarParticipants)].count
+        return SettingsCard("Task defaults", description: "\(overridden) of \(total) overridden", section: .profileTasks) {
+                noteRow("These are the default tasks after recording. The profile’s automation setting controls whether they start automatically.")
                 if !(selectedProfile?.overrides.aiProcessingEnabled ?? appSettings.aiProcessingEnabled) {
-                    Text("Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
+                    noteRow("Summary, action items, and tags are inactive while AI analysis is off for this profile. Saved choices are kept.")
                 }
                 overrideRow("Transcription task", \.autoTranscribe,
                             defaultValue: appSettings.autoTranscribe) {
@@ -627,19 +609,15 @@ struct SettingsProfilesTab: View {
                     boolToggle("Load calendar attendees during processing", \.autoLoadCalendarParticipants,
                                fallback: appSettings.autoLoadCalendarParticipants)
                 }
-            } label: {
-                overrideGroupLabel("Task Defaults", section: .profileTasks, keyPaths: [
-                    isSet(\.autoTranscribe), isSet(\.autoSummary),
-                    isSet(\.autoActionItems), isSet(\.autoTags),
-                    isSet(\.autoLoadCalendarParticipants)
-                ])
-            }
         }
     }
 
     private var folderOverridesSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $showFolderOverrides) {
+        let overridden = [isSet(\.recordingFolderPath), isSet(\.transcriptionFolderPath),
+                    isSet(\.obsidianVaultPath), isSet(\.obsidianDefaultFolderRelativePath)].filter { $0 }.count
+        let total = [isSet(\.recordingFolderPath), isSet(\.transcriptionFolderPath),
+                    isSet(\.obsidianVaultPath), isSet(\.obsidianDefaultFolderRelativePath)].count
+        return SettingsCard("Folders", description: "\(overridden) of \(total) overridden", section: .profileFolders) {
                 folderOverrideRow("Recording folder", \.recordingFolderPath,
                                   fallback: appSettings.recordingFolderURL.path)
                 folderOverrideRow("Transcription folder", \.transcriptionFolderPath,
@@ -656,28 +634,10 @@ struct SettingsProfilesTab: View {
                     )
                     .frame(height: 22)
                 }
-            } label: {
-                overrideGroupLabel("Folders", section: .profileFolders, keyPaths: [
-                    isSet(\.recordingFolderPath), isSet(\.transcriptionFolderPath),
-                    isSet(\.obsidianVaultPath), isSet(\.obsidianDefaultFolderRelativePath)
-                ])
-            }
         }
     }
 
     // MARK: - Override row helpers
-
-    private func overrideGroupLabel(_ title: String, section: SettingsSectionID, keyPaths: [Bool]) -> some View {
-        let active = keyPaths.filter { $0 }.count
-        let total = keyPaths.count
-        return HStack {
-            SettingsSearchHeading(LocalizedStringKey(title), section: section).uiFont(.headline)
-            Spacer()
-            Text("\(active) of \(total) overridden")
-                .uiFont(.caption)
-                .foregroundStyle(active > 0 ? Color.accentColor : Color.secondary)
-        }
-    }
 
     /// A single override: a switch labelled with the setting name. When off the
     /// row shows its inherited value; when on it reveals its inline control.
@@ -691,33 +651,27 @@ struct SettingsProfilesTab: View {
         let enabled = isSet(keyPath)
         let fields = SettingsProfileScope.Field.allCases.filter { $0.keyPath == keyPath }
         let summary = SettingsProfileScope(settings: appSettings, profile: selectedProfile, fields: fields).summary(for: keyPath)
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                Spacer()
-                Toggle("Override \(title)", isOn: Binding(
-                    get: { isSet(keyPath) },
-                    set: { setOverride(keyPath, enabled: $0, defaultValue: defaultValue) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-            }
-            if let summary {
-                Text("\(enabled ? "App default" : "Use app default") — \(summary.defaultValue)")
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .help(summary.defaultValue)
-                if let note = summary.note {
-                    Text("\(note) Profile setting: \(summary.profileValue)")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if enabled {
-                control()
-            }
+        SettingsRow(verbatim: title,
+                    caption: summary.map { "\(enabled ? "App default" : "Uses app default") — \($0.defaultValue)" }) {
+            Toggle("Override \(title)", isOn: Binding(
+                get: { isSet(keyPath) },
+                set: { setOverride(keyPath, enabled: $0, defaultValue: defaultValue) }
+            ))
+        }
+        if let summary, let note = summary.note {
+            noteRow("\(note) Profile setting: \(summary.profileValue)")
+        }
+        if enabled {
+            SettingsStackedRow { control() }
+        }
+    }
+
+    private func noteRow(_ text: String) -> some View {
+        SettingsStackedRow {
+            Text(text)
+                .uiFont(.system(size: 11.5))
+                .foregroundStyle(palette.secondary.color)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -741,15 +695,14 @@ struct SettingsProfilesTab: View {
                 Text(overrideBinding(keyPath, fallback: fallback).wrappedValue)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondary.color)
                 Spacer()
                 Button("Choose…") {
                     chooseFolder { url in
                         overrideBinding(keyPath, fallback: fallback).wrappedValue = url.path
                     }
                 }
-                .buttonStyle(.typographyBordered)
-                .controlSize(.small)
+                .buttonStyle(.settingsSecondary)
             }
         }
     }
