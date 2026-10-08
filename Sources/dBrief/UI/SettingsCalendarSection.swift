@@ -3,9 +3,22 @@ import Combine
 import EventKit
 import SwiftUI
 
+/// Search targets on the Meetings page render even when the calendar source
+/// wouldn't normally show them, so every search result lands on its section.
+enum SettingsCalendarVisibility {
+    static func showsMatching(source: CalendarSource, request: SettingsSearchRequest?) -> Bool {
+        source != .disabled || request?.section == .meetingMatching
+    }
+
+    static func showsClaudeCLI(source: CalendarSource, request: SettingsSearchRequest?) -> Bool {
+        source == .claudeCLI || request?.section == .calendarCLIAdvanced
+    }
+}
+
 struct SettingsCalendarSection: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(MicrosoftAuthService.self) private var microsoftAuthService
+    @Environment(\.settingsSearchRequest) private var searchRequest
 
     @State private var outlookSignInError: String?
     @State private var calendarStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
@@ -88,11 +101,11 @@ struct SettingsCalendarSection: View {
             reloadICalCalendars()
         }
 
-        if settings.effectiveCalendarSource == .claudeCLI {
+        if SettingsCalendarVisibility.showsClaudeCLI(source: settings.effectiveCalendarSource, request: searchRequest) {
             SettingsCalendarCLISection()
         }
 
-        if settings.effectiveCalendarSource != .disabled {
+        if SettingsCalendarVisibility.showsMatching(source: settings.effectiveCalendarSource, request: searchRequest) {
             SettingsCard("Meeting matching", section: .meetingMatching) {
                 SettingsRow("Match window",
                             caption: "Overlapping meetings match automatically. The window also allows nearby starts.") {

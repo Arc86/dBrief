@@ -165,6 +165,7 @@ struct SettingsRow<Control: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .accessibilityElement(children: .combine)
             .frame(maxWidth: .infinity, alignment: .leading)
             control
                 .labelsHidden()
@@ -174,7 +175,8 @@ struct SettingsRow<Control: View>: View {
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
         .overlay(alignment: .bottom) { SettingsHairline() }
-        .accessibilityElement(children: .combine)
+        // Label + caption read as one element; every control stays its own element.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -308,15 +310,23 @@ struct SettingsAdvancedCard<Content: View>: View {
         return sections.contains(section)
     }
 
+    /// Open on the very first render for a search target, so the page can scroll to
+    /// the section before `onAppear` has persisted the expansion.
+    static func isOpen(stored: Bool, request: SettingsSearchRequest?, sections: Set<SettingsSectionID>) -> Bool {
+        stored || shouldExpand(request: request, sections: sections)
+    }
+
+    private var isOpen: Bool { Self.isOpen(stored: expanded, request: request, sections: sections) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.14)) { expanded.toggle() }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.14)) { expanded = !isOpen }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
                         .foregroundStyle(palette.secondary.color)
                     Text("Advanced")
                         .uiFont(.system(size: 12.5, weight: .semibold))
@@ -331,8 +341,8 @@ struct SettingsAdvancedCard<Content: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
-            if expanded {
+            .accessibilityValue(isOpen ? Text("Expanded") : Text("Collapsed"))
+            if isOpen {
                 VStack(alignment: .leading, spacing: 18) { content }
                     .padding([.horizontal, .bottom], 8)
             }

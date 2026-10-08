@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum SettingsSidebarKeys {
+    static func handlesArrows(isSearching: Bool, searchFocused: Bool) -> Bool {
+        !isSearching && !searchFocused
+    }
+}
+
 /// Settings sidebar in the transcript-library style: brand header, search, grouped
 /// pages with a flat `selected` fill, footer pages for Performance and About.
 struct SettingsSidebar<Results: View>: View {
@@ -70,8 +76,18 @@ struct SettingsSidebar<Results: View>: View {
         )
         .focusable()
         .focusEffectDisabled()
-        .onKeyPress(.upArrow) { onSelect(SettingsPage.adjacent(to: selection, offset: -1)); return .handled }
-        .onKeyPress(.downArrow) { onSelect(SettingsPage.adjacent(to: selection, offset: 1)); return .handled }
+        .onKeyPress(.upArrow) { moveSelection(by: -1) }
+        .onKeyPress(.downArrow) { moveSelection(by: 1) }
+    }
+
+    /// Arrow keys walk the pages only when they aren't meant for search: key presses
+    /// bubble up from the search field and results list to this container.
+    private func moveSelection(by offset: Int) -> KeyPress.Result {
+        guard SettingsSidebarKeys.handlesArrows(isSearching: isSearching, searchFocused: searchFocused.wrappedValue) else {
+            return .ignored
+        }
+        onSelect(SettingsPage.adjacent(to: selection, offset: offset))
+        return .handled
     }
 
     private var searchField: some View {
