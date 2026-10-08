@@ -11,11 +11,31 @@ struct SettingsNavigationTests {
         }
     }
 
+    @Test func sidebarFollowsTheLifeOfARecording() {
+        #expect(SettingsGroup.allCases.map(\.title) == ["dBrief", "Capture", "Understand", "Deliver", ""])
+        #expect(SettingsGroup.app.pages == [.general, .appearance, .permissions])
+        #expect(SettingsGroup.capture.pages == [.recording, .meetings, .watchedFolders])
+        #expect(SettingsGroup.understand.pages == [.transcription, .speakers, .vocabulary, .ai, .spokenVoice])
+        #expect(SettingsGroup.deliver.pages == [.afterRecording, .profiles, .integrations, .storage])
+        #expect(SettingsGroup.footer.pages == [.benchmark, .about])
+        #expect(SettingsPage.benchmark.title == "Performance")
+        #expect(SettingsPage.watchedFolders.title == "Import")
+        #expect(SettingsPage.ai.title == "AI analysis")
+    }
+
     @Test func movedSectionsRouteToTheirOwningPage() {
         #expect(SettingsDestination(section: .recordingShortcut).page == .recording)
-        #expect(SettingsDestination(section: .callDetection).page == .recording)
-        #expect(SettingsDestination(section: .calendar).page == .integrations)
+        #expect(SettingsDestination(section: .callDetection).page == .meetings)
+        #expect(SettingsDestination(section: .callPlatforms).page == .meetings)
+        #expect(SettingsDestination(section: .calendar).page == .meetings)
+        #expect(SettingsDestination(section: .meetingMatching).page == .meetings)
+        #expect(SettingsDestination(section: .calendarCLIAdvanced).page == .meetings)
+        #expect(SettingsDestination(section: .speakerIdentification).page == .speakers)
+        #expect(SettingsDestination(section: .speakerLibrary).page == .speakers)
+        #expect(SettingsDestination(section: .aiResultsLanguage).page == .ai)
+        #expect(SettingsDestination(section: .transcriptionAdvanced).page == .transcription)
         #expect(SettingsDestination(section: .storageFolders).page == .storage)
+        #expect(SettingsDestination(section: .integrations).page == .integrations)
         #expect(SettingsDestination(section: .afterRecordingTasks).page == .afterRecording)
         #expect(SettingsDestination(section: .appearance).page == .appearance)
         #expect(SettingsDestination(section: .typography).page == .appearance)
@@ -39,5 +59,7 @@ struct SettingsNavigationTests {
         #expect(SettingsPage.storage.profileFields.contains(.recordingFolder))
         #expect(SettingsPage.afterRecording.profileFields.contains(.transcriptionTask))
         #expect(!SettingsPage.ai.profileFields.contains(.transcriptionTask))
+        #expect(SettingsPage.meetings.profileFields == [.calendarEffort])
+        #expect(!SettingsPage.ai.profileFields.contains(.calendarEffort))
     }
 }

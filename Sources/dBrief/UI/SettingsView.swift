@@ -133,7 +133,8 @@ struct SettingsView: View {
                         case .vocabulary:     SettingsVocabularyTab()
                         case .watchedFolders: SettingsWatchedFoldersTab()
                         case .integrations: SettingsIntegrationsTab()
-                        case .voiceLibrary: SettingsVoiceLibraryTab()
+                        case .meetings:     SettingsMeetingsTab()
+                        case .speakers:     SettingsVoiceLibraryTab()
                         case .profiles:     SettingsProfilesTab(selectedProfileId: $profileToEdit)
                         case .benchmark:    SettingsBenchmarkTab()
                         case .about:        AboutTab()
@@ -141,7 +142,6 @@ struct SettingsView: View {
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                     .id(navigationRevision)
-                    .environment(\.settingsSearchRevealAdvanced, searchRequest?.section != nil)
                     .environment(\.settingsSearchRequest, searchRequest)
                     .task(id: navigationRevision) {
                         if let section = destination.section {

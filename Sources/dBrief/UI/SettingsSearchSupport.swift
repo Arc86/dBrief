@@ -8,18 +8,11 @@ struct SettingsSearchRequest: Equatable, Sendable {
 private struct SettingsSearchRequestKey: EnvironmentKey {
     static let defaultValue: SettingsSearchRequest? = nil
 }
-private struct SettingsSearchAdvancedKey: EnvironmentKey {
-    static let defaultValue = false
-}
 
 extension EnvironmentValues {
     var settingsSearchRequest: SettingsSearchRequest? {
         get { self[SettingsSearchRequestKey.self] }
         set { self[SettingsSearchRequestKey.self] = newValue }
-    }
-    var settingsSearchRevealAdvanced: Bool {
-        get { self[SettingsSearchAdvancedKey.self] }
-        set { self[SettingsSearchAdvancedKey.self] = newValue }
     }
 }
 

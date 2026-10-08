@@ -48,7 +48,7 @@ struct SettingsPagesVisualTests {
             await performance.append(ModelPerformanceRecord(label: "meeting", transcriptionModel: model,
                 audioDuration: audio, transcriptionTime: time, aiModel: "Local CLI", aiTime: 40))
         }
-        let skipped: Set<SettingsPage> = [.voiceLibrary, .watchedFolders]
+        let skipped: Set<SettingsPage> = [.speakers, .watchedFolders]
         let pages = environment["DBRIEF_SETTINGS_SNAPSHOT_PAGES"]
             .map { $0.split(separator: ",").compactMap { SettingsPage(rawValue: String($0)) } }
             ?? SettingsPage.allCases.filter { !skipped.contains($0) }

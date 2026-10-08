@@ -3,7 +3,7 @@ import dBriefWire
 
 struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var selectedEndpointId: UUID?

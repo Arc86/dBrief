@@ -1,62 +1,37 @@
 import SwiftUI
 
 /// Stable identifiers for routing; display labels may change independently.
+/// Declaration order is sidebar order: dBrief, Capture, Understand, Deliver, footer.
 enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
-    case general
-    case appearance
-    case recording
-    case transcription
-    case ai
-    case spokenVoice
-    case vocabulary
-    case watchedFolders
-    case integrations
-    case voiceLibrary
-    case profiles
-    case benchmark
-    case permissions
-    case about
-    case storage
-    case afterRecording
+    case general, appearance, permissions
+    case recording, meetings, watchedFolders
+    case transcription, speakers, vocabulary, ai, spokenVoice
+    case afterRecording, profiles, integrations, storage
+    case benchmark, about
     var id: String { rawValue }
+
     var title: String {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
-        case .recording: "Recording"
-        case .transcription: "Transcription"
-        case .ai: "AI Analysis"
-        case .spokenVoice: "Spoken Summary"
-        case .vocabulary: "Vocabulary"
-        case .watchedFolders: "Automatic Import"
-        case .integrations: "Integrations"
-        case .voiceLibrary: "Speaker Library"
-        case .profiles: "Profiles"
-        case .benchmark: "Benchmark"
         case .permissions: "Permissions"
-        case .about: "About"
+        case .recording: "Recording"
+        case .meetings: "Meetings"
+        case .watchedFolders: "Import"
+        case .transcription: "Transcription"
+        case .speakers: "Speakers"
+        case .vocabulary: "Vocabulary"
+        case .ai: "AI analysis"
+        case .spokenVoice: "Spoken summary"
+        case .afterRecording: "After recording"
+        case .profiles: "Profiles"
+        case .integrations: "Integrations"
         case .storage: "Storage"
-        case .afterRecording: "After Recording"
-        }
-    }
-    var group: SettingsGroup {
-        switch self {
-        case .general, .appearance, .storage, .permissions: .app
-        case .recording, .watchedFolders: .recording
-        case .transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary: .processing
-        case .afterRecording, .profiles, .integrations: .workflow
-        case .benchmark, .about: .footer
+        case .benchmark: "Performance"
+        case .about: "About"
         }
     }
 
-    /// Sidebar top-to-bottom, footer pages last; arrow keys walk this list.
-    static var sidebarOrder: [SettingsPage] { SettingsGroup.allCases.flatMap(\.pages) }
-
-    static func adjacent(to page: SettingsPage, offset: Int) -> SettingsPage {
-        let order = sidebarOrder
-        guard let index = order.firstIndex(of: page) else { return page }
-        return order[min(max(index + offset, 0), order.count - 1)]
-    }
     /// One line under the page title.
     var subtitle: String {
         switch self {
@@ -64,9 +39,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .appearance: "Theme, accent colour and interface text."
         case .permissions: "What dBrief can access on this Mac."
         case .recording: "Microphone, shortcut and what you see while recording."
+        case .meetings: "Notice calls and match recordings to calendar events."
         case .watchedFolders: "Process audio files dropped into watched folders."
         case .transcription: "Turn audio into text."
-        case .voiceLibrary: "Tell voices apart and recognise people you've named."
+        case .speakers: "Tell voices apart and recognise people you've named."
         case .vocabulary: "Names and terms dBrief should spell exactly."
         case .ai: "Summaries, action items, tags and Ask dBrief AI."
         case .spokenVoice: "Listen to a recording's summary."
@@ -79,129 +55,125 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    var group: SettingsGroup {
+        switch self {
+        case .general, .appearance, .permissions: .app
+        case .recording, .meetings, .watchedFolders: .capture
+        case .transcription, .speakers, .vocabulary, .ai, .spokenVoice: .understand
+        case .afterRecording, .profiles, .integrations, .storage: .deliver
+        case .benchmark, .about: .footer
+        }
+    }
+
+    /// Sidebar top-to-bottom, footer pages last; arrow keys walk this list.
+    static var sidebarOrder: [SettingsPage] { SettingsGroup.allCases.flatMap(\.pages) }
+
+    static func adjacent(to page: SettingsPage, offset: Int) -> SettingsPage {
+        let order = sidebarOrder
+        guard let index = order.firstIndex(of: page) else { return page }
+        return order[min(max(index + offset, 0), order.count - 1)]
+    }
+
     var searchSection: SettingsSectionID {
         switch self {
         case .general: .appBehavior
         case .appearance: .appearance
+        case .permissions: .permissions
         case .recording: .audioInput
-        case .storage: .storageFolders
+        case .meetings: .callDetection
+        case .watchedFolders: .automaticImport
         case .transcription: .transcriptionEngine
+        case .speakers: .speakerIdentification
+        case .vocabulary: .vocabularyTerms
         case .ai: .aiEnabled
         case .spokenVoice: .spokenVoice
-        case .vocabulary: .vocabularyTerms
-        case .watchedFolders: .automaticImport
-        case .integrations: .integrations
-        case .voiceLibrary: .speakerLibrary
-        case .profiles: .profileIdentity
-        case .benchmark: .benchmark
-        case .permissions: .permissions
-        case .about: .about
         case .afterRecording: .afterRecordingTasks
+        case .profiles: .profileIdentity
+        case .integrations: .integrations
+        case .storage: .storageFolders
+        case .benchmark: .benchmark
+        case .about: .about
         }
     }
+
     var editsAppDefaults: Bool {
         switch self {
-        case .general, .appearance, .recording, .transcription, .ai, .spokenVoice, .vocabulary, .watchedFolders, .integrations, .storage, .afterRecording: true
-        default: false
+        case .permissions, .speakers, .profiles, .benchmark, .about: false
+        default: true
         }
     }
+
     var profileFields: [SettingsProfileScope.Field] {
         switch self {
         case .storage: [.recordingFolder, .transcriptFolder]
         case .transcription: [.language, .transcriptionEngine, .transcriptionService]
         case .vocabulary: [.vocabulary]
-        case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .calendarEffort,
-                   .summaryPrompt, .actionsPrompt, .tagsPrompt]
+        case .meetings: [.calendarEffort]
+        case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .summaryPrompt, .actionsPrompt, .tagsPrompt]
         case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask]
         case .integrations: [.obsidianVault, .obsidianFolder]
         default: []
         }
     }
+
     var icon: String {
         switch self {
-        case .storage:        "internaldrive"
+        case .general: "gearshape"
+        case .appearance: "paintpalette"
+        case .permissions: "checkmark.shield"
+        case .recording: "mic"
+        case .meetings: "video"
+        case .watchedFolders: "tray.and.arrow.down"
+        case .transcription: "waveform"
+        case .speakers: "person.wave.2"
+        case .vocabulary: "character.book.closed"
+        case .ai: "sparkles"
+        case .spokenVoice: "speaker.wave.2"
         case .afterRecording: "checklist"
-        case .general:        "gear"
-        case .appearance:     "paintpalette"
-        case .permissions:    "lock.shield"
-        case .about:          "info.circle"
-        case .recording:      "mic"
-        case .transcription:  "waveform"
-        case .ai:             "brain"
-        case .spokenVoice:    "speaker.wave.2"
-        case .vocabulary:     "text.word.spacing"
-        case .watchedFolders: "folder.badge.gearshape"
-        case .integrations:   "puzzlepiece.extension"
-        case .voiceLibrary:   "person.wave.2"
-        case .profiles:       "person.3"
-        case .benchmark:      "speedometer"
-        }
-    }
-
-    /// Background tint for the System Settings–style colored icon badge.
-    var color: Color {
-        switch self {
-        case .storage:        .brown
-        case .afterRecording: .indigo
-        case .general:        .gray
-        case .appearance:     .orange
-        case .recording:      .red
-        case .transcription:  .blue
-        case .ai:             .purple
-        case .spokenVoice:    .pink
-        case .vocabulary:     .indigo
-        case .watchedFolders: .orange
-        case .integrations:   .teal
-        case .voiceLibrary:   .cyan
-        case .profiles:       .mint
-        case .benchmark:      .green
-        case .permissions:    .gray
-        case .about:          .blue
+        case .profiles: "person.3"
+        case .integrations: "puzzlepiece.extension"
+        case .storage: "internaldrive"
+        case .benchmark: "gauge.with.dots.needle.33percent"
+        case .about: "info.circle"
         }
     }
 }
 
-
 enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
-    case app, recording, processing, workflow, footer
+    case app, capture, understand, deliver, footer
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .app: "App"
-        case .recording: "Recording"
-        case .processing: "Processing"
-        case .workflow: "Workflow"
+        case .app: "dBrief"
+        case .capture: "Capture"
+        case .understand: "Understand"
+        case .deliver: "Deliver"
         case .footer: ""
         }
     }
-    var pages: [SettingsPage] {
-        switch self {
-        case .app: [.general, .appearance, .storage, .permissions]
-        case .recording: [.recording, .watchedFolders]
-        case .processing: [.transcription, .ai, .spokenVoice, .vocabulary, .voiceLibrary]
-        case .workflow: [.afterRecording, .profiles, .integrations]
-        case .footer: [.benchmark, .about]
-        }
-    }
+    var pages: [SettingsPage] { SettingsPage.allCases.filter { $0.group == self } }
 }
 
 enum SettingsSectionID: String, CaseIterable, Sendable {
     case appBehavior, softwareUpdate, setupGuide
     case appearance, accentColor, typography
-    case recordingShortcut, callDetection, callPlatforms, audioInput, echoCancellation, recordingIndicators, audioQuality
-    case calendar, integrations
+    case recordingShortcut, audioInput, echoCancellation, recordingIndicators, audioQuality
+    case callDetection, callPlatforms, calendar, meetingMatching, calendarCLIAdvanced
+    case integrations
     case storageFolders
     case afterRecordingTasks, afterRecordingAutomation
-    case transcriptionEngine, transcriptionLanguage, transcriptionCleanup, transcriptionLive, transcriptionServices, transcriptionChunking
-    case aiEnabled, aiEngine, aiPrompts, aiCLI, aiChatFallback, aiProviders
-    case spokenVoice, spokenPrompt, vocabularyTerms, automaticImport, permissions, speakerLibrary, benchmark, about
+    case transcriptionEngine, transcriptionLanguage, transcriptionCleanup, transcriptionLive, transcriptionServices, transcriptionChunking, transcriptionAdvanced
+    case speakerIdentification, speakerLibrary
+    case aiEnabled, aiEngine, aiResultsLanguage, aiPrompts, aiCLI, aiChatFallback, aiProviders
+    case spokenVoice, spokenPrompt, vocabularyTerms, automaticImport, permissions, benchmark, about
     case profileIdentity, profileMatching, profileAutomation, profileTranscription, profileAI, profileTasks, profileFolders
 
     var page: SettingsPage {
         switch self {
-        case .transcriptionEngine, .transcriptionLanguage, .transcriptionCleanup, .transcriptionLive, .transcriptionServices, .transcriptionChunking: .transcription
-        case .aiEnabled, .aiEngine, .aiPrompts, .aiCLI, .aiChatFallback, .aiProviders: .ai
-        case .speakerLibrary: .voiceLibrary
+        case .transcriptionEngine, .transcriptionLanguage, .transcriptionCleanup, .transcriptionLive,
+             .transcriptionServices, .transcriptionChunking, .transcriptionAdvanced: .transcription
+        case .aiEnabled, .aiEngine, .aiResultsLanguage, .aiPrompts, .aiCLI, .aiChatFallback, .aiProviders: .ai
+        case .speakerIdentification, .speakerLibrary: .speakers
         case .benchmark: .benchmark
         case .about: .about
         case .spokenVoice, .spokenPrompt: .spokenVoice
@@ -210,11 +182,20 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         case .permissions: .permissions
         case .appBehavior, .softwareUpdate, .setupGuide: .general
         case .appearance, .accentColor, .typography: .appearance
-        case .recordingShortcut, .callDetection, .callPlatforms, .audioInput, .echoCancellation, .recordingIndicators, .audioQuality: .recording
-        case .calendar, .integrations: .integrations
+        case .recordingShortcut, .audioInput, .echoCancellation, .recordingIndicators, .audioQuality: .recording
+        case .callDetection, .callPlatforms, .calendar, .meetingMatching, .calendarCLIAdvanced: .meetings
+        case .integrations: .integrations
         case .storageFolders: .storage
         case .afterRecordingTasks, .afterRecordingAutomation: .afterRecording
         case .profileIdentity, .profileMatching, .profileAutomation, .profileTranscription, .profileAI, .profileTasks, .profileFolders: .profiles
+        }
+    }
+
+    /// Sections that live inside a page's collapsed Advanced card.
+    var isAdvanced: Bool {
+        switch self {
+        case .audioQuality, .transcriptionAdvanced, .transcriptionChunking, .aiPrompts, .spokenPrompt, .calendarCLIAdvanced: true
+        default: false
         }
     }
 }

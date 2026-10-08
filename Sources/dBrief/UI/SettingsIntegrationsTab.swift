@@ -9,7 +9,6 @@ struct SettingsIntegrationsTab: View {
     var body: some View {
         NavigationStack {
             Form {
-                SettingsCalendarSection()
                 credentialStorageStatus
                 Section("Integrations", settingsSearch: .integrations) {
                     ForEach(IntegrationDestination.available, id: \.self) { destination in

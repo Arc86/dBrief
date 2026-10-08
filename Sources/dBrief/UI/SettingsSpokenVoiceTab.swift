@@ -6,7 +6,7 @@ import dBriefWire
 /// Split out of the AI Analysis tab so analysis and read-aloud config are separate.
 struct SettingsSpokenVoiceTab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var voicePreview = VoicePreviewPlayer()
