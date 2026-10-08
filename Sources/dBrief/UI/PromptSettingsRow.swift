@@ -8,23 +8,15 @@ struct PromptSettingsRow: View {
 
     var body: some View {
         let snapshot = try? PromptPreferencesStore(settings: settings).load(.init(kind: kind, scope: scope))
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(kind.title)
-                    Text(status(snapshot)).uiFont(.caption).foregroundStyle(.secondary)
-                }
-                if let snapshot {
-                    Text(PromptDraft(snapshot: snapshot).text)
-                        .uiFont(.callout).foregroundStyle(.secondary).lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Edit Prompt…") { context.promptEditorWindows.show(.init(kind: kind, scope: scope)) }
+        let preview = snapshot.map { PromptDraft(snapshot: $0).text } ?? ""
+        SettingsRow(verbatim: "\(kind.title) · \(status(snapshot))",
+                    caption: preview.isEmpty ? nil : String(preview.prefix(160))) {
+            Button("Edit…") { context.promptEditorWindows.show(.init(kind: kind, scope: scope)) }
+                .buttonStyle(.settingsSecondary)
                 .accessibilityLabel("Edit \(kind.title) prompt")
         }
-        .padding(.vertical, 4)
     }
+
     private func status(_ snapshot: PromptSnapshot?) -> String {
         guard let snapshot else { return "Unavailable" }
         switch snapshot.value {

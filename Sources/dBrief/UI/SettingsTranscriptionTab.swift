@@ -5,7 +5,6 @@ struct SettingsTranscriptionTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
-    private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
     @Environment(\.settingsSearchRequest) private var searchRequest
     @Environment(RecordingManager.self) private var recordingManager
     @State private var purgeMessage: String?

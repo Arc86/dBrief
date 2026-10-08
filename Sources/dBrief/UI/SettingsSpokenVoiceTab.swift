@@ -6,85 +6,78 @@ import dBriefWire
 /// Split out of the AI Analysis tab so analysis and read-aloud config are separate.
 struct SettingsSpokenVoiceTab: View {
     @Environment(AppSettings.self) private var appSettings
-    private var searchAdvanced: Bool { searchRequest?.section.isAdvanced ?? false }
-    @Environment(\.settingsSearchRequest) private var searchRequest
+    @Environment(\.viewerPalette) private var palette
     @Environment(RecordingManager.self) private var recordingManager
     @State private var voicePreview = VoicePreviewPlayer()
 
     var body: some View {
         @Bindable var settings = appSettings
-        Form {
-            Section("Spoken Voice", settingsSearch: .spokenVoice) {
-                Picker("Voice engine", selection: $settings.ttsEngine) {
-                    ForEach(TTSEngine.allCases, id: \.self) { engine in
-                        Text(engine.displayName).tag(engine)
+        SettingsPageScaffold(page: .spokenVoice) {
+            SettingsCard("Voice", section: .spokenVoice) {
+                SettingsRow(verbatim: "Voice engine", caption: settings.ttsEngine.shortDescription) {
+                    Picker("Voice engine", selection: $settings.ttsEngine) {
+                        ForEach(TTSEngine.allCases, id: \.self) { engine in
+                            Text(engine.displayName).tag(engine)
+                        }
                     }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.menu)
-                Text(settings.ttsEngine.shortDescription)
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker("Language", selection: languageBinding) {
-                    ForEach(settings.ttsEngine.supportedLanguages, id: \.self) { language in
-                        Text(language.displayName).tag(language)
+                SettingsRow(verbatim: "Language", caption: languageCaption) {
+                    Picker("Language", selection: languageBinding) {
+                        ForEach(settings.ttsEngine.supportedLanguages, id: \.self) { language in
+                            Text(language.displayName).tag(language)
+                        }
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
-                Text(languageCaption)
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-
                 switch settings.ttsEngine {
                 case .qwen3:
-                    Picker("Voice model", selection: $settings.ttsModelSize) {
-                        ForEach(TTSModelSize.allCases, id: \.self) { size in
-                            Text(size.displayName).tag(size)
+                    SettingsRow("Voice model", caption: "1.7B sounds most natural and follows the voice style. 0.6B uses less memory but ignores the style.") {
+                        Picker("Voice model", selection: $settings.ttsModelSize) {
+                            ForEach(TTSModelSize.allCases, id: \.self) { size in
+                                Text(size.displayName).tag(size)
+                            }
                         }
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.menu)
-                    Text("1.7B sounds the most natural and follows the voice style below. 0.6B is lighter on memory (better for 16 GB Macs) but ignores the style instruction.")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("Voice", selection: $settings.ttsVoice) {
-                        ForEach(TTSVoice.allCases, id: \.self) { voice in
-                            Text(voice.displayName).tag(voice)
+                    SettingsRow(verbatim: "Voice", caption: settings.ttsVoice.detail) {
+                        Picker("Voice", selection: $settings.ttsVoice) {
+                            ForEach(TTSVoice.allCases, id: \.self) { voice in
+                                Text(voice.displayName).tag(voice)
+                            }
                         }
-                    }
-                    .pickerStyle(.menu)
-                    Text(settings.ttsVoice.detail)
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                    voicePreviewRow
-                    if settings.ttsModelSize.supportsVoiceInstruction {
-                        PromptSettingsRow(kind: .voiceStyle)
-                    } else {
-                        Text("Voice style requires the 1.7B model. Your instruction is kept for when you switch back.")
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
+                        .pickerStyle(.menu)
                     }
                 case .kokoro:
-                    Picker("Voice", selection: kokoroVoiceBinding) {
-                        ForEach(KokoroVoice.voices(for: settings.spokenSummaryLanguage), id: \.self) { voice in
-                            Text("\(voice.displayName) · \(voice.detail)").tag(voice)
+                    SettingsRow(verbatim: "Voice", caption: kokoroDownloadNote) {
+                        Picker("Voice", selection: kokoroVoiceBinding) {
+                            ForEach(KokoroVoice.voices(for: settings.spokenSummaryLanguage), id: \.self) { voice in
+                                Text("\(voice.displayName) · \(voice.detail)").tag(voice)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+                SettingsRow("Preview") { voicePreviewControl }
+                if case let .failed(message) = voicePreview.state {
+                    SettingsStackedRow { SettingsErrorDetails(summary: "Voice preview failed", error: message) }
+                }
+            }
+
+            SettingsAdvancedCard(page: .spokenVoice, summary: "Script prompt, voice style", sections: [.spokenPrompt]) {
+                SettingsCard("Prompts", section: .spokenPrompt) {
+                    PromptSettingsRow(kind: .spokenSummary)
+                    if settings.ttsEngine == .qwen3 {
+                        if settings.ttsModelSize.supportsVoiceInstruction {
+                            PromptSettingsRow(kind: .voiceStyle)
+                        } else {
+                            SettingsRow("Voice style", caption: "Needs the 1.7B model. Your instruction is kept for when you switch back.")
                         }
                     }
-                    .pickerStyle(.menu)
-                    Text(kokoroDownloadNote)
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                    voicePreviewRow
                 }
-            }
-                .listRowBackground(Color.clear)
-            if appSettings.powerUserMode || searchAdvanced {
-                Section("Prompt", settingsSearch: .spokenPrompt) {
-                    PromptSettingsRow(kind: .spokenSummary)
-                }
-                    .listRowBackground(Color.clear)
             }
         }
-        .settingsFormStyle()
+        .onDisappear { voicePreview.stop() }
     }
 
     /// Shows the language in effect; picking one also moves Kokoro to a voice that speaks it.
@@ -120,49 +113,43 @@ struct SettingsSpokenVoiceTab: View {
 
     /// Audition the selected voice/language/model/style with a short sample.
     @ViewBuilder
-    private var voicePreviewRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                switch voicePreview.state {
-                case .idle, .failed:
-                    Button {
-                        let tts = appSettings.ttsSynthesisParams
-                        voicePreview.preview(
-                            text: previewSampleText,
-                            engine: tts.engine,
-                            voice: tts.voice,
-                            language: tts.language,
-                            instruction: tts.instruction,
-                            model: tts.model,
-                            plugin: recordingManager.localPlugin
-                        )
-                    } label: {
-                        Label("Preview voice", systemImage: "play.circle")
-                    }
-                case .playing:
-                    Button(role: .cancel) {
-                        voicePreview.stop()
-                    } label: {
-                        Label("Stop", systemImage: "stop.circle")
-                    }
-                case .preparingVoice(let progress):
-                    ProgressView().controlSize(.small)
-                    Text(progress != nil ? "Preparing voice… \(Int((progress ?? 0) * 100))%" : "Preparing voice…")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                case .synthesizing:
-                    ProgressView().controlSize(.small)
-                    Text("Synthesizing…")
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+    private var voicePreviewControl: some View {
+        switch voicePreview.state {
+        case .idle, .failed:
+            Button {
+                let tts = appSettings.ttsSynthesisParams
+                voicePreview.preview(
+                    text: previewSampleText,
+                    engine: tts.engine,
+                    voice: tts.voice,
+                    language: tts.language,
+                    instruction: tts.instruction,
+                    model: tts.model,
+                    plugin: recordingManager.localPlugin
+                )
+            } label: {
+                Label("Play sample", systemImage: "play.fill")
             }
-            if case let .failed(message) = voicePreview.state {
-                SettingsErrorDetails(summary: "Voice preview failed", error: message)
+            .buttonStyle(.settingsSecondary)
+        case .playing:
+            Button(role: .cancel) {
+                voicePreview.stop()
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+            }
+            .buttonStyle(.settingsSecondary)
+        case .preparingVoice(let progress):
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(progress != nil ? "Preparing voice… \(Int((progress ?? 0) * 100))%" : "Preparing voice…")
+                    .uiFont(.system(size: 11.5))
+                    .foregroundStyle(palette.secondary.color)
+            }
+        case .synthesizing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Synthesizing…").uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
             }
         }
-        .onDisappear { voicePreview.stop() }
     }
-
 }

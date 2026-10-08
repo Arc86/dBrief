@@ -23,6 +23,7 @@ enum SettingsProviderKind {
     var urlPlaceholder: String { self == .ai ? "http://localhost:11434" : "http://localhost:8080" }
     var modelPlaceholder: String { self == .ai ? "llama3" : "whisper-1" }
     var noun: String { self == .ai ? "AI provider" : "transcription service" }
+    var addLabel: String { self == .ai ? "Add an AI provider" : "Add a transcription service" }
 }
 
 /// Pure list rules shared by both endpoint lists.
@@ -102,7 +103,7 @@ struct SettingsProviderList: View {
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { beginEdit(endpoint, isNew: false) }
             }
-            SettingsRow("Add a \(kind.noun)") {
+            SettingsRow(verbatim: kind.addLabel) {
                 Menu("Add…") {
                     ForEach(kind.presets) { preset in
                         Button(preset.name) { beginEdit(preset.makeEndpoint(), isNew: true) }
