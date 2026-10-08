@@ -73,15 +73,25 @@ struct SettingsProfilesTab: View {
                 .foregroundStyle(palette.heading.color)
                 .padding(.leading, 2)
 
-            List(selection: $selectedProfileId) {
-                ForEach(appSettings.profiles) { profile in
-                    profileRow(profile)
-                        .tag(profile.id)
-                        .contextMenu { rowContextMenu(profile) }
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(appSettings.profiles) { profile in
+                        profileRow(profile)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .settingsSelectableRow(isSelected: selectedProfileId == profile.id) {
+                                selectedProfileId = profile.id
+                            }
+                            .contextMenu { rowContextMenu(profile) }
+                    }
                 }
+                .padding(6)
+                .overlayScrollers()
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.upArrow) { moveProfileSelection(by: -1) }
+            .onKeyPress(.downArrow) { moveProfileSelection(by: 1) }
             .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
             .frame(maxHeight: .infinity)
@@ -97,6 +107,14 @@ struct SettingsProfilesTab: View {
         }
     }
 
+    private func moveProfileSelection(by step: Int) -> KeyPress.Result {
+        guard let id = SettingsListNavigation.step(step, in: appSettings.profiles.map(\.id), from: selectedProfileId) else {
+            return .ignored
+        }
+        selectedProfileId = id
+        return .handled
+    }
+
     private func profileRow(_ profile: MeetingProfile) -> some View {
         HStack(spacing: 10) {
             ProfileIconView(systemName: profile.iconSystemName, colorKey: profile.iconBackgroundColorKey)
@@ -104,6 +122,7 @@ struct SettingsProfilesTab: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name)
                     .uiFont(.body.weight(.medium))
+                    .foregroundStyle(palette.heading.color)
                     .lineLimit(1)
                 if profile.id == appSettings.activeProfileId {
                     Label("Saved selection", systemImage: "checkmark.seal.fill")

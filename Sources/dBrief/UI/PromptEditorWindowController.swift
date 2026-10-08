@@ -21,7 +21,11 @@ final class PromptEditorWindowController: NSObject, NSWindowDelegate {
                 store: PromptPreferencesStore(settings: context.appSettings),
                 improver: PromptImprovementService(completion: completion))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 700),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            // The palette canvas runs under the titlebar, as in the Settings window.
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
             let view = PromptEditorView(session: session, close: { [weak self, weak window] in
                 guard let window else { return }; self?.requestClose(window)
             }).environment(context)

@@ -59,35 +59,50 @@ struct SettingsView: View {
     }
 
     private var searchResults: some View {
-        List(selection: $selectedSearchID) {
-            if results.isEmpty {
-                Text("No settings found. Try another word.")
-                    .uiFont(.system(size: 12))
-                    .foregroundStyle(palette.secondary.color)
-            } else {
-                ForEach(results) { result in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(result.title)
-                            .uiFont(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(palette.heading.color)
-                        Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
-                            .uiFont(.system(size: 11))
-                            .foregroundStyle(palette.secondary.color)
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                if results.isEmpty {
+                    Text("No settings found. Try another word.")
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                } else {
+                    ForEach(results) { result in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(result.title)
+                                .uiFont(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(palette.heading.color)
+                            Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
+                                .uiFont(.system(size: 11))
+                                .foregroundStyle(palette.secondary.color)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .settingsSelectableRow(isSelected: selectedSearchID == result.id) {
+                            selectedSearchID = result.id
+                            openResult(result)
+                        }
+                        .accessibilityAction { openResult(result) }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 3)
-                    .contentShape(Rectangle())
-                    .tag(result.id)
-                    .onTapGesture { selectedSearchID = result.id; openResult(result) }
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction { openResult(result) }
                 }
             }
+            .padding(.horizontal, 8)
+            .overlayScrollers()
         }
-        .scrollContentBackground(.hidden)
+        .focusable()
+        .focusEffectDisabled()
         .focused($focus, equals: .results)
+        .onKeyPress(.upArrow) { moveSearchSelection(by: -1) }
+        .onKeyPress(.downArrow) { moveSearchSelection(by: 1) }
         .onKeyPress(.return) { openSelectedResult(); return .handled }
         .onExitCommand { clearSearch() }
+    }
+
+    private func moveSearchSelection(by step: Int) -> KeyPress.Result {
+        guard let id = SettingsListNavigation.step(step, in: results.map(\.id), from: selectedSearchID) else { return .ignored }
+        selectedSearchID = id
+        return .handled
     }
 
     var body: some View {
