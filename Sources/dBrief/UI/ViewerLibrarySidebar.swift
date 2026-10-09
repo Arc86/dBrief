@@ -16,11 +16,16 @@ struct ViewerLibrarySidebar<Results: View>: View {
     let onRefresh: () -> Void
     let onRebuildSearchIndex: () -> Void
     let onSettings: () -> Void
+    /// The selected row, kept in view as the selection moves.
+    let selectedRowID: AnyHashable?
+    /// ↑/↓ while the list has focus: -1 or +1 rows.
+    let onMove: (Int) -> Void
     private let results: (ViewerSidebarStatusFilterMenu) -> Results
 
     @Environment(\.viewerPalette) private var palette
     @Environment(\.uiTypography) private var typography
     @FocusState private var searchFocused: Bool
+    @FocusState private var listFocused: Bool
 
     init(
         searchText: Binding<String>,
@@ -35,6 +40,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
         onRefresh: @escaping () -> Void,
         onRebuildSearchIndex: @escaping () -> Void,
         onSettings: @escaping () -> Void,
+        selectedRowID: AnyHashable? = nil,
+        onMove: @escaping (Int) -> Void = { _ in },
         @ViewBuilder results: @escaping (ViewerSidebarStatusFilterMenu) -> Results
     ) {
         self._searchText = searchText
@@ -49,6 +56,8 @@ struct ViewerLibrarySidebar<Results: View>: View {
         self.onRefresh = onRefresh
         self.onRebuildSearchIndex = onRebuildSearchIndex
         self.onSettings = onSettings
+        self.selectedRowID = selectedRowID
+        self.onMove = onMove
         self.results = results
     }
 
@@ -80,6 +89,7 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 .padding(.leading, 24)
                 .padding(.trailing, 18)
 
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if let error {
@@ -101,6 +111,26 @@ struct ViewerLibrarySidebar<Results: View>: View {
             }
             .scrollIndicators(.automatic)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The list, not the search field, takes focus when the window opens,
+            // so ↑/↓ move through recordings like a Finder or Mail list.
+            .focusable()
+            .focusEffectDisabled()
+            .focused($listFocused)
+            .onMoveCommand { direction in
+                switch direction {
+                case .up: onMove(-1)
+                case .down: onMove(1)
+                default: break
+                }
+            }
+            .accessibilityLabel("Recordings")
+            .onChange(of: selectedRowID) { _, id in
+                // A click or arrow selects a row: keep it visible and keep the keys here.
+                guard let id else { return }
+                proxy.scrollTo(id)
+                listFocused = true
+            }
+            }
 
             recordButton
                 .padding(.leading, 24)
@@ -114,6 +144,7 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 .padding(.bottom, 11)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .defaultFocus($listFocused, true)
         .background {
             LinearGradient(
                 colors: [palette.sidebarTop.color, palette.sidebarBottom.color],
@@ -156,7 +187,7 @@ struct ViewerLibrarySidebar<Results: View>: View {
                 .uiFont(.system(size: 13))
                 .foregroundStyle(palette.text.color)
                 .focused($searchFocused)
-                .onExitCommand { searchText = "" }
+                .onExitCommand { searchText = ""; listFocused = true }
                 .accessibilityLabel("Search recordings and transcripts")
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {

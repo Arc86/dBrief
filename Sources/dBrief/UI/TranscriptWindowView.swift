@@ -307,6 +307,7 @@ struct TranscriptDetailView: View, Equatable {
         // centered toolbar label, so an empty string (not titleVisibility) is
         // what actually removes the duplicate.
         .navigationTitle("")
+        .focusedSceneValue(\.recordingViewer, viewerActions)
         .task(id: context.recordingManager.reprocessingRecoveryReady) {
             await loadTranscript()
         }
@@ -428,6 +429,34 @@ struct TranscriptDetailView: View, Equatable {
             }
         }
 
+    }
+
+    // MARK: - Menu bar and keyboard
+
+    /// The Recording/View menu commands and Space for this recording; `nil` while live.
+    private var viewerActions: RecordingViewerActions? {
+        guard !isLive else { return nil }
+        let hasTranscript = richTranscript != nil
+        let audioURL = recording.finalizedAudioURL
+        let canReprocess = !isReprocessing && context.recordingManager.reprocessingRecoveryReady
+        return RecordingViewerActions(
+            mode: mode,
+            availableModes: hasTranscript ? ViewerDocumentMode.allCases : [],
+            selectMode: { mode = $0 },
+            copy: hasTranscript ? { copySelectedDocument() } : nil,
+            isPlaying: audioURL != nil && audioPlayer.currentFileURL == audioURL && audioPlayer.isPlaying,
+            togglePlayback: audioURL.map { url in { audioPlayer.togglePlayPause(url: url) } },
+            assistantOpen: assistantOpen,
+            toggleAssistant: hasTranscript ? {
+                assistantOpen.toggle()
+                if assistantOpen, chatService == nil { buildChatService() }
+            } : nil,
+            reprocess: canReprocess ? { reprocessingOperation = $0 } : nil,
+            hasTranscript: hasTranscript,
+            revealInFinder: audioURL.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } },
+            // Not while editing the summary: ⌘⌫ belongs to the editor then.
+            delete: audioURL != nil && summaryEdit == nil ? { showDeleteConfirm = true } : nil
+        )
     }
 
     // MARK: - Document header

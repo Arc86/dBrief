@@ -46,6 +46,9 @@ struct TranscriptBrowserView: View {
     /// (not per render) so the detail view's identity and state — including its
     /// chat session — survive while chatting or playing back.
     @State private var detailRecording: Recording?
+    /// The newest recording is opened once per window open, never after.
+    @State private var didAutoSelect = false
+    @FocusedValue(\.recordingViewer) private var viewer
 
     private var selectedItem: RecordingBrowserItem? {
         guard let selection else { return nil }
@@ -91,6 +94,13 @@ struct TranscriptBrowserView: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .modifier(ViewerWindowChrome())
+        // Space plays and pauses wherever focus is, except while typing. Not a
+        // menu equivalent: those also win over text input.
+        .onKeyPress(.space) {
+            guard !TextInputFocus.isActive, let toggle = viewer?.togglePlayback else { return .ignored }
+            toggle()
+            return .handled
+        }
     }
 
     private var selectionLifecycle: some View {
@@ -101,6 +111,7 @@ struct TranscriptBrowserView: View {
             applyPendingSelection()
             applyPendingLiveSelection()
             rebuildDetailRecording()
+            selectNewestIfNeeded()
         }
         .onChange(of: selection) { _, value in
             if value != nil { selectedWork = nil }
@@ -121,6 +132,7 @@ struct TranscriptBrowserView: View {
             if let selectedWork, library.error == nil {
                 self.selectedWork = library.workMatches.first { $0.id == selectedWork.id }
             }
+            selectNewestIfNeeded()
         }
         .onChange(of: queueDiscoveryFolders) { _, _ in reload() }
         .onChange(of: library.items) { _, _ in rebuildDetailRecording() }
@@ -248,7 +260,9 @@ struct TranscriptBrowserView: View {
             },
             onRefresh: reload,
             onRebuildSearchIndex: { library.refresh(rebuild: true) },
-            onSettings: { openWindow(id: "settings") }
+            onSettings: { openWindow(id: "settings") },
+            selectedRowID: selectedWork.map { AnyHashable($0.id) } ?? selection.map { AnyHashable($0) },
+            onMove: moveSelection(by:)
         ) { statusMenu in
             if liveRecording != nil || processingRecording != nil {
                 LibrarySectionHeader(title: "In Progress")
@@ -256,11 +270,13 @@ struct TranscriptBrowserView: View {
                     LiveSidebarRow(recording: live, isProcessing: false,
                         isSelected: selection == live.fileURL,
                         onTap: { selectRecording(live.fileURL) })
+                        .id(live.fileURL)
                 }
                 if let proc = processingRecording {
                     LiveSidebarRow(recording: proc, isProcessing: true,
                         isSelected: selection == proc.fileURL,
                         onTap: { selectRecording(proc.fileURL) })
+                        .id(proc.fileURL)
                 }
             }
             smartResults(statusMenu: statusMenu)
@@ -375,6 +391,55 @@ struct TranscriptBrowserView: View {
         selection = url
     }
 
+    /// Recording rows in the order the sidebar shows them, pinned work first.
+    /// Collapsed "Earlier" rows are skipped, as the keys can't reach them visibly.
+    private var visibleRecordingURLs: [URL] {
+        var urls = [liveRecording?.fileURL, processingRecording?.fileURL].compactMap { $0 }
+        switch library.selectedView {
+        case .all:
+            urls += thisWeekItems.map(\.url)
+            if !earlierCollapsed { urls += earlierItems.map(\.url) }
+        case .unfinishedActions, .recentlyProcessed:
+            urls += filteredItems.map(\.url)
+        case .peopleThisMonth:
+            for url in library.peopleGroups.flatMap({ $0.recordings.map(\.url) }) where !urls.contains(url) {
+                urls.append(url)
+            }
+        case .failedJobs, .queuedInterrupted:
+            break
+        }
+        return urls
+    }
+
+    private func moveSelection(by offset: Int) {
+        switch library.selectedView {
+        case .failedJobs, .queuedInterrupted:
+            let ids = library.workMatches.map(\.id)
+            guard let id = LibraryKeyboardNavigation.step(ids, from: selectedWork?.id, by: offset),
+                  let item = library.workMatches.first(where: { $0.id == id }) else { return }
+            selection = nil
+            detailRecording = nil
+            selectedWork = item
+        default:
+            guard let url = LibraryKeyboardNavigation.step(visibleRecordingURLs, from: selection, by: offset)
+            else { return }
+            selectRecording(url)
+        }
+    }
+
+    /// Opening the library shows the top recording instead of an empty pane,
+    /// unless something asked for a specific one.
+    private func selectNewestIfNeeded() {
+        guard !didAutoSelect, library.queryRevision > 0 else { return }
+        didAutoSelect = true
+        guard selection == nil, selectedWork == nil, appState.pendingTranscriptSelectionURL == nil,
+              !appState.pendingLiveTranscriptSelection else { return }
+        let pinned = Set([liveRecording?.fileURL, processingRecording?.fileURL].compactMap { $0 })
+        if let newest = visibleRecordingURLs.first(where: { !pinned.contains($0) }) {
+            selection = newest
+        }
+    }
+
     private func updateActiveWork() {
         library.updateActiveWork(ids: activeWorkIDs, audioURLs: activeAudioURLs)
     }
@@ -437,8 +502,10 @@ struct TranscriptBrowserView: View {
     }
 
     private func handleDeleted(_ url: URL) {
+        // Like Finder and Mail, the next row (else the previous) takes the selection.
+        let next = LibraryKeyboardNavigation.successor(of: url, in: visibleRecordingURLs)
         library.refresh()
-        if selection == url { selection = nil }
+        if selection == url { selection = next }
         if detailRecording?.fileURL == url { detailRecording = nil }
     }
 
