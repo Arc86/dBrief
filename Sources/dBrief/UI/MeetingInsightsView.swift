@@ -151,7 +151,8 @@ struct MeetingInsightsPresentation {
                 modelName: Self.nonempty(provenance?.tags ?? recordingProvenance?.tags)
             ))
         }
-        self.origins = origins
+        // A list of "not recorded" rows tells the reader nothing.
+        self.origins = origins.contains { $0.modelName != nil } ? origins : []
         warnings = recording.finalizationWarnings
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }

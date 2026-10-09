@@ -203,10 +203,13 @@ struct SidebarRecordingRow: View {
         item.libraryStatus ?? ((item.hasRichTranscript || item.hasTranscript) ? .done : nil)
     }
 
+    /// The caption carries the date, so a leading one in the title is dropped.
+    private var title: String { RecordingListPresentation.withoutLeadingDate(item.title) }
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
+                Text(title)
                     .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                     .lineLimit(1)
@@ -227,7 +230,7 @@ struct SidebarRecordingRow: View {
         }
         .buttonStyle(LibrarySidebarRowStyle(isSelected: isSelected))
         .help(item.title)
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(title)
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

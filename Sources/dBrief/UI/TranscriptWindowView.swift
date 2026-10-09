@@ -441,6 +441,13 @@ struct TranscriptDetailView: View, Equatable {
         }
     }
 
+    /// "Thursday 8 October 2026 at 15:04 · 14m"; live recordings have no duration yet.
+    private var headerSubtitle: String {
+        let when = recording.date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().hour().minute())
+        let duration = LibraryRowFormat.duration(recording.duration)
+        return duration.isEmpty ? when : "\(when) · \(duration)"
+    }
+
     /// The one document header for every state. Live and not-yet-transcribed
     /// recordings pass no tabs; delete is withheld while the recording is live.
     private func viewerHeader<Commands: View>(
@@ -453,6 +460,7 @@ struct TranscriptDetailView: View, Equatable {
     ) -> some View {
         ViewerHeader(
             title: recording.generatedTitle ?? recording.meetingTitleDraft,
+            subtitle: headerSubtitle,
             tabs: tabs,
             showsAssistantToggle: showsAssistantToggle,
             mode: $mode,

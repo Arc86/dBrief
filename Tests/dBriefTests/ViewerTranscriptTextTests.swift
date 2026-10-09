@@ -24,14 +24,14 @@ struct ViewerTranscriptTextTests {
 
     @Test func paragraphBreaksPreserveTextAndLaterSearchOffsets() {
         let turn = SpeakerTurn(speakerId: "A", segments: [
-            RichSegment(start: 0, end: 1, text: "First part", originalText: "First part", speakerId: "A"),
+            RichSegment(start: 0, end: 1, text: "First part.", originalText: "First part.", speakerId: "A"),
             RichSegment(start: 4, end: 5, text: "Later match", originalText: "Later match", speakerId: "A"),
         ])
         let result = TranscriptSearch.search(turns: [(turn.id, turn.text)], query: "Later")
         let palette = ViewerThemeResolver.resolve(mode: .darkPaper, sourceHex: "#1268F5", nonNeon: true)
         let paragraphs = ViewerTranscriptText.makeParagraphs(text: turn.text, ranges: turn.readingParagraphRanges,
             matches: result.matches, currentMatchIndex: 0, palette: palette)
-        #expect(paragraphs.map { String($0.characters) } == ["First part", "Later match"])
+        #expect(paragraphs.map { String($0.characters) } == ["First part.", "Later match"])
         let start = paragraphs[1].characters.startIndex
         #expect(paragraphs[1][start..<paragraphs[1].characters.index(after: start)].backgroundColor == palette.primary.color)
     }

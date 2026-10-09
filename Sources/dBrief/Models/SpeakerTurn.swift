@@ -29,7 +29,9 @@ struct SpeakerTurn: Identifiable, Sendable, Equatable {
 
     /// Display ranges coalesce short transcription chunks without changing their
     /// text offsets, identities, timing, or speaker assignments. Long monologues
-    /// still break at segment boundaries or a meaningful pause.
+    /// still break at segment boundaries: after a sentence once the paragraph is
+    /// long or the speaker paused, and anywhere after a long silence or at a hard
+    /// cap for unpunctuated text, so a breath mid-sentence never splits it.
     private static func paragraphRanges(for segments: [RichSegment]) -> [Range<Int>] {
         guard let first = segments.first else { return [] }
         var ranges: [Range<Int>] = []
@@ -38,7 +40,11 @@ struct SpeakerTurn: Identifiable, Sendable, Equatable {
         var previous = first
         for segment in segments.dropFirst() {
             let start = end + 1 // The space inserted by `text`.
-            if end - paragraphStart >= 360 || segment.start - previous.end >= 2 {
+            let pause = segment.start - previous.end
+            let endsSentence = previous.text.trimmingCharacters(in: .whitespaces).last
+                .map { ".?!…".contains($0) } ?? false
+            let length = end - paragraphStart
+            if ((length >= 360 || pause >= 2) && endsSentence) || pause >= 6 || length >= 720 {
                 ranges.append(paragraphStart..<end)
                 paragraphStart = start
             }

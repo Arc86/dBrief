@@ -5,6 +5,8 @@ import SwiftUI
 /// no `tabs`, and live capture passes no `onDelete`.
 struct ViewerHeader<Commands: View>: View {
     let title: String
+    /// When and how long, shown above the title; `nil` falls back to the library name.
+    let subtitle: String?
     let tabs: [ViewerDocumentMode]
     let showsAssistantToggle: Bool
     @Binding private var mode: ViewerDocumentMode
@@ -23,6 +25,7 @@ struct ViewerHeader<Commands: View>: View {
 
     init(
         title: String,
+        subtitle: String? = nil,
         tabs: [ViewerDocumentMode] = ViewerDocumentMode.allCases,
         showsAssistantToggle: Bool = true,
         mode: Binding<ViewerDocumentMode>,
@@ -36,6 +39,7 @@ struct ViewerHeader<Commands: View>: View {
         @ViewBuilder commands: @escaping () -> Commands
     ) {
         self.title = title
+        self.subtitle = subtitle
         self.tabs = tabs
         self.showsAssistantToggle = showsAssistantToggle
         self._mode = mode
@@ -61,21 +65,19 @@ struct ViewerHeader<Commands: View>: View {
 
     private var breadcrumb: some View {
         HStack(spacing: 5) {
-            Image(systemName: "house")
+            Image(systemName: subtitle == nil ? "house" : "calendar")
                 .accessibilityHidden(true)
-            Text("Recording library")
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .accessibilityHidden(true)
+            Text(subtitle ?? "Recording library")
+                .lineLimit(1)
         }
-        .uiFont(.system(size: 11, weight: .medium))
+        .uiFont(.system(size: 11, weight: .medium).monospacedDigit())
         .foregroundStyle(palette.secondary.color)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Recording library")
+        .accessibilityElement(children: .combine)
     }
 
     private var titleText: some View {
-        Text(title)
+        // The eyebrow already carries the date, so "2026-10-08 - Sync" drops it.
+        Text(subtitle == nil ? title : RecordingListPresentation.withoutLeadingDate(title))
             .uiFont(.system(size: 25, weight: .semibold))
             .foregroundStyle(palette.heading.color)
             .lineLimit(nil)
@@ -235,6 +237,7 @@ private struct HeaderDeleteButton: View {
 
     @Environment(\.viewerPalette) private var palette
     @FocusState private var isFocused: Bool
+    @State private var isHovered = false
 
     var body: some View {
         Button(role: .destructive, action: action) {
@@ -244,7 +247,9 @@ private struct HeaderDeleteButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.red)
+        // Quiet like its neighbours at rest; red only once the pointer commits to it.
+        .foregroundStyle(isHovered ? Color.red : Color.primary)
+        .onHover { isHovered = $0 }
         .focused($isFocused)
         .overlay {
             if isFocused {

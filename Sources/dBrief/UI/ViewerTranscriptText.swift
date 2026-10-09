@@ -8,6 +8,7 @@ struct ViewerTranscriptText: View, Equatable {
     let matches: [TranscriptSearch.Match]
     let currentMatchIndex: Int
     @Environment(\.viewerPalette) private var palette
+    @Environment(\.viewerReading) private var reading
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.text == rhs.text && lhs.paragraphRanges == rhs.paragraphRanges
@@ -15,9 +16,12 @@ struct ViewerTranscriptText: View, Equatable {
     }
 
     var body: some View {
-        ForEach(Array(Self.makeParagraphs(text: text, ranges: paragraphRanges,
-            matches: matches, currentMatchIndex: currentMatchIndex, palette: palette).enumerated()), id: \.offset) { _, paragraph in
-            ViewerReadingParagraph(text: paragraph)
+        // Paragraphs sit further apart than wrapped lines, so a break reads as one.
+        VStack(alignment: .leading, spacing: CGFloat(reading.fontSize) * 0.7) {
+            ForEach(Array(Self.makeParagraphs(text: text, ranges: paragraphRanges,
+                matches: matches, currentMatchIndex: currentMatchIndex, palette: palette).enumerated()), id: \.offset) { _, paragraph in
+                ViewerReadingParagraph(text: paragraph)
+            }
         }
     }
 

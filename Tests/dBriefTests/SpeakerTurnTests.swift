@@ -100,19 +100,55 @@ struct SpeakerTurnTests {
 
     @Test func meaningfulPauseStartsANewParagraphWithExactOffsets() {
         let turn = SpeakerTurn(speakerId: "A", segments: [
-            seg("Café 👩🏽‍💻", speaker: "A", start: 0, end: 1),
+            seg("Café 👩🏽‍💻.", speaker: "A", start: 0, end: 1),
             seg("volgende zin", speaker: "A", start: 3, end: 4),
         ])
         let characters = Array(turn.text)
         let paragraphs = turn.readingParagraphRanges.map { String(characters[$0]) }
-        #expect(paragraphs == ["Café 👩🏽‍💻", "volgende zin"])
+        #expect(paragraphs == ["Café 👩🏽‍💻.", "volgende zin"])
+    }
+
+    @Test func pauseMidSentenceKeepsTheParagraphTogether() {
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg("Ik heb het in die sessie ook", speaker: "A", start: 0, end: 2),
+            seg("besproken, want het was nodig.", speaker: "A", start: 4, end: 6),
+        ])
+        #expect(turn.readingParagraphRanges == [0..<turn.text.count])
+    }
+
+    @Test func longSilenceBreaksEvenMidSentence() {
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg("en toen", speaker: "A", start: 0, end: 1),
+            seg("na een lange stilte", speaker: "A", start: 8, end: 9),
+        ])
+        #expect(turn.readingParagraphRanges == [0..<7, 8..<turn.text.count])
     }
 
     @Test func longMonologuesKeepReadableParagraphBreaks() {
-        let text = String(repeating: "word ", count: 75)
+        let text = String(repeating: "word ", count: 75) + "end."
         let turn = SpeakerTurn(speakerId: "A", segments: [
             seg(text, speaker: "A", start: 0, end: 20),
             seg("Next sentence.", speaker: "A", start: 20, end: 22),
+        ])
+        #expect(turn.readingParagraphRanges == [0..<text.count, (text.count + 1)..<turn.text.count])
+    }
+
+    @Test func longParagraphWaitsForTheSentenceToEnd() {
+        let text = String(repeating: "word ", count: 75) + "and"
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg(text, speaker: "A", start: 0, end: 20),
+            seg("then it ends.", speaker: "A", start: 20, end: 22),
+            seg("Next sentence.", speaker: "A", start: 22, end: 23),
+        ])
+        let firstEnd = text.count + 1 + "then it ends.".count
+        #expect(turn.readingParagraphRanges == [0..<firstEnd, (firstEnd + 1)..<turn.text.count])
+    }
+
+    @Test func unpunctuatedMonologueStillBreaksAtTheHardCap() {
+        let text = String(repeating: "word ", count: 150) // 750 characters
+        let turn = SpeakerTurn(speakerId: "A", segments: [
+            seg(text, speaker: "A", start: 0, end: 40),
+            seg("more words", speaker: "A", start: 40, end: 41),
         ])
         #expect(turn.readingParagraphRanges == [0..<text.count, (text.count + 1)..<turn.text.count])
     }
@@ -123,12 +159,12 @@ struct SpeakerTurnTests {
         let oldTurn = SpeakerTurn(speakerId: "A", segments: [first, second])
 
         var editedFirst = first
-        editedFirst.text = String(repeating: "x", count: 360)
+        editedFirst.text = String(repeating: "x", count: 359) + "."
         let updatedTurn = SpeakerTurn(speakerId: "A", segments: [editedFirst, second])
 
         #expect(updatedTurn.id == first.id)
         #expect(updatedTurn.segments.map(\.id) == [first.id, second.id])
-        #expect(updatedTurn.text == "\(String(repeating: "x", count: 360)) continuation")
+        #expect(updatedTurn.text == "\(String(repeating: "x", count: 359)). continuation")
         #expect(updatedTurn.readingParagraphRanges == [0..<360, 361..<updatedTurn.text.count])
 
         #expect(oldTurn.id == first.id)

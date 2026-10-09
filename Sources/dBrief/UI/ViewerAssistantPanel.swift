@@ -16,11 +16,8 @@ struct ViewerAssistantPanel<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("This recording")
-                .uiFont(.system(size: 11))
-                .foregroundStyle(palette.secondary.color)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .frame(height: 38)
+            // Keeps the panel's top level with the document title.
+            Color.clear.frame(height: 38)
 
             VStack(spacing: 15) {
                 HStack(spacing: 8) {
