@@ -395,6 +395,13 @@ The **"Low RAM" processing tag** (`TranscriptionProgressView`) now renders only 
 - **WhisperKit type collision**: The `WhisperKit` module and `WhisperKit` class share the same name, making `WhisperKit.TranscriptionResult` ambiguous. Use `dBrief.TranscriptionResult` to refer to our type; keep WhisperKit result types inferred (never name them explicitly in function signatures). Import with `@preconcurrency import WhisperKit` for Sendable suppression.
 - Metal GPU support is auto-detected; the `make app` target copies `.metallib` files from the build or downloads prebuilt ones from the MLX releases.
 
+## UI and macOS Development Workflow
+
+- **UI work (new views, polish passes, UX reviews, menu panel, viewer, Settings):** load the `macos-app-design` skill first and check the work against it: Mac conventions, keyboard access, context menus, menu bar app behaviour, accessibility, system components over custom chrome. Load `swiftui-specialist` for SwiftUI code, and `swiftui-whats-new-27` when touching APIs that changed in the 2027 SDKs.
+- **Other macOS development (AppKit/SwiftUI bridging, windows, status items, entitlements, build settings):** use the Xcode tooling where it helps: the `mcp__xcode__*` tools (documentation search, previews, builds, diagnostics), `audit-xcode-security-settings` for build hardening, `test-modernizer` for tests. Load `macos-app-design` whenever the change affects how the app looks or behaves for the user.
+- **Xcode MCP caveat:** the tools need approval first. `XcodeOpenWorkspace` on the package asks the user, so mention it before calling it. `RenderPreview` only works for views with a `#Preview` that builds without `AppContext`; the menu panel and viewer need the full service graph.
+- **Verify UI in the running beta, not only in code or previews:** `make run-beta`. Open the panel with `osascript` (System Events → the beta process → `click menu bar item 1 of menu bar 2`), find window frames through AX, and capture them with `screencapture -x -R…`. Small CGEvent helpers (click, right-click, `NSDraggingSession` drag) drive interactions that AX can't reach. A rebuilt beta can block at launch on a keychain prompt that only the user can answer.
+
 ## Platform Requirements
 
 - macOS 14+ (Swift 6.2, swift-tools-version: 6.2)
