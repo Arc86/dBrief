@@ -62,6 +62,9 @@ final class Recording: Identifiable {
     /// Pre-encoded audio (e.g. a YouTube/yt-dlp download) awaiting relocation into the
     /// recordings folder during finalization. Session-only; never persisted to disk.
     var importSourceURL: URL?
+    /// The audio dBrief owns before finalization. A picked or dropped import keeps
+    /// the user's original in `fileURL`; only the staged copy is ours to delete.
+    var ownedAudioURL: URL { importSourceURL ?? fileURL }
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?
@@ -123,11 +126,7 @@ final class Recording: Identifiable {
         analysisModelProvenance = provenance
     }
 
-    var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    var formattedDuration: String { duration.formattedDuration }
 
     var formattedFileSize: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)

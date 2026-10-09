@@ -2354,7 +2354,8 @@ final class RecordingManager {
         guard !captureCoordinator.isBusy, appState.showPostRecordingSheet, let recording = appState.currentRecording,
               let token = postRecordingAction.begin(recordingID: recording.id, action: .delete) else { return }
         defer { postRecordingAction.finish(token: token) }
-        var urls = [recording.fileURL]
+        // Never the user's original file for an import, only dBrief's staged copy.
+        var urls = [recording.ownedAudioURL]
         if let tracks = recording.capturedTracks {
             urls.append(contentsOf: [tracks.systemURL, tracks.micURL].compactMap { $0 })
         }

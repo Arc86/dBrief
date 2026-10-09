@@ -591,7 +591,9 @@ struct PostRecordingSheet: View {
             Text("Delete this recording?")
                 .uiFont(.system(size: 12, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
-            Text("The audio file is permanently removed from disk. This can’t be undone.")
+            Text(appState.currentRecording?.importSourceURL != nil
+                ? "dBrief’s copy of this audio is removed. The original isn’t touched."
+                : "The audio file is permanently removed from disk. This can’t be undone.")
                 .uiFont(.system(size: 11))
                 .foregroundStyle(palette.text.color)
                 .fixedSize(horizontal: false, vertical: true)
