@@ -114,7 +114,7 @@ extension RecordingManager {
         }
         var request = ReprocessingRequest(options: options, recordingID: metadata?.recordingID ?? recording.id,
             date: metadata.flatMap { ISO8601DateFormatter().date(from: $0.dateISO8601) } ?? recording.date,
-            title: metadata?.meetingTitle ?? recording.meetingTitleDraft,
+            title: metadata.map { RecordingFinalizer.readableMeetingTitle($0.meetingTitle) } ?? recording.meetingTitleDraft,
             duration: metadata?.durationSeconds ?? recording.duration,
             participants: metadata?.participants ?? recording.participants,
             calendarEvent: metadata?.calendarEvent ?? recording.calendarEvent)

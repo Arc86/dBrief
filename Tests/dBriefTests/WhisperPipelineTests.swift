@@ -14,6 +14,21 @@ struct WhisperPipelineTests {
     }
 
     @Test
+    func metadataKeepsTheReadableTitleWhileTheFilenameUsesTheSlug() {
+        #expect(RecordingFinalizer.cleanMeetingTitle("  Q1 Review / Team ", fallback: nil) == "Q1 Review Team")
+        #expect(RecordingFinalizer.cleanMeetingTitle("", fallback: "Zoom") == "Zoom")
+        #expect(RecordingFinalizer.normalizeMeetingTitle("Q1 Review Team", fallback: nil) == "Q1-Review-Team")
+    }
+
+    @Test
+    func slugTitlesFromOlderSidecarsReadAsWords() {
+        #expect(RecordingFinalizer.readableMeetingTitle("How-Comedy-Drowned-in-a-Cesspool") == "How Comedy Drowned in a Cesspool")
+        // Real titles with spaces keep their hyphens.
+        #expect(RecordingFinalizer.readableMeetingTitle("Follow-up with Q3-planning team") == "Follow-up with Q3-planning team")
+        #expect(RecordingFinalizer.readableMeetingTitle("Standup") == "Standup")
+    }
+
+    @Test
     @MainActor
     func totalTrackFileSizeSumsExistingTrackFiles() async throws {
         let fm = FileManager.default

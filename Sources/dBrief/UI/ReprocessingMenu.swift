@@ -59,7 +59,7 @@ struct ReprocessingMenu: View {
             if let metadata = try? await RecordingMetadataStore.shared.load(audioURL: recording.finalizedAudioURL ?? recording.fileURL),
                !Task.isCancelled, !locked {
                 recording.calendarEvent = metadata.calendarEvent
-                recording.meetingTitleDraft = metadata.meetingTitle
+                recording.meetingTitleDraft = RecordingFinalizer.readableMeetingTitle(metadata.meetingTitle)
                 recording.generatedTitle = metadata.generatedTitle
                 recording.participants = PersonName.displayList(metadata.participants + (metadata.calendarEvent == nil ? metadata.calendarAttendees : []))
             }
