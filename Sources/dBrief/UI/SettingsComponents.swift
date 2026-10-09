@@ -25,7 +25,6 @@ struct SettingsPageScaffold<Notice: View, Content: View>: View {
     var layout: Layout = .column
     @ViewBuilder var notice: Notice
     @ViewBuilder var content: Content
-    @Environment(\.viewerPalette) private var palette
 
     init(page: SettingsPage, layout: Layout = .column,
          @ViewBuilder notice: () -> Notice, @ViewBuilder content: () -> Content) {
@@ -45,7 +44,7 @@ struct SettingsPageScaffold<Notice: View, Content: View>: View {
             let leading = fills ? SettingsPageLayout.sideInset : SettingsPageLayout.leadingInset(forPaneWidth: pane.size.width)
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    header
+                    SettingsPageHeader(page: page)
                     notice
                     content
                 }
@@ -64,8 +63,15 @@ struct SettingsPageScaffold<Notice: View, Content: View>: View {
         .toggleStyle(.switch)
         .controlSize(.small)
     }
+}
 
-    private var header: some View {
+/// The page title block: icon tile, title, and subtitle. Pages that can't use the
+/// scaffold (two-pane editors) place it themselves.
+struct SettingsPageHeader: View {
+    let page: SettingsPage
+    @Environment(\.viewerPalette) private var palette
+
+    var body: some View {
         HStack(spacing: 12) {
             Image(systemName: page.icon)
                 .font(.system(size: 17, weight: .medium))
@@ -286,7 +292,7 @@ struct SettingsStatusPill: View {
         }
         .foregroundStyle(foreground)
         .padding(.horizontal, 8)
-        .frame(height: 20)
+        .frame(minHeight: 20)
         .background(fill, in: Capsule())
     }
 }
@@ -331,6 +337,7 @@ struct SettingsAdvancedCard<Content: View>: View {
     @SceneStorage private var expanded: Bool
     @Environment(\.settingsSearchRequest) private var request
     @Environment(\.viewerPalette) private var palette
+    @Environment(\.viewerMode) private var mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(page: SettingsPage, summary: LocalizedStringKey, sections: Set<SettingsSectionID>,
@@ -384,7 +391,7 @@ struct SettingsAdvancedCard<Content: View>: View {
             }
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: mode.isPaper ? 8 : 12, style: .continuous)
                 .strokeBorder(palette.divider.color, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 .allowsHitTesting(false)
         }
@@ -418,7 +425,9 @@ private struct SettingsSelectableRowModifier: ViewModifier {
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
             .onHover { hovered = $0 }
+            .accessibilityElement(children: .combine)
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { action() }
     }
 }
 

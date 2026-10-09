@@ -107,15 +107,15 @@ struct SettingsAppearanceEditor: View {
             .frame(maxWidth: .infinity, minHeight: 30)
             .padding(8)
             .background(selected ? palette.selected.color : palette.canvas.color,
-                        in: RoundedRectangle(cornerRadius: 8))
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(selected ? palette.accentText.color.opacity(0.65) : palette.divider.color, lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(mode.displayName) theme mode")
-        .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func themePair(dark: Bool) -> some View {
@@ -138,9 +138,9 @@ struct SettingsAppearanceEditor: View {
             VStack(spacing: 8) {
                 AppearanceThemePreview(mode: mode, accentHex: preferences.sourceAccentHex, nonNeon: nonNeon)
                     .frame(height: 74)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(selected ? palette.accentText.color : palette.divider.color, lineWidth: selected ? 2 : 1)
                     }
                 HStack(spacing: 5) {
@@ -158,9 +158,8 @@ struct SettingsAppearanceEditor: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(mode.displayName), \(mode.isDark ? "dark" : "light") mode theme")
-        .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .help("Use \(mode.displayName) when \(mode.isDark ? "dark" : "light") mode is active")
     }
 
@@ -206,7 +205,7 @@ struct SettingsAppearanceEditor: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(preset.name) accent")
-        .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .help(preset.name)
     }
 
@@ -228,14 +227,14 @@ struct SettingsAppearanceEditor: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.divider.color, lineWidth: 1) }
+        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
         .accessibilityLabel("Live preview, \(typography.readingFont.displayName), \(typography.fontSize) points")
     }
 
     private var customAccent: Binding<Color> {
         Binding(get: {
-            ViewerRGB(hex: preferences.sourceAccentHex)?.color ?? .blue
+            ViewerRGB(hex: preferences.sourceAccentHex)?.color ?? palette.primary.color
         }, set: { color in
             guard let color = NSColor(color).usingColorSpace(.sRGB) else { return }
             preferences.sourceAccentHex = String(format: "#%02X%02X%02X",

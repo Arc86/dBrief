@@ -74,8 +74,8 @@ struct SettingsWatchedFoldersTab: View {
     }
 
     private func addFolder() {
-        if !appSettings.showDockIcon { NSApp.setActivationPolicy(.regular) }
-        NSApp.activate(ignoringOtherApps: true)
+        // The Settings window already owns the activation policy (SettingsView).
+        NSApp.activate()
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -85,7 +85,6 @@ struct SettingsWatchedFoldersTab: View {
         panel.message = "Choose a folder to watch for new audio files"
 
         let response = panel.runModal()
-        if !appSettings.showDockIcon { NSApp.setActivationPolicy(.accessory) }
 
         guard response == .OK, let url = panel.url, let folder = WatchedFolder.make(from: url) else { return }
         // Avoid duplicates by path.

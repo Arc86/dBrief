@@ -130,15 +130,11 @@ struct SettingsCalendarSection: View {
     private var calendarMenu: some View {
         @Bindable var settings = appSettings
         return Menu {
-            Button {
-                settings.selectedICalCalendarIDs = nil
-            } label: {
-                if settings.selectedICalCalendarIDs == nil {
-                    Label("All calendars", systemImage: "checkmark")
-                } else {
-                    Text("All calendars")
-                }
-            }
+            // Toggles render as native checkmark items, so the state reaches VoiceOver.
+            Toggle("All calendars", isOn: Binding(
+                get: { settings.selectedICalCalendarIDs == nil },
+                set: { if $0 { settings.selectedICalCalendarIDs = nil } }
+            ))
 
             Divider()
 
@@ -146,15 +142,14 @@ struct SettingsCalendarSection: View {
                 Text("No calendars available")
             } else {
                 ForEach(availableICalCalendars) { calendar in
-                    Button {
-                        toggleICalCalendar(calendar.id)
-                    } label: {
-                        let isSelected = settings.selectedICalCalendarIDs?.contains(calendar.id) == true
+                    Toggle(isOn: Binding(
+                        get: { settings.selectedICalCalendarIDs?.contains(calendar.id) == true },
+                        set: { _ in toggleICalCalendar(calendar.id) }
+                    )) {
                         Label {
                             Text(calendar.displayName)
                         } icon: {
-                            Image(systemName: isSelected ? "checkmark" : "circle.fill")
-                                .foregroundStyle(isSelected ? Color.primary : calendar.color)
+                            Image(systemName: "circle.fill").foregroundStyle(calendar.color)
                         }
                     }
                 }
@@ -175,7 +170,7 @@ struct SettingsCalendarSection: View {
            let calendar = availableICalCalendars.first(where: { selected.contains($0.id) }) {
             return calendar.title
         }
-        return "\(selected.count) calendars"
+        return selected.count == 1 ? "1 calendar" : "\(selected.count) calendars"
     }
 
     private var unavailableICalCalendarCount: Int {

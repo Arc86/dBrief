@@ -153,7 +153,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
     case recordingShortcut, audioInput, echoCancellation, recordingIndicators, audioQuality
     case callDetection, callPlatforms, calendar, meetingMatching, calendarCLIAdvanced
     case integrations
-    case storageFolders
+    case storageFolders, storageRetention
     case afterRecordingTasks, afterRecordingAutomation
     case transcriptionEngine, transcriptionLanguage, transcriptionCleanup, transcriptionLive, transcriptionServices, transcriptionChunking, transcriptionAdvanced
     case speakerIdentification, speakerLibrary
@@ -178,7 +178,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         case .recordingShortcut, .audioInput, .echoCancellation, .recordingIndicators, .audioQuality: .recording
         case .callDetection, .callPlatforms, .calendar, .meetingMatching, .calendarCLIAdvanced: .meetings
         case .integrations: .integrations
-        case .storageFolders: .storage
+        case .storageFolders, .storageRetention: .storage
         case .afterRecordingTasks, .afterRecordingAutomation: .afterRecording
         case .profileIdentity, .profileMatching, .profileAutomation, .profileTranscription, .profileAI, .profileTasks, .profileFolders: .profiles
         }

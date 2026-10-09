@@ -111,7 +111,7 @@ struct SettingsMeetingsTab: View {
 
     @ViewBuilder
     private func appIcon(_ app: CallDetectionService.CallApp) -> some View {
-        if let customIcon = callPlatformIconImage(for: app) {
+        if let customIcon = CallAppIcons.images[app.bundleId] {
             Image(nsImage: customIcon).resizable().scaledToFit()
         } else if let brand = app.brandIcon {
             brand.text(size: 14).foregroundStyle(palette.secondary.color)
@@ -121,8 +121,14 @@ struct SettingsMeetingsTab: View {
                 .foregroundStyle(palette.secondary.color)
         }
     }
+}
 
-    private func callPlatformIconImage(for app: CallDetectionService.CallApp) -> NSImage? {
+/// Bundled call-app icons, read from disk once instead of on every body pass.
+@MainActor private enum CallAppIcons {
+    static let images: [String: NSImage] = Dictionary(uniqueKeysWithValues:
+        CallDetectionService.knownCallApps.compactMap { app in load(app).map { (app.bundleId, $0) } })
+
+    private static func load(_ app: CallDetectionService.CallApp) -> NSImage? {
         let baseNames = switch app.bundleId {
         case "us.zoom.xos":
             ["Zoom"]

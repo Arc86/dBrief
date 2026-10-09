@@ -4,10 +4,12 @@ import AppKit
 struct SettingsGeneralTab: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(UpdaterController.self) private var updaterController
-    @State private var startAtLogin: Bool = LoginItemManager.isEnabled
+    /// Read in `.task`: a stored default would query ServiceManagement on every init.
+    @State private var startAtLogin = false
 
     var body: some View {
         @Bindable var settings = appSettings
+        @Bindable var updater = updaterController
         SettingsPageScaffold(page: .general) {
             SettingsCard("Startup", section: .appBehavior) {
                 SettingsRow("Start at login") {
@@ -20,10 +22,8 @@ struct SettingsGeneralTab: View {
 
             SettingsCard("Updates", section: .softwareUpdate) {
                 SettingsRow("Check for updates automatically", caption: lastCheckedCaption) {
-                    Toggle("Check for updates automatically", isOn: Binding(
-                        get: { updaterController.automaticallyChecksForUpdates },
-                        set: { updaterController.automaticallyChecksForUpdates = $0 }
-                    ))
+                    Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                        .disabled(!updaterController.isAvailable)
                 }
                 SettingsRow("Check now") {
                     Button("Check now") { updaterController.checkForUpdates() }
@@ -39,6 +39,7 @@ struct SettingsGeneralTab: View {
                 }
             }
         }
+        .task { startAtLogin = LoginItemManager.isEnabled }
     }
 
     private var startAtLoginBinding: Binding<Bool> {

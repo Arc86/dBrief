@@ -91,12 +91,10 @@ struct TranscriptionModelCard<Actions: View>: View {
                     actions()
                         .fixedSize(horizontal: true, vertical: false)
                 }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) { metadata; ratings }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 16) { metadata }
-                    ratings
-                }
+            // One fixed layout: ViewThatFits measures both candidates for every card in the picker.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 16) { metadata }
+                ratings
             }
             .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
             Text(summary).uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)

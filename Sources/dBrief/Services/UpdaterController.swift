@@ -49,6 +49,9 @@ final class UpdaterController {
             // Sparkle delivers this KVO change on the main thread; assumeIsolated is safe.
             MainActor.assumeIsolated {
                 self?.canCheckForUpdates = updater.canCheckForUpdates
+                // A check ending flips this flag; Sparkle's last-check date isn't
+                // observable, so publish it here for the "Last checked" caption.
+                self?.withMutation(keyPath: \.lastUpdateCheckDate) {}
             }
         }
     }
@@ -59,15 +62,27 @@ final class UpdaterController {
         controller?.updater.checkForUpdates()
     }
 
+    /// Whether this build has an update feed (false for beta/dev bundles).
+    var isAvailable: Bool { controller != nil }
+
     /// Whether Sparkle automatically checks on its schedule. Persisted by Sparkle
     /// itself (UserDefaults `SUEnableAutomaticChecks`). Always `false` without a feed.
+    /// Stored by Sparkle, so observation is registered by hand.
     var automaticallyChecksForUpdates: Bool {
-        get { controller?.updater.automaticallyChecksForUpdates ?? false }
-        set { controller?.updater.automaticallyChecksForUpdates = newValue }
+        get {
+            access(keyPath: \.automaticallyChecksForUpdates)
+            return controller?.updater.automaticallyChecksForUpdates ?? false
+        }
+        set {
+            withMutation(keyPath: \.automaticallyChecksForUpdates) {
+                controller?.updater.automaticallyChecksForUpdates = newValue
+            }
+        }
     }
 
     /// Date of the last update check, for a "Last checked" caption.
     var lastUpdateCheckDate: Date? {
-        controller?.updater.lastUpdateCheckDate
+        access(keyPath: \.lastUpdateCheckDate)
+        return controller?.updater.lastUpdateCheckDate
     }
 }

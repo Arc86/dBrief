@@ -85,7 +85,8 @@ struct SettingsProfileScope {
             guard fields.contains(id) else { return }
             let resolved = settings.resolvedFolderURL(overridePath: override, fallback: baseline)
             let emptyOverride = override?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
-            let unavailable = !Self.isDirectory(resolved)
+            // Only overrides are shown; skip the disk check for app-default rows.
+            let unavailable = override != nil && !Self.isDirectory(resolved)
             rows.append(Summary(id: id, label: label, defaultValue: baseline.path,
                                 profileValue: resolved.path, isOverridden: override != nil,
                                 note: emptyOverride ? "Empty destination; using the app default."

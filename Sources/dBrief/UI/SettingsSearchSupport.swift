@@ -5,15 +5,8 @@ struct SettingsSearchRequest: Equatable, Sendable {
     let id = UUID()
 }
 
-private struct SettingsSearchRequestKey: EnvironmentKey {
-    static let defaultValue: SettingsSearchRequest? = nil
-}
-
 extension EnvironmentValues {
-    var settingsSearchRequest: SettingsSearchRequest? {
-        get { self[SettingsSearchRequestKey.self] }
-        set { self[SettingsSearchRequestKey.self] = newValue }
-    }
+    @Entry var settingsSearchRequest: SettingsSearchRequest? = nil
 }
 
 /// Search focuses this one visible heading. Applying focus modifiers to a Section

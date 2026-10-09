@@ -6,15 +6,17 @@ struct SettingsErrorDetails: View {
     let summary: String
     let error: String
     @State private var isExpanded = false
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label {
                 Text(summary)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.heading.color)
             } icon: {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(status.danger.color)
             }
             .uiFont(.callout)
 
@@ -22,7 +24,7 @@ struct SettingsErrorDetails: View {
                 ScrollView {
                     Text(SettingsErrorSanitizer.details(for: error))
                         .uiFont(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondary.color)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 4)

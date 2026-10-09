@@ -49,7 +49,7 @@ enum SettingsSearch {
         .init("indicators", "Recording indicators", "floating window status duration menu bar", section: .recordingIndicators),
         .init("quality", "Audio quality", "capture format master output codec", section: .audioQuality),
         .init("storage", "Recording and transcript folders", "storage path destination choose export", section: .storageFolders),
-        .init("retention", "Automatic file deletion", "storage privacy retention clean up old recordings transcripts delete after", section: .storageFolders),
+        .init("retention", "Automatic file deletion", "storage privacy retention clean up old recordings transcripts delete after", section: .storageRetention),
         .init("calendar", "Calendar connections and matching", "ical outlook microsoft calendars meetings source automatic match window", section: .calendar),
         .init("integrations", "Connected apps and exports", "integrations obsidian vault apple notes reminders notion evernote google keep onenote webhook", section: .integrations),
         .init("tasks", "After-recording task defaults", "auto transcribe summary action items tags sentiment post recording defaults", section: .afterRecordingTasks),

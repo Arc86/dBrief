@@ -38,10 +38,10 @@ struct PromptGenerationStatus: View {
                 HStack(spacing: 10) {
                     ProgressView(value: fraction).accessibilityLabel("Model download")
                     Text(fraction, format: .percent.precision(.fractionLength(0)))
-                        .uiFont(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .uiFont(.caption.monospacedDigit()).foregroundStyle(palette.secondary.color)
                 }
             }
-            if let detail { Text(detail).uiFont(.caption).foregroundStyle(.secondary) }
+            if let detail { Text(detail).uiFont(.caption).foregroundStyle(palette.secondary.color) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -27,7 +27,8 @@ struct SettingsStorageTab: View {
                 }
             }
 
-            SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open") {
+            SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open",
+                         section: .storageRetention) {
                 retentionRows(
                     title: "Delete old recordings",
                     help: "Audio dBrief recognises from its metadata. Transcripts, notes and unknown files are kept.",
@@ -48,7 +49,9 @@ struct SettingsStorageTab: View {
             }
         }
         .confirmationDialog(
-            "Delete \(pendingCleanup?.displayName ?? "files") older than the selected age?",
+            Text(verbatim: pendingCleanup.map {
+                "Delete \($0.displayName) older than \(retentionLabel(retentionDays(for: $0)))?"
+            } ?? ""),
             isPresented: Binding(
                 get: { pendingCleanup != nil },
                 set: { if !$0 { pendingCleanup = nil } }
@@ -115,6 +118,13 @@ struct SettingsStorageTab: View {
         }
     }
 
+    private func retentionDays(for category: RetentionCategory) -> Int {
+        switch category {
+        case .recordings: appSettings.autoDeleteRecordingsDays
+        case .transcripts: appSettings.autoDeleteTranscriptsDays
+        }
+    }
+
     private func retentionLabel(_ days: Int) -> String {
         switch days {
         case 1: "1 day"
@@ -130,14 +140,12 @@ struct SettingsStorageTab: View {
         guard runningCleanup == nil else { return }
         runningCleanup = category
 
-        let days: Int
+        let days = retentionDays(for: category)
         let folders: [URL]
         switch category {
         case .recordings:
-            days = appSettings.autoDeleteRecordingsDays
             folders = [appSettings.effectiveRecordingFolderURL]
         case .transcripts:
-            days = appSettings.autoDeleteTranscriptsDays
             folders = [appSettings.effectiveRecordingFolderURL, appSettings.effectiveTranscriptionFolderURL]
         }
 

@@ -37,7 +37,7 @@ struct VoiceLibraryInspector: View {
 
     private var placeholder: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("\(libraryCount) \(libraryCount == 1 ? "person" : "people") · \(voiceprintCount) voiceprints")
+            Text("^[\(libraryCount) person](inflect: true) · ^[\(voiceprintCount) voiceprint](inflect: true)")
                 .uiFont(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
             Text("Select a person to see their voiceprints. Select several to merge or forget them together.")
@@ -160,14 +160,27 @@ private struct SelectionDetail: View {
     let people: [KnownPerson]
     let actions: VoiceLibraryActions
     @State private var survivorId: String?
+    /// Pairwise voiceprint comparison is costly, so it runs once per selection.
+    @State private var similarity: Float?
     @Environment(\.viewerPalette) private var palette
 
     private var survivor: KnownPerson? {
         people.first { $0.id == survivorId } ?? VoiceLibraryDisplay.mergeSurvivor(people)
     }
-    private var similarity: Float? { VoiceLibraryDisplay.selectionSimilarity(people) }
 
     var body: some View {
+        let survivor = survivor
+        VStack(alignment: .leading, spacing: 14) {
+            content(survivor: survivor)
+        }
+        // Keyed on ids and print counts: a removed or added voiceprint recomputes it.
+        .task(id: people.map { "\($0.id)#\($0.voiceprints.count)" }) {
+            similarity = VoiceLibraryDisplay.selectionSimilarity(people)
+        }
+    }
+
+    @ViewBuilder
+    private func content(survivor: KnownPerson?) -> some View {
         Text("\(people.count) people selected")
             .uiFont(.system(size: 13, weight: .semibold))
             .foregroundStyle(palette.heading.color)
@@ -268,6 +281,7 @@ struct VoiceLibraryStrengthMeter: View {
 struct VoiceLibraryCompanyField: View {
     let company: String?
     var bordered = false
+    var onFocusChange: ((Bool) -> Void)? = nil
     let commit: (String) -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -283,8 +297,14 @@ struct VoiceLibraryCompanyField: View {
         .focused($focused)
         .onSubmit(save)
         .onAppear { draft = company ?? "" }
-        .onDisappear(perform: save)
-        .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
+        .onDisappear {
+            if focused { onFocusChange?(false) }
+            save()
+        }
+        .onChange(of: focused) { _, isFocused in
+            onFocusChange?(isFocused)
+            if !isFocused { save() }
+        }
         .onChange(of: company) { _, newValue in if !focused { draft = newValue ?? "" } }
     }
 

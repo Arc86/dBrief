@@ -40,15 +40,9 @@ struct SettingsAITab: View {
                             summary: "Downloaded once from Hugging Face. Runs analysis and chat on this Mac.")) {
                             HStack(spacing: 6) {
                                 ModelDownloadButton(kind: .gemma, compact: true)
-                                Menu {
-                                    Button("Remove downloaded model", role: .destructive) { purgeGemma() }
-                                } label: {
-                                    Image(systemName: "ellipsis")
+                                ModelActionsMenu(modelName: "Gemma", message: $purgeMessage) {
+                                    try await recordingManager.purgeLocalQwenModel()
                                 }
-                                .menuStyle(.button)
-                                .menuIndicator(.hidden)
-                                .fixedSize()
-                                .accessibilityLabel("More model actions")
                             }
                         }
                     }
@@ -71,10 +65,10 @@ struct SettingsAITab: View {
                     }
                     if case .custom(let code) = settings.outputLanguage {
                         SettingsRow("Language code", caption: "Two letters, for example DE or FR.") {
-                            TextField("EN", text: Binding(
+                            TextField("Language code", text: Binding(
                                 get: { code },
                                 set: { settings.outputLanguage = .custom($0.uppercased()) }
-                            ))
+                            ), prompt: Text(verbatim: "EN"))
                             .settingsTextField()
                             .frame(width: 80)
                         }
@@ -120,17 +114,6 @@ struct SettingsAITab: View {
                     PromptSettingsRow(kind: .actionItems)
                     PromptSettingsRow(kind: .tags)
                 }
-            }
-        }
-    }
-
-    private func purgeGemma() {
-        Task {
-            do {
-                try await recordingManager.purgeLocalQwenModel()
-                purgeMessage = "Local Gemma model cache removed."
-            } catch {
-                purgeMessage = error.localizedDescription
             }
         }
     }

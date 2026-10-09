@@ -13,8 +13,11 @@ struct WhisperModelPicker: View {
     @State private var cached: [String: Bool] = [:]
     @State private var engineFilter = "All"
     @State private var modernApple = false
+    @FocusState private var focusedID: String?
     @Environment(RecordingManager.self) private var manager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     init(modelIDs: [String], selectedID: String, language: String, identifySpeakers: Bool,
          onSelect: @escaping (String) -> Void) {
@@ -50,10 +53,10 @@ struct WhisperModelPicker: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Choose a transcription model").uiFont(.title2.bold())
             Text("Estimated ratings")
-                .uiFont(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(palette.secondary.color)
             HStack {
                 TextField("Search all models", text: $search)
-                    .textFieldStyle(.roundedBorder)
+                    .settingsTextField()
                     .accessibilityLabel("Search all local transcription models")
                 Toggle("All variants", isOn: $showAll).fixedSize()
                     .help("Include all available Whisper variants")
@@ -61,22 +64,31 @@ struct WhisperModelPicker: View {
             Picker("Engine filter", selection: $engineFilter) {
                 ForEach(["All", "Whisper", "Parakeet", "Apple"], id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.segmented)
-            List {
-                ForEach(visibleIDs, id: \.self) { id in
-                    modelRow(id)
-                        .listRowSeparator(.hidden)
-                        .contentShape(RoundedRectangle(cornerRadius: 14))
-                        .onTapGesture { selectedID = id }
-                        .focusable()
-                        .onKeyPress(.space) { selectedID = id; return .handled }
-                        .accessibilityAction(named: "Select model") { selectedID = id }
-                        .accessibilityAddTraits(selectedID == id ? .isSelected : [])
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(visibleIDs, id: \.self) { id in
+                        modelRow(id)
+                            .listRowSeparator(.hidden)
+                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                            .onTapGesture { selectedID = id }
+                            .focusable()
+                            .focused($focusedID, equals: id)
+                            .onKeyPress(.space) { selectedID = id; return .handled }
+                            .onKeyPress(.downArrow) { moveSelection(from: id, by: 1); return .handled }
+                            .onKeyPress(.upArrow) { moveSelection(from: id, by: -1); return .handled }
+                            .accessibilityAction(named: "Select model") { selectedID = id }
+                            .accessibilityAddTraits(selectedID == id ? .isSelected : [])
+                    }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .onChange(of: focusedID) { _, id in
+                    if let id { proxy.scrollTo(id) }
                 }
             }
-            .listStyle(.inset)
             .overlay {
                 if visibleIDs.isEmpty {
-                    Text("No matching models").foregroundStyle(.secondary)
+                    Text("No matching models").foregroundStyle(palette.secondary.color)
                 }
             }
             // The list receives spare height; details never compete for that space.
@@ -87,6 +99,7 @@ struct WhisperModelPicker: View {
                     .uiFont(.headline).lineLimit(2)
                 Spacer()
                 Button("Memory & sources") { showDetails.toggle() }
+                    .buttonStyle(.settingsSecondary)
                     .popover(isPresented: $showDetails) {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
@@ -103,27 +116,29 @@ struct WhisperModelPicker: View {
             memorySummary
             if !modelIDs.contains(selectedID) && !LocalTranscriptionChoice.extraIDs.contains(selectedID) {
                 Text("Saved model is absent from the catalog; availability is unverified.")
-                    .uiFont(.caption).foregroundStyle(.orange)
+                    .uiFont(.caption).foregroundStyle(status.warning.color)
             }
             if WhisperModelCatalog.entries[selectedID]?.englishOnly == true
                 || LocalTranscriptionChoice.parakeetVariant(selectedID).map({ ParakeetModelInfo.find($0).isEnglishOnly }) == true,
                !language.isEmpty,
                language.lowercased().split(separator: "-").first != "en" {
                 Text("English only. Choose a multilingual model for the selected language.")
-                    .uiFont(.caption).foregroundStyle(.orange)
+                    .uiFont(.caption).foregroundStyle(status.warning.color)
             }
             HStack {
                 Text("\(visibleIDs.count) models · No download until used")
-                    .uiFont(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(palette.secondary.color)
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction).buttonStyle(.settingsSecondary)
                 Button("Use model") { onSelect(selectedID); dismiss() }
-                    .keyboardShortcut(.defaultAction).buttonStyle(.typographyProminent)
+                    .keyboardShortcut(.defaultAction).buttonStyle(.settingsPrimary)
             }
         }
         .padding(20)
         .frame(minWidth: 540, idealWidth: 680, maxWidth: 820,
                minHeight: 440, idealHeight: 570, maxHeight: 760)
+        .background(palette.canvas.color)
         .task {
             for id in Set(modelIDs).union([selectedID]).subtracting(LocalTranscriptionChoice.extraIDs).sorted() {
                 guard !Task.isCancelled else { return }
@@ -140,20 +155,24 @@ struct WhisperModelPicker: View {
         }
     }
 
+    /// Arrow keys move the selection (and focus) from the focused row.
+    private func moveSelection(from id: String, by step: Int) {
+        guard let next = SettingsListNavigation.step(step, in: visibleIDs, from: id) else { return }
+        selectedID = next
+        focusedID = next
+    }
+
     private func modelRow(_ id: String) -> some View {
         TranscriptionModelCard(modelID: id, presentation: .local(id, modernApple: modernApple),
                                selected: selectedID == id) {
             HStack(spacing: 8) {
                 if LocalTranscriptionChoice.extraIDs.contains(id) {
                     Text(id == LocalTranscriptionChoice.apple ? "macOS managed" : "Local model")
-                        .uiFont(.caption).foregroundStyle(.secondary)
+                        .uiFont(.caption).foregroundStyle(palette.secondary.color)
                 }
                 if let downloaded = cached[id] {
-                    Label(downloaded ? "Downloaded" : "Not downloaded",
-                          systemImage: downloaded ? "checkmark.circle" : "arrow.down.circle")
-                        .uiFont(.caption).foregroundStyle(.secondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.1), in: Capsule())
+                    SettingsStatusPill(downloaded ? "Downloaded" : "Not downloaded",
+                                       kind: downloaded ? .success : .neutral)
                 }
                 Menu {
                     Button("Memory & sources") { selectedID = id; showDetails = true }
@@ -174,18 +193,18 @@ struct WhisperModelPicker: View {
             let total = runtimeGiB + (identifySpeakers ? 0.5 : 0)
             HStack(spacing: 12) {
                 ProgressView(value: min(total / max(installed, 1), 1))
-                    .tint(total / max(installed, 1) <= 0.25 ? .green : total / max(installed, 1) <= 0.5 ? .yellow : .orange)
+                    .tint(total / max(installed, 1) <= 0.25 ? status.success.color : status.warning.color)
                     .frame(width: 80)
                     .accessibilityLabel("Estimated share of installed RAM")
                     .accessibilityValue(String(format: "%.0f percent", total / max(installed, 1) * 100))
                 Text(String(format: "~%.1f of %.0f GiB RAM%@", total, installed,
                             identifySpeakers ? " · includes speakers" : ""))
-                    .uiFont(.caption).foregroundStyle(.secondary)
+                    .uiFont(.caption).foregroundStyle(palette.secondary.color)
             }
         } else {
             Text(selectedID == LocalTranscriptionChoice.apple
                  ? "Memory and language downloads managed by macOS"
-                 : "Memory guidance unavailable").uiFont(.caption).foregroundStyle(.secondary)
+                 : "Memory guidance unavailable").uiFont(.caption).foregroundStyle(palette.secondary.color)
         }
     }
 }

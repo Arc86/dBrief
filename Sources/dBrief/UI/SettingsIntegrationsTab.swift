@@ -5,10 +5,14 @@ struct SettingsIntegrationsTab: View {
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
     let editProfile: (UUID) -> Void
-    @State private var connectionMessages: [IntegrationDestination: String] = [:]
+    @State private var testOutcomes: [IntegrationDestination: TestOutcome] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
     @State private var openDestination: IntegrationDestination?
-    private let integrationService = IntegrationDispatchService()
+
+    private enum TestOutcome: Equatable {
+        case success
+        case failure(String)
+    }
 
     var body: some View {
         // In-page detail instead of a NavigationStack: inside the split view a pushed
@@ -24,6 +28,8 @@ struct SettingsIntegrationsTab: View {
         }) {
             if let destination = openDestination {
                 Button {
+                    // A result from this visit may not hold after later edits.
+                    testOutcomes[destination] = nil
                     openDestination = nil
                 } label: {
                     Label("All integrations", systemImage: "chevron.left")
@@ -132,7 +138,7 @@ struct SettingsIntegrationsTab: View {
 
     @ViewBuilder
     private func integrationIcon(for destination: IntegrationDestination) -> some View {
-        if let image = integrationIconImage(for: destination) {
+        if let image = Self.iconImages[destination] {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
@@ -186,9 +192,11 @@ struct SettingsIntegrationsTab: View {
         SettingsRow(verbatim: text) { SettingsStatusPill("Needs setup", kind: .warning) }
     }
 
+    @ViewBuilder
     private var obsidianDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Obsidian") {
-            enableRow("Send to Obsidian", binding({ appSettings.obsidianEnabled }, { appSettings.obsidianEnabled = $0 }))
+            enableRow("Send to Obsidian", $settings.obsidianEnabled)
             if appSettings.obsidianEnabled {
                 SettingsRow(verbatim: "Vault", caption: vaultPathText, systemImage: "folder") {
                     Button("Choose…") { chooseVault { url in appSettings.obsidianVaultURL = url } }
@@ -206,8 +214,7 @@ struct SettingsIntegrationsTab: View {
                     .disabled(appSettings.obsidianVaultURL == nil)
                 }
                 SettingsRow("Include the transcript", caption: "Off sends only the summary, action items and tags.") {
-                    Toggle("Include the transcript", isOn: binding({ appSettings.obsidianIncludeTranscript },
-                                                                   { appSettings.obsidianIncludeTranscript = $0 }))
+                    Toggle("Include the transcript", isOn: $settings.obsidianIncludeTranscript)
                 }
             }
         }
@@ -215,30 +222,27 @@ struct SettingsIntegrationsTab: View {
 
     @ViewBuilder
     private var appleNotesDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Apple Notes") {
-            enableRow("Send to Apple Notes", binding({ appSettings.integrations.appleNotes.enabled },
-                                                     { appSettings.integrations.appleNotes.enabled = $0 }))
+            enableRow("Send to Apple Notes", $settings.integrations.appleNotes.enabled)
             if appSettings.integrations.appleNotes.enabled {
-                textRow("Account name", optional: true, binding({ appSettings.integrations.appleNotes.accountName },
-                                                                { appSettings.integrations.appleNotes.accountName = $0 }))
-                textRow("Folder name", optional: true, binding({ appSettings.integrations.appleNotes.folderName },
-                                                               { appSettings.integrations.appleNotes.folderName = $0 }))
+                textRow("Account name", optional: true, $settings.integrations.appleNotes.accountName)
+                textRow("Folder name", optional: true, $settings.integrations.appleNotes.folderName)
                 testRow(for: .appleNotes)
             }
         }
         if appSettings.integrations.appleNotes.enabled {
-            deliveryFieldsCard(get: { appSettings.integrations.appleNotes.fields },
-                               set: { appSettings.integrations.appleNotes.fields = $0 })
+            deliveryFieldsCard($settings.integrations.appleNotes.fields)
         }
     }
 
+    @ViewBuilder
     private var appleRemindersDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Apple Reminders", description: "Only action items are sent, one reminder each") {
-            enableRow("Send to Apple Reminders", binding({ appSettings.integrations.appleReminders.enabled },
-                                                         { appSettings.integrations.appleReminders.enabled = $0 }))
+            enableRow("Send to Apple Reminders", $settings.integrations.appleReminders.enabled)
             if appSettings.integrations.appleReminders.enabled {
-                textRow("Default list", optional: true, binding({ appSettings.integrations.appleReminders.listName },
-                                                                { appSettings.integrations.appleReminders.listName = $0 }))
+                textRow("Default list", optional: true, $settings.integrations.appleReminders.listName)
                 testRow(for: .appleReminders)
             }
         }
@@ -246,23 +250,20 @@ struct SettingsIntegrationsTab: View {
 
     @ViewBuilder
     private var notionDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Notion") {
-            enableRow("Send to Notion", binding({ appSettings.integrations.notion.enabled },
-                                                { appSettings.integrations.notion.enabled = $0 }))
+            enableRow("Send to Notion", $settings.integrations.notion.enabled)
             if appSettings.integrations.notion.enabled {
-                textRow("Token", secure: true, binding({ appSettings.notionToken }, { appSettings.notionToken = $0 }))
+                textRow("Token", secure: true, $settings.notionToken)
                 SettingsRow("Parent type") {
-                    Picker("Parent type", selection: binding({ appSettings.integrations.notion.parentType },
-                                                             { appSettings.integrations.notion.parentType = $0 })) {
+                    Picker("Parent type", selection: $settings.integrations.notion.parentType) {
                         Text("Data source").tag(NotionParentType.dataSource)
                         Text("Page").tag(NotionParentType.page)
                     }
                     .pickerStyle(.menu)
                 }
-                textRow("Parent ID", binding({ appSettings.integrations.notion.parentID },
-                                             { appSettings.integrations.notion.parentID = $0 }))
-                textRow("Title property", binding({ appSettings.integrations.notion.titlePropertyName },
-                                                  { appSettings.integrations.notion.titlePropertyName = $0 }))
+                textRow("Parent ID", $settings.integrations.notion.parentID)
+                textRow("Title property", $settings.integrations.notion.titlePropertyName)
                 if appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty {
                     warningRow("Token and parent ID are required.")
                 }
@@ -270,69 +271,60 @@ struct SettingsIntegrationsTab: View {
             }
         }
         if appSettings.integrations.notion.enabled {
-            deliveryFieldsCard(get: { appSettings.integrations.notion.fields },
-                               set: { appSettings.integrations.notion.fields = $0 })
+            deliveryFieldsCard($settings.integrations.notion.fields)
         }
     }
 
     @ViewBuilder
     private var evernoteDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Evernote") {
-            enableRow("Send to Evernote", binding({ appSettings.integrations.evernote.enabled },
-                                                  { appSettings.integrations.evernote.enabled = $0 }))
+            enableRow("Send to Evernote", $settings.integrations.evernote.enabled)
             if appSettings.integrations.evernote.enabled {
-                textRow("Token", secure: true, binding({ appSettings.evernoteToken }, { appSettings.evernoteToken = $0 }))
-                textRow("API base URL", binding({ appSettings.integrations.evernote.apiBaseURL },
-                                                { appSettings.integrations.evernote.apiBaseURL = $0 }))
-                textRow("Notebook ID", optional: true, binding({ appSettings.integrations.evernote.notebookID },
-                                                               { appSettings.integrations.evernote.notebookID = $0 }))
+                textRow("Token", secure: true, $settings.evernoteToken)
+                textRow("API base URL", $settings.integrations.evernote.apiBaseURL)
+                textRow("Notebook ID", optional: true, $settings.integrations.evernote.notebookID)
                 if appSettings.evernoteToken.isEmpty { warningRow("A token is required.") }
                 testRow(for: .evernote)
             }
         }
         if appSettings.integrations.evernote.enabled {
-            deliveryFieldsCard(get: { appSettings.integrations.evernote.fields },
-                               set: { appSettings.integrations.evernote.fields = $0 })
+            deliveryFieldsCard($settings.integrations.evernote.fields)
         }
     }
 
     @ViewBuilder
     private var googleKeepDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Google Keep", description: "The Keep API may need Google Workspace setup") {
-            enableRow("Send to Google Keep", binding({ appSettings.integrations.googleKeep.enabled },
-                                                     { appSettings.integrations.googleKeep.enabled = $0 }))
+            enableRow("Send to Google Keep", $settings.integrations.googleKeep.enabled)
             if appSettings.integrations.googleKeep.enabled {
-                textRow("OAuth token", secure: true, binding({ appSettings.googleKeepToken }, { appSettings.googleKeepToken = $0 }))
-                textRow("API base URL", binding({ appSettings.integrations.googleKeep.apiBaseURL },
-                                                { appSettings.integrations.googleKeep.apiBaseURL = $0 }))
+                textRow("OAuth token", secure: true, $settings.googleKeepToken)
+                textRow("API base URL", $settings.integrations.googleKeep.apiBaseURL)
                 if appSettings.googleKeepToken.isEmpty { warningRow("A token is required.") }
                 testRow(for: .googleKeep)
             }
         }
         if appSettings.integrations.googleKeep.enabled {
-            deliveryFieldsCard(get: { appSettings.integrations.googleKeep.fields },
-                               set: { appSettings.integrations.googleKeep.fields = $0 })
+            deliveryFieldsCard($settings.integrations.googleKeep.fields)
         }
     }
 
     @ViewBuilder
     private var oneNoteDetail: some View {
+        @Bindable var settings = appSettings
         SettingsCard("Microsoft OneNote") {
-            enableRow("Send to OneNote", binding({ appSettings.integrations.oneNote.enabled },
-                                                 { appSettings.integrations.oneNote.enabled = $0 }))
+            enableRow("Send to OneNote", $settings.integrations.oneNote.enabled)
             if appSettings.integrations.oneNote.enabled {
-                textRow("Graph token", secure: true, binding({ appSettings.oneNoteToken }, { appSettings.oneNoteToken = $0 }))
-                textRow("Graph base URL", binding({ appSettings.integrations.oneNote.graphBaseURL },
-                                                  { appSettings.integrations.oneNote.graphBaseURL = $0 }))
-                textRow("Section ID", optional: true, binding({ appSettings.integrations.oneNote.sectionID },
-                                                              { appSettings.integrations.oneNote.sectionID = $0 }))
+                textRow("Graph token", secure: true, $settings.oneNoteToken)
+                textRow("Graph base URL", $settings.integrations.oneNote.graphBaseURL)
+                textRow("Section ID", optional: true, $settings.integrations.oneNote.sectionID)
                 if appSettings.oneNoteToken.isEmpty { warningRow("A token is required.") }
                 testRow(for: .oneNote)
             }
         }
         if appSettings.integrations.oneNote.enabled {
-            deliveryFieldsCard(get: { appSettings.integrations.oneNote.fields },
-                               set: { appSettings.integrations.oneNote.fields = $0 })
+            deliveryFieldsCard($settings.integrations.oneNote.fields)
         }
     }
 
@@ -348,18 +340,16 @@ struct SettingsIntegrationsTab: View {
 
     @ViewBuilder
     private var webhookDetail: some View {
+        @Bindable var settings = appSettings
         Group {
             SettingsCard("Webhook",
                          description: "Each delivery has an Idempotency-Key; retry unconfirmed sends from History") {
-                enableRow("Send to a webhook", binding({ appSettings.integrations.webhook.enabled },
-                                                       { appSettings.integrations.webhook.enabled = $0 }))
+                enableRow("Send to a webhook", $settings.integrations.webhook.enabled)
                 if appSettings.integrations.webhook.enabled {
-                    textRow("URL", secure: true, binding({ appSettings.integrations.webhook.url },
-                                                         { appSettings.integrations.webhook.url = $0 }))
+                    textRow("URL", secure: true, $settings.integrations.webhook.url)
                     SettingsRow("Timeout") {
                         HStack(spacing: 6) {
-                            TextField("Timeout", value: binding({ appSettings.integrations.webhook.timeoutSeconds },
-                                                                { appSettings.integrations.webhook.timeoutSeconds = $0 }),
+                            TextField("Timeout", value: $settings.integrations.webhook.timeoutSeconds,
                                       format: .number)
                                 .settingsTextField()
                                 .multilineTextAlignment(.trailing)
@@ -373,19 +363,13 @@ struct SettingsIntegrationsTab: View {
             }
             if appSettings.integrations.webhook.enabled {
                 SettingsCard("Headers") {
-                    ForEach(Array(appSettings.integrations.webhook.headers.enumerated()), id: \.element.id) { index, header in
+                    ForEach($settings.integrations.webhook.headers) { $header in
                         SettingsStackedRow {
                             HStack(spacing: 8) {
-                                TextField("Header", text: binding(
-                                    { headerValue(index: index).key },
-                                    { updateHeader(index: index, key: $0, value: headerValue(index: index).value) }
-                                ))
-                                .settingsTextField()
-                                SecureField("Value", text: binding(
-                                    { headerValue(index: index).value },
-                                    { updateHeader(index: index, key: headerValue(index: index).key, value: $0) }
-                                ))
-                                .settingsTextField()
+                                TextField("Header", text: $header.key)
+                                    .settingsTextField()
+                                SecureField("Value", text: $header.value)
+                                    .settingsTextField()
                                 Button { removeHeader(id: header.id) } label: { Image(systemName: "xmark") }
                                     .buttonStyle(.settingsSecondary)
                                     .accessibilityLabel("Remove header")
@@ -401,58 +385,45 @@ struct SettingsIntegrationsTab: View {
                         .buttonStyle(.settingsSecondary)
                     }
                 }
-                deliveryFieldsCard(get: { appSettings.integrations.webhook.fields },
-                                   set: { appSettings.integrations.webhook.fields = $0 })
+                deliveryFieldsCard($settings.integrations.webhook.fields)
             }
         }
         .disabled(appSettings.integrations.webhook.credentialsUnavailable)
     }
 
-    private func deliveryFieldsCard(get: @escaping () -> [DeliveryField],
-                                    set: @escaping ([DeliveryField]) -> Void) -> some View {
+    private func deliveryFieldsCard(_ fields: Binding<[DeliveryField]>) -> some View {
         SettingsCard("Send fields") {
             ForEach(DeliveryField.allCases) { field in
                 SettingsRow(verbatim: field.displayName) {
-                    Toggle(field.displayName, isOn: binding(
-                        { get().contains(field) },
-                        { isOn in
-                            var current = get()
-                            if isOn {
-                                if !current.contains(field) { current.append(field) }
-                            } else {
-                                current.removeAll { $0 == field }
-                            }
-                            set(current)
-                        }
-                    ))
+                    Toggle(field.displayName, isOn: fields[contains: field])
                 }
             }
         }
     }
 
-    private func binding<T>(_ get: @escaping () -> T, _ set: @escaping (T) -> Void) -> Binding<T> {
-        Binding(get: { @MainActor in get() }, set: { @MainActor value in set(value) })
-    }
-
-    private func integrationIconImage(for destination: IntegrationDestination) -> NSImage? {
-        let baseNames = iconFileBaseNames(for: destination)
-        let searchNames = Set(baseNames + baseNames.map { $0.lowercased() })
+    /// Bundled brand icons, resolved once: the first match in name, then extension, order.
+    private static let iconImages: [IntegrationDestination: NSImage] = {
+        guard let resourceURL = Bundle.main.resourceURL else { return [:] }
         let extensions = ["png", "jpg", "jpeg", "pdf", "icns", "webp", ""]
-
-        guard let resourceURL = Bundle.main.resourceURL else { return nil }
-        for name in searchNames {
-            for ext in extensions {
-                let fileName = ext.isEmpty ? name : "\(name).\(ext)"
-                let url = resourceURL.appendingPathComponent("3dPartyIcons/\(fileName)")
-                if let image = NSImage(contentsOf: url) {
-                    return image
+        var images: [IntegrationDestination: NSImage] = [:]
+        for destination in IntegrationDestination.allCases {
+            var seen = Set<String>()
+            let names = iconFileBaseNames(for: destination).flatMap { [$0, $0.lowercased()] }
+                .filter { seen.insert($0).inserted }
+            search: for name in names {
+                for ext in extensions {
+                    let fileName = ext.isEmpty ? name : "\(name).\(ext)"
+                    if let image = NSImage(contentsOf: resourceURL.appendingPathComponent("3dPartyIcons/\(fileName)")) {
+                        images[destination] = image
+                        break search
+                    }
                 }
             }
         }
-        return nil
-    }
+        return images
+    }()
 
-    private func iconFileBaseNames(for destination: IntegrationDestination) -> [String] {
+    private static func iconFileBaseNames(for destination: IntegrationDestination) -> [String] {
         switch destination {
         case .obsidian:
             return ["Obsidian", destination.rawValue, destination.displayName]
@@ -486,34 +457,19 @@ struct SettingsIntegrationsTab: View {
         }
     }
 
-    private func headerValue(index: Int) -> WebhookHeader {
-        guard appSettings.integrations.webhook.headers.indices.contains(index) else {
-            return WebhookHeader()
-        }
-        return appSettings.integrations.webhook.headers[index]
-    }
-
-    private func updateHeader(index: Int, key: String, value: String) {
-        guard appSettings.integrations.webhook.headers.indices.contains(index) else { return }
-        appSettings.integrations.webhook.headers[index].key = key
-        appSettings.integrations.webhook.headers[index].value = value
-    }
-
     private func removeHeader(id: UUID) {
         appSettings.integrations.webhook.headers.removeAll { $0.id == id }
     }
 
     @ViewBuilder
     private func testRow(for destination: IntegrationDestination) -> some View {
-        let message = connectionMessages[destination]
+        let outcome = testOutcomes[destination]
         SettingsRow("Test the connection") {
             HStack(spacing: 8) {
-                if let message {
-                    if message == "Connection successful" {
-                        SettingsStatusPill("Connected", kind: .success)
-                    } else {
-                        SettingsStatusPill("Failed", kind: .danger).help(message)
-                    }
+                switch outcome {
+                case .success: SettingsStatusPill("Connected", kind: .success)
+                case .failure(let message): SettingsStatusPill("Failed", kind: .danger).help(message)
+                case nil: EmptyView()
                 }
                 Button(isTesting.contains(destination) ? "Testing…" : "Test connection") {
                     Task { await runConnectionTest(destination: destination) }
@@ -522,7 +478,7 @@ struct SettingsIntegrationsTab: View {
                 .disabled(isTesting.contains(destination))
             }
         }
-        if let message, message != "Connection successful" {
+        if case .failure(let message) = outcome {
             SettingsStackedRow {
                 Text(message)
                     .uiFont(.system(size: 11.5))
@@ -538,10 +494,11 @@ struct SettingsIntegrationsTab: View {
         defer { isTesting.remove(destination) }
 
         do {
-            try await integrationService.testConnection(destination: destination, settings: appSettings)
-            connectionMessages[destination] = "Connection successful"
+            // Created per test: the service owns an EKEventStore, too costly for view init.
+            try await IntegrationDispatchService().testConnection(destination: destination, settings: appSettings)
+            testOutcomes[destination] = .success
         } catch {
-            connectionMessages[destination] = error.localizedDescription
+            testOutcomes[destination] = .failure(error.localizedDescription)
         }
     }
 
@@ -576,6 +533,20 @@ struct SettingsIntegrationsTab: View {
         if panel.runModal() == .OK, let url = panel.url {
             guard let relativePath = appSettings.obsidianRelativePath(for: url) else { return }
             completion(relativePath)
+        }
+    }
+}
+
+private extension Array where Element == DeliveryField {
+    /// Membership as a settable flag, for key-path toggle bindings.
+    subscript(contains field: DeliveryField) -> Bool {
+        get { contains(field) }
+        set {
+            if newValue {
+                if !contains(field) { append(field) }
+            } else {
+                removeAll { $0 == field }
+            }
         }
     }
 }

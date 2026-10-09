@@ -21,16 +21,32 @@ struct SettingsVoiceLibraryTab: View {
     @State private var sortColumn: VoiceLibraryRow.Column = .lastHeard
     @State private var sortAscending = false
     @State private var anchorId: String?
-    @State private var hoveredId: String?
+    // Starts wide so the first frame shows every column; the measured width follows.
+    @State private var tableWidth: CGFloat = .greatestFiniteMagnitude
+    @State private var editingCompany = false
     @FocusState private var tableFocused: Bool
     @AppStorage("voiceLibraryGroupByCompany") private var groupByCompany = true
 
     @State private var renaming: KnownPerson?
     @State private var renameText = ""
     @State private var mergeSource: KnownPerson?
-    @State private var collision: (source: KnownPerson, existingId: String, name: String)?
+    @State private var collision: NameCollision?
+    @State private var showingCollision = false
     @State private var forgetTargets: [KnownPerson] = []
-    @State private var pendingMerge: (sources: [KnownPerson], survivor: KnownPerson)?
+    @State private var confirmingForget = false
+    @State private var pendingMerge: MergeRequest?
+    @State private var confirmingMerge = false
+
+    private struct MergeRequest {
+        let sources: [KnownPerson]
+        let survivor: KnownPerson
+    }
+
+    private struct NameCollision {
+        let source: KnownPerson
+        let existingId: String
+        let name: String
+    }
 
     private var visiblePeople: [KnownPerson] {
         VoiceLibraryFilter.apply(people: library.people, query: query, companies: companyFilter, sort: .name)
@@ -41,11 +57,14 @@ struct SettingsVoiceLibraryTab: View {
     private var selectedPeople: [KnownPerson] { library.people.filter { selection.contains($0.id) } }
     private var totalVoiceprints: Int { library.people.reduce(0) { $0 + $1.voiceprints.count } }
 
+    private var columns: VoiceLibraryColumns { VoiceLibraryColumns(tableWidth: tableWidth) }
+
     /// Company groups in table order: the sorted rows feed `grouped`, which keeps
     /// input order inside each group.
-    private func groups(of rows: [VoiceLibraryRow]) -> [(group: VoiceLibraryFilter.Group, rows: [VoiceLibraryRow])] {
+    private func groups(of rows: [VoiceLibraryRow],
+                        peopleById: [String: KnownPerson]) -> [(group: VoiceLibraryFilter.Group, rows: [VoiceLibraryRow])] {
         let byId = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        let people = rows.compactMap { row in visiblePeople.first { $0.id == row.id } }
+        let people = rows.compactMap { peopleById[$0.id] }
         return VoiceLibraryFilter.grouped(people: people).map { group in
             (group, group.people.compactMap { byId[$0.id] })
         }
@@ -56,11 +75,12 @@ struct SettingsVoiceLibraryTab: View {
             if library.people.isEmpty {
                 emptyLibraryView
             } else {
+                let columns = columns
                 VStack(spacing: 0) {
-                    toolbar
+                    toolbar(compact: !columns.showsDates)
                     palette.divider.color.frame(height: 1)
                     HStack(spacing: 0) {
-                        table
+                        table(columns)
                         palette.divider.color.frame(width: 1)
                         VoiceLibraryInspector(selected: selectedPeople, libraryCount: library.people.count,
                                               voiceprintCount: totalVoiceprints, actions: actions)
@@ -71,42 +91,37 @@ struct SettingsVoiceLibraryTab: View {
             }
         }
         .task { if !loaded { await reload(); loaded = true } }
-        .alert(forgetTitle, isPresented: Binding(get: { !forgetTargets.isEmpty }, set: { if !$0 { forgetTargets = [] } })) {
+        // `presenting:` keeps each alert's data intact while it animates out.
+        .alert(forgetTitle, isPresented: $confirmingForget, presenting: forgetTargets) { targets in
             Button("Forget", role: .destructive) {
-                let ids = forgetTargets.map(\.id)
+                let ids = targets.map(\.id)
                 Task {
                     for id in ids { await context.voiceLibraryStore.delete(id: id) }
                     await reload()
                 }
             }
-            Button("Cancel", role: .cancel) { forgetTargets = [] }
-        } message: {
-            Text("\(quotedNames(forgetTargets)) and all \(forgetTargets.count == 1 ? "its" : "their") voiceprints will be removed. This cannot be undone.")
+            Button("Cancel", role: .cancel) {}
+        } message: { targets in
+            Text("\(quotedNames(targets)) and all \(targets.count == 1 ? "its" : "their") voiceprints will be removed. This cannot be undone.")
         }
-        .alert(mergeTitle, isPresented: Binding(get: { pendingMerge != nil }, set: { if !$0 { pendingMerge = nil } })) {
-            Button("Merge", role: .destructive) {
-                if let merge = pendingMerge { performMerge(sources: merge.sources, into: merge.survivor) }
-            }
-            Button("Cancel", role: .cancel) { pendingMerge = nil }
-        } message: {
-            if let merge = pendingMerge {
-                let others = merge.sources.filter { $0.id != merge.survivor.id }
-                Text("The voiceprints of \(quotedNames(others)) move into \u{201C}\(merge.survivor.name)\u{201D}, and \(others.count == 1 ? "that person is" : "those people are") removed. This cannot be undone.")
-            }
+        .alert(mergeTitle, isPresented: $confirmingMerge, presenting: pendingMerge) { merge in
+            Button("Merge", role: .destructive) { performMerge(sources: merge.sources, into: merge.survivor) }
+            Button("Cancel", role: .cancel) {}
+        } message: { merge in
+            let others = merge.sources.filter { $0.id != merge.survivor.id }
+            Text("The voiceprints of \(quotedNames(others)) move into \u{201C}\(merge.survivor.name)\u{201D}, and \(others.count == 1 ? "that person is" : "those people are") removed. This cannot be undone.")
         }
-        .alert("Name already exists", isPresented: Binding(get: { collision != nil }, set: { if !$0 { collision = nil } })) {
+        .alert("Name already exists", isPresented: $showingCollision, presenting: collision) { collision in
             Button("Merge", role: .destructive) {
-                if let c = collision {
-                    Task {
-                        await context.voiceLibraryStore.merge(sourceId: c.source.id, into: c.existingId)
-                        selection = [c.existingId]
-                        await reload()
-                    }
+                Task {
+                    await context.voiceLibraryStore.merge(sourceId: collision.source.id, into: collision.existingId)
+                    selection = [collision.existingId]
+                    await reload()
                 }
             }
-            Button("Cancel", role: .cancel) { collision = nil }
-        } message: {
-            Text("Another person is already named \u{201C}\(collision?.name ?? "")\u{201D}. Merge \u{201C}\(collision?.source.name ?? "")\u{201D} into them?")
+            Button("Cancel", role: .cancel) {}
+        } message: { collision in
+            Text("Another person is already named \u{201C}\(collision.name)\u{201D}. Merge \u{201C}\(collision.source.name)\u{201D} into them?")
         }
         .sheet(item: $renaming) { person in renameSheet(person) }
         .sheet(item: $mergeSource) { person in mergeSheet(person) }
@@ -141,11 +156,13 @@ struct SettingsVoiceLibraryTab: View {
 
     // MARK: - Toolbar
 
-    private var toolbar: some View {
+    /// `compact` (the table is too narrow for the date columns) drops the trailing
+    /// count and bulk actions; the inspector shows both.
+    private func toolbar(compact: Bool) -> some View {
         HStack(spacing: 10) {
             TextField("Search name or company", text: $query)
                 .settingsTextField()
-                .frame(width: 220)
+                .frame(minWidth: 140, maxWidth: 220)
 
             Menu {
                 ForEach(VoiceLibraryFilter.companies(in: library.people), id: \.self) { company in
@@ -165,23 +182,24 @@ struct SettingsVoiceLibraryTab: View {
 
             Toggle("Group by company", isOn: $groupByCompany)
                 .toggleStyle(.checkbox)
-                .tint(palette.primary.color)
                 .uiFont(.system(size: 12))
 
             Spacer(minLength: 8)
 
-            if selection.count > 1 {
-                Text("\(selection.count) selected")
-                    .uiFont(.system(size: 11.5))
-                    .foregroundStyle(palette.secondary.color)
-                Button("Merge \(selection.count)\u{2026}") { requestMerge(selectedPeople) }
-                    .buttonStyle(.settingsSecondary)
-                Button("Forget \(selection.count)", role: .destructive) { forgetTargets = selectedPeople }
-                    .buttonStyle(.settingsDanger)
-            } else {
-                Text("\(library.people.count) \(library.people.count == 1 ? "person" : "people") · \(totalVoiceprints) voiceprints")
-                    .uiFont(.system(size: 11.5))
-                    .foregroundStyle(palette.secondary.color)
+            if !compact {
+                if selection.count > 1 {
+                    Text("\(selection.count) selected")
+                        .uiFont(.system(size: 11.5))
+                        .foregroundStyle(palette.secondary.color)
+                    Button("Merge \(selection.count)\u{2026}") { requestMerge(selectedPeople) }
+                        .buttonStyle(.settingsSecondary)
+                    Button("Forget \(selection.count)", role: .destructive) { requestForget(selectedPeople) }
+                        .buttonStyle(.settingsDanger)
+                } else {
+                    Text("^[\(library.people.count) person](inflect: true) · ^[\(totalVoiceprints) voiceprint](inflect: true)")
+                        .uiFont(.system(size: 11.5))
+                        .foregroundStyle(palette.secondary.color)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -190,24 +208,18 @@ struct SettingsVoiceLibraryTab: View {
 
     // MARK: - Table
 
-    private enum ColumnWidth {
-        static let company: CGFloat = 160
-        static let voiceprints: CGFloat = 90
-        static let firstHeard: CGFloat = 100
-        static let lastHeard: CGFloat = 110
-        static let spacing: CGFloat = 12
-    }
-
-    private var table: some View {
+    private func table(_ columns: VoiceLibraryColumns) -> some View {
         let rows = rows
         let order = rows.map(\.id)
+        let peopleById = Dictionary(library.people.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let selected = selectedPeople
         return VStack(spacing: 0) {
-            columnHeader
+            columnHeader(columns)
             palette.divider.color.frame(height: 1)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     if groupByCompany {
-                        ForEach(groups(of: rows), id: \.group.id) { entry in
+                        ForEach(groups(of: rows, peopleById: peopleById), id: \.group.id) { entry in
                             Text("\(entry.group.label) · \(entry.rows.count)")
                                 .uiFont(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(palette.secondary.color)
@@ -215,10 +227,14 @@ struct SettingsVoiceLibraryTab: View {
                                 .padding(.top, 12)
                                 .padding(.bottom, 4)
                                 .accessibilityAddTraits(.isHeader)
-                            ForEach(entry.rows) { row in rowView(row, order: order) }
+                            ForEach(entry.rows) { row in
+                                rowView(row, person: peopleById[row.id], columns: columns, order: order, selected: selected)
+                            }
                         }
                     } else {
-                        ForEach(rows) { row in rowView(row, order: order) }
+                        ForEach(rows) { row in
+                            rowView(row, person: peopleById[row.id], columns: columns, order: order, selected: selected)
+                        }
                     }
                 }
                 .padding(6)
@@ -230,6 +246,15 @@ struct SettingsVoiceLibraryTab: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
+        // Our own focus ring (the system one ignores the palette), hidden while the
+        // focus is in a row's company field.
+        .overlay {
+            Rectangle()
+                .strokeBorder(palette.primary.color.opacity(0.6), lineWidth: 2)
+                .opacity(tableFocused && !editingCompany ? 1 : 0)
+                .allowsHitTesting(false)
+        }
         .focusable()
         .focusEffectDisabled()
         .focused($tableFocused)
@@ -237,7 +262,7 @@ struct SettingsVoiceLibraryTab: View {
         .onKeyPress(.downArrow) { moveSelection(by: 1, order: order) }
         .onKeyPress(keys: [.delete, .deleteForward]) { _ in
             guard !selection.isEmpty else { return .ignored }
-            forgetTargets = selectedPeople
+            requestForget(selectedPeople)
             return .handled
         }
         .onKeyPress(characters: ["a"]) { press in
@@ -247,13 +272,17 @@ struct SettingsVoiceLibraryTab: View {
         }
     }
 
-    private var columnHeader: some View {
-        HStack(spacing: ColumnWidth.spacing) {
+    private func columnHeader(_ columns: VoiceLibraryColumns) -> some View {
+        HStack(spacing: VoiceLibraryColumns.spacing) {
             headerButton(.name).frame(maxWidth: .infinity, alignment: .leading)
-            headerButton(.company).frame(width: ColumnWidth.company, alignment: .leading)
-            headerButton(.voiceprints).frame(width: ColumnWidth.voiceprints, alignment: .leading)
-            headerButton(.firstHeard).frame(width: ColumnWidth.firstHeard, alignment: .leading)
-            headerButton(.lastHeard).frame(width: ColumnWidth.lastHeard, alignment: .leading)
+            headerButton(.company).frame(width: columns.companyWidth, alignment: .leading)
+            if columns.showsVoiceprints {
+                headerButton(.voiceprints).frame(width: VoiceLibraryColumns.voiceprints, alignment: .leading)
+            }
+            if columns.showsDates {
+                headerButton(.firstHeard).frame(width: VoiceLibraryColumns.firstHeard, alignment: .leading)
+                headerButton(.lastHeard).frame(width: VoiceLibraryColumns.lastHeard, alignment: .leading)
+            }
         }
         .padding(.horizontal, 16)
         .frame(height: 30)
@@ -285,66 +314,21 @@ struct SettingsVoiceLibraryTab: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
-    private func rowView(_ row: VoiceLibraryRow, order: [String]) -> some View {
+    private func rowView(_ row: VoiceLibraryRow, person: KnownPerson?, columns: VoiceLibraryColumns,
+                         order: [String], selected: [KnownPerson]) -> some View {
         let isSelected = selection.contains(row.id)
-        let person = library.people.first { $0.id == row.id }
-        return HStack(spacing: ColumnWidth.spacing) {
-            HStack(spacing: 8) {
-                VoiceLibraryAvatar(name: row.name, colorKey: row.company ?? row.name)
-                Text(row.name)
-                    .uiFont(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(palette.heading.color)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .allowsHitTesting(false)
-
-            Group {
-                if let person {
-                    VoiceLibraryCompanyField(company: row.company) { setCompany(person, $0) }
-                        .id(row.id)
-                        .uiFont(.system(size: 12))
-                        .foregroundStyle(palette.text.color)
-                }
-            }
-            .frame(width: ColumnWidth.company, alignment: .leading)
-
-            Group {
-                HStack(spacing: 6) {
-                    VoiceLibraryStrengthMeter(strength: row.strength)
-                    Text("\(row.voiceprintCount)").uiFont(.system(size: 12).monospacedDigit())
-                }
-                .frame(width: ColumnWidth.voiceprints, alignment: .leading)
-                Text(row.firstHeard?.formatted(date: .abbreviated, time: .omitted) ?? "—")
-                    .frame(width: ColumnWidth.firstHeard, alignment: .leading)
-                Text(row.lastHeard?.formatted(.relative(presentation: .named)) ?? "—")
-                    .frame(width: ColumnWidth.lastHeard, alignment: .leading)
-            }
-            .uiFont(.system(size: 12))
-            .foregroundStyle(palette.secondary.color)
-            .lineLimit(1)
-            .allowsHitTesting(false)
+        return VoiceLibraryTableRow(
+            row: row,
+            isSelected: isSelected,
+            columns: columns,
+            onClick: { click(row, order: order) },
+            onSelect: { selection = [row.id]; anchorId = row.id },
+            onRename: { if let person { actions.rename(person) } },
+            onSetCompany: person.map { person in { setCompany(person, $0) } },
+            onCompanyFocus: { editingCompany = $0 }
+        ) {
+            contextMenu(for: isSelected ? selected : person.map { [$0] } ?? [])
         }
-        .padding(.horizontal, 10)
-        .frame(height: 34)
-        // Clicks land on this layer (the cells above ignore hits) so the company
-        // field keeps its own clicks for editing.
-        .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? palette.selected.color
-                      : hoveredId == row.id ? palette.divider.color.opacity(0.35) : .clear)
-                .contentShape(Rectangle())
-                .onTapGesture { click(row, order: order) }
-        }
-        .onHover { inside in
-            if inside { hoveredId = row.id } else if hoveredId == row.id { hoveredId = nil }
-        }
-        .contextMenu {
-            contextMenu(for: selection.contains(row.id) ? selectedPeople : person.map { [$0] } ?? [])
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction(named: "Rename") { if let person { actions.rename(person) } }
     }
 
     private func click(_ row: VoiceLibraryRow, order: [String]) {
@@ -376,11 +360,11 @@ struct SettingsVoiceLibraryTab: View {
                 Button("Merge into\u{2026}") { actions.mergeInto(person) }
             }
             Divider()
-            Button("Forget voice", role: .destructive) { forgetTargets = [person] }
+            Button("Forget voice", role: .destructive) { requestForget([person]) }
         } else if people.count > 1 {
             Button("Merge \(people.count) people\u{2026}") { requestMerge(people) }
             Divider()
-            Button("Forget \(people.count) voices", role: .destructive) { forgetTargets = people }
+            Button("Forget \(people.count) voices", role: .destructive) { requestForget(people) }
         }
     }
 
@@ -390,8 +374,11 @@ struct SettingsVoiceLibraryTab: View {
         VoiceLibraryActions(
             rename: { person in renameText = person.name; renaming = person },
             mergeInto: { person in mergeSource = person },
-            merge: { sources, survivor in pendingMerge = (sources, survivor) },
-            forget: { people in forgetTargets = people },
+            merge: { sources, survivor in
+                pendingMerge = MergeRequest(sources: sources, survivor: survivor)
+                confirmingMerge = true
+            },
+            forget: { people in requestForget(people) },
             removeVoiceprint: { person, capturedAt in
                 Task {
                     await context.voiceLibraryStore.removeVoiceprint(personId: person.id, capturedAt: capturedAt)
@@ -404,7 +391,14 @@ struct SettingsVoiceLibraryTab: View {
 
     private func requestMerge(_ people: [KnownPerson]) {
         guard people.count > 1, let survivor = VoiceLibraryDisplay.mergeSurvivor(people) else { return }
-        pendingMerge = (people, survivor)
+        pendingMerge = MergeRequest(sources: people, survivor: survivor)
+        confirmingMerge = true
+    }
+
+    private func requestForget(_ people: [KnownPerson]) {
+        guard !people.isEmpty else { return }
+        forgetTargets = people
+        confirmingForget = true
     }
 
     private func performMerge(sources: [KnownPerson], into survivor: KnownPerson) {
@@ -441,25 +435,29 @@ struct SettingsVoiceLibraryTab: View {
     @ViewBuilder
     private func renameSheet(_ person: KnownPerson) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename Voice").uiFont(.headline)
-            TextField("Name", text: $renameText).textFieldStyle(.roundedBorder).frame(width: 260)
+            Text("Rename Voice").uiFont(.headline).foregroundStyle(palette.heading.color)
+            TextField("Name", text: $renameText).settingsTextField().frame(width: 260)
             HStack {
                 Spacer()
                 Button("Cancel") { renaming = nil }
+                    .buttonStyle(.settingsSecondary)
+                    .keyboardShortcut(.cancelAction)
                 Button("Save") { commitRename(person) }
+                    .buttonStyle(.settingsPrimary)
                     .keyboardShortcut(.defaultAction)
                     .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
+        .background(palette.canvas.color)
     }
 
     @ViewBuilder
     private func mergeSheet(_ source: KnownPerson) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Merge \u{201C}\(source.name)\u{201D} into\u{2026}").uiFont(.headline)
+            Text("Merge \u{201C}\(source.name)\u{201D} into\u{2026}").uiFont(.headline).foregroundStyle(palette.heading.color)
             Text("All of \(source.name)\u{2019}s voiceprints move into the person you pick, and \u{201C}\(source.name)\u{201D} is removed.")
-                .uiFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(VoiceLibraryDisplay.sortedByLastSeen(library.people.filter { $0.id != source.id })) { target in
@@ -471,17 +469,27 @@ struct SettingsVoiceLibraryTab: View {
                                 await reload()
                             }
                         } label: {
-                            HStack { Text(target.name); Spacer(); Text(VoiceLibraryDisplay.sampleSummary(target)).foregroundStyle(.secondary) }
+                            HStack {
+                                Text(target.name)
+                                Spacer()
+                                Text(VoiceLibraryDisplay.sampleSummary(target)).foregroundStyle(palette.secondary.color)
+                            }
                         }
-                        .buttonStyle(.typographyBordered)
+                        .buttonStyle(.settingsSecondary)
                     }
                 }
             }
             .frame(maxHeight: 360)
-            HStack { Spacer(); Button("Cancel") { mergeSource = nil } }
+            HStack {
+                Spacer()
+                Button("Cancel") { mergeSource = nil }
+                    .buttonStyle(.settingsSecondary)
+                    .keyboardShortcut(.cancelAction)
+            }
         }
         .padding(20)
         .frame(minWidth: 320)
+        .background(palette.canvas.color)
     }
 
     // MARK: - Mutations
@@ -492,7 +500,9 @@ struct SettingsVoiceLibraryTab: View {
         Task {
             let outcome = await context.voiceLibraryStore.rename(id: person.id, to: newName)
             if case let .collision(existingId) = outcome {
-                collision = (source: person, existingId: existingId, name: newName.trimmingCharacters(in: .whitespacesAndNewlines))
+                collision = NameCollision(source: person, existingId: existingId,
+                                          name: newName.trimmingCharacters(in: .whitespacesAndNewlines))
+                showingCollision = true
             }
             await reload()
         }
@@ -513,5 +523,117 @@ struct SettingsVoiceLibraryTab: View {
         library = await context.voiceLibraryStore.load()
         let ids = Set(library.people.map(\.id))
         selection.formIntersection(ids)
+    }
+}
+
+/// The table's columns for its measured width. Name keeps a usable width: the date
+/// columns go first, then the voiceprints column, and Company narrows once the dates
+/// are gone.
+private struct VoiceLibraryColumns {
+    static let company: CGFloat = 160
+    static let compactCompany: CGFloat = 120
+    static let voiceprints: CGFloat = 90
+    static let firstHeard: CGFloat = 100
+    static let lastHeard: CGFloat = 110
+    static let spacing: CGFloat = 12
+    /// 16 pt each side: the header's padding, or a row's 10 pt inside the list's 6 pt.
+    static let insets: CGFloat = 32
+    static let nameMin: CGFloat = 140
+    static let compactNameMin: CGFloat = 120
+
+    /// Widest set: every column with Name at `nameMin` (680 pt).
+    static let datesMinWidth = nameMin + company + voiceprints + firstHeard + lastHeard + 4 * spacing + insets
+    /// Without dates: Name, a narrower Company, and Voiceprints (386 pt).
+    static let voiceprintsMinWidth = compactNameMin + compactCompany + voiceprints + 2 * spacing + insets
+
+    let showsDates: Bool
+    let showsVoiceprints: Bool
+
+    init(tableWidth: CGFloat) {
+        showsDates = tableWidth >= Self.datesMinWidth
+        showsVoiceprints = tableWidth >= Self.voiceprintsMinWidth
+    }
+
+    var companyWidth: CGFloat { showsDates ? Self.company : Self.compactCompany }
+}
+
+/// One table row. Its own view so hovering repaints only this row, not the table
+/// and inspector.
+private struct VoiceLibraryTableRow<MenuItems: View>: View {
+    let row: VoiceLibraryRow
+    let isSelected: Bool
+    let columns: VoiceLibraryColumns
+    let onClick: () -> Void
+    let onSelect: () -> Void
+    let onRename: () -> Void
+    /// Nil when the row has no stored person (no company field).
+    let onSetCompany: ((String) -> Void)?
+    let onCompanyFocus: (Bool) -> Void
+    @ViewBuilder let menuItems: () -> MenuItems
+    @State private var hovered = false
+    @Environment(\.viewerPalette) private var palette
+
+    var body: some View {
+        HStack(spacing: VoiceLibraryColumns.spacing) {
+            HStack(spacing: 8) {
+                VoiceLibraryAvatar(name: row.name, colorKey: row.company ?? row.name)
+                Text(row.name)
+                    .uiFont(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
+            // For VoiceOver the name cell stands for the row; the company field stays
+            // its own editable element.
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { onSelect() }
+            .accessibilityAction(named: "Rename") { onRename() }
+
+            Group {
+                if let onSetCompany {
+                    VoiceLibraryCompanyField(company: row.company, onFocusChange: onCompanyFocus, commit: onSetCompany)
+                        .id(row.id)
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.text.color)
+                        .accessibilityLabel("Company")
+                }
+            }
+            .frame(width: columns.companyWidth, alignment: .leading)
+
+            Group {
+                if columns.showsVoiceprints {
+                    HStack(spacing: 6) {
+                        VoiceLibraryStrengthMeter(strength: row.strength)
+                        Text("\(row.voiceprintCount)").uiFont(.system(size: 12).monospacedDigit())
+                    }
+                    .frame(width: VoiceLibraryColumns.voiceprints, alignment: .leading)
+                }
+                if columns.showsDates {
+                    Text(row.firstHeard?.formatted(date: .abbreviated, time: .omitted) ?? "—")
+                        .frame(width: VoiceLibraryColumns.firstHeard, alignment: .leading)
+                    Text(row.lastHeard?.formatted(.relative(presentation: .named)) ?? "—")
+                        .frame(width: VoiceLibraryColumns.lastHeard, alignment: .leading)
+                }
+            }
+            .uiFont(.system(size: 12))
+            .foregroundStyle(palette.secondary.color)
+            .lineLimit(1)
+            .allowsHitTesting(false)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+        // Clicks land on this layer (the cells above ignore hits) so the company
+        // field keeps its own clicks for editing.
+        .background {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected ? palette.selected.color : hovered ? palette.divider.color.opacity(0.35) : .clear)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onClick)
+        }
+        .onHover { hovered = $0 }
+        .contextMenu { menuItems() }
+        .accessibilityElement(children: .contain)
     }
 }

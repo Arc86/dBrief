@@ -169,8 +169,10 @@ private struct NativeTextFieldRepresentable: NSViewRepresentable {
     }
 
     private func applyBezel(to field: NSTextField) {
+        // Border first: setting either clears the other, and a border with no
+        // bezel draws a plain rectangle instead of the rounded field.
+        field.isBordered = false
         field.isBezeled = bezeled
-        field.isBordered = bezeled
         field.drawsBackground = bezeled
         field.focusRingType = bezeled ? .exterior : .none
     }

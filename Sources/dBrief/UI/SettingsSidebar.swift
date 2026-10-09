@@ -57,6 +57,7 @@ struct SettingsSidebar<Results: View>: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.bottom, 10)
+                    .overlayScrollers()
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }

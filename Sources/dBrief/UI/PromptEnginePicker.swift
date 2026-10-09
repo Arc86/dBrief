@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PromptEnginePicker: View {
     @Bindable var session: PromptEditorSession
+    @Environment(\.viewerPalette) private var palette
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Picker("AI engine", selection: $session.engineSelection) {
@@ -25,7 +26,7 @@ struct PromptEnginePicker: View {
             Text(session.identity.kind == .voiceStyle && session.panel == .preview
                  ? "Applies to AI improvements. Audio uses your configured voice."
                  : "For this window only · app settings stay unchanged")
-                .uiFont(.caption).foregroundStyle(.secondary)
+                .uiFont(.caption).foregroundStyle(palette.secondary.color)
         }
     }
 }

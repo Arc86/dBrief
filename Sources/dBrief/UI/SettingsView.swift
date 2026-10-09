@@ -83,7 +83,6 @@ struct SettingsView: View {
                             selectedSearchID = result.id
                             openResult(result)
                         }
-                        .accessibilityAction { openResult(result) }
                     }
                 }
             }

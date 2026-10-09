@@ -29,10 +29,11 @@ struct PromptEditorView: View {
                 } else { editor }
             }
             if let error = session.errorMessage {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(error).uiFont(.callout).textSelection(.enabled)
-                    Button("Reload saved") { try? session.reloadSaved() }
-                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                SettingsNotice(Text(error), tone: .warning) {
+                    Button("Reload saved") { try? session.reloadSaved() }.buttonStyle(.settingsSecondary)
+                }
+                .textSelection(.enabled)
+                .padding(.horizontal, 14).padding(.vertical, 6)
             }
             footer
         }
@@ -81,7 +82,7 @@ struct PromptEditorView: View {
                 .padding(.horizontal, 22).padding(.bottom, 8)
             PromptTextEditor(session: session, fontSize: fontSize)
             DisclosureGroup("Output format") {
-                Text(session.identity.kind.outputContract).uiFont(.caption).foregroundStyle(.secondary)
+                Text(session.identity.kind.outputContract).uiFont(.caption).foregroundStyle(palette.secondary.color)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             }.uiFont(.caption).foregroundStyle(palette.secondary.color).padding(.horizontal, 22).padding(.vertical, 12)
         }

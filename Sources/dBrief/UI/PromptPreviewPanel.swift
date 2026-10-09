@@ -9,6 +9,10 @@ struct PromptPreviewPanel: View {
     @State private var sampleError: String?
     @State private var loading = false
     @State private var refresh = UUID()
+    /// Recordings that have a transcript to preview against. Checked on the disk, so
+    /// kept in state rather than recomputed on every keystroke.
+    @State private var choices: [Recording] = []
+    @Environment(\.viewerPalette) private var palette
     private var preview: PromptPreviewSession { session.preview }
     private var settings: AppSettings { session.store.settings }
     private var isVoice: Bool { session.identity.kind == .voiceStyle }
@@ -16,11 +20,6 @@ struct PromptPreviewPanel: View {
     private var voiceFingerprint: String {
         let tts = settings.ttsSynthesisParams
         return [tts.engine, tts.voice ?? "", tts.language ?? "", tts.model ?? "", session.draft.text].joined(separator: "\n")
-    }
-    private var choices: [Recording] {
-        context.appState.recentRecordings.filter {
-            $0.transcription != nil || $0.richTranscript != nil || $0.transcriptSidecarURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-        }
     }
     private var usesSpokenFallback: Bool { session.usesSpokenPreviewFallback }
     private func route() throws -> PromptExecutionConfiguration { try session.resolvePreviewConfiguration() }
@@ -40,14 +39,18 @@ struct PromptPreviewPanel: View {
         return request
     }
     var body: some View {
+        // Built once per body: this panel re-renders on every keystroke in the editor.
+        let request = request
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PromptInspectorHeading(title: isVoice ? "Hear the difference" : "Try your prompt",
                     subtitle: isVoice ? "Listen before you save." : "See how your instructions shape the result.", symbol: isVoice ? "waveform" : "play.rectangle")
-                if isVoice { voiceControls } else { textControls }
+                if isVoice { voiceControls } else { textControls(request) }
             }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }
         .task(id: "\(selectedID)-\(refresh)") { await loadSample() }
+        .task(id: refresh) { loadChoices() }
+        .onChange(of: context.appState.recentRecordings.map(\.id)) { _, _ in loadChoices() }
         .onReceive(NotificationCenter.default.publisher(for: .recordingLibraryChanged).receive(on: RunLoop.main)) { _ in
             preview.cancel(); refresh = UUID()
         }
@@ -55,7 +58,7 @@ struct PromptPreviewPanel: View {
         .onChange(of: voiceFingerprint) { _, _ in preview.cancel() }
         .onDisappear { preview.cancel() }
     }
-    @ViewBuilder private var textControls: some View {
+    @ViewBuilder private func textControls(_ request: PromptPreviewRequest?) -> some View {
         Picker("Recording", selection: $selectedID) {
             Section("Examples") {
                 ForEach(PromptPreviewSample.examples) { example in Text(example.title).tag(example.id) }
@@ -66,23 +69,24 @@ struct PromptPreviewPanel: View {
                 }
             }
         }.pickerStyle(.menu)
-        if let config = try? route() {
+        switch Result(catching: route) {
+        case .success(let config):
             PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
             if usesSpokenFallback {
-                Text("Uses your configured chat fallback, matching spoken-summary generation.").uiFont(.callout).foregroundStyle(.secondary)
+                Text("Uses your configured chat fallback, matching spoken-summary generation.").uiFont(.callout).foregroundStyle(palette.secondary.color)
             }
-            if case .remote = config { Text("Sends the selected text to this endpoint.").uiFont(.callout).foregroundStyle(.secondary) }
-            if case .localCLI = config { Text("Your command determines where the selected text is processed.").uiFont(.callout).foregroundStyle(.secondary) }
-        } else {
-            Text(routeError).foregroundStyle(.secondary)
+            if case .remote = config { Text("Sends the selected text to this endpoint.").uiFont(.callout).foregroundStyle(palette.secondary.color) }
+            if case .localCLI = config { Text("Your command determines where the selected text is processed.").uiFont(.callout).foregroundStyle(palette.secondary.color) }
+        case .failure(let error):
+            Text(error.localizedDescription).foregroundStyle(palette.secondary.color)
         }
         if loading { ProgressView("Loading transcript…") }
-        if let sampleError { Text(sampleError).uiFont(.callout).foregroundStyle(.secondary) }
+        if let sampleError { Text(sampleError).uiFont(.callout).foregroundStyle(palette.secondary.color) }
         if session.identity.kind == .spokenSummary, sample?.summary == nil {
             Text("This recording has no saved summary. Use the example or choose a recording with saved insights.")
-                .uiFont(.callout).foregroundStyle(.secondary)
+                .uiFont(.callout).foregroundStyle(palette.secondary.color)
         }
-        if let note = request?.shorteningNotice { Text(note).uiFont(.caption).foregroundStyle(.secondary) }
+        if let note = request?.shorteningNotice { Text(note).uiFont(.caption).foregroundStyle(palette.secondary.color) }
         HStack {
             if preview.isRunning {
                 PromptGenerationStatus(progress: preview.progress ?? .generating,
@@ -99,12 +103,12 @@ struct PromptPreviewPanel: View {
                 }.modifier(PromptPrimaryAction()).disabled(loading || request == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.identity.kind == .spokenSummary && sample?.summary == nil))
             }
         }
-        Text("The original recording stays unchanged.").uiFont(.caption).foregroundStyle(.secondary)
-        if let error = preview.errorMessage { Text(error).uiFont(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
-        Divider()
+        Text("The original recording stays unchanged.").uiFont(.caption).foregroundStyle(palette.secondary.color)
+        if let error = preview.errorMessage { Text(error).uiFont(.callout).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
+        palette.divider.color.frame(height: 1)
         if let result = preview.result {
             if preview.resultRequest != request {
-                Label("Outdated preview — run another test", systemImage: "arrow.clockwise").foregroundStyle(.secondary)
+                Label("Outdated preview — run another test", systemImage: "arrow.clockwise").foregroundStyle(palette.secondary.color)
             } else { Text("Preview result").uiFont(.headline) }
             Text(result.text).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
         } else {
@@ -112,18 +116,17 @@ struct PromptPreviewPanel: View {
                 Image(systemName: "text.document").font(.system(size: 30, weight: .light))
                 Text("Ready when you are").uiFont(.headline)
                 Text("Choose a recording and run a test.").uiFont(.callout)
-            }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 24)
+            }.foregroundStyle(palette.secondary.color).frame(maxWidth: .infinity).padding(.vertical, 24)
         }
     }
-    private var routeError: String { do { _ = try route(); return "" } catch { return error.localizedDescription } }
     @ViewBuilder private var voiceControls: some View {
-        Text("Uses the configured voice on this Mac.").foregroundStyle(.secondary)
+        Text("Uses the configured voice on this Mac.").foregroundStyle(palette.secondary.color)
         Text(settings.ttsLanguage.sampleText).uiFont(.system(size: 16)).lineSpacing(4)
-        if !voiceSupported { Text(PromptPreviewError.unsupportedVoice.localizedDescription).foregroundStyle(.secondary) }
+        if !voiceSupported { Text(PromptPreviewError.unsupportedVoice.localizedDescription).foregroundStyle(palette.secondary.color) }
         if preview.voice.isBusy {
             if preview.voice.isPlaying { Label("Playing sample", systemImage: "speaker.wave.2") }
             else { ProgressView("Preparing voice sample…") }
-            Button("Stop") { preview.voice.stop() }
+            Button("Stop") { preview.voice.stop() }.buttonStyle(.settingsSecondary)
         } else {
             Button("Play sample") {
                 let tts = settings.ttsSynthesisParams
@@ -132,7 +135,13 @@ struct PromptPreviewPanel: View {
             }.modifier(PromptPrimaryAction()).disabled(!voiceSupported || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         if case .failed(let message) = preview.voice.state { SettingsErrorDetails(summary: "Voice preview failed", error: message) }
-        Text("Sample audio is temporary. Your saved voice style stays unchanged.").uiFont(.caption).foregroundStyle(.secondary)
+        Text("Sample audio is temporary. Your saved voice style stays unchanged.").uiFont(.caption).foregroundStyle(palette.secondary.color)
+    }
+
+    private func loadChoices() {
+        choices = context.appState.recentRecordings.filter {
+            $0.transcription != nil || $0.richTranscript != nil || $0.transcriptSidecarURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        }
     }
 
     @MainActor private func loadSample() async {

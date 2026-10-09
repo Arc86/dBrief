@@ -16,6 +16,9 @@ struct SettingsCalendarCLISection: View {
     @State private var statusTask: Task<Void, Never>?
     @State private var customFreshnessMinutes = 60
     @State private var usesCustomFreshness = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case mailbox, calendarName, launcher, command, customMinutes }
 
     private enum ConnectionTestState: Equatable {
         case idle, running
@@ -39,6 +42,7 @@ struct SettingsCalendarCLISection: View {
                 ), prompt: Text("name@company.com"))
                 .settingsTextField()
                 .frame(width: 240)
+                .focused($focusedField, equals: .mailbox)
                 .onSubmit { configurationChanged() }
             }
             SettingsRow("Calendar name", caption: "Optional. First use may ask for approval in Terminal.") {
@@ -48,6 +52,7 @@ struct SettingsCalendarCLISection: View {
                 ), prompt: Text("Default calendar"))
                 .settingsTextField()
                 .frame(width: 240)
+                .focused($focusedField, equals: .calendarName)
                 .onSubmit { configurationChanged() }
             }
             SettingsStackedRow {
@@ -89,6 +94,14 @@ struct SettingsCalendarCLISection: View {
         }
         .onDisappear {
             statusTask?.cancel()
+        }
+        // Return isn't the only way out of a field: commit on focus loss too.
+        .onChange(of: focusedField) { old, _ in
+            switch old {
+            case .customMinutes: commitCustomMinutes()
+            case .mailbox, .calendarName, .launcher, .command: configurationChanged()
+            case nil: break
+            }
         }
 
         SettingsCard("Meeting list") {
@@ -138,7 +151,8 @@ struct SettingsCalendarCLISection: View {
                     }
                 )) {
                     ForEach(Self.freshnessOptions, id: \.self) { seconds in
-                        Text("\(seconds / 60) min").tag(seconds)
+                        Text(Duration.seconds(seconds), format: .units(allowed: [.hours, .minutes], width: .abbreviated))
+                            .tag(seconds)
                     }
                     Text("Custom…").tag(-1)
                     Text("Manual only").tag(0)
@@ -150,11 +164,8 @@ struct SettingsCalendarCLISection: View {
                     TextField("Custom minutes", value: $customFreshnessMinutes, format: .number)
                         .settingsTextField()
                         .frame(width: 80)
-                        .onSubmit {
-                            let minutes = min(1440, max(5, customFreshnessMinutes))
-                            settings.calendarCLIConfig = config.updating(listFreshnessSeconds: minutes * 60)
-                            customFreshnessMinutes = settings.calendarCLIConfig.listFreshnessSeconds / 60
-                        }
+                        .focused($focusedField, equals: .customMinutes)
+                        .onSubmit { commitCustomMinutes() }
                 }
             }
         }
@@ -189,6 +200,7 @@ struct SettingsCalendarCLISection: View {
                                 configurationChanged()
                             }
                         ), in: 1...100)
+                        .accessibilityValue("\(config.maxAttendees)")
                     }
                 }
             }
@@ -205,8 +217,11 @@ struct SettingsCalendarCLISection: View {
                         Slider(value: Binding(
                             get: { Double(config.timeoutSeconds) },
                             set: { settings.calendarCLIConfig = config.updating(timeoutSeconds: Int($0)) }
-                        ), in: 30...300, step: 5)
+                        ), in: 30...300, step: 5) {
+                            Text("Timeout")
+                        }
                         .frame(width: 180)
+                        .accessibilityValue("\(config.timeoutSeconds) seconds")
                     }
                 }
                 SettingsRow("Claude launcher",
@@ -217,6 +232,7 @@ struct SettingsCalendarCLISection: View {
                     ), prompt: Text("claude"))
                     .settingsTextField()
                     .frame(width: 200)
+                    .focused($focusedField, equals: .launcher)
                     .onSubmit { configurationChanged() }
                 }
                 SettingsRow("CLI command") {
@@ -230,6 +246,7 @@ struct SettingsCalendarCLISection: View {
                         ), prompt: Text("Managed Claude command"))
                         .settingsTextField()
                         .frame(width: 240)
+                        .focused($focusedField, equals: .command)
                         .onSubmit { configurationChanged() }
                     }
                 }
@@ -245,6 +262,12 @@ struct SettingsCalendarCLISection: View {
         lastSuccessfulRefresh = nil
         recordingManager.calendarCLIConfigurationChanged()
         refreshStatus()
+    }
+
+    private func commitCustomMinutes() {
+        let minutes = min(1440, max(5, customFreshnessMinutes))
+        appSettings.calendarCLIConfig = appSettings.calendarCLIConfig.updating(listFreshnessSeconds: minutes * 60)
+        customFreshnessMinutes = appSettings.calendarCLIConfig.listFreshnessSeconds / 60
     }
 
     private func runConnectionTest() {

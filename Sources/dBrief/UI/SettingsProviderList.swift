@@ -69,7 +69,7 @@ struct SettingsProviderList: View {
     @State private var isLoadingModels = false
 
     var body: some View {
-        if let draft = editing {
+        if let draft = Binding($editing) {
             editor(draft)
         } else {
             if endpoints.isEmpty {
@@ -132,19 +132,14 @@ struct SettingsProviderList: View {
         return value.isEmpty || (Int(value).map { $0 > 0 } ?? false)
     }
 
-    private func draftBinding<Value>(_ keyPath: WritableKeyPath<Endpoint, Value>, _ fallback: Value) -> Binding<Value> {
-        Binding(get: { editing?[keyPath: keyPath] ?? fallback },
-                set: { editing?[keyPath: keyPath] = $0 })
-    }
-
     @ViewBuilder
-    private func editor(_ draft: Endpoint) -> some View {
+    private func editor(_ draft: Binding<Endpoint>) -> some View {
         SettingsStackedRow {
             VStack(alignment: .leading, spacing: 4) {
                 Text(isNew ? "Add \(kind.noun)" : "Edit \(kind.noun)")
                     .uiFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
-                if let note = providerNote(for: draft) {
+                if let note = providerNote(for: draft.wrappedValue) {
                     Text(note)
                         .uiFont(.system(size: 11.5))
                         .foregroundStyle(palette.secondary.color)
@@ -153,37 +148,37 @@ struct SettingsProviderList: View {
             }
         }
         SettingsRow("Name") {
-            NativeTextField(placeholder: kind.namePlaceholder, text: draftBinding(\.name, ""),
+            NativeTextField(placeholder: kind.namePlaceholder, text: draft.name,
                             accessibilityName: "\(kind.noun) name")
                 .frame(width: 260, height: 22)
         }
         SettingsRow("Base URL") {
-            NativeTextField(placeholder: kind.urlPlaceholder, text: draftBinding(\.baseURL, ""),
+            NativeTextField(placeholder: kind.urlPlaceholder, text: draft.baseURL,
                             accessibilityName: "\(kind.noun) base URL")
                 .frame(width: 260, height: 22)
         }
         SettingsRow("Model", caption: availableModels.isEmpty ? nil
                     : "Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from the server.") {
             if availableModels.isEmpty {
-                NativeTextField(placeholder: kind.modelPlaceholder, text: draftBinding(\.modelName, ""),
+                NativeTextField(placeholder: kind.modelPlaceholder, text: draft.modelName,
                                 accessibilityName: "\(kind.noun) model")
                     .frame(width: 260, height: 22)
             } else {
-                Picker("Model", selection: draftBinding(\.modelName, "")) {
+                Picker("Model", selection: draft.modelName) {
                     ForEach(availableModels, id: \.self) { model in Text(model).tag(model) }
                 }
                 .pickerStyle(.menu)
             }
         }
         SettingsRow("API key", caption: "Optional for local servers.") {
-            NativeTextField(placeholder: "", text: draftBinding(\.apiKey, ""), isSecure: true,
+            NativeTextField(placeholder: "", text: draft.apiKey, isSecure: true,
                             accessibilityName: "\(kind.noun) API key (optional)")
                 .frame(width: 260, height: 22)
         }
         if kind.showsOutputTokenLimit {
             SettingsRow("Output token limit",
                         caption: isOutputTokenLimitValid
-                            ? "Blank is automatic (\(draft.recommendedMaxOutputTokens.formatted()) tokens). Covers analysis and chat, including reasoning."
+                            ? "Blank is automatic (\(draft.wrappedValue.recommendedMaxOutputTokens.formatted()) tokens). Covers analysis and chat, including reasoning."
                             : "Enter a positive whole number, or leave blank for automatic.") {
                 NativeTextField(placeholder: "Automatic", text: $outputTokenLimitText,
                                 accessibilityName: "\(kind.noun) output token limit")
@@ -214,7 +209,9 @@ struct SettingsProviderList: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
                     .buttonStyle(.settingsPrimary)
-                    .disabled(draft.name.isEmpty || draft.baseURL.isEmpty || draft.modelName.isEmpty || !isOutputTokenLimitValid)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(draft.wrappedValue.name.isEmpty || draft.wrappedValue.baseURL.isEmpty
+                              || draft.wrappedValue.modelName.isEmpty || !isOutputTokenLimitValid)
             }
         }
     }

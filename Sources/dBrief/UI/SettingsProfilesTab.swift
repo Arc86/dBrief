@@ -19,11 +19,16 @@ struct SettingsProfilesTab: View {
     @State private var showSymbolPicker = false
 
     var body: some View {
-        HStack(spacing: 16) {
-            profileListPane
-                .frame(width: Theme.Spacing.listPaneWidth)
-            Divider()
-            editorPane
+        // Two independent scroll panes, so the page header sits outside the scaffold.
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsPageHeader(page: .profiles)
+                .padding(.top, 30)
+            HStack(spacing: 16) {
+                profileListPane
+                    .frame(width: Theme.Spacing.listPaneWidth)
+                Divider()
+                editorPane
+            }
         }
         .padding(.leading, 14)
         .onAppear { ensureSelection() }
@@ -68,11 +73,6 @@ struct SettingsProfilesTab: View {
 
     private var profileListPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Profiles")
-                .uiFont(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.heading.color)
-                .padding(.leading, 2)
-
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(appSettings.profiles) { profile in
@@ -92,8 +92,8 @@ struct SettingsProfilesTab: View {
             .focusEffectDisabled()
             .onKeyPress(.upArrow) { moveProfileSelection(by: -1) }
             .onKeyPress(.downArrow) { moveProfileSelection(by: 1) }
-            .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
+            .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1) }
             .frame(maxHeight: .infinity)
 
             bottomControlBar
@@ -130,9 +130,9 @@ struct SettingsProfilesTab: View {
                         .foregroundStyle(palette.accentText.color)
                 }
                 if profile.id == appSettings.automaticProfileId {
-                    noteRow("Automatic selection")
+                    rowNote("Automatic selection")
                 } else if profile.id != appSettings.activeProfileId && profile.preset == .custom {
-                    noteRow("Custom profile")
+                    rowNote("Custom profile")
                 }
             }
             Spacer(minLength: 0)
@@ -144,6 +144,13 @@ struct SettingsProfilesTab: View {
                 + (profile.id == appSettings.activeProfileId ? ", saved selection" : "")
                 + (profile.id == appSettings.automaticProfileId ? ", automatic selection" : "")
         )
+    }
+
+    /// A caption inside a list row (`noteRow` is a full card row).
+    private func rowNote(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .uiFont(.system(size: 11))
+            .foregroundStyle(palette.secondary.color)
     }
 
     @ViewBuilder
@@ -169,7 +176,8 @@ struct SettingsProfilesTab: View {
                 let created = appSettings.createProfile(name: "New profile")
                 selectedProfileId = created.id
             } label: {
-                Image(systemName: "plus")
+                Label("Add profile", systemImage: "plus")
+                    .labelStyle(.iconOnly)
                     .frame(width: 24, height: 22)
                     .contentShape(Rectangle())
             }
@@ -179,7 +187,8 @@ struct SettingsProfilesTab: View {
                 guard let selectedProfile else { return }
                 profilePendingDeletion = selectedProfile
             } label: {
-                Image(systemName: "minus")
+                Label("Delete selected profile", systemImage: "minus")
+                    .labelStyle(.iconOnly)
                     .frame(width: 24, height: 22)
                     .contentShape(Rectangle())
             }
@@ -215,7 +224,8 @@ struct SettingsProfilesTab: View {
                     exportProfiles(selectedOnly: false)
                 }
             } label: {
-                Image(systemName: "ellipsis")
+                Label("More actions", systemImage: "ellipsis")
+                    .labelStyle(.iconOnly)
                     .frame(width: 24, height: 22)
                     .contentShape(Rectangle())
             }
@@ -256,10 +266,11 @@ struct SettingsProfilesTab: View {
                     taskOverridesSection
                     folderOverridesSection
                 }
-                .frame(maxWidth: 620, alignment: .leading)
+                .frame(maxWidth: SettingsPageLayout.columnWidth, alignment: .leading)
                 .padding(.vertical, 28)
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity)
+                .overlayScrollers()
             }
             .scrollBounceBehavior(.basedOnSize)
             .toggleStyle(.switch)
@@ -346,8 +357,8 @@ struct SettingsProfilesTab: View {
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "pencil.circle.fill")
                             .font(.system(size: 16))
-                            .foregroundStyle(.white, palette.primary.color)
-                            .background(Circle().fill(.background))
+                            .foregroundStyle(palette.onPrimary.color, palette.primary.color)
+                            .background(Circle().fill(palette.surface.color))
                             .offset(x: 4, y: 4)
                     }
                 }
@@ -390,7 +401,7 @@ struct SettingsProfilesTab: View {
                                 .fill(option.color)
                                 .frame(width: 18, height: 18)
                                 .overlay(
-                                    Circle().strokeBorder(.primary, lineWidth: isSelected ? 2 : 0)
+                                    Circle().strokeBorder(palette.heading.color, lineWidth: isSelected ? 2 : 0)
                                 )
                                 .padding(2)
                         }
@@ -423,6 +434,8 @@ struct SettingsProfilesTab: View {
         let tint = Theme.profileColor(for: profile.iconBackgroundColorKey)
         VStack(alignment: .leading, spacing: 8) {
             Text("Symbol")
+                .uiFont(.system(size: 12, weight: .medium))
+                .foregroundStyle(palette.heading.color)
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 40), spacing: 8)],
                 spacing: 8
@@ -432,15 +445,15 @@ struct SettingsProfilesTab: View {
                     Button { binding.wrappedValue = symbol } label: {
                         Image(systemName: symbol)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(isSelected ? tint : Color.primary)
+                            .foregroundStyle(isSelected ? tint : palette.text.color)
                             .frame(width: 36, height: 36)
                             .background(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(isSelected ? tint.opacity(0.18) : Color.secondary.opacity(0.10))
+                                    .fill(isSelected ? tint.opacity(0.18) : palette.canvas.color)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .strokeBorder(isSelected ? tint : .clear, lineWidth: 2)
+                                    .strokeBorder(isSelected ? tint : palette.divider.color, lineWidth: isSelected ? 2 : 1)
                             )
                             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                     }
@@ -713,6 +726,7 @@ struct SettingsProfilesTab: View {
         overrideRow(label, keyPath, defaultValue: fallback) {
             HStack {
                 Text(overrideBinding(keyPath, fallback: fallback).wrappedValue)
+                    .uiFont(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(palette.secondary.color)

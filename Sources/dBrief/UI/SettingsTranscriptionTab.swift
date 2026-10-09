@@ -28,20 +28,20 @@ struct SettingsTranscriptionTab: View {
         case failure(String)
     }
 
-    private func fetchWhisperModels() {
+    /// Asks the ML helper for the Hugging Face list, so only call it when Whisper is
+    /// in use or the picker is open (it launches the helper process).
+    private func loadWhisperModels() async {
         guard !isFetchingWhisperModels else { return }
         isFetchingWhisperModels = true
         whisperModelFetchError = nil
-        Task {
-            let modelNames = await recordingManager.fetchAvailableWhisperModels()
-            if modelNames.isEmpty {
-                whisperModels = Self.offlineWhisperModels
-                whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
-            } else {
-                whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
-            }
-            isFetchingWhisperModels = false
+        let modelNames = await recordingManager.fetchAvailableWhisperModels()
+        if modelNames.isEmpty {
+            whisperModels = Self.offlineWhisperModels
+            whisperModelFetchError = "Using offline model list — couldn't reach HuggingFace."
+        } else {
+            whisperModels = modelNames.map { WhisperModelInfo.parse($0) }.sorted()
         }
+        isFetchingWhisperModels = false
     }
 
     var body: some View {
@@ -139,7 +139,7 @@ struct SettingsTranscriptionTab: View {
                     }
                     SettingsRow("Model list", caption: "Fetched from Hugging Face.") {
                         Button {
-                            fetchWhisperModels()
+                            Task { await loadWhisperModels() }
                         } label: {
                             Label(isFetchingWhisperModels ? "Refreshing…" : "Refresh", systemImage: "arrow.clockwise")
                         }
@@ -178,8 +178,11 @@ struct SettingsTranscriptionTab: View {
                 }
         }
         .onAppear {
-            fetchWhisperModels()
             if appSettings.transcriptionEngine != .remoteEndpoint { lastLocalEngine = appSettings.transcriptionEngine }
+        }
+        .task(id: engine == .localWhisper || showWhisperComparison) {
+            guard engine == .localWhisper || showWhisperComparison else { return }
+            await loadWhisperModels()
         }
         .task(id: appSettings.transcriptionLanguage) {
             if #available(macOS 26, *) {
@@ -203,10 +206,9 @@ struct SettingsTranscriptionTab: View {
                                            onChangeModel: { showWhisperComparison = true }) {
                         SettingsStatusPill("Managed by macOS", kind: .neutral)
                     }
-                    DisclosureGroup("Memory and sources") {
+                    ModelEvidenceDisclosure {
                         LocalModelEvidenceView(modelID: LocalTranscriptionChoice.apple)
                     }
-                    .uiFont(.system(size: 12))
                 }
             }
         case .parakeetLocal:
@@ -216,13 +218,14 @@ struct SettingsTranscriptionTab: View {
                     TranscriptionModelCard(presentation: .local(id), onChangeModel: { showWhisperComparison = true }) {
                         HStack(spacing: 6) {
                             ModelDownloadButton(kind: .parakeet, compact: true)
-                            removeDownloadMenu(label: "Parakeet") { try await recordingManager.purgeLocalParakeetModel() }
+                            ModelActionsMenu(modelName: "Parakeet", message: $purgeMessage) {
+                                try await recordingManager.purgeLocalParakeetModel()
+                            }
                         }
                     }
-                    DisclosureGroup("Memory and sources") {
+                    ModelEvidenceDisclosure {
                         LocalModelEvidenceView(modelID: id)
                     }
-                    .uiFont(.system(size: 12))
                 }
             }
         case .localWhisper:
@@ -232,42 +235,22 @@ struct SettingsTranscriptionTab: View {
                                            onChangeModel: { showWhisperComparison = true }) {
                         HStack(spacing: 6) {
                             ModelDownloadButton(kind: .whisper, compact: true)
-                            removeDownloadMenu(label: "WhisperKit") { try await recordingManager.purgeLocalWhisperModel() }
+                            ModelActionsMenu(modelName: "WhisperKit", message: $purgeMessage) {
+                                try await recordingManager.purgeLocalWhisperModel()
+                            }
                         }
                     }
                     .help("Smaller models are faster but less accurate. Larger models are more accurate but use more memory and time. Ratings are estimates.")
-                    DisclosureGroup("Memory and sources") {
+                    ModelEvidenceDisclosure {
                         WhisperModelImpactView(modelID: appSettings.whisperModelName,
                                                identifySpeakers: appSettings.diarizationEnabled)
                             .padding(.top, 8)
                     }
-                    .uiFont(.system(size: 12))
                 }
             }
         case .remoteEndpoint:
             EmptyView()
         }
-    }
-
-    private func removeDownloadMenu(label: String, purge: @escaping () async throws -> Void) -> some View {
-        Menu {
-            Button("Remove downloaded model", role: .destructive) {
-                Task {
-                    do {
-                        try await purge()
-                        purgeMessage = "Local \(label) model cache removed."
-                    } catch {
-                        purgeMessage = error.localizedDescription
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-        }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("More model actions")
     }
 
     // MARK: Language
@@ -362,6 +345,7 @@ struct SettingsTranscriptionTab: View {
             HStack(spacing: 6) {
                 Text(value).uiFont(.system(size: 12).monospacedDigit()).foregroundStyle(palette.text.color)
                 Stepper(label, value: binding, in: range, step: 1)
+                    .accessibilityValue(Text(value))
             }
         }
     }

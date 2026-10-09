@@ -44,7 +44,7 @@ struct SettingsProfileScopeView: View {
                         }
                         .padding(14)
                         .frame(width: 300, alignment: .leading)
-                        .background(palette.surface.color)
+                        .presentationBackground(palette.surface.color)
                     }
                 Button("Edit profile") { editProfile(scope.profile.id) }
                     .buttonStyle(.settingsSecondary)

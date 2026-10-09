@@ -41,7 +41,8 @@ struct SettingsPermissionsTab: View {
 
     private func row(_ title: LocalizedStringKey, caption: LocalizedStringKey, icon: String,
                      state: PermissionAuthorizationState, action: @escaping () -> Void) -> some View {
-        SettingsRow(title, caption: caption, systemImage: icon) {
+        SettingsRow(title, caption: state == .restricted ? "Blocked by a device management profile or Screen Time." : caption,
+                    systemImage: icon) {
             HStack(spacing: 8) {
                 switch state {
                 case .granted: SettingsStatusPill("Allowed", kind: .success)

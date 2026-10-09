@@ -59,6 +59,8 @@ struct SettingsVocabularyTab: View {
                         .onExitCommand { editor.cancel() }
                     }
                 }
+                // Offset identity: rows hold no state, and lists migrated from the legacy
+                // Whisper prompt can contain duplicate terms, which would collide as ids.
                 ForEach(Array(appSettings.customVocabulary.enumerated()), id: \.offset) { index, term in
                     SettingsRow(verbatim: term) {
                         HStack(spacing: 6) {
