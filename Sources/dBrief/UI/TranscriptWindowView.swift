@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 import OSLog
 import dBriefWire
@@ -977,8 +978,7 @@ struct TranscriptDetailView: View, Equatable {
             onClose: onClose,
             onClearChat: { chatService?.clearMessages() },
             clearChatDisabled: isReprocessing || chatService?.isStreaming != false || chatService?.messages.isEmpty != false,
-            onPromptSelected: { template in chatService?.draftInput = template.prompt },
-            promptTemplatesDisabled: isReprocessing || chatService?.isStreaming != false,
+            conversation: chatService.map { conversationActions(for: $0) },
             chatFontSize: Binding(
                 get: { context.appSettings.viewerAppearance.chatFontSize },
                 set: { size in
@@ -1046,7 +1046,19 @@ struct TranscriptDetailView: View, Equatable {
         if isReprocessing {
             ContentUnavailableView("Chat paused", systemImage: "clock", description: Text("Finish or discard the pending reprocessing attempt to use chat."))
         } else if let chatService {
-            TranscriptChatView(chatService: chatService)
+            TranscriptChatView(
+                chatService: chatService,
+                onSeek: chatSeekAction,
+                people: chatPeople,
+                savedPrompts: context.appSettings.savedChatPrompts,
+                onSavePrompt: { question in
+                    let settings = context.appSettings
+                    guard !settings.savedChatPrompts.contains(where: { $0.prompt == question }) else { return }
+                    settings.savedChatPrompts.append(SavedChatPrompt(question: question))
+                    chatService.showNotice("Saved as a prompt. Manage your prompts in Settings → AI analysis.")
+                },
+                answerDestinations: chatAnswerDestinations(for: chatService)
+            )
         } else {
             VStack(spacing: 12) {
                 Spacer()
@@ -1302,6 +1314,106 @@ struct TranscriptDetailView: View, Equatable {
 
     private func isTurnActive(_ turn: SpeakerTurn) -> Bool {
         turn.id == activeTurnID
+    }
+
+    /// Speakers first (they spoke), then participants and calendar attendees.
+    private var chatPeople: [String] {
+        AnalysisRoster.names(
+            participants: (richTranscript?.speakerLabels.map(\.displayName) ?? []) + recording.participants,
+            attendees: recording.calendarEvent?.attendeeNames ?? [])
+    }
+
+    /// Adding an answer edits the analysis, so it needs one and no edit in progress.
+    private func chatAnswerDestinations(for chatService: TranscriptChatService) -> ChatAnswerDestinations? {
+        guard !isLive, !isReprocessing, summaryEdit == nil, insights != nil else { return nil }
+        func save(_ change: (inout RecordingInsights) -> Void) async -> Bool {
+            guard let baseline = insights else { return false }
+            var updated = baseline
+            change(&updated)
+            if await saveInsights(updated, basedOn: baseline) { return true }
+            analysisSaveError = nil
+            chatService.showNotice("Couldn’t add this answer to the recording. Try again, or edit it from the Summary tab.")
+            return false
+        }
+        return ChatAnswerDestinations(
+            knownOwners: chatPeople,
+            existingActionItems: insights?.actionItems ?? [],
+            addToSummary: { answer, question in
+                await save { $0.summary = ChatAnswerHarvest.summary($0.summary, adding: answer, question: question) }
+            },
+            addActionItems: { items in
+                await save { $0.actionItems += items }
+            })
+    }
+
+    private func conversationActions(for chatService: TranscriptChatService) -> ChatConversationActions {
+        let title = recording.generatedTitle ?? recording.meetingTitleDraft
+        let notePath = insights?.markdownPath
+        let hasNote = !isLive && !isReprocessing && notePath.map { FileManager.default.fileExists(atPath: $0) } == true
+        return .init(
+            isEmpty: chatService.isStreaming || chatService.conversationBody.isEmpty,
+            copy: {
+                Task {
+                    if await chatService.copyConversation(title: title) { chatService.showNotice("Conversation copied.") }
+                }
+            },
+            save: { saveConversation(chatService, title: title) },
+            addToNote: hasNote ? { Task { await addConversationToNote(chatService) } } : nil)
+    }
+
+    private func saveConversation(_ chatService: TranscriptChatService, title: String) {
+        let panel = NSSavePanel()
+        panel.title = "Save Conversation as Markdown"
+        panel.allowedContentTypes = [UTType(filenameExtension: "md")
+            ?? UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "\(title) - Ask dBrief.md"
+        Task { @MainActor in
+            guard await panel.begin() == .OK, let url = panel.url else { return }
+            do {
+                try await chatService.exportConversation(title: title, to: url)
+                chatService.showNotice("Conversation saved.")
+            } catch {
+                chatService.showNotice("Couldn’t save the conversation: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Writes the conversation into the recording's Markdown note as an "Ask dBrief"
+    /// section, replacing the one written last time.
+    private func addConversationToNote(_ chatService: TranscriptChatService) async {
+        guard !isReprocessing, let path = insights?.markdownPath else { return }
+        let body = chatService.conversationBody
+        guard !body.isEmpty else { return }
+        let noteURL = URL(fileURLWithPath: path)
+        let revision = context.recordingManager.reprocessingResultsRevision
+        do {
+            let receiptContext = await recording.privacyContext()
+            try await PrivacyTrace.$context.withValue(receiptContext) {
+                try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text],
+                                                     destination: .local(provider: .fileSystem))) {
+                    guard !isReprocessing, revision == context.recordingManager.reprocessingResultsRevision else {
+                        throw CancellationError()
+                    }
+                    let existing = try String(contentsOf: noteURL, encoding: .utf8)
+                    let updated = MarkdownInsightsUpdater.upsertAskDBrief(markdown: existing, body: body)
+                    try updated.write(to: noteURL, atomically: true, encoding: .utf8)
+                }
+            }
+            chatService.showNotice("Conversation added to the recording note.")
+        } catch {
+            chatService.showNotice("Couldn’t update the recording note: \(error.localizedDescription)")
+        }
+    }
+
+    /// Chat citations jump to their moment in the transcript; nil without audio to seek.
+    private var chatSeekAction: ((TimeInterval) -> Void)? {
+        guard !isLive, recording.finalizedAudioURL != nil else { return nil }
+        return { time in
+            if mode != .transcript { mode = .transcript }
+            seek(to: time)
+        }
     }
 
     private func seek(to time: TimeInterval) {

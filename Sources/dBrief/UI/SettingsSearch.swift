@@ -78,6 +78,7 @@ enum SettingsSearch {
         .init("prompts", "AI prompts", "custom summary action items tags sentiment instructions", section: .aiPrompts),
         .init("cli", "Local CLI configuration", "command executable claude codex test", section: .aiCLI),
         .init("chatFallback", "Chat fallback", "local cli chat engine provider", section: .aiChatFallback),
+        .init("chatPrompts", "Chat prompts", "saved prompts ask dbrief questions chips templates", section: .aiChatPrompts),
         .init("aiProviders", "AI providers", "llm endpoints api key server model test connection", section: .aiProviders),
         .init("voice", "Spoken voice", "text to speech tts qwen kokoro voice style language preview model", section: .spokenVoice),
         .init("spokenPrompt", "Spoken summary prompt", "custom script instructions read aloud", section: .spokenPrompt),

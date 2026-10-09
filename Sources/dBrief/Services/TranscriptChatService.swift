@@ -89,8 +89,13 @@ final class TranscriptChatService {
     private(set) var spokenMessageID: UUID?
     private var speechTask: Task<Void, Never>?
 
-    func copyAnswer(_ message: ChatMessage) async -> Bool {
-        await RecordingClipboard.copy(message.displayParts.answer, contextProvider: {
+    func copyAnswer(_ message: ChatMessage, format: ChatAnswerExportFormat = .markdown) async -> Bool {
+        await copy(ChatAnswerExport.payload(for: message, format: format))
+    }
+
+    /// Copies chat text (a question, or an answer in a chosen format).
+    func copy(_ text: String) async -> Bool {
+        await RecordingClipboard.copy(text, contextProvider: {
             await self.privacyRecording?.privacyContext()
         })
     }
@@ -118,6 +123,30 @@ final class TranscriptChatService {
                 try ChatAnswerExport.write(ChatAnswerExport.payload(for: current, format: format), to: destination)
             }
         }
+    }
+
+    /// The finished exchanges as Markdown; empty when nothing has been answered yet.
+    var conversationBody: String { ChatAnswerHarvest.conversationBody(messages) }
+
+    func copyConversation(title: String) async -> Bool {
+        guard !invalidated, !conversationBody.isEmpty else { return false }
+        return await copy(ChatAnswerHarvest.conversationDocument(messages, title: title))
+    }
+
+    func exportConversation(title: String, to destination: URL) async throws {
+        guard !invalidated, !conversationBody.isEmpty else { throw answerExportUnavailable }
+        let context = await privacyRecording?.privacyContext()
+        try await PrivacyTrace.$context.withValue(context) {
+            try await PrivacyTrace.perform(.init(stage: .markdownExport, data: [.text],
+                                                 destination: .local(provider: .fileSystem))) {
+                try ChatAnswerExport.write(ChatAnswerHarvest.conversationDocument(messages, title: title), to: destination)
+            }
+        }
+    }
+
+    /// A one-line status under the conversation (e.g. "Added to the recording note.").
+    func showNotice(_ text: String) {
+        streamingNotice = text
     }
 
     private var answerExportUnavailable: NSError {
@@ -295,6 +324,24 @@ final class TranscriptChatService {
 
     func send(_ userText: String) async {
         await runExclusive(userText) { sendID in await self.sendInRecordingContext(userText, sendID: sendID) }
+    }
+
+    /// The question behind the latest answer, when that answer can be asked again.
+    var questionToAskAgain: String? {
+        guard !invalidated, !isStreaming, messages.count >= 2,
+              messages[messages.count - 1].role == .assistant,
+              messages[messages.count - 2].role == .user else { return nil }
+        return messages[messages.count - 2].content
+    }
+
+    /// Replaces the latest answer by asking its question again.
+    func askAgain() async {
+        guard let question = questionToAskAgain else { return }
+        stopReading()
+        messages.removeLast(2)
+        clearScanState()
+        scanFootnote = nil
+        await send(question)
     }
 
     /// Runs one exchange (a question or a whole-recording scan) as the session's only

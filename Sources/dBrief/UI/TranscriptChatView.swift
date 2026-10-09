@@ -4,12 +4,23 @@ import UniformTypeIdentifiers
 
 struct TranscriptChatView: View {
     @Bindable var chatService: TranscriptChatService
+    /// Seeks the recording when a `[hh:mm:ss]` citation is clicked; nil when there
+    /// is no audio to seek (citations then stay plain text).
+    var onSeek: ((TimeInterval) -> Void)? = nil
+    /// People in this recording, for "What did … commit to?" prompts.
+    var people: [String] = []
+    var savedPrompts: [SavedChatPrompt] = []
+    /// Saves a question as a reusable prompt; nil hides "Save as Prompt".
+    var onSavePrompt: ((String) -> Void)? = nil
+    /// Where an answer can be added; nil when the recording has no analysis yet.
+    var answerDestinations: ChatAnswerDestinations? = nil
 
     @Environment(\.viewerPalette) private var palette
     @Environment(\.viewerReading) private var reading
     @Environment(\.uiTypography) private var typography
     @FocusState private var inputIsFocused: Bool
     @State private var scrollFollow = ChatScrollFollowController()
+    @State private var isAwayFromLatest = false
 
     private var sendEnabled: Bool {
         !chatService.draftInput.trimmingCharacters(in: .whitespaces).isEmpty && !chatService.isStreaming
@@ -35,60 +46,89 @@ struct TranscriptChatView: View {
                     .foregroundStyle(palette.secondary.color)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            promptChipsRow
+            if !chatService.messages.isEmpty, !chatService.isStreaming {
+                followUpRow
+            }
             inputBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.chatAnswerDestinations, answerDestinations)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let seconds = ChatTimestampLink.seconds(from: url) else { return .systemAction }
+            onSeek?(seconds)
+            return .handled
+        })
         .onExitCommand {
             chatService.stopGenerating()
             chatService.stopReading()
         }
+        .onAppear {
+            scrollFollow.onFollowChange = { [away = $isAwayFromLatest] follows in away.wrappedValue = !follows }
+            inputIsFocused = true
+        }
         .onDisappear { chatService.stopReading() }
     }
 
-    // MARK: - Prompt chips
+    // MARK: - Prompts
 
-    private var promptChipsRow: some View {
+    private func ask(_ template: ChatPromptTemplate) {
+        guard !chatService.isStreaming else { return }
+        scrollFollow.resumeFollowing()
+        Task { await chatService.send(template.prompt) }
+    }
+
+    /// Follow-up prompts under the conversation; one click asks.
+    private var followUpRow: some View {
         FlowLayout(spacing: 6) {
-            ForEach(suggestedPrompts) { template in
-                Button {
-                    chatService.draftInput = template.prompt
-                    inputIsFocused = true
-                } label: {
+            ForEach(ChatPromptTemplate.followUps(after: chatService.messages, people: people,
+                                                 saved: savedPrompts, limit: 4)) { template in
+                Button { ask(template) } label: {
                     Text(template.title)
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.text.color)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, 6)
                         .padding(.horizontal, 9)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(palette.canvas.color))
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(palette.divider.color, lineWidth: 1))
+                        .background(Capsule().fill(palette.canvas.color))
+                        .overlay(Capsule().strokeBorder(palette.divider.color, lineWidth: 1))
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(chatService.isStreaming)
-                .help("Put this prompt in the composer")
+                .help(template.prompt)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var suggestedPrompts: [ChatPromptTemplate] {
-        ["Action Items", "Key Points", "Questions Asked"].compactMap { title in
-            ChatPromptTemplate.defaults.first(where: { $0.title == title })
-        }
-    }
-
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            ViewerSparkle(size: 24)
-            Text("Ask a question about this transcript")
-                .uiFont(.callout.weight(.medium))
-                .foregroundStyle(palette.heading.color)
-            Text("Choose a prompt below or type your own.")
-                .uiFont(.caption)
-                .foregroundStyle(palette.secondary.color)
-                .multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 14) {
+            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Ask anything about this recording")
+                    .uiFont(.callout.weight(.semibold))
+                    .foregroundStyle(palette.heading.color)
+                Text("Answers cite timestamps you can click to jump to that moment.")
+                    .uiFont(.caption)
+                    .foregroundStyle(palette.secondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(ChatPromptTemplate.starters + ChatPromptTemplate.people(people, limit: 2)) { template in
+                    StarterPromptRow(template: template) { ask(template) }
+                }
+                if !savedPrompts.isEmpty {
+                    Text("Your prompts")
+                        .uiFont(.caption.weight(.semibold))
+                        .foregroundStyle(palette.secondary.color)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                    ForEach(ChatPromptTemplate.saved(savedPrompts)) { template in
+                        StarterPromptRow(template: template) { ask(template) }
+                    }
+                }
+            }
+            .disabled(chatService.isStreaming)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     }
 
     // MARK: - Message list
@@ -99,8 +139,8 @@ struct TranscriptChatView: View {
                 // Chat replies can be taller than the viewport. Use measured
                 // row heights when restoring or scrolling to a reply, rather
                 // than letting a lazy stack revise its off-screen estimates.
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(chatService.messages) { message in
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(chatService.messages.enumerated()), id: \.element.id) { index, message in
                         // While a reply streams, only its bubble re-renders per
                         // token; render it as plain text then (skipping the block
                         // Markdown parse that would re-run over the whole growing
@@ -109,8 +149,16 @@ struct TranscriptChatView: View {
                             message: message,
                             chatService: chatService,
                             chatFontSize: reading.chatFontSize,
-                            isStreaming: chatService.isStreaming && message.id == chatService.messages.last?.id
+                            isStreaming: chatService.isStreaming && message.id == chatService.messages.last?.id,
+                            isLatest: message.id == chatService.messages.last?.id,
+                            linksTimestamps: onSeek != nil,
+                            onEditQuestion: { editQuestion($0) },
+                            onAskAgain: { askAgain() },
+                            onSavePrompt: onSavePrompt,
+                            isSavedPrompt: savedPrompts.contains { $0.prompt == message.content }
                         )
+                        // A question sits close to its answer; exchanges are set apart.
+                        .padding(.top, index == 0 ? 0 : (message.role == .user ? 22 : 10))
                         .id(message.id)
                     }
 
@@ -119,10 +167,12 @@ struct TranscriptChatView: View {
                             Text(footnote.text)
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
-                                .padding(.horizontal, 16)
+                                .padding(.horizontal, 3)
+                                .padding(.top, 8)
                         } else if chatService.coverage == .relevantParts || chatService.coverage == .recentPart
                                     || chatService.offerScan {
                             coverageFooter(after: last)
+                                .padding(.top, 8)
                         }
                     }
 
@@ -135,7 +185,8 @@ struct TranscriptChatView: View {
                                 .uiFont(.caption)
                                 .foregroundStyle(palette.secondary.color)
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 3)
+                        .padding(.top, 8)
                         .id("streaming-indicator")
                     }
                 }
@@ -145,6 +196,17 @@ struct TranscriptChatView: View {
                 .background(ChatScrollFollowObserver(controller: scrollFollow))
             }
             .scrollIndicators(.automatic)
+            .overlay(alignment: .bottom) {
+                if isAwayFromLatest {
+                    jumpToLatestButton {
+                        scrollFollow.resumeFollowing()
+                        if let lastId = chatService.messages.last?.id {
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
             .onChange(of: chatService.messages.count) { _, _ in
                 if scrollFollow.shouldFollow, let lastId = chatService.messages.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
@@ -155,8 +217,35 @@ struct TranscriptChatView: View {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
+            .onAppear {
+                // A reopened conversation starts at its latest exchange.
+                guard let lastId = chatService.messages.last?.id else { return }
+                Task { @MainActor in proxy.scrollTo(lastId, anchor: .bottom) }
+            }
+            .onChange(of: chatService.isStreaming) { _, streaming in
+                // The finished reply re-renders as Markdown (and gains its actions),
+                // which changes its height after the last token scrolled it into view.
+                guard !streaming, scrollFollow.shouldFollow, let lastId = chatService.messages.last?.id else { return }
+                Task { @MainActor in proxy.scrollTo(lastId, anchor: .bottom) }
+            }
         }
         .frame(minHeight: 0, maxHeight: .infinity)
+    }
+
+    private func jumpToLatestButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.text.color)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(palette.surface.color))
+                .overlay(Circle().strokeBorder(palette.divider.color, lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Jump to latest message")
+        .help("Jump to latest message")
     }
 
     /// Coverage note ("relevant parts" / "most recent part"), plus the opt-in exhaustive
@@ -186,7 +275,7 @@ struct TranscriptChatView: View {
                 .help("Ask this question of every part of the recording, so nothing is missed. Stop cancels it.")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 3)
     }
 
     private var coverageNote: String? {
@@ -209,16 +298,30 @@ struct TranscriptChatView: View {
     /// Persistent composer at the bottom of both empty and populated chats.
     private var inputField: some View {
         HStack(spacing: 10) {
-            TextField("Ask a follow-up…", text: $chatService.draftInput, axis: .vertical)
+            TextField(chatService.messages.isEmpty ? "Ask about this recording…" : "Ask a follow-up…",
+                      text: $chatService.draftInput, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(AppFontStyle.system(size: CGFloat(reading.chatFontSize)).resolve(
                     using: AppTypographyPreferences(readingFont: typography.readingFont)))
                 .lineSpacing(chatLineSpacing)
                 .foregroundStyle(palette.text.color)
                 .lineLimit(1...6)
-                .accessibilityLabel("Ask a follow-up")
+                .accessibilityLabel("Ask about this recording")
                 .onSubmit { submitMessage() }
                 .focused($inputIsFocused)
+
+            if !chatService.isStreaming {
+                Button(action: startDictation) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 13))
+                        .foregroundStyle(palette.secondary.color)
+                        .frame(width: 24, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Ask by voice")
+                .help("Ask by voice (macOS Dictation)")
+            }
 
             Button {
                 if chatService.isStreaming {
@@ -241,7 +344,7 @@ struct TranscriptChatView: View {
             .buttonStyle(.plain)
             .disabled(!sendEnabled && !chatService.isStreaming)
             .accessibilityLabel(chatService.isStreaming ? "Stop generating" : "Send message")
-            .help(chatService.isStreaming ? "Stop generating (Esc)" : "Send message")
+            .help(chatService.isStreaming ? "Stop generating (Esc)" : "Send message (Return)")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -276,6 +379,61 @@ struct TranscriptChatView: View {
         chatService.draftInput = ""
         Task { await chatService.send(text) }
     }
+
+    /// Starts macOS Dictation in the composer: on-device where available, in the
+    /// system language, and macOS offers to turn it on when it is off.
+    private func startDictation() {
+        inputIsFocused = true
+        DispatchQueue.main.async {
+            NSApp.sendAction(Selector(("startDictation:")), to: nil, from: nil)
+        }
+    }
+
+    private func editQuestion(_ text: String) {
+        chatService.draftInput = text
+        inputIsFocused = true
+    }
+
+    private func askAgain() {
+        scrollFollow.resumeFollowing()
+        Task { await chatService.askAgain() }
+    }
+}
+
+// MARK: - Starter prompt
+
+private struct StarterPromptRow: View {
+    let template: ChatPromptTemplate
+    let action: () -> Void
+    @Environment(\.viewerPalette) private var palette
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: template.systemIcon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.secondary.color)
+                    .frame(width: 18)
+                Text(template.title)
+                    .uiFont(.system(size: 13))
+                    .foregroundStyle(palette.text.color)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.secondary.color)
+                    .opacity(isHovered ? 1 : 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isHovered ? palette.canvas.color : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(template.prompt)
+        .accessibilityLabel("Ask: \(template.title)")
+    }
 }
 
 // MARK: - MessageBubble
@@ -287,10 +445,18 @@ private struct MessageBubble: View {
     /// True only for the assistant reply currently streaming — render plain
     /// text while true, then Markdown once the reply completes.
     var isStreaming: Bool = false
+    /// The newest message keeps its answer actions visible; older ones reveal them on hover.
+    var isLatest: Bool = false
+    var linksTimestamps: Bool = false
+    var onEditQuestion: (String) -> Void = { _ in }
+    var onAskAgain: () -> Void = {}
+    var onSavePrompt: ((String) -> Void)? = nil
+    var isSavedPrompt = false
     @Environment(\.viewerPalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.uiTypography) private var typography
     @State private var showReasoning = false
+    @State private var isHovered = false
 
     var body: some View {
         let parts = message.displayParts
@@ -303,9 +469,11 @@ private struct MessageBubble: View {
                         ViewerSparkle(size: 13)
                         Text("dBrief")
                             .uiFont(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(palette.accentText.color)
+                            .foregroundStyle(palette.heading.color)
                     }
-                    .padding(.bottom, 3)
+                    .padding(.horizontal, 3)
+                    .padding(.bottom, 2)
+                    .accessibilityElement(children: .combine)
                 }
 
                 if let reasoning = parts.reasoning {
@@ -326,6 +494,36 @@ private struct MessageBubble: View {
 
         }
         .padding(.horizontal, 3)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .contextMenu { contextMenuItems(answer: parts.answer) }
+    }
+
+    @ViewBuilder
+    private func contextMenuItems(answer: String) -> some View {
+        if message.role == .user {
+            Button("Copy") { Task { _ = await chatService.copy(message.content) } }
+            Button("Edit Question") { onEditQuestion(message.content) }
+                .disabled(chatService.isStreaming)
+            if let onSavePrompt {
+                Divider()
+                Button(isSavedPrompt ? "Saved as Prompt" : "Save as Prompt") { onSavePrompt(message.content) }
+                    .disabled(isSavedPrompt)
+            }
+        } else if !isStreaming, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button("Copy") { Task { _ = await chatService.copyAnswer(message, format: .markdown) } }
+            Button("Copy as Plain Text") { Task { _ = await chatService.copyAnswer(message, format: .plainText) } }
+            Divider()
+            Button(chatService.spokenMessageID == message.id && chatService.speechPlayer.isBusy
+                   ? "Stop Reading" : "Read Aloud") {
+                chatService.toggleReadAloud(message)
+            }
+            .disabled(message.speechText.isEmpty)
+            if isLatest {
+                Button("Ask Again") { onAskAgain() }
+                    .disabled(chatService.questionToAskAgain == nil)
+            }
+        }
     }
 
     private func userBubble(_ text: String) -> some View {
@@ -340,27 +538,21 @@ private struct MessageBubble: View {
             .padding(.vertical, 10)
             .background(palette.primary.color)
             .clipShape(shape)
-            .textSelection(.enabled)
+            // Not selectable, so right-click reaches Copy / Edit Question / Save as Prompt.
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// Answers sit on the panel surface without a card, so the text carries the weight.
     private func assistantAnswer(_ text: String, showsActions: Bool) -> some View {
-        let cardColour = palette.surface.mixed(with: palette.primary, fraction: 0.08).color
-
-        return VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             assistantBody(text)
             if showsActions {
-                MessageActions(message: message, chatService: chatService)
+                MessageActions(message: message, chatService: chatService,
+                               isLatest: isLatest, isRevealed: isLatest || isHovered,
+                               onAskAgain: onAskAgain)
             }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardColour, in: RoundedRectangle(cornerRadius: palette.readingCardCornerRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: palette.readingCardCornerRadius)
-                .strokeBorder(palette.divider.color.opacity(0.8), lineWidth: 1)
-        }
+        .padding(.horizontal, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -368,6 +560,7 @@ private struct MessageBubble: View {
         bubbleContent(text)
             .font(chatFont)
             .foregroundStyle(palette.text.color)
+            .tint(palette.accentText.color)
             .lineSpacing(chatAdditionalLineSpacing(size: chatFontSize, typography: typography))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,7 +577,7 @@ private struct MessageBubble: View {
     @ViewBuilder
     private func bubbleContent(_ text: String) -> some View {
         if message.role == .assistant && !isStreaming {
-            MarkdownText(text, readingFont: chatFont)
+            MarkdownText(text, readingFont: chatFont, linksTimestamps: linksTimestamps)
         } else {
             Text(text)
         }
@@ -405,7 +598,7 @@ private struct MessageBubble: View {
                     Text("Reasoning")
                         .uiFont(.caption2.weight(.semibold))
                 }
-                .foregroundStyle(palette.accentText.color)
+                .foregroundStyle(palette.secondary.color)
             }
             .buttonStyle(.plain)
 
@@ -421,22 +614,33 @@ private struct MessageBubble: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.divider.color, lineWidth: 1))
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 
-/// Kept below the answer so actions remain reachable without hovering.
+/// Icon actions under an answer. The latest answer always shows them; older answers
+/// show them on hover or keyboard focus, and every action is also in the context menu.
 private struct MessageActions: View {
     let message: ChatMessage
     let chatService: TranscriptChatService
+    var isLatest: Bool = false
+    var isRevealed: Bool = true
+    var onAskAgain: () -> Void = {}
     @Environment(\.viewerPalette) private var palette
     @Environment(\.viewerMode) private var appearanceMode
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.chatAnswerDestinations) private var destinations
+    @FocusState private var focusedAction: Action?
     @State private var copyToken: UUID?
+    @State private var proposedActionItems: [String]?
+    @State private var addStatus: String?
+    @State private var isAdding = false
     @State private var isExporting = false
     @State private var exportErrorMessage: String?
+
+    private enum Action: Hashable { case copy, read, askAgain, share }
 
     private var speechState: VoicePreviewPlayer.State {
         chatService.spokenMessageID == message.id ? chatService.speechPlayer.state : .idle
@@ -453,21 +657,98 @@ private struct MessageActions: View {
         !isExporting && chatService.canExportAnswer(message)
     }
 
+    private var isVisible: Bool {
+        isRevealed || focusedAction != nil || isReading || copyToken != nil || proposedActionItems != nil
+    }
+
+    /// The question this answer replies to.
+    private var question: String? {
+        guard let index = chatService.messages.firstIndex(where: { $0.id == message.id }), index > 0,
+              chatService.messages[index - 1].role == .user else { return nil }
+        return chatService.messages[index - 1].content
+    }
+
+    private func addToSummary() {
+        guard let destinations, !isAdding else { return }
+        isAdding = true
+        Task {
+            defer { isAdding = false }
+            let added = await destinations.addToSummary(message.displayParts.answer, question)
+            addStatus = added ? "Added to the summary." : nil
+        }
+    }
+
+    private func proposeActionItems() {
+        guard let destinations else { return }
+        let existing = Set(destinations.existingActionItems.map { $0.lowercased() })
+        let items = ChatAnswerHarvest.actionItems(from: message.displayParts.answer,
+                                                  knownOwners: destinations.knownOwners)
+            .filter { !existing.contains($0.lowercased()) }
+        if items.isEmpty {
+            addStatus = "No new action items found in this answer."
+        } else {
+            proposedActionItems = items
+        }
+    }
+
+    private func addActionItems(_ items: [String]) {
+        guard let destinations, !isAdding else { return }
+        proposedActionItems = nil
+        isAdding = true
+        Task {
+            defer { isAdding = false }
+            let added = await destinations.addActionItems(items)
+            addStatus = added ? (items.count == 1 ? "Added 1 action item." : "Added \(items.count) action items.") : nil
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
-                    answerActions
-                    Spacer(minLength: 2)
-                    exportMenu
+            HStack(spacing: 2) {
+                iconButton(copyToken == nil ? "doc.on.doc" : "checkmark",
+                           help: "Copy this answer", label: copyToken == nil ? "Copy answer" : "Answer copied",
+                           action: .copy) {
+                    Task {
+                        if await chatService.copyAnswer(message) { copyToken = UUID() }
+                    }
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    answerActions
-                    exportMenu
+
+                iconButton(isReading ? "stop.fill" : "speaker.wave.2",
+                           help: isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken Summary",
+                           label: isReading ? "Stop reading answer" : "Read answer aloud",
+                           action: .read) {
+                    chatService.toggleReadAloud(message)
+                }
+                .disabled(message.speechText.isEmpty)
+
+                if isLatest {
+                    iconButton("arrow.clockwise", help: "Ask this question again", label: "Ask again",
+                               action: .askAgain, perform: onAskAgain)
+                        .disabled(chatService.questionToAskAgain == nil)
+                }
+
+                exportMenu
+            }
+            .opacity(isVisible ? 1 : 0)
+            .popover(isPresented: Binding(get: { proposedActionItems != nil },
+                                          set: { if !$0 { proposedActionItems = nil } }),
+                     arrowEdge: .bottom) {
+                if let proposedActionItems {
+                    ActionItemPicker(items: proposedActionItems, onAdd: addActionItems,
+                                     onCancel: { self.proposedActionItems = nil })
                 }
             }
-            .buttonStyle(.typographyBorderless)
-            .uiFont(.caption)
+
+            if let addStatus {
+                Label(addStatus, systemImage: "checkmark")
+                    .uiFont(.caption)
+                    .foregroundStyle(palette.secondary.color)
+                    .padding(.leading, 6)
+                    .task {
+                        do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                        self.addStatus = nil
+                    }
+            }
 
             switch speechState {
             case .preparingVoice(let progress):
@@ -483,8 +764,7 @@ private struct MessageActions: View {
                 EmptyView()
             }
         }
-        .padding(.horizontal, 3)
-        .padding(.top, 4)
+        .padding(.leading, -6) // optically align the first icon with the answer text
         .alert(
             "Couldn’t export answer",
             isPresented: Binding(
@@ -503,94 +783,89 @@ private struct MessageActions: View {
         }
     }
 
+    private func iconButton(_ symbol: String, help: String, label: String, action: Action,
+                            perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.secondary.color)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.typographyBorderless)
+        .focused($focusedAction, equals: action)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+
     private func speechProgress(_ title: String) -> some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.mini)
             Text(title).uiFont(.caption).foregroundStyle(palette.secondary.color)
         }
-    }
-
-    private var answerActions: some View {
-        HStack(spacing: 4) {
-            Button {
-                Task {
-                    if await chatService.copyAnswer(message) {
-                        copyToken = UUID()
-                    }
-                }
-            } label: {
-                Image(systemName: copyToken == nil ? "doc.on.doc" : "checkmark")
-                    .font(.system(size: 13))
-                    .foregroundStyle(palette.secondary.color)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .help("Copy this answer to the clipboard")
-            .accessibilityLabel(copyToken == nil ? "Copy answer" : "Answer copied")
-
-            Button {
-                chatService.toggleReadAloud(message)
-            } label: {
-                Image(systemName: isReading ? "stop.fill" : "speaker.wave.2")
-                    .font(.system(size: 13))
-                    .foregroundStyle(palette.secondary.color)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .disabled(message.speechText.isEmpty)
-            .help(isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken Summary")
-            .accessibilityLabel(isReading ? "Stop reading answer" : "Read answer aloud")
-            .foregroundStyle(palette.accentText.color)
-        }
-        .fixedSize(horizontal: true, vertical: false)
+        .padding(.leading, 6)
     }
 
     private var exportMenu: some View {
         Menu {
-            Section("Share this answer") {
-                Button {
-                    Task {
-                        guard chatService.canExportAnswer(message),
-                              await chatService.copyAnswer(message) else { return }
-                        copyToken = UUID()
+            if destinations != nil {
+                Section("Add to this recording") {
+                    Button {
+                        addToSummary()
+                    } label: {
+                        Label("Add to Summary", systemImage: "text.badge.plus")
                     }
-                } label: {
-                    Label("Copy answer", systemImage: "doc.on.doc")
+                    Button {
+                        proposeActionItems()
+                    } label: {
+                        Label("Add as Action Items…", systemImage: "checklist")
+                    }
                 }
-                .disabled(!isAnswerExportEnabled)
+                .disabled(!isAnswerExportEnabled || isAdding)
+
+                Divider()
             }
+
+            Button {
+                Task {
+                    guard chatService.canExportAnswer(message),
+                          await chatService.copyAnswer(message, format: .plainText) else { return }
+                    copyToken = UUID()
+                }
+            } label: {
+                Label("Copy as Plain Text", systemImage: "doc.plaintext")
+            }
+            .disabled(!isAnswerExportEnabled)
 
             Divider()
 
             Button {
                 beginExport(format: .markdown)
             } label: {
-                Label("Download Markdown", systemImage: "arrow.down.doc")
+                Label("Save as Markdown…", systemImage: "arrow.down.doc")
             }
             .disabled(!isAnswerExportEnabled)
 
             Button {
                 beginExport(format: .plainText)
             } label: {
-                Label("Download text", systemImage: "arrow.down.doc")
+                Label("Save as Text…", systemImage: "arrow.down.doc")
             }
             .disabled(!isAnswerExportEnabled)
         } label: {
-            Label("Share / Export", systemImage: "square.and.arrow.up")
-                .uiFont(.system(size: 11))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(palette.text.color)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(palette.surface.color))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.divider.color, lineWidth: 1))
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.secondary.color)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
         }
         .menuStyle(.button)
         .buttonStyle(.typographyBorderless)
-        .controlSize(.small)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .focused($focusedAction, equals: .share)
         .disabled(!isAnswerExportEnabled)
-        .help("Copy or export this answer only")
+        .help("Add this answer to the recording, copy it, or save it")
         .accessibilityLabel("Share or export this answer")
     }
 
@@ -643,4 +918,90 @@ private func chatAdditionalLineSpacing(size: Int, typography: AppTypographyPrefe
         using: AppTypographyPreferences(readingFont: typography.readingFont))
     let naturalLineHeight = max(0, font.ascender - font.descender + font.leading)
     return max(0, CGFloat(size) * 1.5 - naturalLineHeight)
+}
+
+// MARK: - Answer destinations
+
+/// Where a chat answer can be added in the open recording.
+struct ChatAnswerDestinations {
+    /// Names an action-item owner can match (speakers, participants, attendees).
+    var knownOwners: [String]
+    var existingActionItems: [String]
+    /// Appends the answer to the summary; false when the save failed (the viewer shows why).
+    var addToSummary: @MainActor (_ answer: String, _ question: String?) async -> Bool
+    var addActionItems: @MainActor (_ items: [String]) async -> Bool
+}
+
+extension EnvironmentValues {
+    @Entry var chatAnswerDestinations: ChatAnswerDestinations? = nil
+}
+
+/// Pick which of an answer's items become action items.
+private struct ActionItemPicker: View {
+    let items: [String]
+    let onAdd: ([String]) -> Void
+    let onCancel: () -> Void
+    @Environment(\.viewerPalette) private var palette
+    @State private var selected: Set<String>
+
+    init(items: [String], onAdd: @escaping ([String]) -> Void, onCancel: @escaping () -> Void) {
+        self.items = items
+        self.onAdd = onAdd
+        self.onCancel = onCancel
+        _selected = State(initialValue: Set(items))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Add action items")
+                .uiFont(.headline)
+                .foregroundStyle(palette.heading.color)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        let parsed = ActionItemParser.parse(item).first
+                        Toggle(isOn: Binding(
+                            get: { selected.contains(item) },
+                            set: { if $0 { selected.insert(item) } else { selected.remove(item) } }
+                        )) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(parsed?.text ?? item)
+                                    .foregroundStyle(palette.text.color)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let owner = parsed?.owner {
+                                    Text(owner)
+                                        .uiFont(.caption)
+                                        .foregroundStyle(palette.secondary.color)
+                                }
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 320)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button(selected.count == items.count ? "Select None" : "Select All") {
+                    selected = selected.count == items.count ? [] : Set(items)
+                }
+                .buttonStyle(.settingsSecondary)
+                Spacer()
+                Button("Cancel", role: .cancel, action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.settingsSecondary)
+                Button(selected.count == 1 ? "Add 1 Item" : "Add \(selected.count) Items") {
+                    onAdd(items.filter(selected.contains))
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.settingsPrimary)
+                .disabled(selected.isEmpty)
+            }
+        }
+        .uiFont(.system(size: 13))
+        .padding(14)
+        .frame(width: 340)
+        .background(palette.surface.color)
+    }
 }

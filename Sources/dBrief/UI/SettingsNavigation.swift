@@ -157,7 +157,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
     case afterRecordingTasks, afterRecordingAutomation
     case transcriptionEngine, transcriptionLanguage, transcriptionCleanup, transcriptionLive, transcriptionServices, transcriptionChunking, transcriptionAdvanced
     case speakerIdentification, speakerLibrary
-    case aiEnabled, aiEngine, aiResultsLanguage, aiPrompts, aiCLI, aiChatFallback, aiProviders
+    case aiEnabled, aiEngine, aiResultsLanguage, aiPrompts, aiCLI, aiChatFallback, aiChatPrompts, aiProviders
     case spokenVoice, spokenPrompt, vocabularyTerms, automaticImport, permissions, benchmark, about
     case profileIdentity, profileMatching, profileAutomation, profileTranscription, profileAI, profileTasks, profileFolders
 
@@ -165,7 +165,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         switch self {
         case .transcriptionEngine, .transcriptionLanguage, .transcriptionCleanup, .transcriptionLive,
              .transcriptionServices, .transcriptionChunking, .transcriptionAdvanced: .transcription
-        case .aiEnabled, .aiEngine, .aiResultsLanguage, .aiPrompts, .aiCLI, .aiChatFallback, .aiProviders: .ai
+        case .aiEnabled, .aiEngine, .aiResultsLanguage, .aiPrompts, .aiCLI, .aiChatFallback, .aiChatPrompts, .aiProviders: .ai
         case .speakerIdentification, .speakerLibrary: .speakers
         case .benchmark: .benchmark
         case .about: .about

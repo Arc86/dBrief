@@ -56,22 +56,79 @@ struct ChatPromptTemplate: Identifiable, Sendable {
         self.prompt = prompt
     }
 
-    static let defaults: [ChatPromptTemplate] = [
-        ChatPromptTemplate(title: "Bullet Points", systemIcon: "list.bullet",
-            prompt: "Summarize this transcript as concise bullet points."),
-        ChatPromptTemplate(title: "Action Items", systemIcon: "checkmark.circle",
-            prompt: "Extract all action items and tasks mentioned in this transcript."),
-        ChatPromptTemplate(title: "Key Points", systemIcon: "star",
-            prompt: "Identify and explain the most important points from this transcript."),
-        ChatPromptTemplate(title: "Questions Asked", systemIcon: "questionmark.circle",
-            prompt: "Extract all questions asked during this conversation."),
-        ChatPromptTemplate(title: "Improve Grammar", systemIcon: "text.badge.checkmark",
-            prompt: "Rewrite this transcript with improved grammar, punctuation, and readability while maintaining the original meaning and speaking style."),
-        ChatPromptTemplate(title: "Generate FAQ", systemIcon: "questionmark.folder",
-            prompt: "Create a FAQ document based on the topics discussed in this transcript."),
-        ChatPromptTemplate(title: "Extract Statistics", systemIcon: "number",
-            prompt: "Extract all numbers, statistics, dates, and quantitative data mentioned."),
-        ChatPromptTemplate(title: "Identify Emotions", systemIcon: "heart",
-            prompt: "Analyze the emotional tone and sentiment throughout this transcript, noting any significant shifts."),
-    ]
+    static let summarize = ChatPromptTemplate(title: "Summarize", systemIcon: "list.bullet",
+        prompt: "Summarize this recording as concise bullet points.")
+    static let actionItems = ChatPromptTemplate(title: "Action items", systemIcon: "checkmark.circle",
+        prompt: "Extract all action items and tasks mentioned in this transcript, with who owns each one.")
+    static let decisions = ChatPromptTemplate(title: "Decisions", systemIcon: "checkmark.seal",
+        prompt: "List the decisions that were made, and who made them.")
+    static let questions = ChatPromptTemplate(title: "Questions asked", systemIcon: "questionmark.circle",
+        prompt: "Extract all questions asked during this conversation, and whether each was answered.")
+    static let keyPoints = ChatPromptTemplate(title: "Key points", systemIcon: "star",
+        prompt: "Identify and explain the most important points from this transcript.")
+    static let numbers = ChatPromptTemplate(title: "Numbers & dates", systemIcon: "number",
+        prompt: "Extract all numbers, statistics, dates, and deadlines mentioned.")
+    static let openIssues = ChatPromptTemplate(title: "Open issues", systemIcon: "exclamationmark.bubble",
+        prompt: "What was left unresolved or needs a follow-up?")
+
+    /// Shown in an empty chat.
+    static let starters: [ChatPromptTemplate] = [summarize, actionItems, decisions, questions]
+
+    /// Offered under the conversation, minus the ones already asked.
+    static let defaults: [ChatPromptTemplate] = starters + [keyPoints, openIssues, numbers]
+
+    /// One prompt per person: what they committed to. Titles use the first name.
+    static func people(_ names: [String], limit: Int = 3) -> [ChatPromptTemplate] {
+        names.prefix(limit).map { name in
+            let first = name.split(separator: " ").first.map(String.init) ?? name
+            return ChatPromptTemplate(title: "What did \(first) commit to?", systemIcon: "person",
+                                      prompt: "What did \(name) commit to or agree to do?")
+        }
+    }
+
+    static func saved(_ prompts: [SavedChatPrompt]) -> [ChatPromptTemplate] {
+        prompts.map { ChatPromptTemplate(title: $0.title, systemIcon: "bookmark", prompt: $0.prompt) }
+    }
+
+    /// Up to `limit` follow-ups not already asked in `messages`: the user's saved
+    /// prompts first (at most two), then one about a person, then the built-in ones.
+    static func followUps(after messages: [ChatMessage], people: [String] = [], saved: [SavedChatPrompt] = [],
+                          limit: Int = 3) -> [ChatPromptTemplate] {
+        let asked = Set(messages.filter { $0.role == .user }.map(\.content))
+        func open(_ templates: [ChatPromptTemplate]) -> [ChatPromptTemplate] {
+            templates.filter { !asked.contains($0.prompt) }
+        }
+        let ordered = open(Self.saved(saved)).prefix(2) + open(Self.people(people)).prefix(1) + open(defaults)
+        return Array(ordered.prefix(limit))
+    }
+}
+
+/// A question the user saved as a reusable chat prompt (Settings → AI analysis).
+struct SavedChatPrompt: Codable, Identifiable, Equatable, Sendable {
+    var id: UUID
+    var title: String
+    var prompt: String
+
+    init(id: UUID = UUID(), title: String, prompt: String) {
+        self.id = id
+        self.title = title
+        self.prompt = prompt
+    }
+
+    /// A saved prompt for `question`, titled with its first few words.
+    init(question: String) {
+        let prompt = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.init(title: Self.title(for: prompt), prompt: prompt)
+    }
+
+    static func title(for prompt: String, maxLength: Int = 28) -> String {
+        let collapsed = prompt.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard collapsed.count > maxLength else { return collapsed }
+        var title = ""
+        for word in collapsed.split(separator: " ") {
+            if title.count + word.count + 1 > maxLength { break }
+            title += title.isEmpty ? String(word) : " \(word)"
+        }
+        return (title.isEmpty ? String(collapsed.prefix(maxLength)) : title) + "…"
+    }
 }

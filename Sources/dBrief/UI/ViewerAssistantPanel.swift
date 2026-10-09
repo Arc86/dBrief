@@ -7,8 +7,7 @@ struct ViewerAssistantPanel<Content: View>: View {
     var onClose: () -> Void
     var onClearChat: (() -> Void)? = nil
     var clearChatDisabled: Bool = false
-    var onPromptSelected: ((ChatPromptTemplate) -> Void)? = nil
-    var promptTemplatesDisabled: Bool = false
+    var conversation: ChatConversationActions? = nil
     var chatFontSize: Binding<Int> = .constant(ViewerAppearancePreferences.defaultChatFontSize)
     @ViewBuilder var content: () -> Content
     @Environment(\.viewerPalette) private var palette
@@ -46,27 +45,21 @@ struct ViewerAssistantPanel<Content: View>: View {
                             ViewerChatTextSizeOptions(chatFontSize: chatFontSize)
                         }
                     }
-                    if onClearChat != nil || onPromptSelected != nil {
+                    if onClearChat != nil || conversation != nil {
                         Menu {
-                            if let onPromptSelected {
-                                Menu("Prompt templates") {
-                                    ForEach(ChatPromptTemplate.defaults) { template in
-                                        Button {
-                                            onPromptSelected(template)
-                                        } label: {
-                                            Label(template.title, systemImage: template.systemIcon)
-                                        }
-                                    }
+                            if let conversation {
+                                Button("Copy Conversation", action: conversation.copy)
+                                    .disabled(conversation.isEmpty)
+                                Button("Save Conversation as Markdown…", action: conversation.save)
+                                    .disabled(conversation.isEmpty)
+                                if let addToNote = conversation.addToNote {
+                                    Button("Add Conversation to Recording Note", action: addToNote)
+                                        .disabled(conversation.isEmpty)
                                 }
-                                .disabled(promptTemplatesDisabled)
                             }
-
-                            if onPromptSelected != nil, onClearChat != nil {
-                                Divider()
-                            }
-
                             if let onClearChat {
-                                Button("Clear chat", action: onClearChat)
+                                if conversation != nil { Divider() }
+                                Button("Clear Chat", action: onClearChat)
                                     .disabled(clearChatDisabled)
                             }
                         } label: {
@@ -75,7 +68,7 @@ struct ViewerAssistantPanel<Content: View>: View {
                                 .frame(width: 24, height: 28)
                         }
                         .menuStyle(.button)
-        .buttonStyle(.typographyBorderless)
+                        .buttonStyle(.typographyBorderless)
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .accessibilityLabel("Conversation options")
@@ -145,4 +138,13 @@ private struct ViewerChatTextSizeOptions: View {
         .background(palette.surface.color)
         .fixedSize(horizontal: false, vertical: true)
     }
+}
+
+/// Whole-conversation commands in the assistant panel's "…" menu.
+struct ChatConversationActions {
+    var isEmpty: Bool
+    var copy: () -> Void
+    var save: () -> Void
+    /// Nil when the recording has no Markdown note to add to.
+    var addToNote: (() -> Void)?
 }

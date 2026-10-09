@@ -98,6 +98,12 @@ struct SettingsAITab: View {
                 }
             }
 
+            SettingsCard("Chat prompts", description: "Your own prompts in Ask dBrief AI", section: .aiChatPrompts) {
+                SettingsStackedRow {
+                    SettingsSavedChatPrompts()
+                }
+            }
+
             if searchRequest?.section == .aiProviders || settings.aiEngine == .remoteEndpoint
                 || (settings.aiEngine == .localCLI && settings.chatFallbackEngine == .remoteEndpoint) {
                 SettingsCard("Providers", description: "For remote analysis and chat", section: .aiProviders) {

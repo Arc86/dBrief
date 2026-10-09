@@ -56,6 +56,7 @@ final class AppSettings {
         static let watchedFolderNotifyOnDetect = "watchedFolderNotifyOnDetect"
         static let removeIgnoredSegments = "removeIgnoredSegments"
         static let customIgnoredSegments = "customIgnoredSegments"
+        static let savedChatPrompts = "savedChatPrompts"
         static let transcriptionEndpoints = "transcriptionEndpoints"
         static let aiEndpoints = "aiEndpoints"
         static let defaultTranscriptionEndpointId = "defaultTranscriptionEndpointId"
@@ -475,6 +476,15 @@ final class AppSettings {
     /// "Reset to defaults" in Settings clears this list.
     var customIgnoredSegments: [String] {
         didSet { UserDefaults.standard.set(customIgnoredSegments, forKey: Keys.customIgnoredSegments) }
+    }
+
+    /// Questions saved from Ask dBrief AI, offered as prompts in every recording's chat.
+    var savedChatPrompts: [SavedChatPrompt] {
+        didSet {
+            if let data = try? JSONEncoder().encode(savedChatPrompts) {
+                UserDefaults.standard.set(data, forKey: Keys.savedChatPrompts)
+            }
+        }
     }
 
     /// WhisperKit model name to use for local transcription (e.g., "openai_whisper-small").
@@ -1063,6 +1073,8 @@ final class AppSettings {
         self.watchedFolderNotifyOnDetect = defaults.object(forKey: Keys.watchedFolderNotifyOnDetect) as? Bool ?? true
         self.removeIgnoredSegments = defaults.object(forKey: Keys.removeIgnoredSegments) as? Bool ?? true
         self.customIgnoredSegments = defaults.stringArray(forKey: Keys.customIgnoredSegments) ?? []
+        self.savedChatPrompts = defaults.data(forKey: Keys.savedChatPrompts)
+            .flatMap { try? JSONDecoder().decode([SavedChatPrompt].self, from: $0) } ?? []
         self.whisperModelName = {
             // New key takes priority
             if let name = defaults.string(forKey: Keys.whisperModelName), !name.isEmpty {

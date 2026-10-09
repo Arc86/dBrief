@@ -14,22 +14,26 @@ struct MarkdownText: View {
     // and goes through a cache for views that are rebuilt with the same text.
     private let text: String
     private let readingFont: Font?
+    /// Link `[hh:mm:ss]` citations (chat answers) so they can seek the recording.
+    private let linksTimestamps: Bool
     @Environment(\.uiTypography) private var typography
 
-    init(_ text: String, readingFont: Font? = nil) {
+    init(_ text: String, readingFont: Font? = nil, linksTimestamps: Bool = false) {
         self.text = text
         self.readingFont = readingFont
+        self.linksTimestamps = linksTimestamps
     }
 
     var body: some View {
-        let rendered = MarkdownRenderCache.shared.rendered(text, readingFont: readingFont)
+        let rendered = MarkdownRenderCache.shared.rendered(text, readingFont: readingFont,
+                                                           linksTimestamps: linksTimestamps)
         // A single selectable text view avoids a nested SwiftUI layout graph for
         // every line when a streamed response becomes formatted after Stop.
         Text(readingFont != nil ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static func render(_ text: String, readingFont: Font? = nil) -> AttributedString {
+    static func render(_ text: String, readingFont: Font? = nil, linksTimestamps: Bool = false) -> AttributedString {
         var result = AttributedString()
         for (index, block) in parse(text).enumerated() {
             if index > 0 { result += AttributedString("\n") }
@@ -49,7 +53,7 @@ struct MarkdownText: View {
                 break
             }
         }
-        return result
+        return linksTimestamps ? ChatTimestampLink.linked(result) : result
     }
 
     /// Adjust the cached heading spans when UI preferences change without parsing again.
@@ -145,6 +149,7 @@ final class MarkdownRenderCache {
     private struct Key: Hashable {
         let text: String
         let readingFont: Font?
+        let linksTimestamps: Bool
     }
 
     private var entries: [Key: AttributedString] = [:]
@@ -157,14 +162,14 @@ final class MarkdownRenderCache {
         self.limit = limit
     }
 
-    func rendered(_ text: String, readingFont: Font?) -> AttributedString {
-        let key = Key(text: text, readingFont: readingFont)
+    func rendered(_ text: String, readingFont: Font?, linksTimestamps: Bool = false) -> AttributedString {
+        let key = Key(text: text, readingFont: readingFont, linksTimestamps: linksTimestamps)
         if let cached = entries[key] {
             touch(key)
             return cached
         }
         renderCount += 1
-        let result = MarkdownText.render(text, readingFont: readingFont)
+        let result = MarkdownText.render(text, readingFont: readingFont, linksTimestamps: linksTimestamps)
         entries[key] = result
         touch(key)
         while recency.count > limit {
