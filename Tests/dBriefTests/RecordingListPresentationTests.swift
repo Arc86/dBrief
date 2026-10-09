@@ -13,6 +13,20 @@ struct RecordingListPresentationTests {
         #expect(RecordingListPresentation.title(filenameStem: "2026-09-08_1148_Team-handover", generatedTitle: "\n ") == "Team handover")
     }
 
+    @Test func titlesDropALeadingDateTheRowAlreadyShows() {
+        #expect(RecordingListPresentation.title(filenameStem: "x", generatedTitle: "2026-10-08 - Defensie IRM") == "Defensie IRM")
+        #expect(RecordingListPresentation.title(filenameStem: "x", generatedTitle: "2026-10-08: Team sync") == "Team sync")
+        #expect(RecordingListPresentation.title(filenameStem: "x", generatedTitle: "2026-10-08") == "2026-10-08")
+        #expect(RecordingListPresentation.title(filenameStem: "x", generatedTitle: "Q3 review 2026-10-08") == "Q3 review 2026-10-08")
+    }
+
+    @Test func rowDurationsReadHoursAndHideUnknowns() {
+        #expect(RecordingListPresentation.duration(0) == "")
+        #expect(RecordingListPresentation.duration(0.4) == "")
+        #expect(RecordingListPresentation.duration(841) == "14:01")
+        #expect(RecordingListPresentation.duration(4997) == "1:23:17")
+    }
+
     @Test(arguments: ["client_project_handover", "meeting-name", "2026-09-08_notes_Team", "録音_プロジェクト_打合せ"])
     func importedFilenamesAreNotStripped(name: String) {
         #expect(RecordingListPresentation.title(filenameStem: name) == name)
