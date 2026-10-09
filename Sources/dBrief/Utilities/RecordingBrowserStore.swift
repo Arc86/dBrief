@@ -39,9 +39,7 @@ struct RecordingBrowserItem: Identifiable, Hashable, Codable, Sendable {
     }
 
     var formattedDuration: String {
-        guard duration > 0 else { return "" }
-        let total = Int(duration)
-        return String(format: "%d:%02d", total / 60, total % 60)
+        RecordingListPresentation.duration(duration)
     }
 
     /// Indexed rows include durable job state; legacy callers retain the

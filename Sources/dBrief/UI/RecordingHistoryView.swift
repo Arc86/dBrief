@@ -112,13 +112,7 @@ struct RecordingHistoryView: View {
             ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
         }
 
-        var formattedDuration: String {
-            guard duration > 0 else { return "" }
-            let total = Int(duration)
-            let minutes = total / 60
-            let seconds = total % 60
-            return String(format: "%d:%02d", minutes, seconds)
-        }
+        var formattedDuration: String { RecordingListPresentation.duration(duration) }
 
         var displayName: String {
             RecordingListPresentation.title(filenameStem: name, generatedTitle: generatedTitle)
@@ -127,8 +121,7 @@ struct RecordingHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RecordingListSectionHeader(title: "Recent recordings",
-                count: recordings.isEmpty ? nil : recordings.count, expanded: $expanded) {
+            RecordingListSectionHeader(title: "Recent recordings", count: nil, expanded: $expanded) {
                 RecordingListIconButton(title: "Refresh recent recordings", systemImage: "arrow.clockwise") {
                     loadRecordings()
                 }
@@ -139,20 +132,21 @@ struct RecordingHistoryView: View {
                     ReprocessingRecoveryView().frame(height: 170)
                 } else if recordings.isEmpty {
                     RecordingListEmptyState(title: "No recordings found", message: "Your recent recordings will appear here.", systemImage: "waveform")
-                } else if recordings.count <= 3 && expandedItemId == nil {
-                    historyRows
                 } else {
-                    // Bring an opened row's actions into view instead of leaving them
-                    // below the fold of this short list.
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            historyRows
+                    // A short list that grows the panel instead of a scroll box inside
+                    // the panel's own scroll view; everything else lives in the library.
+                    historyRows
+                    if recordings.count > Self.visibleCount {
+                        Button {
+                            MenuBarPanel.open("transcript", with: openWindow)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Show all in library")
+                                Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
+                            }
                         }
-                        .frame(height: expandedItemId == nil ? 200 : 260)
-                        .onChange(of: expandedItemId) { _, id in
-                            guard let id else { return }
-                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .top) }
-                        }
+                        .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22, fontSize: 11))
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             }
@@ -177,11 +171,11 @@ struct RecordingHistoryView: View {
 
     private var historyRows: some View {
         VStack(spacing: 0) {
-            ForEach(recordings) { item in
+            let visible = recordings.prefix(Self.visibleCount)
+            ForEach(visible) { item in
                 historyRow(item)
-                    .id(item.id)
                     .overlay(alignment: .bottom) {
-                        if item.id != recordings.last?.id { MenuPanelHairline() }
+                        if item.id != visible.last?.id { MenuPanelHairline() }
                     }
             }
         }
@@ -217,7 +211,7 @@ struct RecordingHistoryView: View {
             // grid never reflows between recordings.
             Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    actionTile(title: "Copy summary", systemImage: "doc.on.doc") {
+                    actionTile(title: item.hasInsights ? "Copy summary" : "Copy transcript", systemImage: "doc.on.doc") {
                         let text = loadedSummaries[item.id] ?? ""
                         Task { _ = await RecordingClipboard.copy(text, from: item.url) }
                     }
@@ -378,6 +372,9 @@ struct RecordingHistoryView: View {
             .accessibilityLabel("Stop playback")
         }
     }
+
+    /// Rows shown in the panel; the library holds the rest.
+    static let visibleCount = 5
 
     nonisolated private static let segmentSuffix = try! NSRegularExpression(pattern: "_part\\d+$")
 

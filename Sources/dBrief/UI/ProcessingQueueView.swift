@@ -111,9 +111,6 @@ struct ProcessingQueueView: View {
             }
         }
         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 12, fillsWidth: false))
-        .task { await manager.refreshWorkQueue() }
-        .onChange(of: appState.processingJob?.id) { _, _ in Task { await manager.refreshWorkQueue() } }
-        .onChange(of: appState.queuedCount) { _, _ in Task { await manager.refreshWorkQueue() } }
     }
 
     private var visibleReprocessing: [ReprocessingStore.Attempt] {

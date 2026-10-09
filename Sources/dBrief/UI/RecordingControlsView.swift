@@ -101,9 +101,19 @@ struct RecordingControlsView: View {
             }
         } label: {
             Label("Record meeting", systemImage: "mic.fill")
+                .frame(maxWidth: .infinity)
+                // The shortcut rides inside the button it triggers, quiet and right-aligned.
+                .overlay(alignment: .trailing) {
+                    Text(appSettings.recordHotkey.displayString)
+                        .uiFont(.system(size: 11, weight: .medium))
+                        .opacity(0.55)
+                        .accessibilityHidden(true)
+                }
         }
         .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 40))
+        .keyboardShortcut("r", modifiers: .command)
         .help("Start recording (\(appSettings.recordHotkey.displayString))")
+        .accessibilityHint("Shortcut \(appSettings.recordHotkey.displayString)")
     }
 
     private var profileRow: some View {
@@ -132,12 +142,6 @@ struct RecordingControlsView: View {
             .menuIndicator(.hidden)
             .accessibilityLabel("Profile")
             .accessibilityValue(settings.activeProfile.name)
-
-            Text(appSettings.recordHotkey.displayString)
-                .uiFont(.system(size: 11))
-                .foregroundStyle(palette.secondary.color)
-                .fixedSize()
-                .accessibilityLabel("Record shortcut \(appSettings.recordHotkey.displayString)")
         }
     }
 
@@ -253,16 +257,7 @@ struct RecordingControlsView: View {
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private var formattedDuration: String {
-        let total = Int(appState.recordingDuration)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    private var formattedDuration: String { appState.recordingDuration.formattedDuration }
 }
 
 

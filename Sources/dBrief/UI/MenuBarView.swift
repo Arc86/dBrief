@@ -41,7 +41,15 @@ struct MenuBarView: View {
         .environment(\.viewerPalette, palette.withSoftDividers(mode: mode))
         .task {
             await recordingManager.refreshQueuedCount()
+            await recordingManager.refreshWorkQueue()
         }
+        // The queue section can be hidden, so the panel keeps its work list fresh.
+        .onChange(of: appState.processingJob?.id) { _, _ in Task { await recordingManager.refreshWorkQueue() } }
+        .onChange(of: appState.queuedCount) { _, _ in Task { await recordingManager.refreshWorkQueue() } }
+        .onChange(of: showsQueueSection) { _, shows in
+            if !shows, showQueueManagement { showQueueManagement = false; showRecentRecordings = true }
+        }
+        .modifier(StatusItemControlsInstaller())
         // Keep both section headers visible without making the menu taller than
         // the screen. Opening either list folds the other, but never stops playback.
         .onChange(of: showQueueManagement) { _, expanded in
@@ -50,6 +58,16 @@ struct MenuBarView: View {
         .onChange(of: showRecentRecordings) { _, expanded in
             if expanded { showQueueManagement = false }
         }
+    }
+
+    private var showsQueueSection: Bool {
+        RecordingListPresentation.showsQueueSection(
+            pending: recordingManager.pendingQueueItems.count,
+            recovery: recordingManager.recoveryQueueEntries.count,
+            reprocessing: recordingManager.reprocessingAttempts
+                .filter { $0.id != appState.processingJob?.reprocessingAttemptID }.count,
+            paused: recordingManager.queuePaused,
+            hasError: recordingManager.queueLoadError != nil)
     }
 
     // MARK: - Header
@@ -158,7 +176,8 @@ struct MenuBarView: View {
                         }
                     }
                     .buttonStyle(MenuPanelLibraryButtonStyle(height: 32))
-                    .help("Open the recording library: every recording with its summary, transcript and assistant")
+                    .keyboardShortcut("l", modifiers: .command)
+                    .help("Open the recording library (⌘L): every recording with its summary, transcript and assistant")
                 }
 
                 if appState.isIdle, !appState.hasProcessingResults {
@@ -167,8 +186,10 @@ struct MenuBarView: View {
                     }
                 }
 
-                MenuPanelSection {
-                    ProcessingQueueView(expanded: $showQueueManagement)
+                if showsQueueSection {
+                    MenuPanelSection {
+                        ProcessingQueueView(expanded: $showQueueManagement)
+                    }
                 }
 
                 MenuPanelSection(showsDivider: false) {
@@ -181,23 +202,32 @@ struct MenuBarView: View {
         }
     }
 
+    /// One Import menu for both sources; the caption points at the drop target,
+    /// since the panel itself closes as soon as a drag starts in Finder.
     private var importRow: some View {
-        HStack(spacing: 8) {
-            Button {
-                recordingManager.pickFileForTranscription()
+        HStack(spacing: 10) {
+            Menu {
+                Button("Audio file…", systemImage: "doc.badge.plus") {
+                    recordingManager.pickFileForTranscription()
+                }
+                Button("YouTube or video link…", systemImage: "play.rectangle") {
+                    showYouTubeInput = true
+                }
             } label: {
-                Label("Transcribe file…", systemImage: "doc.badge.plus")
+                Label("Import…", systemImage: "square.and.arrow.down")
             }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fontSize: 12))
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fontSize: 12, fillsWidth: false))
+            .fixedSize()
             .disabled(!appState.isIdle)
+            .help("Transcribe an audio file or a YouTube or video link")
 
-            Button {
-                showYouTubeInput.toggle()
-            } label: {
-                Label("YouTube URL…", systemImage: "play.rectangle")
-            }
-            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, fontSize: 12))
-            .disabled(!appState.isIdle)
+            Text("or drop audio on the menu bar icon")
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
         }
     }
 

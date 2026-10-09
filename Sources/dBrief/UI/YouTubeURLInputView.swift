@@ -31,7 +31,7 @@ struct YouTubeURLInputView: View {
                 .padding(.bottom, 4)
             // Header
             HStack {
-                Text("YouTube / Video URL")
+                Text("YouTube or video link")
                     .uiFont(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.heading.color)
                 Spacer()

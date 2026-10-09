@@ -2187,6 +2187,17 @@ final class RecordingManager {
             : "Processing stopped, but its retry queue couldn't be saved. Processing is paused for this session; check storage and retry."
     }
 
+    /// Audio types the import paths accept: the open panel, a file dropped on the
+    /// menu bar icon, and Open With from Finder.
+    nonisolated static var importableAudioTypes: [UTType] {
+        [.audio, .mpeg4Audio, .wav, .mp3, .aiff] + ["ogg", "opus", "flac"].compactMap { UTType(filenameExtension: $0) }
+    }
+
+    nonisolated static func isImportableAudio(_ url: URL) -> Bool {
+        guard url.isFileURL, let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return importableAudioTypes.contains { type.conforms(to: $0) }
+    }
+
     func pickFileForTranscription() {
         guard recordingReviewSlot.canImport else { return }
         // Become a regular app so the open panel can take focus properly
@@ -2199,17 +2210,7 @@ final class RecordingManager {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        var contentTypes: [UTType] = [.audio, .mpeg4Audio, .wav, .mp3, .aiff]
-        if let oggType = UTType(filenameExtension: "ogg") {
-            contentTypes.append(oggType)
-        }
-        if let opusType = UTType(filenameExtension: "opus") {
-            contentTypes.append(opusType)
-        }
-        if let flacType = UTType(filenameExtension: "flac") {
-            contentTypes.append(flacType)
-        }
-        panel.allowedContentTypes = contentTypes
+        panel.allowedContentTypes = Self.importableAudioTypes
         panel.message = "Choose an audio file to transcribe"
 
         let response = MenuBarPanel.runModal(panel)
@@ -2217,8 +2218,16 @@ final class RecordingManager {
             NSApp.setActivationPolicy(.accessory)
         }
 
-        guard response == .OK, let url = panel.url,
-              let snapshot = recordingReviewSlot.snapshotForImport() else { return }
+        guard response == .OK, let url = panel.url else { return }
+        importFile(url)
+    }
+
+    /// Starts an import of an audio file the user picked, dropped or opened, and
+    /// shows the menu panel's review form once it is ready. False when a capture,
+    /// review or other work is busy, or the file is not audio.
+    @discardableResult
+    func importFile(_ url: URL) -> Bool {
+        guard Self.isImportableAudio(url), let snapshot = recordingReviewSlot.snapshotForImport() else { return false }
 
         // Copy off MainActor; reject the handoff if a newer import, capture or
         // review took over while the filesystem was busy.
@@ -2235,6 +2244,9 @@ final class RecordingManager {
                     await importCoordinator.discard(prepared)
                     return
                 }
+                // The open panel, a drop and Open With all leave the menu panel
+                // closed; bring it back so the review form is in view.
+                MenuBarPanel.show()
                 // Preserve immediate review, with duration filled in asynchronously.
                 let duration = await importCoordinator.durationSeconds(for: url)
                 if duration > 0 { recording.duration = duration }
@@ -2246,6 +2258,7 @@ final class RecordingManager {
                 }
             }
         }
+        return true
     }
 
     private func recordingForImport(_ prepared: ImportCoordinator.PreparedImport) -> Recording {

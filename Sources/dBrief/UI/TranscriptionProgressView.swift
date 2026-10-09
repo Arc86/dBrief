@@ -141,7 +141,7 @@ struct TranscriptionProgressView: View {
             if isComplete, let recording = appState.processingRecording, recording.transcription != nil {
                 MenuPanelHairline()
                 HStack(spacing: 8) {
-                    Button(copied ? "Copied!" : "Copy Notes") {
+                    Button(copied ? "Copied" : "Copy notes") {
                         if
                             let transcript = recording.transcription?.text,
                             let summary = recording.summary

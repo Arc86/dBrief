@@ -212,6 +212,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var promptEditorWindows: PromptEditorWindowController?
     private var isTerminating = false
 
+    /// Open With from Finder, or an audio file dropped on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: RecordingManager.isImportableAudio) else { return }
+        Task { @MainActor in
+            if !AppContext.shared.recordingManager.importFile(url) { NSSound.beep() }
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isTerminating else { return .terminateCancel }
         isTerminating = true
@@ -262,51 +270,57 @@ struct DBriefApp: App {
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .modifier(AppAppearanceScope(settings: context.appSettings))
         } label: {
-            if context.appState.isRecording || context.appState.isPaused {
-                HStack(spacing: 4) {
-                    Image(systemName: "record.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.red, .red)
-                        .environment(\.symbolVariants, .none)
-                    if context.appSettings.showMenuBarRecordingDuration {
-                        Text(formatMenuBarDuration(context.appState.recordingDuration))
-                            .monospacedDigit()
-                            .uiFont(.caption)
+            Group {
+                if context.appState.isRecording || context.appState.isPaused {
+                    HStack(spacing: 4) {
+                        // Paused gets its own glyph and colour, so a glance at the menu bar
+                        // tells a held recording from a running one.
+                        Image(systemName: context.appState.isPaused ? "pause.circle.fill" : "record.circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(context.appState.isPaused ? .orange : .red, context.appState.isPaused ? .orange : .red)
+                            .environment(\.symbolVariants, .none)
+                        if context.appSettings.showMenuBarRecordingDuration {
+                            Text(formatMenuBarDuration(context.appState.recordingDuration))
+                                .monospacedDigit()
+                                .uiFont(.caption)
+                        }
                     }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(context.appState.isPaused ? "dBrief, paused" : "dBrief, recording")
-                .accessibilityValue(context.appSettings.showMenuBarRecordingDuration
-                    ? formatMenuBarDuration(context.appState.recordingDuration)
-                    : "")
-            } else if context.appState.isProcessing {
-                if reduceMotion {
-                    Image(systemName: "circle.dotted")
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("dBrief, processing")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(context.appState.isPaused ? "dBrief, paused" : "dBrief, recording")
+                    .accessibilityValue(context.appSettings.showMenuBarRecordingDuration
+                        ? formatMenuBarDuration(context.appState.recordingDuration)
+                        : "")
+                } else if context.appState.isProcessing {
+                    if reduceMotion {
+                        Image(systemName: "circle.dotted")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.blue)
+                            .accessibilityLabel("dBrief, processing")
+                    } else {
+                        Image(systemName: "circle.dotted")
+                            .symbolRenderingMode(.hierarchical)
+                            .symbolEffect(.pulse, options: .repeating)
+                            .foregroundStyle(.blue)
+                            .accessibilityLabel("dBrief, processing")
+                    }
+                } else if context.appState.queuedCount > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "waveform")
+                            .symbolRenderingMode(.hierarchical)
+                        Text("\(context.appState.queuedCount)")
+                            .uiFont(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("dBrief, \(context.appState.queuedCount) queued")
                 } else {
-                    Image(systemName: "circle.dotted")
-                        .symbolRenderingMode(.hierarchical)
-                        .symbolEffect(.pulse, options: .repeating)
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("dBrief, processing")
-                }
-            } else if context.appState.queuedCount > 0 {
-                HStack(spacing: 2) {
                     Image(systemName: "waveform")
                         .symbolRenderingMode(.hierarchical)
-                    Text("\(context.appState.queuedCount)")
-                        .uiFont(.caption2)
-                        .foregroundStyle(.orange)
+                        .accessibilityLabel("dBrief, ready")
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("dBrief, \(context.appState.queuedCount) queued")
-            } else {
-                Image(systemName: "waveform")
-                    .symbolRenderingMode(.hierarchical)
-                    .accessibilityLabel("dBrief, ready")
             }
+            // Right-click menu and audio-file drop on the icon.
+            .modifier(StatusItemControlsInstaller())
         }
         .menuBarExtraStyle(.window)
 
@@ -326,6 +340,8 @@ struct DBriefApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 950, height: 650)
+        // Open With / Dock drops go to AppDelegate's import; no window should open for them.
+        .handlesExternalEvents(matching: [])
 
         Window("Transcripts", id: "transcript") {
             TranscriptBrowserView()
@@ -340,6 +356,7 @@ struct DBriefApp: App {
         }
         .defaultSize(width: 1100, height: 720)
         .windowStyle(.hiddenTitleBar)
+        .handlesExternalEvents(matching: [])
     }
 }
 

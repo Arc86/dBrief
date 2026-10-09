@@ -18,6 +18,15 @@ struct RecordingListPresentationTests {
         #expect(RecordingListPresentation.title(filenameStem: name) == name)
     }
 
+    @Test func queueSectionHidesWhenThereIsNothingToShowOrDo() {
+        #expect(!RecordingListPresentation.showsQueueSection(pending: 0, recovery: 0, reprocessing: 0, paused: false, hasError: false))
+        #expect(RecordingListPresentation.showsQueueSection(pending: 1, recovery: 0, reprocessing: 0, paused: false, hasError: false))
+        #expect(RecordingListPresentation.showsQueueSection(pending: 0, recovery: 1, reprocessing: 0, paused: false, hasError: false))
+        #expect(RecordingListPresentation.showsQueueSection(pending: 0, recovery: 0, reprocessing: 1, paused: false, hasError: false))
+        #expect(RecordingListPresentation.showsQueueSection(pending: 0, recovery: 0, reprocessing: 0, paused: true, hasError: false))
+        #expect(RecordingListPresentation.showsQueueSection(pending: 0, recovery: 0, reprocessing: 0, paused: false, hasError: true))
+    }
+
     @Test func emptyQueueDoesNotSuggestPendingWork() {
         #expect(RecordingListPresentation.queueSummary(pending: 0, recovery: 0, paused: false, processing: false, hasError: false) == "No pending work")
     }

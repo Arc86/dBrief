@@ -57,7 +57,7 @@ struct MenuPanelButtonStyle: ButtonStyle {
         switch kind {
         case .hero: palette.primary.color
         case .row: palette.canvas.color
-        case .danger, .dangerTile: status.dangerFill.color
+        case .danger: status.dangerFill.color
         case .dangerFilled: status.danger.color
         case .quiet: .clear
         default: palette.surface.color
@@ -67,7 +67,7 @@ struct MenuPanelButtonStyle: ButtonStyle {
     private var border: Color? {
         switch kind {
         case .hero, .quiet, .dangerFilled: nil
-        case .danger, .dangerTile: status.dangerBorder.color
+        case .danger: status.dangerBorder.color
         case .accentOutline: palette.primary.color
         default: palette.divider.color
         }
@@ -348,6 +348,27 @@ enum MenuBarPanel {
         let name = String(describing: type(of: window))
         if name.contains("MenuBarExtra") { return true }
         return window.level == .popUpMenu && !name.contains("StatusBar") && !(window is NSPanel)
+    }
+
+    /// The window that hosts the menu bar icon itself.
+    static func isStatusItemWindow(_ window: NSWindow) -> Bool {
+        String(describing: type(of: window)).contains("StatusBarWindow")
+    }
+
+    /// Opens the panel as if the icon were clicked; no-op when it is already open.
+    static func show() {
+        guard !NSApp.windows.contains(where: { isMenuBarExtraWindow($0) && $0.isVisible }) else { return }
+        statusButton()?.performClick(nil)
+    }
+
+    static func statusButton() -> NSButton? {
+        firstButton(in: NSApp.windows.first(where: isStatusItemWindow)?.contentView)
+    }
+
+    private static func firstButton(in view: NSView?) -> NSButton? {
+        guard let view else { return nil }
+        if let button = view as? NSButton { return button }
+        return view.subviews.lazy.compactMap { firstButton(in: $0) }.first
     }
 
     static func open(_ id: String, with openWindow: OpenWindowAction) {
