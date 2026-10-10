@@ -149,6 +149,7 @@ struct ModelPickerAllModels: View {
         .contentShape(Rectangle())
         .onTapGesture { selectedID = id; focusedID = id }
         .focusable()
+        .focusEffectDisabled()
         .focused($focusedID, equals: id)
         .onKeyPress(.downArrow) { move(from: id, by: 1); return .handled }
         .onKeyPress(.upArrow) { move(from: id, by: -1); return .handled }

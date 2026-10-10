@@ -164,7 +164,7 @@ struct SettingsTranscriptionTab: View {
             }
         }
         .sheet(isPresented: $showWhisperComparison) {
-            WhisperModelPicker(modelIDs: whisperModels.map(\.id),
+            TranscriptionModelPicker(modelIDs: whisperModels.map(\.id),
                 selectedID: LocalTranscriptionChoice.id(engine: appSettings.transcriptionEngine,
                     whisper: appSettings.whisperModelName, parakeet: appSettings.parakeetModelVariant),
                 language: appSettings.transcriptionLanguage, identifySpeakers: appSettings.diarizationEnabled) { id in

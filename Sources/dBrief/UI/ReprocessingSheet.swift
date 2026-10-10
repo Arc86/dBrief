@@ -139,7 +139,7 @@ private struct ReprocessingEditor: View {
         .panelWindowChrome()
         .interactiveDismissDisabled(isStarting)
         .sheet(isPresented: $showWhisperComparison) {
-            WhisperModelPicker(modelIDs: whisperModels, selectedID: LocalTranscriptionChoice.id(
+            TranscriptionModelPicker(modelIDs: whisperModels, selectedID: LocalTranscriptionChoice.id(
                 engine: options.engine, whisper: options.whisperModelName, parakeet: options.parakeetModelVariant),
                 language: options.spokenLanguage, identifySpeakers: options.diarizationEnabled) {
                     let engine = LocalTranscriptionChoice.engine($0)

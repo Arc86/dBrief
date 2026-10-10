@@ -36,7 +36,9 @@ struct ModelPickerQuickPick: View {
                 .accessibilityLabel("Suggested models")
             }
             if !suggestions.contains(where: { $0.modelID == currentID }) { currentRow }
-            Spacer(minLength: 0)
+        }
+        .onAppear {
+            if suggestions.contains(where: { $0.modelID == selectedID }) { focusedID = selectedID }
         }
     }
 
@@ -83,6 +85,8 @@ struct ModelPickerQuickPick: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture { selectedID = id; focusedID = id }
         .focusable()
+        // Arrow keys move selection with focus, so the selected border already marks focus.
+        .focusEffectDisabled()
         .focused($focusedID, equals: id)
         .onKeyPress(.leftArrow) { step(-1, from: id); return .handled }
         .onKeyPress(.rightArrow) { step(1, from: id); return .handled }
