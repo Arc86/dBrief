@@ -1,45 +1,48 @@
-# Benchmark & Performance
+# Performance
 
-A Power User panel that tracks how fast each transcription and AI model runs, plus a
+A settings page that tracks how fast each transcription and AI model runs, plus a
 lifetime total of everything dBrief has transcribed for you.
 
 ## Where to find it
 
-Enable **Power User Mode** in **Settings → General**, then open the **Benchmark**
-tab in Settings. Metrics are recorded automatically every time a recording is
-transcribed or analyzed — there's nothing to turn on.
+Open **Settings → Performance** (at the bottom of the Settings sidebar). Metrics are
+recorded automatically every time a recording is transcribed or analyzed — there's
+nothing to turn on.
 
-## Transcription cards
+## Fastest model
 
-Each transcription model gets a card. The **big number** is how much faster than
-real-time the model itself runs — e.g. `21.6x` means a 60-minute recording was
-transcribed in under three minutes of pure model time.
+The **Fastest model** card shows the transcription model with the best speed. The
+**big number** is how much faster than real-time the model itself runs — e.g. `21.6×`
+means a 60-minute recording was transcribed in under three minutes of pure model time.
 
-Underneath, a smaller line shows the **end-to-end** speed and the **load/overhead**
-that sits between the two:
+Below it, the card shows:
 
-- **Model** (the headline) — pure inference time, just the model crunching audio.
-- **End-to-end** — the whole transcription step, including loading the model into
-  memory, moving audio to the on-device helper, and (if enabled) speaker
+- **Avg. audio** and **Avg. processing** — the average audio length and processing
+  time across all sessions for that model.
+- **End-to-end** — the speed of the whole transcription step, including loading the
+  model into memory, moving audio to the on-device helper, and (if enabled) speaker
   diarization.
-- **load/overhead** — the difference between them. This is what
-  [model prewarming](../transcription/local-whisper.md#instant-starts-model-prewarming)
+- **Load / overhead** — the extra time between pure model time and end-to-end. This
+  is what [model prewarming](../transcription/local-whisper.md#instant-starts-model-prewarming)
   hides behind your recording.
 
-The card also shows the average audio length and average processing time across all
-sessions for that model.
+> Models without a separate inference time (Apple Speech, Remote) — or recordings made
+> before this was measured — show only the end-to-end number.
 
-> Cards for recordings made before this feature — or with engines that don't report
-> a separate inference time (Apple Speech, Remote) — show only the end-to-end number.
+## Transcription models
 
-## AI analysis cards
+The **Transcription models** card compares every model you've used, with its
+**Relative speed** and number of **Sessions**. The quickest is marked **Fastest**.
+Click a column header to sort by it.
 
-Each AI model gets a card showing the average time it takes to produce a summary,
-action items, tags, and sentiment for a recording.
+## AI analysis models
 
-## Recent Transcriptions
+The **AI analysis models** card shows the average time each AI model takes to produce
+a summary, action items, tags, and sentiment for a recording (**Avg. analysis**).
 
-Below the model cards, **Recent Transcriptions** lists your individual recent
+## Recent recordings
+
+Below the model cards, **Recent recordings** lists your individual recent
 recordings (newest first) so you can confirm whether a particular one was actually
 slow — not just how the model averages out. Re-transcribing a saved recording also
 adds a row here.
@@ -67,8 +70,8 @@ it just feel that way?"
 
 ## Time range
 
-Use the menu in the top-right to filter the cards to the **last 7 days**, **30
-days**, **last year**, or **all time**. Speeds are averaged over the sessions in the
+Use the range menu in the header to filter the page to the **Last 7 Days**, **Last 30
+Days**, **Last Year**, or **All Time**. Speeds are averaged over the sessions in the
 selected range.
 
 ## Total transcribed by dBrief
@@ -79,9 +82,9 @@ is a lifetime odometer: it only ever counts up.
 
 ## Clearing stats
 
-The **trash** button in the header clears the per-model benchmark history after a
-confirmation. The lifetime *"transcribed by dBrief"* total is **kept** — only the
-per-model cards are reset.
+The **trash** button in the header (**Clear benchmark stats**) clears the per-model
+benchmark history after a confirmation. The lifetime *"transcribed by dBrief"* total
+is **kept** — only the per-model stats are reset.
 
 The benchmark log lives at
 `~/Library/Application Support/com.dbrief.app/model-performance.json`.

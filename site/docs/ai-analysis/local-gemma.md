@@ -20,9 +20,9 @@ You need a working internet connection for the initial download. After that, ana
 
 ## Setup
 
-1. Go to **Settings → AI Analysis**
-2. Select **Gemma 4 E4B Local** as your AI engine
-3. dBrief downloads the model on first use. With **Power User Mode** enabled, you can also use the **Download model** button to fetch it ahead of time (with progress and a cancel option)
+1. Go to **Settings → AI analysis**
+2. Select **Gemma 4 E4B Local** as your **Engine**
+3. dBrief downloads the model on first use. You can also use the **Download model** button on the model card to fetch it ahead of time (with progress and a cancel option)
 
 ## Streaming output
 
@@ -30,7 +30,7 @@ Results appear progressively as the model generates them — you'll see the summ
 
 ## Deleting the model
 
-To free up disk space, enable **Power User Mode** and use **Purge local Gemma model** in **Settings → AI Analysis**. You can re-download it at any time.
+To free up disk space, go to **Settings → AI analysis**, click the **…** button on the Gemma model card and choose **Remove downloaded model**. You can re-download it at any time.
 
 ## Privacy
 

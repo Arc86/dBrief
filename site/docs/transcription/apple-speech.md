@@ -11,11 +11,11 @@ dBrief automatically picks the best engine for your Mac:
 - **macOS 26 or newer** — Apple's modern `SpeechAnalyzer`, with noticeably better long-form accuracy and word-level timing (so the transcript viewer can highlight along with playback). The first time you transcribe in a given language, macOS downloads a small language model — you'll see a brief **"Preparing language…"** step.
 - **macOS 14–25** — the classic `SFSpeechRecognizer` recognizer.
 
-This is automatic; there's a single **Apple Speech** option in Settings.
+This is automatic; there's a single **Apple Speech** option in the model picker.
 
 ## Setup
 
-Select **Apple Speech** in **Settings → Transcription**. On macOS 26+, allow the first-use language download to finish. Grant **Speech Recognition** permission when prompted (or in **Settings → Permissions**).
+In **Settings → Transcription**, set **Where transcription runs** to **On this Mac**, click **Change model…** and choose **Apple Speech**. On macOS 26+, allow the first-use language download to finish. Grant **Speech Recognition** permission when prompted (or in **Settings → Permissions**).
 
 ## When to use it
 

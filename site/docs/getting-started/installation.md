@@ -37,8 +37,8 @@ Locally built apps aren't quarantined, so there's no Gatekeeper step.
 
 dBrief updates itself in-app via [Sparkle](https://sparkle-project.org), so you don't have to watch the releases page.
 
-- **Automatic checks** — by default, dBrief checks for updates every 12 hours while it's running, so fixes reach you within about half a day. It stays quiet unless a newer version exists. You can turn this off in **Settings → General → Software update**.
-- **Check manually** — open **Settings → General → Software update** and click **Check Now**. The last-checked time is shown there.
+- **Automatic checks** — by default, dBrief checks for updates every 12 hours while it's running, so fixes reach you within about half a day. It stays quiet unless a newer version exists. You can turn this off with **Check for updates automatically** in **Settings → General → Updates**.
+- **Check manually** — open **Settings → General → Updates** and click **Check now**. The last-checked time is shown there.
 - **One-click install** — when a newer version is available, dBrief offers to download and install it for you, verifies the signed download, and relaunches into the new version — no Gatekeeper prompt, no manual re-download.
 
 If you installed via **Homebrew**, update with `brew upgrade dbrief` instead (it rebuilds from source). Your recordings and settings are stored separately and are kept across updates either way.
@@ -51,17 +51,17 @@ dBrief will ask for permissions as you use it. You can also review and grant the
 |---|---|
 | **Microphone** | Required for all recording |
 | **Screen Recording** | Required for mixed audio (system sound + mic) |
-| **Speech Recognition** | Required if you use the Apple Speech transcription engine |
+| **Speech Recognition** | Required if you use the Apple Speech transcription engine or the live transcript preview |
 | **Calendar** | Optional — lets dBrief pre-fill the meeting title and participants from your calendar |
 | **Reminders** | Required if you use the Apple Reminders integration |
 
-**Settings → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, with buttons to request or open the relevant System Settings pane.
+**Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, and Calendar, with buttons to request access or open the relevant System Settings pane. Reminders access is requested the first time you use the Apple Reminders integration.
 
 If you accidentally denied a permission, open **System Settings → Privacy & Security**, find the relevant section, and enable dBrief there.
 
 ## Start at login
 
-To have dBrief launch automatically when you log in, turn on **Start at login** in **Settings → General**. It runs quietly in the menu bar (no Dock icon), ready to record.
+To have dBrief launch automatically when you log in, turn on **Start at login** in **Settings → General → Startup**. It runs quietly in the menu bar (no Dock icon), ready to record.
 
 ## Uninstalling
 

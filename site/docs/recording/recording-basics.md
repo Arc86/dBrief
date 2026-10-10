@@ -4,9 +4,9 @@ How to start, pause, resume, and stop a recording.
 
 ## Starting a recording
 
-Click the dBrief icon in the menu bar, then click **Record**.
+Click the dBrief icon in the menu bar, then click **Record meeting**.
 
-Or press **⌃⌥⌘R** from anywhere on your Mac — you don't need to open dBrief first. (You can change this shortcut in **Settings → General → Shortcuts**.)
+Or press **⌃⌥⌘R** from anywhere on your Mac — you don't need to open dBrief first. (You can change this shortcut in **Settings → Recording → Shortcut**.)
 
 ## Pausing and resuming
 
@@ -16,14 +16,14 @@ Click **Pause** to pause the recording. The timer stops and audio capture halts.
 
 ## Stopping a recording
 
-Click **Stop** (or press **⌃⌥⌘R**). A sheet appears where you can:
+Click **Stop** (or press **⌃⌥⌘R**). The panel shows the recording so you can:
 
 - Edit the recording title (pre-filled from your calendar if a matching event is found)
-- Choose what to process (transcribe, summarise, generate action items, tags)
+- Pick the matching calendar event under **Meeting details**, when dBrief finds nearby events
 - Enter participant names (used to label speakers when diarization is on)
-- Select a meeting profile (with Power User Mode)
+- Open **Processing settings** to choose a profile and what to process (transcribe, summary, action items, tags and sentiment)
 
-Click **Done** to start processing, or **Discard** to delete the recording.
+Click **Process recording** to start processing. **Queue** saves the recording and processes it later, and **Keep audio only** keeps the audio without processing it. The delete (trash) button removes the recording after you confirm.
 
 ## Naming your recording
 
@@ -47,10 +47,10 @@ If you type your own title, dBrief keeps it — the AI won't replace it with a g
 
 ## Recording back-to-back meetings
 
-You don't have to wait for a recording to finish processing before starting the next one. The **Record** button and the **⌃⌥⌘R** shortcut stay available while dBrief is still transcribing and analysing a previous recording, so you can capture back-to-back meetings without missing the start of one.
+You don't have to wait for a recording to finish processing before starting the next one. The **Record meeting** button and the **⌃⌥⌘R** shortcut stay available while dBrief is still transcribing and analysing a previous recording, so you can capture back-to-back meetings without missing the start of one.
 
-Only one recording is processed at a time. If a new recording finishes while an earlier one is still being processed, it's queued automatically and drains one at a time once the current job completes, unless you have paused the queue. Manually deferred recordings wait for **Process Queue**. See [Queue & Recovery](../history/queue-recovery.md) to reorder, pause, resume, or remove jobs. Both the recording in progress and the one being processed appear in the transcript browser.
+Only one recording is processed at a time. If a new recording finishes while an earlier one is still being processed, it's queued automatically and drains one at a time once the current job completes, unless you have paused the queue. Manually deferred recordings wait for **Process queue**. See [Queue & Recovery](../history/queue-recovery.md) to reorder, pause, resume, or remove jobs. Both the recording in progress and the one being processed appear in the **Recording library**.
 
 ## Settings
 
-Audio settings (input device, echo cancellation) are in **Settings → Recording**. Output folders, the record shortcut, call detection, and calendar are in **Settings → General**. The transcription engine is in **Settings → Transcription** and the AI engine in **Settings → AI Analysis**.
+Audio settings (input device, echo reduction) and the record shortcut are in **Settings → Recording**. Call detection and calendar are in **Settings → Meetings**, and output folders in **Settings → Storage**. The tasks that are pre-selected after you stop are in **Settings → After recording**. The transcription engine is in **Settings → Transcription** and the AI engine in **Settings → AI analysis**.

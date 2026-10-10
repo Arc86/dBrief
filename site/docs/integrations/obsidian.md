@@ -4,9 +4,10 @@ Write a Markdown file directly to your Obsidian vault after each recording.
 
 ## Setup
 
-1. Go to **Settings → Integrations**
-2. Enable **Obsidian**
-3. Click **Choose Vault Folder** and select the folder inside your Obsidian vault where notes should be saved
+1. Go to **Settings → Integrations** and click **Obsidian**
+2. Turn on **Send to Obsidian**
+3. Next to **Vault**, click **Choose…** and select your Obsidian vault
+4. Optionally, next to **Default folder**, click **Choose…** to pick the folder inside the vault where notes should be saved
 
 No API key or Obsidian plugin is needed. dBrief writes files directly to disk.
 
@@ -40,4 +41,4 @@ The `audio:` field in the frontmatter links to the matching `.m4a` recording.
 
 ## What gets sent
 
-Each note includes the summary, action items, and tags. A separate **Include transcript in notes** toggle controls whether the full transcript is written into the file as well.
+Each note includes the summary, action items, and tags. The **Include the transcript** toggle controls whether the full transcript is written into the file as well.

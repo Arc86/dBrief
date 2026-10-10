@@ -714,7 +714,7 @@ private struct MessageActions: View {
                 }
 
                 iconButton(isReading ? "stop.fill" : "speaker.wave.2",
-                           help: isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken Summary",
+                           help: isReading ? "Stop reading (Esc)" : "Read using the voice selected in Settings → Spoken summary",
                            label: isReading ? "Stop reading answer" : "Read answer aloud",
                            action: .read) {
                     chatService.toggleReadAloud(message)

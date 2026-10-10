@@ -19,21 +19,24 @@ Support for [Notion, Evernote, Google Keep, and Microsoft OneNote](other-integra
 
 ## Field selection
 
-For each integration, you choose which fields to send:
+Apple Notes and Webhook have a **Send fields** card where you choose what to send:
 
-- Audio file
+- Audio (Webhook only)
 - Transcript
 - Summary
-- Action items
+- Action Items
 - Tags
 - Sentiment
-- Full Markdown export
+- Markdown (the full Markdown export)
+- Meeting Info (from your calendar)
 
-Open the integration in **Settings → Integrations** and toggle the fields you want.
+Obsidian always writes the summary, action items and tags, with an **Include the transcript** toggle. Apple Reminders sends only action items.
 
 ## Enabling integrations
 
-Go to **Settings → Integrations**, find the integration you want, and enable it. Each integration has its own setup steps (API key, folder path, etc.) — see the individual pages for details.
+Go to **Settings → Integrations**, click the integration you want, and turn it on. Each integration has its own setup steps (folder, URL, etc.) — see the individual pages for details.
+
+Each integration in the list shows a status: **On**, **Off**, or **Needs setup** (turned on but missing something it needs, such as an Obsidian vault or a webhook URL).
 
 ## When integrations run
 

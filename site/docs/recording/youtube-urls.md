@@ -4,9 +4,9 @@ You can transcribe audio from a YouTube link — or any URL supported by `yt-dlp
 
 ## How it works
 
-1. Open the dBrief menu bar window and find the **YouTube / Video URL** input.
-2. Paste a video URL and start it.
-3. dBrief downloads the audio, then opens the same post-recording sheet you'd see after a normal recording, where you choose what to transcribe and analyse.
+1. Open the dBrief menu bar panel and choose **Import… → YouTube or video link…**.
+2. Paste a video URL and click **Go**.
+3. dBrief downloads the audio, then shows the same options you'd see after a normal recording, where you choose what to transcribe and analyse.
 
 The downloaded audio runs through the same transcription and AI pipeline as a recording, and produces the same Markdown output and integrations.
 

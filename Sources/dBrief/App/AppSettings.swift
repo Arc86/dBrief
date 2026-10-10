@@ -768,7 +768,7 @@ final class AppSettings {
 
     /// Chosen spoken-summary language (both engines). Use `spokenSummaryLanguage`
     /// for the value in effect, which falls back to English when the selected engine
-    /// can't speak this one. Settings → Spoken Summary.
+    /// can't speak this one. Settings → Spoken summary.
     var ttsLanguage: TTSLanguage {
         didSet { UserDefaults.standard.set(ttsLanguage.rawValue, forKey: Keys.ttsLanguage) }
     }

@@ -18,15 +18,20 @@ You need a working internet connection for the initial download. After that, tra
 
 ## Choosing a model
 
-In **Settings → Transcription**, the selected model appears as a card showing its name, approximate memory use, and a **Recommended** badge on the suggested model. A one-line description under the card explains the trade-off, and the **ⓘ** button next to *Model* gives a plain-language overview. Smaller models (Tiny, Small) are faster and lighter; larger models are more accurate but need more memory. Open **Advanced** to switch where the model runs (compute units), enable **Show all models** to see every variant fetched from Hugging Face, refresh the list, or purge the cached model.
+In **Settings → Transcription**, the selected model appears as a card showing its name, languages, size, and speed and accuracy ratings, with a one-line description of the trade-off. Open **Memory and sources** under the card for memory guidance. Smaller models (Tiny, Small) are faster and lighter; larger models are more accurate but need more memory.
 
-Use the **Download model** button to fetch a model ahead of time. Downloads show progress and can be cancelled. A green checkmark indicates a model is already on disk.
+Click **Change model…** to pick another model. **Quick pick** suggests a **Fastest**, **Recommended** and **Most accurate** model for your language and Mac. **All models** lists every model; turn on **Show every Whisper variant** to include the full list fetched from Hugging Face. Click **Use** with the model's name to switch.
+
+The collapsed **Advanced** card at the end of the page has a **Whisper** card where you can change **Where it runs** (compute units) and refresh the **Model list**.
+
+Use the **Download model** button on the model card to fetch a model ahead of time. Downloads show progress and can be cancelled. A model that's already on disk shows **Downloaded**.
 
 ## Setup
 
 1. Go to **Settings → Transcription**
-2. Select **Local Whisper** as your transcription engine
-3. Pick a model and click **Download model** (or just start a recording — dBrief downloads the model on demand)
+2. Set **Where transcription runs** to **On this Mac**
+3. Click **Change model…** and choose a Whisper model
+4. Click **Download model** (or just start a recording — dBrief downloads the model on demand)
 
 ## Instant starts: model prewarming
 
@@ -35,25 +40,25 @@ out of your way, dBrief **prewarms the model while you record** — as soon as a
 recording starts, the model loads in the background, so transcription begins the
 moment you hit **Stop** instead of waiting on a load.
 
-For an even snappier first transcription, open **Settings →
-Transcription → Advanced** and enable **Keep model warm**. This loads the model
+For an even snappier first transcription, open the **Advanced** card at the end of
+**Settings → Transcription** and enable **Keep the model warm**. This loads the model
 shortly after the app launches and again after your Mac wakes from sleep, so it's
 ready before you even start recording. It's **off by default** because it holds the
 model in memory while idle, which competes with a local analysis model (Gemma) —
 leave it off unless you transcribe often and have memory to spare.
 
-See [Benchmark & Performance](../reference/benchmark.md) to measure the difference
+See [Performance](../reference/benchmark.md) to measure the difference
 between pure model speed and the full end-to-end time.
 
 ## Speaker diarization
 
-Turn on **Speaker diarization** in the same section to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
+Turn on **Identify speakers** in **Settings → Speakers** to label who said what. dBrief downloads a separate speaker model on first use (stored under `LocalAIPlugin/SpeakerKit/`) and tags each segment with a speaker. See the [transcript viewer](../history/transcript-viewer.md) for renaming speakers.
 
-You can also run speaker detection **after the fact** on an already-transcribed recording with the **Detect Speakers** button in the [transcript viewer](../history/transcript-viewer.md) — no need to re-transcribe.
+You can also run speaker detection **after the fact** on an already-transcribed recording from the **Re-process** menu in the [transcript viewer](../history/transcript-viewer.md): choose **Detect speakers again…** — no need to re-transcribe.
 
 ## Deleting the model
 
-To free up disk space, go to **Settings → Transcription** and use **Purge local WhisperKit model**. You can re-download it at any time.
+To free up disk space, go to **Settings → Transcription**, click the **…** button on the model card and choose **Remove downloaded model**. You can re-download it at any time.
 
 ## Accuracy
 

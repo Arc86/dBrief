@@ -5,7 +5,7 @@ dBrief lets you choose where transcription and AI analysis happen: **on your Mac
 This choice applies in two places, and you can mix them — for example, transcribe locally but analyse remotely:
 
 - **Transcription** — Apple Speech, Local Whisper, and Parakeet run locally; a Remote Endpoint runs on a server. See [Transcription Overview](../transcription/transcription-overview.md).
-- **AI Analysis** — Apple Intelligence and Gemma 4 E4B Local run locally; a Remote Endpoint runs on a server. See [AI Analysis Overview](ai-overview.md).
+- **AI analysis** — Apple Intelligence and Gemma 4 E4B Local run locally; a Remote Endpoint runs on a server. See [AI Analysis Overview](ai-overview.md).
 
 ## The short version
 
@@ -36,7 +36,7 @@ Local engines run entirely on your Mac. Apple Intelligence and Apple Speech use 
 - **Quality can be lower** — local models are smaller than the largest cloud models. Summaries may be less nuanced and transcripts less accurate, especially for technical content, accents, or noisy audio. A larger Local Whisper model improves accuracy at the cost of speed and memory.
 - **Depends on your hardware** — performance scales with your Mac. On Apple Silicon with plenty of RAM it's fast; on older or memory-constrained machines it can be slow, and some engines (Gemma, MLX) require Apple Silicon.
 - **Uses your Mac's resources** — transcription and analysis use the GPU and Neural Engine, which can heat up the machine and drain battery during long recordings.
-- **Disk space** — downloaded models take up storage (from a few hundred MB to several GB). You can purge models you no longer use.
+- **Disk space** — downloaded models take up storage (from a few hundred MB to several GB). You can remove models you no longer use (**…** → **Remove downloaded model** on the model card).
 
 ## Remote AI
 
@@ -65,4 +65,4 @@ If you want cloud-style speed and quality but local-style privacy, you can point
 - **Choose remote (cloud)** if you want the best possible quality and speed, you have a reliable connection, and you're comfortable with the provider's handling of your data.
 - **Choose remote (your own server)** if you want strong quality and speed *and* want your data to stay on hardware you control.
 
-You can change engines at any time in **Settings → AI Analysis**, and try a different one on a past recording from the [Recording History](../history/recording-history.md).
+You can change engines at any time in **Settings → AI analysis**, and try a different one on a past recording from the [Recording History](../history/recording-history.md).
