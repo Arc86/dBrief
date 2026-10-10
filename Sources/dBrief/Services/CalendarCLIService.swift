@@ -345,10 +345,6 @@ actor CalendarCLIService {
         persistenceOutcomes[Self.taskKey(scope: CalendarCLIScope(config: config), window: window)]
     }
 
-    func lastAttemptOutcome(window: CalendarCLIWindow, config: CalendarCLIConfig) -> ListAttemptOutcome? {
-        listAttemptOutcomes[Self.taskKey(scope: CalendarCLIScope(config: config), window: window)]
-    }
-
     /// The settings "Test connection" probe: one bounded read of a tiny
     /// window, reported as completeness. No persistence, no coalescing, no
     /// cooldown side effects, and never a full-resource fetch.

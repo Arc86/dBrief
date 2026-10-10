@@ -24,7 +24,7 @@ enum MLHostLocator {
 /// In-app proxy implementing the same surface as the former in-process service,
 /// forwarding every call to the crash-isolated `dBriefMLHost` helper over a
 /// supervised child process.
-final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
+final class LocalAIPluginService: Sendable {
     let connection: MLHostConnection
     private let broadcaster = StateBroadcaster()
     private let diagnostics: MLLifecycleDiagnostics?
@@ -65,8 +65,8 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return turns
     }
 
-    /// Diarize plus a per-speaker voiceprint, for confirm-first re-diarize from the
-    /// transcript viewer (the resolver needs embeddings to match against the library).
+    /// Diarize plus a per-speaker voiceprint, for "Detect speakers again" reprocessing
+    /// (the resolver needs embeddings to match against the library).
     func diarizeWithEmbeddings(fileURL: URL) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) {
         guard case let .diarizeWithEmbeddingsResult(turns, embeddings) = try await connection.call(.diarizeWithEmbeddings(path: fileURL.path)) else { return ([], [:]) }
         return (turns, embeddings)
@@ -112,14 +112,6 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
-    func copyToClipboard(transcript: String, insights: LocalInsightsResult) async -> String {
-        // Formatting is pure + needs the AppKit pasteboard — keep it in-process.
-        let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-        let context = PrivacyTrace.context
-        _ = await RecordingClipboard.copy(markdown, contextProvider: { context })
-        return markdown
-    }
-
     /// Synthesize speech to a WAV at `outputPath` via TTSKit in the helper.
     /// Used by spoken summaries and voice previews. Returns the written file's
     /// path plus duration/sample-rate metadata.
@@ -135,7 +127,6 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
-    func prepareModelsIfNeeded() async { _ = try? await connection.call(.prepareModels) }
     func downloadWhisperModel(config: WhisperRuntimeConfig) async throws { _ = try await connection.call(.downloadWhisper(config: config)) }
 
     /// Warm the Whisper model in the helper ahead of transcription. Best-effort:
@@ -154,7 +145,6 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     }
     func purgeModels() async throws { _ = try await connection.call(.purgeModels) }
     func purgeWhisperModel() async throws { _ = try await connection.call(.purgeWhisper) }
-    func purgeSpeakerKitModel() async throws { _ = try await connection.call(.purgeSpeakerKit) }
     func purgeQwenModel() async throws { _ = try await connection.call(.purgeQwen) }
     func purgeModelsOnMemoryPressure() async { _ = try? await connection.call(.memoryPressurePurge) }
     /// Drains and unloads every engine. The helper refuses all requests after this,

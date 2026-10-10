@@ -366,13 +366,6 @@ final class WhisperKitTranscriptionService: @unchecked Sendable {
         }
     }
 
-    func purgeSpeakerKitModels() async throws {
-        let dir = try speakerKitDownloadBaseURL()
-        if fileManager.fileExists(atPath: dir.path) {
-            try fileManager.removeItem(at: dir)
-        }
-    }
-
     // MARK: - WhisperKit Loading
 
     private func loadWhisperKit(config: WhisperRuntimeConfig) async throws -> WhisperKit {

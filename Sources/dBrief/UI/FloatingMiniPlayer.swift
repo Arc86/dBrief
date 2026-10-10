@@ -203,16 +203,7 @@ private struct MiniPlayerView: View {
         }
     }
 
-    private var formattedDuration: String {
-        let total = Int(appState.recordingDuration)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    private var formattedDuration: String { appState.recordingDuration.formattedDuration }
 }
 
 /// Start dragging explicitly: SwiftUI's hit testing can prevent the panel's

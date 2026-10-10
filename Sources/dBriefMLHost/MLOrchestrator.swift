@@ -154,7 +154,7 @@ actor MLOrchestrator: MLBackend {
     }
 
     /// Standalone diarization plus a FluidAudio embedding per detected speaker —
-    /// the confirm-first re-diarize path needs voiceprints to resolve against the
+    /// speaker re-detection during reprocessing needs voiceprints to resolve against the
     /// library, which the plain `diarize` (turns only) doesn't produce. The turns
     /// are fed to the embedding extractor as one pseudo-segment each, so it
     /// clusters by `speakerId` exactly as the transcribe path clusters by segment.
@@ -401,13 +401,6 @@ actor MLOrchestrator: MLBackend {
         try await withModelAccess { [self] in
             defer { emit(.plugin, .idle) }
             try await whisperService.purgeModels()
-        }
-    }
-
-    func purgeSpeakerKit() async throws {
-        try await withModelAccess { [self] in
-            defer { emit(.plugin, .idle) }
-            try await whisperService.purgeSpeakerKitModels()
         }
     }
 

@@ -34,7 +34,6 @@ public enum MLRequest: Sendable, Codable {
     case fetchWhisperModels(repo: String)
     case purgeModels
     case purgeWhisper
-    case purgeSpeakerKit
     case purgeQwen
     case purgeParakeet
     case memoryPressurePurge

@@ -33,10 +33,6 @@ final class TranscriptChatStore {
         accessOrder.removeAll { $0 == url }
     }
 
-    func hasMessages(for url: URL) -> Bool {
-        !(sessions[url]?.messages.isEmpty ?? true)
-    }
-
     /// Flush every session's pending (debounced) save to disk. Called on app
     /// termination so an exchange sent within the debounce window isn't lost.
     func flushAll() async {

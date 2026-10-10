@@ -1079,7 +1079,7 @@ final class RecordingManager {
             }, enroll: { @MainActor entry in
                 try self.requireProcessingOwnership(job)
                 let id = await libraryStore.upsert(name: entry.name,
-                    voiceprint: Voiceprint(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+                    voiceprint: Voiceprint(embedding: entry.embedding, model: SpeakerEmbeddingModel.tag, capturedAt: Date()))
                 try self.requireProcessingOwnership(job)
                 await self.suggestCompany(forPersonId: id, name: entry.name, recording: recording)
                 try self.requireProcessingOwnership(job)
@@ -1831,7 +1831,7 @@ final class RecordingManager {
                 }, loadEmbeddings: { embeddings }, enroll: { @MainActor entry in
                     try self.requireReviewOwnership(operation, recording: recording)
                     let id = await self.voiceLibraryStore.upsert(name: entry.name,
-                        voiceprint: .init(embedding: entry.embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+                        voiceprint: .init(embedding: entry.embedding, model: SpeakerEmbeddingModel.tag, capturedAt: Date()))
                     try self.requireReviewOwnership(operation, recording: recording)
                     await self.suggestCompany(forPersonId: id, name: entry.name, recording: recording)
                     try self.requireReviewOwnership(operation, recording: recording)
@@ -1865,9 +1865,7 @@ final class RecordingManager {
     }
 
     /// Shared tail of finish/cancel: the fresh-transcription hold resumes the AI →
-    /// markdown → export pipeline; a transcript-viewer re-diarize only commits the
-    /// names (already applied + persisted) and signals the open viewer to reload —
-    /// re-analysis stays an explicit choice via the viewer's reanalysis banner.
+    /// markdown → export pipeline; a reprocessing hold returns to its own stage.
     private func resumeAfterReview(session: SpeakerReviewSession, recording: Recording, operation: ReviewOperation) async {
         guard ownsReviewOperation(operation, recording: recording) else { return }
         do { try operation.validateSnapshot() }
@@ -1921,59 +1919,7 @@ final class RecordingManager {
                     )
                 }
             }
-        case .rediarize:
-            // A re-diarize from the transcript viewer isn't a pipeline job — no teardown.
-            appState.speakerReviewCommit = SpeakerReviewCommit(
-                recordingID: recording.id, token: UUID(), offerReanalysis: true)
         }
-    }
-
-    /// A false return means the review gate declined. Preparation failures throw
-    /// so the viewer cannot silently commit a failed or superseded review.
-    func presentReDiarizeReview(recording: Recording, turns: [DiarizedTurn],
-                                embeddings: [String: [Float]], baseTranscript: RichTranscript,
-                                validateSource: @escaping @MainActor @Sendable () throws -> Void) async throws -> Bool {
-        try Task.checkCancellation()
-        guard speakerReviewOperation == nil, appState.pendingSpeakerReview == nil,
-              appState.processingJob?.recording !== recording else {
-            throw NSError(domain: "SpeakerReview", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "Finish the active speaker review or processing for this recording before trying again."])
-        }
-        let operation = ReviewOperation(recording: recording, job: nil)
-        speakerReviewOperation = operation
-        defer {
-            operation.finish()
-            if speakerReviewOperation === operation { speakerReviewOperation = nil }
-        }
-        let input = ProcessingPipeline.RediarizationReviewRequest(turns: turns, embeddings: embeddings,
-            transcript: baseTranscript, mode: appSettings.speakerIdMode,
-            roster: recording.participants + (recording.calendarEvent?.attendeeNames ?? []))
-        let library = voiceLibraryStore
-        let store = transcriptStore
-        let prepared = try await processingPipeline.prepareRediarizationReview(input, loadLibrary: { await library.load() },
-            save: { @MainActor rich in
-                try self.requireReviewOwnership(operation, recording: recording)
-                try validateSource()
-                guard let url = operation.sidecarURL else { throw TranscriptStoreError.noSidecarURL }
-                try await store.save(rich, to: url, replacing: baseTranscript)
-                try self.requireReviewOwnership(operation, recording: recording)
-                try validateSource()
-            }, validateOwnership: { @MainActor in
-                try self.requireReviewOwnership(operation, recording: recording)
-                try validateSource()
-            })
-        try requireReviewOwnership(operation, recording: recording)
-        try validateSource()
-        guard let prepared else { return false }
-        recording.richTranscript = prepared.transcript
-        appState.pendingSpeakerReview = SpeakerReviewSession(recording: recording,
-            masterAudioURL: recording.finalizedAudioURL, items: prepared.items,
-            transcribe: false, summary: false, actionItems: false, tags: false,
-            localAIAvailable: false, perf: TranscriptionPerf(), origin: .rediarize)
-        SpeakerReviewWindowController.shared.show()
-        sendReviewReadyNotification()
-        Logger.transcription.info("Confirm-first re-diarize: holding \(prepared.items.count) speaker(s) for review")
-        return true
     }
 
     /// Read-only access to the voice library for review UI (candidate chips).
@@ -2007,11 +1953,6 @@ final class RecordingManager {
             settings.finishAutomaticRouting(for: owner)
         }
         return settings.activeProfile.id
-    }
-
-    func retranscribe(for recording: Recording) async {
-        do { try await startReprocessing(for: recording, options: ReprocessingOptions(settings: appSettings, operation: .transcribe)) }
-        catch { appState.lastError = error.localizedDescription }
     }
 
     func retryAIAnalysis(for recording: Recording) async {
@@ -3604,7 +3545,7 @@ final class RecordingManager {
         guard let embedding = embeddings?[speakerId], !embedding.isEmpty else { return nil }
         let id = await voiceLibraryStore.upsert(
             name: trimmed,
-            voiceprint: Voiceprint(embedding: embedding, model: "fluidaudio-wespeaker-256", capturedAt: Date()))
+            voiceprint: Voiceprint(embedding: embedding, model: SpeakerEmbeddingModel.tag, capturedAt: Date()))
         Logger.transcription.info("Enrolled voiceprint for a manually-named speaker")
         await suggestCompany(forPersonId: id, name: trimmed, recording: recording)
         return id.isEmpty ? nil : id

@@ -248,7 +248,6 @@ struct CalendarCLIConfig: Codable, Sendable, Equatable {
 
     /// The managed command never embeds user data; dynamic values (schema,
     /// model) flow through quoted environment variables, prompt data on stdin.
-    static let managedCommandPrefix = "claude" + managedFlags
     static let managedFlags = #" -p --no-session-persistence --output-format json --json-schema "$DBRIEF_CALENDAR_SCHEMA""#
 
     /// Managed headless invocation: one allowlisted read-only connector tool,

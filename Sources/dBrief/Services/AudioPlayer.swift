@@ -143,18 +143,7 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         timer = nil
     }
 
-    var formattedCurrentTime: String {
-        formatTime(currentTime)
-    }
+    var formattedCurrentTime: String { currentTime.formattedDuration }
 
-    var formattedDuration: String {
-        formatTime(duration)
-    }
-
-    private func formatTime(_ time: TimeInterval) -> String {
-        let total = Int(time)
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    var formattedDuration: String { duration.formattedDuration }
 }

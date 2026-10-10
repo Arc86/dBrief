@@ -51,7 +51,7 @@ final class PrivacyMLTrace: @unchecked Sendable {
                       entries.count < PrivacyReceiptStore.maximumStoredAttempts else { await gap(); return }
                 let destination: PrivacyDestination = operation == .speakerDiarization
                     ? .local(provider: .speakerKit)
-                    : .local(provider: .fluidAudio, model: "fluidaudio-wespeaker-256")
+                    : .local(provider: .fluidAudio, model: SpeakerEmbeddingModel.tag)
                 let token = await PrivacyTrace.begin(.init(stage: .speakerAnalysis, data: [.recordingAudio, .metadata],
                                                           destination: destination), in: context)
                 entries[id] = Entry(token: token)

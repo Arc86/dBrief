@@ -366,17 +366,6 @@ struct TranscriptDetailView: View, Equatable {
                 }
             }
         }
-        .onChange(of: context.appState.speakerReviewCommit) { _, commit in
-            // A confirm-first re-diarize review committed names for this recording —
-            // reload the persisted transcript and offer optional re-analysis.
-            guard let commit, commit.recordingID == recording.id else { return }
-            Task {
-                await loadTranscript()
-                recomputeSearch()
-                if !showSpeakerNames { showSpeakerNames = true }
-                if commit.offerReanalysis && hasSummary { offerReanalysis = true }
-            }
-        }
         .sheet(isPresented: $analysisEditorPresented) {
             if let baseline = analysisEditorBaseline {
                 RecordingAnalysisEditor(baseline: baseline, isReadOnly: isReprocessing, saveError: analysisSaveError,

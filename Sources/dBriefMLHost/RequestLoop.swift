@@ -25,7 +25,6 @@ protocol MLBackend: Sendable {
     func fetchWhisperModels(repo: String) async throws -> [String]
     func purgeModels() async throws
     func purgeWhisper() async throws
-    func purgeSpeakerKit() async throws
     func purgeQwen() async throws
     func purgeParakeet() async throws
     func memoryPressurePurge() async
@@ -115,7 +114,6 @@ final class RequestRouter: Sendable {
                         send(.stringsResult(try await backend.fetchWhisperModels(repo: repo))); send(.finished)
                     case .purgeModels: try await backend.purgeModels(); send(.voidResult); send(.finished)
                     case .purgeWhisper: try await backend.purgeWhisper(); send(.voidResult); send(.finished)
-                    case .purgeSpeakerKit: try await backend.purgeSpeakerKit(); send(.voidResult); send(.finished)
                     case .purgeQwen: try await backend.purgeQwen(); send(.voidResult); send(.finished)
                     case .purgeParakeet: try await backend.purgeParakeet(); send(.voidResult); send(.finished)
                     case .memoryPressurePurge: await backend.memoryPressurePurge(); send(.voidResult); send(.finished)

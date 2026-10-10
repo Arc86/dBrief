@@ -150,11 +150,6 @@ extension RecordingManager {
         }
     }
 
-    /// Drops the reference to the finished prefetch task.
-    func cleanupCalendarCLIPrefetch() {
-        calendarCLIPrefetchTask = nil
-    }
-
     // MARK: - Candidate lookup (cache-first)
 
     /// Events for the recording span from the day snapshots. Reads come from

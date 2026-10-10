@@ -150,14 +150,7 @@ struct TranscriptPlayerBar: View {
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
-        guard time.isFinite else { return "—" }
-        let total = Int(min(max(0, time), Double(Int.max) / 2))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "%d:%02d", minutes, seconds)
+        time.isFinite ? time.formattedDuration : "—"
     }
 }
 

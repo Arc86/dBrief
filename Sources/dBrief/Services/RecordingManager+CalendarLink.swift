@@ -1,11 +1,6 @@
 import Foundation
 
 extension RecordingManager {
-    /// Always query the recording's original day, including when opened from history.
-    func calendarEventsForLinking(_ recording: Recording) async throws -> [CalendarEvent] {
-        try await refreshCalendarMeetingsForLinking(recording, force: false).events
-    }
-
     func cachedCalendarMeetingsForLinking(_ recording: Recording) async throws -> CalendarLinkMeetingList {
         try await calendarMeetingsForLinking(recording, refresh: false, force: false)
     }
