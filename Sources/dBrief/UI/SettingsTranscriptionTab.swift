@@ -80,7 +80,6 @@ struct SettingsTranscriptionTab: View {
                 if let purgeMessage {
                     SettingsRow(verbatim: "Model download", caption: purgeMessage)
                 }
-                SettingsStackedRow { TranscriptionEngineGuideView() }
             }
 
             SettingsCard("Language", section: .transcriptionLanguage) {

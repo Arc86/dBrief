@@ -45,9 +45,9 @@ struct ModelPickerListTests {
         let ids = ModelPickerAllModels.whisperIDs(modelIDs: catalog, selectedID: WhisperModelInfo.recommendedModelID,
                                                   currentID: variant, showEveryVariant: false, query: "")
         #expect(ids.contains(variant))
-        #expect(ModelPickerAllModels.visibleCount(modelIDs: catalog, selectedID: WhisperModelInfo.recommendedModelID,
-                                                  currentID: variant)
-                == ModelPickerAllModels.visibleCount(modelIDs: catalog, selectedID: variant, currentID: variant))
+        #expect(ModelPickerAllModels.listIDs(modelIDs: catalog, selectedID: WhisperModelInfo.recommendedModelID,
+                                             currentID: variant, showEveryVariant: false, query: "", modernApple: false)
+                    .contains(variant))
     }
 
     @Test func tileAccessibilityValueIncludesTheTradeOff() throws {
@@ -55,5 +55,32 @@ struct ModelPickerListTests {
         #expect(ModelPickerQuickPick.accessibilityValue(profile: profile, downloaded: false)
                 == "Speed: Very fast, Accuracy: Very good, 25 European languages, 1.8 GB RAM, not downloaded")
         #expect(ModelPickerQuickPick.accessibilityValue(profile: nil, downloaded: true) == "downloaded")
+        #expect(ModelPickerQuickPick.accessibilityValue(profile: nil, downloaded: nil) == "checking download")
+    }
+
+    @Test func downloadTextNeverClaimsBeforeTheCheckAnswers() {
+        #expect(ModelPickerQuickPick.downloadText(downloaded: nil, downloadMB: 632) == "Checking…")
+        #expect(ModelPickerQuickPick.downloadText(downloaded: true, downloadMB: 632) == "✓ Downloaded")
+        #expect(ModelPickerQuickPick.downloadText(downloaded: false, downloadMB: 632) == "Not downloaded · 632 MB")
+        #expect(ModelPickerQuickPick.downloadText(downloaded: false, downloadMB: nil) == "Not downloaded")
+    }
+
+    @Test func memoryLimitMatchesTheSuggestionRule() {
+        // 8 GB Mac, Turbo + speakers = 2.2 GB (27.5%): within the 50% rule, so not a warning.
+        #expect(ModelSuggestions.fitsMemory(ramGiB: 1.7, speakersGiB: 0.5, installedGiB: 8))
+        #expect(!ModelSuggestions.fitsMemory(ramGiB: 5, speakersGiB: 0.5, installedGiB: 8))
+        #expect(ModelSuggestions.fitsMemory(ramGiB: 3.5, speakersGiB: 0.5, installedGiB: 8))   // exactly 50%
+    }
+
+    @Test func listCountFollowsSearchAndTheVariantToggle() {
+        let defaultIDs = ModelPickerAllModels.listIDs(modelIDs: catalog, selectedID: "", currentID: "",
+                                                      showEveryVariant: false, query: "", modernApple: false)
+        let every = ModelPickerAllModels.listIDs(modelIDs: catalog, selectedID: "", currentID: "",
+                                                 showEveryVariant: true, query: "", modernApple: false)
+        #expect(every.count > defaultIDs.count)
+        #expect(defaultIDs.contains(LocalTranscriptionChoice.apple))
+        let searched = ModelPickerAllModels.listIDs(modelIDs: catalog, selectedID: "", currentID: "",
+                                                    showEveryVariant: false, query: "ultra", modernApple: false)
+        #expect(searched == ["parakeet:ultra"])
     }
 }

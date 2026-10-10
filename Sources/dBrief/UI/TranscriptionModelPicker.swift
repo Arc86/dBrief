@@ -60,8 +60,6 @@ struct TranscriptionModelPicker: View {
                                      modernApple: modernApple, selectedID: $selectedID,
                                      showAllModels: { mode = .allModels })
             case .allModels:
-                Text("\(ModelPickerAllModels.visibleCount(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID)) models · nothing downloads until first use")
-                    .uiFont(.caption).foregroundStyle(palette.secondary.color)
                 ModelPickerAllModels(modelIDs: modelIDs, currentID: currentID, suggestions: picks, cached: cached,
                                      modernApple: modernApple, language: language,
                                      identifySpeakers: identifySpeakers, selectedID: $selectedID)
@@ -82,17 +80,19 @@ struct TranscriptionModelPicker: View {
         }
         .padding(20)
         // Each view sizes the sheet: Quick pick stays compact, All models gets list height.
-        .frame(minWidth: 620, idealWidth: 700, maxWidth: 840, maxHeight: 760)
+        .frame(minWidth: 680, idealWidth: 760, maxWidth: 860, maxHeight: 760)
         .background(palette.canvas.color)
         .task {
-            for id in Set(modelIDs).union([selectedID]).sorted() where LocalTranscriptionChoice.engine(id) == .localWhisper {
-                guard !Task.isCancelled else { return }
-                cached[id] = await manager.localAIPluginService.isWhisperModelCached(name: id)
-            }
-            for id in LocalTranscriptionChoice.extraIDs {
+            // Tiles and the saved model first, so the visible state settles before the long tail.
+            let first = suggestions.map(\.modelID) + [currentID]
+            let rest = Set(modelIDs).union(LocalTranscriptionChoice.extraIDs).subtracting(first).sorted()
+            for id in first + rest where cached[id] == nil {
                 if Task.isCancelled { return }
-                guard let variant = LocalTranscriptionChoice.parakeetVariant(id) else { continue }
-                cached[id] = await manager.parakeetService.isModelDownloaded(variant: variant)
+                if let variant = LocalTranscriptionChoice.parakeetVariant(id) {
+                    cached[id] = await manager.parakeetService.isModelDownloaded(variant: variant)
+                } else if LocalTranscriptionChoice.engine(id) == .localWhisper, !id.isEmpty {
+                    cached[id] = await manager.localAIPluginService.isWhisperModelCached(name: id)
+                }
             }
         }
         .task(id: language) {

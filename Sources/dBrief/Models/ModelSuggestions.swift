@@ -34,6 +34,12 @@ enum ModelSuggestions {
     static let speakersGiB = 0.5
     static let maxRAMShare = 0.5
 
+    /// The memory rule shared by the tiles and the inspector's memory bar: model plus speaker
+    /// identification may use at most half of installed RAM.
+    static func fitsMemory(ramGiB: Double, speakersGiB: Double, installedGiB: Double) -> Bool {
+        ramGiB + speakersGiB <= maxRAMShare * installedGiB
+    }
+
     /// English display name of the spoken language, or nil for auto-detect.
     static func languageName(_ language: String) -> String? {
         let code = LocalModelProfile.baseCode(language)
@@ -63,7 +69,7 @@ enum ModelSuggestions {
             guard id != LocalTranscriptionChoice.apple, let p = profile(id),
                   let speed = p.speed, let accuracy = p.accuracy, let ram = p.runtimeGiB,
                   p.minimumMacOSMajor <= macOSMajor, p.covers(language: language),
-                  ram + speakers <= maxRAMShare * installedRAMGiB else { return nil }
+                  fitsMemory(ramGiB: ram, speakersGiB: speakers, installedGiB: installedRAMGiB) else { return nil }
             return Candidate(id: id, profile: p, speed: speed, accuracy: accuracy, ram: ram)
         }
 

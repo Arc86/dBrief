@@ -17,7 +17,7 @@ struct ModelPickerAllModels: View {
     @Environment(\.viewerPalette) private var palette
     @Environment(\.menuPanelPalette) private var status
 
-    private struct ModelGroup: Identifiable {
+    struct ModelGroup: Identifiable, Equatable {
         let id: String
         let title: String
         let ids: [String]
@@ -41,18 +41,18 @@ struct ModelPickerAllModels: View {
         return ids.contains(recommended) ? [recommended] + ids.filter { $0 != recommended } : ids
     }
 
-    nonisolated static func visibleCount(modelIDs: [String], selectedID: String, currentID: String) -> Int {
-        1 + LocalTranscriptionChoice.extraIDs.filter { $0 != LocalTranscriptionChoice.apple }.count
-            + whisperIDs(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
-                         showEveryVariant: false, query: "").count
-    }
-
-    private var query: String { search.trimmingCharacters(in: .whitespaces) }
-
-    private var groups: [ModelGroup] {
+    /// The list's groups after search and the variant toggle; empty groups are dropped.
+    nonisolated static func groups(modelIDs: [String], selectedID: String, currentID: String,
+                                   showEveryVariant: Bool, query: String, modernApple: Bool) -> [ModelGroup] {
         let parakeet = LocalTranscriptionChoice.extraIDs.filter { LocalTranscriptionChoice.engine($0) == .parakeetLocal }
-        let whisper = Self.whisperIDs(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
-                                      showEveryVariant: showEveryVariant, query: query)
+        let whisper = whisperIDs(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
+                                 showEveryVariant: showEveryVariant, query: query)
+        func matches(_ id: String) -> Bool {
+            guard !query.isEmpty else { return true }
+            let language = LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.languageLabel ?? ""
+            return "\(id) \(LocalTranscriptionChoice.title(id)) \(LocalTranscriptionChoice.shortTitle(id)) \(language)"
+                .localizedCaseInsensitiveContains(query)
+        }
         return [ModelGroup(id: "builtin", title: "Built in", ids: [LocalTranscriptionChoice.apple]),
                 ModelGroup(id: "parakeet", title: "Parakeet", ids: parakeet),
                 ModelGroup(id: "whisper", title: "Whisper", ids: whisper)]
@@ -60,58 +60,71 @@ struct ModelPickerAllModels: View {
             .filter { !$0.ids.isEmpty }
     }
 
+    /// Every row the list shows, in order (drives the count and arrow-key navigation).
+    nonisolated static func listIDs(modelIDs: [String], selectedID: String, currentID: String,
+                                    showEveryVariant: Bool, query: String, modernApple: Bool) -> [String] {
+        groups(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
+               showEveryVariant: showEveryVariant, query: query, modernApple: modernApple).flatMap(\.ids)
+    }
+
+    private var query: String { search.trimmingCharacters(in: .whitespaces) }
+
     private var flatIDs: [String] { groups.flatMap(\.ids) }
 
-    private func matches(_ id: String) -> Bool {
-        guard !query.isEmpty else { return true }
-        let language = LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.languageLabel ?? ""
-        return "\(id) \(LocalTranscriptionChoice.title(id)) \(LocalTranscriptionChoice.shortTitle(id)) \(language)"
-            .localizedCaseInsensitiveContains(query)
+    private var groups: [ModelGroup] {
+        Self.groups(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
+                    showEveryVariant: showEveryVariant, query: query, modernApple: modernApple)
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Search models", text: $search)
-                    .settingsTextField()
-                    .accessibilityLabel("Search local transcription models")
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(groups) { group in
-                                Text(group.title.uppercased())
-                                    .uiFont(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(palette.secondary.color)
-                                    .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 2)
-                                    .accessibilityAddTraits(.isHeader)
-                                ForEach(group.ids, id: \.self) { row($0, group: group) }
+        let shown = groups
+        let flatIDs = shown.flatMap(\.ids)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(flatIDs.count) models · nothing downloads until first use")
+                .uiFont(.caption).foregroundStyle(palette.secondary.color)
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Search models", text: $search)
+                        .settingsTextField()
+                        .accessibilityLabel("Search local transcription models")
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 1) {
+                                ForEach(shown) { group in
+                                    Text(group.title.uppercased())
+                                        .uiFont(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(palette.secondary.color)
+                                        .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 2)
+                                        .accessibilityAddTraits(.isHeader)
+                                    ForEach(group.ids, id: \.self) { row($0, group: group) }
+                                }
                             }
                         }
+                        .overlayScrollers()
+                        .onChange(of: focusedID) { _, id in
+                            if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }
+                        }
                     }
-                    .overlayScrollers()
-                    .onChange(of: focusedID) { _, id in
-                        if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }
+                    .overlay {
+                        if flatIDs.isEmpty {
+                            Text("No matching models").foregroundStyle(palette.secondary.color)
+                        }
                     }
+                    Toggle("Show every Whisper variant", isOn: $showEveryVariant)
+                        .toggleStyle(.checkbox)
+                        .uiFont(.caption)
+                        .help("Include all available Whisper variants, not only the curated set")
                 }
-                .overlay {
-                    if flatIDs.isEmpty {
-                        Text("No matching models").foregroundStyle(palette.secondary.color)
-                    }
-                }
-                Toggle("Show every Whisper variant", isOn: $showEveryVariant)
-                    .toggleStyle(.checkbox)
-                    .uiFont(.caption)
-                    .help("Include all available Whisper variants, not only the curated set")
+                .frame(width: 250)
+                .padding(.trailing, 12)
+                palette.divider.color.frame(width: 1)
+                ModelInspector(modelID: selectedID,
+                               suggestion: suggestions.first { $0.modelID == selectedID },
+                               downloaded: cached[selectedID],
+                               modernApple: modernApple, language: language, identifySpeakers: identifySpeakers,
+                               inCatalog: modelIDs.contains(selectedID) || LocalTranscriptionChoice.extraIDs.contains(selectedID))
+                    .padding(.leading, 14)
             }
-            .frame(width: 250)
-            .padding(.trailing, 12)
-            palette.divider.color.frame(width: 1)
-            ModelInspector(modelID: selectedID,
-                           suggestion: suggestions.first { $0.modelID == selectedID },
-                           downloaded: cached[selectedID],
-                           modernApple: modernApple, language: language, identifySpeakers: identifySpeakers,
-                           inCatalog: modelIDs.contains(selectedID) || LocalTranscriptionChoice.extraIDs.contains(selectedID))
-                .padding(.leading, 14)
         }
     }
 
@@ -318,7 +331,8 @@ private struct MemoryShareBar: View {
         let total = max(installed, 1)
         let modelShare = min(model / total, 1)
         let speakerShare = min(speakers / total, 1 - modelShare)
-        let tint = (model + speakers) / total <= 0.25 ? status.success.color : status.warning.color
+        let tint = ModelSuggestions.fitsMemory(ramGiB: model, speakersGiB: speakers, installedGiB: installed)
+            ? status.success.color : status.warning.color
         GeometryReader { geo in
             HStack(spacing: 0) {
                 tint.frame(width: geo.size.width * modelShare)

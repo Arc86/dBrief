@@ -129,25 +129,3 @@ struct ModelDownloadButton: View {
         }
     }
 }
-
-/// Collapsed-by-default per-engine guidance for the transcription settings.
-struct TranscriptionEngineGuideView: View {
-    var body: some View {
-        DisclosureGroup("Need some help?") {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(TranscriptionEngineGuide.entries) { entry in
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(entry.title)
-                            .uiFont(.caption)
-                            .fontWeight(.medium)
-                        Text(entry.detail)
-                            .uiFont(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .padding(.top, 4)
-        }
-        .uiFont(.caption)
-    }
-}

@@ -26,17 +26,17 @@ struct ModelRatingMeter: View {
         HStack(spacing: 8) {
             Text(kind.label)
                 .foregroundStyle(palette.secondary.color)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 52, alignment: .leading)
             HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { index in
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(index <= (value ?? 0) ? fill : palette.divider.color)
-                        .frame(height: 5)
+                        .frame(minWidth: 10, minHeight: 5, maxHeight: 5)
                 }
             }
             Text(value.map(kind.word) ?? "Not rated")
                 .foregroundStyle(palette.text.color)
-                .frame(width: 64, alignment: .trailing)
+                .frame(width: 58, alignment: .trailing)
         }
         .uiFont(.system(size: 11))
         .accessibilityElement(children: .ignore)

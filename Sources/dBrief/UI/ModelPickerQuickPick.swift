@@ -15,6 +15,7 @@ struct ModelPickerQuickPick: View {
     @Environment(\.menuPanelPalette) private var status
 
     private var languageName: String { ModelSuggestions.languageName(language) ?? "Auto-detect" }
+    private var showsCurrentRow: Bool { !suggestions.contains(where: { $0.modelID == currentID }) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -35,10 +36,13 @@ struct ModelPickerQuickPick: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Suggested models")
             }
-            if !suggestions.contains(where: { $0.modelID == currentID }) { currentRow }
+            if showsCurrentRow { currentRow }
         }
         .onAppear {
-            if suggestions.contains(where: { $0.modelID == selectedID }) { focusedID = selectedID }
+            // Start keyboard focus on whatever is selected: a tile or the "Currently using" row.
+            if suggestions.contains(where: { $0.modelID == selectedID }) || (showsCurrentRow && selectedID == currentID) {
+                focusedID = selectedID
+            }
         }
     }
 
@@ -47,7 +51,7 @@ struct ModelPickerQuickPick: View {
         let selected = id == selectedID
         let profile = LocalTranscriptionChoice.profile(id, modernApple: modernApple)
         let ram = profile?.runtimeGiB.map { String(format: "%.1f GB RAM", $0) } ?? ""
-        let download = cached[id] == true ? "✓ Downloaded" : "Not downloaded"
+        let download = Self.downloadText(downloaded: cached[id], downloadMB: profile?.downloadMB)
         return VStack(alignment: .leading, spacing: 7) {
             Label(suggestion.intent.title.uppercased(), systemImage: suggestion.intent.symbol)
                 .uiFont(.system(size: 10, weight: .semibold))
@@ -90,24 +94,38 @@ struct ModelPickerQuickPick: View {
         .focused($focusedID, equals: id)
         .onKeyPress(.leftArrow) { step(-1, from: id); return .handled }
         .onKeyPress(.rightArrow) { step(1, from: id); return .handled }
+        .onKeyPress(.downArrow) {
+            guard showsCurrentRow else { return .ignored }
+            selectedID = currentID; focusedID = currentID; return .handled
+        }
         .onKeyPress(.space) { selectedID = id; return .handled }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(suggestion.intent.title): \(LocalTranscriptionChoice.shortTitle(id))")
-        .accessibilityValue(Self.accessibilityValue(profile: profile, downloaded: cached[id] == true))
+        .accessibilityValue(Self.accessibilityValue(profile: profile, downloaded: cached[id]))
         .accessibilityHint(suggestion.reason)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { selectedID = id }
     }
 
     /// What VoiceOver reads for a tile: the speed/accuracy trade-off first, then the facts.
-    nonisolated static func accessibilityValue(profile: LocalModelProfile?, downloaded: Bool) -> String {
+    nonisolated static func accessibilityValue(profile: LocalModelProfile?, downloaded: Bool?) -> String {
         var parts: [String] = []
         if let speed = profile?.speed { parts.append("Speed: \(ModelRatingKind.speed.word(speed))") }
         if let accuracy = profile?.accuracy { parts.append("Accuracy: \(ModelRatingKind.accuracy.word(accuracy))") }
         if let profile { parts.append(profile.languageLabel) }
         if let ram = profile?.runtimeGiB { parts.append(String(format: "%.1f GB RAM", ram)) }
-        parts.append(downloaded ? "downloaded" : "not downloaded")
+        parts.append(downloaded.map { $0 ? "downloaded" : "not downloaded" } ?? "checking download")
         return parts.joined(separator: ", ")
+    }
+
+    /// Download state for a tile. Says nothing definite until the check answers, and shows
+    /// the download size for a model that still has to download.
+    nonisolated static func downloadText(downloaded: Bool?, downloadMB: Int?) -> String {
+        switch downloaded {
+        case nil: return "Checking…"
+        case true?: return "✓ Downloaded"
+        case false?: return "Not downloaded" + (downloadMB.map { " · \($0) MB" } ?? "")
+        }
     }
 
     private var currentRow: some View {
@@ -135,8 +153,21 @@ struct ModelPickerQuickPick: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.primary.color, lineWidth: 2)
             }
         }
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .onTapGesture { selectedID = currentID; focusedID = currentID }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focusedID, equals: currentID)
+        .onKeyPress(.upArrow) {
+            // Back to the tiles, landing on Recommended (the middle tile) when there is one.
+            guard let target = suggestions.first(where: { $0.intent == .recommended }) ?? suggestions.first
+            else { return .ignored }
+            selectedID = target.modelID; focusedID = target.modelID; return .handled
+        }
+        .onKeyPress(.space) { selectedID = currentID; return .handled }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { selectedID = currentID }
     }
 
     private func step(_ offset: Int, from id: String) {
