@@ -121,7 +121,9 @@ enum ViewerThemeResolver {
         let primary = rounded(mixed)
         let selectedColour = mixed.mixed(with: canvas, fraction: 0.86)
         let selected = rounded(selectedColour)
-        let onPrimary = contrast(mixed, white) >= contrast(mixed, black) ? white : black
+        // White text on filled buttons, like macOS accent buttons, whenever it reaches WCAG's 3:1
+        // for bold UI text; only very pale accents fall back to black.
+        let onPrimary = contrast(mixed, white) >= 3 || contrast(mixed, white) >= contrast(mixed, black) ? white : black
 
         var unroundedAccentText = mixed
         let textTarget = mode.isDark ? white : black

@@ -58,12 +58,23 @@ import Testing
     for mode in ViewerAppearanceMode.allCases {
         for source in sources {
             let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: source, nonNeon: true)
-            #expect(ViewerThemeResolver.contrast(palette.primary, palette.onPrimary) >= 4.5)
+            // WCAG 3:1 for bold UI text on filled buttons, as macOS accent buttons do.
+            #expect(ViewerThemeResolver.contrast(palette.primary, palette.onPrimary) >= 3)
             #expect(ViewerThemeResolver.contrast(palette.accentText, palette.surface) >= 4.5)
             #expect(ViewerThemeResolver.contrast(palette.accentText, palette.selected) >= 4.5)
             #expect(palette.brandStops.allSatisfy { $0 == palette.primary })
         }
     }
+}
+
+@Test func filledButtonsUseWhiteTextLikeMacOSAccentButtons() {
+    // Dark mode lightens the default blue to #3880F7: white is 3.75:1, black 5.6:1.
+    for mode in ViewerAppearanceMode.allCases {
+        let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: "#1268F5", nonNeon: false)
+        #expect(palette.onPrimary.hex == "#FFFFFF", "\(mode)")
+    }
+    // A very pale accent still gets dark text.
+    #expect(ViewerThemeResolver.resolve(mode: .light, sourceHex: "#FFFFFF", nonNeon: false).onPrimary.hex == "#000000")
 }
 
 @Test func paletteUsesFixedBrandStopsUnlessNonNeonIsSelected() {
