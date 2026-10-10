@@ -259,33 +259,3 @@ struct RecordingControlsView: View {
 
     private var formattedDuration: String { appState.recordingDuration.formattedDuration }
 }
-
-
-struct LevelMeterBars: View {
-    let level: Float
-    private let barCount = 8
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(barColor(for: index))
-                    .frame(width: 3, height: barHeight(for: index))
-                    .animation(.linear(duration: 0.05), value: level)
-            }
-        }
-    }
-
-    private func barHeight(for index: Int) -> CGFloat {
-        let threshold = Float(index + 1) / Float(barCount)
-        let filled = level >= threshold
-        return filled ? CGFloat(4 + index * 2) : 4
-    }
-
-    private func barColor(for index: Int) -> Color {
-        let threshold = Float(index + 1) / Float(barCount)
-        if threshold > 0.85 { return .red }
-        if threshold > 0.6  { return .yellow }
-        return .green
-    }
-}

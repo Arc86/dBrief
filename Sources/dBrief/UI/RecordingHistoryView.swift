@@ -108,10 +108,6 @@ struct RecordingHistoryView: View {
             }
         }
 
-        var formattedSize: String {
-            ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
-        }
-
         var formattedDuration: String { RecordingListPresentation.duration(duration) }
 
         var displayName: String {

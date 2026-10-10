@@ -411,14 +411,3 @@ enum MenuBarPanel {
         return panel.runModal()
     }
 }
-
-extension View {
-    /// The 360 pt panel card: surface fill, hairline border, radius 18.
-    func menuPanelCard(palette: ViewerPalette) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        return self
-            .background(palette.surface.color, in: shape)
-            .clipShape(shape)
-            .overlay { shape.strokeBorder(palette.divider.color, lineWidth: 1).allowsHitTesting(false) }
-    }
-}

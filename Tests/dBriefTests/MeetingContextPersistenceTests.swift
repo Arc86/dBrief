@@ -61,10 +61,9 @@ struct MeetingContextPersistenceTests {
             payload: payload(participants: ["Jesper Mol", "Bart den Boer"],
                              attendees: ["Bart den Boer", "Marco De Roni"]))
 
-        let items = RecordingBrowserStore.load(in: folder)
-        #expect(items.count == 1)
+        let item = try browserItem(in: folder)
         // Typed participants first, calendar attendees after, de-duped.
-        #expect(items.first?.meetingNames == ["Jesper Mol", "Bart den Boer", "Marco De Roni"])
+        #expect(item.meetingNames == ["Jesper Mol", "Bart den Boer", "Marco De Roni"])
     }
 
     @Test
@@ -77,10 +76,18 @@ struct MeetingContextPersistenceTests {
             in: folder,
             payload: payload(participants: [], attendees: []))
 
-        #expect(RecordingBrowserStore.load(in: folder).first?.meetingNames == [])
+        #expect(try browserItem(in: folder).meetingNames == [])
     }
 
     // MARK: - helpers
+
+    /// Builds the sidebar item the way the library index does.
+    private func browserItem(in folder: URL) throws -> RecordingBrowserItem {
+        let entries = RecordingDiscovery.discover(in: folder)
+        #expect(entries.count == 1)
+        let entry = try #require(entries.first)
+        return try LibraryDocument(entry: entry, job: nil) { try Data(contentsOf: $0) }.item
+    }
 
     private func makeTempFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory

@@ -6,9 +6,8 @@ import SwiftUI
 /// Per the UI brief's "shared token file" rule: one place that owns the stable
 /// name→`Color` maps and reused spacing so a given identity resolves to the same
 /// color everywhere it appears. The speaker palette lives here so that every place
-/// a person appears — transcript rails, action-item owner avatars, and the
-/// document header avatar stack — resolves the *same* colour for a given speaker
-/// (`TranscriptDesignTokens.speakerColor(for:)` delegates here), and the profile
+/// a person appears — transcript rails, action-item owner avatars, and speaker
+/// avatars — resolves the *same* colour for a given speaker, and the profile
 /// palette so a profile icon looks identical in the list, the row, and the editor.
 enum Theme {
 
@@ -103,11 +102,6 @@ enum Theme {
         "bolt.fill", "flame.fill", "leaf.fill", "airplane",
         "house.fill", "cup.and.saucer.fill", "stethoscope", "scalemass.fill"
     ]
-
-    // MARK: - Reused spacing
-
-    static let cardGap: CGFloat = 12
-    static let contentPadding: CGFloat = 16
 }
 
 /// Canonical circular speaker avatar: a filled identity-coloured circle with the

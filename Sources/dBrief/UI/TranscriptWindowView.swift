@@ -1672,12 +1672,6 @@ struct TranscriptDetailView: View, Equatable {
         return .some(loaded)
     }
 
-    private func loadInsights() async {
-        guard let loaded = await fetchInsights() else { return }
-        insights = loaded
-        refreshSpokenSummaryAvailability()
-    }
-
     private func startSpokenSummary() {
         guard !isReprocessing else { return }
         guard let insights else { return }
