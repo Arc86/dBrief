@@ -19,7 +19,7 @@ First use may prompt you once in Terminal to approve the calendar tool. dBrief d
 | Concern | Behavior |
 |---|---|
 | Day list | Cached per local calendar day; refreshed when a recording starts or the meeting picker opens if absent or older than the freshness setting (default 60 minutes). No background polling. |
-| Attendees | Never fetched while matching or selecting a meeting. Only when you press **Load now** for a specific meeting, or when **Load during processing** is ticked for it in the post-recording sheet, and only if the cached roster is older than the attendee freshness window. |
+| Attendees | Never fetched while matching or selecting a meeting. Only when you press **Load now** for a specific meeting, or when **Load during processing** is ticked for it in the post-recording sheet, and only if the attendees cached for that meeting are more than an hour old. |
 | Manual refresh | The post-recording picker **Refresh** button forces that recording day's list; **Refresh today** in Settings forces today's list. Both work inside the freshness interval. |
 | True delta sync | Not available — the connector exposes no change cursor. A 60-minute-old snapshot can miss last-minute changes until you force a refresh. |
 
