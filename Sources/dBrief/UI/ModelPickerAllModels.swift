@@ -4,6 +4,7 @@ import dBriefWire
 /// "All models": grouped list (Built in / Parakeet / Whisper) beside an inspector.
 struct ModelPickerAllModels: View {
     let modelIDs: [String]
+    let currentID: String
     let suggestions: [ModelSuggestion]
     let cached: [String: Bool]
     let modernApple: Bool
@@ -22,32 +23,35 @@ struct ModelPickerAllModels: View {
         let ids: [String]
     }
 
-    /// Whisper rows: curated (+ the saved model) by default; the whole catalog when searching
-    /// or when "Show every Whisper variant" is on. The recommended model always leads.
-    nonisolated static func whisperIDs(modelIDs: [String], selectedID: String, showEveryVariant: Bool, query: String) -> [String] {
-        var available = Set(modelIDs)
-        if LocalTranscriptionChoice.engine(selectedID) == .localWhisper, !selectedID.isEmpty { available.insert(selectedID) }
-        let ids: [String]
+    /// Whisper rows: curated (+ the saved and selected models) by default; the whole catalog when
+    /// searching or when "Show every Whisper variant" is on. The recommended model always leads.
+    nonisolated static func whisperIDs(modelIDs: [String], selectedID: String, currentID: String,
+                                       showEveryVariant: Bool, query: String) -> [String] {
+        // The saved model stays listed even after another row is selected.
+        let pinned = [currentID, selectedID].filter { !$0.isEmpty && LocalTranscriptionChoice.engine($0) == .localWhisper }
+        let available = Set(modelIDs).union(pinned)
+        var ids: [String]
         if showEveryVariant || !query.isEmpty {
             ids = available.map { WhisperModelInfo.parse($0) }.sorted().map(\.id)
         } else {
-            let curated = WhisperModelCatalog.curatedIDs.filter(available.contains)
-            ids = curated + (available.contains(selectedID) && !curated.contains(selectedID) ? [selectedID] : [])
+            ids = WhisperModelCatalog.curatedIDs.filter(available.contains)
+            for id in pinned where !ids.contains(id) { ids.append(id) }
         }
         let recommended = WhisperModelInfo.recommendedModelID
         return ids.contains(recommended) ? [recommended] + ids.filter { $0 != recommended } : ids
     }
 
-    nonisolated static func visibleCount(modelIDs: [String], selectedID: String) -> Int {
+    nonisolated static func visibleCount(modelIDs: [String], selectedID: String, currentID: String) -> Int {
         1 + LocalTranscriptionChoice.extraIDs.filter { $0 != LocalTranscriptionChoice.apple }.count
-            + whisperIDs(modelIDs: modelIDs, selectedID: selectedID, showEveryVariant: false, query: "").count
+            + whisperIDs(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
+                         showEveryVariant: false, query: "").count
     }
 
     private var query: String { search.trimmingCharacters(in: .whitespaces) }
 
     private var groups: [ModelGroup] {
         let parakeet = LocalTranscriptionChoice.extraIDs.filter { LocalTranscriptionChoice.engine($0) == .parakeetLocal }
-        let whisper = Self.whisperIDs(modelIDs: modelIDs, selectedID: selectedID,
+        let whisper = Self.whisperIDs(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID,
                                       showEveryVariant: showEveryVariant, query: query)
         return [ModelGroup(id: "builtin", title: "Built in", ids: [LocalTranscriptionChoice.apple]),
                 ModelGroup(id: "parakeet", title: "Parakeet", ids: parakeet),

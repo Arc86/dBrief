@@ -93,10 +93,21 @@ struct ModelPickerQuickPick: View {
         .onKeyPress(.space) { selectedID = id; return .handled }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(suggestion.intent.title): \(LocalTranscriptionChoice.shortTitle(id))")
-        .accessibilityValue("\(profile?.languageLabel ?? ""), \(ram), \(cached[id] == true ? "downloaded" : "not downloaded")")
+        .accessibilityValue(Self.accessibilityValue(profile: profile, downloaded: cached[id] == true))
         .accessibilityHint(suggestion.reason)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { selectedID = id }
+    }
+
+    /// What VoiceOver reads for a tile: the speed/accuracy trade-off first, then the facts.
+    nonisolated static func accessibilityValue(profile: LocalModelProfile?, downloaded: Bool) -> String {
+        var parts: [String] = []
+        if let speed = profile?.speed { parts.append("Speed: \(ModelRatingKind.speed.word(speed))") }
+        if let accuracy = profile?.accuracy { parts.append("Accuracy: \(ModelRatingKind.accuracy.word(accuracy))") }
+        if let profile { parts.append(profile.languageLabel) }
+        if let ram = profile?.runtimeGiB { parts.append(String(format: "%.1f GB RAM", ram)) }
+        parts.append(downloaded ? "downloaded" : "not downloaded")
+        return parts.joined(separator: ", ")
     }
 
     private var currentRow: some View {

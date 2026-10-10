@@ -60,9 +60,9 @@ struct TranscriptionModelPicker: View {
                                      modernApple: modernApple, selectedID: $selectedID,
                                      showAllModels: { mode = .allModels })
             case .allModels:
-                Text("\(ModelPickerAllModels.visibleCount(modelIDs: modelIDs, selectedID: selectedID)) models · nothing downloads until first use")
+                Text("\(ModelPickerAllModels.visibleCount(modelIDs: modelIDs, selectedID: selectedID, currentID: currentID)) models · nothing downloads until first use")
                     .uiFont(.caption).foregroundStyle(palette.secondary.color)
-                ModelPickerAllModels(modelIDs: modelIDs, suggestions: picks, cached: cached,
+                ModelPickerAllModels(modelIDs: modelIDs, currentID: currentID, suggestions: picks, cached: cached,
                                      modernApple: modernApple, language: language,
                                      identifySpeakers: identifySpeakers, selectedID: $selectedID)
                     .frame(minHeight: 380, idealHeight: 460, maxHeight: .infinity)
