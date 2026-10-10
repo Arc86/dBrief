@@ -5,6 +5,7 @@ struct PromptEditorView: View {
     let close: () -> Void
     @AppStorage("promptEditorFontSize") private var storedFontSize = 16.0
     @State private var narrowSection = PromptEditorSession.Panel.improve
+    @State private var showOutputFormat = false
     @Environment(\.viewerPalette) private var palette
     private var fontSize: Double { storedFontSize.isFinite ? min(22, max(14, storedFontSize)) : 16 }
 
@@ -81,7 +82,14 @@ struct PromptEditorView: View {
             Text(session.identity.kind.description).uiFont(.callout).foregroundStyle(palette.secondary.color)
                 .padding(.horizontal, 22).padding(.bottom, 8)
             PromptTextEditor(session: session, fontSize: fontSize)
-            DisclosureGroup("Output format") {
+            // No animation: the native text view above resizes once instead of every frame.
+            DisclosureGroup("Output format", isExpanded: Binding(
+                get: { showOutputFormat },
+                set: { value in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { showOutputFormat = value }
+                })) {
                 Text(session.identity.kind.outputContract).uiFont(.caption).foregroundStyle(palette.secondary.color)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             }.uiFont(.caption).foregroundStyle(palette.secondary.color).padding(.horizontal, 22).padding(.vertical, 12)

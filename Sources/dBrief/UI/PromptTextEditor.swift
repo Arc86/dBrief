@@ -14,7 +14,9 @@ struct PromptTextEditor: NSViewRepresentable {
         scroll.autohidesScrollers = true
         // Let the card's surface (paper themes included) show through instead of white.
         scroll.drawsBackground = false
-        let text = PromptNativeTextView()
+        // TextKit 1: TextKit 2's viewport layout redraws its text fragments on every
+        // frame change, which flickers when the card resizes (e.g. Output format).
+        let text = PromptNativeTextView(usingTextLayoutManager: false)
         text.drawsBackground = false
         text.promptUndoManager = session.undoManager ?? UndoManager()
         text.isRichText = false
