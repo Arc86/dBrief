@@ -48,7 +48,7 @@ struct LocalTranscriptionChoiceTests {
     @Test func parakeetGuidanceAndUnknownFallback() {
         for model in ParakeetModelInfo.available {
             let id = LocalTranscriptionChoice.parakeet(model.id)
-            #expect(TranscriptionCardPresentation.local(id)?.accuracy == 4)
+            #expect(TranscriptionCardPresentation.local(id)?.accuracy == (model.id == "ultra" ? 5 : 4))
             // Redux trades speed for size (~34% slower than v3 on the ANE upstream).
             #expect(TranscriptionCardPresentation.local(id)?.speed == (model.id == "redux" ? 4 : 5))
             #expect(TranscriptionCardPresentation.local(id)?.language == (model.isEnglishOnly ? "English only" : "25 European languages"))
@@ -56,5 +56,54 @@ struct LocalTranscriptionChoiceTests {
         }
         #expect(TranscriptionCardPresentation.local("unknown") == nil)
         #expect(LocalTranscriptionChoice.runtimeGiB("unknown") == nil)
+    }
+
+    @Test func profileCoversEveryEngine() throws {
+        let turbo = try #require(LocalTranscriptionChoice.profile(WhisperModelInfo.recommendedModelID))
+        #expect(turbo.speed == 5)
+        #expect(turbo.accuracy == 4)
+        #expect(turbo.languages == .all)
+        #expect(turbo.downloadMB == 632)
+        #expect(turbo.minimumMacOSMajor == 14)
+
+        let ultra = try #require(LocalTranscriptionChoice.profile("parakeet:ultra"))
+        #expect(ultra.accuracy == 5)
+        #expect(ultra.speed == 5)
+        #expect(ultra.languages == .codes(ParakeetModelInfo.languageCodes))
+        #expect(ultra.downloadMB == nil)
+
+        // Exact variant lookup: redux keeps its macOS 15 floor even on a host that can't run it.
+        #expect(LocalTranscriptionChoice.profile("parakeet:redux")?.minimumMacOSMajor == 15)
+        #expect(LocalTranscriptionChoice.profile("parakeet:redux")?.speed == 4)
+        #expect(LocalTranscriptionChoice.profile("parakeet:phonon2")?.speedTieBreak == 1)
+        #expect(LocalTranscriptionChoice.profile("parakeet:v2")?.languages == .englishOnly)
+
+        #expect(LocalTranscriptionChoice.profile(LocalTranscriptionChoice.apple)?.accuracy == nil)
+        #expect(LocalTranscriptionChoice.profile(LocalTranscriptionChoice.apple, modernApple: true)?.accuracy == 4)
+        #expect(LocalTranscriptionChoice.profile("unknown") == nil)
+    }
+
+    @Test func languageCoverageUsesTheBaseCode() throws {
+        let parakeet = try #require(LocalTranscriptionChoice.profile("parakeet:v3"))
+        #expect(parakeet.covers(language: "nl-NL"))
+        #expect(parakeet.covers(language: "pt_BR"))
+        #expect(parakeet.covers(language: "EN"))
+        #expect(parakeet.covers(language: ""))          // auto-detect
+        #expect(!parakeet.covers(language: "ja"))
+        let english = try #require(LocalTranscriptionChoice.profile("parakeet:v2"))
+        #expect(english.covers(language: "en-GB"))
+        #expect(!english.covers(language: ""))          // auto-detect excludes English-only
+        #expect(!english.covers(language: "de"))
+        #expect(ParakeetModelInfo.languageCodes.count == 25)
+        #expect(parakeet.languageLabel == "25 European languages")
+    }
+
+    @Test func staleParakeetIDHasNoProfileButAReadableName() {
+        #expect(LocalTranscriptionChoice.profile("parakeet:obsolete") == nil)
+        #expect(LocalTranscriptionChoice.shortTitle("parakeet:obsolete") == "Parakeet v3")
+        #expect(LocalTranscriptionChoice.shortTitle(WhisperModelInfo.recommendedModelID) == "Whisper Turbo")
+        #expect(LocalTranscriptionChoice.shortTitle("parakeet:phonon2") == "Parakeet Phonon-2")
+        #expect(LocalTranscriptionChoice.shortTitle("openai_whisper-large-v3") == "Whisper Large V3")
+        #expect(LocalTranscriptionChoice.shortTitle(LocalTranscriptionChoice.apple) == "Apple Speech")
     }
 }

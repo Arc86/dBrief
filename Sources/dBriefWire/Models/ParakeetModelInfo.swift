@@ -19,6 +19,14 @@ public struct ParakeetModelInfo: Identifiable, Sendable {
 
     public static let defaultID = "v3"
 
+    /// The 25 languages NVIDIA lists for parakeet-tdt-0.6b-v3
+    /// (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3). v3, Ultra and Redux are
+    /// re-trainings of v3, so every multilingual variant shares this set.
+    public static let languageCodes: Set<String> = [
+        "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it",
+        "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+    ]
+
     public static let variants: [ParakeetModelInfo] = [
         ParakeetModelInfo(
             id: "v2",

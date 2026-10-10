@@ -18,12 +18,13 @@ extension TranscriptionCardPresentation {
                          summary: modernApple
                             ? "Apple SpeechAnalyzer · provisional research-based ratings."
                             : "Apple Speech · older or unsupported-locale fallback is not rated.",
-                         accuracy: modernApple ? 4 : nil, speed: modernApple ? 4 : nil)
+                         accuracy: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.accuracy,
+                         speed: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.speed)
         }
         guard let variant = LocalTranscriptionChoice.parakeetVariant(id) else { return nil }
         let model = ParakeetModelInfo.find(variant)
         let summary = switch model.id {
-        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; ratings are family estimates."
+        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; fewest errors in FluidAudio's FLEURS and LibriSpeech results."
         case "redux": "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes."
         case "phonon2": "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra."
         default: "Parakeet / FluidAudio · fast transcription; ratings are family estimates."
@@ -31,7 +32,8 @@ extension TranscriptionCardPresentation {
         return .init(title: model.displayName, language: model.isEnglishOnly ? "English only" : "25 European languages",
                      footprint: String(format: "~%.1f GiB RAM", Double(model.estimatedMemoryMB) / 1024),
                      summary: summary,
-                     accuracy: 4, speed: model.id == "redux" ? 4 : 5)
+                     accuracy: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.accuracy,
+                     speed: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.speed)
     }
 }
 
