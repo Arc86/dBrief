@@ -69,8 +69,8 @@ struct SettingsProviderList: View {
     @State private var isLoadingModels = false
 
     var body: some View {
-        if let draft = Binding($editing) {
-            editor(draft)
+        if let current = editing {
+            editor(draftBinding(fallback: current))
         } else {
             if endpoints.isEmpty {
                 SettingsRow("No \(kind.noun)s yet", caption: "Add one from a preset or enter your own server.")
@@ -125,6 +125,17 @@ struct SettingsProviderList: View {
         outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
         testResult = nil
         availableModels = []
+    }
+
+    /// Not `Binding($editing)`: that force-unwraps on every read, and the editor's
+    /// fields and model picker still read it during the layout pass after Save or
+    /// Cancel sets `editing` to nil, which traps. Reads fall back to the last draft,
+    /// and a late write from a closing field can't reopen the editor.
+    private func draftBinding(fallback: Endpoint) -> Binding<Endpoint> {
+        Binding(
+            get: { editing ?? fallback },
+            set: { if editing != nil { editing = $0 } }
+        )
     }
 
     private var isOutputTokenLimitValid: Bool {
