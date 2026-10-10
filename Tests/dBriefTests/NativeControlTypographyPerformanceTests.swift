@@ -59,4 +59,16 @@ import Testing
         #expect(NativeControlTypographyHost.isThrottled(sinceLastRefresh: 0.02))
         #expect(!NativeControlTypographyHost.isThrottled(sinceLastRefresh: 0.5))
     }
+
+    @Test func clicksAndKeysAreNeverThrottled() {
+        // A click can open a new Settings page; a trailing refresh would let its
+        // controls draw at the system size first and then visibly resize.
+        for type: NSEvent.EventType in [.leftMouseUp, .leftMouseDown, .keyDown] {
+            #expect(!NativeControlTypographyHost.isThrottled(sinceLastRefresh: 0.02, eventType: type))
+        }
+        for type: NSEvent.EventType in [.scrollWheel, .mouseMoved, .leftMouseDragged] {
+            #expect(NativeControlTypographyHost.isThrottled(sinceLastRefresh: 0.02, eventType: type))
+        }
+        #expect(NativeControlTypographyHost.isThrottled(sinceLastRefresh: 0.02, eventType: nil))
+    }
 }

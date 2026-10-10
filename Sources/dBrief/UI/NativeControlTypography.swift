@@ -57,6 +57,19 @@ final class NativeControlTypographyHost: NSView {
         interval < 0.1
     }
 
+    /// Clicks and key presses can swap in a whole page of new controls, so they
+    /// always restyle in the same frame. Only streams (scroll, drag, mouse-move)
+    /// are throttled; a trailing refresh there would show controls resizing.
+    static func isThrottled(sinceLastRefresh interval: TimeInterval, eventType: NSEvent.EventType?) -> Bool {
+        switch eventType {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+             .otherMouseDown, .otherMouseUp, .keyDown:
+            false
+        default:
+            isThrottled(sinceLastRefresh: interval)
+        }
+    }
+
     init(preferences: AppTypographyPreferences) {
         self.preferences = preferences
         super.init(frame: .zero)
@@ -117,7 +130,8 @@ final class NativeControlTypographyHost: NSView {
         guard window != nil,
               Self.shouldRefresh(preferences: preferences, lastApplied: lastApplied, trigger: trigger)
         else { return }
-        if trigger == .windowUpdate, Self.isThrottled(sinceLastRefresh: Date().timeIntervalSince(lastRefresh)) {
+        if trigger == .windowUpdate, Self.isThrottled(sinceLastRefresh: Date().timeIntervalSince(lastRefresh),
+                                                      eventType: NSApp.currentEvent?.type) {
             // Keep one trailing refresh so controls created mid-burst still get styled.
             guard !trailingRefreshScheduled else { return }
             trailingRefreshScheduled = true
@@ -130,15 +144,27 @@ final class NativeControlTypographyHost: NSView {
         }
         guard !refreshScheduled else { return }
         refreshScheduled = true
-        // SwiftUI may finish installing or replacing its native children after updateNSView.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.refreshScheduled = false
-            guard let content = self.window?.contentView else { return }
-            self.lastRefresh = Date()
-            self.lastApplied = self.preferences
-            self.applicator.apply(to: content, preferences: self.preferences)
-        }
+        // Walk in this cycle's layout pass: SwiftUI installs its native children while
+        // the hosting view (an ancestor) lays out, and this view lays out after it, so
+        // controls get their final font before the frame is drawn instead of drawing at
+        // the system size first and visibly resizing a run-loop turn later.
+        needsLayout = true
+        // Backstop for children SwiftUI installs after this cycle's layout pass.
+        DispatchQueue.main.async { [weak self] in self?.performRefresh() }
+    }
+
+    override func layout() {
+        super.layout()
+        performRefresh()
+    }
+
+    private func performRefresh() {
+        guard refreshScheduled else { return }
+        refreshScheduled = false
+        guard let content = window?.contentView else { return }
+        lastRefresh = Date()
+        lastApplied = preferences
+        applicator.apply(to: content, preferences: preferences)
     }
 }
 
