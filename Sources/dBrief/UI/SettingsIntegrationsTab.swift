@@ -385,15 +385,15 @@ struct SettingsIntegrationsTab: View {
                         .buttonStyle(.settingsSecondary)
                     }
                 }
-                deliveryFieldsCard($settings.integrations.webhook.fields)
+                deliveryFieldsCard($settings.integrations.webhook.fields, includingAudio: true)
             }
         }
         .disabled(appSettings.integrations.webhook.credentialsUnavailable)
     }
 
-    private func deliveryFieldsCard(_ fields: Binding<[DeliveryField]>) -> some View {
+    private func deliveryFieldsCard(_ fields: Binding<[DeliveryField]>, includingAudio: Bool = false) -> some View {
         SettingsCard("Send fields") {
-            ForEach(DeliveryField.allCases) { field in
+            ForEach(DeliveryField.options(includingAudio: includingAudio)) { field in
                 SettingsRow(verbatim: field.displayName) {
                     Toggle(field.displayName, isOn: fields[contains: field])
                 }

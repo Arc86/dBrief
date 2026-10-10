@@ -57,6 +57,12 @@ enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifia
         case .meetingInfo: "Meeting Info"
         }
     }
+
+    /// Fields a destination can send. Only the webhook uploads the audio file;
+    /// the others render text and would ignore an Audio toggle.
+    static func options(includingAudio: Bool) -> [DeliveryField] {
+        includingAudio ? allCases : allCases.filter { $0 != .audio }
+    }
 }
 
 struct AppleNotesConfig: Codable, Hashable, Sendable {
