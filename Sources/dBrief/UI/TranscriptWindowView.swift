@@ -388,6 +388,7 @@ struct TranscriptDetailView: View, Equatable {
         }
         .sheet(isPresented: $showPrivacyReceipt) {
             PrivacyReceiptView(recording: recording)
+                .modifier(ViewerAppearanceScope(settings: context.appSettings))
         }
         .sheet(item: $spokenSummaryService) { service in
             SpokenSummaryPlayerView(
