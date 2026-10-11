@@ -45,7 +45,7 @@ struct SettingsAppearanceEditor: View {
                      section: .typography) {
             SettingsRow("Font") {
                 Picker("Font", selection: $typography.readingFont) {
-                    ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                    ForEach(ViewerFonts.choices(keeping: typography.readingFont), id: \.self) { font in
                         Text(font.displayName).tag(font)
                     }
                 }

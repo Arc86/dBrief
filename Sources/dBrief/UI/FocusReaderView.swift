@@ -253,7 +253,7 @@ struct FocusReaderView: View {
                 get: { settings.font?.rawValue ?? "" },
                 set: { apply(FocusReaderTextSettings(size: settings.size, font: ViewerReadingFont(rawValue: $0))) })) {
                 Text("Same as the viewer").tag("")
-                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                ForEach(ViewerFonts.choices(keeping: settings.font), id: \.self) { font in
                     Text(font.displayName).tag(font.rawValue)
                 }
             }

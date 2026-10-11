@@ -38,11 +38,25 @@ enum ViewerAppearanceMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Reading fonts, in menu order. Besides the originals, the easy-to-read set
+/// from smartpress.com/blog/features/easy-to-read-fonts: macOS's own Arial,
+/// Helvetica, Times New Roman and Verdana; bundled Lato, Open Sans, Roboto and
+/// EB Garamond (OFL); and Calibri, offered only when installed (Microsoft's, not
+/// redistributable). Raw values are persisted, so they never change.
 enum ViewerReadingFont: String, Codable, CaseIterable, Sendable {
     case systemDefault
     case sanFrancisco
-    case inter
+    case arial
+    case calibri
+    case ebGaramond
     case georgia
+    case helvetica
+    case inter
+    case lato
+    case openSans
+    case roboto
+    case timesNewRoman
+    case verdana
     case openDyslexic
     case monospace
 
@@ -50,8 +64,17 @@ enum ViewerReadingFont: String, Codable, CaseIterable, Sendable {
         switch self {
         case .systemDefault: "Default"
         case .sanFrancisco: "San Francisco"
-        case .inter: "Inter"
+        case .arial: "Arial"
+        case .calibri: "Calibri"
+        case .ebGaramond: "EB Garamond"
         case .georgia: "Georgia"
+        case .helvetica: "Helvetica"
+        case .inter: "Inter"
+        case .lato: "Lato"
+        case .openSans: "Open Sans"
+        case .roboto: "Roboto"
+        case .timesNewRoman: "Times New Roman"
+        case .verdana: "Verdana"
         case .openDyslexic: "OpenDyslexic"
         case .monospace: "Monospace"
         }

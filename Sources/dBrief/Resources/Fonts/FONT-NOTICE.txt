@@ -44,3 +44,22 @@ Default uses the macOS system sans-serif outside Paper modes and the built-in
 Georgia font in Paper modes. The explicit San Francisco option always uses
 the macOS system sans-serif, including in Paper modes. Inter and OpenDyslexic
 fall back to the system sans-serif if font registration or lookup fails.
+
+Lato, Open Sans, Roboto and EB Garamond font files are bundled as additional easy-to-read
+reading fonts. They are copied unmodified from the official Google Fonts repository
+(https://github.com/google/fonts, branch main, directories ofl/lato, ofl/opensans,
+ofl/roboto and ofl/ebgaramond) on 2026-10-11; Open Sans, Roboto and EB Garamond are
+the variable fonts, renamed to *-Variable.ttf. All four are licensed under the SIL
+Open Font License 1.1; each upstream OFL.txt is included as <Family>-OFL.txt.
+
+SHA-256 checksums:
+- Lato-Regular.ttf: d636e4683231f931eda222d588e944d082bfd3bdba02f928bee461c0f185b251
+- Lato-Bold.ttf: 8a0aace75d33794eece4b28187bfc1df0bbd2888b5d8a56e01788c8d65d16be1
+- Lato-Italic.ttf: e399c44efe1387100531d26c7e4800c5d12251b890d6654a3098c7c679cb1786
+- Lato-BoldItalic.ttf: 62c1b7f0d2e74b45960154c3520efc337b553db0961bfdc950d5618334596cc8
+- OpenSans-Variable.ttf: 36643644f318a812aab2d2ed3bb98f8cf0872527f835fe9398d95fe6b9adb878
+- OpenSans-Italic-Variable.ttf: fe269381e992f32e135801740998544d6235061e37c93ec067ad2be3edd5b17b
+- Roboto-Variable.ttf: d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134
+- Roboto-Italic-Variable.ttf: 9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182
+- EBGaramond-Variable.ttf: ef9512f92f6d579e5dc75af59a5a4b1b8b47d2eda89e00b954d44520e5369027
+- EBGaramond-Italic-Variable.ttf: bba2c4499c93c9612b90b9825d32b07da52fce2fe57562a1eb6b833553f93c4e

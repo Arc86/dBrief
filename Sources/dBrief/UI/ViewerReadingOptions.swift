@@ -22,7 +22,7 @@ struct ViewerReadingOptions: View {
                 .foregroundStyle(palette.heading.color)
 
             Picker("Font", selection: $preferences.readingFont) {
-                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                ForEach(ViewerFonts.choices(keeping: preferences.readingFont), id: \.self) { font in
                     Text(font.displayName).tag(font)
                 }
             }

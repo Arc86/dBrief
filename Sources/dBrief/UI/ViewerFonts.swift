@@ -6,11 +6,45 @@ import SwiftUI
 @MainActor
 enum ViewerFonts {
     private static let registration: Void = {
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "otf", subdirectory: "Fonts") else { return }
-        for url in urls {
-            _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        for ext in ["otf", "ttf"] {
+            for url in Bundle.main.urls(forResourcesWithExtension: ext, subdirectory: "Fonts") ?? [] {
+                _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
         }
     }()
+
+    /// PostScript name of each named reading font (nil: a system font).
+    private static func postScriptName(for font: ViewerReadingFont) -> String? {
+        switch font {
+        case .systemDefault, .sanFrancisco, .monospace: nil
+        case .arial: "ArialMT"
+        case .calibri: "Calibri"
+        case .ebGaramond: "EBGaramond-Regular"
+        case .georgia: "Georgia"
+        case .helvetica: "Helvetica"
+        case .inter: "Inter-Regular"
+        case .lato: "Lato-Regular"
+        case .openSans: "OpenSans-Regular"
+        case .roboto: "Roboto-Regular"
+        case .timesNewRoman: "TimesNewRomanPSMT"
+        case .verdana: "Verdana"
+        case .openDyslexic: "OpenDyslexic-Regular"
+        }
+    }
+
+    /// Whether the font can be shown: bundled and macOS fonts always; Calibri
+    /// only when the user has it installed.
+    static func isAvailable(_ font: ViewerReadingFont) -> Bool {
+        guard let name = postScriptName(for: font) else { return true }
+        registerBundledFontsIfNeeded()
+        return NSFont(name: name, size: 12) != nil
+    }
+
+    /// Fonts to offer in a picker: the available ones, plus `current` so a saved
+    /// choice never disappears from the menu.
+    static func choices(keeping current: ViewerReadingFont?) -> [ViewerReadingFont] {
+        ViewerReadingFont.allCases.filter { isAvailable($0) || $0 == current }
+    }
 
     static func registerBundledFontsIfNeeded() {
         _ = registration
@@ -43,16 +77,12 @@ enum ViewerFonts {
             return NSFont.systemFont(ofSize: size)
         case .sanFrancisco:
             return NSFont.systemFont(ofSize: size)
-        case .inter:
-            registerBundledFontsIfNeeded()
-            return NSFont(name: "Inter-Regular", size: size) ?? NSFont.systemFont(ofSize: size)
-        case .georgia:
-            return NSFont(name: "Georgia", size: size) ?? NSFont.systemFont(ofSize: size)
-        case .openDyslexic:
-            registerBundledFontsIfNeeded()
-            return NSFont(name: "OpenDyslexic-Regular", size: size) ?? NSFont.systemFont(ofSize: size)
         case .monospace:
             return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        default:
+            registerBundledFontsIfNeeded()
+            return postScriptName(for: readingFont).flatMap { NSFont(name: $0, size: size) }
+                ?? NSFont.systemFont(ofSize: size)
         }
     }
 
