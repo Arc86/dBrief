@@ -16,6 +16,9 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
     /// Set only after an observed, warning-free processing prefix. Nil on legacy
     /// or delivery-only batches; sending saved content cannot backfill that proof.
     var processingSucceededBeforeDeliveryAt: Date? = nil
+    /// The meeting profile whose integration overrides this batch was prepared
+    /// with (`AppSettings.resolvedIntegrations(for:)`). Nil on older batches.
+    var profileID: UUID? = nil
 
     var successfulWorkflowCompletion: ProcessingCompletionStamp? {
         guard let processingSucceededBeforeDeliveryAt, isComplete,

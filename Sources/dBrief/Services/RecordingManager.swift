@@ -3589,10 +3589,14 @@ final class RecordingManager {
             if case .failed = $0.status { return true }
             return false
         }
+        // The job's profile (routed as active while it processes) picks the task
+        // list/project; the batch remembers it so later retries resolve the same way.
+        let profileID = job.persistedRecord?.source.profileID ?? appSettings.activeProfile.id
         let input = ProcessingPipeline.DeliveryPreparation(jobID: job.id,
-            recording: RecordingSnapshot(recording: job.recording), configuration: appSettings.integrations,
+            recording: RecordingSnapshot(recording: job.recording),
+            configuration: appSettings.resolvedIntegrations(for: profileID),
             markdownURL: markdownURL, requireTranscript: job.persistedRecord?.request.transcribe == true,
-            processingSucceededBeforeDeliveryAt: succeeded ? Date() : nil)
+            processingSucceededBeforeDeliveryAt: succeeded ? Date() : nil, profileID: profileID)
         let batch = try await processingPipeline.prepareDeliveries(input, store: integrationDeliveryStore,
             service: integrationDispatchService, validateOwnership: { [weak self] in
                 guard let self else { throw CancellationError() }
@@ -3678,7 +3682,8 @@ final class RecordingManager {
     ) async throws -> IntegrationDeliveryBatch {
         try requireProcessingOwnership(job)
         let input = ProcessingPipeline.DeliveryRun(id: batch.id,
-            configurationDigests: try IntegrationDeliveryBatch.configurationDigests(appSettings.integrations),
+            configurationDigests: try IntegrationDeliveryBatch.configurationDigests(
+                appSettings.resolvedIntegrations(for: batch.profileID)),
             destinations: destinations, allowUncertainRetry: allowUncertainRetry,
             acceptConfigurationChange: acceptConfigurationChange)
         let service = integrationDispatchService
@@ -3687,7 +3692,7 @@ final class RecordingManager {
             send: { saved, delivery in
                 // Credentials/configuration are read per attempt. The dispatcher
                 // still compares the actual destination with its frozen digest.
-                let config = await MainActor.run { settings.integrations }
+                let config = await MainActor.run { settings.resolvedIntegrations(for: saved.profileID) }
                 return await service.send(batch: saved, delivery: delivery, config: config)
             }, onEvent: { [weak self] event in
                 await self?.applyDeliveryEvent(event, job: job)
@@ -3745,7 +3750,8 @@ final class RecordingManager {
             alert.addButton(withTitle: "Close")
             guard alert.runModal() == .alertFirstButtonReturn, !remaining.isEmpty else { return }
             let selected = remaining[picker.indexOfSelectedItem]
-            let currentDigest = try IntegrationDeliveryBatch.configurationDigests(appSettings.integrations)[selected.destination]
+            let currentDigest = try IntegrationDeliveryBatch.configurationDigests(
+                appSettings.resolvedIntegrations(for: batch.profileID))[selected.destination]
             guard let currentDigest else {
                 appState.lastError = "Enable \(selected.destination.displayName) in Settings before retrying."
                 return
@@ -3843,8 +3849,10 @@ final class RecordingManager {
             ?? insights?.markdownPath.map { URL(fileURLWithPath: $0) }
         recording.generatedTitle = record.markdownExport?.generatedTitle ?? recording.generatedTitle
         var proposed = try await integrationDispatchService.prepareBatch(
-            jobID: record.id, recording: RecordingSnapshot(recording: recording), config: appSettings.integrations, generatedMarkdownURL: markdownURL,
+            jobID: record.id, recording: RecordingSnapshot(recording: recording),
+            config: appSettings.resolvedIntegrations(for: record.source.profileID), generatedMarkdownURL: markdownURL,
             requireTranscript: record.request.transcribe)
+        proposed.profileID = record.source.profileID
         // Pre-5D jobs cannot prove whether a remote send occurred. Never assume
         // they are unsent, even when their processing checkpoint says otherwise.
         for index in proposed.deliveries.indices { proposed.deliveries[index].status = .uncertain }

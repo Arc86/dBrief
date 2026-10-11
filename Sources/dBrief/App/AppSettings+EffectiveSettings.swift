@@ -17,6 +17,27 @@ extension AppSettings {
         return profiles[0]
     }
 
+    /// Integration settings as a given profile sees them: its TickTick list and
+    /// Todoist project overrides on top of the app's. Deliveries resolve with the
+    /// profile they were prepared under, never the currently active one, so a
+    /// later retry still goes where the meeting's profile sent it. A nil or
+    /// deleted profile resolves the app settings.
+    func resolvedIntegrations(for profileID: UUID?) -> IntegrationSettings {
+        var resolved = integrations
+        guard let profileID, let overrides = profiles.first(where: { $0.id == profileID })?.overrides else {
+            return resolved
+        }
+        if let id = overrides.tickTickProjectID {
+            resolved.tickTick.projectID = id.isEmpty ? nil : id
+            resolved.tickTick.projectName = id.isEmpty ? nil : overrides.tickTickProjectName
+        }
+        if let id = overrides.todoistProjectID {
+            resolved.todoist.projectID = id.isEmpty ? nil : id
+            resolved.todoist.projectName = id.isEmpty ? nil : overrides.todoistProjectName
+        }
+        return resolved
+    }
+
     /// `nil` explicitly resolves app defaults, for global tests and app-scope previews.
     func resolvedLocalCLIConfig(for profile: MeetingProfile?) -> LocalCLIConfig {
         var config = localCLIConfig

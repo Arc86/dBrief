@@ -10,6 +10,7 @@ struct SettingsProfileScope {
         case summaryPrompt, actionsPrompt, tagsPrompt
         case transcriptionTask, summaryTask, actionsTask, tagsTask, calendarParticipantsTask
         case recordingFolder, transcriptFolder, obsidianVault, obsidianFolder
+        case tickTickList, todoistProject
         var id: String { rawValue }
 
         var keyPath: PartialKeyPath<MeetingProfileOverrides> {
@@ -35,6 +36,8 @@ struct SettingsProfileScope {
             case .transcriptFolder: \.transcriptionFolderPath
             case .obsidianVault: \.obsidianVaultPath
             case .obsidianFolder: \.obsidianDefaultFolderRelativePath
+            case .tickTickList: \.tickTickProjectID
+            case .todoistProject: \.todoistProjectID
             }
         }
     }
@@ -162,6 +165,16 @@ struct SettingsProfileScope {
         }
         add(.obsidianFolder, "Obsidian notes folder", settings.obsidianDefaultFolderRelativePath,
             overrides.obsidianDefaultFolderRelativePath, format: { $0.isEmpty ? "Vault root" : $0 })
+        func taskList(_ id: Field, _ label: String, baseName: String?, overrideID: String?, overrideName: String?) {
+            guard fields.contains(id) else { return }
+            let profileName = overrideID.map { $0.isEmpty ? "Inbox" : overrideName ?? "Unnamed" } ?? baseName ?? "Inbox"
+            rows.append(Summary(id: id, label: label, defaultValue: baseName ?? "Inbox", profileValue: profileName,
+                                isOverridden: overrideID != nil, note: nil))
+        }
+        taskList(.tickTickList, "TickTick list", baseName: settings.integrations.tickTick.projectName,
+                 overrideID: overrides.tickTickProjectID, overrideName: overrides.tickTickProjectName)
+        taskList(.todoistProject, "Todoist project", baseName: settings.integrations.todoist.projectName,
+                 overrideID: overrides.todoistProjectID, overrideName: overrides.todoistProjectName)
         summaries = rows
     }
 

@@ -104,7 +104,8 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .meetings: [.calendarEffort]
         case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .summaryPrompt, .actionsPrompt, .tagsPrompt]
         case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask]
-        case .integrations: [.obsidianVault, .obsidianFolder]
+        case .integrations: [.obsidianVault, .obsidianFolder, .todoistProject]
+            + (IntegrationDestination.available.contains(.tickTick) ? [.tickTickList] : [])
         default: []
         }
     }
@@ -160,6 +161,7 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
     case aiEnabled, aiEngine, aiResultsLanguage, aiPrompts, aiCLI, aiChatFallback, aiChatPrompts, aiProviders
     case spokenVoice, spokenPrompt, vocabularyTerms, automaticImport, permissions, benchmark, about
     case profileIdentity, profileMatching, profileAutomation, profileTranscription, profileAI, profileTasks, profileFolders
+    case profileIntegrations
 
     var page: SettingsPage {
         switch self {
@@ -180,7 +182,8 @@ enum SettingsSectionID: String, CaseIterable, Sendable {
         case .integrations: .integrations
         case .storageFolders, .storageRetention: .storage
         case .afterRecordingTasks, .afterRecordingAutomation: .afterRecording
-        case .profileIdentity, .profileMatching, .profileAutomation, .profileTranscription, .profileAI, .profileTasks, .profileFolders: .profiles
+        case .profileIdentity, .profileMatching, .profileAutomation, .profileTranscription, .profileAI, .profileTasks, .profileFolders,
+             .profileIntegrations: .profiles
         }
     }
 

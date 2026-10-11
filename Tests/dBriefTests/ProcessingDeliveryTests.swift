@@ -123,10 +123,13 @@ struct ProcessingDeliveryTests {
         var config = IntegrationSettings()
         config.webhook.enabled = true
         config.webhook.url = "https://synthetic.invalid"
+        let profileID = UUID()
         let request = ProcessingPipeline.DeliveryPreparation(jobID: UUID(), recording: RecordingSnapshot(recording: recording),
-            configuration: config, markdownURL: nil, requireTranscript: true, processingSucceededBeforeDeliveryAt: nil)
+            configuration: config, markdownURL: nil, requireTranscript: true, processingSucceededBeforeDeliveryAt: nil,
+            profileID: profileID)
         let result = try await ProcessingPipeline().prepareDeliveries(request, store: store, service: IntegrationDispatchService())
         #expect(try await store.load(id: request.jobID) == result)
+        #expect(result.profileID == profileID)
         #expect(result.processingSucceededBeforeDeliveryAt == nil && result.successfulWorkflowCompletion == nil)
         #expect(result.bundle.transcript == "Synthetic transcript" && result.deliveries.count == 1)
     }

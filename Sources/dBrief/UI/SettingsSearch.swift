@@ -61,6 +61,7 @@ enum SettingsSearch {
         .init("profileAI", "Profile AI overrides", "analysis provider prompts inherit", section: .profileAI),
         .init("profileTasks", "Profile task overrides", "transcription summary action items tags inherit", section: .profileTasks),
         .init("profileFolders", "Profile destination overrides", "recording transcript folder obsidian vault inherit", section: .profileFolders),
+        .init("profileIntegrations", "Profile integration overrides", "ticktick list todoist project tasks inherit", section: .profileIntegrations),
         .init("transcriptionEngine", "Transcription engine", "whisper parakeet apple speech remote model download", section: .transcriptionEngine),
         .init("language", "Audio language", "transcription language auto detect multilingual", section: .transcriptionLanguage),
         .init("cleanup", "Transcript cleanup", "spelling filler words punctuation", section: .transcriptionCleanup),

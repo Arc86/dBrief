@@ -265,6 +265,7 @@ struct SettingsProfilesTab: View {
                     aiOverridesSection
                     taskOverridesSection
                     folderOverridesSection
+                    integrationOverridesSection
                 }
                 .frame(maxWidth: SettingsPageLayout.columnWidth, alignment: .leading)
                 .padding(.vertical, 28)
@@ -667,6 +668,60 @@ struct SettingsProfilesTab: View {
                     )
                     .frame(height: 22)
                 }
+        }
+    }
+
+    private var integrationOverridesSection: some View {
+        let showTickTick = IntegrationDestination.available.contains(.tickTick)
+        let keys: [WritableKeyPath<MeetingProfileOverrides, String?>] =
+            (showTickTick ? [\.tickTickProjectID] : []) + [\.todoistProjectID]
+        let overridden = keys.filter { isSet($0) }.count
+        return SettingsCard("Integrations", description: "\(overridden) of \(keys.count) overridden",
+                            section: .profileIntegrations) {
+            if showTickTick {
+                taskDestinationOverrideRow("TickTick list", service: .tickTick,
+                                           id: \.tickTickProjectID, name: \.tickTickProjectName,
+                                           base: appSettings.integrations.tickTick.projectID,
+                                           baseName: appSettings.integrations.tickTick.projectName)
+            }
+            taskDestinationOverrideRow("Todoist project", service: .todoist,
+                                       id: \.todoistProjectID, name: \.todoistProjectName,
+                                       base: appSettings.integrations.todoist.projectID,
+                                       baseName: appSettings.integrations.todoist.projectName)
+        }
+    }
+
+    /// Like `overrideRow`, but keeps the display name in step with the id. An
+    /// empty id overrides to the Inbox.
+    @ViewBuilder
+    private func taskDestinationOverrideRow(
+        _ title: String, service: TaskDestinationPicker.Service,
+        id idPath: WritableKeyPath<MeetingProfileOverrides, String?>,
+        name namePath: WritableKeyPath<MeetingProfileOverrides, String?>,
+        base: String?, baseName: String?
+    ) -> some View {
+        let enabled = isSet(idPath)
+        SettingsRow(verbatim: title,
+                    caption: "\(enabled ? "App default" : "Uses app default") — \(baseName ?? "Inbox")") {
+            Toggle("Override \(title)", isOn: Binding(
+                get: { isSet(idPath) },
+                set: { on in
+                    guard let index = selectedProfileIndex else { return }
+                    appSettings.profiles[index].overrides[keyPath: idPath] = on ? (base ?? "") : nil
+                    appSettings.profiles[index].overrides[keyPath: namePath] = on ? baseName : nil
+                }))
+        }
+        if enabled, let index = selectedProfileIndex {
+            let overrides = appSettings.profiles[index].overrides
+            let current = overrides[keyPath: idPath] ?? ""
+            SettingsStackedRow {
+                TaskDestinationPicker(service: service, savedID: current.isEmpty ? nil : current,
+                                      savedName: overrides[keyPath: namePath]) { id, name in
+                    guard let index = selectedProfileIndex else { return }
+                    appSettings.profiles[index].overrides[keyPath: idPath] = id ?? ""
+                    appSettings.profiles[index].overrides[keyPath: namePath] = name
+                }
+            }
         }
     }
 

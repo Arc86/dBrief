@@ -178,7 +178,7 @@ A **spoken-audio summary**: the AI rewrites a recording's insights into a natura
 
 Profile system for per-meeting configuration overrides:
 - **Presets**: `default`, `teamMeeting`, `salesMeeting`, `custom` — each with pre-configured prompts
-- **Overrides**: nullable fields for transcription engine, AI engine, endpoints, prompts, output folders
+- **Overrides**: nullable fields for transcription engine, AI engine, endpoints, prompts, output folders, and the TickTick list / Todoist project (`tickTickProjectID`/`todoistProjectID`, empty = Inbox; names display-only). Integration settings resolve per profile via `AppSettings.resolvedIntegrations(for:)`; each `IntegrationDeliveryBatch` records the `profileID` it was prepared under, so sends, digests and History retries resolve with the meeting's profile rather than whichever is active later. The list/project picker is the shared `TaskDestinationPicker` (Integrations page + Profiles editor)
 - **Resolution order**: profile override → active profile setting → global app default
 - **Export/import**: versioned `ProfilesExportEnvelope` with conflict renaming on import
 - Effective settings accessed via `AppSettings.effectiveTranscriptionEngine`, `effectiveAIEngine`, etc.

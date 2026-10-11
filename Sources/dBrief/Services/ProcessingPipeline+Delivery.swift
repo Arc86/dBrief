@@ -8,6 +8,8 @@ extension ProcessingPipeline {
         let markdownURL: URL?
         let requireTranscript: Bool
         let processingSucceededBeforeDeliveryAt: Date?
+        /// The profile `configuration` was resolved for; retries resolve with it again.
+        var profileID: UUID? = nil
     }
     struct DeliveryRun: Sendable {
         let id: UUID
@@ -47,6 +49,7 @@ extension ProcessingPipeline {
         try await validateOwnership()
         try Task.checkCancellation()
         proposed.processingSucceededBeforeDeliveryAt = request.processingSucceededBeforeDeliveryAt
+        proposed.profileID = request.profileID
         let saved = try await store.createIfAbsent(proposed)
         try Task.checkCancellation()
         try await validateOwnership()

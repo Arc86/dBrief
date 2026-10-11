@@ -9,11 +9,7 @@ struct SettingsIntegrationsTab: View {
     @State private var isTesting: Set<IntegrationDestination> = []
     @State private var openDestination: IntegrationDestination?
     @Environment(TickTickAuthService.self) private var tickTickAuth
-    @State private var tickTickProjects: [TickTickProject] = []
-    @State private var tickTickListError: String?
     @State private var tickTickSignInError: String?
-    @State private var todoistProjects: [TodoistProject] = []
-    @State private var todoistListError: String?
 
     private enum TestOutcome: Equatable {
         case success
@@ -278,7 +274,6 @@ struct SettingsIntegrationsTab: View {
                 }
             }
         }
-        .task(id: tickTickAuth.isSignedIn) { await loadTickTickProjects() }
     }
 
     @ViewBuilder
@@ -310,48 +305,12 @@ struct SettingsIntegrationsTab: View {
 
     private var tickTickListRow: some View {
         let saved = appSettings.integrations.tickTick
-        return destinationListRow("List", options: tickTickProjects.map { ($0.id, $0.name) },
-                                  savedID: saved.projectID, savedName: saved.projectName, error: tickTickListError,
-                                  retry: { Task { await loadTickTickProjects() } }) { id, name in
-            var config = appSettings.integrations.tickTick
-            config.projectID = id
-            config.projectName = name
-            appSettings.integrations.tickTick = config
-        }
-    }
-
-    private static let inboxTag = "__dbrief_inbox__"
-
-    /// A list/project picker with Inbox (nil) first. A saved choice missing from
-    /// `options` stays selectable while the lists load or after it was deleted.
-    private func destinationListRow(_ title: String, options: [(id: String, name: String)],
-                                    savedID: String?, savedName: String?, error: String?,
-                                    retry: @escaping () -> Void,
-                                    select: @escaping (_ id: String?, _ name: String?) -> Void) -> some View {
-        let selection = Binding<String>(
-            get: { savedID ?? Self.inboxTag },
-            set: { id in
-                guard id != Self.inboxTag else { return select(nil, nil) }
-                select(id, options.first(where: { $0.id == id })?.name ?? savedName)
-            })
-        return SettingsRow(verbatim: title, caption: error, systemImage: "list.bullet") {
-            HStack(spacing: 8) {
-                if error != nil {
-                    Button("Retry", action: retry)
-                        .buttonStyle(.settingsSecondary)
-                }
-                Picker(title, selection: selection) {
-                    Text("Inbox").tag(Self.inboxTag)
-                    ForEach(options, id: \.id) { option in
-                        Text(option.name).tag(option.id)
-                    }
-                    if let savedID, !options.contains(where: { $0.id == savedID }) {
-                        Text(savedName ?? "Unavailable list").tag(savedID)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 220)
+        return SettingsRow(verbatim: "List", systemImage: "list.bullet") {
+            TaskDestinationPicker(service: .tickTick, savedID: saved.projectID, savedName: saved.projectName) { id, name in
+                var config = appSettings.integrations.tickTick
+                config.projectID = id
+                config.projectName = name
+                appSettings.integrations.tickTick = config
             }
         }
     }
@@ -375,56 +334,17 @@ struct SettingsIntegrationsTab: View {
                 }
             }
         }
-        .task(id: appSettings.todoistToken) { await loadTodoistProjects() }
     }
 
     private var todoistProjectRow: some View {
         let saved = appSettings.integrations.todoist
-        return destinationListRow("Project", options: todoistProjects.map { ($0.id, $0.name) },
-                                  savedID: saved.projectID, savedName: saved.projectName, error: todoistListError,
-                                  retry: { Task { await loadTodoistProjects() } }) { id, name in
-            var config = appSettings.integrations.todoist
-            config.projectID = id
-            config.projectName = name
-            appSettings.integrations.todoist = config
-        }
-    }
-
-    @MainActor
-    private func loadTodoistProjects() async {
-        let token = appSettings.todoistToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            todoistProjects = []
-            todoistListError = nil
-            return
-        }
-        // The token field updates on every keystroke; wait for typing to settle.
-        try? await Task.sleep(for: .milliseconds(600))
-        guard !Task.isCancelled else { return }
-        do {
-            todoistProjects = try await TodoistClient().listProjects(token: token)
-            todoistListError = nil
-        } catch is CancellationError {
-        } catch {
-            todoistListError = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func loadTickTickProjects() async {
-        tickTickAuth.reload()
-        guard tickTickAuth.isSignedIn else {
-            tickTickProjects = []
-            return
-        }
-        do {
-            tickTickProjects = try await TickTickClient().listProjects(token: tickTickAuth.accessToken())
-            tickTickListError = nil
-        } catch TickTickError.unauthorized {
-            TickTickSession.markExpired()
-            tickTickAuth.reload()
-        } catch {
-            tickTickListError = error.localizedDescription
+        return SettingsRow(verbatim: "Project", systemImage: "list.bullet") {
+            TaskDestinationPicker(service: .todoist, savedID: saved.projectID, savedName: saved.projectName) { id, name in
+                var config = appSettings.integrations.todoist
+                config.projectID = id
+                config.projectName = name
+                appSettings.integrations.todoist = config
+            }
         }
     }
 
