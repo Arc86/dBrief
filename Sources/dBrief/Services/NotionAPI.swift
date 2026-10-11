@@ -96,7 +96,7 @@ enum NotionAPI {
         let tags = bundle.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         if fields.contains(.tags), !tags.isEmpty {
             blocks.append(block("heading_2", "Tags"))
-            blocks += split(tags.joined(separator: ", ")).map { block("paragraph", $0) }
+            blocks += tagBlocks(tags)
         }
         if fields.contains(.sentiment), let sentiment = nonEmpty(bundle.sentiment) {
             blocks.append(block("heading_2", "Sentiment"))
@@ -161,6 +161,22 @@ enum NotionAPI {
         }
         emit(current[...])
         return pieces
+    }
+
+    /// Each tag as a grey pill, separated by spaces. A plain page can't hold
+    /// Notion tags; a database entry also gets them in its Tags column.
+    private static func tagBlocks(_ tags: [String]) -> [[String: Any]] {
+        var runs: [[String: Any]] = []
+        for (offset, tag) in tags.enumerated() {
+            if offset > 0 { runs.append(richText(" ")) }
+            var pill = richText(split(tag).first ?? tag)
+            pill["annotations"] = ["color": "gray_background"]
+            runs.append(pill)
+        }
+        // A rich-text array holds at most 100 runs.
+        return stride(from: 0, to: runs.count, by: 100).map { start in
+            ["object": "block", "type": "paragraph", "paragraph": ["rich_text": Array(runs[start..<min(start + 100, runs.count)])]]
+        }
     }
 
     private static func block(_ type: String, _ text: String, extra: [String: Any] = [:]) -> [String: Any] {

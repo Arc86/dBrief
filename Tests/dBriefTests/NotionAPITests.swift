@@ -41,7 +41,7 @@ struct NotionAPITests {
         #expect(text(blocks[4]) == "one")
         #expect(text(blocks[7]) == "Send deck")
         #expect((blocks[7]["to_do"] as? [String: Any])?["checked"] as? Bool == false)
-        #expect(text(blocks[9]) == "q3, sales")
+        #expect(text(blocks[9]) == "q3 sales")
     }
 
     @Test func unselectedFieldsAreLeftOutButTheHeaderStays() {
@@ -128,5 +128,17 @@ struct NotionAPITests {
     @Test func splittingNeverProducesEmptyPieces() {
         #expect(NotionAPI.split(String(repeating: " ", count: 2_500) + "b") == ["b"])
         #expect(NotionAPI.split("   ").isEmpty)
+    }
+
+    @Test func tagsAreGreyPills() throws {
+        let blocks = NotionAPI.blocks(for: bundle(tags: [" q3 ", "sales", ""]), fields: [.tags], reference: "r",
+                                      locale: locale, timeZone: utc)
+        let tags = try #require(blocks.last)
+        #expect(tags["type"] as? String == "paragraph")
+        let runs = (tags["paragraph"] as? [String: Any])?["rich_text"] as? [[String: Any]] ?? []
+        let content = runs.map { ($0["text"] as? [String: Any])?["content"] as? String ?? "" }
+        #expect(content == ["q3", " ", "sales"])
+        let colors = runs.map { ($0["annotations"] as? [String: Any])?["color"] as? String }
+        #expect(colors == ["gray_background", nil, "gray_background"])
     }
 }
