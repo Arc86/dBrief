@@ -17,7 +17,7 @@ struct ViewerTranscriptText: View, Equatable {
 
     var body: some View {
         // Paragraphs sit further apart than wrapped lines, so a break reads as one.
-        VStack(alignment: .leading, spacing: CGFloat(reading.fontSize) * 0.7) {
+        VStack(alignment: .leading, spacing: CGFloat(reading.effectiveFontSize) * 0.7) {
             ForEach(Array(Self.makeParagraphs(text: text, ranges: paragraphRanges,
                 matches: matches, currentMatchIndex: currentMatchIndex, palette: palette).enumerated()), id: \.offset) { _, paragraph in
                 ViewerReadingParagraph(text: paragraph)

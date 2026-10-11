@@ -20,6 +20,8 @@ struct RecordingViewerActions {
     var delete: (() -> Void)?
     /// Opens the Focus Reader from the viewer, or leaves it from the reader.
     var focusReader: (() -> Void)? = nil
+    /// +1 / −1 step of the Focus Reader's text size; nil elsewhere.
+    var changeTextSize: ((Int) -> Void)? = nil
 }
 
 enum TextInputFocus {
@@ -63,6 +65,12 @@ struct RecordingCommands: Commands {
             Button("Focus Reader") { viewer?.focusReader?() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(viewer?.focusReader == nil)
+            Button("Larger Text") { viewer?.changeTextSize?(1) }
+                .keyboardShortcut("+", modifiers: .command)
+                .disabled(viewer?.changeTextSize == nil)
+            Button("Smaller Text") { viewer?.changeTextSize?(-1) }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(viewer?.changeTextSize == nil)
             Divider()
         }
 

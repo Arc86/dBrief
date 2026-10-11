@@ -157,6 +157,10 @@ struct ViewerAppearancePreferences: Equatable, Sendable {
     }
 
     var readingFont: ViewerReadingFont
+    /// A display-only size from the Focus Reader, which reads larger than the
+    /// viewer's 12–24 range allows. Never saved; the viewer's `fontSize` stays.
+    var displaySizeOverride: Int? = nil
+    var effectiveFontSize: Int { displaySizeOverride ?? fontSize }
     var density: ViewerDensity
 
     var fontSize: Int {

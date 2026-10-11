@@ -8,13 +8,17 @@ struct FocusReaderView: View {
     @Environment(FocusReaderStore.self) private var store
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.viewerPalette) private var palette
-    @Environment(\.viewerReading) private var reading
+    @Environment(\.viewerReading) private var viewerReading
     @Environment(\.viewerMode) private var mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
+    @State private var textOptionsShown = false
+    @State private var pinchStart: FocusReaderTextSettings?
     @FocusState private var controlsFocused: Bool
+    @AppStorage("focusReaderFontSize") private var storedSize = FocusReaderTextSettings.defaultSize
+    @AppStorage("focusReaderFont") private var storedFont = ""
 
     static let windowID = "focus-reader"
 
@@ -49,12 +53,35 @@ struct FocusReaderView: View {
         .onAppear(perform: revealControls)
         .onDisappear { hideTask?.cancel() }
         .focusedSceneValue(\.recordingViewer, viewerActions)
-        .background {
-            // ⌘+ / ⌘− adjust the shared reading size.
-            Button("Larger Text") { adjustFontSize(by: 1) }.keyboardShortcut("+", modifiers: .command).hidden()
-            Button("Larger Text") { adjustFontSize(by: 1) }.keyboardShortcut("=", modifiers: .command).hidden()
-            Button("Smaller Text") { adjustFontSize(by: -1) }.keyboardShortcut("-", modifiers: .command).hidden()
-        }
+        .environment(\.viewerReading, reading)
+        // Pinch on the trackpad to resize the text, from the size when the pinch began.
+        .simultaneousGesture(MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStart ?? textSettings
+                pinchStart = start
+                apply(start.pinched(by: value.magnification))
+            }
+            .onEnded { _ in pinchStart = nil })
+    }
+
+    // MARK: - Text settings
+
+    private var textSettings: FocusReaderTextSettings {
+        FocusReaderTextSettings(size: storedSize, font: ViewerReadingFont(rawValue: storedFont))
+    }
+
+    /// The viewer's reading preferences at the reader's own size and font.
+    private var reading: ViewerAppearancePreferences { textSettings.applied(to: viewerReading) }
+
+    private func apply(_ settings: FocusReaderTextSettings) {
+        storedSize = settings.size
+        storedFont = settings.font?.rawValue ?? ""
+    }
+
+    private func changeSize(by steps: Int) {
+        var settings = textSettings
+        if steps > 0 { settings.enlarge() } else { settings.shrink() }
+        apply(settings)
     }
 
     // MARK: - Content
@@ -65,12 +92,12 @@ struct FocusReaderView: View {
     private func header(_ content: FocusReaderContent) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(content.title)
-                .font(.system(size: CGFloat(reading.fontSize) * 2, weight: .bold))
+                .font(.system(size: CGFloat(reading.effectiveFontSize) * 2, weight: .bold))
                 .foregroundStyle(palette.heading.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(content.subtitle)
-                .font(.system(size: CGFloat(reading.fontSize) * 0.85))
+                .font(.system(size: CGFloat(reading.effectiveFontSize) * 0.85))
                 .foregroundStyle(palette.secondary.color)
         }
     }
@@ -117,7 +144,7 @@ struct FocusReaderView: View {
                 FlowLayout(spacing: 8) {
                     ForEach(content.tags, id: \.self) { tag in
                         Text(tag)
-                            .font(.system(size: CGFloat(reading.fontSize) * 0.8, weight: .medium))
+                            .font(.system(size: CGFloat(reading.effectiveFontSize) * 0.8, weight: .medium))
                             .foregroundStyle(palette.text.color)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -162,7 +189,7 @@ struct FocusReaderView: View {
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: CGFloat(reading.fontSize) * 1.25, weight: .semibold))
+                .font(.system(size: CGFloat(reading.effectiveFontSize) * 1.25, weight: .semibold))
                 .foregroundStyle(palette.heading.color)
                 .accessibilityAddTraits(.isHeader)
             content()
@@ -185,6 +212,19 @@ struct FocusReaderView: View {
                 .focused($controlsFocused)
             }
             Spacer()
+            Button { textOptionsShown.toggle() } label: {
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.secondary.color)
+            .background(palette.surface.color, in: Circle())
+            .help("Text size and font")
+            .accessibilityLabel("Text size and font")
+            .focused($controlsFocused)
+            .popover(isPresented: $textOptionsShown, arrowEdge: .bottom) { textOptions }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
@@ -200,8 +240,48 @@ struct FocusReaderView: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
-        .opacity(controlsVisible || controlsFocused ? 1 : 0)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: controlsVisible || controlsFocused)
+        .opacity(controlsShown ? 1 : 0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: controlsShown)
+    }
+
+    private var controlsShown: Bool { controlsVisible || controlsFocused || textOptionsShown }
+
+    private var textOptions: some View {
+        let settings = textSettings
+        return VStack(alignment: .leading, spacing: 14) {
+            Picker("Font", selection: Binding(
+                get: { settings.font?.rawValue ?? "" },
+                set: { apply(FocusReaderTextSettings(size: settings.size, font: ViewerReadingFont(rawValue: $0))) })) {
+                Text("Same as the viewer").tag("")
+                ForEach(ViewerReadingFont.allCases, id: \.self) { font in
+                    Text(font.displayName).tag(font.rawValue)
+                }
+            }
+            HStack(spacing: 10) {
+                Button { changeSize(by: -1) } label: { Image(systemName: "textformat.size.smaller") }
+                    .accessibilityLabel("Smaller text")
+                    .disabled(settings.size <= FocusReaderTextSettings.sizeRange.lowerBound)
+                Slider(value: Binding(
+                    get: { Double(settings.size) },
+                    set: { value in var next = settings; next.setSize(Int(value.rounded())); apply(next) }),
+                       in: Double(FocusReaderTextSettings.sizeRange.lowerBound)...Double(FocusReaderTextSettings.sizeRange.upperBound),
+                       step: Double(FocusReaderTextSettings.step))
+                    .frame(width: 180)
+                    .accessibilityLabel("Text size")
+                    .accessibilityValue("\(settings.size) points")
+                Button { changeSize(by: 1) } label: { Image(systemName: "textformat.size.larger") }
+                    .accessibilityLabel("Larger text")
+                    .disabled(settings.size >= FocusReaderTextSettings.sizeRange.upperBound)
+                Text("\(settings.size) pt")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
+            }
+            Text("Pinch on the trackpad or press ⌘+ / ⌘− to resize.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
     }
 
     private func revealControls() {
@@ -223,11 +303,7 @@ struct FocusReaderView: View {
             selectMode: { mode in store.page = mode == .summary ? .notes : .transcript },
             copy: nil, isPlaying: false, togglePlayback: nil, assistantOpen: false, toggleAssistant: nil,
             reprocess: nil, hasTranscript: !content.turns.isEmpty, revealInFinder: nil, delete: nil,
-            focusReader: close)
-    }
-
-    private func adjustFontSize(by step: Int) {
-        appSettings.viewerAppearance.fontSize += step
+            focusReader: close, changeTextSize: { changeSize(by: $0) })
     }
 
     private func close() {
