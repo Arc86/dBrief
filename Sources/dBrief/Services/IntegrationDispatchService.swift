@@ -16,12 +16,15 @@ actor IntegrationDispatchService {
     let tickTickClient: TickTickClient
     let tickTickToken: @Sendable () throws -> String
     let tickTickSessionExpired: @Sendable () -> Void
+    let todoistClient: TodoistClient
+    let todoistToken: @Sendable () throws -> String
 
     init(session: URLSession = .shared, privacyStore: PrivacyReceiptStore = .shared,
          privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending"),
          available: [IntegrationDestination] = IntegrationDestination.available,
          tickTickToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .tickTickAccessToken) },
-         tickTickSessionExpired: @escaping @Sendable () -> Void = { TickTickSession.markExpired() }) {
+         tickTickSessionExpired: @escaping @Sendable () -> Void = { TickTickSession.markExpired() },
+         todoistToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .todoist) }) {
         self.session = session
         self.privacyStore = privacyStore
         self.privacyPendingRoot = privacyPendingRoot
@@ -29,6 +32,8 @@ actor IntegrationDispatchService {
         self.tickTickClient = TickTickClient(session: session)
         self.tickTickToken = tickTickToken
         self.tickTickSessionExpired = tickTickSessionExpired
+        self.todoistClient = TodoistClient(session: session)
+        self.todoistToken = todoistToken
     }
 
     /// UI-owned fields/configuration are copied before entering this actor.
@@ -56,6 +61,7 @@ actor IntegrationDispatchService {
                 guard let digest = digests[destination] else { return nil }
                 // Not signed in: leave it out, like a disabled destination.
                 if destination == .tickTick, ((try? tickTickToken()) ?? "").isEmpty { return nil }
+                if destination == .todoist, ((try? todoistToken()) ?? "").isEmpty { return nil }
                 return .init(id: UUID(), destination: destination, configurationDigest: digest)
             }
         )
@@ -85,6 +91,9 @@ actor IntegrationDispatchService {
         let bundle = batch.bundle
         if delivery.destination == .tickTick {
             return await sendToTickTick(batch: batch, delivery: delivery, config: config)
+        }
+        if delivery.destination == .todoist {
+            return await sendToTodoist(batch: batch, delivery: delivery, config: config)
         }
         if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
@@ -142,6 +151,10 @@ actor IntegrationDispatchService {
                 tickTickSessionExpired()
                 throw TickTickError.unauthorized
             }
+        case .todoist:
+            let token = try todoistToken()
+            guard !token.isEmpty else { throw TodoistError.missingToken }
+            _ = try await todoistClient.listProjects(token: token)
         case .obsidian:
             break
         }

@@ -10,6 +10,7 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
     case oneNote
     case webhook
     case tickTick
+    case todoist
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
         case .oneNote: "Microsoft OneNote"
         case .webhook: "Webhook"
         case .tickTick: "TickTick"
+        case .todoist: "Todoist"
         }
     }
 
@@ -35,7 +37,7 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
     }
 
     static func available(tickTickConfigured: Bool) -> [IntegrationDestination] {
-        [.obsidian, .appleNotes, .appleReminders, .webhook] + (tickTickConfigured ? [.tickTick] : [])
+        [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist] + (tickTickConfigured ? [.tickTick] : [])
     }
 }
 
@@ -81,6 +83,14 @@ struct AppleNotesConfig: Codable, Hashable, Sendable {
 struct AppleRemindersConfig: Codable, Hashable, Sendable {
     var enabled: Bool = false
     var listName: String = ""
+}
+
+struct TodoistConfig: Codable, Hashable, Sendable {
+    var enabled: Bool = false
+    /// Nil sends to the Inbox.
+    var projectID: String? = nil
+    /// Display only; the id is what routes tasks.
+    var projectName: String? = nil
 }
 
 struct TickTickConfig: Codable, Hashable, Sendable {
@@ -213,6 +223,7 @@ struct IntegrationSettings: Codable, Hashable, Sendable {
     var oneNote = OneNoteConfig()
     var webhook = WebhookConfig()
     var tickTick = TickTickConfig()
+    var todoist = TodoistConfig()
 }
 
 extension IntegrationSettings {
@@ -229,6 +240,7 @@ extension IntegrationSettings {
         oneNote = try container.decodeIfPresent(OneNoteConfig.self, forKey: .oneNote) ?? oneNote
         webhook = try container.decodeIfPresent(WebhookConfig.self, forKey: .webhook) ?? webhook
         tickTick = try container.decodeIfPresent(TickTickConfig.self, forKey: .tickTick) ?? tickTick
+        todoist = try container.decodeIfPresent(TodoistConfig.self, forKey: .todoist) ?? todoist
     }
 }
 

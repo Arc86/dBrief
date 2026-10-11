@@ -12,6 +12,8 @@ struct SettingsIntegrationsTab: View {
     @State private var tickTickProjects: [TickTickProject] = []
     @State private var tickTickListError: String?
     @State private var tickTickSignInError: String?
+    @State private var todoistProjects: [TodoistProject] = []
+    @State private var todoistListError: String?
 
     private enum TestOutcome: Equatable {
         case success
@@ -101,6 +103,7 @@ struct SettingsIntegrationsTab: View {
         case .oneNote: appSettings.integrations.oneNote.enabled
         case .webhook: appSettings.integrations.webhook.enabled
         case .tickTick: appSettings.integrations.tickTick.enabled
+        case .todoist: appSettings.integrations.todoist.enabled
         }
     }
 
@@ -110,6 +113,7 @@ struct SettingsIntegrationsTab: View {
         case .obsidian: appSettings.obsidianVaultURL == nil
         case .appleNotes, .appleReminders: false
         case .tickTick: !tickTickAuth.isSignedIn
+        case .todoist: appSettings.todoistToken.isEmpty
         case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty
         case .evernote: appSettings.evernoteToken.isEmpty
         case .googleKeep: appSettings.googleKeepToken.isEmpty
@@ -140,6 +144,8 @@ struct SettingsIntegrationsTab: View {
             return host.map { "\($0) · \(appSettings.integrations.webhook.fields.count) fields" } ?? "Add a URL"
         case .tickTick:
             return "One task per action item · list “\(appSettings.integrations.tickTick.projectName ?? "Inbox")”"
+        case .todoist:
+            return "One task per action item · project “\(appSettings.integrations.todoist.projectName ?? "Inbox")”"
         case .notion, .evernote, .googleKeep, .oneNote:
             return nil
         }
@@ -176,6 +182,7 @@ struct SettingsIntegrationsTab: View {
         case .oneNote: oneNoteDetail
         case .webhook: webhookDetail
         case .tickTick: tickTickDetail
+        case .todoist: todoistDetail
         }
     }
 
@@ -303,20 +310,43 @@ struct SettingsIntegrationsTab: View {
 
     private var tickTickListRow: some View {
         let saved = appSettings.integrations.tickTick
-        return SettingsRow(verbatim: "List", caption: tickTickListError, systemImage: "list.bullet") {
+        return destinationListRow("List", options: tickTickProjects.map { ($0.id, $0.name) },
+                                  savedID: saved.projectID, savedName: saved.projectName, error: tickTickListError,
+                                  retry: { Task { await loadTickTickProjects() } }) { id, name in
+            var config = appSettings.integrations.tickTick
+            config.projectID = id
+            config.projectName = name
+            appSettings.integrations.tickTick = config
+        }
+    }
+
+    private static let inboxTag = "__dbrief_inbox__"
+
+    /// A list/project picker with Inbox (nil) first. A saved choice missing from
+    /// `options` stays selectable while the lists load or after it was deleted.
+    private func destinationListRow(_ title: String, options: [(id: String, name: String)],
+                                    savedID: String?, savedName: String?, error: String?,
+                                    retry: @escaping () -> Void,
+                                    select: @escaping (_ id: String?, _ name: String?) -> Void) -> some View {
+        let selection = Binding<String>(
+            get: { savedID ?? Self.inboxTag },
+            set: { id in
+                guard id != Self.inboxTag else { return select(nil, nil) }
+                select(id, options.first(where: { $0.id == id })?.name ?? savedName)
+            })
+        return SettingsRow(verbatim: title, caption: error, systemImage: "list.bullet") {
             HStack(spacing: 8) {
-                if tickTickListError != nil {
-                    Button("Retry") { Task { await loadTickTickProjects() } }
+                if error != nil {
+                    Button("Retry", action: retry)
                         .buttonStyle(.settingsSecondary)
                 }
-                Picker("List", selection: tickTickProjectSelection) {
-                    Text("Inbox").tag(TickTickAPI.inboxProjectID)
-                    ForEach(tickTickProjects, id: \.id) { project in
-                        Text(project.name).tag(project.id)
+                Picker(title, selection: selection) {
+                    Text("Inbox").tag(Self.inboxTag)
+                    ForEach(options, id: \.id) { option in
+                        Text(option.name).tag(option.id)
                     }
-                    // Keep a saved list selectable while the lists load or after it was deleted.
-                    if let id = saved.projectID, !tickTickProjects.contains(where: { $0.id == id }) {
-                        Text(saved.projectName ?? "Unavailable list").tag(id)
+                    if let savedID, !options.contains(where: { $0.id == savedID }) {
+                        Text(savedName ?? "Unavailable list").tag(savedID)
                     }
                 }
                 .labelsHidden()
@@ -326,16 +356,58 @@ struct SettingsIntegrationsTab: View {
         }
     }
 
-    private var tickTickProjectSelection: Binding<String> {
-        Binding(
-            get: { appSettings.integrations.tickTick.projectID ?? TickTickAPI.inboxProjectID },
-            set: { id in
-                var config = appSettings.integrations.tickTick
-                config.projectID = id == TickTickAPI.inboxProjectID ? nil : id
-                config.projectName = config.projectID == nil ? nil
-                    : tickTickProjects.first(where: { $0.id == id })?.name ?? config.projectName
-                appSettings.integrations.tickTick = config
-            })
+    @ViewBuilder
+    private var todoistDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("Todoist", description: "Only action items are sent, one task each") {
+            enableRow("Send to Todoist", $settings.integrations.todoist.enabled)
+            if appSettings.integrations.todoist.enabled {
+                textRow("API token", secure: true, $settings.todoistToken)
+                SettingsRow(verbatim: "Where to find it", caption: "Todoist → Settings → Integrations → Developer") {
+                    Button("Open Todoist") { NSWorkspace.shared.open(TodoistAPI.tokenSettingsURL) }
+                        .buttonStyle(.settingsSecondary)
+                }
+                if appSettings.todoistToken.isEmpty {
+                    warningRow("An API token is required.")
+                } else {
+                    todoistProjectRow
+                    testRow(for: .todoist)
+                }
+            }
+        }
+        .task(id: appSettings.todoistToken) { await loadTodoistProjects() }
+    }
+
+    private var todoistProjectRow: some View {
+        let saved = appSettings.integrations.todoist
+        return destinationListRow("Project", options: todoistProjects.map { ($0.id, $0.name) },
+                                  savedID: saved.projectID, savedName: saved.projectName, error: todoistListError,
+                                  retry: { Task { await loadTodoistProjects() } }) { id, name in
+            var config = appSettings.integrations.todoist
+            config.projectID = id
+            config.projectName = name
+            appSettings.integrations.todoist = config
+        }
+    }
+
+    @MainActor
+    private func loadTodoistProjects() async {
+        let token = appSettings.todoistToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            todoistProjects = []
+            todoistListError = nil
+            return
+        }
+        // The token field updates on every keystroke; wait for typing to settle.
+        try? await Task.sleep(for: .milliseconds(600))
+        guard !Task.isCancelled else { return }
+        do {
+            todoistProjects = try await TodoistClient().listProjects(token: token)
+            todoistListError = nil
+        } catch is CancellationError {
+        } catch {
+            todoistListError = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -561,6 +633,8 @@ struct SettingsIntegrationsTab: View {
             return ["Webhook", destination.rawValue, destination.displayName]
         case .tickTick:
             return ["TickTick", destination.rawValue, destination.displayName]
+        case .todoist:
+            return ["Todoist", destination.rawValue, destination.displayName]
         }
     }
 
@@ -575,6 +649,7 @@ struct SettingsIntegrationsTab: View {
         case .oneNote: "book.closed"
         case .webhook: "network"
         case .tickTick: "checkmark.square"
+        case .todoist: "checkmark.circle"
         }
     }
 

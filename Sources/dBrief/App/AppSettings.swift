@@ -205,6 +205,10 @@ final class AppSettings {
         didSet { saveKeychainSecret(oneNoteToken, for: .oneNote) }
     }
 
+    var todoistToken: String {
+        didSet { saveKeychainSecret(todoistToken, for: .todoist) }
+    }
+
     // MARK: - Post-Recording Defaults
 
     var autoTranscribe: Bool {
@@ -994,6 +998,7 @@ final class AppSettings {
         self.evernoteToken = Self.loadKeychainSecret(for: .evernote)
         self.googleKeepToken = Self.loadKeychainSecret(for: .googleKeep)
         self.oneNoteToken = Self.loadKeychainSecret(for: .oneNote)
+        self.todoistToken = Self.loadKeychainSecret(for: .todoist)
 
         self.autoTranscribe = defaults.object(forKey: Keys.autoTranscribe) as? Bool ?? true
         self.autoSummary = defaults.object(forKey: Keys.autoSummary) as? Bool ?? true

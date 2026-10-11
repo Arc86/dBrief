@@ -369,6 +369,7 @@ private extension PrivacyDestination.Provider {
         case .appleReminders: "Apple Reminders"
         case .webhook: "Webhook"
         case .tickTick: "TickTick"
+        case .todoist: "Todoist"
         case .fileSystem: "File system"
         case .clipboard: "System clipboard"
         case .ttsKit: "TTSKit"

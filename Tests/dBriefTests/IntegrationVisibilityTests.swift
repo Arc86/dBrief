@@ -4,7 +4,7 @@ import Testing
 struct IntegrationVisibilityTests {
     @Test("available lists exactly the four trusted destinations")
     func testAvailableTrustedOnly() {
-        #expect(IntegrationDestination.available == [.obsidian, .appleNotes, .appleReminders, .webhook])
+        #expect(IntegrationDestination.available == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist])
     }
 
     @Test("available excludes untested destinations")

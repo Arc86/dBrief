@@ -1,4 +1,4 @@
-Integration icons (obsidian, Webhook, Notion, Evernote, Google Keep, OneNote, Slack)
+Integration icons (obsidian, Webhook, Notion, Evernote, Google Keep, OneNote, Slack, Todoist)
 are from Dashboard Icons by Homarr Labs, https://github.com/homarr-labs/dashboard-icons,
 licensed under the Apache License 2.0 (dashboard-icons-LICENSE.txt). Logos remain
 trademarks of their respective owners.

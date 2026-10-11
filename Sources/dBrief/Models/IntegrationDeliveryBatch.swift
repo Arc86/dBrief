@@ -94,10 +94,13 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         try add(.webhook, webhookRouting, enabled: settings.webhook.enabled)
         try add(.tickTick, TickTickRouting(projectID: settings.tickTick.projectID ?? "inbox"),
                 enabled: settings.tickTick.enabled)
+        try add(.todoist, TickTickRouting(projectID: settings.todoist.projectID ?? "inbox"),
+                enabled: settings.todoist.enabled)
         return values
     }
 
-    /// The list name is display-only; renaming it must not block a retry.
+    /// The list/project name is display-only; renaming it must not block a retry.
+    /// Shared by TickTick and Todoist, whose routing is just a project id.
     private struct TickTickRouting: Encodable {
         let projectID: String
     }

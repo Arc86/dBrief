@@ -201,7 +201,7 @@ Both search a ±2h window and rank candidates via the pure, unit-tested `Calenda
 
 ### Integration Dispatch (`Services/IntegrationDispatchService.swift`)
 
-Routes post-recording content to nine implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — Obsidian, Apple Notes, Apple Reminders and Webhook, plus TickTick in builds stamped with its OAuth credentials. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
+Routes post-recording content to ten implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — Obsidian, Apple Notes, Apple Reminders, Webhook and Todoist, plus TickTick in builds stamped with its OAuth credentials. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
 
 | Destination | Method |
 |-------------|--------|
@@ -214,8 +214,11 @@ Routes post-recording content to nine implemented destinations, each with config
 | Obsidian | Local filesystem (Markdown files in vault folder) |
 | Webhook | Custom HTTP POST with optional multipart audio upload |
 | TickTick | Open API (OAuth2 via `TickTickAuthService`) — one task per action item |
+| Todoist | API v1 Sync `item_add` (pasted personal API token) — one task per action item |
 
 **TickTick**: "Sign in with TickTick" (`TickTickAuthService`) opens the authorize page in the default browser and receives the redirect on a one-shot loopback listener (`TickTickLoopbackServer`, Network.framework, bound to `127.0.0.1:47213`; RFC 8252) — TickTick's portal rejects custom-scheme redirects, so the registered redirect is exactly `http://127.0.0.1:47213/ticktick/callback`. Sign-in times out after 5 minutes and can be cancelled from Settings. TickTick has no PKCE, so the code exchange uses a client secret; the ID/secret are stamped into the built `Info.plist` (`DBTickTickClientID`/`DBTickTickClientSecret`) by `scripts/stamp-ticktick-credentials.py` from `TICKTICK_CLIENT_ID`/`TICKTICK_CLIENT_SECRET` or the gitignored `packaging/secrets.env` — never committed (public repo); unstamped builds hide TickTick. Only the access token is stored (Keychain); there is no refresh token, so a 401 deletes it and sets `ticktick.sessionExpired` (Settings asks to sign in again). Delivery (`IntegrationDispatchService+TickTick.swift`) records created task ids per action item on the delivery (`createdItems`) and, on a retry, matches existing tasks by title + the batch reference in the content line (`… — added by dBrief (ref <8 hex of the batch id>)`, never the localized date) before creating, so lost responses, 201-without-body replies, locale/time-zone changes and same-titled meetings don't duplicate or drop tasks.
+
+**Todoist**: the user pastes a personal API token (`AppSettings.todoistToken`, Keychain `integration.todoist.token`; no expiry, no OAuth). Tasks go through the Sync API (`IntegrationDispatchService+Todoist.swift`, up to 100 `item_add` commands per request) with a command uuid derived from the delivery id + item index (`TodoistAPI.commandUUID`); Todoist never executes a uuid twice, so retries can't duplicate tasks. Per-item progress uses the same `createdItems` as TickTick; a project picker defaults to the Inbox (no `project_id`).
 
 Integration tokens are stored securely via `KeychainHelper`.
 

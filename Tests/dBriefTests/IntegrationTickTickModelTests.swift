@@ -6,9 +6,9 @@ import Testing
 struct IntegrationTickTickModelTests {
     @Test func tickTickIsOfferedOnlyWithCredentials() {
         #expect(IntegrationDestination.available(tickTickConfigured: false)
-            == [.obsidian, .appleNotes, .appleReminders, .webhook])
+            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist])
         #expect(IntegrationDestination.available(tickTickConfigured: true)
-            == [.obsidian, .appleNotes, .appleReminders, .webhook, .tickTick])
+            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist, .tickTick])
         #expect(IntegrationDestination.tickTick.displayName == "TickTick")
     }
 
@@ -18,11 +18,13 @@ struct IntegrationTickTickModelTests {
         saved.appleReminders.listName = "Work"
         var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
         object["tickTick"] = nil
+        object["todoist"] = nil
         let legacy = try JSONSerialization.data(withJSONObject: object)
         let decoded = try JSONDecoder().decode(IntegrationSettings.self, from: legacy)
         #expect(decoded.webhook.enabled)
         #expect(decoded.appleReminders.listName == "Work")
         #expect(decoded.tickTick == TickTickConfig())
+        #expect(decoded.todoist == TodoistConfig())
     }
 
     @Test func tickTickSettingsRoundTrip() throws {
