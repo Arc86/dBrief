@@ -286,4 +286,24 @@ struct IntegrationDeliveryTests {
         #expect(retried.deliveries[0].createdItems == [0: "t-a", 1: "t-b"])
         #expect(await store.batch.deliveries[0].createdItems == [0: "t-a", 1: "t-b"])
     }
+
+    @Test
+    func acceptingChangedSettingsStartsTheDeliveryOver() async throws {
+        var delivery = IntegrationDeliveryBatch.Delivery(id: UUID(), destination: .notion, configurationDigest: "old")
+        delivery.status = .uncertain
+        delivery.createdItems = [0: "page", 1: "100"]
+        let original = IntegrationDeliveryBatch(id: UUID(), recordingID: UUID(), createdAt: Date(),
+            bundle: .init(title: "Meeting", createdAt: Date(), durationSeconds: 60,
+                          audioFileURL: URL(fileURLWithPath: "/tmp/meeting.m4a"), transcript: nil, summary: "S",
+                          actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
+            deliveries: [delivery])
+        let store = DeliveryTestStore(original)
+        let result = try await IntegrationDeliveryCoordinator(store: store).run(
+            id: original.id, configurationDigests: [.notion: "new"], allowUncertainRetry: true,
+            acceptConfigurationChange: true) { _, entry in
+            #expect(entry.createdItems == nil)
+            return .init(destination: .notion, status: .success, message: "Sent", remoteID: "p2", createdItems: [0: "p2", 1: "3"])
+        }
+        #expect(result.deliveries[0].createdItems == [0: "p2", 1: "3"])
+    }
 }

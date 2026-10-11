@@ -34,7 +34,8 @@ extension IntegrationDispatchService {
                 let chunk = pending[start..<min(start + TodoistAPI.maxCommandsPerRequest, pending.count)]
                 start += TodoistAPI.maxCommandsPerRequest
                 let commands = chunk.map { item in
-                    let uuid = TodoistAPI.commandUUID(deliveryID: delivery.id, index: item.index)
+                    let uuid = TodoistAPI.commandUUID(deliveryID: delivery.id, digest: delivery.configurationDigest,
+                                                      index: item.index)
                     return (item.index, uuid, TodoistAPI.itemAdd(uuid: uuid, tempID: uuid, content: item.title,
                                                                  description: description,
                                                                  projectID: config.todoist.projectID))

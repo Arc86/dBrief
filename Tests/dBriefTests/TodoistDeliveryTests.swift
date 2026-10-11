@@ -82,8 +82,8 @@ struct TodoistDeliveryTests {
         #expect(result.createdItems == [0: "id-Send deck", 2: "id-Book room"])
         #expect(h.log.posts.count == 1)
         let sent = Self.commands(try #require(h.log.posts.first))
-        #expect(sent.map { $0["uuid"] as? String } == [TodoistAPI.commandUUID(deliveryID: delivery.id, index: 0),
-                                                        TodoistAPI.commandUUID(deliveryID: delivery.id, index: 2)])
+        #expect(sent.map { $0["uuid"] as? String } == [TodoistAPI.commandUUID(deliveryID: delivery.id, digest: delivery.configurationDigest, index: 0),
+                                                        TodoistAPI.commandUUID(deliveryID: delivery.id, digest: delivery.configurationDigest, index: 2)])
         let args = try #require(sent.first?["args"] as? [String: String])
         #expect(args["project_id"] == "p1")
         #expect(args["description"]?.hasPrefix("From “Weekly sync”") == true)
@@ -116,7 +116,7 @@ struct TodoistDeliveryTests {
         retry.createdItems = first.createdItems
         _ = await h.service.send(batch: batch, delivery: retry, config: h.config)
         let resent = Self.commands(h.log.posts[1])
-        #expect(resent.map { $0["uuid"] as? String } == [TodoistAPI.commandUUID(deliveryID: delivery.id, index: 1)])
+        #expect(resent.map { $0["uuid"] as? String } == [TodoistAPI.commandUUID(deliveryID: delivery.id, digest: delivery.configurationDigest, index: 1)])
     }
 
     @Test func moreThanOneHundredItemsAreSplit() async throws {

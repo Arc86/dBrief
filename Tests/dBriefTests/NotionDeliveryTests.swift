@@ -23,7 +23,7 @@ struct NotionDeliveryTests {
     }
 
     private func harness(parent: NotionParentType = .page, parentID: String = "parent-1", tokenStored: Bool = true,
-                         respond: @escaping @Sendable (Seen) -> Reply) throws -> Harness {
+                         tokenSuffix: String = "", respond: @escaping @Sendable (Seen) -> Reply) throws -> Harness {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("notion-delivery-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let token = UUID().uuidString
@@ -36,7 +36,7 @@ struct NotionDeliveryTests {
         let service = IntegrationDispatchService(
             session: session, privacyStore: PrivacyReceiptStore(gapDirectoryURL: folder.appendingPathComponent("gaps")),
             privacyPendingRoot: folder.appendingPathComponent("pending"),
-            notionToken: { tokenStored ? token : "" })
+            notionToken: { tokenStored ? token + tokenSuffix : "" })
         var config = IntegrationSettings()
         config.notion.enabled = true
         config.notion.parentType = parent
@@ -118,16 +118,64 @@ struct NotionDeliveryTests {
         #expect(Set(properties.keys) == ["Name", "Date", "Tags"])
     }
 
-    @Test func retryResumesFromTheRecordedPageAndCount() async throws {
-        let h = try harness { _ in Self.ok(["results": []]) }
+    @Test func retryRecountsTheBlocksAlreadyOnThePage() async throws {
+        // The previous attempt recorded 100 blocks, but its last append reached
+        // Notion before the response was lost: the page already holds 150.
+        let h = try harness { seen in
+            seen.method == "GET"
+                ? Self.ok(["results": Array(repeating: ["type": "paragraph"], count: 150), "has_more": false])
+                : Self.ok([:])
+        }
         defer { h.cleanUp() }
-        let (batch, delivery) = try batch(h, transcriptLines: 120, attempts: 2, created: [0: "pg", 1: "100"])
+        let (batch, delivery) = try batch(h, transcriptLines: 220, attempts: 2, created: [0: "pg", 1: "100"])
         let total = blockCount(h, batch)
         let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
         #expect(result.status == .success)
         #expect(result.createdItems == [0: "pg", 1: "\(total)"])
-        #expect(h.log.all.map(\.path) == ["/v1/blocks/pg/children"])
-        #expect(Self.children(h.log.all[0]) == total - 100)
+        let appends = h.log.all.filter { $0.method == "PATCH" }
+        #expect(appends.map(Self.children).reduce(0, +) == total - 150)
+    }
+
+    @Test func lostPageSearchLooksPastTheFirstResultsNewestFirst() async throws {
+        let id = UUID()
+        let marker = "added by dBrief (ref \(NotionAPI.reference(for: id)))"
+        let searches = TickTickSeenLog()
+        let h = try harness { seen in
+            switch (seen.method, seen.path) {
+            case ("POST", "/v1/search"):
+                searches.append(seen)
+                return searches.all.count == 1
+                    ? Self.ok(["results": [["object": "page", "id": "old", "parent": ["type": "page_id", "page_id": "parent-1"]]],
+                               "has_more": true, "next_cursor": "c2"])
+                    : Self.ok(["results": [["object": "page", "id": "p1", "parent": ["type": "page_id", "page_id": "parent-1"]]],
+                               "has_more": false])
+            case ("GET", "/v1/blocks/old/children"):
+                return Self.ok(["results": [["type": "paragraph", "paragraph": ["rich_text": [["plain_text": "an older meeting"]]]]]])
+            case ("GET", "/v1/blocks/p1/children"):
+                let first: [String: Any] = ["type": "paragraph", "paragraph": ["rich_text": [["plain_text": marker]]]]
+                return Self.ok(["results": [first, ["type": "heading_2"]], "has_more": false])
+            default:
+                return Self.ok(["id": "new"])
+            }
+        }
+        defer { h.cleanUp() }
+        var (batch, delivery) = try batch(h, attempts: 2)
+        batch = IntegrationDeliveryBatch(id: id, recordingID: batch.recordingID, createdAt: batch.createdAt,
+                                         bundle: batch.bundle, deliveries: batch.deliveries)
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.createdItems?[0] == "p1")
+        #expect(!h.log.all.contains { $0.path == "/v1/pages" })
+        let firstSearch = Self.json(try #require(searches.all.first))
+        #expect((firstSearch["sort"] as? [String: String]) == ["timestamp": "last_edited_time", "direction": "descending"])
+        #expect(Self.json(searches.all[1])["start_cursor"] as? String == "c2")
+    }
+
+    @Test func aPastedSecretIsTrimmed() async throws {
+        let h = try harness(tokenSuffix: "\n") { _ in Self.ok(["id": "pg"]) }
+        defer { h.cleanUp() }
+        let (batch, delivery) = try batch(h)
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.status == .success)
     }
 
     @Test func lostResponseRetryAdoptsThePageCarryingThisMeetingsReference() async throws {

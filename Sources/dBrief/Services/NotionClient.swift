@@ -47,19 +47,38 @@ struct NotionClient: Sendable {
                                              body: ["children": children]), traced: true)
     }
 
-    /// Pages titled `title` that sit directly under `parentID`.
+    /// Pages titled `title` that sit directly under `parentID`, most recently
+    /// edited first. Recurring meeting titles can have many matches, so this
+    /// pages through up to 500 results.
     func pages(titled title: String, under parentID: String, token: String) async throws -> [String] {
-        let body: [String: Any] = ["query": title, "page_size": 20,
-                                   "filter": ["property": "object", "value": "page"]]
-        let data = try await send(NotionAPI.request("v1/search", token: token, method: "POST", body: body))
-        guard let results = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["results"] as? [[String: Any]] else {
-            throw NotionError.invalidResponse
+        var ids: [String] = []
+        var cursor: String?
+        for _ in 0..<5 {
+            var body: [String: Any] = ["query": title, "page_size": 100,
+                                       "filter": ["property": "object", "value": "page"],
+                                       "sort": ["timestamp": "last_edited_time", "direction": "descending"]]
+            if let cursor { body["start_cursor"] = cursor }
+            let data = try await send(NotionAPI.request("v1/search", token: token, method: "POST", body: body))
+            guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let results = object["results"] as? [[String: Any]] else { throw NotionError.invalidResponse }
+            ids += results.compactMap { result in
+                guard let id = result["id"] as? String, let parent = result["parent"] as? [String: Any],
+                      let type = parent["type"] as? String, parent[type] as? String == parentID else { return nil }
+                return id
+            }
+            guard object["has_more"] as? Bool == true, let next = object["next_cursor"] as? String else { break }
+            cursor = next
         }
-        return results.compactMap { result in
-            guard let id = result["id"] as? String, let parent = result["parent"] as? [String: Any],
-                  let type = parent["type"] as? String, parent[type] as? String == parentID else { return nil }
-            return id
-        }
+        return ids
+    }
+
+    /// Text of the page's first block, with a single request.
+    func firstBlockText(of pageID: String, token: String) async throws -> String? {
+        let data = try await send(NotionAPI.request("v1/blocks/\(pageID)/children", token: token,
+                                                    query: [URLQueryItem(name: "page_size", value: "1")]))
+        guard let first = (((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["results"] as? [[String: Any]])?.first,
+              let type = first["type"] as? String else { return nil }
+        return NotionAPI.plainText((first[type] as? [String: Any])?["rich_text"] as? [[String: Any]])
     }
 
     /// The page's top-level blocks: the first one's text and how many there are.

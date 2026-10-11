@@ -34,9 +34,10 @@ enum TodoistAPI {
     static let tokenSettingsURL = URL(string: "https://app.todoist.com/app/settings/integrations/developer")!
     static let maxCommandsPerRequest = 100
 
-    /// Stable per delivery and action item, so every retry resends the same id.
-    static func commandUUID(deliveryID: UUID, index: Int) -> String {
-        var bytes = Array(SHA256.hash(data: Data("dbrief-todoist|\(deliveryID.uuidString)|\(index)".utf8)).prefix(16))
+    /// Stable per delivery, settings and action item, so every retry resends the
+    /// same id; a send accepted with changed settings gets new ids.
+    static func commandUUID(deliveryID: UUID, digest: String, index: Int) -> String {
+        var bytes = Array(SHA256.hash(data: Data("dbrief-todoist|\(deliveryID.uuidString)|\(digest)|\(index)".utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50 // version 5 (name-based)
         bytes[8] = (bytes[8] & 0x3F) | 0x80 // RFC 4122 variant
         let uuid = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],

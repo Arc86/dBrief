@@ -6,10 +6,12 @@ import Testing
 struct TodoistAPITests {
     @Test func commandUUIDIsStablePerDeliveryAndItem() throws {
         let delivery = try #require(UUID(uuidString: "1A2B3C4D-0000-4000-8000-000000000000"))
-        let first = TodoistAPI.commandUUID(deliveryID: delivery, index: 0)
-        #expect(first == TodoistAPI.commandUUID(deliveryID: delivery, index: 0))
-        #expect(first != TodoistAPI.commandUUID(deliveryID: delivery, index: 1))
-        #expect(first != TodoistAPI.commandUUID(deliveryID: UUID(), index: 0))
+        let first = TodoistAPI.commandUUID(deliveryID: delivery, digest: "d", index: 0)
+        #expect(first == TodoistAPI.commandUUID(deliveryID: delivery, digest: "d", index: 0))
+        #expect(first != TodoistAPI.commandUUID(deliveryID: delivery, digest: "d", index: 1))
+        #expect(first != TodoistAPI.commandUUID(deliveryID: UUID(), digest: "d", index: 0))
+        // Sending again with accepted new settings must not be ignored as a repeat.
+        #expect(first != TodoistAPI.commandUUID(deliveryID: delivery, digest: "other", index: 0))
         #expect(UUID(uuidString: first) != nil)
         #expect(first == first.lowercased())
     }

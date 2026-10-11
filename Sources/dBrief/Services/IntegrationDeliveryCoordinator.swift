@@ -31,6 +31,8 @@ actor IntegrationDeliveryCoordinator {
                   destinations == nil || destinations!.contains(entry.destination),
                   !entry.needsDuplicateConfirmation || allowUncertainRetry else { continue }
             if acceptConfigurationChange, let current = configurationDigests[entry.destination] {
+                // Progress made for the old destination or layout doesn't carry over.
+                if current != batch.deliveries[index].configurationDigest { batch.deliveries[index].createdItems = nil }
                 batch.deliveries[index].configurationDigest = current
             }
             guard configurationDigests[entry.destination] == batch.deliveries[index].configurationDigest else {

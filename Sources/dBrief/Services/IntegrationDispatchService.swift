@@ -67,7 +67,7 @@ actor IntegrationDispatchService {
                 // Not signed in: leave it out, like a disabled destination.
                 if destination == .tickTick, ((try? tickTickToken()) ?? "").isEmpty { return nil }
                 if destination == .todoist, ((try? todoistToken()) ?? "").isEmpty { return nil }
-                if destination == .notion, ((try? notionToken()) ?? "").isEmpty
+                if destination == .notion, ((try? notionToken()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || config.notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
                 return .init(id: UUID(), destination: destination, configurationDigest: digest)
             }
@@ -140,7 +140,7 @@ actor IntegrationDispatchService {
         case .appleReminders:
             try await assertRemindersPermission()
         case .notion:
-            let token = try notionToken()
+            let token = try notionToken().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { throw NotionError.missingToken }
             try await notionClient.checkSecret(token: token)
         case .evernote:

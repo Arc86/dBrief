@@ -134,7 +134,8 @@ enum NotionAPI {
         return blocks
     }
 
-    /// Whole lines packed into paragraphs of at most `maxTextLength` characters.
+    /// Whole lines packed into paragraphs of at most `maxTextLength` UTF-16
+    /// units (Notion measures text length the way JavaScript does).
     static func paragraphs(_ text: String) -> [String] {
         var result: [String] = []
         var current = ""
@@ -142,7 +143,7 @@ enum NotionAPI {
             for piece in split(line) {
                 if current.isEmpty {
                     current = piece
-                } else if current.count + 1 + piece.count <= maxTextLength {
+                } else if current.utf16.count + 1 + piece.utf16.count <= maxTextLength {
                     current += "\n" + piece
                 } else {
                     result.append(current)
@@ -154,18 +155,35 @@ enum NotionAPI {
         return result
     }
 
-    /// Splits text into pieces of at most `maxTextLength`, at whitespace when possible.
+    /// Splits text into non-empty pieces of at most `maxTextLength` UTF-16 units,
+    /// at whitespace when possible and never inside a character.
     static func split(_ text: String) -> [String] {
         var pieces: [String] = []
-        var rest = Substring(text)
-        while rest.count > maxTextLength {
-            let window = rest.prefix(maxTextLength)
-            let cut = window.lastIndex(where: { $0.isWhitespace }).map { rest.index(after: $0) } ?? window.endIndex
-            pieces.append(String(rest[..<cut]).trimmingCharacters(in: .whitespaces))
-            rest = rest[cut...]
+        var current = ""
+        var units = 0
+        var lastBreak: String.Index?
+        func emit(_ piece: Substring) {
+            let trimmed = piece.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { pieces.append(trimmed) }
         }
-        let last = String(rest).trimmingCharacters(in: .whitespaces)
-        if !last.isEmpty { pieces.append(last) }
+        for character in text {
+            let width = character.utf16.count
+            while units + width > maxTextLength, !current.isEmpty {
+                if let cut = lastBreak, cut > current.startIndex {
+                    emit(current[..<cut])
+                    current = String(current[cut...])
+                } else {
+                    emit(current[...])
+                    current = ""
+                }
+                units = current.utf16.count
+                lastBreak = nil
+            }
+            current.append(character)
+            units += width
+            if character.isWhitespace { lastBreak = current.endIndex }
+        }
+        emit(current[...])
         return pieces
     }
 
@@ -194,7 +212,7 @@ enum NotionAPI {
     /// A child page only has a title; a database entry also gets its Date and
     /// Tags columns when the database has them.
     static func properties(title: String, schema: NotionSchema?, date: Date, tags: [String]) -> [String: Any] {
-        let titleValue: [String: Any] = ["title": [richText(String(title.prefix(maxTextLength)))]]
+        let titleValue: [String: Any] = ["title": [richText(split(title).first ?? "")]]
         guard let schema else { return ["title": titleValue] }
         var properties: [String: Any] = [schema.titleProperty: titleValue]
         if let dateProperty = schema.dateProperty {

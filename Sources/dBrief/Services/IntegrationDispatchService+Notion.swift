@@ -20,7 +20,7 @@ extension IntegrationDispatchService {
                     == delivery.configurationDigest else {
                 throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
             }
-            let token = try notionToken()
+            let token = try notionToken().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { throw NotionError.missingToken }
             let notion = config.notion
             let parentID = notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,12 +31,17 @@ extension IntegrationDispatchService {
 
             var pageID = created[0]
             var written = Int(created[1] ?? "") ?? 0
-            if pageID == nil, delivery.attempts > 1 {
-                for candidate in try await notionClient.pages(titled: bundle.title, under: parentID, token: token) {
-                    let existing = try await notionClient.children(of: candidate, token: token)
-                    if existing.firstText?.contains("(ref \(reference))") == true {
+            if delivery.attempts > 1 {
+                if let known = pageID {
+                    // An append may have landed even though its response was lost:
+                    // the page itself says how far the content got.
+                    written = try await notionClient.children(of: known, token: token).count
+                } else {
+                    for candidate in try await notionClient.pages(titled: bundle.title, under: parentID, token: token)
+                    where try await notionClient.firstBlockText(of: candidate, token: token)?
+                        .contains("(ref \(reference))") == true {
                         pageID = candidate
-                        written = existing.count
+                        written = try await notionClient.children(of: candidate, token: token).count
                         break
                     }
                 }

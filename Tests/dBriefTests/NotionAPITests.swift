@@ -115,4 +115,18 @@ struct NotionAPITests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
+
+    @Test func limitsAreMeasuredInUTF16Units() {
+        let emoji = String(repeating: "😀", count: 1_500) // 3,000 UTF-16 units
+        let pieces = NotionAPI.split(emoji)
+        #expect(pieces.allSatisfy { $0.utf16.count <= NotionAPI.maxTextLength })
+        #expect(pieces.joined() == emoji)
+        let lines = Array(repeating: String(repeating: "नमस्ते ", count: 120), count: 6).joined(separator: "\n")
+        #expect(NotionAPI.paragraphs(lines).allSatisfy { $0.utf16.count <= NotionAPI.maxTextLength })
+    }
+
+    @Test func splittingNeverProducesEmptyPieces() {
+        #expect(NotionAPI.split(String(repeating: " ", count: 2_500) + "b") == ["b"])
+        #expect(NotionAPI.split("   ").isEmpty)
+    }
 }
