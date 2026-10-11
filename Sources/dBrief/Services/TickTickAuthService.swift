@@ -1,21 +1,25 @@
 import AppKit
-import AuthenticationServices
 import Foundation
 import os
 import dBriefWire
 
 /// Sign in with TickTick (OAuth2 authorization code; TickTick has no PKCE, so
-/// the exchange uses the bundled client secret). Only the access token is
-/// stored, in the Keychain. TickTick documents no refresh token: a 401 marks
-/// the session expired (`TickTickSession`) and the user signs in again.
+/// the exchange uses the bundled client secret). The sign-in page opens in the
+/// default browser and redirects to a one-shot loopback listener on
+/// 127.0.0.1:47213 (`TickTickLoopbackServer`). Only the access token is stored,
+/// in the Keychain. TickTick documents no refresh token: a 401 marks the
+/// session expired (`TickTickSession`) and the user signs in again.
 @MainActor
 @Observable
 final class TickTickAuthService {
     static var isConfigured: Bool { TickTickCredentials.bundled.isConfigured }
+    static let signInTimeout: Duration = .seconds(300)
 
     private(set) var isSignedIn = false
     private(set) var sessionExpired = false
-    private var activeSession: ASWebAuthenticationSession?
+    /// True while the browser sign-in is open; Settings offers Cancel.
+    private(set) var isSigningIn = false
+    private var activeServer: TickTickLoopbackServer?
     private let client: TickTickClient
     private let log = Logger.integrations
 
@@ -36,33 +40,41 @@ final class TickTickAuthService {
         return token
     }
 
-    /// Returns without an error when the user closes the sign-in window.
+    /// Opens the TickTick sign-in page in the browser and waits for its redirect.
+    /// Returns without an error when cancelled.
     func signIn() async throws {
         let credentials = TickTickCredentials.bundled
         guard credentials.isConfigured else { throw TickTickError.notConfigured }
-        guard activeSession == nil else { return }
+        guard activeServer == nil else { return }
+        let server: TickTickLoopbackServer
+        do {
+            server = try TickTickLoopbackServer()
+            _ = try await server.start()
+        } catch {
+            log.error("TickTick sign-in listener failed: \(error.localizedDescription, privacy: .public)")
+            throw TickTickError.callbackPortUnavailable
+        }
+        activeServer = server
+        isSigningIn = true
+        defer {
+            server.cancel()
+            activeServer = nil
+            isSigningIn = false
+        }
         let state = TickTickAPI.makeState()
-        let authURL = TickTickAPI.authorizeURL(clientID: credentials.clientID, state: state)
+        NSWorkspace.shared.open(TickTickAPI.authorizeURL(clientID: credentials.clientID, state: state))
+        let timeout = Task.detached {
+            try await Task.sleep(for: Self.signInTimeout)
+            server.cancel(with: TickTickError.signInTimedOut)
+        }
+        defer { timeout.cancel() }
         let callback: URL
         do {
-            callback = try await withCheckedThrowingContinuation { continuation in
-                let session = ASWebAuthenticationSession(url: authURL,
-                                                         callbackURLScheme: TickTickAPI.callbackScheme) { [weak self] url, error in
-                    self?.activeSession = nil
-                    if let url {
-                        continuation.resume(returning: url)
-                    } else {
-                        continuation.resume(throwing: error ?? TickTickError.missingCode)
-                    }
-                }
-                session.presentationContextProvider = WebAuthPresentationContext.shared
-                session.prefersEphemeralWebBrowserSession = false
-                activeSession = session
-                session.start()
-            }
-        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            callback = try await server.waitForCallback()
+        } catch is CancellationError {
             return
         }
+        NSApp.activate(ignoringOtherApps: true)
         let code = try TickTickAPI.authorizationCode(from: callback, expectedState: state)
         let token = try await client.exchangeCode(code, credentials: credentials)
         try KeychainHelper.set(token, for: .tickTickAccessToken)
@@ -71,9 +83,12 @@ final class TickTickAuthService {
         log.info("TickTick sign-in succeeded")
     }
 
+    func cancelSignIn() {
+        activeServer?.cancel()
+    }
+
     func signOut() async {
-        activeSession?.cancel()
-        activeSession = nil
+        cancelSignIn()
         if let token = try? accessToken() {
             await client.revoke(token: token, credentials: TickTickCredentials.bundled)
         }

@@ -22,20 +22,20 @@ struct TickTickAPITests {
         #expect(components.path == "/oauth/authorize")
         let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         #expect(items == ["client_id": "client-id", "scope": "tasks:read tasks:write", "state": "state-123",
-                          "redirect_uri": "dbrief://oauth/ticktick", "response_type": "code"])
+                          "redirect_uri": "http://127.0.0.1:47213/ticktick/callback", "response_type": "code"])
     }
 
     @Test func callbackNeedsMatchingStateAndCode() throws {
-        let good = try #require(URL(string: "dbrief://oauth/ticktick?code=abc&state=s1"))
+        let good = try #require(URL(string: "http://127.0.0.1:47213/ticktick/callback?code=abc&state=s1"))
         #expect(try TickTickAPI.authorizationCode(from: good, expectedState: "s1") == "abc")
         #expect(throws: TickTickError.stateMismatch) {
             try TickTickAPI.authorizationCode(from: good, expectedState: "other")
         }
         #expect(throws: TickTickError.stateMismatch) {
-            try TickTickAPI.authorizationCode(from: URL(string: "dbrief://oauth/ticktick?code=abc")!, expectedState: "s1")
+            try TickTickAPI.authorizationCode(from: URL(string: "http://127.0.0.1:47213/ticktick/callback?code=abc")!, expectedState: "s1")
         }
         #expect(throws: TickTickError.missingCode) {
-            try TickTickAPI.authorizationCode(from: URL(string: "dbrief://oauth/ticktick?state=s1")!, expectedState: "s1")
+            try TickTickAPI.authorizationCode(from: URL(string: "http://127.0.0.1:47213/ticktick/callback?state=s1")!, expectedState: "s1")
         }
     }
 
@@ -47,7 +47,7 @@ struct TickTickAPITests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == expectedBasic)
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/x-www-form-urlencoded")
         let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
-        #expect(body == "code=the%20code&grant_type=authorization_code&scope=tasks%3Aread%20tasks%3Awrite&redirect_uri=dbrief%3A%2F%2Foauth%2Fticktick")
+        #expect(body == "code=the%20code&grant_type=authorization_code&scope=tasks%3Aread%20tasks%3Awrite&redirect_uri=http%3A%2F%2F127.0.0.1%3A47213%2Fticktick%2Fcallback")
         #expect(!body.contains("s3cret"))
     }
 
@@ -101,6 +101,16 @@ struct TickTickAPITests {
         #expect(TickTickAPI.content(reformatted, carries: "1a2b3c4d"))
         #expect(!TickTickAPI.content("From “Weekly sync” · Sep 21, 2026 — added by dBrief (ref 99999999)", carries: "1a2b3c4d"))
         #expect(!TickTickAPI.content(nil, carries: "1a2b3c4d"))
+    }
+
+    @Test func loopbackRequestYieldsTheCallbackURL() throws {
+        let request = "GET /ticktick/callback?code=abc&state=s1 HTTP/1.1\r\nHost: 127.0.0.1:47213\r\n\r\n"
+        let url = try #require(TickTickAPI.callbackURL(fromRequest: request))
+        #expect(try TickTickAPI.authorizationCode(from: url, expectedState: "s1") == "abc")
+        #expect(TickTickAPI.callbackURL(fromRequest: "GET /favicon.ico HTTP/1.1\r\n\r\n") == nil)
+        #expect(TickTickAPI.callbackURL(fromRequest: "POST /ticktick/callback?code=a HTTP/1.1\r\n\r\n") == nil)
+        #expect(TickTickAPI.callbackURL(fromRequest: "GET /ticktick/callbackish?code=a HTTP/1.1\r\n\r\n") == nil)
+        #expect(TickTickAPI.callbackURL(fromRequest: "garbage") == nil)
     }
 
     @Test func statesAreUnique() {

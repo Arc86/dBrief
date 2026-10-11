@@ -32,6 +32,8 @@ enum TickTickError: LocalizedError, Equatable, Sendable {
     case unauthorized
     case invalidResponse
     case http(Int)
+    case callbackPortUnavailable
+    case signInTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -42,19 +44,25 @@ enum TickTickError: LocalizedError, Equatable, Sendable {
         case .unauthorized: "Your TickTick sign-in expired. Sign in again."
         case .invalidResponse: "TickTick returned a response dBrief couldn't read."
         case .http(let code): "TickTick returned an error (\(code))."
+        case .callbackPortUnavailable: "dBrief couldn't listen for the TickTick sign-in on port 47213. Quit the app using it and try again."
+        case .signInTimedOut: "The TickTick sign-in wasn't finished in time. Try again."
         }
     }
 }
 
 /// TickTick Open API constants and request builders (developer.ticktick.com/docs).
 /// TickTick has no PKCE: the code exchange authenticates with the client secret.
+/// Its portal accepts only http(s) redirects, so sign-in uses a loopback
+/// redirect (RFC 8252) answered by `TickTickLoopbackServer`.
 enum TickTickAPI {
     static let authorizeEndpoint = URL(string: "https://ticktick.com/oauth/authorize")!
     static let tokenEndpoint = URL(string: "https://ticktick.com/oauth/token")!
     static let revokeEndpoint = URL(string: "https://api.ticktick.com/oauth/revoke")!
     static let apiBase = URL(string: "https://api.ticktick.com")!
-    static let redirectURI = "dbrief://oauth/ticktick"
-    static let callbackScheme = "dbrief"
+    static let loopbackPort: UInt16 = 47213
+    static let callbackPath = "/ticktick/callback"
+    /// Must match the redirect registered in the TickTick developer portal exactly.
+    static let redirectURI = "http://127.0.0.1:\(loopbackPort)\(callbackPath)"
     static let scope = "tasks:read tasks:write"
     static let inboxProjectID = "inbox"
 
@@ -84,6 +92,17 @@ enum TickTickAPI {
             throw TickTickError.missingCode
         }
         return code
+    }
+
+    /// The callback URL from a raw HTTP request to the loopback listener, or nil
+    /// for anything that isn't `GET <callbackPath>?…` (a favicon request, a probe).
+    static func callbackURL(fromRequest request: String) -> URL? {
+        let requestLine = request.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
+        let parts = requestLine.split(separator: " ")
+        guard parts.count == 3, parts[0] == "GET", parts[2].hasPrefix("HTTP/") else { return nil }
+        let target = String(parts[1])
+        guard let components = URLComponents(string: target), components.path == callbackPath else { return nil }
+        return URL(string: "http://127.0.0.1:\(loopbackPort)\(target)")
     }
 
     static func tokenRequest(code: String, credentials: TickTickCredentials) -> URLRequest {

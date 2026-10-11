@@ -291,7 +291,7 @@ final class MicrosoftAuthService {
 
 // MARK: - ASWebAuthenticationSession presentation context
 
-final class WebAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding, @unchecked Sendable {
+private final class WebAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding, @unchecked Sendable {
     static let shared = WebAuthPresentationContext()
     private override init() {}
 

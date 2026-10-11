@@ -12,7 +12,6 @@ struct SettingsIntegrationsTab: View {
     @State private var tickTickProjects: [TickTickProject] = []
     @State private var tickTickListError: String?
     @State private var tickTickSignInError: String?
-    @State private var isSigningInToTickTick = false
 
     private enum TestOutcome: Equatable {
         case success
@@ -284,14 +283,20 @@ struct SettingsIntegrationsTab: View {
             }
         } else {
             SettingsRow(verbatim: "TickTick account",
-                        caption: tickTickSignInError
-                            ?? (tickTickAuth.sessionExpired ? "Your TickTick sign-in expired. Sign in again." : "Not connected"),
+                        caption: tickTickAuth.isSigningIn
+                            ? "Finish signing in in your browser."
+                            : tickTickSignInError
+                                ?? (tickTickAuth.sessionExpired ? "Your TickTick sign-in expired. Sign in again." : "Not connected"),
                         systemImage: "person.crop.circle") {
-                Button(isSigningInToTickTick ? "Signing in…" : "Sign in with TickTick") {
-                    Task { await signInToTickTick() }
+                if tickTickAuth.isSigningIn {
+                    Button("Cancel") { tickTickAuth.cancelSignIn() }
+                        .buttonStyle(.settingsSecondary)
+                } else {
+                    Button("Sign in with TickTick") {
+                        Task { await signInToTickTick() }
+                    }
+                    .buttonStyle(.settingsPrimary)
                 }
-                .buttonStyle(.settingsPrimary)
-                .disabled(isSigningInToTickTick)
             }
         }
     }
@@ -354,8 +359,6 @@ struct SettingsIntegrationsTab: View {
     @MainActor
     private func signInToTickTick() async {
         tickTickSignInError = nil
-        isSigningInToTickTick = true
-        defer { isSigningInToTickTick = false }
         do {
             try await tickTickAuth.signIn()
         } catch {

@@ -45,7 +45,7 @@ Modelled on `MicrosoftAuthService` (`ASWebAuthenticationSession`, `dbrief` URL s
 
 - `@MainActor` service with `signIn()`, `signOut()`, `accessToken() throws -> String`, `isSignedIn`, `accountLabel`.
 - `clientID` / `clientSecret` are read from the app bundle's `Info.plist` keys `DBTickTickClientID` / `DBTickTickClientSecret`. **They are never committed to git.** `make app` (and `beta`, `dmg`, `notarize`) fill these keys from the environment variables `TICKTICK_CLIENT_ID` / `TICKTICK_CLIENT_SECRET`, or from a gitignored `packaging/secrets.env` when present; when neither is set the keys are left empty. `static func isConfigured(clientID:) -> Bool` (non-empty) mirrors `MicrosoftAuthService.isConfigured`. Consequence: `swift run`, Homebrew-from-source and CI builds have no credentials, so TickTick is hidden there; only release/beta builds made on a machine with the secrets show it.
-- Redirect URI: `dbrief://oauth/ticktick` (separate path from Microsoft's `dbrief://oauth/callback`). A random `state` is generated per attempt and must match on callback; mismatch or a missing `code` fails the sign-in.
+- Redirect URI: `http://127.0.0.1:47213/ticktick/callback` (loopback). The TickTick portal rejected the planned `dbrief://oauth/ticktick` (2026-10-11), so the fallback below is in use: the authorize page opens in the default browser and a one-shot listener bound to 127.0.0.1 answers the redirect; 5-minute timeout, cancellable from Settings. A random `state` is generated per attempt and must match on callback; mismatch or a missing `code` fails the sign-in.
 - Code exchange: pure request builder `TickTickOAuth.tokenRequest(code:clientID:clientSecret:redirectURI:) -> URLRequest` (Basic header, form body), and pure `TickTickOAuth.authorizeURL(clientID:redirectURI:state:)`. Both unit-tested.
 - Storage: access token in Keychain under a new `KeychainSecretKey.tickTickAccessToken`. No expiry is stored (none is documented).
 - Account label: TickTick's Open API has no profile endpoint, so the row shows "Connected" rather than an email.
@@ -109,7 +109,7 @@ Unit tests (swift-testing, URLProtocol-style fake network, no TickTick account):
 
 Manual (needs the user):
 
-1. Register a "dBrief" app at `developer.ticktick.com/manage` with redirect `dbrief://oauth/ticktick`; supply client ID and secret.
+1. Register a "dBrief" app at `developer.ticktick.com/manage` with redirect `http://127.0.0.1:47213/ticktick/callback`; supply client ID and secret.
 2. In the beta build: sign in, pick a list, process a recording with action items, confirm tasks appear once; kill the network mid-send, retry, confirm no duplicates.
 
 ## Estimate
