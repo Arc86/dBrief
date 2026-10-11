@@ -111,7 +111,14 @@ struct ProcessingStep: Identifiable {
         case pending
         case inProgress
         case completed
+        /// Finished, with a note the user should see. Unlike `.failed`, it does
+        /// not mark processing as unsuccessful or hold back integrations.
+        case warning(String)
         case failed(String)
+    }
+
+    var warningMessage: String? {
+        if case .warning(let message) = status { message } else { nil }
     }
 }
 

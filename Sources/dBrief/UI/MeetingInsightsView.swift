@@ -153,7 +153,7 @@ struct MeetingInsightsPresentation {
         }
         // A list of "not recorded" rows tells the reader nothing.
         self.origins = origins.contains { $0.modelName != nil } ? origins : []
-        warnings = recording.finalizationWarnings
+        warnings = (recording.finalizationWarnings + recording.processingNotes)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }

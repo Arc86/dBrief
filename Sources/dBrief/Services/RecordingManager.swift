@@ -2816,7 +2816,8 @@ final class RecordingManager {
         settings: ProcessingPipeline.TranscriptionSettings
     ) async throws -> ProcessingPipeline.TranscriptionOutput {
         guard let owner = appState.processingJob, owner.recording === recording else { throw CancellationError() }
-        let correct: (@Sendable (TranscriptionResult) async -> TranscriptionResult)?
+        recording.processingNotes = []
+        let correct: (@Sendable (TranscriptionResult) async -> TranscriptSpellingService.Correction)?
         if settings.spelling.terms.isEmpty {
             correct = nil
         } else {
@@ -2850,6 +2851,10 @@ final class RecordingManager {
         }
         try Task.checkCancellation()
         guard appState.processingJob === owner else { throw CancellationError() }
+        if let note = result.vocabularyWarning {
+            recording.processingNotes.append(note)
+            appState.processingSteps.append(ProcessingStep(name: "Vocabulary correction skipped", status: .warning(note)))
+        }
         return result
     }
 

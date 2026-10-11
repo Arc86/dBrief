@@ -41,6 +41,9 @@ struct ResultsView: View {
 
             actions(recording: recording, markdownURL: markdownURL)
 
+            ForEach(warningSteps) { step in
+                warningRow(step)
+            }
             if !failedSteps.isEmpty {
                 failureRow
             }
@@ -233,6 +236,29 @@ struct ResultsView: View {
 
     private var failedSteps: [ProcessingStep] {
         appState.processingSteps.filter { if case .failed = $0.status { true } else { false } }
+    }
+
+    private var warningSteps: [ProcessingStep] {
+        appState.processingSteps.filter { if case .warning = $0.status { true } else { false } }
+    }
+
+    private func warningRow(_ step: ProcessingStep) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MenuPanelHairline()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(status.warning.color)
+                    .accessibilityHidden(true)
+                Text(step.warningMessage ?? step.name)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.text.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: 4)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Warning: \(step.warningMessage ?? step.name)")
+        }
     }
 
     private var failureRow: some View {

@@ -70,6 +70,9 @@ final class Recording: Identifiable {
     var metadataURL: URL?
     var transcriptURL: URL?
     var finalizationWarnings: [String]
+    /// Non-blocking notes from the latest processing run, such as a skipped
+    /// vocabulary correction. Session-only; reset when transcription starts.
+    var processingNotes: [String] = []
     var richTranscript: RichTranscript?
 
     init(

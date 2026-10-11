@@ -18,9 +18,10 @@ struct TranscriptionProgressView: View {
 
     private var isComplete: Bool {
         !appState.processingSteps.isEmpty && appState.processingSteps.allSatisfy {
-            if case .completed = $0.status { return true }
-            if case .failed = $0.status { return true }
-            return false
+            switch $0.status {
+            case .completed, .warning, .failed: return true
+            case .pending, .inProgress: return false
+            }
         }
     }
 
@@ -214,11 +215,11 @@ struct TranscriptionProgressView: View {
                     .foregroundStyle(palette.secondary.color)
                     .padding(.leading, 28)
             }
-            if case .failed(let message) = step.status, !message.isEmpty {
+            if let (message, color) = stepMessage(step.status), !message.isEmpty {
                 ScrollView {
                     Text(message)
                         .uiFont(.system(size: 11))
-                        .foregroundStyle(status.danger.color)
+                        .foregroundStyle(color)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
@@ -227,6 +228,14 @@ struct TranscriptionProgressView: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func stepMessage(_ stepStatus: ProcessingStep.Status) -> (String, Color)? {
+        switch stepStatus {
+        case .warning(let message): (message, status.warning.color)
+        case .failed(let message): (message, status.danger.color)
+        case .pending, .inProgress, .completed: nil
+        }
     }
 
     private func isDone(_ status: ProcessingStep.Status) -> Bool {
@@ -252,6 +261,11 @@ struct TranscriptionProgressView: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(status.success.color)
                 .accessibilityLabel("Done")
+        case .warning:
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(status.warning.color)
+                .accessibilityLabel("Done with a warning")
         case .failed:
             Image(systemName: "xmark.circle")
                 .font(.system(size: 15, weight: .medium))
