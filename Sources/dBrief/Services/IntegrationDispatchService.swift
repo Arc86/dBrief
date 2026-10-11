@@ -12,12 +12,23 @@ actor IntegrationDispatchService {
     private let session: URLSession
     private let privacyStore: PrivacyReceiptStore
     private let privacyPendingRoot: URL
+    let available: [IntegrationDestination]
+    let tickTickClient: TickTickClient
+    let tickTickToken: @Sendable () throws -> String
+    let tickTickSessionExpired: @Sendable () -> Void
 
     init(session: URLSession = .shared, privacyStore: PrivacyReceiptStore = .shared,
-         privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending")) {
+         privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending"),
+         available: [IntegrationDestination] = IntegrationDestination.available,
+         tickTickToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .tickTickAccessToken) },
+         tickTickSessionExpired: @escaping @Sendable () -> Void = { TickTickSession.markExpired() }) {
         self.session = session
         self.privacyStore = privacyStore
         self.privacyPendingRoot = privacyPendingRoot
+        self.available = available
+        self.tickTickClient = TickTickClient(session: session)
+        self.tickTickToken = tickTickToken
+        self.tickTickSessionExpired = tickTickSessionExpired
     }
 
     /// UI-owned fields/configuration are copied before entering this actor.
@@ -27,7 +38,7 @@ actor IntegrationDispatchService {
         generatedMarkdownURL: URL?, requireTranscript: Bool = false
     ) throws -> IntegrationDeliveryBatch {
         try Task.checkCancellation()
-        let digests = try IntegrationDeliveryBatch.configurationDigests(config)
+        let digests = try IntegrationDeliveryBatch.configurationDigests(config, available: available)
         var recordingSnapshot = recording
         if !digests.isEmpty, recordingSnapshot.transcript == nil,
            let url = recordingSnapshot.transcriptURL, FileManager.default.fileExists(atPath: url.path) {
@@ -41,8 +52,10 @@ actor IntegrationDispatchService {
         try Task.checkCancellation()
         return IntegrationDeliveryBatch(
             id: jobID, recordingID: recordingSnapshot.id, createdAt: Date(), bundle: bundle,
-            deliveries: IntegrationDestination.available.compactMap { destination in
+            deliveries: available.compactMap { destination in
                 guard let digest = digests[destination] else { return nil }
+                // Not signed in: leave it out, like a disabled destination.
+                if destination == .tickTick, ((try? tickTickToken()) ?? "").isEmpty { return nil }
                 return .init(id: UUID(), destination: destination, configurationDigest: digest)
             }
         )
@@ -70,12 +83,15 @@ actor IntegrationDispatchService {
     private func sendInRecordingContext(batch: IntegrationDeliveryBatch, delivery: IntegrationDeliveryBatch.Delivery,
                                         config: IntegrationSettings) async -> IntegrationDispatchResult {
         let bundle = batch.bundle
+        if delivery.destination == .tickTick {
+            return await sendToTickTick(batch: batch, delivery: delivery, config: config)
+        }
         if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
         }
         return await perform(delivery.destination) {
             try Task.checkCancellation()
-            guard try IntegrationDeliveryBatch.configurationDigests(config)[delivery.destination]
+            guard try IntegrationDeliveryBatch.configurationDigests(config, available: self.available)[delivery.destination]
                     == delivery.configurationDigest else {
                 throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
             }
@@ -94,7 +110,7 @@ actor IntegrationDispatchService {
     }
 
     func testConnection(destination: IntegrationDestination, settings: AppSettings) async throws {
-        guard IntegrationDestination.available.contains(destination) else {
+        guard available.contains(destination) else {
             throw IntegrationError.unsupported("\(destination.displayName) is not available")
         }
         let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
@@ -118,7 +134,14 @@ actor IntegrationDispatchService {
                 throw IntegrationError.invalidURL(snapshot.config.webhook.url)
             }
         case .tickTick:
-            throw IntegrationError.unsupported("TickTick is not available yet")
+            let token = try tickTickToken()
+            guard !token.isEmpty else { throw TickTickError.notSignedIn }
+            do {
+                _ = try await tickTickClient.listProjects(token: token)
+            } catch TickTickError.unauthorized {
+                tickTickSessionExpired()
+                throw TickTickError.unauthorized
+            }
         case .obsidian:
             break
         }
