@@ -9,6 +9,7 @@ enum KeychainSecretKey: String, CaseIterable, Sendable {
     case microsoftAccessToken = "microsoft.accessToken"
     case microsoftRefreshToken = "microsoft.refreshToken"
     case microsoftTokenExpiry = "microsoft.tokenExpiry"
+    case tickTickAccessToken = "integration.ticktick.accessToken"
 }
 
 enum KeychainError: LocalizedError, Sendable {

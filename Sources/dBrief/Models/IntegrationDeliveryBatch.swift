@@ -35,6 +35,9 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         var attempts = 0
         var remoteID: String?
         var updatedAt: Date?
+        /// Action-item index → remote id created so far (TickTick). Optional so
+        /// records written before this field existed still decode.
+        var createdItems: [Int: String]? = nil
 
         var isComplete: Bool { status == .succeeded || status == .skipped }
         var needsDuplicateConfirmation: Bool { status == .inFlight || status == .uncertain }
@@ -62,12 +65,14 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
 
     /// Hash only the selected destination; unrelated settings cannot invalidate a
     /// retry. Credentials are read at send time and never copied into the journal.
-    static func configurationDigests(_ settings: IntegrationSettings) throws -> [IntegrationDestination: String] {
+    static func configurationDigests(_ settings: IntegrationSettings,
+                                     available: [IntegrationDestination] = IntegrationDestination.available)
+        throws -> [IntegrationDestination: String] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         var values: [IntegrationDestination: String] = [:]
         func add<T: Encodable>(_ destination: IntegrationDestination, _ config: T, enabled: Bool) throws {
-            guard enabled, IntegrationDestination.available.contains(destination) else { return }
+            guard enabled, available.contains(destination) else { return }
             values[destination] = SHA256.hash(data: try encoder.encode(config))
                 .map { String(format: "%02x", $0) }.joined()
         }
@@ -87,7 +92,14 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         let webhookRouting = WebhookRouting(url: settings.webhook.url.trimmingCharacters(in: .whitespacesAndNewlines),
                                             fields: settings.webhook.fields, headers: routingHeaders)
         try add(.webhook, webhookRouting, enabled: settings.webhook.enabled)
+        try add(.tickTick, TickTickRouting(projectID: settings.tickTick.projectID ?? "inbox"),
+                enabled: settings.tickTick.enabled)
         return values
+    }
+
+    /// The list name is display-only; renaming it must not block a retry.
+    private struct TickTickRouting: Encodable {
+        let projectID: String
     }
 
     private struct WebhookRouting: Encodable {

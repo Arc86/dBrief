@@ -9,6 +9,7 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
     case googleKeep
     case oneNote
     case webhook
+    case tickTick
 
     var id: String { rawValue }
 
@@ -22,15 +23,20 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
         case .googleKeep: "Google Keep"
         case .oneNote: "Microsoft OneNote"
         case .webhook: "Webhook"
+        case .tickTick: "TickTick"
         }
     }
 
     /// Destinations currently exposed to users. Untested integrations
     /// (Notion, Evernote, Google Keep, OneNote) are omitted until verified.
-    /// Re-enable one by adding its case back to this list.
-    static let available: [IntegrationDestination] = [
-        .obsidian, .appleNotes, .appleReminders, .webhook,
-    ]
+    /// TickTick appears only in builds stamped with its OAuth credentials.
+    static var available: [IntegrationDestination] {
+        available(tickTickConfigured: TickTickCredentials.bundled.isConfigured)
+    }
+
+    static func available(tickTickConfigured: Bool) -> [IntegrationDestination] {
+        [.obsidian, .appleNotes, .appleReminders, .webhook] + (tickTickConfigured ? [.tickTick] : [])
+    }
 }
 
 enum DeliveryField: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
@@ -75,6 +81,14 @@ struct AppleNotesConfig: Codable, Hashable, Sendable {
 struct AppleRemindersConfig: Codable, Hashable, Sendable {
     var enabled: Bool = false
     var listName: String = ""
+}
+
+struct TickTickConfig: Codable, Hashable, Sendable {
+    var enabled: Bool = false
+    /// Nil sends to the Inbox.
+    var projectID: String? = nil
+    /// Display only; the id is what routes tasks.
+    var projectName: String? = nil
 }
 
 enum NotionParentType: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
@@ -198,6 +212,24 @@ struct IntegrationSettings: Codable, Hashable, Sendable {
     var googleKeep = GoogleKeepConfig()
     var oneNote = OneNoteConfig()
     var webhook = WebhookConfig()
+    var tickTick = TickTickConfig()
+}
+
+extension IntegrationSettings {
+    /// Settings saved before a destination existed lack its key; decode each
+    /// one leniently so adding a destination never resets the others.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        appleNotes = try container.decodeIfPresent(AppleNotesConfig.self, forKey: .appleNotes) ?? appleNotes
+        appleReminders = try container.decodeIfPresent(AppleRemindersConfig.self, forKey: .appleReminders) ?? appleReminders
+        notion = try container.decodeIfPresent(NotionConfig.self, forKey: .notion) ?? notion
+        evernote = try container.decodeIfPresent(EvernoteConfig.self, forKey: .evernote) ?? evernote
+        googleKeep = try container.decodeIfPresent(GoogleKeepConfig.self, forKey: .googleKeep) ?? googleKeep
+        oneNote = try container.decodeIfPresent(OneNoteConfig.self, forKey: .oneNote) ?? oneNote
+        webhook = try container.decodeIfPresent(WebhookConfig.self, forKey: .webhook) ?? webhook
+        tickTick = try container.decodeIfPresent(TickTickConfig.self, forKey: .tickTick) ?? tickTick
+    }
 }
 
 struct IntegrationDispatchResult: Sendable {
@@ -211,6 +243,9 @@ struct IntegrationDispatchResult: Sendable {
     let status: Status
     let message: String
     let remoteID: String?
+    /// Action-item index → remote id for destinations that create one item per
+    /// action item (TickTick). Kept on failure so a retry resumes.
+    var createdItems: [Int: String]? = nil
 }
 
 enum IntegrationError: LocalizedError {

@@ -53,7 +53,7 @@ struct PrivacyDestination: Codable, Equatable, Sendable {
     enum Provider: String, Codable, Sendable {
         case openAICompatible, anthropic, deepgram, elevenLabs, custom
         case whisper, speakerKit, parakeet, fluidAudio, appleSpeech, speechAnalyzer, appleIntelligence, localModel
-        case localCLI, appleNotes, appleReminders, webhook, fileSystem
+        case localCLI, appleNotes, appleReminders, webhook, tickTick, fileSystem
         case clipboard, ttsKit, kokoro
         case claudeCLI
     }

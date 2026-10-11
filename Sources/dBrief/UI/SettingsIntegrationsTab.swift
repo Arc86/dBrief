@@ -95,6 +95,7 @@ struct SettingsIntegrationsTab: View {
         case .googleKeep: appSettings.integrations.googleKeep.enabled
         case .oneNote: appSettings.integrations.oneNote.enabled
         case .webhook: appSettings.integrations.webhook.enabled
+        case .tickTick: appSettings.integrations.tickTick.enabled
         }
     }
 
@@ -102,7 +103,7 @@ struct SettingsIntegrationsTab: View {
     private func needsSetup(_ destination: IntegrationDestination) -> Bool {
         switch destination {
         case .obsidian: appSettings.obsidianVaultURL == nil
-        case .appleNotes, .appleReminders: false
+        case .appleNotes, .appleReminders, .tickTick: false
         case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty
         case .evernote: appSettings.evernoteToken.isEmpty
         case .googleKeep: appSettings.googleKeepToken.isEmpty
@@ -131,7 +132,7 @@ struct SettingsIntegrationsTab: View {
         case .webhook:
             let host = URLComponents(string: appSettings.integrations.webhook.url)?.host
             return host.map { "\($0) · \(appSettings.integrations.webhook.fields.count) fields" } ?? "Add a URL"
-        case .notion, .evernote, .googleKeep, .oneNote:
+        case .notion, .evernote, .googleKeep, .oneNote, .tickTick:
             return nil
         }
     }
@@ -166,6 +167,7 @@ struct SettingsIntegrationsTab: View {
         case .googleKeep: googleKeepDetail
         case .oneNote: oneNoteDetail
         case .webhook: webhookDetail
+        case .tickTick: EmptyView()
         }
     }
 
@@ -441,6 +443,8 @@ struct SettingsIntegrationsTab: View {
             return ["OneNote", "Microsoft OneNote", destination.rawValue, destination.displayName]
         case .webhook:
             return ["Webhook", destination.rawValue, destination.displayName]
+        case .tickTick:
+            return ["TickTick", destination.rawValue, destination.displayName]
         }
     }
 
@@ -454,6 +458,7 @@ struct SettingsIntegrationsTab: View {
         case .googleKeep: "lightbulb"
         case .oneNote: "book.closed"
         case .webhook: "network"
+        case .tickTick: "checkmark.square"
         }
     }
 

@@ -56,6 +56,7 @@ actor IntegrationDeliveryCoordinator {
             case .failed: batch.deliveries[index].status = .uncertain
             }
             batch.deliveries[index].remoteID = result.remoteID
+            if let created = result.createdItems { batch.deliveries[index].createdItems = created }
             batch.deliveries[index].updatedAt = Date()
             // Even cancellation must not discard a confirmed remote success.
             try await store.save(batch)

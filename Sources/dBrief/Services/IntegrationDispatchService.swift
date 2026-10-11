@@ -117,6 +117,8 @@ actor IntegrationDispatchService {
             guard URL(string: snapshot.config.webhook.url) != nil else {
                 throw IntegrationError.invalidURL(snapshot.config.webhook.url)
             }
+        case .tickTick:
+            throw IntegrationError.unsupported("TickTick is not available yet")
         case .obsidian:
             break
         }
