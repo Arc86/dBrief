@@ -398,7 +398,14 @@ struct SettingsIntegrationsTab: View {
             }
         }
         if notion.enabled {
-            deliveryFieldsCard($settings.integrations.notion.fields)
+            SettingsCard("Include in the page") {
+                ForEach([DeliveryField.summary, .actionItems, .tags, .sentiment, .meetingInfo, .transcript]) { field in
+                    SettingsRow(verbatim: field == .meetingInfo ? "Participants" : field.displayName,
+                                caption: field == .transcript ? "The full transcript at the end of the page. Long meetings make long pages." : nil) {
+                        Toggle(field.displayName, isOn: $settings.integrations.notion.fields[contains: field])
+                    }
+                }
+            }
         }
     }
 

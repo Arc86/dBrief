@@ -105,7 +105,7 @@ actor IntegrationDispatchService {
         if delivery.destination == .notion {
             return await sendToNotion(batch: batch, delivery: delivery, config: config)
         }
-        if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
+        if delivery.destination == .appleReminders, ActionItemText.deliverable(bundle.actionItems).isEmpty {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
         }
         return await perform(delivery.destination) {
@@ -265,7 +265,7 @@ actor IntegrationDispatchService {
             }
 
             var created: [EKReminder] = []
-            for item in bundle.actionItems where !item.isEmpty {
+            for item in ActionItemText.deliverable(bundle.actionItems).map(\.title) {
                 let reminder = EKReminder(eventStore: reminderStore)
                 reminder.title = item
                 reminder.calendar = targetCalendar

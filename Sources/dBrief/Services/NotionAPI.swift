@@ -86,12 +86,12 @@ enum NotionAPI {
         }
         if fields.contains(.summary), let summary = nonEmpty(bundle.summary) {
             blocks.append(block("heading_2", "Summary"))
-            blocks += summaryBlocks(summary)
+            blocks += NotionMarkdown.blocks(from: summary)
         }
-        let actions = bundle.actionItems.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let actions = ActionItemText.deliverable(bundle.actionItems).map(\.title)
         if fields.contains(.actionItems), !actions.isEmpty {
             blocks.append(block("heading_2", "Action items"))
-            blocks += actions.flatMap { split($0) }.map { block("to_do", $0, extra: ["checked": false]) }
+            blocks += actions.flatMap { NotionMarkdown.textBlocks("to_do", $0, extra: ["checked": false]) }
         }
         let tags = bundle.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         if fields.contains(.tags), !tags.isEmpty {
@@ -105,31 +105,6 @@ enum NotionAPI {
         if fields.contains(.transcript), let transcript = nonEmpty(bundle.transcript) {
             blocks.append(block("heading_2", "Transcript"))
             blocks += paragraphs(transcript).map { block("paragraph", $0) }
-        }
-        return blocks
-    }
-
-    /// Blank-line separated paragraphs; lines starting with -, * or • become bullets.
-    private static func summaryBlocks(_ summary: String) -> [[String: Any]] {
-        var blocks: [[String: Any]] = []
-        for section in summary.components(separatedBy: "\n\n") {
-            var prose: [String] = []
-            func flush() {
-                let text = prose.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty { blocks += split(text).map { block("paragraph", $0) } }
-                prose = []
-            }
-            for line in section.components(separatedBy: "\n") {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if let marker = ["- ", "* ", "• "].first(where: { trimmed.hasPrefix($0) }) {
-                    flush()
-                    let item = String(trimmed.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
-                    if !item.isEmpty { blocks += split(item).map { block("bulleted_list_item", $0) } }
-                } else {
-                    prose.append(line)
-                }
-            }
-            flush()
         }
         return blocks
     }
@@ -156,15 +131,16 @@ enum NotionAPI {
     }
 
     /// Splits text into non-empty pieces of at most `maxTextLength` UTF-16 units,
-    /// at whitespace when possible and never inside a character.
-    static func split(_ text: String) -> [String] {
+    /// at whitespace when possible and never inside a character. `trimming: false`
+    /// keeps spaces at the edges, for runs of styled text that sit side by side.
+    static func split(_ text: String, trimming: Bool = true) -> [String] {
         var pieces: [String] = []
         var current = ""
         var units = 0
         var lastBreak: String.Index?
         func emit(_ piece: Substring) {
-            let trimmed = piece.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty { pieces.append(trimmed) }
+            let kept = trimming ? piece.trimmingCharacters(in: .whitespaces) : String(piece)
+            if !kept.isEmpty { pieces.append(kept) }
         }
         for character in text {
             let width = character.utf16.count

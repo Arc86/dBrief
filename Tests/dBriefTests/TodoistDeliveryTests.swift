@@ -188,3 +188,14 @@ struct TodoistDeliveryTests {
         #expect(pages.all.count == 2)
     }
 }
+
+extension TodoistDeliveryTests {
+    @Test func aPlaceholderIsNotSentAsATask() async throws {
+        let h = try harness(respond: Self.acceptAll)
+        defer { h.cleanUp() }
+        let (batch, delivery) = try batch(h, items: ["- No action items identified"])
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.status == .skipped)
+        #expect(h.log.all.isEmpty)
+    }
+}

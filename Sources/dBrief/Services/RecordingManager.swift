@@ -386,7 +386,19 @@ final class RecordingManager {
         recording.calendarEvent = record.source.calendarEvent
         recording.echoSuppressionApplied = record.source.echoSuppressionApplied
         recording.titleWasUserProvided = record.request.titleWasUserProvided
+        // A job interrupted after analysis doesn't title the meeting again, so
+        // restore the AI title; otherwise exports and integrations use the file name.
+        let sidecarTitle = if let audio = source.finalizedAudioURL {
+            (try? await RecordingMetadataStore.shared.load(audioURL: audio))?.generatedTitle
+        } else { String?.none }
+        recording.generatedTitle = Self.recoveredGeneratedTitle(exportPlan: record.markdownExport, sidecarTitle: sidecarTitle)
         return recording
+    }
+
+    nonisolated static func recoveredGeneratedTitle(exportPlan: MarkdownExportPlan?, sidecarTitle: String?) -> String? {
+        [exportPlan?.generatedTitle, sidecarTitle]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     /// Closes an active audio file before AppDelegate's hard process exit. The

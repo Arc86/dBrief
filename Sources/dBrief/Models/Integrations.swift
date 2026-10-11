@@ -116,7 +116,8 @@ struct NotionConfig: Codable, Hashable, Sendable {
     /// Display only; `parentID` routes the pages.
     var parentName: String? = nil
     var titlePropertyName: String = "Name"
-    var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
+    /// The transcript is opt-in: it can make a page very long.
+    var fields: [DeliveryField] = [.summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }
 
 struct EvernoteConfig: Codable, Hashable, Sendable {

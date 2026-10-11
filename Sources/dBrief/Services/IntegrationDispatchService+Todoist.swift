@@ -9,10 +9,7 @@ extension IntegrationDispatchService {
     /// lost response cannot duplicate a task. Items in `createdItems` are skipped.
     func sendToTodoist(batch: IntegrationDeliveryBatch, delivery: IntegrationDeliveryBatch.Delivery,
                        config: IntegrationSettings) async -> IntegrationDispatchResult {
-        let items = batch.bundle.actionItems.enumerated().compactMap { index, text -> (index: Int, title: String)? in
-            let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return title.isEmpty ? nil : (index, title)
-        }
+        let items = ActionItemText.deliverable(batch.bundle.actionItems)
         guard !items.isEmpty else {
             return .init(destination: .todoist, status: .skipped, message: "No action items", remoteID: nil)
         }
