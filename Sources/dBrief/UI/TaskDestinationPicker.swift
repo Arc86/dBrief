@@ -88,7 +88,9 @@ struct TaskDestinationPicker: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 220)
+                // The menu sizes to its items; pin its trailing edge so it lines up
+                // with the other controls in the column.
+                .frame(width: 220, alignment: .trailing)
             }
             if let error {
                 Text(error)

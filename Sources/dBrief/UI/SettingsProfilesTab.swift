@@ -691,9 +691,8 @@ struct SettingsProfilesTab: View {
         }
     }
 
-    /// Like `overrideRow`, but keeps the display name in step with the id. An
-    /// empty id overrides to the Inbox.
-    @ViewBuilder
+    /// An override whose list/project menu sits beside its switch on one row,
+    /// keeping the display name in step with the id. An empty id overrides to the Inbox.
     private func taskDestinationOverrideRow(
         _ title: String, service: TaskDestinationPicker.Service,
         id idPath: WritableKeyPath<MeetingProfileOverrides, String?>,
@@ -701,26 +700,26 @@ struct SettingsProfilesTab: View {
         base: String?, baseName: String?
     ) -> some View {
         let enabled = isSet(idPath)
-        SettingsRow(verbatim: title,
-                    caption: "\(enabled ? "App default" : "Uses app default") — \(baseName ?? "Inbox")") {
-            Toggle("Override \(title)", isOn: Binding(
-                get: { isSet(idPath) },
-                set: { on in
-                    guard let index = selectedProfileIndex else { return }
-                    appSettings.profiles[index].overrides[keyPath: idPath] = on ? (base ?? "") : nil
-                    appSettings.profiles[index].overrides[keyPath: namePath] = on ? baseName : nil
-                }))
-        }
-        if enabled, let index = selectedProfileIndex {
-            let overrides = appSettings.profiles[index].overrides
-            let current = overrides[keyPath: idPath] ?? ""
-            SettingsStackedRow {
-                TaskDestinationPicker(service: service, savedID: current.isEmpty ? nil : current,
-                                      savedName: overrides[keyPath: namePath]) { id, name in
-                    guard let index = selectedProfileIndex else { return }
-                    appSettings.profiles[index].overrides[keyPath: idPath] = id ?? ""
-                    appSettings.profiles[index].overrides[keyPath: namePath] = name
+        let overrides = selectedProfileIndex.map { appSettings.profiles[$0].overrides }
+        let current = overrides?[keyPath: idPath] ?? ""
+        return SettingsRow(verbatim: title,
+                           caption: "\(enabled ? "App default" : "Uses app default") — \(baseName ?? "Inbox")") {
+            HStack(spacing: 12) {
+                if enabled {
+                    TaskDestinationPicker(service: service, savedID: current.isEmpty ? nil : current,
+                                          savedName: overrides?[keyPath: namePath]) { id, name in
+                        guard let index = selectedProfileIndex else { return }
+                        appSettings.profiles[index].overrides[keyPath: idPath] = id ?? ""
+                        appSettings.profiles[index].overrides[keyPath: namePath] = name
+                    }
                 }
+                Toggle("Override \(title)", isOn: Binding(
+                    get: { isSet(idPath) },
+                    set: { on in
+                        guard let index = selectedProfileIndex else { return }
+                        appSettings.profiles[index].overrides[keyPath: idPath] = on ? (base ?? "") : nil
+                        appSettings.profiles[index].overrides[keyPath: namePath] = on ? baseName : nil
+                    }))
             }
         }
     }
