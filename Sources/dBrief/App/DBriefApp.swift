@@ -32,6 +32,7 @@ final class AppContext {
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
     let tickTickAuthService = TickTickAuthService()
+    let focusReader = FocusReaderStore()
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
@@ -353,6 +354,7 @@ struct DBriefApp: App {
                 .environment(context.audioPlayer)
                 .environment(context.recordingManager)
                 .environment(context.transcriptChatStore)
+                .environment(context.focusReader)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .modifier(AppAppearanceScope(settings: context.appSettings))
         }
@@ -360,6 +362,18 @@ struct DBriefApp: App {
         .windowStyle(.hiddenTitleBar)
         .handlesExternalEvents(matching: [])
         .commands { RecordingCommands() }
+
+        Window("Focus Reader", id: FocusReaderView.windowID) {
+            FocusReaderView()
+                .environment(context.focusReader)
+                .environment(context.appSettings)
+                .environment(\.calmAppearance, context.appSettings.reduceNeon)
+                .modifier(ViewerAppearanceScope(settings: context.appSettings))
+                .modifier(AppAppearanceScope(settings: context.appSettings))
+        }
+        .defaultSize(width: 1000, height: 760)
+        .windowStyle(.hiddenTitleBar)
+        .handlesExternalEvents(matching: [])
     }
 }
 

@@ -18,6 +18,8 @@ struct RecordingViewerActions {
     var hasTranscript: Bool
     var revealInFinder: (() -> Void)?
     var delete: (() -> Void)?
+    /// Opens the Focus Reader from the viewer, or leaves it from the reader.
+    var focusReader: (() -> Void)? = nil
 }
 
 enum TextInputFocus {
@@ -58,6 +60,9 @@ struct RecordingCommands: Commands {
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                     .disabled(viewer?.availableModes.contains(mode) != true)
             }
+            Button("Focus Reader") { viewer?.focusReader?() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(viewer?.focusReader == nil)
             Divider()
         }
 

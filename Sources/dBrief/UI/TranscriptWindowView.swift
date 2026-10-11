@@ -31,6 +31,8 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     @Environment(AppContext.self) private var context
+    @Environment(FocusReaderStore.self) private var focusReader
+    @Environment(\.openWindow) private var openWindow
     @Environment(AudioPlayer.self) private var audioPlayer
     @Environment(TranscriptChatStore.self) private var chatStore
     @Environment(\.calmAppearance) private var calm
@@ -446,14 +448,34 @@ struct TranscriptDetailView: View, Equatable {
             hasTranscript: hasTranscript,
             revealInFinder: audioURL.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } },
             // Not while editing the summary: ⌘⌫ belongs to the editor then.
-            delete: audioURL != nil && summaryEdit == nil ? { showDeleteConfirm = true } : nil
+            delete: audioURL != nil && summaryEdit == nil ? { showDeleteConfirm = true } : nil,
+            focusReader: { openFocusReader() }
         )
+    }
+
+    /// Snapshots the notes and transcript into the Focus Reader window, which
+    /// leaves this viewer untouched.
+    private func openFocusReader() {
+        let lastID = displayedTurns.last?.id
+        let turns = displayedTurns.map { turn -> TranscriptTurnRowModel in
+            var model = rowModel(for: turn, lastID: lastID, menuKey: 0)
+            model.isActive = false
+            model.isPulsing = false
+            model.matches = []
+            model.currentMatchIndex = -1
+            return model
+        }
+        focusReader.present(.make(
+            recordingID: recording.id, title: recording.generatedTitle ?? recording.meetingTitleDraft,
+            date: recording.date, duration: recording.duration, insights: insights,
+            owners: recording.participants + (recording.calendarEvent?.attendeeNames ?? []), turns: turns))
+        openWindow(id: FocusReaderView.windowID)
     }
 
     // MARK: - Document header
 
     private var documentHeader: some View {
-        viewerHeader(assistantOpen: assistantOpen, onToggleAssistant: {
+        viewerHeader(canFocus: true, assistantOpen: assistantOpen, onToggleAssistant: {
             assistantOpen.toggle()
             if assistantOpen, chatService == nil { buildChatService() }
         }) {
@@ -474,6 +496,7 @@ struct TranscriptDetailView: View, Equatable {
         tabs: [ViewerDocumentMode] = ViewerDocumentMode.allCases,
         showsAssistantToggle: Bool = true,
         canDelete: Bool = true,
+        canFocus: Bool = false,
         assistantOpen: Bool,
         onToggleAssistant: @escaping () -> Void,
         @ViewBuilder commands: @escaping () -> Commands
@@ -491,6 +514,7 @@ struct TranscriptDetailView: View, Equatable {
             onToggleAssistant: onToggleAssistant,
             onPrivacyReceipt: { showPrivacyReceipt = true },
             onDelete: canDelete ? { showDeleteConfirm = true } : nil,
+            onFocusReader: canFocus ? { openFocusReader() } : nil,
             commands: commands
         )
         .frame(maxWidth: 920)

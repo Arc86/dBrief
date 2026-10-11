@@ -17,6 +17,7 @@ struct ViewerHeader<Commands: View>: View {
     let onToggleAssistant: () -> Void
     let onPrivacyReceipt: () -> Void
     let onDelete: (() -> Void)?
+    let onFocusReader: (() -> Void)?
 
     @Environment(\.viewerPalette) private var palette
     @FocusState private var focusedMode: ViewerDocumentMode?
@@ -36,6 +37,7 @@ struct ViewerHeader<Commands: View>: View {
         onToggleAssistant: @escaping () -> Void,
         onPrivacyReceipt: @escaping () -> Void,
         onDelete: (() -> Void)?,
+        onFocusReader: (() -> Void)? = nil,
         @ViewBuilder commands: @escaping () -> Commands
     ) {
         self.title = title
@@ -50,6 +52,7 @@ struct ViewerHeader<Commands: View>: View {
         self.onToggleAssistant = onToggleAssistant
         self.onPrivacyReceipt = onPrivacyReceipt
         self.onDelete = onDelete
+        self.onFocusReader = onFocusReader
         self.commands = commands
     }
 
@@ -167,6 +170,10 @@ struct ViewerHeader<Commands: View>: View {
     }
 
     @ViewBuilder private var utilityIcons: some View {
+        if let onFocusReader {
+            HeaderIconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Focus Reader (⇧⌘F)",
+                             action: onFocusReader)
+        }
         HeaderIconButton(symbol: "textformat.size", label: "Display options") {
             readingOptionsPresented.toggle()
         }
