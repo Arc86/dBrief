@@ -32,6 +32,7 @@ jobs:
       - name: Run test suite
         run: |
           python3 scripts/test_beta_build.py
+          python3 scripts/test_ticktick_credentials.py
           swift test
 
       - name: Assemble beta app

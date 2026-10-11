@@ -201,7 +201,7 @@ Both search a ±2h window and rank candidates via the pure, unit-tested `Calenda
 
 ### Integration Dispatch (`Services/IntegrationDispatchService.swift`)
 
-Routes post-recording content to eight implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — currently only Obsidian, Apple Notes, Apple Reminders, and Webhook. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
+Routes post-recording content to nine implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — Obsidian, Apple Notes, Apple Reminders and Webhook, plus TickTick in builds stamped with its OAuth credentials. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
 
 | Destination | Method |
 |-------------|--------|
@@ -213,6 +213,9 @@ Routes post-recording content to eight implemented destinations, each with confi
 | Microsoft OneNote | Microsoft Graph API (v1.0) |
 | Obsidian | Local filesystem (Markdown files in vault folder) |
 | Webhook | Custom HTTP POST with optional multipart audio upload |
+| TickTick | Open API (OAuth2 via `TickTickAuthService`) — one task per action item |
+
+**TickTick**: "Sign in with TickTick" (`TickTickAuthService`, `ASWebAuthenticationSession`, redirect `dbrief://oauth/ticktick`). TickTick has no PKCE, so the code exchange uses a client secret; the ID/secret are stamped into the built `Info.plist` (`DBTickTickClientID`/`DBTickTickClientSecret`) by `scripts/stamp-ticktick-credentials.py` from `TICKTICK_CLIENT_ID`/`TICKTICK_CLIENT_SECRET` or the gitignored `packaging/secrets.env` — never committed (public repo); unstamped builds hide TickTick. Only the access token is stored (Keychain); there is no refresh token, so a 401 deletes it and sets `ticktick.sessionExpired` (Settings asks to sign in again). Delivery (`IntegrationDispatchService+TickTick.swift`) records created task ids per action item on the delivery (`createdItems`) and, on a retry, matches existing tasks by title + the "added by dBrief" content line before creating, so lost responses don't duplicate tasks.
 
 Integration tokens are stored securely via `KeychainHelper`.
 

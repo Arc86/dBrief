@@ -22,6 +22,9 @@ DerivedData/
 # Local lock for the tracked beta build counter.
 /packaging/.beta-build-number.lock
 
+# TickTick OAuth client credentials for local release/beta builds. Never commit.
+/packaging/secrets.env
+
 # Built DMG (reproduce with `make dmg`; upload to GitHub Releases)
 /dBrief-*.dmg
 

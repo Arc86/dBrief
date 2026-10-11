@@ -113,6 +113,7 @@ app: build
 		echo "Stripping SUFeedURL (dev channel — no auto-update to production)"; \
 		/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$(CONTENTS)/Info.plist" 2>/dev/null || true; \
 	fi
+	@python3 scripts/stamp-ticktick-credentials.py "$(CONTENTS)/Info.plist" packaging/secrets.env
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Sources/dBrief/Resources/Assets.car $(RESOURCES)/Assets.car
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png

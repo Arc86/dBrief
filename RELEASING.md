@@ -17,6 +17,7 @@ There are two distribution paths, signed differently:
 - **Apple Developer Program** membership with a **Developer ID Application** certificate in your login keychain. dBrief's is `Developer ID Application: Jesper Mol (9WFDLY652Y)` (Team ID `9WFDLY652Y`).
 - **notarytool credentials** stored once under the profile name `dbrief` (see [Notarization setup](#notarization-setup)).
 - **Sparkle EdDSA private key** at `~/dbrief-sparkle-private-key.txt` (also backed up in your vault — see [Sparkle in-app updates](#sparkle-in-app-updates)).
+- **TickTick credentials** (optional): put `TICKTICK_CLIENT_ID=…` and `TICKTICK_CLIENT_SECRET=…` in `packaging/secrets.env` (gitignored) or export them before `make notarize`. The build prints `TickTick credentials: stamped`; without them TickTick is hidden in that build. Never commit them — the repository is public.
 
 ## 1. Bump the version
 
