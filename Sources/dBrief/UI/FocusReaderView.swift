@@ -19,6 +19,7 @@ struct FocusReaderView: View {
     @FocusState private var controlsFocused: Bool
     @AppStorage("focusReaderFontSize") private var storedSize = FocusReaderTextSettings.defaultSize
     @AppStorage("focusReaderFont") private var storedFont = ""
+    @AppStorage("focusReaderWidth") private var storedWidth = FocusReaderWidth.default.rawValue
 
     static let windowID = "focus-reader"
 
@@ -33,7 +34,7 @@ struct FocusReaderView: View {
                             header(content)
                             notes(content)
                         }
-                        .modifier(ReadingColumn())
+                        .modifier(ReadingColumn(maxWidth: width.maxWidth))
                         .padding(.top, 88)
                         .padding(.bottom, 120)
                     }
@@ -65,6 +66,8 @@ struct FocusReaderView: View {
     }
 
     // MARK: - Text settings
+
+    private var width: FocusReaderWidth { FocusReaderWidth(rawValue: storedWidth) ?? .default }
 
     private var textSettings: FocusReaderTextSettings {
         FocusReaderTextSettings(size: storedSize, font: ViewerReadingFont(rawValue: storedFont))
@@ -107,6 +110,7 @@ struct FocusReaderView: View {
         if let summary = content.summary {
             section("Summary") {
                 MarkdownText(summary, readingFont: readingFont)
+                    .font(readingFont)
                     .lineSpacing(lineSpacing)
                     .foregroundStyle(palette.text.color)
                     .textSelection(.enabled)
@@ -162,7 +166,7 @@ struct FocusReaderView: View {
     private func transcript(_ content: FocusReaderContent) -> some View {
         List {
             header(content)
-                .modifier(ReadingColumn())
+                .modifier(ReadingColumn(maxWidth: width.maxWidth))
                 .padding(.top, 88)
                 .padding(.bottom, 28)
                 .listRowInsets(EdgeInsets())
@@ -175,7 +179,7 @@ struct FocusReaderView: View {
                         .foregroundStyle(model.color)
                 }
                 .equatable()
-                .modifier(ReadingColumn())
+                .modifier(ReadingColumn(maxWidth: width.maxWidth))
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -203,13 +207,28 @@ struct FocusReaderView: View {
     private var controls: some View {
         HStack(spacing: 12) {
             if let content = store.content, content.pages.count > 1 {
-                Picker("Show", selection: Binding(get: { store.page }, set: { store.page = $0 })) {
-                    ForEach(content.pages, id: \.self) { Text($0.title).tag($0) }
+                // Neutral, like the round buttons: no accent colour to pull the eye.
+                HStack(spacing: 2) {
+                    ForEach(content.pages, id: \.self) { page in
+                        let selected = store.page == page
+                        Button { store.page = page } label: {
+                            Text(page.title)
+                                .uiFont(.system(size: 12, weight: selected ? .semibold : .regular))
+                                .padding(.horizontal, 12)
+                                .frame(height: 26)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(selected ? palette.heading.color : palette.secondary.color)
+                        .background(selected ? palette.canvas.color : .clear, in: Capsule())
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .focused($controlsFocused)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 220)
-                .focused($controlsFocused)
+                .padding(2)
+                .background(palette.surface.color, in: Capsule())
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Show")
             }
             Spacer()
             Button { textOptionsShown.toggle() } label: {
@@ -277,6 +296,10 @@ struct FocusReaderView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .trailing)
             }
+            Picker("Width", selection: $storedWidth) {
+                ForEach(FocusReaderWidth.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
             Text("Pinch on the trackpad or press ⌘+ / ⌘− to resize.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -313,10 +336,12 @@ struct FocusReaderView: View {
 
 /// The centred reading measure shared by both pages.
 private struct ReadingColumn: ViewModifier {
+    let maxWidth: CGFloat?
+
     func body(content: Content) -> some View {
         content
-            .frame(maxWidth: 680, alignment: .leading)
-            .padding(.horizontal, 32)
+            .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
+            .padding(.horizontal, maxWidth == nil ? 72 : 32)
             .frame(maxWidth: .infinity)
     }
 }

@@ -37,3 +37,29 @@ struct FocusReaderTextSettings: Equatable, Sendable {
         min(max(value, sizeRange.lowerBound), sizeRange.upperBound)
     }
 }
+
+/// How wide the Focus Reader's reading column may grow.
+enum FocusReaderWidth: String, CaseIterable, Sendable {
+    case narrow, medium, wide, full
+
+    static let `default` = FocusReaderWidth.wide
+
+    var title: String {
+        switch self {
+        case .narrow: "Narrow"
+        case .medium: "Medium"
+        case .wide: "Wide"
+        case .full: "Full width"
+        }
+    }
+
+    /// Nil: the column fills the screen, less its margins.
+    var maxWidth: CGFloat? {
+        switch self {
+        case .narrow: 680
+        case .medium: 880
+        case .wide: 1_120
+        case .full: nil
+        }
+    }
+}

@@ -43,3 +43,15 @@ struct FocusReaderTextSettingsTests {
         #expect(ViewerFonts.nsFont(for: chosen, effectiveMode: .light).pointSize == 30)
     }
 }
+
+@Suite("Focus Reader width")
+struct FocusReaderWidthTests {
+    @Test func defaultsToWideAndFullWidthHasNoCap() {
+        #expect(FocusReaderWidth.default == .wide)
+        #expect(FocusReaderWidth.narrow.maxWidth == 680)
+        #expect(FocusReaderWidth.medium.maxWidth! < FocusReaderWidth.wide.maxWidth!)
+        #expect(FocusReaderWidth.full.maxWidth == nil)
+        #expect(FocusReaderWidth(rawValue: "unknown") == nil)
+        #expect(Set(FocusReaderWidth.allCases.map(\.title)).count == FocusReaderWidth.allCases.count)
+    }
+}
