@@ -8,6 +8,11 @@ struct SettingsIntegrationsTab: View {
     @State private var testOutcomes: [IntegrationDestination: TestOutcome] = [:]
     @State private var isTesting: Set<IntegrationDestination> = []
     @State private var openDestination: IntegrationDestination?
+    @Environment(TickTickAuthService.self) private var tickTickAuth
+    @State private var tickTickProjects: [TickTickProject] = []
+    @State private var tickTickListError: String?
+    @State private var tickTickSignInError: String?
+    @State private var isSigningInToTickTick = false
 
     private enum TestOutcome: Equatable {
         case success
@@ -51,6 +56,7 @@ struct SettingsIntegrationsTab: View {
                 }
             }
         }
+        .onAppear { tickTickAuth.reload() }
     }
 
     // MARK: Root rows
@@ -103,7 +109,8 @@ struct SettingsIntegrationsTab: View {
     private func needsSetup(_ destination: IntegrationDestination) -> Bool {
         switch destination {
         case .obsidian: appSettings.obsidianVaultURL == nil
-        case .appleNotes, .appleReminders, .tickTick: false
+        case .appleNotes, .appleReminders: false
+        case .tickTick: !tickTickAuth.isSignedIn
         case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty
         case .evernote: appSettings.evernoteToken.isEmpty
         case .googleKeep: appSettings.googleKeepToken.isEmpty
@@ -132,7 +139,9 @@ struct SettingsIntegrationsTab: View {
         case .webhook:
             let host = URLComponents(string: appSettings.integrations.webhook.url)?.host
             return host.map { "\($0) · \(appSettings.integrations.webhook.fields.count) fields" } ?? "Add a URL"
-        case .notion, .evernote, .googleKeep, .oneNote, .tickTick:
+        case .tickTick:
+            return "One task per action item · list “\(appSettings.integrations.tickTick.projectName ?? "Inbox")”"
+        case .notion, .evernote, .googleKeep, .oneNote:
             return nil
         }
     }
@@ -167,7 +176,7 @@ struct SettingsIntegrationsTab: View {
         case .googleKeep: googleKeepDetail
         case .oneNote: oneNoteDetail
         case .webhook: webhookDetail
-        case .tickTick: EmptyView()
+        case .tickTick: tickTickDetail
         }
     }
 
@@ -247,6 +256,110 @@ struct SettingsIntegrationsTab: View {
                 textRow("Default list", optional: true, $settings.integrations.appleReminders.listName)
                 testRow(for: .appleReminders)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var tickTickDetail: some View {
+        @Bindable var settings = appSettings
+        SettingsCard("TickTick", description: "Only action items are sent, one task each") {
+            enableRow("Send to TickTick", $settings.integrations.tickTick.enabled)
+            if appSettings.integrations.tickTick.enabled {
+                tickTickAccountRow
+                if tickTickAuth.isSignedIn {
+                    tickTickListRow
+                    testRow(for: .tickTick)
+                }
+            }
+        }
+        .task(id: tickTickAuth.isSignedIn) { await loadTickTickProjects() }
+    }
+
+    @ViewBuilder
+    private var tickTickAccountRow: some View {
+        if tickTickAuth.isSignedIn {
+            SettingsRow(verbatim: "TickTick account", caption: "Connected", systemImage: "person.crop.circle") {
+                Button("Sign out") { Task { await tickTickAuth.signOut() } }
+                    .buttonStyle(.settingsSecondary)
+            }
+        } else {
+            SettingsRow(verbatim: "TickTick account",
+                        caption: tickTickSignInError
+                            ?? (tickTickAuth.sessionExpired ? "Your TickTick sign-in expired. Sign in again." : "Not connected"),
+                        systemImage: "person.crop.circle") {
+                Button(isSigningInToTickTick ? "Signing in…" : "Sign in with TickTick") {
+                    Task { await signInToTickTick() }
+                }
+                .buttonStyle(.settingsPrimary)
+                .disabled(isSigningInToTickTick)
+            }
+        }
+    }
+
+    private var tickTickListRow: some View {
+        let saved = appSettings.integrations.tickTick
+        return SettingsRow(verbatim: "List", caption: tickTickListError, systemImage: "list.bullet") {
+            HStack(spacing: 8) {
+                if tickTickListError != nil {
+                    Button("Retry") { Task { await loadTickTickProjects() } }
+                        .buttonStyle(.settingsSecondary)
+                }
+                Picker("List", selection: tickTickProjectSelection) {
+                    Text("Inbox").tag(TickTickAPI.inboxProjectID)
+                    ForEach(tickTickProjects, id: \.id) { project in
+                        Text(project.name).tag(project.id)
+                    }
+                    // Keep a saved list selectable while the lists load or after it was deleted.
+                    if let id = saved.projectID, !tickTickProjects.contains(where: { $0.id == id }) {
+                        Text(saved.projectName ?? "Unavailable list").tag(id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 220)
+            }
+        }
+    }
+
+    private var tickTickProjectSelection: Binding<String> {
+        Binding(
+            get: { appSettings.integrations.tickTick.projectID ?? TickTickAPI.inboxProjectID },
+            set: { id in
+                var config = appSettings.integrations.tickTick
+                config.projectID = id == TickTickAPI.inboxProjectID ? nil : id
+                config.projectName = config.projectID == nil ? nil
+                    : tickTickProjects.first(where: { $0.id == id })?.name ?? config.projectName
+                appSettings.integrations.tickTick = config
+            })
+    }
+
+    @MainActor
+    private func loadTickTickProjects() async {
+        tickTickAuth.reload()
+        guard tickTickAuth.isSignedIn else {
+            tickTickProjects = []
+            return
+        }
+        do {
+            tickTickProjects = try await TickTickClient().listProjects(token: tickTickAuth.accessToken())
+            tickTickListError = nil
+        } catch TickTickError.unauthorized {
+            TickTickSession.markExpired()
+            tickTickAuth.reload()
+        } catch {
+            tickTickListError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func signInToTickTick() async {
+        tickTickSignInError = nil
+        isSigningInToTickTick = true
+        defer { isSigningInToTickTick = false }
+        do {
+            try await tickTickAuth.signIn()
+        } catch {
+            tickTickSignInError = error.localizedDescription
         }
     }
 
@@ -505,6 +618,7 @@ struct SettingsIntegrationsTab: View {
         } catch {
             testOutcomes[destination] = .failure(error.localizedDescription)
         }
+        if destination == .tickTick { tickTickAuth.reload() }
     }
 
     private var vaultPathText: String {

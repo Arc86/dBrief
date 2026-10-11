@@ -31,6 +31,7 @@ final class AppContext {
     let updaterController = UpdaterController.shared
     let audioPlayer = AudioPlayer()
     let microsoftAuthService = MicrosoftAuthService()
+    let tickTickAuthService = TickTickAuthService()
     let miniPlayer = FloatingMiniPlayerController()
     let memoryMonitor = MemoryPressureMonitor()
     let powerStateMonitor: PowerStateMonitor
@@ -330,6 +331,7 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(context.recordingManager)
                 .environment(context.microsoftAuthService)
+                .environment(context.tickTickAuthService)
                 .environment(context.updaterController)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .modifier(AppAppearanceScope(settings: context.appSettings))

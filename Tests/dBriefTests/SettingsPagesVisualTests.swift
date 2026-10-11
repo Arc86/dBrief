@@ -63,6 +63,7 @@ struct SettingsPagesVisualTests {
                     .environment(settings)
                     .environment(manager)
                     .environment(auth)
+                    .environment(TickTickAuthService())
                     .environment(UpdaterController.shared)
                     .modifier(AppAppearanceScope(settings: settings))
                     .environment(\.colorScheme, scheme))
