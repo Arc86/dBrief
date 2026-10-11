@@ -135,9 +135,19 @@ enum TickTickAPI {
                                    options: [.sortedKeys])
     }
 
-    /// The line under every task. Retries compare it to find tasks a lost
-    /// response already created, so it must not change between attempts.
-    static func taskContent(meetingTitle: String, date: Date,
+    /// Short id of one delivery batch. Retries match on it, never on the
+    /// localized date, so a locale or time-zone change can't hide a task.
+    static func reference(for batchID: UUID) -> String {
+        String(batchID.uuidString.lowercased().prefix(8))
+    }
+
+    static func content(_ content: String?, carries reference: String) -> Bool {
+        content?.contains("(ref \(reference))") == true
+    }
+
+    /// The line under every task; its "(ref …)" tells a retry which tasks a
+    /// lost response already created for this meeting.
+    static func taskContent(meetingTitle: String, date: Date, reference: String,
                             locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale
@@ -145,6 +155,6 @@ enum TickTickAPI {
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         let title = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "From “\(title.isEmpty ? "Untitled meeting" : title)” · \(formatter.string(from: date)) — added by dBrief"
+        return "From “\(title.isEmpty ? "Untitled meeting" : title)” · \(formatter.string(from: date)) — added by dBrief (ref \(reference))"
     }
 }

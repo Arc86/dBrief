@@ -55,7 +55,7 @@ struct TickTickDeliveryTests {
     }
 
     private func batch(_ harness: Harness, items: [String], attempts: Int = 1,
-                       created: [Int: String]? = nil) throws -> (IntegrationDeliveryBatch, IntegrationDeliveryBatch.Delivery) {
+                       created: [Int: String]? = nil, id: UUID = UUID()) throws -> (IntegrationDeliveryBatch, IntegrationDeliveryBatch.Delivery) {
         let audio = harness.folder.appendingPathComponent("meeting.m4a")
         try Data("audio".utf8).write(to: audio)
         let bundle = IntegrationContentBundle(title: "Weekly sync", createdAt: Date(timeIntervalSince1970: 1_790_000_000),
@@ -65,13 +65,14 @@ struct TickTickDeliveryTests {
         var delivery = IntegrationDeliveryBatch.Delivery(id: UUID(), destination: .tickTick, configurationDigest: digest)
         delivery.attempts = attempts
         delivery.createdItems = created
-        let batch = IntegrationDeliveryBatch(id: UUID(), recordingID: UUID(), createdAt: Date(),
+        let batch = IntegrationDeliveryBatch(id: id, recordingID: UUID(), createdAt: Date(),
                                              bundle: bundle, deliveries: [delivery])
         return (batch, delivery)
     }
 
-    private func content() -> String {
-        TickTickAPI.taskContent(meetingTitle: "Weekly sync", date: Date(timeIntervalSince1970: 1_790_000_000))
+    private func content(_ batchID: UUID) -> String {
+        TickTickAPI.taskContent(meetingTitle: "Weekly sync", date: Date(timeIntervalSince1970: 1_790_000_000),
+                                reference: TickTickAPI.reference(for: batchID))
     }
 
     private func titles(_ log: TickTickSeenLog) -> [String] {
@@ -91,7 +92,7 @@ struct TickTickDeliveryTests {
         #expect(titles(h.log) == ["Send deck", "Book room"])
         let first = try #require(try JSONSerialization.jsonObject(with: Data(h.log.posts[0].body.utf8)) as? [String: String])
         #expect(first["projectId"] == "p1")
-        #expect(first["content"] == content())
+        #expect(first["content"] == content(batch.id))
         #expect(!h.log.all.contains { $0.method == "GET" })
     }
 
@@ -105,7 +106,8 @@ struct TickTickDeliveryTests {
     }
 
     @Test func retrySkipsRecordedItemsAndMatchesExistingTasks() async throws {
-        let marker = content()
+        let id = UUID()
+        let marker = content(id)
         let h = try harness { seen, _ in
             if seen.method == "GET" {
                 #expect(seen.path == "/open/v1/project/p1/data")
@@ -114,7 +116,7 @@ struct TickTickDeliveryTests {
             return .status(200, #"{"id":"t-c"}"#)
         }
         defer { h.cleanUp() }
-        let (batch, delivery) = try batch(h, items: ["A", "B", "C"], attempts: 2, created: [0: "t-a"])
+        let (batch, delivery) = try batch(h, items: ["A", "B", "C"], attempts: 2, created: [0: "t-a"], id: id)
         let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
         #expect(result.status == .success)
         #expect(result.createdItems == [0: "t-a", 1: "t-b", 2: "t-c"])
@@ -123,14 +125,59 @@ struct TickTickDeliveryTests {
     }
 
     @Test func duplicateTitlesClaimOneExistingTaskEach() async throws {
-        let marker = content()
+        let id = UUID()
+        let marker = content(id)
         let h = try harness { seen, _ in
             seen.method == "GET"
                 ? .status(200, #"{"tasks":[{"id":"t1","title":"Follow up","content":"\#(marker)"}]}"#)
                 : .status(200, #"{"id":"t2"}"#)
         }
         defer { h.cleanUp() }
-        let (batch, delivery) = try batch(h, items: ["Follow up", "Follow up"], attempts: 2)
+        let (batch, delivery) = try batch(h, items: ["Follow up", "Follow up"], attempts: 2, id: id)
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.createdItems == [0: "t1", 1: "t2"])
+        #expect(titles(h.log) == ["Follow up"])
+    }
+
+    @Test func retryMatchesAfterTheDateIsFormattedDifferently() async throws {
+        let id = UUID()
+        let reformatted = "From “Weekly sync” · 21 sep 2026 — added by dBrief (ref \(TickTickAPI.reference(for: id)))"
+        let h = try harness { seen, _ in
+            seen.method == "GET"
+                ? .status(200, #"{"tasks":[{"id":"t1","title":"A","content":"\#(reformatted)"}]}"#)
+                : .status(200, #"{"id":"t2"}"#)
+        }
+        defer { h.cleanUp() }
+        let (batch, delivery) = try batch(h, items: ["A"], attempts: 2, id: id)
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.createdItems == [0: "t1"])
+        #expect(h.log.posts.isEmpty)
+    }
+
+    @Test func retryIgnoresTasksFromAnotherMeeting() async throws {
+        let other = content(UUID())
+        let h = try harness { seen, _ in
+            seen.method == "GET"
+                ? .status(200, #"{"tasks":[{"id":"other","title":"Send notes","content":"\#(other)"}]}"#)
+                : .status(200, #"{"id":"mine"}"#)
+        }
+        defer { h.cleanUp() }
+        let (batch, delivery) = try batch(h, items: ["Send notes"], attempts: 2)
+        let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
+        #expect(result.createdItems == [0: "mine"])
+        #expect(titles(h.log) == ["Send notes"])
+    }
+
+    @Test func bodylessCreateIsClaimedOnRetry() async throws {
+        let id = UUID()
+        let marker = content(id)
+        let h = try harness { seen, _ in
+            seen.method == "GET"
+                ? .status(200, #"{"tasks":[{"id":"t1","title":"Follow up","content":"\#(marker)"}]}"#)
+                : .status(200, #"{"id":"t2"}"#)
+        }
+        defer { h.cleanUp() }
+        let (batch, delivery) = try batch(h, items: ["Follow up", "Follow up"], attempts: 2, created: [0: ""], id: id)
         let result = await h.service.send(batch: batch, delivery: delivery, config: h.config)
         #expect(result.createdItems == [0: "t1", 1: "t2"])
         #expect(titles(h.log) == ["Follow up"])

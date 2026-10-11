@@ -87,11 +87,20 @@ struct TickTickAPITests {
         let date = Date(timeIntervalSince1970: 1_790_000_000) // 2026-09-21 14:13 UTC
         let locale = Locale(identifier: "en_US")
         let zone = try #require(TimeZone(identifier: "UTC"))
-        let content = TickTickAPI.taskContent(meetingTitle: " Q3 “review” 🚀 ", date: date, locale: locale, timeZone: zone)
-        #expect(content == "From “Q3 “review” 🚀” · Sep 21, 2026 — added by dBrief")
-        #expect(content == TickTickAPI.taskContent(meetingTitle: " Q3 “review” 🚀 ", date: date, locale: locale, timeZone: zone))
-        #expect(TickTickAPI.taskContent(meetingTitle: "  ", date: date, locale: locale, timeZone: zone)
-            == "From “Untitled meeting” · Sep 21, 2026 — added by dBrief")
+        let content = TickTickAPI.taskContent(meetingTitle: " Q3 “review” 🚀 ", date: date, reference: "1a2b3c4d",
+                                              locale: locale, timeZone: zone)
+        #expect(content == "From “Q3 “review” 🚀” · Sep 21, 2026 — added by dBrief (ref 1a2b3c4d)")
+        #expect(TickTickAPI.taskContent(meetingTitle: "  ", date: date, reference: "1a2b3c4d", locale: locale, timeZone: zone)
+            == "From “Untitled meeting” · Sep 21, 2026 — added by dBrief (ref 1a2b3c4d)")
+    }
+
+    @Test func referenceMatchingIgnoresTheLocalizedDate() throws {
+        let id = try #require(UUID(uuidString: "1A2B3C4D-0000-4000-8000-000000000000"))
+        #expect(TickTickAPI.reference(for: id) == "1a2b3c4d")
+        let reformatted = "From “Weekly sync” · 21 sep 2026 — added by dBrief (ref 1a2b3c4d)"
+        #expect(TickTickAPI.content(reformatted, carries: "1a2b3c4d"))
+        #expect(!TickTickAPI.content("From “Weekly sync” · Sep 21, 2026 — added by dBrief (ref 99999999)", carries: "1a2b3c4d"))
+        #expect(!TickTickAPI.content(nil, carries: "1a2b3c4d"))
     }
 
     @Test func statesAreUnique() {

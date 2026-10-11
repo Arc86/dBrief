@@ -70,7 +70,7 @@ Modelled on `MicrosoftAuthService` (`ASWebAuthenticationSession`, `dbrief` URL s
 
 - One task per non-empty action item, in the bundle's order, into `projectID` (fallback `"inbox"`).
 - `title`: the action item text, trimmed.
-- `content`: `From “<meeting title>” · <date, medium style> — added by dBrief`. This line is also the duplicate-check marker (§4).
+- `content`: `From “<meeting title>” · <date, medium style> — added by dBrief (ref <first 8 hex of the batch id>)`. The `(ref …)` is the duplicate-check marker (§4); the localized date is never compared.
 - Skipped up front (status `skipped`) when there are no action items, exactly like Reminders.
 - Routed through the existing `sendInRecordingContext` switch, `testConnection` switch, privacy tracing and frozen-config check. HTTP goes through the existing `performJSONRequest` bearer helper.
 - Pure builder `TickTickTaskRequest.body(title:content:projectID:)` for the JSON payload.
@@ -81,7 +81,7 @@ TickTick creates tasks one at a time, so a send can stop part-way.
 
 - `IntegrationDeliveryBatch.Delivery` gains `var createdItems: [Int: String]? = nil` (action-item index → TickTick task id). Optional, so existing delivery records decode unchanged.
 - `IntegrationDispatchResult` gains `var createdItems: [Int: String]? = nil`. `sendToTickTick` returns every created index → id on success **and** on failure; the coordinator copies it onto the delivery when it saves the attempt's result. A retry skips indices already in `createdItems`.
-- **Lost response or crash mid-attempt:** an item can exist in TickTick without being in `createdItems` (response lost, or the app quit before the attempt's result was saved). So on every retry (`delivery.attempts > 1`), before creating any item, `sendToTickTick` loads `GET /open/v1/project/{projectId}/data` once and treats an existing task with the same `title` **and** the same `content` line as already created (records its id, does not create). Each existing task can match only one item.
+- **Lost response or crash mid-attempt:** an item can exist in TickTick without being in `createdItems` (response lost, or the app quit before the attempt's result was saved). So on every retry (`delivery.attempts > 1`), before creating any item, `sendToTickTick` loads `GET /open/v1/project/{projectId}/data` once and treats an existing task with the same `title` **and** this batch's `(ref …)` in its content as already created (records its id, does not create). Each existing task can match only one item.
 - Definite failures: `401` → token deleted, `sessionExpired` set, delivery fails. Other 4xx/5xx → delivery fails. The existing coordinator turns failures into `uncertain` and keeps its current user confirmation before retrying; that shared behaviour is not changed.
 - On full success, `remoteID` is the created task ids joined by commas (as Reminders does).
 
