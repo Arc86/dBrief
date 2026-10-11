@@ -34,6 +34,10 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
     var tickTickProjectName: String?
     var todoistProjectID: String?
     var todoistProjectName: String?
+    /// Notion page or database (`NotionParentType` raw value); the name is display only.
+    var notionParentID: String?
+    var notionParentType: String?
+    var notionParentName: String?
 
     // swiftlint:disable:next function_default_parameter_at_end
     init(
@@ -61,7 +65,10 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         tickTickProjectID: String? = nil,
         tickTickProjectName: String? = nil,
         todoistProjectID: String? = nil,
-        todoistProjectName: String? = nil
+        todoistProjectName: String? = nil,
+        notionParentID: String? = nil,
+        notionParentType: String? = nil,
+        notionParentName: String? = nil
     ) {
         self.transcriptionLanguage = transcriptionLanguage
         self.customVocabulary = customVocabulary
@@ -88,6 +95,9 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         self.tickTickProjectName = tickTickProjectName
         self.todoistProjectID = todoistProjectID
         self.todoistProjectName = todoistProjectName
+        self.notionParentID = notionParentID
+        self.notionParentType = notionParentType
+        self.notionParentName = notionParentName
     }
 
     static let empty = MeetingProfileOverrides()
@@ -123,6 +133,9 @@ struct MeetingProfileOverrides: Codable, Equatable, Hashable, Sendable {
         tickTickProjectName = try c.decodeIfPresent(String.self, forKey: .tickTickProjectName)
         todoistProjectID = try c.decodeIfPresent(String.self, forKey: .todoistProjectID)
         todoistProjectName = try c.decodeIfPresent(String.self, forKey: .todoistProjectName)
+        notionParentID = try c.decodeIfPresent(String.self, forKey: .notionParentID)
+        notionParentType = try c.decodeIfPresent(String.self, forKey: .notionParentType)
+        notionParentName = try c.decodeIfPresent(String.self, forKey: .notionParentName)
 
         if let vocab = try c.decodeIfPresent([String].self, forKey: .customVocabulary) {
             customVocabulary = vocab

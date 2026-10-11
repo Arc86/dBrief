@@ -18,13 +18,16 @@ actor IntegrationDispatchService {
     let tickTickSessionExpired: @Sendable () -> Void
     let todoistClient: TodoistClient
     let todoistToken: @Sendable () throws -> String
+    let notionClient: NotionClient
+    let notionToken: @Sendable () throws -> String
 
     init(session: URLSession = .shared, privacyStore: PrivacyReceiptStore = .shared,
          privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending"),
          available: [IntegrationDestination] = IntegrationDestination.available,
          tickTickToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .tickTickAccessToken) },
          tickTickSessionExpired: @escaping @Sendable () -> Void = { TickTickSession.markExpired() },
-         todoistToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .todoist) }) {
+         todoistToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .todoist) },
+         notionToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .notion) }) {
         self.session = session
         self.privacyStore = privacyStore
         self.privacyPendingRoot = privacyPendingRoot
@@ -34,6 +37,8 @@ actor IntegrationDispatchService {
         self.tickTickSessionExpired = tickTickSessionExpired
         self.todoistClient = TodoistClient(session: session)
         self.todoistToken = todoistToken
+        self.notionClient = NotionClient(session: session)
+        self.notionToken = notionToken
     }
 
     /// UI-owned fields/configuration are copied before entering this actor.
@@ -62,6 +67,8 @@ actor IntegrationDispatchService {
                 // Not signed in: leave it out, like a disabled destination.
                 if destination == .tickTick, ((try? tickTickToken()) ?? "").isEmpty { return nil }
                 if destination == .todoist, ((try? todoistToken()) ?? "").isEmpty { return nil }
+                if destination == .notion, ((try? notionToken()) ?? "").isEmpty
+                    || config.notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
                 return .init(id: UUID(), destination: destination, configurationDigest: digest)
             }
         )
@@ -94,6 +101,9 @@ actor IntegrationDispatchService {
         }
         if delivery.destination == .todoist {
             return await sendToTodoist(batch: batch, delivery: delivery, config: config)
+        }
+        if delivery.destination == .notion {
+            return await sendToNotion(batch: batch, delivery: delivery, config: config)
         }
         if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
@@ -130,7 +140,9 @@ actor IntegrationDispatchService {
         case .appleReminders:
             try await assertRemindersPermission()
         case .notion:
-            try await testHTTPBearerConnection(urlString: "https://api.notion.com/v1/users/me", token: snapshot.notionToken, extraHeaders: ["Notion-Version": "2022-06-28"])
+            let token = try notionToken()
+            guard !token.isEmpty else { throw NotionError.missingToken }
+            try await notionClient.checkSecret(token: token)
         case .evernote:
             let base = snapshot.config.evernote.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             try await testHTTPBearerConnection(urlString: "\(base)/v1/user", token: snapshot.evernoteToken, extraHeaders: [:])
@@ -263,67 +275,6 @@ actor IntegrationDispatchService {
             try reminderStore.commit()
             return created.map(\.calendarItemIdentifier).joined(separator: ",")
         }
-    }
-
-    private func sendToNotion(bundle: IntegrationContentBundle, config: NotionConfig, token: String) async throws -> String? {
-        guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("Notion token is required")
-        }
-        guard !config.parentID.isEmpty else {
-            throw IntegrationError.missingConfiguration("Notion parent ID is required")
-        }
-
-        guard let url = URL(string: "https://api.notion.com/v1/pages") else {
-            throw IntegrationError.invalidURL("https://api.notion.com/v1/pages")
-        }
-
-        let titlePropertyName = config.titlePropertyName.isEmpty ? "Name" : config.titlePropertyName
-        let parentType = config.parentType == .dataSource ? "data_source_id" : "page_id"
-
-        let content = renderPlainContent(bundle: bundle, fields: config.fields)
-        let lines = content.split(separator: "\n").map(String.init)
-        let blocks: [[String: Any]] = lines.map { line in
-            [
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": [
-                    "rich_text": [
-                        [
-                            "type": "text",
-                            "text": ["content": line],
-                        ],
-                    ],
-                ],
-            ]
-        }
-
-        let payload: [String: Any] = [
-            "parent": [parentType: config.parentID],
-            "properties": [
-                titlePropertyName: [
-                    "title": [[
-                        "type": "text",
-                        "text": ["content": bundle.title],
-                    ]],
-                ],
-            ],
-            "children": blocks,
-        ]
-
-        let data = try await performJSONRequest(
-            url: url,
-            method: "POST",
-            payload: payload,
-            bearerToken: token,
-            additionalHeaders: ["Notion-Version": "2022-06-28"],
-            timeout: 30
-        )
-
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let id = json["id"] as? String {
-            return id
-        }
-        return nil
     }
 
     private func sendToEvernote(bundle: IntegrationContentBundle, config: EvernoteConfig, token: String) async throws -> String? {

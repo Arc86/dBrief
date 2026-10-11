@@ -34,6 +34,34 @@ struct ProfileIntegrationOverridesTests {
         }
     }
 
+    @Test func profileOverridesTheNotionDestination() throws {
+        try withSettings { settings in
+            settings.integrations.notion = {
+                var notion = NotionConfig()
+                notion.enabled = true
+                notion.parentType = .page
+                notion.parentID = "base-page"
+                notion.parentName = "Base page"
+                return notion
+            }()
+            let profile = MeetingProfile(name: "Sales", overrides: .init(
+                notionParentID: "ds-1", notionParentType: NotionParentType.dataSource.rawValue, notionParentName: "Deals"))
+            settings.profiles = [profile]
+            let notion = settings.resolvedIntegrations(for: profile.id).notion
+            #expect(notion.parentID == "ds-1" && notion.parentType == .dataSource && notion.parentName == "Deals")
+            #expect(notion.enabled && notion.fields == settings.integrations.notion.fields)
+        }
+    }
+
+    @Test func notionSettingsSavedBeforeThisChangeStillDecode() throws {
+        let legacy = Data(#"""
+        {"enabled":true,"tokenKeychainKey":"integration.notion.token","parentType":"page","parentID":"abc",
+         "titlePropertyName":"Name","fields":["summary"]}
+        """#.utf8)
+        let notion = try JSONDecoder().decode(NotionConfig.self, from: legacy)
+        #expect(notion.parentID == "abc" && notion.parentName == nil && notion.fields == [.summary])
+    }
+
     @Test func noOverrideUnknownOrMissingProfileUsesDefaults() throws {
         try withSettings { settings in
             let plain = MeetingProfile(name: "Plain")

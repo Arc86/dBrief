@@ -370,6 +370,7 @@ private extension PrivacyDestination.Provider {
         case .webhook: "Webhook"
         case .tickTick: "TickTick"
         case .todoist: "Todoist"
+        case .notion: "Notion"
         case .fileSystem: "File system"
         case .clipboard: "System clipboard"
         case .ttsKit: "TTSKit"

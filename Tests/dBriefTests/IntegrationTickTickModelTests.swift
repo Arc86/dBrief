@@ -6,9 +6,9 @@ import Testing
 struct IntegrationTickTickModelTests {
     @Test func tickTickIsOfferedOnlyWithCredentials() {
         #expect(IntegrationDestination.available(tickTickConfigured: false)
-            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist])
+            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist, .notion])
         #expect(IntegrationDestination.available(tickTickConfigured: true)
-            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist, .tickTick])
+            == [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist, .notion, .tickTick])
         #expect(IntegrationDestination.tickTick.displayName == "TickTick")
     }
 

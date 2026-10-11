@@ -17,8 +17,8 @@ extension AppSettings {
         return profiles[0]
     }
 
-    /// Integration settings as a given profile sees them: its TickTick list and
-    /// Todoist project overrides on top of the app's. Deliveries resolve with the
+    /// Integration settings as a given profile sees them: its TickTick list,
+    /// Todoist project and Notion destination overrides on top of the app's. Deliveries resolve with the
     /// profile they were prepared under, never the currently active one, so a
     /// later retry still goes where the meeting's profile sent it. A nil or
     /// deleted profile resolves the app settings.
@@ -34,6 +34,11 @@ extension AppSettings {
         if let id = overrides.todoistProjectID {
             resolved.todoist.projectID = id.isEmpty ? nil : id
             resolved.todoist.projectName = id.isEmpty ? nil : overrides.todoistProjectName
+        }
+        if let id = overrides.notionParentID, !id.isEmpty {
+            resolved.notion.parentID = id
+            resolved.notion.parentType = overrides.notionParentType.flatMap(NotionParentType.init(rawValue:)) ?? .page
+            resolved.notion.parentName = overrides.notionParentName
         }
         return resolved
     }

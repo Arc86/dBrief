@@ -142,7 +142,11 @@ struct SettingsIntegrationsTab: View {
             return "One task per action item · list “\(appSettings.integrations.tickTick.projectName ?? "Inbox")”"
         case .todoist:
             return "One task per action item · project “\(appSettings.integrations.todoist.projectName ?? "Inbox")”"
-        case .notion, .evernote, .googleKeep, .oneNote:
+        case .notion:
+            let notion = appSettings.integrations.notion
+            guard !notion.parentID.isEmpty else { return "Choose a page or database" }
+            return "\(notion.parentType == .dataSource ? "Database" : "Page") “\(notion.parentName ?? "Untitled")”"
+        case .evernote, .googleKeep, .oneNote:
             return nil
         }
     }
@@ -361,26 +365,39 @@ struct SettingsIntegrationsTab: View {
     @ViewBuilder
     private var notionDetail: some View {
         @Bindable var settings = appSettings
-        SettingsCard("Notion") {
+        let notion = appSettings.integrations.notion
+        SettingsCard("Notion", description: "One page per meeting, under a page or in a database") {
             enableRow("Send to Notion", $settings.integrations.notion.enabled)
-            if appSettings.integrations.notion.enabled {
-                textRow("Token", secure: true, $settings.notionToken)
-                SettingsRow("Parent type") {
-                    Picker("Parent type", selection: $settings.integrations.notion.parentType) {
-                        Text("Data source").tag(NotionParentType.dataSource)
-                        Text("Page").tag(NotionParentType.page)
+            if notion.enabled {
+                textRow("Integration secret", secure: true, $settings.notionToken)
+                SettingsRow(verbatim: "Where to get it",
+                            caption: "Create an internal integration, then connect your page or database to it (••• → Connections).") {
+                    Button("Open Notion") { NSWorkspace.shared.open(NotionAPI.integrationsURL) }
+                        .buttonStyle(.settingsSecondary)
+                }
+                if appSettings.notionToken.isEmpty {
+                    warningRow("An integration secret is required.")
+                } else {
+                    SettingsRow(verbatim: "Destination", caption: "Pages and databases connected to the integration",
+                                systemImage: "doc.text") {
+                        TaskDestinationPicker(
+                            service: .notion,
+                            savedID: notion.parentID.isEmpty ? nil : TaskDestinationPicker.notionTag(notion.parentType, notion.parentID),
+                            savedName: notion.parentName) { tag, name in
+                            var config = appSettings.integrations.notion
+                            let destination = tag.flatMap(TaskDestinationPicker.notionDestination(fromTag:))
+                            config.parentID = destination?.id ?? ""
+                            config.parentType = destination?.type ?? .page
+                            config.parentName = destination == nil ? nil : name
+                            appSettings.integrations.notion = config
+                        }
                     }
-                    .pickerStyle(.menu)
+                    if notion.parentID.isEmpty { warningRow("Choose a page or database.") }
+                    testRow(for: .notion)
                 }
-                textRow("Parent ID", $settings.integrations.notion.parentID)
-                textRow("Title property", $settings.integrations.notion.titlePropertyName)
-                if appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty {
-                    warningRow("Token and parent ID are required.")
-                }
-                testRow(for: .notion)
             }
         }
-        if appSettings.integrations.notion.enabled {
+        if notion.enabled {
             deliveryFieldsCard($settings.integrations.notion.fields)
         }
     }

@@ -30,14 +30,14 @@ enum IntegrationDestination: String, CaseIterable, Codable, Hashable, Sendable, 
     }
 
     /// Destinations currently exposed to users. Untested integrations
-    /// (Notion, Evernote, Google Keep, OneNote) are omitted until verified.
+    /// (Evernote, Google Keep, OneNote) are omitted until verified.
     /// TickTick appears only in builds stamped with its OAuth credentials.
     static var available: [IntegrationDestination] {
         available(tickTickConfigured: TickTickCredentials.bundled.isConfigured)
     }
 
     static func available(tickTickConfigured: Bool) -> [IntegrationDestination] {
-        [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist] + (tickTickConfigured ? [.tickTick] : [])
+        [.obsidian, .appleNotes, .appleReminders, .webhook, .todoist, .notion] + (tickTickConfigured ? [.tickTick] : [])
     }
 }
 
@@ -113,6 +113,8 @@ struct NotionConfig: Codable, Hashable, Sendable {
     var tokenKeychainKey: String = KeychainSecretKey.notion.rawValue
     var parentType: NotionParentType = .dataSource
     var parentID: String = ""
+    /// Display only; `parentID` routes the pages.
+    var parentName: String? = nil
     var titlePropertyName: String = "Name"
     var fields: [DeliveryField] = [.transcript, .summary, .actionItems, .tags, .sentiment, .meetingInfo]
 }

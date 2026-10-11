@@ -10,7 +10,7 @@ struct SettingsProfileScope {
         case summaryPrompt, actionsPrompt, tagsPrompt
         case transcriptionTask, summaryTask, actionsTask, tagsTask, calendarParticipantsTask
         case recordingFolder, transcriptFolder, obsidianVault, obsidianFolder
-        case tickTickList, todoistProject
+        case tickTickList, todoistProject, notionDestination
         var id: String { rawValue }
 
         var keyPath: PartialKeyPath<MeetingProfileOverrides> {
@@ -38,6 +38,7 @@ struct SettingsProfileScope {
             case .obsidianFolder: \.obsidianDefaultFolderRelativePath
             case .tickTickList: \.tickTickProjectID
             case .todoistProject: \.todoistProjectID
+            case .notionDestination: \.notionParentID
             }
         }
     }
@@ -175,6 +176,14 @@ struct SettingsProfileScope {
                  overrideID: overrides.tickTickProjectID, overrideName: overrides.tickTickProjectName)
         taskList(.todoistProject, "Todoist project", baseName: settings.integrations.todoist.projectName,
                  overrideID: overrides.todoistProjectID, overrideName: overrides.todoistProjectName)
+        if fields.contains(.notionDestination) {
+            let notion = settings.integrations.notion
+            let baseName = notion.parentID.isEmpty ? "Not chosen" : notion.parentName ?? "Untitled"
+            let overrideID = overrides.notionParentID.flatMap { $0.isEmpty ? nil : $0 }
+            rows.append(Summary(id: .notionDestination, label: "Notion destination", defaultValue: baseName,
+                                profileValue: overrideID == nil ? baseName : overrides.notionParentName ?? "Untitled",
+                                isOverridden: overrideID != nil, note: nil))
+        }
         summaries = rows
     }
 

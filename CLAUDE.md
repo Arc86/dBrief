@@ -201,13 +201,13 @@ Both search a ±2h window and rank candidates via the pure, unit-tested `Calenda
 
 ### Integration Dispatch (`Services/IntegrationDispatchService.swift`)
 
-Routes post-recording content to ten implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — Obsidian, Apple Notes, Apple Reminders, Webhook and Todoist, plus TickTick in builds stamped with its OAuth credentials. The others (Notion, Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
+Routes post-recording content to ten implemented destinations, each with configurable field selection (audio, transcript, summary, tags, sentiment, action items, markdown). **`IntegrationDestination.available` is the source of truth for which are exposed** — Obsidian, Apple Notes, Apple Reminders, Webhook, Todoist and Notion, plus TickTick in builds stamped with its OAuth credentials. The others (Evernote, Google Keep, OneNote) are implemented but hidden from the Settings UI and skipped by dispatch until verified.
 
 | Destination | Method |
 |-------------|--------|
 | Apple Notes | AppleScript |
 | Apple Reminders | EventKit API (`EKEventStore`) — creates reminder per action item |
-| Notion | REST API (v2022-06-28) |
+| Notion | API `2026-03-11` (pasted internal-integration secret) — one page per meeting under a page or in a database |
 | Evernote | REST API |
 | Google Keep | REST API |
 | Microsoft OneNote | Microsoft Graph API (v1.0) |
@@ -219,6 +219,8 @@ Routes post-recording content to ten implemented destinations, each with configu
 **TickTick**: "Sign in with TickTick" (`TickTickAuthService`) opens the authorize page in the default browser and receives the redirect on a one-shot loopback listener (`TickTickLoopbackServer`, Network.framework, bound to `127.0.0.1:47213`; RFC 8252) — TickTick's portal rejects custom-scheme redirects, so the registered redirect is exactly `http://127.0.0.1:47213/ticktick/callback`. Sign-in times out after 5 minutes and can be cancelled from Settings. TickTick has no PKCE, so the code exchange uses a client secret; the ID/secret are stamped into the built `Info.plist` (`DBTickTickClientID`/`DBTickTickClientSecret`) by `scripts/stamp-ticktick-credentials.py` from `TICKTICK_CLIENT_ID`/`TICKTICK_CLIENT_SECRET` or the gitignored `packaging/secrets.env` — never committed (public repo); unstamped builds hide TickTick. Only the access token is stored (Keychain); there is no refresh token, so a 401 deletes it and sets `ticktick.sessionExpired` (Settings asks to sign in again). Delivery (`IntegrationDispatchService+TickTick.swift`) records created task ids per action item on the delivery (`createdItems`) and, on a retry, matches existing tasks by title + the batch reference in the content line (`… — added by dBrief (ref <8 hex of the batch id>)`, never the localized date) before creating, so lost responses, 201-without-body replies, locale/time-zone changes and same-titled meetings don't duplicate or drop tasks.
 
 **Todoist**: the user pastes a personal API token (`AppSettings.todoistToken`, Keychain `integration.todoist.token`; no expiry, no OAuth). Tasks go through the Sync API (`IntegrationDispatchService+Todoist.swift`, up to 100 `item_add` commands per request) with a command uuid derived from the delivery id + item index (`TodoistAPI.commandUUID`); Todoist never executes a uuid twice, so retries can't duplicate tasks. Per-item progress uses the same `createdItems` as TickTick; a project picker defaults to the Inbox (no `project_id`).
+
+**Notion**: the user pastes an internal-integration secret (`AppSettings.notionToken`, Keychain `integration.notion.token`) and picks a destination from `POST /v1/search` (pages and data sources connected to the integration) in the shared `TaskDestinationPicker`. Each meeting becomes a child page or a database entry (`IntegrationDispatchService+Notion.swift`); for a database the title, Date and Tags columns are found by type (`NotionAPI.parseSchema`). The page layout (`NotionAPI.blocks`) is a header line with "(ref <8 hex of the batch id>)", then Summary / Action items (to-dos) / Tags / Sentiment / Transcript per the selected fields, text split to Notion's 2,000-character limit. Pages are created with the first 100 blocks and the rest appended in batches; progress is `createdItems = [0: page id, 1: blocks written]`, and a retry without a recorded page id first adopts a same-titled page under the parent whose first block carries the reference. Profiles can override the destination (`notionParentID`/`notionParentType`).
 
 Integration tokens are stored securely via `KeychainHelper`.
 

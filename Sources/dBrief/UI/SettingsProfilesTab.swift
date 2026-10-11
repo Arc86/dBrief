@@ -674,7 +674,7 @@ struct SettingsProfilesTab: View {
     private var integrationOverridesSection: some View {
         let showTickTick = IntegrationDestination.available.contains(.tickTick)
         let keys: [WritableKeyPath<MeetingProfileOverrides, String?>] =
-            (showTickTick ? [\.tickTickProjectID] : []) + [\.todoistProjectID]
+            (showTickTick ? [\.tickTickProjectID] : []) + [\.todoistProjectID, \.notionParentID]
         let overridden = keys.filter { isSet($0) }.count
         return SettingsCard("Integrations", description: "\(overridden) of \(keys.count) overridden",
                             section: .profileIntegrations) {
@@ -688,6 +688,43 @@ struct SettingsProfilesTab: View {
                                        id: \.todoistProjectID, name: \.todoistProjectName,
                                        base: appSettings.integrations.todoist.projectID,
                                        baseName: appSettings.integrations.todoist.projectName)
+            notionOverrideRow
+        }
+    }
+
+    /// Like `taskDestinationOverrideRow`, for Notion, whose destination is a
+    /// page or a database. An empty id means none chosen (the app default applies).
+    private var notionOverrideRow: some View {
+        let base = appSettings.integrations.notion
+        let enabled = isSet(\.notionParentID)
+        let overrides = selectedProfileIndex.map { appSettings.profiles[$0].overrides }
+        let currentID = overrides?.notionParentID ?? ""
+        let currentType = overrides?.notionParentType.flatMap(NotionParentType.init(rawValue:)) ?? .page
+        let baseLabel = base.parentID.isEmpty ? "Not chosen" : base.parentName ?? "Untitled"
+        return SettingsRow(verbatim: "Notion destination",
+                           caption: "\(enabled ? "App default" : "Uses app default") — \(baseLabel)") {
+            HStack(spacing: 12) {
+                if enabled {
+                    TaskDestinationPicker(
+                        service: .notion,
+                        savedID: currentID.isEmpty ? nil : TaskDestinationPicker.notionTag(currentType, currentID),
+                        savedName: overrides?.notionParentName) { tag, name in
+                        guard let index = selectedProfileIndex else { return }
+                        let destination = tag.flatMap(TaskDestinationPicker.notionDestination(fromTag:))
+                        appSettings.profiles[index].overrides.notionParentID = destination?.id ?? ""
+                        appSettings.profiles[index].overrides.notionParentType = destination?.type.rawValue
+                        appSettings.profiles[index].overrides.notionParentName = destination == nil ? nil : name
+                    }
+                }
+                Toggle("Override Notion destination", isOn: Binding(
+                    get: { isSet(\.notionParentID) },
+                    set: { on in
+                        guard let index = selectedProfileIndex else { return }
+                        appSettings.profiles[index].overrides.notionParentID = on ? base.parentID : nil
+                        appSettings.profiles[index].overrides.notionParentType = on ? base.parentType.rawValue : nil
+                        appSettings.profiles[index].overrides.notionParentName = on ? base.parentName : nil
+                    }))
+            }
         }
     }
 

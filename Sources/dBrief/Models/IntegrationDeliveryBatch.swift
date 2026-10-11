@@ -99,6 +99,10 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
                 enabled: settings.tickTick.enabled)
         try add(.todoist, TickTickRouting(projectID: settings.todoist.projectID ?? "inbox"),
                 enabled: settings.todoist.enabled)
+        try add(.notion, NotionRouting(parentType: settings.notion.parentType.rawValue,
+                                       parentID: settings.notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines),
+                                       fields: settings.notion.fields),
+                enabled: settings.notion.enabled)
         return values
     }
 
@@ -106,6 +110,12 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
     /// Shared by TickTick and Todoist, whose routing is just a project id.
     private struct TickTickRouting: Encodable {
         let projectID: String
+    }
+
+    private struct NotionRouting: Encodable {
+        let parentType: String
+        let parentID: String
+        let fields: [DeliveryField]
     }
 
     private struct WebhookRouting: Encodable {

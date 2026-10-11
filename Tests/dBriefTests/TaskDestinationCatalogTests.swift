@@ -44,4 +44,12 @@ struct TaskDestinationCatalogTests {
         #expect(catalog.options(for: .todoist).isEmpty)
         #expect(catalog.error(for: .todoist) == "Paste a token")
     }
+
+    @Test func notionTagsRoundTripTheKind() throws {
+        let tag = TaskDestinationPicker.notionTag(.dataSource, "abc-123")
+        let decoded = try #require(TaskDestinationPicker.notionDestination(fromTag: tag))
+        #expect(decoded.type == .dataSource && decoded.id == "abc-123")
+        #expect(TaskDestinationPicker.notionDestination(fromTag: "page:") == nil)
+        #expect(TaskDestinationPicker.notionDestination(fromTag: "nonsense") == nil)
+    }
 }

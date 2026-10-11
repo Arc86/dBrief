@@ -104,7 +104,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
         case .meetings: [.calendarEffort]
         case .ai: [.aiEnabled, .aiEngine, .aiProvider, .analysisEffort, .summaryPrompt, .actionsPrompt, .tagsPrompt]
         case .afterRecording: [.transcriptionTask, .summaryTask, .actionsTask, .tagsTask]
-        case .integrations: [.obsidianVault, .obsidianFolder, .todoistProject]
+        case .integrations: [.obsidianVault, .obsidianFolder, .todoistProject, .notionDestination]
             + (IntegrationDestination.available.contains(.tickTick) ? [.tickTickList] : [])
         default: []
         }

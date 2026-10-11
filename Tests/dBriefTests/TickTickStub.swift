@@ -34,7 +34,7 @@ final class TickTickStubProtocol: URLProtocol, @unchecked Sendable {
 
     override class func canInit(with request: URLRequest) -> Bool {
         // Also serves the Todoist tests, which share the per-token routing.
-        ["ticktick.com", "todoist.com"].contains { request.url?.host?.hasSuffix($0) == true }
+        ["ticktick.com", "todoist.com", "notion.com"].contains { request.url?.host?.hasSuffix($0) == true }
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }

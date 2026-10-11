@@ -12,6 +12,8 @@ final class TaskDestinationCatalog {
     struct Option: Hashable, Sendable {
         let id: String
         let name: String
+        /// Shown after the name in the menu only (Notion: "Page" / "Database").
+        var detail: String? = nil
     }
 
     private var optionsByService: [TaskDestinationPicker.Service: [Option]] = [:]
@@ -45,13 +47,24 @@ final class TaskDestinationCatalog {
     }
 }
 
-/// Picks a TickTick list or Todoist project, with Inbox (nil) first. Options
+/// Picks a TickTick list or Todoist project, with Inbox (nil) first, or a
+/// Notion page or database (no Inbox: nil means none chosen yet). Options
 /// come from `TaskDestinationCatalog`; a saved choice missing from them stays
 /// selectable (still loading, or deleted in the service). Shared by Settings →
 /// Integrations and the profile overrides.
 struct TaskDestinationPicker: View {
     enum Service: Hashable, Sendable {
-        case tickTick, todoist
+        case tickTick, todoist, notion
+    }
+
+    /// Notion options carry their kind in the id: "<NotionParentType>:<id>".
+    static func notionTag(_ type: NotionParentType, _ id: String) -> String { "\(type.rawValue):\(id)" }
+
+    static func notionDestination(fromTag tag: String) -> (type: NotionParentType, id: String)? {
+        guard let colon = tag.firstIndex(of: ":"),
+              let type = NotionParentType(rawValue: String(tag[..<colon])) else { return nil }
+        let id = String(tag[tag.index(after: colon)...])
+        return id.isEmpty ? nil : (type, id)
     }
 
     let service: Service
@@ -77,10 +90,10 @@ struct TaskDestinationPicker: View {
                     }
                     .buttonStyle(.settingsSecondary)
                 }
-                Picker(service == .tickTick ? "List" : "Project", selection: selection(options)) {
-                    Text("Inbox").tag(Self.inboxTag)
+                Picker(pickerTitle, selection: selection(options)) {
+                    Text(service == .notion ? "Choose a page or database" : "Inbox").tag(Self.inboxTag)
                     ForEach(options, id: \.id) { option in
-                        Text(option.name).tag(option.id)
+                        Text(option.detail.map { "\(option.name) · \($0)" } ?? option.name).tag(option.id)
                     }
                     if let savedID, !options.contains(where: { $0.id == savedID }) {
                         Text(savedName ?? "Unavailable list").tag(savedID)
@@ -113,11 +126,20 @@ struct TaskDestinationPicker: View {
             })
     }
 
+    private var pickerTitle: String {
+        switch service {
+        case .tickTick: "List"
+        case .todoist: "Project"
+        case .notion: "Destination"
+        }
+    }
+
     /// Reload when the credential changes (sign-in, sign-out, a pasted token).
     private var reloadKey: String {
         switch service {
         case .tickTick: tickTickAuth.isSignedIn ? "signed-in" : "signed-out"
         case .todoist: appSettings.todoistToken
+        case .notion: appSettings.notionToken
         }
     }
 
@@ -128,6 +150,7 @@ struct TaskDestinationPicker: View {
             await load(.tickTick, appSettings: appSettings, tickTickAuth: tickTickAuth)
         }
         await load(.todoist, appSettings: appSettings, tickTickAuth: tickTickAuth)
+        await load(.notion, appSettings: appSettings, tickTickAuth: tickTickAuth)
     }
 
     /// `debounce` waits for a token being typed to settle before fetching.
@@ -157,6 +180,19 @@ struct TaskDestinationPicker: View {
             await catalog.load(.todoist, key: token, force: force) {
                 if debounce { try await Task.sleep(for: .milliseconds(600)) }
                 return try await TodoistClient().listProjects(token: token).map { .init(id: $0.id, name: $0.name) }
+            }
+        case .notion:
+            let token = appSettings.notionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else {
+                return catalog.clear(.notion, message: NotionError.missingToken.localizedDescription)
+            }
+            await catalog.load(.notion, key: token, force: force) {
+                if debounce { try await Task.sleep(for: .milliseconds(600)) }
+                return try await NotionClient().search(token: token).map { destination in
+                    let type: NotionParentType = destination.kind == .dataSource ? .dataSource : .page
+                    return .init(id: notionTag(type, destination.id), name: destination.name,
+                                 detail: type == .dataSource ? "Database" : "Page")
+                }
             }
         }
     }
