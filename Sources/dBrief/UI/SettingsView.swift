@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(TickTickAuthService.self) private var tickTickAuth
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.viewerPalette) private var palette
     @State private var destination: SettingsDestination
@@ -127,6 +128,8 @@ struct SettingsView: View {
             // Replaced by `SettingsSidebarToggle`: the system button draws a glass
             // circle over the custom sidebar background.
             .toolbar(removing: .sidebarToggle)
+            // Load task lists now so their pickers draw at full width when shown.
+            .task { await TaskDestinationPicker.prefetch(appSettings: appSettings, tickTickAuth: tickTickAuth) }
         } detail: {
             // Keep long grouped forms inside the window's viewport. Without
             // this boundary, the header + form stack can report the form's full
