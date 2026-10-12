@@ -327,7 +327,7 @@ final class RecordingManager {
 
     /// Analyzed jobs need no finalization, transcription, or speaker processing.
     /// A frozen export can finish even when earlier stage sidecars were moved.
-    private func resumeExport(job: ProcessingJob) async {
+    private func resumeExport(job: ProcessingJob, stopBeforeIntegrations: Bool = true) async {
         guard !Task.isCancelled, appState.processingJob === job,
               let record = job.persistedRecord else { return }
         appState.processingSteps = []
@@ -364,7 +364,7 @@ final class RecordingManager {
             recording: job.recording, transcribe: record.request.transcribe,
             summary: record.request.summary, actionItems: record.request.actionItems,
             tags: record.request.tags, localAIAvailable: false,
-            perf: TranscriptionPerf(), stopBeforeIntegrations: true
+            perf: TranscriptionPerf(), stopBeforeIntegrations: stopBeforeIntegrations
         )
     }
 
@@ -519,7 +519,9 @@ final class RecordingManager {
                 recording.meetingTitleDraft = defaultMeetingTitle(from: recording.associatedApp)
             }
             if appSettings.effectiveCalendarSource != .disabled {
+                recording.calendarLookupInFlight = true
                 recording.calendarLookupTask = Task { [weak self, weak recording] in
+                    defer { recording?.calendarLookupInFlight = false }
                     guard let self, let recording else { return }
                     await self.lookupCalendarCandidates(for: recording)
                 }
@@ -790,8 +792,14 @@ final class RecordingManager {
             let prepared = try await processingPipeline.prepareWorkflow(transcribe: transcribe, steps: .init(
                 waitForCalendar: { @MainActor in
                     try self.requireProcessingOwnership(job)
+                    // Without a step the panel would sit empty while the lookup finishes.
+                    let index = recording.calendarLookupInFlight ? self.appState.processingSteps.count : nil
+                    if index != nil {
+                        self.appState.processingSteps.append(ProcessingStep(name: "Calendar event", status: .inProgress))
+                    }
                     await recording.calendarLookupTask?.value
                     try self.requireProcessingOwnership(job)
+                    if let index { self.markCompleted(index) }
                 }, finalize: { @MainActor in
                     try await self.finalizePreparation(job: job, progress: progress)
                 }, finalizationCommitted: { @MainActor in
@@ -3448,13 +3456,14 @@ final class RecordingManager {
             let saved = record
             let request = record.request
             queueMutationInProgress = false
+            // The user asked to resume, so integrations go out like a normal run;
+            // only the automatic launch replay stops before them.
             launchJob(recording: recording, existingRecord: saved) { job in
                 if saved.checkpoint.hasCompleted(.analyzed) {
-                    await self.resumeExport(job: job)
+                    await self.resumeExport(job: job, stopBeforeIntegrations: false)
                 } else {
                     await self.processRecording(job: job, transcribe: request.transcribe,
-                        summary: request.summary, actionItems: request.actionItems, tags: request.tags,
-                        stopBeforeIntegrations: true)
+                        summary: request.summary, actionItems: request.actionItems, tags: request.tags)
                 }
             }
         } catch { appState.lastError = "Couldn't load this recovery item. Its saved files were left untouched." }
@@ -3657,7 +3666,7 @@ final class RecordingManager {
             guard result.batch.isComplete else {
                 await markPersistedJobFailed(.integrations, job: job)
                 try requireProcessingOwnership(job)
-                appState.lastError = "Some integrations need attention. Open Integrations in History to review or retry individual sends."
+                appState.lastError = IntegrationRetryPlan.processingAttentionMessage
                 return false
             }
             job.successfulCompletion = result.completion
@@ -3753,36 +3762,43 @@ final class RecordingManager {
                 ? "No integrations were enabled for this processing job."
                 : batch.deliveries.map { "\($0.destination.displayName): \($0.statusDescription)" }.joined(separator: "\n\n")
             let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
+            // With several unsent, the first entry sends them all in one go.
+            let offersAll = remaining.count > 1
             if !remaining.isEmpty {
+                if offersAll { picker.addItem(withTitle: "All remaining (\(remaining.count))") }
                 picker.addItems(withTitles: remaining.map { $0.destination.displayName })
-                picker.setAccessibilityLabel("Integration to retry")
+                picker.setAccessibilityLabel("Integrations to send")
                 alert.accessoryView = picker
-                alert.addButton(withTitle: "Send Selected")
+                alert.addButton(withTitle: "Send")
             }
             alert.addButton(withTitle: "Close")
             guard alert.runModal() == .alertFirstButtonReturn, !remaining.isEmpty else { return }
-            let selected = remaining[picker.indexOfSelectedItem]
-            let currentDigest = try IntegrationDeliveryBatch.configurationDigests(
-                appSettings.resolvedIntegrations(for: batch.profileID))[selected.destination]
-            guard let currentDigest else {
-                appState.lastError = "Enable \(selected.destination.displayName) in Settings before retrying."
+            let index = picker.indexOfSelectedItem
+            let selected = offersAll && index == 0 ? remaining : [remaining[index - (offersAll ? 1 : 0)]]
+            let plan = IntegrationRetryPlan(selected: selected, currentDigests: try IntegrationDeliveryBatch.configurationDigests(
+                appSettings.resolvedIntegrations(for: batch.profileID)))
+            func names(_ destinations: [IntegrationDestination]) -> String {
+                ListFormatter.localizedString(byJoining: destinations.map(\.displayName))
+            }
+            guard !plan.destinations.isEmpty else {
+                appState.lastError = "Enable \(names(plan.disabled)) in Settings before retrying."
                 return
             }
-            let configurationChanged = currentDigest != selected.configurationDigest
-            if selected.needsDuplicateConfirmation || configurationChanged {
+            if plan.needsConfirmation {
                 let warning = NSAlert()
                 warning.alertStyle = .warning
-                warning.messageText = "Retry \(selected.destination.displayName)?"
+                let sending = selected.map(\.destination).filter(plan.destinations.contains)
+                warning.messageText = sending.count == 1 ? "Retry \(names(sending))?" : "Send \(names(sending))?"
                 var explanations: [String] = []
-                if selected.needsDuplicateConfirmation {
-                    explanations.append("The previous attempt may already have created a note, reminders, or a webhook event. Check the destination first. Retrying may create duplicates. Webhook deduplication depends on the receiver honoring the idempotency key.")
+                if plan.allowUncertainRetry {
+                    explanations.append("The previous attempt to \(names(plan.duplicateRisk)) may already have created a note, reminders, or a webhook event. Check the destination first. Retrying may create duplicates. Webhook deduplication depends on the receiver honoring the idempotency key.")
                 }
-                if configurationChanged {
-                    explanations.append("The integration settings have changed. Using current settings may send this saved content to a different account, folder, or URL, or include different selected fields.")
+                if plan.acceptConfigurationChange {
+                    explanations.append("The settings for \(names(plan.configurationChanged)) have changed. Using current settings may send this saved content to a different account, folder, or URL, or include different selected fields.")
                 }
                 warning.informativeText = explanations.joined(separator: "\n\n")
                 warning.addButton(withTitle: "Cancel")
-                warning.addButton(withTitle: configurationChanged ? "Send with Current Settings" : "Retry Anyway")
+                warning.addButton(withTitle: plan.acceptConfigurationChange ? "Send with Current Settings" : "Retry Anyway")
                 guard warning.runModal() == .alertSecondButtonReturn else { return }
             }
             guard appState.processingJob == nil else {
@@ -3801,12 +3817,12 @@ final class RecordingManager {
             let job = launchJob(id: batch.id, recording: recording) { retryJob in
                 do {
                     let result = try await self.runIntegrationDeliveries(
-                        batch: batch, job: retryJob, destinations: [selected.destination],
-                        allowUncertainRetry: selected.needsDuplicateConfirmation,
-                        acceptConfigurationChange: configurationChanged)
+                        batch: batch, job: retryJob, destinations: plan.destinations,
+                        allowUncertainRetry: plan.allowUncertainRetry,
+                        acceptConfigurationChange: plan.acceptConfigurationChange)
                     guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
-                    if let entry = result.deliveries.first(where: { $0.id == selected.id }),
-                       !self.appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) {
+                    for entry in result.deliveries where plan.destinations.contains(entry.destination)
+                        && !self.appState.processingSteps.contains(where: { $0.name == "Send: \(entry.destination.displayName)" }) {
                         self.appState.processingSteps.append(ProcessingStep(
                             name: "Send: \(entry.destination.displayName)",
                             status: entry.isComplete ? .completed : .failed(entry.statusDescription)))
@@ -3825,9 +3841,10 @@ final class RecordingManager {
                             try await self.persistProcessingCompletion(completion, for: retryJob)
                             guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }
                         }
-                    }
-                    if !result.isComplete {
-                        self.appState.lastError = "Some deliveries still need attention. Open Integrations in History to review them."
+                        // Everything has gone out, so an earlier "needs attention" banner is stale.
+                        if IntegrationRetryPlan.isAttentionError(self.appState.lastError) { self.appState.lastError = nil }
+                    } else {
+                        self.appState.lastError = IntegrationRetryPlan.retryAttentionMessage
                     }
                 } catch {
                     guard !Task.isCancelled, self.appState.processingJob === retryJob else { return }

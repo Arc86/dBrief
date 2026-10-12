@@ -44,6 +44,9 @@ final class Recording: Identifiable {
     /// (especially the Outlook network round-trip) and lose calendar title/participants/AI context.
     /// Session-only; never persisted.
     @ObservationIgnored var calendarLookupTask: Task<Void, Never>?
+    /// True while `calendarLookupTask` runs, so processing can show that it is waiting
+    /// for the calendar (a Claude CLI lookup can take minutes). Session-only.
+    @ObservationIgnored var calendarLookupInFlight = false
     /// Bumped on every automatic or manual calendar selection so a late roster
     /// fetch can detect that the selection changed while it was running.
     /// Session-only; never persisted.

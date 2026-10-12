@@ -261,22 +261,25 @@ struct TranscriptBrowserView: View {
             onRefresh: reload,
             onRebuildSearchIndex: { library.refresh(rebuild: true) },
             onSettings: { openWindow(id: "settings") },
-            selectedRowID: selectedWork.map { AnyHashable($0.id) } ?? selection.map { AnyHashable($0) },
+            selectedRowID: selectedWork.map { AnyHashable($0.id) } ?? selection.map(rowID(for:)),
             onMove: moveSelection(by:)
         ) { statusMenu in
             if liveRecording != nil || processingRecording != nil {
                 LibrarySectionHeader(title: "In Progress")
+                // Pinned ids must differ from the library rows' (their URL): the lazy
+                // stack would otherwise keep showing this pinned row in the list
+                // row for the same recording once processing finishes.
                 if let live = liveRecording {
                     LiveSidebarRow(recording: live, isProcessing: false,
                         isSelected: selection == live.fileURL,
                         onTap: { selectRecording(live.fileURL) })
-                        .id(live.fileURL)
+                        .id(PinnedRowID.live(live.fileURL))
                 }
                 if let proc = processingRecording {
                     LiveSidebarRow(recording: proc, isProcessing: true,
                         isSelected: selection == proc.fileURL,
                         onTap: { selectRecording(proc.fileURL) })
-                        .id(proc.fileURL)
+                        .id(PinnedRowID.processing(proc.fileURL))
                 }
             }
             smartResults(statusMenu: statusMenu)
@@ -384,6 +387,17 @@ struct TranscriptBrowserView: View {
                 }
             }
         }
+    }
+
+    private enum PinnedRowID: Hashable {
+        case live(URL), processing(URL)
+    }
+
+    /// The sidebar row id for a selected recording, so scrolling finds pinned rows too.
+    private func rowID(for url: URL) -> AnyHashable {
+        if url == liveRecording?.fileURL { return AnyHashable(PinnedRowID.live(url)) }
+        if url == processingRecording?.fileURL { return AnyHashable(PinnedRowID.processing(url)) }
+        return AnyHashable(url)
     }
 
     private func selectRecording(_ url: URL) {
