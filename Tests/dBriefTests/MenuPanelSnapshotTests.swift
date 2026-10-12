@@ -100,15 +100,24 @@ struct MenuPanelSnapshotTests {
             ("w-reprocess", { _ in }, { AnyView(ReprocessingSheet(recording: recording(), operation: .transcribe, dismissAction: {})) }),
             ("w-calendar-link", { _ in }, { AnyView(CalendarLinkSheet(recording: recording(), hasTranscript: true, dismissAction: {})) }),
             ("w-speaker-review", { _ in }, {
+                let print = { (x: Float, y: Float) in [Voiceprint(embedding: [x, y], model: "m", capturedAt: .now)] }
                 let items = [
                     SpeakerReviewItem(id: "Speaker 1", proposedName: "Speaker 1", reason: .noEmbedding, confidence: 0,
-                                      personId: nil, clusterEmbedding: [], snippet: nil),
+                                      personId: nil, clusterEmbedding: [0.6, 0.8], snippet: (start: 1, end: 6),
+                                      quote: "So if we move the demo to Thursday, can the platform team still get the CMDB import done?"),
                     SpeakerReviewItem(id: "Speaker 2", proposedName: "Jesper Mol", reason: .matched, confidence: 0.82,
-                                      personId: nil, clusterEmbedding: [], snippet: (start: 1, end: 4)),
+                                      personId: "jesper", clusterEmbedding: [1, 0], snippet: (start: 1, end: 4)),
                 ]
+                let library = VoiceLibrary(people: [
+                    .init(id: "hidde", name: "Hidde de Vries", company: "ServiceNow", voiceprints: print(0.62, 0.78)),
+                    .init(id: "jaap", name: "Jaap Beekhuis", company: "ServiceNow", voiceprints: print(0.9, 0.44)),
+                    .init(id: "jesper", name: "Jesper Mol", company: "ServiceNow", voiceprints: print(1, 0)),
+                    .init(id: "barend", name: "Barend Klickermann", company: "Amsterdam UMC", voiceprints: []),
+                ])
                 let draft = SpeakerReviewDraft(items: items)
                 return AnyView(SpeakerReviewContent(
-                    draft: draft, meetingTitle: nil, meetingNames: ["Jep"], library: VoiceLibrary(),
+                    draft: draft, meetingTitle: "Platform roadmap sync", meetingNames: ["Hidde de Vries", "Maarten van Egmond"],
+                    library: library,
                     libraryLoading: false, masterAudioURL: audio, samplePlayer: AudioPlayer(),
                     beforeAnalysis: true, onConfirm: {}, onCancel: {})
                     .frame(width: SpeakerReviewView.contentSize.width, height: SpeakerReviewView.contentSize.height)

@@ -10,6 +10,7 @@ struct SpeakerReviewItem: Identifiable, Equatable, Sendable {
     var personId: String?          // library link when the proposal came from a match
     var clusterEmbedding: [Float]  // ranks the library choices
     var snippet: (start: Double, end: Double)?  // representative audio range
+    var quote: String? = nil       // what the speaker says in that range
 
     static func == (lhs: SpeakerReviewItem, rhs: SpeakerReviewItem) -> Bool {
         lhs.id == rhs.id && lhs.proposedName == rhs.proposedName

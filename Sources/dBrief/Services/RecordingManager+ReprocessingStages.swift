@@ -122,7 +122,8 @@ extension RecordingManager {
             let items = rich.speakerLabels.map {
                 SpeakerReviewItem(id: $0.id, proposedName: $0.displayName, reason: .noEmbedding,
                     confidence: 0, personId: $0.personId, clusterEmbedding: [],
-                    snippet: SpeakerSnippet.representative(for: $0.id, in: rich))
+                    snippet: SpeakerSnippet.representative(for: $0.id, in: rich),
+                    quote: SpeakerSnippet.quote(for: $0.id, in: rich))
             }
             try await reprocessingStore.checkpoint(attemptID: job.id, status: .waitingForSpeakerReview)
             try requireProcessingOwnership(job)

@@ -6,11 +6,21 @@ import Foundation
 /// `maxLength` seconds from its start.
 enum SpeakerSnippet {
     static func representative(for speakerId: String, in transcript: RichTranscript, maxLength: Double = 6) -> (start: Double, end: Double)? {
-        let longest = transcript.segments
-            .filter { $0.speakerId == speakerId && $0.end > $0.start }
-            .max { ($0.end - $0.start) < ($1.end - $1.start) }
-        guard let s = longest else { return nil }
+        guard let s = longestTurn(for: speakerId, in: transcript) else { return nil }
         let end = min(s.end, s.start + maxLength)
         return (s.start, end)
+    }
+
+    /// What the speaker says in that same turn, so a voice can be recognised without playing it.
+    static func quote(for speakerId: String, in transcript: RichTranscript) -> String? {
+        let text = longestTurn(for: speakerId, in: transcript)?.text
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    private static func longestTurn(for speakerId: String, in transcript: RichTranscript) -> RichSegment? {
+        transcript.segments
+            .filter { $0.speakerId == speakerId && $0.end > $0.start }
+            .max { ($0.end - $0.start) < ($1.end - $1.start) }
     }
 }

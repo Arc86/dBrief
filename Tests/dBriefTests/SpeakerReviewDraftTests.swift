@@ -12,23 +12,22 @@ struct SpeakerReviewDraftTests {
     @Test("A manual correction never retains the old voice-library identity")
     func manualCorrectionClearsIdentity() {
         let draft = SpeakerReviewDraft(items: [item("Speaker 1", name: "Jesper Mol", personID: "jesper")])
-        draft.manualName = "  Alex de Jong \n"
-        draft.useManualName()
+        draft.search = "  Alex de Jong \n"
+        draft.useTypedName()
         #expect(draft.edits["Speaker 1"] == ConfirmedSpeaker(name: "Alex de Jong", personId: nil))
         #expect(draft.reviewedIDs == ["Speaker 1"])
     }
 
-    @Test("Switching speakers preserves assignments and clears the previous search and input")
+    @Test("Switching speakers preserves assignments and clears the previous search")
     func independentAssignments() {
         let draft = SpeakerReviewDraft(items: [item("Speaker 1"), item("Speaker 2")])
         draft.assign(.init(id: "alex", name: "Alex", personId: "alex", detail: nil))
-        draft.search = "Alex"
-        draft.manualName = "Unsaved"
-        draft.selectSpeaker("Speaker 2")
+        draft.search = "Unsaved"
+        draft.selectSpeaker("Speaker 1")
         #expect(draft.search.isEmpty)
-        #expect(draft.manualName.isEmpty)
-        draft.manualName = "Bob"
-        draft.useManualName()
+        draft.selectSpeaker("Speaker 2")
+        draft.search = "Bob"
+        draft.useTypedName()
         #expect(draft.edits["Speaker 1"]?.personId == "alex")
         #expect(draft.edits["Speaker 2"] == ConfirmedSpeaker(name: "Bob", personId: nil))
     }
@@ -36,11 +35,45 @@ struct SpeakerReviewDraftTests {
     @Test("Keeping a label removes a suggested library identity; blank manual input leaves it intact")
     func keepUnnamed() {
         let draft = SpeakerReviewDraft(items: [item("Speaker 1", name: "Jesper Mol", personID: "jesper")])
-        draft.manualName = " \n "
-        draft.useManualName()
+        draft.search = " \n "
+        draft.useTypedName()
         #expect(draft.edits["Speaker 1"]?.personId == "jesper")
         draft.keepUnnamed()
         #expect(draft.edits["Speaker 1"] == ConfirmedSpeaker(name: "Speaker 1", personId: nil))
+    }
+
+    @Test("Answering a speaker moves on to the next unreviewed one, wrapping around")
+    func advancesToNextUnreviewed() {
+        let draft = SpeakerReviewDraft(items: [item("Speaker 1"), item("Speaker 2"), item("Speaker 3")])
+        draft.selectSpeaker("Speaker 2")
+        draft.keepUnnamed()
+        #expect(draft.selectedID == "Speaker 3")
+        draft.search = "Cleo"
+        draft.useTypedName()
+        #expect(draft.selectedID == "Speaker 1")
+        draft.assign(.init(id: "alex", name: "Alex", personId: "alex", detail: nil))
+        #expect(draft.selectedID == "Speaker 1")
+        #expect(draft.allReviewed)
+    }
+
+    @Test("Voice scores rank attendees, and an attendee's library entry is not listed twice")
+    func scoredAndCombined() {
+        let library = VoiceLibrary(people: [
+            .init(id: "alex", name: "Alex", voiceprints: [.init(embedding: [1, 0], model: "m", capturedAt: .now)]),
+            .init(id: "bob", name: "Bob", voiceprints: [.init(embedding: [0, 1], model: "m", capturedAt: .now)]),
+            .init(id: "cleo", name: "Cleo", voiceprints: [])
+        ])
+        let meeting = SpeakerReviewCandidates.meetingChoices(names: ["Alex", "Bob"], library: library,
+                                                             search: "", clusterEmbedding: [0, 1])
+        #expect(meeting.map(\.name) == ["Bob", "Alex"])
+        #expect(meeting.first?.score == 1)
+        let all = SpeakerReviewCandidates.combined(
+            meeting: meeting,
+            library: SpeakerReviewCandidates.libraryChoices(library: library, search: "", clusterEmbedding: [0, 1]))
+        #expect(all.map(\.name) == ["Bob", "Alex", "Cleo"])
+        #expect(all.last?.score == nil)
+        #expect(!SpeakerReviewCandidates.offersTypedName("bob", among: all))
+        #expect(SpeakerReviewCandidates.offersTypedName("Bobby", among: all))
     }
 
     @Test("Meeting names are normalized, searchable, and linked to a uniquely named library person")
