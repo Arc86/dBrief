@@ -13,10 +13,10 @@ enum ViewerFonts {
         }
     }()
 
-    /// PostScript name of each named reading font (nil: a system font).
+    /// PostScript name of the fonts dBrief names exactly; the others resolve by
+    /// family (nil: a system font, or a family lookup).
     private static func postScriptName(for font: ViewerReadingFont) -> String? {
         switch font {
-        case .systemDefault, .sanFrancisco, .monospace: nil
         case .arial: "ArialMT"
         case .calibri: "Calibri"
         case .ebGaramond: "EBGaramond-Regular"
@@ -24,26 +24,48 @@ enum ViewerFonts {
         case .helvetica: "Helvetica"
         case .inter: "Inter-Regular"
         case .lato: "Lato-Regular"
+        case .lexend: "Lexend-Regular"
         case .openSans: "OpenSans-Regular"
         case .roboto: "Roboto-Regular"
         case .timesNewRoman: "TimesNewRomanPSMT"
         case .verdana: "Verdana"
         case .openDyslexic: "OpenDyslexic-Regular"
+        default: nil
         }
     }
 
-    /// Whether the font can be shown: bundled and macOS fonts always; Calibri
-    /// only when the user has it installed.
-    static func isAvailable(_ font: ViewerReadingFont) -> Bool {
-        guard let name = postScriptName(for: font) else { return true }
+    /// The regular face of a named or installed font, or nil when it isn't
+    /// installed (or is a system-font choice).
+    private static func regularFont(for font: ViewerReadingFont, size: CGFloat) -> NSFont? {
         registerBundledFontsIfNeeded()
-        return NSFont(name: name, size: 12) != nil
+        if let name = postScriptName(for: font) { return NSFont(name: name, size: size) }
+        guard let family = font.familyName else { return nil }
+        return NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size)
+    }
+
+    /// Whether the font can be shown: bundled and macOS fonts always; Calibri,
+    /// Dyslexie and installed families only while the user has them.
+    static func isAvailable(_ font: ViewerReadingFont) -> Bool {
+        font.familyName == nil || regularFont(for: font, size: 12) != nil
     }
 
     /// Fonts to offer in a picker: the available ones, plus `current` so a saved
-    /// choice never disappears from the menu.
-    static func choices(keeping current: ViewerReadingFont?) -> [ViewerReadingFont] {
-        ViewerReadingFont.allCases.filter { isAvailable($0) || $0 == current }
+    /// choice never disappears from the menu. Reading menus also lead with
+    /// "Same as Interface Text".
+    static func choices(keeping current: ViewerReadingFont?,
+                        includingSameAsInterface: Bool = false) -> [ViewerReadingFont] {
+        var fonts = ViewerReadingFont.allCases.filter { isAvailable($0) || $0 == current }
+        if let current, !fonts.contains(current), current != .sameAsInterface { fonts.append(current) }
+        if includingSameAsInterface { fonts.insert(.sameAsInterface, at: 0) }
+        return fonts
+    }
+
+    /// Installed font families for "Other Font…", without hidden system families.
+    static func installedFamilies() -> [String] {
+        registerBundledFontsIfNeeded()
+        return NSFontManager.shared.availableFontFamilies
+            .filter { !$0.hasPrefix(".") }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     static func registerBundledFontsIfNeeded() {
@@ -88,14 +110,12 @@ enum ViewerFonts {
                 return NSFont(name: "Georgia", size: size) ?? NSFont.systemFont(ofSize: size)
             }
             return NSFont.systemFont(ofSize: size)
-        case .sanFrancisco:
+        case .sanFrancisco, .sameAsInterface:
             return NSFont.systemFont(ofSize: size)
         case .monospace:
             return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         default:
-            registerBundledFontsIfNeeded()
-            return postScriptName(for: readingFont).flatMap { NSFont(name: $0, size: size) }
-                ?? NSFont.systemFont(ofSize: size)
+            return regularFont(for: readingFont, size: size) ?? NSFont.systemFont(ofSize: size)
         }
     }
 

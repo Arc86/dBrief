@@ -21,12 +21,14 @@ struct ViewerReadingOptions: View {
                 .uiFont(.headline)
                 .foregroundStyle(palette.heading.color)
 
-            Picker("Font", selection: $preferences.readingFont) {
-                ForEach(ViewerFonts.choices(keeping: preferences.readingFont), id: \.self) { font in
-                    Text(font.displayName).tag(font)
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                ReadingFontPicker(selection: $preferences.readingFont, includesSameAsInterface: true)
+                    .pickerStyle(.menu)
+                Text("Exported Markdown and integrations don't keep this font.")
+                    .uiFont(.caption)
+                    .foregroundStyle(palette.secondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.menu)
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {

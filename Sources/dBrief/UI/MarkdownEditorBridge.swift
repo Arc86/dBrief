@@ -115,7 +115,7 @@ struct MarkdownEditorTheme: Equatable, Sendable {
     static func fontFamily(for font: ViewerReadingFont, mode: ViewerAppearanceMode) -> String {
         switch font {
         case .systemDefault: mode.isPaper ? "Georgia, serif" : "-apple-system, system-ui, sans-serif"
-        case .sanFrancisco: "-apple-system, system-ui, sans-serif"
+        case .sanFrancisco, .sameAsInterface: "-apple-system, system-ui, sans-serif"
         case .inter: "\"dBrief Inter\", -apple-system, sans-serif"
         case .georgia: "Georgia, serif"
         case .arial: "Arial, sans-serif"
@@ -128,8 +128,22 @@ struct MarkdownEditorTheme: Equatable, Sendable {
         case .openSans: "\"dBrief Open Sans\", -apple-system, sans-serif"
         case .roboto: "\"dBrief Roboto\", -apple-system, sans-serif"
         case .openDyslexic: "\"dBrief OpenDyslexic\", -apple-system, sans-serif"
+        case .lexend: "\"dBrief Lexend\", -apple-system, sans-serif"
+        case .tahoma: "Tahoma, sans-serif"
+        case .trebuchetMS: "\"Trebuchet MS\", sans-serif"
+        case .dyslexie, .installed: "\(cssString(font.displayName)), -apple-system, sans-serif"
         case .monospace: "ui-monospace, Menlo, monospace"
         }
+    }
+
+    /// A CSS string literal: quotes and backslashes escaped, control characters dropped.
+    private static func cssString(_ text: String) -> String {
+        var escaped = ""
+        for scalar in text.unicodeScalars where !CharacterSet.controlCharacters.contains(scalar) {
+            if scalar == "\"" || scalar == "\\" { escaped.append("\\") }
+            escaped.unicodeScalars.append(scalar)
+        }
+        return "\"\(escaped)\""
     }
 }
 

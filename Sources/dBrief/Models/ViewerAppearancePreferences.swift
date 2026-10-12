@@ -40,44 +40,142 @@ enum ViewerAppearanceMode: String, Codable, CaseIterable, Sendable {
 
 /// Reading fonts, in menu order. Besides the originals, the easy-to-read set
 /// from smartpress.com/blog/features/easy-to-read-fonts: macOS's own Arial,
-/// Helvetica, Times New Roman and Verdana; bundled Lato, Open Sans, Roboto and
-/// EB Garamond (OFL); and Calibri, offered only when installed (Microsoft's, not
-/// redistributable). Raw values are persisted, so they never change.
-enum ViewerReadingFont: String, Codable, CaseIterable, Sendable {
+/// Helvetica, Times New Roman, Verdana, Tahoma and Trebuchet MS; bundled Lato,
+/// Open Sans, Roboto, EB Garamond and Lexend (OFL); and Calibri and Dyslexie,
+/// offered only when installed (neither is redistributable). Any other installed
+/// family is `installed`, and `sameAsInterface` lets the reading text follow
+/// the interface font. Raw values are persisted, so they never change.
+enum ViewerReadingFont: Hashable, Sendable {
+    case sameAsInterface
     case systemDefault
     case sanFrancisco
     case arial
     case calibri
+    case dyslexie
     case ebGaramond
     case georgia
     case helvetica
     case inter
     case lato
+    case lexend
     case openSans
     case roboto
+    case tahoma
     case timesNewRoman
+    case trebuchetMS
     case verdana
     case openDyslexic
     case monospace
+    /// Any installed font family, by its family name.
+    case installed(String)
+
+    private static let installedPrefix = "installed:"
 
     var displayName: String {
         switch self {
+        case .sameAsInterface: "Same as Interface Text"
         case .systemDefault: "Default"
         case .sanFrancisco: "San Francisco"
         case .arial: "Arial"
         case .calibri: "Calibri"
+        case .dyslexie: "Dyslexie"
         case .ebGaramond: "EB Garamond"
         case .georgia: "Georgia"
         case .helvetica: "Helvetica"
         case .inter: "Inter"
         case .lato: "Lato"
+        case .lexend: "Lexend"
         case .openSans: "Open Sans"
         case .roboto: "Roboto"
+        case .tahoma: "Tahoma"
         case .timesNewRoman: "Times New Roman"
+        case .trebuchetMS: "Trebuchet MS"
         case .verdana: "Verdana"
         case .openDyslexic: "OpenDyslexic"
         case .monospace: "Monospace"
+        case .installed(let family): family
         }
+    }
+
+    /// The named choice for a font family, so a family picked from the
+    /// installed list that is already on the menu is stored as that choice.
+    static func forFamily(_ family: String) -> ViewerReadingFont {
+        allCases.first { $0.familyName == family } ?? .installed(family)
+    }
+
+    /// The font family this choice draws with; nil for the system-font choices.
+    var familyName: String? {
+        switch self {
+        case .sameAsInterface, .systemDefault, .sanFrancisco, .monospace: nil
+        default: displayName
+        }
+    }
+}
+
+extension ViewerReadingFont: CaseIterable {
+    /// The named fonts, in menu order: neither `sameAsInterface` nor `installed`.
+    static let allCases: [ViewerReadingFont] = [
+        .systemDefault, .sanFrancisco, .arial, .calibri, .dyslexie, .ebGaramond, .georgia, .helvetica,
+        .inter, .lato, .lexend, .openSans, .roboto, .tahoma, .timesNewRoman, .trebuchetMS, .verdana,
+        .openDyslexic, .monospace,
+    ]
+}
+
+extension ViewerReadingFont: RawRepresentable {
+    init?(rawValue: String) {
+        if rawValue.hasPrefix(Self.installedPrefix) {
+            let family = String(rawValue.dropFirst(Self.installedPrefix.count))
+            guard !family.isEmpty else { return nil }
+            self = .installed(family)
+        } else if rawValue == "sameAsInterface" {
+            self = .sameAsInterface
+        } else if let named = Self.allCases.first(where: { $0.rawValue == rawValue }) {
+            self = named
+        } else {
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .sameAsInterface: "sameAsInterface"
+        case .systemDefault: "systemDefault"
+        case .sanFrancisco: "sanFrancisco"
+        case .arial: "arial"
+        case .calibri: "calibri"
+        case .dyslexie: "dyslexie"
+        case .ebGaramond: "ebGaramond"
+        case .georgia: "georgia"
+        case .helvetica: "helvetica"
+        case .inter: "inter"
+        case .lato: "lato"
+        case .lexend: "lexend"
+        case .openSans: "openSans"
+        case .roboto: "roboto"
+        case .tahoma: "tahoma"
+        case .timesNewRoman: "timesNewRoman"
+        case .trebuchetMS: "trebuchetMS"
+        case .verdana: "verdana"
+        case .openDyslexic: "openDyslexic"
+        case .monospace: "monospace"
+        case .installed(let family): Self.installedPrefix + family
+        }
+    }
+}
+
+extension ViewerReadingFont: Codable {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let font = Self(rawValue: raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Unknown reading font \(raw)"))
+        }
+        self = font
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -287,6 +385,19 @@ struct ViewerAppearancePreferences: Equatable, Sendable {
         case .dark: darkTheme
         case .system: systemIsDark ? darkTheme : lightTheme
         }
+    }
+
+    /// These preferences with "Same as Interface Text" replaced by the interface
+    /// font. The interface's Default is the system font, so it becomes San
+    /// Francisco rather than the reading Default (Georgia in Paper themes).
+    func resolvingInterfaceFont(_ interfaceFont: ViewerReadingFont) -> Self {
+        guard readingFont == .sameAsInterface else { return self }
+        var resolved = self
+        switch interfaceFont {
+        case .systemDefault, .sameAsInterface: resolved.readingFont = .sanFrancisco
+        default: resolved.readingFont = interfaceFont
+        }
+        return resolved
     }
 
     /// Resolves the "Default" reading choice without changing its stored value.

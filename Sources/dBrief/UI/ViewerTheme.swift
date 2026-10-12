@@ -61,7 +61,7 @@ struct ViewerAppearanceScope: ViewModifier {
     @Environment(\.colorScheme) private var systemScheme
 
     func body(content: Content) -> some View {
-        let reading = settings.viewerAppearance
+        let reading = settings.viewerAppearance.resolvingInterfaceFont(settings.uiTypography.readingFont)
         let mode = reading.effectiveMode(systemIsDark: systemScheme == .dark)
         let palette = ViewerThemeResolver.resolve(mode: mode, sourceHex: reading.sourceAccentHex, nonNeon: settings.reduceNeon)
             .withSoftDividers(mode: mode)

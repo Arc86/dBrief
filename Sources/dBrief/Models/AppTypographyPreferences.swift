@@ -5,13 +5,16 @@ struct AppTypographyPreferences: Equatable, Sendable {
     static let defaultFontSize = 13
     static let fontSizeRange = 10...20
 
-    var readingFont: ViewerReadingFont
+    /// The interface font. Never `sameAsInterface`, which only reading text offers.
+    var readingFont: ViewerReadingFont {
+        didSet { if readingFont == .sameAsInterface { readingFont = .systemDefault } }
+    }
     var fontSize: Int {
         didSet { fontSize = Self.clamp(fontSize) }
     }
 
     init(readingFont: ViewerReadingFont = .systemDefault, fontSize: Int = defaultFontSize) {
-        self.readingFont = readingFont
+        self.readingFont = readingFont == .sameAsInterface ? .systemDefault : readingFont
         self.fontSize = Self.clamp(fontSize)
     }
 

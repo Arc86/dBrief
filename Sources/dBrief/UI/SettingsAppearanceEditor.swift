@@ -44,12 +44,8 @@ struct SettingsAppearanceEditor: View {
         SettingsCard("Interface text", description: "Menus, transcripts and settings throughout dBrief.",
                      section: .typography) {
             SettingsRow("Font") {
-                Picker("Font", selection: $typography.readingFont) {
-                    ForEach(ViewerFonts.choices(keeping: typography.readingFont), id: \.self) { font in
-                        Text(font.displayName).tag(font)
-                    }
-                }
-                .pickerStyle(.menu)
+                ReadingFontPicker(selection: $typography.readingFont)
+                    .pickerStyle(.menu)
             }
             SettingsRow("Text size") {
                 HStack(spacing: 6) {

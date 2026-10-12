@@ -275,15 +275,12 @@ struct FocusReaderView: View {
     private var textOptions: some View {
         let settings = textSettings
         return VStack(alignment: .leading, spacing: 14) {
-            Picker("Font", selection: Binding(
-                get: { settings.font?.rawValue ?? "" },
-                set: { apply(FocusReaderTextSettings(size: settings.size, font: ViewerReadingFont(rawValue: $0),
-                                                     lineHeight: settings.lineHeight)) })) {
-                Text("Same as the viewer").tag("")
-                ForEach(ViewerFonts.choices(keeping: settings.font), id: \.self) { font in
-                    Text(font.displayName).tag(font.rawValue)
-                }
-            }
+            ReadingFontPicker(
+                selection: Binding(
+                    get: { settings.font },
+                    set: { apply(FocusReaderTextSettings(size: settings.size, font: $0,
+                                                         lineHeight: settings.lineHeight)) }),
+                inheritLabel: "Same as the viewer")
             HStack(spacing: 10) {
                 Button { changeSize(by: -1) } label: { Image(systemName: "textformat.size.smaller") }
                     .accessibilityLabel("Smaller text")

@@ -63,3 +63,20 @@ SHA-256 checksums:
 - Roboto-Italic-Variable.ttf: 9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182
 - EBGaramond-Variable.ttf: ef9512f92f6d579e5dc75af59a5a4b1b8b47d2eda89e00b954d44520e5369027
 - EBGaramond-Italic-Variable.ttf: bba2c4499c93c9612b90b9825d32b07da52fce2fe57562a1eb6b833553f93c4e
+
+Lexend is bundled as an additional easy-to-read reading font. The variable font
+is copied unmodified from the official Google Fonts repository
+(https://github.com/google/fonts, revision e2332cf862ac3145c0ee5f24f04f4c1819b2410b,
+directory ofl/lexend) on 2026-10-12, renamed from Lexend[wght].ttf to
+Lexend-Variable.ttf. PostScript name of the default instance: Lexend-Regular.
+Lexend has no italic; slanted text is synthesized. It is licensed under the SIL
+Open Font License 1.1; the upstream OFL.txt is included as Lexend-OFL.txt.
+
+SHA-256 checksums:
+- Lexend-Variable.ttf: 3add53e641fbc81da64da4bb254285e2831b52b029527bc0714e2b9610832ee6
+- Lexend-OFL.txt: 5da8505887d0fa7fe963445fd58852707fda34adfeb65af25c99d152bab285bd
+
+Tahoma and Trebuchet MS are the copies shipped with macOS and are offered when
+present. Dyslexie is a commercial font: dBrief never bundles it and offers it
+only when the user has installed it. Any other installed font family can be
+chosen with "Other Font…"; dBrief stores only its family name.
