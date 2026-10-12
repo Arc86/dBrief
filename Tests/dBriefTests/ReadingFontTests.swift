@@ -33,3 +33,20 @@ struct ReadingFontTests {
         }
     }
 }
+
+@MainActor
+@Suite("Reading font headings")
+struct ReadingFontHeadingTests {
+    @Test(arguments: [ViewerReadingFont.georgia, .verdana, .timesNewRoman, .sanFrancisco])
+    func headingsUseTheReadingFamilyScaledAndBold(font: ViewerReadingFont) {
+        var preferences = ViewerAppearancePreferences()
+        preferences.readingFont = font
+        preferences.displaySizeOverride = 20
+        let body = ViewerFonts.nsFont(for: preferences, effectiveMode: .light)
+        let heading = ViewerFonts.nsFont(for: preferences, scale: 2, bold: true, effectiveMode: .light)
+        #expect(heading.familyName == body.familyName)
+        #expect(heading.pointSize == 40)
+        #expect(NSFontManager.shared.traits(of: heading).contains(.boldFontMask))
+        #expect(ViewerFonts.nsFont(for: preferences, scale: 0.85, bold: false, effectiveMode: .light).pointSize == 17)
+    }
+}

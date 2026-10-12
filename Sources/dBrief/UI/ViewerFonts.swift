@@ -64,6 +64,19 @@ enum ViewerFonts {
         nsFont(for: preferences.readingFont, size: CGFloat(preferences.effectiveFontSize), effectiveMode: effectiveMode)
     }
 
+    /// The reading font at `scale` × the reading size, optionally bold: titles
+    /// and headings in the same family as the text they introduce.
+    static func nsFont(
+        for preferences: ViewerAppearancePreferences,
+        scale: CGFloat,
+        bold: Bool,
+        effectiveMode: ViewerAppearanceMode
+    ) -> NSFont {
+        let font = nsFont(for: preferences.readingFont, size: CGFloat(preferences.effectiveFontSize) * scale,
+                          effectiveMode: effectiveMode)
+        return bold ? NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) : font
+    }
+
     static func nsFont(
         for readingFont: ViewerReadingFont,
         size: CGFloat,

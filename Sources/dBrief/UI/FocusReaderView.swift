@@ -94,15 +94,20 @@ struct FocusReaderView: View {
     private var readingFont: Font { ViewerFonts.font(for: reading, effectiveMode: mode) }
     private var lineSpacing: CGFloat { ViewerFonts.additionalLineSpacing(for: reading, effectiveMode: mode) }
 
+    /// Title, headings and pills in the reader's own font, scaled from its size.
+    private func readerFont(scale: CGFloat, bold: Bool = false) -> Font {
+        Font(ViewerFonts.nsFont(for: reading, scale: scale, bold: bold, effectiveMode: mode))
+    }
+
     private func header(_ content: FocusReaderContent) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(content.title)
-                .font(.system(size: CGFloat(reading.effectiveFontSize) * 2, weight: .bold))
+                .font(readerFont(scale: 2, bold: true))
                 .foregroundStyle(palette.heading.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(content.subtitle)
-                .font(.system(size: CGFloat(reading.effectiveFontSize) * 0.85))
+                .font(readerFont(scale: 0.85))
                 .foregroundStyle(palette.secondary.color)
         }
     }
@@ -150,7 +155,7 @@ struct FocusReaderView: View {
                 FlowLayout(spacing: 8) {
                     ForEach(content.tags, id: \.self) { tag in
                         Text(tag)
-                            .font(.system(size: CGFloat(reading.effectiveFontSize) * 0.8, weight: .medium))
+                            .font(readerFont(scale: 0.8))
                             .foregroundStyle(palette.text.color)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -195,7 +200,7 @@ struct FocusReaderView: View {
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: CGFloat(reading.effectiveFontSize) * 1.25, weight: .semibold))
+                .font(readerFont(scale: 1.25, bold: true))
                 .foregroundStyle(palette.heading.color)
                 .accessibilityAddTraits(.isHeader)
             content()
