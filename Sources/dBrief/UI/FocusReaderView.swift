@@ -20,6 +20,7 @@ struct FocusReaderView: View {
     @AppStorage("focusReaderFontSize") private var storedSize = FocusReaderTextSettings.defaultSize
     @AppStorage("focusReaderFont") private var storedFont = ""
     @AppStorage("focusReaderWidth") private var storedWidth = FocusReaderWidth.default.rawValue
+    @AppStorage("focusReaderLineHeight") private var storedLineHeight = FocusReaderTextSettings.defaultLineHeight
 
     static let windowID = "focus-reader"
 
@@ -70,7 +71,7 @@ struct FocusReaderView: View {
     private var width: FocusReaderWidth { FocusReaderWidth(rawValue: storedWidth) ?? .default }
 
     private var textSettings: FocusReaderTextSettings {
-        FocusReaderTextSettings(size: storedSize, font: ViewerReadingFont(rawValue: storedFont))
+        FocusReaderTextSettings(size: storedSize, font: ViewerReadingFont(rawValue: storedFont), lineHeight: storedLineHeight)
     }
 
     /// The viewer's reading preferences at the reader's own size and font.
@@ -79,6 +80,7 @@ struct FocusReaderView: View {
     private func apply(_ settings: FocusReaderTextSettings) {
         storedSize = settings.size
         storedFont = settings.font?.rawValue ?? ""
+        storedLineHeight = settings.lineHeight
     }
 
     private func changeSize(by steps: Int) {
@@ -270,7 +272,8 @@ struct FocusReaderView: View {
         return VStack(alignment: .leading, spacing: 14) {
             Picker("Font", selection: Binding(
                 get: { settings.font?.rawValue ?? "" },
-                set: { apply(FocusReaderTextSettings(size: settings.size, font: ViewerReadingFont(rawValue: $0))) })) {
+                set: { apply(FocusReaderTextSettings(size: settings.size, font: ViewerReadingFont(rawValue: $0),
+                                                     lineHeight: settings.lineHeight)) })) {
                 Text("Same as the viewer").tag("")
                 ForEach(ViewerFonts.choices(keeping: settings.font), id: \.self) { font in
                     Text(font.displayName).tag(font.rawValue)
@@ -292,6 +295,20 @@ struct FocusReaderView: View {
                     .accessibilityLabel("Larger text")
                     .disabled(settings.size >= FocusReaderTextSettings.sizeRange.upperBound)
                 Text("\(settings.size) pt")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
+            }
+            HStack(spacing: 10) {
+                Text("Line spacing")
+                Slider(value: Binding(
+                    get: { settings.lineHeight },
+                    set: { value in var next = settings; next.setLineHeight((value * 10).rounded() / 10); apply(next) }),
+                       in: FocusReaderTextSettings.lineHeightRange, step: 0.1)
+                    .frame(width: 180)
+                    .accessibilityLabel("Line spacing")
+                    .accessibilityValue(String(format: "%.1f times the text size", settings.lineHeight))
+                Text(String(format: "%.1f×", settings.lineHeight))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .trailing)

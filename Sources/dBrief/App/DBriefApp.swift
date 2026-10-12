@@ -369,7 +369,7 @@ struct DBriefApp: App {
                 .environment(context.appSettings)
                 .environment(\.calmAppearance, context.appSettings.reduceNeon)
                 .modifier(ViewerAppearanceScope(settings: context.appSettings))
-                .modifier(AppAppearanceScope(settings: context.appSettings))
+                .modifier(AppAppearanceScope(settings: context.appSettings, restylesNativeControls: false))
         }
         .defaultSize(width: 1000, height: 760)
         .windowStyle(.hiddenTitleBar)

@@ -7,13 +7,23 @@ struct FocusReaderTextSettings: Equatable, Sendable {
     static let defaultSize = 22
     static let step = 2
 
+    static let lineHeightRange = 1.3...2.6
+    static let defaultLineHeight = 1.8
+
     private(set) var size: Int
     /// Nil follows the viewer's reading font.
     var font: ViewerReadingFont?
+    /// Line height as a multiple of the text size.
+    private(set) var lineHeight: Double
 
-    init(size: Int = defaultSize, font: ViewerReadingFont? = nil) {
+    init(size: Int = defaultSize, font: ViewerReadingFont? = nil, lineHeight: Double = defaultLineHeight) {
         self.size = Self.clamped(size)
         self.font = font
+        self.lineHeight = min(max(lineHeight, Self.lineHeightRange.lowerBound), Self.lineHeightRange.upperBound)
+    }
+
+    mutating func setLineHeight(_ value: Double) {
+        self = FocusReaderTextSettings(size: size, font: font, lineHeight: value)
     }
 
     mutating func enlarge() { size = Self.clamped(size + Self.step) }
@@ -22,13 +32,14 @@ struct FocusReaderTextSettings: Equatable, Sendable {
 
     /// The size for a trackpad pinch, scaled from the size when it began.
     func pinched(by magnification: CGFloat) -> FocusReaderTextSettings {
-        FocusReaderTextSettings(size: Int((CGFloat(size) * magnification).rounded()), font: font)
+        FocusReaderTextSettings(size: Int((CGFloat(size) * magnification).rounded()), font: font, lineHeight: lineHeight)
     }
 
     /// The viewer's reading preferences shown at this size and font.
     func applied(to viewer: ViewerAppearancePreferences) -> ViewerAppearancePreferences {
         var preferences = viewer
         preferences.displaySizeOverride = size
+        preferences.displayLineHeightOverride = lineHeight
         if let font { preferences.readingFont = font }
         return preferences
     }

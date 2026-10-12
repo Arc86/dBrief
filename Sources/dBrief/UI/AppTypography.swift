@@ -153,6 +153,10 @@ extension View {
 /// Every independently hosted window receives the same live appearance settings.
 struct AppAppearanceScope: ViewModifier {
     let settings: AppSettings?
+    /// Off for windows whose text sets its own font (the Focus Reader): the
+    /// native-control pass would put the interface font and the text's first
+    /// size back on selectable text a moment after every change.
+    var restylesNativeControls = true
     @Environment(\.colorScheme) private var systemScheme
 
     func body(content: Content) -> some View {
@@ -165,7 +169,10 @@ struct AppAppearanceScope: ViewModifier {
             .environment(\.font, AppFontStyle.body.resolve(using: typography))
             .environment(\.viewerPalette, palette)
             .environment(\.viewerMode, mode)
-            .environment(\.menuPanelPalette, MenuPanelPalette.resolve(mode: mode, base: palette))            .background(NativeControlTypography(preferences: typography).frame(width: 0, height: 0))
+            .environment(\.menuPanelPalette, MenuPanelPalette.resolve(mode: mode, base: palette))
+            .background {
+                if restylesNativeControls { NativeControlTypography(preferences: typography).frame(width: 0, height: 0) }
+            }
             .buttonStyle(.typographyBordered)
             .menuStyle(.button)
             .tint(palette.primary.color)

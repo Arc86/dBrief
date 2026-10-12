@@ -55,3 +55,26 @@ struct FocusReaderWidthTests {
         #expect(Set(FocusReaderWidth.allCases.map(\.title)).count == FocusReaderWidth.allCases.count)
     }
 }
+
+@Suite("Focus Reader line spacing")
+struct FocusReaderLineSpacingTests {
+    @Test func lineHeightIsClampedAndApplied() {
+        #expect(FocusReaderTextSettings().lineHeight == FocusReaderTextSettings.defaultLineHeight)
+        #expect(FocusReaderTextSettings(lineHeight: 9).lineHeight == FocusReaderTextSettings.lineHeightRange.upperBound)
+        #expect(FocusReaderTextSettings(lineHeight: 0.5).lineHeight == FocusReaderTextSettings.lineHeightRange.lowerBound)
+        let viewer = ViewerAppearancePreferences()
+        let applied = FocusReaderTextSettings(lineHeight: 2.2).applied(to: viewer)
+        #expect(applied.displayLineHeightOverride == 2.2)
+        #expect(applied.density == viewer.density)
+        #expect(FocusReaderTextSettings(size: 30, lineHeight: 2.2).pinched(by: 1.2).lineHeight == 2.2)
+    }
+
+    @Test @MainActor func moreLineHeightMeansMoreSpacing() {
+        let viewer = ViewerAppearancePreferences()
+        let tight = ViewerFonts.additionalLineSpacing(for: FocusReaderTextSettings(lineHeight: 1.4).applied(to: viewer),
+                                                      effectiveMode: .light)
+        let loose = ViewerFonts.additionalLineSpacing(for: FocusReaderTextSettings(lineHeight: 2.4).applied(to: viewer),
+                                                      effectiveMode: .light)
+        #expect(loose > tight)
+    }
+}

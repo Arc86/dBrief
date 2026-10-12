@@ -184,6 +184,8 @@ struct ViewerAppearancePreferences: Equatable, Sendable {
     /// viewer's 12–24 range allows. Never saved; the viewer's `fontSize` stays.
     var displaySizeOverride: Int? = nil
     var effectiveFontSize: Int { displaySizeOverride ?? fontSize }
+    /// Display-only line height (× text size) from the Focus Reader; overrides density.
+    var displayLineHeightOverride: Double? = nil
     var density: ViewerDensity
 
     var fontSize: Int {

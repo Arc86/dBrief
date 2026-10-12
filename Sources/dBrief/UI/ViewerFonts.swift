@@ -94,7 +94,8 @@ enum ViewerFonts {
     ) -> CGFloat {
         let font = nsFont(for: preferences, effectiveMode: effectiveMode)
         let naturalLineHeight = max(0, font.ascender - font.descender + font.leading)
-        let targetLineHeight = CGFloat(preferences.effectiveFontSize) * CGFloat(preferences.density.lineHeightTarget)
+        let targetLineHeight = CGFloat(preferences.effectiveFontSize)
+            * CGFloat(preferences.displayLineHeightOverride ?? preferences.density.lineHeightTarget)
         return max(0, targetLineHeight - naturalLineHeight)
     }
 }
