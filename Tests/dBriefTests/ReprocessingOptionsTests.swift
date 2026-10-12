@@ -38,6 +38,43 @@ struct ReprocessingOptionsTests {
         }
     }
 
+    @Test func choosingAnotherEndpointResolvesItForThisAttemptOnly() throws {
+        let settings = AppSettings()
+        let oldAI = settings.aiEndpoints
+        let oldTranscription = settings.transcriptionEndpoints
+        let oldEngine = settings.aiEngine
+        defer {
+            settings.aiEndpoints = oldAI
+            settings.transcriptionEndpoints = oldTranscription
+            settings.aiEngine = oldEngine
+        }
+        settings.aiEngine = .qwenLocal
+        let first = Endpoint(name: "first", baseURL: "https://one.test", modelName: "a", apiKey: "k1")
+        let second = Endpoint(name: "second", baseURL: "https://two.test", modelName: "b", apiKey: "k2")
+        settings.aiEndpoints = [first, second]
+        settings.transcriptionEndpoints = [first, second]
+
+        var options = ReprocessingOptions(settings: settings, operation: .transcribe)
+        options.vocabulary = []
+        options.selectAnalysis(engine: .remoteEndpoint, endpoint: second, settings: settings)
+        options.selectTranscriptionEndpoint(second)
+
+        #expect(options.aiEndpoint?.apiKey == "")
+        #expect(options.spellingEngine == .remoteEndpoint)
+        #expect(try options.analysisConfiguration(settings: settings).endpoint?.id == second.id)
+        #expect(try options.analysisConfiguration(settings: settings).endpoint?.apiKey == "k2")
+        #expect(try options.transcriptionSettings(settings: settings).endpoint?.id == second.id)
+        #expect(settings.aiEngine == .qwenLocal)
+    }
+
+    @Test func choosingLocalCLIRoutesVocabularyToTheChatFallback() {
+        let settings = AppSettings()
+        var options = ReprocessingOptions(settings: settings, operation: .analysis)
+        options.selectAnalysis(engine: .localCLI, settings: settings)
+        #expect(options.aiEngine == .localCLI)
+        #expect(options.spellingEngine == settings.chatFallbackEngine)
+    }
+
     @Test func encodedSnapshotOmitsEndpointAndCommandSecrets() throws {
         let settings = AppSettings()
         let oldCLI = settings.localCLIConfig

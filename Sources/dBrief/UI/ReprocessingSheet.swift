@@ -61,8 +61,16 @@ private struct ReprocessingEditor: View {
     @State private var error: String?
     @Environment(RecordingManager.self) private var manager
     @Environment(AppState.self) private var appState
+    @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
     @Environment(\.viewerPalette) private var palette
+
+    /// One picker entry: a local engine, or a specific configured endpoint.
+    private enum ServiceChoice: Hashable {
+        case local(AppSettings.AIEngine)
+        case onThisMac
+        case endpoint(UUID?)
+    }
 
     init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool,
          supportsCalendarReload: Bool,
@@ -176,11 +184,10 @@ private struct ReprocessingEditor: View {
                 }
             }
             PanelRow(label: "Transcription") {
-                Picker("Transcription", selection: Binding(
-                    get: { options.engine == .remoteEndpoint },
-                    set: { options.engine = $0 ? .remoteEndpoint : .localWhisper })) {
-                    Text("On this Mac").tag(false)
-                    Text("Remote service").tag(true)
+                Picker("Transcription", selection: transcriptionChoice) {
+                    Text("On this Mac").tag(ServiceChoice.onThisMac)
+                    endpointSection("Remote services", settings.transcriptionEndpoints,
+                                    isSelected: options.engine == .remoteEndpoint, saved: options.transcriptionEndpoint)
                 }
                 .labelsHidden().fixedSize()
             }
@@ -192,7 +199,9 @@ private struct ReprocessingEditor: View {
                 PanelRow(label: "Parakeet model") { Text(ParakeetModelInfo.find(options.parakeetModelVariant).displayName) }
                 PanelNote("Parakeet detects language automatically. v2 supports English; v3 supports 25 European languages. The spoken language selection does not force Parakeet decoding.")
             case .remoteEndpoint:
-                PanelRow(label: "Model") { Text(options.transcriptionEndpoint?.modelName ?? "No endpoint configured") }
+                if options.transcriptionEndpoint == nil {
+                    PanelNote("No remote transcription service is configured. Add one in Settings → Transcription.")
+                }
             case .appleSpeech:
                 PanelNote("Uses Apple's speech model for the selected language.")
             }
@@ -233,7 +242,19 @@ private struct ReprocessingEditor: View {
 
     private var analysisControls: some View {
         PanelCard(title: "AI analysis") {
-            PanelRow(label: "AI engine") { Text(options.aiEngine.displayName) }
+            PanelRow(label: "AI engine") {
+                Picker("AI engine", selection: analysisChoice) {
+                    ForEach(AppSettings.AIEngine.allCases.filter { $0 != .remoteEndpoint }, id: \.self) { engine in
+                        Text(engine.displayName).tag(ServiceChoice.local(engine))
+                    }
+                    endpointSection("Remote endpoints", settings.aiEndpoints,
+                                    isSelected: options.aiEngine == .remoteEndpoint, saved: options.aiEndpoint)
+                }
+                .labelsHidden().fixedSize()
+            }
+            if options.aiEngine == .remoteEndpoint && options.aiEndpoint == nil {
+                PanelNote("No remote AI endpoint is configured. Add one in Settings → AI analysis.")
+            }
             if supportsCalendarReload {
                 PanelRow(label: "Refresh selected calendar attendees") {
                     Toggle("Refresh selected calendar attendees", isOn: Binding(
@@ -254,6 +275,63 @@ private struct ReprocessingEditor: View {
             if case .custom(let code) = options.outputLanguage {
                 TextField("Language code", text: Binding(get: { code }, set: { options.outputLanguage = .custom($0) }))
                     .panelTextField()
+            }
+        }
+    }
+
+    private var transcriptionChoice: Binding<ServiceChoice> {
+        Binding(get: {
+            options.engine == .remoteEndpoint ? .endpoint(options.transcriptionEndpoint?.id) : .onThisMac
+        }, set: { choice in
+            switch choice {
+            case .endpoint(let id):
+                if let endpoint = settings.transcriptionEndpoints.first(where: { $0.id == id }) {
+                    options.selectTranscriptionEndpoint(endpoint)
+                }
+            default:
+                guard options.engine == .remoteEndpoint else { return }
+                let preferred = settings.effectiveTranscriptionEngine
+                options.engine = preferred == .remoteEndpoint ? .localWhisper : preferred
+            }
+        })
+    }
+
+    private var analysisChoice: Binding<ServiceChoice> {
+        Binding(get: {
+            options.aiEngine == .remoteEndpoint ? .endpoint(options.aiEndpoint?.id) : .local(options.aiEngine)
+        }, set: { choice in
+            switch choice {
+            case .local(let engine):
+                options.selectAnalysis(engine: engine, settings: settings)
+            case .endpoint(let id):
+                if let endpoint = settings.aiEndpoints.first(where: { $0.id == id }) {
+                    options.selectAnalysis(engine: .remoteEndpoint, endpoint: endpoint, settings: settings)
+                }
+            case .onThisMac:
+                break
+            }
+        })
+    }
+
+    /// Lists every configured endpoint, plus the attempt's own endpoint when it
+    /// is no longer configured, so the picker never shows a blank selection.
+    @ViewBuilder
+    private func endpointSection(_ title: String, _ endpoints: [Endpoint], isSelected: Bool,
+                                 saved: Endpoint?) -> some View {
+        if !endpoints.isEmpty || isSelected {
+            Section(title) {
+                ForEach(endpoints) { endpoint in
+                    Text("\(endpoint.name) · \(endpoint.modelName)").tag(ServiceChoice.endpoint(endpoint.id))
+                }
+                if isSelected {
+                    if let saved {
+                        if !endpoints.contains(where: { $0.id == saved.id }) {
+                            Text("\(saved.name) (unavailable)").tag(ServiceChoice.endpoint(saved.id))
+                        }
+                    } else {
+                        Text("No endpoint configured").tag(ServiceChoice.endpoint(nil))
+                    }
+                }
             }
         }
     }
