@@ -86,7 +86,10 @@ struct SettingsProviderList: View {
                             Button("Edit…") { beginEdit(endpoint, isNew: false) }
                             Button("Set as default") { defaultID = endpoint.id }
                             Divider()
-                            Button("Remove", role: .destructive) {
+                            Button("Remove…", role: .destructive) {
+                                guard DestructiveConfirmation.confirm("Remove “\(endpoint.name)”?",
+                                    message: "Its saved API key is deleted too. Profiles that use it switch to the default provider.",
+                                    button: "Remove Provider") else { return }
                                 let result = SettingsProviderListLogic.remove(endpoint.id, from: endpoints, defaultID: defaultID)
                                 endpoints = result.endpoints
                                 defaultID = result.defaultID

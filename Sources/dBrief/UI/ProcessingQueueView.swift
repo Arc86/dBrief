@@ -171,6 +171,9 @@ struct ProcessingQueueView: View {
                             Task { await manager.resumeReprocessing(attempt.id) }
                         }.disabled(appState.processingJob != nil || editing)
                         RecordingListAction(title: "Discard attempt", systemImage: "minus.circle") {
+                            guard DestructiveConfirmation.confirm("Discard this reprocess?",
+                                message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
+                                button: "Discard") else { return }
                             Task { await manager.discardReprocessing(attempt.id) }
                         }.disabled(editing)
                     }

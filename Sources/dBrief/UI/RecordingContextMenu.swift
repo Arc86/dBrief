@@ -44,14 +44,7 @@ struct RecordingContextMenu: View {
     static let message = "This permanently deletes the recording, its transcript and notes in dBrief, and anything queued for it. Markdown notes exported elsewhere and content already sent to integrations are kept."
 
     static func confirmAndDelete(_ url: URL, title: String, manager: RecordingManager, appState: AppState) async -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Delete “\(title)”?"
-        alert.informativeText = message
-        alert.addButton(withTitle: "Delete Recording")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard DestructiveConfirmation.confirm("Delete “\(title)”?", message: message, button: "Delete Recording") else { return false }
         do {
             try await manager.deleteRecording(url)
             return true

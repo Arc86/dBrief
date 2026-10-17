@@ -105,7 +105,9 @@ struct TranscriptDetailView: View, Equatable {
     @State private var copied = false
     @State private var showDeleteConfirm = false
     @State private var showPrivacyReceipt = false
-    @State private var isGenerating = false
+    /// AI analysis is being regenerated for this recording (a pending reprocess
+    /// that will produce new analysis while none is saved yet).
+    private var isGenerating: Bool { isReprocessing && insights == nil }
 
     // Transcript search (finished-recording transcript only)
     @State private var searchQuery = ""
@@ -1355,6 +1357,8 @@ struct TranscriptDetailView: View, Equatable {
         setTranscript(transcript)
         saveTranscript(transcript)
         recomputeSearch()
+        // Who said what changed, so the name-aware analysis may be stale (as after a rename).
+        if hasSummary { offerReanalysis = true }
     }
 
     // MARK: - Actions
@@ -1478,6 +1482,7 @@ struct TranscriptDetailView: View, Equatable {
         transcript.meSpeakerId = id
         setTranscript(transcript)
         saveTranscript(transcript)
+        if hasSummary { offerReanalysis = true }
     }
 
     /// Every analysis request uses the same durable reprocessing path.
@@ -1487,8 +1492,12 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     private func copyTranscript() {
-        guard let transcript = richTranscript else { return }
-        let text = transcript.segments.map { $0.text }.joined(separator: "\n")
+        guard richTranscript != nil else { return }
+        // Same shape the assistant and exports use: who said it, and when.
+        let text = displayedTurns.map { turn in
+            let name = turn.speakerId.map { displayName(for: $0) }
+            return "[\(turn.startTime.formattedDuration)] " + (name.map { "\($0): " } ?? "") + turn.text
+        }.joined(separator: "\n")
         Task {
             copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))

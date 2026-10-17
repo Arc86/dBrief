@@ -13,4 +13,12 @@ struct PermissionAttentionTests {
         #expect(PermissionAttention.count(microphone: .granted, screenRecording: .denied, speech: .granted, calendar: .restricted,
                                           needsSpeech: true, needsCalendar: true) == 2)
     }
+
+    /// Apple Reminders read "On" in Integrations even with Reminders access denied.
+    @Test func remindersCountWhenTheIntegrationIsOn() {
+        #expect(PermissionAttention.count(microphone: .granted, screenRecording: .granted, speech: .granted, calendar: .granted,
+                                          reminders: .denied, needsSpeech: false, needsCalendar: false, needsReminders: true) == 1)
+        #expect(PermissionAttention.count(microphone: .granted, screenRecording: .granted, speech: .granted, calendar: .granted,
+                                          reminders: .denied, needsSpeech: false, needsCalendar: false, needsReminders: false) == 0)
+    }
 }

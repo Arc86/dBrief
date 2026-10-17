@@ -228,7 +228,12 @@ struct TranscriptBrowserView: View {
         case .recovery, .delivery:
             return { await recordingManager.dismissRecoveryItem(work.recoveryID); library.refresh() }
         case .reprocess:
-            return { await recordingManager.discardReprocessing(work.recoveryID); library.refresh() }
+            return {
+                guard DestructiveConfirmation.confirm("Discard this reprocess?",
+                    message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
+                    button: "Discard") else { return }
+                await recordingManager.discardReprocessing(work.recoveryID); library.refresh()
+            }
         case .capture:
             return nil
         }

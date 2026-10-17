@@ -61,8 +61,22 @@ struct SettingsCalendarSection: View {
                         }
                     }
                 } else {
-                    SettingsRow("Calendar access", caption: "Allow calendar access on the Permissions page.") {
-                        SettingsStatusPill("Not allowed", kind: .warning)
+                    SettingsRow("Calendar access", caption: "dBrief needs calendar access to match meetings.") {
+                        HStack(spacing: 8) {
+                            SettingsStatusPill(calendarStatus == .notDetermined ? "Not asked" : "Denied",
+                                               kind: calendarStatus == .notDetermined ? .neutral : .danger)
+                            Button(calendarStatus == .notDetermined ? "Allow…" : "Open System Settings") {
+                                if calendarStatus == .notDetermined {
+                                    Task {
+                                        _ = try? await EKEventStore().requestFullAccessToEvents()
+                                        calendarStatus = EKEventStore.authorizationStatus(for: .event)
+                                    }
+                                } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.settingsSecondary)
+                        }
                     }
                 }
 

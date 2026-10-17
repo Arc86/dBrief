@@ -59,8 +59,12 @@ struct ViewerAssistantPanel<Content: View>: View {
                             }
                             if let onClearChat {
                                 if conversation != nil { Divider() }
-                                Button("Clear Chat", action: onClearChat)
-                                    .disabled(clearChatDisabled)
+                                Button("Clear Chat…") {
+                                    if DestructiveConfirmation.confirm("Clear this chat?",
+                                        message: "The conversation is removed from this recording. This can't be undone.",
+                                        button: "Clear Chat") { onClearChat() }
+                                }
+                                .disabled(clearChatDisabled)
                             }
                         } label: {
                             Image(systemName: "ellipsis")

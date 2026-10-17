@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 struct SettingsIntegrationsTab: View {
@@ -108,7 +109,9 @@ struct SettingsIntegrationsTab: View {
     private func needsSetup(_ destination: IntegrationDestination) -> Bool {
         switch destination {
         case .obsidian: appSettings.obsidianVaultURL == nil
-        case .appleNotes, .appleReminders: false
+        case .appleNotes: false
+        // Reminders needs its own access; without it nothing is created.
+        case .appleReminders: EKEventStore.authorizationStatus(for: .reminder) != .fullAccess
         case .tickTick: !tickTickAuth.isSignedIn
         case .todoist: appSettings.todoistToken.isEmpty
         case .notion: appSettings.notionToken.isEmpty || appSettings.integrations.notion.parentID.isEmpty

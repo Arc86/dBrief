@@ -9,7 +9,10 @@ struct ModelActionsMenu: View {
 
     var body: some View {
         Menu {
-            Button("Remove downloaded model", role: .destructive) {
+            Button("Remove Downloaded Model…", role: .destructive) {
+                guard DestructiveConfirmation.confirm("Remove the downloaded \(modelName) model?",
+                    message: "It is downloaded again the next time it's needed, which can take a while.",
+                    button: "Remove Model") else { return }
                 Task {
                     do {
                         try await purge()

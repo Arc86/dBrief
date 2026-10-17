@@ -421,7 +421,14 @@ final class AppSettings {
     var showDockIcon: Bool {
         didSet {
             UserDefaults.standard.set(showDockIcon, forKey: Keys.showDockIcon)
-            NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+            // Settings keeps its dock icon while open (keyboard focus needs it); the
+            // window applies the choice when it closes.
+            let settingsOpen = NSApp.windows.contains {
+                $0.isVisible && ($0.identifier?.rawValue.hasPrefix("settings") ?? false)
+            }
+            if showDockIcon || !settingsOpen {
+                NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+            }
         }
     }
 
