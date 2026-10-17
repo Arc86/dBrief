@@ -78,9 +78,8 @@ actor LocalAIService {
         }
 
         var listsAtCap: [String] {
-            [("action items", actionItems.count, 10), ("decisions", decisions.count, 8),
-             ("people", people.count, 12), ("key points", keyPoints.count, 10)]
-                .filter { $0.1 >= $0.2 }.map(\.0)
+            cappedLists([("action items", actionItems.count, 10), ("decisions", decisions.count, 8),
+                         ("people", people.count, 12), ("key points", keyPoints.count, 10)])
         }
     }
 
@@ -102,8 +101,7 @@ actor LocalAIService {
         }
 
         var listsAtCap: [String] {
-            [("decisions", decisions.count, 40), ("people", people.count, 30), ("key points", keyPoints.count, 10)]
-                .filter { $0.1 >= $0.2 }.map(\.0)
+            cappedLists([("decisions", decisions.count, 40), ("people", people.count, 30), ("key points", keyPoints.count, 10)])
         }
     }
 
@@ -501,6 +499,9 @@ enum AppleGenerationFailure: Equatable, CustomStringConvertible {
             default: return .other
             }
         }
+        // macOS 27 failure shapes exist only in the 27 SDK (Swift 6.4); CI builds with
+        // the 26 SDK, where these types don't exist and the 26 shapes above apply.
+        #if compiler(>=6.4)
         if #available(macOS 27, *) {
             if let error = error as? LanguageModelError {
                 switch error {
@@ -513,6 +514,7 @@ enum AppleGenerationFailure: Equatable, CustomStringConvertible {
             }
             if error is GeneratedContent.ParsingError { return .decoding }
         }
+        #endif
         return nil
     }
 
@@ -562,5 +564,13 @@ enum LocalAIError: Error, LocalizedError {
         case .generation(let message): message
         }
     }
+}
+#endif
+
+#if canImport(FoundationModels)
+/// Names of the lists whose count reached their cap. A typed helper, because inline
+/// tuple literals made the Swift 6.3 type-checker time out.
+private func cappedLists(_ lists: [(name: String, count: Int, cap: Int)]) -> [String] {
+    lists.filter { $0.count >= $0.cap }.map(\.name)
 }
 #endif
