@@ -29,7 +29,7 @@ struct ModelPerformanceView: View {
             records = await store.load()
             loaded = true
         }
-        .confirmationDialog("Clear benchmark stats?",
+        .confirmationDialog("Clear performance stats?",
                             isPresented: $showClearConfirm, titleVisibility: .visible) {
             Button("Clear stats", role: .destructive) {
                 Task {
@@ -62,8 +62,8 @@ struct ModelPerformanceView: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.settingsDanger)
-                    .help("Clear benchmark stats")
-                    .accessibilityLabel("Clear benchmark stats")
+                    .help("Clear performance stats")
+                    .accessibilityLabel("Clear performance stats")
                     .disabled(records.isEmpty)
                 }
             }

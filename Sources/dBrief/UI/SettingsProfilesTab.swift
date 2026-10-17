@@ -125,7 +125,7 @@ struct SettingsProfilesTab: View {
                     .foregroundStyle(palette.heading.color)
                     .lineLimit(1)
                 if profile.id == appSettings.activeProfileId {
-                    Label("Saved selection", systemImage: "checkmark.seal.fill")
+                    Label("Default profile", systemImage: "checkmark.seal.fill")
                         .uiFont(.system(size: 11))
                         .foregroundStyle(palette.accentText.color)
                 }
@@ -156,7 +156,7 @@ struct SettingsProfilesTab: View {
     @ViewBuilder
     private func rowContextMenu(_ profile: MeetingProfile) -> some View {
         if profile.id != appSettings.activeProfileId {
-            Button("Make Active", systemImage: "checkmark.seal") {
+            Button("Use as Default", systemImage: "checkmark.seal") {
                 appSettings.setActiveProfile(profile.id)
             }
         }
@@ -375,9 +375,9 @@ struct SettingsProfilesTab: View {
                     .frame(height: 22)
 
                     if profile.id == appSettings.activeProfileId {
-                        SettingsStatusPill("Saved profile selection", kind: .accent)
+                        SettingsStatusPill("Default profile", kind: .accent)
                     } else {
-                        Button("Use as saved profile") { appSettings.setActiveProfile(profile.id) }
+                        Button("Use as Default") { appSettings.setActiveProfile(profile.id) }
                             .buttonStyle(.settingsSecondary)
                     }
                 }
@@ -955,7 +955,7 @@ struct SettingsProfilesTab: View {
             let data = try Data(contentsOf: url)
             let result = try appSettings.importProfiles(from: data)
             selectedProfileId = appSettings.activeProfileId
-            var message = "Imported \(result.importedCount) profile(s)."
+            var message = "Imported \(result.importedCount) profile\(result.importedCount == 1 ? "" : "s")."
             if result.renamedCount > 0 {
                 message += " Renamed \(result.renamedCount)."
             }

@@ -93,15 +93,15 @@ struct ReprocessingMenu: View {
     @ViewBuilder
     private var operations: some View {
         if settings.effectiveCalendarSource != .disabled {
-            Button("Link calendar meeting…") { presentCalendarLink() }
+            Button("Link Calendar Meeting…") { presentCalendarLink() }
                 .disabled(manager.eligibility(for: audio, .linkCalendar) != nil)
             Divider()
         }
         Button(hasTranscript ? "Retranscribe…" : "Transcribe…") { present(.transcribe) }
-        Button("Re-run AI analysis…") { present(.analysis) }.disabled(!hasTranscript)
-        Button("Detect speakers again…") { present(.speakers) }.disabled(!hasTranscript)
+        Button("Re-run AI Analysis…") { present(.analysis) }.disabled(!hasTranscript)
+        Button("Detect Speakers Again…") { present(.speakers) }.disabled(!hasTranscript)
         Divider()
-        Button("Restore previous results") { restore() }.disabled(!canRestore)
+        Button("Restore Previous Results") { restore() }.disabled(!canRestore)
     }
 
     private func present(_ operation: ReprocessingOperation, discardingRun runID: UUID? = nil) {

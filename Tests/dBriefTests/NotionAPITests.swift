@@ -37,7 +37,7 @@ struct NotionAPITests {
                                   "heading_2", "paragraph",
                                   "heading_2", "paragraph"])
         #expect(text(blocks[0]) == "Sep 21, 2026 · 1 h 2 min — added by dBrief (ref 1a2b3c4d)")
-        #expect(text(blocks[1]) == "Participants: Alice, Bob")
+        #expect(text(blocks[1]) == "Attendees: Alice, Bob")
         #expect(text(blocks[4]) == "one")
         #expect(text(blocks[7]) == "Send deck")
         #expect((blocks[7]["to_do"] as? [String: Any])?["checked"] as? Bool == false)

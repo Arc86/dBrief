@@ -216,7 +216,7 @@ struct ResultsView: View {
                 Button {
                     copyNotes(recording: recording)
                 } label: {
-                    Label(copied ? "Copied" : "Copy notes", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? "Copied" : "Copy Notes", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
                 .disabled(recording.transcription == nil && recording.summary == nil)
 

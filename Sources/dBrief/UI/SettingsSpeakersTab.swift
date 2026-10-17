@@ -63,7 +63,7 @@ struct SettingsSpeakersTab: View {
                 }
             }
 
-            SettingsCard("Known people", description: "Voiceprints stay on this Mac and are never uploaded",
+            SettingsCard("Voice library", description: "Voiceprints stay on this Mac and are never uploaded",
                          section: .speakerLibrary) {
                 SettingsVoiceLibraryTab()
             }

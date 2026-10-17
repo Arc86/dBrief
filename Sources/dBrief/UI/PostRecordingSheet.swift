@@ -117,7 +117,7 @@ struct PostRecordingSheet: View {
 
                 if appSettings.diarizationEnabled {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(participantNames.isEmpty ? "Participants" : "Participants (\(participantNames.count))")
+                        Text(participantNames.isEmpty ? "Attendees" : "Attendees (\(participantNames.count))")
                             .uiFont(.system(size: 12, weight: .medium))
                             .foregroundStyle(palette.heading.color)
                         participantsField
@@ -419,7 +419,7 @@ struct PostRecordingSheet: View {
                         .foregroundStyle(status.warning.color)
                 }
             } else {
-                Text("AI processing is disabled in Settings.")
+                Text("AI analysis is off in Settings → AI analysis.")
                     .uiFont(.system(size: 11))
                     .foregroundStyle(palette.secondary.color)
             }
@@ -518,7 +518,7 @@ struct PostRecordingSheet: View {
             }
 
             if reviewNeedsTranscriptionEndpoint && transcribe {
-                Text("No transcription endpoint configured. Add one in Settings.")
+                Text("No transcription endpoint is set up. Add one in Settings → Transcription.")
                     .uiFont(.system(size: 11))
                     .foregroundStyle(status.danger.color)
             }
@@ -828,7 +828,7 @@ struct PostRecordingSheet: View {
             Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
                 .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .unconfigured:
-            Text("Add a mailbox in Calendar settings to load meetings.")
+            Text("Add a mailbox in Settings → Meetings to load meetings.")
                 .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         case .complete, .none:
             if !calendarPickerRefreshing, calendarPickerLastRefresh != nil,
@@ -891,7 +891,7 @@ struct PostRecordingSheet: View {
             if !allowed {
                 Text(recording.calendarEvent == nil
                      ? "Choose a meeting to load its attendees."
-                     : "Attendee loading is set to Never in Calendar settings.")
+                     : "Attendee loading is set to Never in Settings → Meetings.")
                     .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
             }
             Group {

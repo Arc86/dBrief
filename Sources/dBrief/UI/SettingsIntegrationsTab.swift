@@ -404,7 +404,7 @@ struct SettingsIntegrationsTab: View {
         if notion.enabled {
             SettingsCard("Include in the page") {
                 ForEach([DeliveryField.summary, .actionItems, .tags, .sentiment, .meetingInfo, .transcript]) { field in
-                    SettingsRow(verbatim: field == .meetingInfo ? "Participants" : field.displayName,
+                    SettingsRow(verbatim: field == .meetingInfo ? "Attendees" : field.displayName,
                                 caption: field == .transcript ? "The full transcript at the end of the page. Long meetings make long pages." : nil) {
                         Toggle(field.displayName, isOn: $settings.integrations.notion.fields[contains: field])
                     }
@@ -481,7 +481,7 @@ struct SettingsIntegrationsTab: View {
         @Bindable var settings = appSettings
         Group {
             SettingsCard("Webhook",
-                         description: "Each delivery has an Idempotency-Key; retry unconfirmed sends from History") {
+                         description: "Each delivery has an Idempotency-Key; retry unconfirmed sends with Integrations… on the recording") {
                 enableRow("Send to a webhook", $settings.integrations.webhook.enabled)
                 if appSettings.integrations.webhook.enabled {
                     textRow("URL", secure: true, $settings.integrations.webhook.url)

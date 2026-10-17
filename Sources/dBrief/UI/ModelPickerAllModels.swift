@@ -213,7 +213,7 @@ struct ModelInspector: View {
                     HStack(spacing: 6) {
                         if let suggestion { SettingsStatusPill(verbatim: suggestion.intent.title, kind: .accent) }
                         if modelID == LocalTranscriptionChoice.apple {
-                            SettingsStatusPill("macOS managed", kind: .neutral)
+                            SettingsStatusPill("Managed by macOS", kind: .neutral)
                         } else if let downloaded {
                             SettingsStatusPill(downloaded ? "Downloaded" : "Not downloaded",
                                                kind: downloaded ? .success : .neutral)

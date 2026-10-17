@@ -479,6 +479,8 @@ struct TranscriptDetailView: View, Equatable {
             // Not while editing the summary: ⌘⌫ belongs to the editor then.
             delete: audioURL != nil && summaryEdit == nil && eligibility(.delete) == nil ? { showDeleteConfirm = true } : nil,
             focusReader: { openFocusReader() },
+            // View ▸ Larger/Smaller Text (⌘+/⌘−) now also works in the viewer itself.
+            changeTextSize: { step in context.appSettings.viewerAppearance.fontSize += step },
             reviewIntegrations: audioURL != nil && context.appState.processingJob == nil
                 && !context.recordingManager.reviewingIntegrationDeliveries
                 ? { if let audioURL { Task { await context.recordingManager.reviewIntegrationDeliveries(for: audioURL) } } } : nil
@@ -589,7 +591,7 @@ struct TranscriptDetailView: View, Equatable {
     }
 
     @ViewBuilder private var processingCommands: some View {
-        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Re-process")
+        ReprocessingMenu(recording: recording, hasTranscript: richTranscript != nil, label: "Reprocess")
             .environment(context.appSettings)
             .environment(context.recordingManager)
             .environment(context.appState)

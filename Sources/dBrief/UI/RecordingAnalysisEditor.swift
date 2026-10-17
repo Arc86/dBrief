@@ -31,6 +31,10 @@ struct RecordingAnalysisEditor: View {
         _tags = State(initialValue: baseline.tags.joined(separator: ", "))
     }
 
+    private var isDirty: Bool {
+        actions.map(\.text) != baseline.actionItems || tags != baseline.tags.joined(separator: ", ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit actions and tags").uiFont(.title2.weight(.semibold))
@@ -64,7 +68,15 @@ struct RecordingAnalysisEditor: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction).disabled(isSaving)
+                // Like the summary editor: ask before throwing edits away, and only
+                // enable Save once something changed.
+                Button("Cancel") {
+                    if !isDirty || DestructiveConfirmation.confirm("Discard your changes?",
+                        message: "Your edits to the action items and tags are lost.", button: "Discard Changes") {
+                        onCancel()
+                    }
+                }
+                .keyboardShortcut(.cancelAction).disabled(isSaving)
                 Button {
                     var edited = baseline
                     // Preserve every unchanged raw action key, including whitespace.
@@ -82,7 +94,7 @@ struct RecordingAnalysisEditor: View {
                     else { Text("Save") }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(isReadOnly || isSaving)
+                .disabled(isReadOnly || isSaving || !isDirty)
             }
             .buttonStyle(ViewerCommandButtonStyle())
         }

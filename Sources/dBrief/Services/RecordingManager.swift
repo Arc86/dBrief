@@ -3934,7 +3934,7 @@ final class RecordingManager {
             guard let index = appState.processingSteps.lastIndex(where: { $0.name == "Send: \(result.destination.displayName)" }) else { return }
             switch result.status {
             case .success, .skipped: appState.processingSteps[index].status = .completed
-            case .failed: appState.processingSteps[index].status = .failed("Delivery unconfirmed. Review Integrations in History before retrying.")
+            case .failed: appState.processingSteps[index].status = .failed("Delivery unconfirmed. Check the destination, then retry with Integrations….")
             }
         }
     }

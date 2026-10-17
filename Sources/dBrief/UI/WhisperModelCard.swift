@@ -14,7 +14,7 @@ extension TranscriptionCardPresentation {
     static func local(_ id: String, modernApple: Bool = false) -> Self? {
         if id == LocalTranscriptionChoice.apple {
             return .init(title: "Apple Speech", language: "System-supported languages",
-                         footprint: "macOS managed",
+                         footprint: "Managed by macOS",
                          summary: modernApple
                             ? "Apple SpeechAnalyzer · provisional research-based ratings."
                             : "Apple Speech · older or unsupported-locale fallback is not rated.",

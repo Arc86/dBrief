@@ -209,7 +209,7 @@ struct RecordingHistoryView: View {
             // grid never reflows between recordings.
             Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
-                    actionTile(title: copiedItem == item.id ? "Copied" : (item.hasInsights ? "Copy notes" : "Copy transcript"),
+                    actionTile(title: copiedItem == item.id ? "Copied" : (item.hasInsights ? "Copy Notes" : "Copy Transcript"),
                                systemImage: copiedItem == item.id ? "checkmark" : "doc.on.doc") {
                         Task {
                             guard let text = await RecordingNotesText.load(for: item.url),

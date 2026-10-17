@@ -338,7 +338,7 @@ struct DBriefApp: App {
         // Open With / Dock drops go to AppDelegate's import; no window should open for them.
         .handlesExternalEvents(matching: [])
 
-        Window("Transcripts", id: "transcript") {
+        Window("Recording Library", id: "transcript") {
             TranscriptBrowserView()
                 .environment(context)
                 .environment(context.appState)

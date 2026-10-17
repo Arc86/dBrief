@@ -104,7 +104,7 @@ struct ProcessingQueueView: View {
 
             if expanded || !manager.pendingQueueItems.isEmpty {
                 HStack(spacing: 8) {
-                    Button(manager.queuePaused ? "Resume automatic queue" : "Pause queue") {
+                    Button(manager.queuePaused ? "Resume Queue" : "Pause Queue") {
                         Task {
                             if await manager.setQueuePaused(!manager.queuePaused), !manager.queuePaused {
                                 await manager.drainQueueIfNeeded()
@@ -115,7 +115,7 @@ struct ProcessingQueueView: View {
                     .help("Pause prevents the next job from starting; the current job can finish. This setting survives a restart.")
                     Spacer(minLength: 4)
                     if !manager.pendingQueueItems.isEmpty || visibleReprocessing.contains(where: { $0.status == .queued }) {
-                        Button("Process queue") { Task { await manager.startProcessingQueue() } }
+                        Button("Process Queue") { Task { await manager.startProcessingQueue() } }
                             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 30, fontSize: 12, fillsWidth: false))
                             .disabled(manager.queueLoadError != nil)
                     }
@@ -170,7 +170,7 @@ struct ProcessingQueueView: View {
                         RecordingListAction(title: "Resume", systemImage: "play") {
                             Task { await manager.resumeReprocessing(attempt.id) }
                         }.disabled(appState.processingJob != nil || editing)
-                        RecordingListAction(title: "Discard attempt", systemImage: "minus.circle") {
+                        RecordingListAction(title: "Discard Attempt", systemImage: "minus.circle") {
                             guard DestructiveConfirmation.confirm("Discard this reprocess?",
                                 message: "The recording's current results stay. The unfinished reprocess can't be resumed afterwards.",
                                 button: "Discard") else { return }
@@ -197,7 +197,7 @@ struct ProcessingQueueView: View {
             }
         } actions: {
             FlowLayout(spacing: 6) {
-                RecordingListAction(title: "Process now", systemImage: "play") {
+                RecordingListAction(title: "Process Now", systemImage: "play") {
                     Task { await manager.drainQueueIfNeeded(preferredAudioURL: audioURL, expectedID: item.id) }
                 }
                 .disabled(!available || appState.processingJob != nil || manager.queueLoadError != nil)

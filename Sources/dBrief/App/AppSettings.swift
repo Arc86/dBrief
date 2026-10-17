@@ -757,26 +757,26 @@ final class AppSettings {
     }
 
     /// Prompt for the second AI pass that rewrites insights into a spoken script
-    /// for the Spoken Summary feature. User-editable in Settings → AI Analysis.
+    /// for the Spoken Summary feature. User-editable in Settings → AI analysis.
     var spokenSummaryPrompt: String {
         didSet { UserDefaults.standard.set(spokenSummaryPrompt, forKey: Keys.spokenSummaryPrompt) }
     }
 
     /// Style/delivery instruction fed to the Spoken Summary TTS voice. Only the
     /// 1.7B model follows it (the 0.6B variant ignores it). User-editable in
-    /// Settings → AI Analysis; an empty value sends no instruction.
+    /// Settings → AI analysis; an empty value sends no instruction.
     var ttsDeliveryInstruction: String {
         didSet { UserDefaults.standard.set(ttsDeliveryInstruction, forKey: Keys.ttsDeliveryInstruction) }
     }
 
     /// Qwen3-TTS model size used for spoken-summary synthesis. 1.7B is the most
     /// natural (and the only one that follows `ttsDeliveryInstruction`); 0.6B is
-    /// lighter for 16 GB Macs. Settings → AI Analysis.
+    /// lighter for 16 GB Macs. Settings → AI analysis.
     var ttsModelSize: TTSModelSize {
         didSet { UserDefaults.standard.set(ttsModelSize.rawValue, forKey: Keys.ttsModelSize) }
     }
 
-    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI Analysis.
+    /// Qwen3-TTS speaker voice used for spoken-summary synthesis. Settings → AI analysis.
     var ttsVoice: TTSVoice {
         didSet { UserDefaults.standard.set(ttsVoice.rawValue, forKey: Keys.ttsVoice) }
     }
@@ -790,12 +790,12 @@ final class AppSettings {
 
     /// Which on-device TTS engine synthesizes spoken summaries. Default Kokoro
     /// (fast, ANE-resident); Qwen3 is the broader-multilingual alternative.
-    /// Settings → AI Analysis.
+    /// Settings → AI analysis.
     var ttsEngine: TTSEngine {
         didSet { UserDefaults.standard.set(ttsEngine.rawValue, forKey: Keys.ttsEngine) }
     }
 
-    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI Analysis.
+    /// Kokoro (FluidAudio) voice used when `ttsEngine == .kokoro`. Settings → AI analysis.
     var ttsKokoroVoice: KokoroVoice {
         didSet { UserDefaults.standard.set(ttsKokoroVoice.rawValue, forKey: Keys.ttsKokoroVoice) }
     }
