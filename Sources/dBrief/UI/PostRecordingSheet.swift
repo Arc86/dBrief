@@ -429,10 +429,8 @@ struct PostRecordingSheet: View {
                     title: "Obsidian output folder",
                     currentRelativePath: currentObsidianFolder(for: recording)
                 ) { relativePath in
+                    // This recording only; the default lives in Settings → Integrations.
                     recording.obsidianFolderRelativePath = relativePath
-                    if reviewProfile.isProtectedDefault {
-                        appSettings.obsidianDefaultFolderRelativePath = relativePath
-                    }
                 }
             }
 
@@ -503,10 +501,13 @@ struct PostRecordingSheet: View {
                     loadCalendarParticipants: acceptedCalendarParticipantLoad
                 )
             } label: {
-                Label("Process recording", systemImage: "play")
+                // While another recording processes, this one starts right after it.
+                Label(appState.processingJob == nil ? "Process recording" : "Process next", systemImage: "play")
             }
             .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
             .disabled(processDisabled)
+            .help(appState.processingJob == nil ? "Process this recording now"
+                  : "Processes this recording as soon as the current one finishes")
 
             if appSettings.obsidianEnabled, let recording = appState.currentRecording {
                 Text("Output folder · \(appSettings.obsidianFolderDisplayName(relativePath: currentObsidianFolder(for: recording)))")
@@ -530,7 +531,7 @@ struct PostRecordingSheet: View {
                 .disabled(sanitizedMeetingTitle.isEmpty)
                 .help("Keep the audio and stop here")
 
-                Button("Queue") {
+                Button(appState.processingJob == nil ? "Queue" : "Queue for later") {
                     applyFieldsToRecording()
                     Task {
                         await recordingManager.queueForLater(
@@ -543,7 +544,7 @@ struct PostRecordingSheet: View {
                     }
                 }
                 .disabled(sanitizedMeetingTitle.isEmpty)
-                .help("Finalize audio and queue processing for later")
+                .help("Save the audio and wait in the queue until you choose Process Queue")
 
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }

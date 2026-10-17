@@ -73,8 +73,11 @@ struct TranscriptionProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(isComplete ? "Processing complete" : "Processing recording")
+                Text(MenuPanelProgress.processingHeading(
+                        title: appState.processingRecording.map { $0.generatedTitle ?? RecordingFinalizer.readableMeetingTitle($0.meetingTitleDraft) },
+                        complete: isComplete))
                     .uiFont(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
                     .foregroundStyle(palette.heading.color)
                 Spacer()
                 if let done = MenuPanelProgress.doneLabel(appState.processingSteps) {
@@ -120,7 +123,7 @@ struct TranscriptionProgressView: View {
 
                 if let title = appState.processingJob?.transcriptButtonTitle {
                     Button {
-                        appState.pendingLiveTranscriptSelection = true
+                        appState.pendingLiveTranscriptSelection = .processing
                         MenuBarPanel.open("transcript", with: openWindow)
                     } label: {
                         Label(title, systemImage: "text.viewfinder")

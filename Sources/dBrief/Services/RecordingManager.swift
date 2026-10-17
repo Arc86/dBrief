@@ -716,8 +716,11 @@ final class RecordingManager {
         guard appState.processingJob == nil, !processingCancellationInProgress,
               !postRecordingAction.isBusy, appSettings.profiles.contains(where: { $0.id == id }) else { return }
         cancelPostRecordingAutomation()
-        appState.currentRecording?.profileSelection.chooseManually(id, savedManualID: id)
-        appSettings.setActiveProfile(id)
+        // For this recording only: route to the profile instead of changing the saved
+        // one, so the next recording starts from the user's saved profile again.
+        guard let recording = appState.currentRecording else { return }
+        recording.profileSelection.chooseManually(id, savedManualID: appSettings.activeProfileId)
+        appSettings.routeAutomatically(to: id, for: recording.id)
     }
 
     private func automaticPostRecordingRequest(for recording: Recording) -> AutomaticPostRecordingRequest {
@@ -3669,6 +3672,14 @@ final class RecordingManager {
     /// stage before forwarding an explicit button click to existing safe actions.
     func performLibraryWork(_ item: LibraryWorkItem) async throws {
         guard libraryWorkBlockMessage(item.target) == nil else { throw LibraryWorkNavigation.Failure.busy }
+        if item.target == .reprocess {
+            // Reprocess attempts live in their own store, not the processing journal.
+            guard reprocessingAttempts.contains(where: { $0.id == item.recoveryID }) else {
+                throw LibraryWorkNavigation.Failure.changed
+            }
+            await resumeReprocessing(item.recoveryID)
+            return
+        }
         // Reserve queue mutations while resolving, so a concurrent dismissal
         // cannot be superseded by this older click. Existing actions acquire their
         // own guard synchronously after the reservation is handed off below.

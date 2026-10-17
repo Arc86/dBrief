@@ -326,6 +326,24 @@ struct ReprocessingManagerTests {
         #expect(fixture.state.notices.items.contains { $0.source == .integrations })
     }
 
+    /// "Profile for this recording" changed the saved profile, so every later
+    /// recording used it too.
+    @Test func reviewProfileChoiceAppliesToThisRecordingOnly() {
+        let fixture = try! Fixture()
+        defer { fixture.clean() }
+        let saved = fixture.settings.activeProfileId
+        let recording = fixture.recording()
+        fixture.state.currentRecording = recording
+        fixture.state.showPostRecordingSheet = true
+        defer { fixture.state.showPostRecordingSheet = false; fixture.state.currentRecording = nil }
+        fixture.manager.selectPostRecordingProfile(fixture.automaticProfile.id)
+        #expect(fixture.settings.activeProfileId == saved)
+        #expect(fixture.settings.activeProfile.id == fixture.automaticProfile.id)
+        #expect(recording.profileSelection.reviewProfileID(savedManualID: saved) == fixture.automaticProfile.id)
+        fixture.settings.finishAutomaticRouting(for: recording.id)
+        #expect(fixture.settings.activeProfile.id == saved)
+    }
+
     /// A parked reprocess used to stop every automatic cleanup until it was discarded.
     @Test func pendingReprocessProtectsItsRecordingWithoutBlockingCleanup() async throws {
         let fixture = try Fixture()

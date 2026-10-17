@@ -105,29 +105,8 @@ struct RecordingHistoryView: View {
             return .recorded
         }
 
-        var formattedDate: String {
-            let cal = Calendar.current
-            let now = Date.now
-            let timeFormatter = DateFormatter()
-            timeFormatter.dateFormat = "h:mm a"
-            let timeStr = timeFormatter.string(from: date)
-
-            if cal.isDateInToday(date) {
-                return "Today \(timeStr)"
-            } else if cal.isDateInYesterday(date) {
-                return "Yesterday \(timeStr)"
-            } else if let days = cal.dateComponents([.day], from: date, to: now).day, days < 7 {
-                let dayFormatter = DateFormatter()
-                dayFormatter.dateFormat = "EEE"
-                return "\(dayFormatter.string(from: date)) \(timeStr)"
-            } else {
-                let shortFormatter = DateFormatter()
-                let year = cal.component(.year, from: date)
-                let currentYear = cal.component(.year, from: now)
-                shortFormatter.dateFormat = year == currentYear ? "MMM d" : "MMM d, yyyy"
-                return shortFormatter.string(from: date)
-            }
-        }
+        /// Same text as the library sidebar, following the system's 12/24-hour setting.
+        var formattedDate: String { LibraryRowFormat.date(date) }
 
         var formattedDuration: String { RecordingListPresentation.duration(duration) }
 

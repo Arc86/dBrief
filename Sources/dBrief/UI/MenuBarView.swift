@@ -147,6 +147,23 @@ struct MenuBarView: View {
             // The post-recording sheet is a focused, dedicated screen: it replaces
             // the recording controls, history, queue and import affordances.
             if appState.showPostRecordingSheet {
+                // A background job keeps running while the review is open; say so.
+                if appState.isProcessing, let job = appState.processingRecording {
+                    MenuPanelSection(verticalPadding: 8) {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(MenuPanelProgress.processingHeading(
+                                title: job.generatedTitle ?? RecordingFinalizer.readableMeetingTitle(job.meetingTitleDraft),
+                                complete: false))
+                                .uiFont(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Button("Stop processing") { Task { await recordingManager.cancelProcessing() } }
+                                .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22, fontSize: 11, fillsWidth: false))
+                        }
+                    }
+                }
                 MenuPanelSection(showsDivider: false) {
                     PostRecordingSheet()
                 }

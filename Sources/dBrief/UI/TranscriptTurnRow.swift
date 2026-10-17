@@ -32,7 +32,8 @@ struct TranscriptTurnRow<SpeakerLabel: View>: View, Equatable {
     typealias Model = TranscriptTurnRowModel
 
     let model: Model
-    let onSeek: (TimeInterval) -> Void
+    /// Nil where there is no audio to jump in (the Focus Reader).
+    let onSeek: ((TimeInterval) -> Void)?
     @ViewBuilder let speakerLabel: () -> SpeakerLabel
 
     @Environment(\.viewerPalette) private var palette
@@ -63,11 +64,23 @@ struct TranscriptTurnRow<SpeakerLabel: View>: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 0)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { onSeek(turn.startTime) }
+        // Clicking the text selects it, as in any Mac text; the timecode and the
+        // avatar jump to the turn.
     }
 
+    @ViewBuilder
     private var avatarLane: some View {
+        if let onSeek {
+            avatarStack
+                .contentShape(Rectangle())
+                .onTapGesture { onSeek(turn.startTime) }
+                .help("Play from here")
+        } else {
+            avatarStack
+        }
+    }
+
+    private var avatarStack: some View {
         VStack(spacing: 7) {
             SpeakerAvatar(
                 speakerId: turn.speakerId ?? "",
@@ -127,27 +140,36 @@ struct TranscriptTurnRow<SpeakerLabel: View>: View, Equatable {
         }
     }
 
+    @ViewBuilder
     private var timecodeChip: some View {
-        let chipColor: Color? = model.isActive ? model.color : nil
-        return Button { onSeek(turn.startTime) } label: {
-            Text(Self.timecode(turn.startTime))
-                .uiFont(.system(size: 11).monospaced())
-                .foregroundStyle(chipColor ?? palette.secondary.color)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background {
-                    if let chipColor {
-                        RoundedRectangle(cornerRadius: 5).fill(chipColor.opacity(0.14))
-                    }
-                }
+        if let onSeek {
+            Button { onSeek(turn.startTime) } label: { timecodeLabel }
+                .buttonStyle(.plain)
+                .help("Jump to this point")
+        } else {
+            timecodeLabel
         }
-        .buttonStyle(.plain)
-        .help("Jump to this point")
+    }
+
+    private var timecodeLabel: some View {
+        let chipColor: Color? = model.isActive ? model.color : nil
+        return Text(Self.timecode(turn.startTime))
+            .uiFont(.system(size: 11).monospaced())
+            .foregroundStyle(chipColor ?? palette.secondary.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background {
+                if let chipColor {
+                    RoundedRectangle(cornerRadius: 5).fill(chipColor.opacity(0.14))
+                }
+            }
     }
 
     static func timecode(_ time: TimeInterval) -> String {
         guard time.isFinite else { return "—" }
         let total = Int(min(max(0, time), Double(Int.max) / 2))
-        return String(format: "%d:%02d", total / 60, total % 60)
+        // Same as the player: hours appear once past the first hour.
+        return total >= 3600 ? String(format: "%d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
+                             : String(format: "%d:%02d", total / 60, total % 60)
     }
 }

@@ -78,6 +78,13 @@ import Testing
         #expect(MenuPanelProgress.stopProcessingTitle(isCapturing: true) == "Stop processing")
     }
 
+    /// The panel never said which recording was processing.
+    @Test func processingHeadingNamesTheRecording() {
+        #expect(MenuPanelProgress.processingHeading(title: "Weekly sync", complete: false) == "Processing “Weekly sync”")
+        #expect(MenuPanelProgress.processingHeading(title: nil, complete: false) == "Processing recording")
+        #expect(MenuPanelProgress.processingHeading(title: "Weekly sync", complete: true) == "Processed “Weekly sync”")
+    }
+
     @Test func deferredProfileNoticeStaysOnTheSurface() {
         #expect(MenuPanelProgress.profileNoticeOnSurface(isDeferred: true))
         #expect(!MenuPanelProgress.profileNoticeOnSurface(isDeferred: false))

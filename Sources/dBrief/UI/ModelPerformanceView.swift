@@ -354,7 +354,7 @@ private struct RecentRecordingRow: View {
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "d MMM"
+        f.setLocalizedDateFormatFromTemplate("dMMM")
         return f
     }()
 

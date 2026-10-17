@@ -27,16 +27,19 @@ struct RecordingBrowserItem: Identifiable, Hashable, Codable, Sendable {
         if let generated = generatedTitle?.trimmingCharacters(in: .whitespaces), !generated.isEmpty {
             return generated
         }
-        let parts = name.split(separator: "_", maxSplits: 2)
-        if parts.count == 3 {
-            let raw = String(parts[2]).replacingOccurrences(of: "-", with: " ")
-                .trimmingCharacters(in: .whitespaces)
-            if !raw.isEmpty, raw.lowercased() != "meeting" {
-                return raw.prefix(1).uppercased() + raw.dropFirst()
-            }
-        }
-        return "Meeting \(Self.titleDateFormatter.string(from: date))"
+        return Self.titleFromFileName(name) ?? "Meeting \(Self.titleDateFormatter.string(from: date))"
     }
+
+    /// The meeting title in a `YYYY-MM-DD_HHMM_title` file name, if it has one.
+    static func titleFromFileName(_ name: String) -> String? {
+        let parts = name.split(separator: "_", maxSplits: 2)
+        guard parts.count == 3 else { return nil }
+        let raw = String(parts[2]).replacingOccurrences(of: "-", with: " ").trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty, raw.lowercased() != "meeting" else { return nil }
+        return raw.prefix(1).uppercased() + raw.dropFirst()
+    }
+
+    static func displayTitle(forAudioName name: String) -> String { titleFromFileName(name) ?? name }
 
     var formattedDuration: String {
         RecordingListPresentation.duration(duration)
@@ -51,7 +54,7 @@ struct RecordingBrowserItem: Identifiable, Hashable, Codable, Sendable {
 
     private static let titleDateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "MMM d, h:mm a"
+        f.setLocalizedDateFormatFromTemplate("MMMd jmm") // follows the 12/24-hour setting
         return f
     }()
 }

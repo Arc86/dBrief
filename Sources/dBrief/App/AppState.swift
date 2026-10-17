@@ -66,7 +66,7 @@ final class AppState {
     /// the live transcript waiting state. Empty once segments start arriving.
     var liveStatusMessage: String = ""
     /// When set, the transcript browser should select the in-progress live recording on open.
-    var pendingLiveTranscriptSelection: Bool = false
+    var pendingLiveTranscriptSelection: LiveTranscriptTarget?
     /// Set to expand the menu panel's Queue & Recovery for this work item.
     var queueFocusRequest: UUID?
     /// Errors, warnings and results the user should see, newest first.
@@ -171,4 +171,19 @@ struct PreflightWarning: Equatable {
     let requiredGB: Double
     let availableGB: Double
     let hasRemoteEndpoint: Bool
+}
+
+/// Which in-progress recording a "Live" button opens in the library.
+enum LiveTranscriptTarget: Equatable {
+    /// The meeting being recorded (menu panel's Live button).
+    case capture
+    /// The recording being processed (processing view's Live Transcript button).
+    case processing
+
+    func url(capture: URL?, processing: URL?) -> URL? {
+        switch self {
+        case .capture: capture ?? processing
+        case .processing: processing ?? capture
+        }
+    }
 }

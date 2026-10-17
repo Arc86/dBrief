@@ -307,7 +307,8 @@ struct TranscriptDetailView: View, Equatable {
                     bodyContent
                 } playback: {
                     if ViewerPresentationPolicy.showsPlayback(mode: mode,
-                        hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive) {
+                        hasFinalizedAudio: recording.finalizedAudioURL != nil, isLive: isLive,
+                        isPlaying: recording.finalizedAudioURL != nil && audioPlayer.currentFileURL == recording.finalizedAudioURL) {
                         playerBar.transition(documentModeTransition)
                     }
                 } assistant: {

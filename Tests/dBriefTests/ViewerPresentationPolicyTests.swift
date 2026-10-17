@@ -2,6 +2,13 @@ import Testing
 @testable import dBrief
 
 @Suite struct ViewerPresentationPolicyTests {
+    /// Space played audio on the Summary tab with no visible player to stop it.
+    @Test func thePlayerStaysVisibleOnAnyTabWhileItsAudioPlays() {
+        for mode in ViewerDocumentMode.allCases {
+            #expect(ViewerPresentationPolicy.showsPlayback(mode: mode, hasFinalizedAudio: true, isLive: false, isPlaying: true))
+        }
+    }
+
     @Test func playbackBelongsOnlyToFinalizedTranscriptView() {
         for mode in ViewerDocumentMode.allCases {
             #expect(

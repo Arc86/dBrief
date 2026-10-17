@@ -20,6 +20,7 @@ struct LibraryWorkDetailView: View {
         case .recovery: "Resume Processing"
         case .delivery: "Review Deliveries"
         case .capture: "Recover Audio"
+        case .reprocess: "Resume Reprocess"
         }
     }
 
@@ -56,15 +57,16 @@ struct LibraryWorkDetailView: View {
                         Button("Open Recording", action: openRecording)
                     }
                     if let remove {
-                        Button(item.target == .queue ? "Remove from Queue" : "Remove from List") {
+                        Button(item.target == .queue ? "Remove from Queue"
+                               : item.target == .reprocess ? "Discard Attempt" : "Remove from List") {
                             actionTask = Task { @MainActor in
                                 defer { actionTask = nil }
                                 await remove()
                             }
                         }
                         .disabled(actionTask != nil)
-                        .help(item.target == .queue
-                              ? "Remove from the queue without deleting the recording"
+                        .help(item.target == .queue ? "Remove from the queue without deleting the recording"
+                              : item.target == .reprocess ? "Discards this reprocess. The recording's current results stay."
                               : "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards.")
                     }
                     if actionTask != nil { ProgressView().controlSize(.small) }

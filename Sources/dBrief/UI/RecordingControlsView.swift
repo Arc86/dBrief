@@ -80,10 +80,8 @@ struct RecordingControlsView: View {
                     title: "Obsidian output folder",
                     currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
+                    // This recording only; the default lives in Settings → Integrations.
                     recording.obsidianFolderRelativePath = relativePath
-                    if appSettings.activeProfile.isProtectedDefault {
-                        appSettings.obsidianDefaultFolderRelativePath = relativePath
-                    }
                 }
             }
 
@@ -163,7 +161,7 @@ struct RecordingControlsView: View {
             Spacer(minLength: 0)
             if appState.isLiveTranscribing {
                 Button {
-                    appState.pendingLiveTranscriptSelection = true
+                    appState.pendingLiveTranscriptSelection = .capture
                     MenuBarPanel.open("transcript", with: openWindow)
                 } label: {
                     Label("Live", systemImage: "text.viewfinder")

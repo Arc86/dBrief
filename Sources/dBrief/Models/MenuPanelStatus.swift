@@ -56,6 +56,13 @@ enum MenuPanelProgress {
         return lines > 4
     }
 
+    static func processingHeading(title: String?, complete: Bool) -> String {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return complete ? "Processing complete" : "Processing recording"
+        }
+        return complete ? "Processed “\(title)”" : "Processing “\(title)”"
+    }
+
     /// During record-while-processing two Stop buttons are on screen; name the job's one.
     static func stopProcessingTitle(isCapturing: Bool) -> String {
         isCapturing ? "Stop processing" : "Stop"

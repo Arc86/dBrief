@@ -50,7 +50,8 @@ struct ProcessingQueueView: View {
                                                 tint: palette.primary.color)
                         }
                         Spacer(minLength: 0)
-                        RecordingListAction(title: "Stop", systemImage: "stop") {
+                        RecordingListAction(title: MenuPanelProgress.stopProcessingTitle(isCapturing: !appState.isIdle),
+                                            systemImage: "stop") {
                             Task { await manager.cancelProcessing() }
                         }
                         .disabled(editing)
