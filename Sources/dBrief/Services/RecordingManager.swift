@@ -2394,23 +2394,19 @@ final class RecordingManager {
         // Headless: run as a background job (no capture slot, no post-recording sheet) and
         // await completion so the watched-folder poller stays serial (its `isIdle` gate also
         // defers new files while this job runs).
+        let tasks = appSettings.watchedFolderTasks
         let request = processingRequest(
-            transcribe: appSettings.autoTranscribe,
-            summary: appSettings.autoSummary && appSettings.autoTranscribe,
-            actionItems: appSettings.autoActionItems && appSettings.autoTranscribe,
-            tags: appSettings.autoTags && appSettings.autoTranscribe,
+            transcribe: tasks.transcribe,
+            summary: tasks.summary,
+            actionItems: tasks.actionItems,
+            tags: tasks.tags,
             loadCalendarParticipants: appSettings.effectiveAutoLoadCalendarParticipants,
             titleWasUserProvided: recording.titleWasUserProvided,
             autoResume: true
         )
         let job = launchJob(recording: recording, persistedRequest: request) { job in
-            await self.processRecording(
-                job: job,
-                transcribe: self.appSettings.autoTranscribe,
-                summary: self.appSettings.autoSummary && self.appSettings.autoTranscribe,
-                actionItems: self.appSettings.autoActionItems && self.appSettings.autoTranscribe,
-                tags: self.appSettings.autoTags && self.appSettings.autoTranscribe
-            )
+            await self.processRecording(job: job, transcribe: tasks.transcribe, summary: tasks.summary,
+                                        actionItems: tasks.actionItems, tags: tasks.tags)
         }
         await job.task?.value
     }

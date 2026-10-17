@@ -52,8 +52,8 @@ struct SettingsAITab: View {
                 }
             }
 
-            if settings.aiEngine == .qwenLocal || searchRequest?.section == .aiResultsLanguage {
-                SettingsCard("Results language", description: "Gemma only", section: .aiResultsLanguage) {
+            if settings.aiEngine.usesResultsLanguage || searchRequest?.section == .aiResultsLanguage {
+                SettingsCard("Results language", description: "For on-device and Local CLI analysis", section: .aiResultsLanguage) {
                     SettingsRow("Write results in") {
                         Picker("Write results in", selection: outputLanguageSelectionBinding) {
                             Text("Same as transcript").tag("matchInput")
@@ -76,7 +76,7 @@ struct SettingsAITab: View {
                 }
             }
 
-            if settings.aiEngine == .localCLI || searchRequest?.section == .aiCLI {
+            if settings.usesAIEngineAnywhere(.localCLI) || searchRequest?.section == .aiCLI {
                 SettingsCard("Local CLI", description: "Runs your command once per recording", section: .aiCLI) {
                     localCLIRows
                 }
@@ -104,7 +104,7 @@ struct SettingsAITab: View {
                 }
             }
 
-            if searchRequest?.section == .aiProviders || settings.aiEngine == .remoteEndpoint
+            if searchRequest?.section == .aiProviders || settings.usesAIEngineAnywhere(.remoteEndpoint)
                 || (settings.aiEngine == .localCLI && settings.chatFallbackEngine == .remoteEndpoint) {
                 SettingsCard("Providers", description: "For remote analysis and chat", section: .aiProviders) {
                     SettingsProviderList(kind: .ai, endpoints: $settings.aiEndpoints, defaultID: $settings.defaultAIEndpointId)

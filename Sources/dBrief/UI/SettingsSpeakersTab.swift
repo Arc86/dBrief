@@ -20,9 +20,10 @@ struct SettingsSpeakersTab: View {
 
     var body: some View {
         @Bindable var settings = appSettings
-        let engine = appSettings.effectiveTranscriptionEngine
+        // Settings pages show app defaults; a profile's engine applies only to its recordings.
+        let engine = appSettings.transcriptionEngine
         let supported = SpeakerIdentificationSupport.isSupported(
-            engine: engine, remoteProvider: appSettings.effectiveDefaultTranscriptionEndpoint?.provider)
+            engine: engine, remoteProvider: appSettings.defaultTranscriptionEndpoint?.provider)
 
         SettingsPageScaffold(page: .speakers, layout: .fill) {
             // One slim row, so the library below gets the page's height.

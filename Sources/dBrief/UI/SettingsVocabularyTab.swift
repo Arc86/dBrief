@@ -79,7 +79,7 @@ struct SettingsVocabularyTab: View {
                     .onTapGesture(count: 2) { startEdit(at: index, term: term) }
                 }
                 if appSettings.customVocabulary.isEmpty {
-                    SettingsRow("No terms yet", caption: "Profiles can add their own terms on top of these.")
+                    SettingsRow("No terms yet", caption: "A profile can use its own list instead of this one.")
                 }
             }
         }

@@ -146,6 +146,13 @@ extension AppSettings {
         activeProfile.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
     }
 
+    /// Tasks for a file dropped into a watched folder: the active profile's After
+    /// recording choices, like the engine, folders and AI it is processed with.
+    var watchedFolderTasks: (transcribe: Bool, summary: Bool, actionItems: Bool, tags: Bool) {
+        let transcribe = effectiveAutoTranscribe
+        return (transcribe, effectiveAutoSummary && transcribe, effectiveAutoActionItems && transcribe, effectiveAutoTags && transcribe)
+    }
+
     func resolvedAutoLoadCalendarParticipants(for profile: MeetingProfile?) -> Bool {
         profile?.overrides.autoLoadCalendarParticipants ?? autoLoadCalendarParticipants
     }
@@ -155,6 +162,28 @@ extension AppSettings {
             overridePath: activeProfile.overrides.recordingFolderPath,
             fallback: recordingFolderURL
         )
+    }
+
+    /// The app default or any profile uses `engine`, so its setup card must stay visible.
+    func usesTranscriptionEngineAnywhere(_ engine: TranscriptionEngine) -> Bool {
+        transcriptionEngine == engine || profiles.contains { $0.overrides.transcriptionEngine == engine }
+    }
+
+    func usesAIEngineAnywhere(_ engine: AIEngine) -> Bool {
+        aiEngine == engine || profiles.contains { $0.overrides.aiEngine == engine }
+    }
+
+    /// Every folder auto-delete must sweep: the app's folders plus each profile's
+    /// folder overrides, so recordings saved under a non-active profile also age out.
+    func retentionFolders(for category: RetentionCategory) -> [URL] {
+        var folders = [recordingFolderURL]
+        folders += profiles.map { resolvedFolderURL(overridePath: $0.overrides.recordingFolderPath, fallback: recordingFolderURL) }
+        if category == .transcripts {
+            folders.append(transcriptionFolderURL)
+            folders += profiles.map { resolvedFolderURL(overridePath: $0.overrides.transcriptionFolderPath, fallback: transcriptionFolderURL) }
+        }
+        var seen = Set<String>()
+        return folders.filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 
     var effectiveTranscriptionFolderURL: URL {
@@ -181,14 +210,14 @@ extension AppSettings {
         activeProfile.overrides.obsidianDefaultFolderRelativePath ?? obsidianDefaultFolderRelativePath
     }
 
-    /// The Whisper helper config for the *current raw* settings, built identically
-    /// to the transcription path so a prewarmed model satisfies `loadedConfig ==
-    /// config` in the helper and is reused (not reloaded). Mirrors the construction
-    /// in `RecordingManager.transcribeRecordingAudio` — keep the two in lockstep.
+    /// The Whisper helper config, built identically for prewarm and transcription so a
+    /// prewarmed model satisfies `loadedConfig == config` in the helper and is reused.
+    /// Uses the active profile's language, like every other engine.
     var whisperRuntimeConfig: WhisperRuntimeConfig {
-        WhisperRuntimeConfig(
+        let language = effectiveTranscriptionLanguage
+        return WhisperRuntimeConfig(
             modelName: whisperModelName,
-            language: transcriptionLanguage.isEmpty ? nil : transcriptionLanguage,
+            language: language.isEmpty ? nil : language,
             diarizationEnabled: diarizationEnabled,
             computeUnits: whisperComputeUnits
         )

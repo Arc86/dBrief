@@ -27,7 +27,7 @@ struct SettingsStorageTab: View {
                 }
             }
 
-            SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open",
+            SettingsCard("Auto-delete", description: "Runs at launch and then daily while dBrief is open, in these folders and every profile's folders",
                          section: .storageRetention) {
                 retentionRows(
                     title: "Delete old recordings",
@@ -60,8 +60,11 @@ struct SettingsStorageTab: View {
         ) { category in
             Button("Delete", role: .destructive) { runCleanup(category) }
             Button("Cancel", role: .cancel) { pendingCleanup = nil }
-        } message: { _ in
-            Text("This permanently deletes matching files. This can't be undone.")
+        } message: { category in
+            // Name the folders: profiles can save recordings outside the ones shown above.
+            Text(verbatim: "This permanently deletes matching files in "
+                 + ListFormatter.localizedString(byJoining: appSettings.retentionFolders(for: category).map(\.lastPathComponent))
+                 + ". This can't be undone.")
         }
     }
 
@@ -141,13 +144,7 @@ struct SettingsStorageTab: View {
         runningCleanup = category
 
         let days = retentionDays(for: category)
-        let folders: [URL]
-        switch category {
-        case .recordings:
-            folders = [appSettings.effectiveRecordingFolderURL]
-        case .transcripts:
-            folders = [appSettings.effectiveRecordingFolderURL, appSettings.effectiveTranscriptionFolderURL]
-        }
+        let folders = appSettings.retentionFolders(for: category)
 
         Task {
             do {

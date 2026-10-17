@@ -144,21 +144,19 @@ final class AppContext {
         // An interrupted Phase 5A job may be actively reading an old recording.
         // Defer its age-based sweep until a later scheduler run after processing ends.
         guard !recordingManager.hasActiveProcessingJob else { return }
-        let recordingsFolder = appSettings.effectiveRecordingFolderURL
-        let transcriptionFolder = appSettings.effectiveTranscriptionFolderURL
         var combined = RetentionCleanupResult()
 
         do {
             if appSettings.autoDeleteRecordingsEnabled {
                 let days = appSettings.autoDeleteRecordingsDays
-                let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: [recordingsFolder])
+                let result = try await recordingManager.runRetentionCleanup(category: .recordings, days: days, folders: appSettings.retentionFolders(for: .recordings))
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
             }
             if appSettings.autoDeleteTranscriptsEnabled {
                 let days = appSettings.autoDeleteTranscriptsDays
                 let result = try await recordingManager.runRetentionCleanup(category: .transcripts, days: days,
-                    folders: [recordingsFolder, transcriptionFolder])
+                    folders: appSettings.retentionFolders(for: .transcripts))
                 combined.filesDeleted += result.filesDeleted
                 combined.bytesFreed += result.bytesFreed
             }

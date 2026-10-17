@@ -40,7 +40,7 @@ struct SettingsWatchedFoldersTab: View {
 
                 SettingsCard("Notifications") {
                     SettingsRow("Notify when a file is detected",
-                                caption: "New files use your After recording defaults and are picked up once they finish copying.") {
+                                caption: "New files use the active profile's After recording choices, engine and folders, and are picked up once they finish copying.") {
                         Toggle("Notify when a file is detected", isOn: $settings.watchedFolderNotifyOnDetect)
                     }
                 }

@@ -327,6 +327,10 @@ final class AppSettings {
         case remoteEndpoint
         case localCLI
 
+        /// Unified engines write all results in one call and honour "Results language";
+        /// the remote endpoint follows its prompts instead.
+        var usesResultsLanguage: Bool { self != .remoteEndpoint }
+
         var displayName: String {
             switch self {
             case .appleIntelligence: "Apple Intelligence"

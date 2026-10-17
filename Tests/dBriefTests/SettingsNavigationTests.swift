@@ -62,4 +62,12 @@ struct SettingsNavigationTests {
         #expect(SettingsPage.meetings.profileFields == [.calendarEffort])
         #expect(!SettingsPage.ai.profileFields.contains(.calendarEffort))
     }
+
+    /// The override notice missed "Load calendar attendees" and vanished on integration detail pages.
+    @Test func everyOverriddenControlIsCoveredByANotice() {
+        #expect(SettingsPage.afterRecording.profileFields.contains(.calendarParticipantsTask))
+        #expect(SettingsPage.profileFields(for: .obsidian) == [.obsidianVault, .obsidianFolder])
+        #expect(SettingsPage.profileFields(for: .todoist) == [.todoistProject])
+        #expect(SettingsPage.profileFields(for: .webhook).isEmpty)
+    }
 }

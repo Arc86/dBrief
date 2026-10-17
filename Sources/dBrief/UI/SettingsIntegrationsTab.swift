@@ -23,9 +23,10 @@ struct SettingsIntegrationsTab: View {
         SettingsPageScaffold(page: .integrations, notice: {
             VStack(spacing: 10) {
                 credentialStorageNotice
-                if openDestination == nil {
-                    SettingsProfileScopeView(fields: SettingsPage.integrations.profileFields, editProfile: editProfile)
-                }
+                // Detail pages keep the notice, for the fields that page edits.
+                SettingsProfileScopeView(fields: openDestination.map(SettingsPage.profileFields(for:))
+                                            ?? SettingsPage.integrations.profileFields,
+                                         editProfile: editProfile)
             }
         }) {
             if let destination = openDestination {

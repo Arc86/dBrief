@@ -71,7 +71,7 @@ enum SettingsSearch {
         .init("aiEnabled", "Enable AI processing", "analysis summary actions tags on off", section: .aiEnabled),
         .init("aiEngine", "AI engine", "gemma qwen apple intelligence local cli remote", section: .aiEngine),
         .init("aiModels", "Gemma model", "gemma model download remove cache", section: .aiEngine),
-        .init("resultsLanguage", "Results language", "output language gemma write results in dutch english", section: .aiResultsLanguage),
+        .init("resultsLanguage", "Results language", "output language gemma apple intelligence local cli write results in dutch english", section: .aiResultsLanguage),
         .init("speakerIdentification", "Identify speakers", "diarization who said what recognise voices confirm first", section: .speakerIdentification),
         .init("meetingMatching", "Meeting matching", "calendar match window recording day meetings", section: .meetingMatching),
         .init("transcriptionAdvanced", "Transcription compute and warm-up", "neural engine gpu compute units keep model warm prewarm refresh model list", section: .transcriptionAdvanced),

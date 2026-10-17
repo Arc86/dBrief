@@ -115,7 +115,7 @@ struct SettingsTranscriptionTab: View {
                 }
             }
 
-            if engine == .remoteEndpoint || searchRequest?.section == .transcriptionServices {
+            if settings.usesTranscriptionEngineAnywhere(.remoteEndpoint) || searchRequest?.section == .transcriptionServices {
                 SettingsCard("Providers", description: "For remote transcription", section: .transcriptionServices) {
                     SettingsProviderList(kind: .transcription, endpoints: $settings.transcriptionEndpoints,
                                          defaultID: $settings.defaultTranscriptionEndpointId)
@@ -260,24 +260,10 @@ struct SettingsTranscriptionTab: View {
         if settings.transcriptionEngine == .appleSpeech {
             AppleSpeechLanguagePicker(selection: $settings.transcriptionLanguage)
         } else {
-            Picker("Spoken language", selection: $settings.transcriptionLanguage) {
-                Text("Auto-detect").tag("")
-                Divider()
-                ForEach(Self.languages, id: \.code) { language in
-                    Text(language.name).tag(language.code)
-                }
-            }
-            .pickerStyle(.menu)
-            .disabled(settings.transcriptionEngine == .parakeetLocal)
+            TranscriptionLanguagePicker(selection: $settings.transcriptionLanguage)
+                .disabled(settings.transcriptionEngine == .parakeetLocal)
         }
     }
-
-    private static let languages: [(code: String, name: String)] = [
-        ("en", "English"), ("nl", "Dutch"), ("de", "German"), ("fr", "French"), ("es", "Spanish"),
-        ("it", "Italian"), ("pt", "Portuguese"), ("ja", "Japanese"), ("zh", "Chinese"), ("ko", "Korean"),
-        ("ru", "Russian"), ("ar", "Arabic"), ("hi", "Hindi"), ("pl", "Polish"), ("tr", "Turkish"),
-        ("uk", "Ukrainian"), ("sv", "Swedish"), ("da", "Danish"), ("no", "Norwegian"),
-    ]
 
     private var languageCaption: LocalizedStringKey? {
         let settings = appSettings
@@ -347,5 +333,33 @@ struct SettingsTranscriptionTab: View {
                     .accessibilityValue(Text(value))
             }
         }
+    }
+}
+
+/// The spoken-language menu for Whisper and remote engines, shared by the
+/// Transcription page and the profile editor's override.
+struct TranscriptionLanguagePicker: View {
+    @Binding var selection: String
+
+    static let languages: [(code: String, name: String)] = [
+        ("en", "English"), ("nl", "Dutch"), ("de", "German"), ("fr", "French"), ("es", "Spanish"),
+        ("it", "Italian"), ("pt", "Portuguese"), ("ja", "Japanese"), ("zh", "Chinese"), ("ko", "Korean"),
+        ("ru", "Russian"), ("ar", "Arabic"), ("hi", "Hindi"), ("pl", "Polish"), ("tr", "Turkish"),
+        ("uk", "Ukrainian"), ("sv", "Swedish"), ("da", "Danish"), ("no", "Norwegian"),
+    ]
+
+    var body: some View {
+        Picker("Spoken language", selection: $selection) {
+            Text("Auto-detect").tag("")
+            Divider()
+            ForEach(Self.languages, id: \.code) { language in
+                Text(language.name).tag(language.code)
+            }
+            // Keep a code typed into an older version selectable.
+            if !selection.isEmpty, !Self.languages.contains(where: { $0.code == selection }) {
+                Text(selection).tag(selection)
+            }
+        }
+        .pickerStyle(.menu)
     }
 }

@@ -494,11 +494,8 @@ struct SettingsProfilesTab: View {
                         AppleSpeechLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
                             fallback: appSettings.transcriptionLanguage))
                     } else {
-                        NativeTextField(
-                            placeholder: "Language code (e.g. en, nl)",
-                            text: overrideBinding(\.transcriptionLanguage, fallback: appSettings.transcriptionLanguage)
-                        )
-                        .frame(height: 22)
+                        TranscriptionLanguagePicker(selection: overrideBinding(\.transcriptionLanguage,
+                            fallback: appSettings.transcriptionLanguage))
                     }
                 }
                 if (selectedProfile?.overrides.transcriptionEngine ?? appSettings.transcriptionEngine) == .parakeetLocal {
