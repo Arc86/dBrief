@@ -203,12 +203,27 @@ struct TranscriptBrowserView: View {
 
     // MARK: - Shell panes
 
+    /// The same Remove actions the menu panel's Queue & Recovery offers.
+    private func removeAction(for work: LibraryWorkItem) -> (@MainActor () async -> Void)? {
+        switch work.target {
+        case .queue:
+            guard let audio = work.audioURL else { return nil }
+            return { await recordingManager.removeQueuedItem(audio); library.refresh() }
+        case .recovery, .delivery:
+            return { await recordingManager.dismissRecoveryItem(work.recoveryID); library.refresh() }
+        case .capture:
+            return nil
+        }
+    }
+
     @ViewBuilder
     private var mainPane: some View {
         if let work = selectedWork {
             LibraryWorkDetailView(item: work,
                 disabledReason: recordingManager.libraryWorkBlockMessage(work.target)
-                    ?? (library.isQuerying || library.error != nil ? "The library is updating. Try again in a moment." : nil)) {
+                    ?? (library.isQuerying || library.error != nil ? "The library is updating. Try again in a moment." : nil),
+                remove: removeAction(for: work),
+                openRecording: work.audioURL.map { url in { appState.pendingTranscriptSelectionURL = url } }) {
                 try await recordingManager.performLibraryWork(work)
                 if recordingManager.reprocessingRecoveryReady { library.refresh() }
             }
@@ -347,7 +362,7 @@ struct TranscriptBrowserView: View {
         case .failedJobs, .queuedInterrupted:
             Group {
                 LibrarySectionHeader(
-                    title: library.selectedView == .failedJobs ? "Failed jobs" : "Queued / interrupted",
+                    title: library.selectedView.title,
                     count: library.workMatches.count
                 )
                 ForEach(library.workMatches) { item in
@@ -542,7 +557,7 @@ struct TranscriptBrowserView: View {
     }
 }
 
-/// A library row plus its Reprocess context menu. Equatable over the row's data,
+/// A library row plus the shared recording context menu. Equatable over the row's data,
 /// so a selection change re-renders only the two rows whose `isSelected` flipped
 /// instead of every row and every context menu (each menu wraps a fresh
 /// `Recording` and a `ReprocessingMenu`, which `.contextMenu` builds eagerly).
@@ -559,8 +574,8 @@ private struct LibraryRecordingRow: View, Equatable {
     var body: some View {
         SidebarRecordingRow(item: item, isSelected: isSelected, onTap: onSelect)
             .contextMenu {
-                ReprocessingMenu(recording: TranscriptBrowserView.makeRecording(from: item),
-                                 hasTranscript: item.hasTranscript, presentationStyle: .window)
+                RecordingContextMenu(recording: TranscriptBrowserView.makeRecording(from: item),
+                                     hasTranscript: item.hasTranscript, open: onSelect)
             }
     }
 }

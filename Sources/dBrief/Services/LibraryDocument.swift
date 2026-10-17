@@ -3,7 +3,16 @@ import Foundation
 enum LibraryRecordingStatus: String, Codable, CaseIterable, Sendable {
     case queued, failed, incomplete, unprocessed, done
 
-    var title: String { rawValue.capitalized }
+    /// Shared with the menu panel's `RecordingStatus` labels.
+    var title: String {
+        switch self {
+        case .queued: "Queued"
+        case .failed: "Needs attention"
+        case .incomplete: "Incomplete"
+        case .unprocessed: "Not processed"
+        case .done: "Done"
+        }
+    }
 
     static func resolve(job: LibraryJobSummary?, queued: Bool, transcript: Bool, malformed: Bool) -> Self {
         if let job, !job.dismissed {

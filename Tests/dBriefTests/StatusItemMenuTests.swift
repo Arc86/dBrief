@@ -21,6 +21,16 @@ struct StatusItemMenuTests {
         #expect(Array(entries.prefix(2)) == [.resumeRecording, .stopRecording])
     }
 
+    /// The icon's menu had no way to stop processing or start the queue.
+    @Test func processingAndQueuedWorkAreReachableFromTheIcon() {
+        let entries = StatusItemMenuEntry.entries(isRecording: false, isPaused: false, isIdle: true, canImport: true,
+                                                  isProcessing: true, queuedCount: 2)
+        #expect(entries.contains(.stopProcessing))
+        #expect(entries.contains(.processQueue(count: 2)))
+        let idle = StatusItemMenuEntry.entries(isRecording: false, isPaused: false, isIdle: true, canImport: true)
+        #expect(!idle.contains(.stopProcessing) && !idle.contains { if case .processQueue = $0 { true } else { false } })
+    }
+
     @Test func recordIsDisabledWhenCaptureIsNotIdle() {
         let entries = StatusItemMenuEntry.entries(isRecording: false, isPaused: false, isIdle: false, canImport: false)
         #expect(entries.first == .startRecording(enabled: false))

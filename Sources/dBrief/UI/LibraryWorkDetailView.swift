@@ -7,6 +7,9 @@ struct LibraryWorkDetailView: View {
     let item: LibraryWorkItem
     /// Why the action can't start now; shown under the disabled button.
     let disabledReason: String?
+    /// "Remove from List" / "Remove from Queue", as in the menu panel's Queue & Recovery.
+    var remove: (@MainActor () async -> Void)? = nil
+    var openRecording: (() -> Void)? = nil
     let action: @MainActor () async throws -> Void
     @State private var actionTask: Task<Void, Never>?
     @State private var error: String?
@@ -49,6 +52,21 @@ struct LibraryWorkDetailView: View {
                     }
                     .buttonStyle(.typographyProminent)
                     .disabled(disabledReason != nil || actionTask != nil)
+                    if let openRecording {
+                        Button("Open Recording", action: openRecording)
+                    }
+                    if let remove {
+                        Button(item.target == .queue ? "Remove from Queue" : "Remove from List") {
+                            actionTask = Task { @MainActor in
+                                defer { actionTask = nil }
+                                await remove()
+                            }
+                        }
+                        .disabled(actionTask != nil)
+                        .help(item.target == .queue
+                              ? "Remove from the queue without deleting the recording"
+                              : "Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards.")
+                    }
                     if actionTask != nil { ProgressView().controlSize(.small) }
                 }
                 if let disabledReason, actionTask == nil {

@@ -143,35 +143,21 @@ struct TranscriptionProgressView: View {
                 MenuPanelHairline()
                 HStack(spacing: 8) {
                     Button(copied ? "Copied" : "Copy notes") {
-                        if
-                            let transcript = recording.transcription?.text,
-                            let summary = recording.summary
-                        {
-                            let insights = LocalInsightsResult(
-                                summary: summary,
-                                actionItems: recording.actionItems ?? [],
-                                tags: recording.tags ?? [],
-                                sentiment: recording.sentiment ?? "Neutral"
-                            )
-                            let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-                            Task {
-                                copied = await RecordingClipboard.copy(markdown, for: recording)
-                                try? await Task.sleep(for: .seconds(2))
-                                copied = false
-                            }
-                        } else if let text = recording.transcription?.text {
-                            Task {
-                                copied = await RecordingClipboard.copy(text, for: recording)
-                                try? await Task.sleep(for: .seconds(2))
-                                copied = false
-                            }
+                        // Same notes as every other Copy Notes: summary, then action items.
+                        guard let text = RecordingNotesText.compose(summary: recording.summary,
+                            actionItems: recording.actionItems, transcript: recording.transcription?.text) else { return }
+                        Task {
+                            copied = await RecordingClipboard.copy(text, for: recording)
+                            try? await Task.sleep(for: .seconds(2))
+                            copied = false
                         }
                     }
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
 
-                    Button("Close") {
+                    Button("Done") {
                         appState.processingSteps.removeAll()
                     }
+                    .help("Clear this brief from the menu; the recording stays in your library")
                     .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
                 }
             }

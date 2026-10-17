@@ -22,6 +22,8 @@ struct RecordingViewerActions {
     var focusReader: (() -> Void)? = nil
     /// +1 / −1 step of the Focus Reader's text size; nil elsewhere.
     var changeTextSize: ((Int) -> Void)? = nil
+    /// Review and retry this recording's integration deliveries.
+    var reviewIntegrations: (() -> Void)? = nil
 }
 
 enum TextInputFocus {
@@ -97,6 +99,8 @@ struct RecordingCommands: Commands {
             Button("Detect Speakers Again…") { viewer?.reprocess?(.speakers) }
                 .disabled(viewer?.reprocess == nil || viewer?.hasTranscript != true)
             Divider()
+            Button("Integrations…") { viewer?.reviewIntegrations?() }
+                .disabled(viewer?.reviewIntegrations == nil)
             Button("Show in Finder") { viewer?.revealInFinder?() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(viewer?.revealInFinder == nil)

@@ -336,15 +336,8 @@ struct ResultsView: View {
     // MARK: - Helpers
 
     private func copyNotes(recording: Recording) {
-        var parts: [String] = []
-        if let summary = recording.summary { parts.append("## Summary\n\(summary)") }
-        if let items = recording.actionItems, !items.isEmpty {
-            parts.append("## Action Items\n" + items.map { "- \($0)" }.joined(separator: "\n"))
-        }
-        if let transcript = recording.transcription?.text, parts.isEmpty {
-            parts.append(transcript)
-        }
-        let text = parts.joined(separator: "\n\n")
+        let text = RecordingNotesText.compose(summary: recording.summary, actionItems: recording.actionItems,
+                                              transcript: recording.transcription?.text) ?? ""
         Task {
             copied = await RecordingClipboard.copy(text, for: recording)
             try? await Task.sleep(for: .seconds(2))

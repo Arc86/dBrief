@@ -20,3 +20,15 @@ import Testing
         }
     }
 }
+
+/// The menu panel and the library used two vocabularies for the same recording
+/// ("Recorded" vs "Unprocessed", "Analyzed" vs "Done", no failed state in the panel).
+@Suite struct RecordingStatusVocabularyTests {
+    @Test func bothListsUseTheSameWords() {
+        #expect(RecordingStatus.recorded.label == LibraryRecordingStatus.unprocessed.title)
+        #expect(LibraryRecordingStatus.unprocessed.title == "Not processed")
+        #expect(RecordingStatus.queued.label == LibraryRecordingStatus.queued.title)
+        #expect(RecordingStatus.needsAttention.label == LibraryRecordingStatus.failed.title)
+        #expect(LibraryRecordingStatus.failed.title == "Needs attention")
+    }
+}

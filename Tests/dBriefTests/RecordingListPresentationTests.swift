@@ -61,7 +61,7 @@ struct RecordingListPresentationTests {
                   date: .now, size: 0, duration: 0, profileName: nil, hasTranscript: transcript,
                   hasRichTranscript: false, hasInsights: insights, isQueued: queued)
         }
-        #expect(item().status.label == "Recorded")
+        #expect(item().status.label == "Not processed")
         #expect(item(transcript: true).status.label == "Transcribed")
         #expect(item(transcript: true, insights: true).status.label == "Analyzed")
         #expect(item(transcript: true, insights: true, queued: true).status.label == "Queued")
