@@ -190,6 +190,10 @@ struct PostRecordingSheet: View {
             guard !recordingManager.postRecordingAction.isBusy else { return }
             loadProfileTaskDefaults()
         }
+        // A new capture can replace this form; it queues the recording with these choices.
+        .onChange(of: currentChoices, initial: true) { _, choices in
+            appState.currentRecording?.reviewChoices = choices
+        }
     }
 
     // MARK: - Title
@@ -762,6 +766,13 @@ struct PostRecordingSheet: View {
         if let cal = recording.calendarEvent?.title.trimmingCharacters(in: .whitespacesAndNewlines),
            !cal.isEmpty, trimmed.compare(cal, options: .caseInsensitive) == .orderedSame { return false }
         return true
+    }
+
+    private var currentChoices: PostRecordingChoices {
+        PostRecordingChoices(transcribe: transcribe, summary: summary && transcribe,
+            actionItems: actionItems && transcribe, tags: tags && transcribe,
+            loadCalendarParticipants: acceptedCalendarParticipantLoad, participants: participantNames,
+            titleWasUserProvided: appState.currentRecording.map { isCustomTitle(sanitizedMeetingTitle, recording: $0) } ?? false)
     }
 
     private func applyFieldsToRecording() {

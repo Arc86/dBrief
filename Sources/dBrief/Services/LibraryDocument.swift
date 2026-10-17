@@ -32,11 +32,12 @@ struct LibraryJobSummary: Codable, Sendable {
         self.init(RecoveryQueueEntry.JobFacts(job))
     }
 
-    init?(_ job: RecoveryQueueEntry.JobFacts) {
+    init?(_ job: RecoveryQueueEntry.JobFacts, deliveriesComplete: Bool = false) {
         guard let path = job.audioPath else { return nil }
         audioPath = path
         updatedAt = job.updatedAt
-        status = job.status
+        status = PersistedProcessingJob.isFinished(status: job.status, markdownGenerated: job.markdownCompleted,
+                                                   deliveriesComplete: deliveriesComplete) ? .completed : job.status
         dismissed = job.dismissedFromQueue == true
         associatedApp = job.associatedApp
     }

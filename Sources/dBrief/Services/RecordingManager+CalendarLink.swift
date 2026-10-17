@@ -86,9 +86,8 @@ extension RecordingManager {
         defer { reprocessingAdmissionBusy = false }
         guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
         let jobs = await processingJobStore.discover()
-        guard jobs.issues.isEmpty, !jobs.jobs.contains(where: {
-            $0.status != .completed && $0.dismissedFromQueue != true && $0.source.finalizedAudioPath == audio.path
-        }) else { throw ReprocessingError.busy }
+        guard jobs.issues.isEmpty,
+              !(await unfinishedJobOwns(audio, jobs: jobs.jobs)) else { throw ReprocessingError.busy }
         try await RecordingMetadataStore.shared.linkCalendar(event, audioURL: audio,
             updateTitle: updateTitle, updateParticipants: updateParticipants)
         recording.calendarEvent = event

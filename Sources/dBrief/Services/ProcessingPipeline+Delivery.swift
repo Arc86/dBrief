@@ -100,6 +100,15 @@ extension ProcessingPipeline {
         try Task.checkCancellation()
         try await validateOwnership()
         try Task.checkCancellation()
+        // Recovery holds back sends it cannot safely repeat. With nothing left to
+        // send there is nothing to hold, and a parked job could never finish.
+        if stopBeforeIntegrations, batch.isComplete {
+            try await checkpoint()
+            try Task.checkCancellation()
+            try await validateOwnership()
+            try Task.checkCancellation()
+            return .init(batch: batch, held: false, completion: batch.successfulWorkflowCompletion)
+        }
         if stopBeforeIntegrations {
             try await park()
             try Task.checkCancellation()

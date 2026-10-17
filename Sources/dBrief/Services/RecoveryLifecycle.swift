@@ -48,8 +48,8 @@ struct RecoveryLifecycle: Sendable {
         let pendingDeliveryIDs = Set(batches.filter { !$0.isComplete && $0.dismissedFromQueue != true }.map(\.id))
         let completedDeliveryIDs = Set(batches.filter(\.isComplete).map(\.id))
         let pendingRecords = records.filter {
-            let finished = $0.status == .completed || ($0.checkpoint.hasCompleted(.markdownGenerated) && completedDeliveryIDs.contains($0.id))
-            return (!finished && $0.dismissedFromQueue != true) || pendingDeliveryIDs.contains($0.id)
+            (!$0.isFinished(completedDeliveryIDs: completedDeliveryIDs) && $0.dismissedFromQueue != true)
+                || pendingDeliveryIDs.contains($0.id)
         }
         for record in pendingRecords {
             if let path = record.source.finalizedAudioPath { protected.insert(Self.base(URL(fileURLWithPath: path))) }

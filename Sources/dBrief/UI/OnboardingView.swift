@@ -8,6 +8,7 @@ struct OnboardingView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
     @State private var step = 0
     @State private var speechStatus = SFSpeechRecognizer.authorizationStatus()
     @State private var calendarStatus = EKEventStore.authorizationStatus(for: .event)
@@ -394,7 +395,9 @@ struct OnboardingView: View {
                     Text("Add your server URL and key in Settings before recording.")
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
-                    SettingsLink { Text("Settings") }
+                    // The app has a Settings window, not a SwiftUI Settings scene,
+                    // so SettingsLink would do nothing here.
+                    Button("Settings") { MenuBarPanel.open("settings", with: openWindow) }
                         .buttonStyle(.typographyBordered)
                         .controlSize(.small)
                 }

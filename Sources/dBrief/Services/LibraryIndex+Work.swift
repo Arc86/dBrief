@@ -145,8 +145,12 @@ extension LibraryIndex {
 
     nonisolated func latestJobs(_ sources: [String: LibraryWorkSource]) -> [String: LibraryJobSummary] {
         var latest: [String: LibraryJobSummary] = [:]
+        let completedDeliveryIDs = Set(sources.values.compactMap {
+            if case .delivery(let batch) = $0, batch.isComplete { batch.id } else { nil }
+        })
         for (_, source) in sources.sorted(by: { $0.key < $1.key }) {
-            guard case .job(let job) = source, let summary = LibraryJobSummary(job) else { continue }
+            guard case .job(let job) = source,
+                  let summary = LibraryJobSummary(job, deliveriesComplete: completedDeliveryIDs.contains(job.id)) else { continue }
             if latest[summary.audioPath].map({ $0.updatedAt < summary.updatedAt }) ?? true {
                 latest[summary.audioPath] = summary
             }

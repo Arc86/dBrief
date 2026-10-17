@@ -21,6 +21,21 @@ final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
 
     private(set) var playbackRate: Float = 1.0
 
+    /// Every live player, so a new capture can silence all of them (library, viewer,
+    /// spoken summary, speaker review, voice preview).
+    private static let live = NSHashTable<AudioPlayer>.weakObjects()
+
+    override init() {
+        super.init()
+        Self.live.add(self)
+    }
+
+    /// Pauses (never stops) every playing player, keeping each one's place. Called when
+    /// a capture starts: system audio capture would otherwise record the playback.
+    static func pauseAll() {
+        for player in live.allObjects where player.isPlaying { player.pause() }
+    }
+
     func play(url: URL) {
         stop()
 

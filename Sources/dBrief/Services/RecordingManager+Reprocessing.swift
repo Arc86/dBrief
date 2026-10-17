@@ -101,9 +101,8 @@ extension RecordingManager {
         defer { reprocessingAdmissionBusy = false }
         guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
         let existingJobs = await processingJobStore.discover()
-        guard existingJobs.issues.isEmpty, !existingJobs.jobs.contains(where: {
-            $0.status != .completed && $0.dismissedFromQueue != true && $0.source.finalizedAudioPath == audio.path
-        }) else { throw ReprocessingError.busy }
+        guard existingJobs.issues.isEmpty,
+              !(await unfinishedJobOwns(audio, jobs: existingJobs.jobs)) else { throw ReprocessingError.busy }
         try Task.checkCancellation()
         let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
         let priorCalendar = existingJobs.jobs

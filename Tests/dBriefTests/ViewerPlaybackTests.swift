@@ -9,6 +9,23 @@ import Testing
 @MainActor
 @Suite("Viewer audio playback", .serialized)
 struct ViewerPlaybackTests {
+    @Test("Starting a capture pauses every player so old audio is never recorded")
+    func pauseAllStopsEveryPlayingInstanceButKeepsItsPlace() throws {
+        let url = try makeSilentWAV(duration: 8)
+        let library = AudioPlayer(), preview = AudioPlayer(), idle = AudioPlayer()
+        defer {
+            library.stop(); preview.stop()
+            try? FileManager.default.removeItem(at: url)
+        }
+        library.play(url: url)
+        preview.play(url: url)
+        #expect(library.isPlaying && preview.isPlaying && !idle.isPlaying)
+        AudioPlayer.pauseAll()
+        #expect(!library.isPlaying && !preview.isPlaying && !idle.isPlaying)
+        // Paused, not stopped: the user can resume where they were.
+        #expect(library.currentFileURL == url && preview.currentFileURL == url)
+    }
+
     @Test("The real player supports play, pause, seek, and rate changes on silent WAV audio")
     func silentWaveTransportControls() throws {
         let url = try makeSilentWAV(duration: 8)

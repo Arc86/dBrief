@@ -22,40 +22,29 @@ struct RecordingReviewSlotTests {
         try #require(condition())
     }
 
-    @Test func inFlightImportCannotReplaceReviewWhileSaveOwnsIt() async throws {
-        let h = Harness(), original = h.recording(), imported = h.recording()
+    @Test func importIsRefusedWhileAReviewIsOpen() throws {
+        let h = Harness(), original = h.recording()
         h.state.currentRecording = original; h.state.showPostRecordingSheet = true
-        let pendingImport = try #require(h.slot.snapshotForImport())
-        let token = try #require(h.action.begin(recordingID: original.id, action: .skip))
-        let saving = Task {
-            await h.suspend() // The finalizer has not returned yet.
-            return h.slot.dismiss(for: original, actionToken: token)
-        }
-        try await wait { h.waiter != nil }
+        // Replacing the review would drop the meeting the user just recorded.
+        #expect(!h.slot.canImport)
         #expect(h.slot.snapshotForImport() == nil)
-        #expect(!h.slot.acceptImport(imported, replacing: pendingImport))
         #expect(h.state.currentRecording === original && h.state.showPostRecordingSheet)
-        h.release()
-        #expect(await saving.value)
-        h.action.finish(token: token)
-        #expect(!h.state.showPostRecordingSheet && h.state.currentRecording === original)
     }
 
     @Test(arguments: ["capture", "termination", "maintenance", "saving"])
     func importedResultRechecksAdmissionAfterPreparation(reason: String) async throws {
-        let h = Harness(), original = h.recording(), imported = h.recording()
-        h.state.currentRecording = original; h.state.showPostRecordingSheet = true
+        let h = Harness(), imported = h.recording()
         let snapshot = try #require(h.slot.snapshotForImport())
         let preparing = Task { await h.suspend(); return h.slot.acceptImport(imported, replacing: snapshot) }
         try await wait { h.waiter != nil }
         switch reason {
         case "capture", "termination": h.captureBusy = true
         case "maintenance": h.maintenance = true
-        default: _ = h.action.begin(recordingID: original.id, action: .delete)
+        default: _ = h.action.begin(recordingID: UUID(), action: .delete)
         }
         h.release()
         #expect(await preparing.value == false)
-        #expect(h.state.currentRecording === original && h.state.showPostRecordingSheet)
+        #expect(h.state.currentRecording == nil && !h.state.showPostRecordingSheet)
     }
 
     @Test func delayedBackgroundPreparationCannotDismissAnotherCapturesReview() async throws {

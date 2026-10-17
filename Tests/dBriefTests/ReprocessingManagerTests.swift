@@ -195,6 +195,68 @@ struct ReprocessingManagerTests {
         fixture.state.processingJob = nil
     }
 
+    @Test func newCaptureQueuesTheReviewItDisplacesWithTheReviewsChoices() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        #expect(fixture.manager.takeReviewForNewCapture() == nil)
+        let recording = fixture.recording()
+        fixture.state.currentRecording = recording
+        fixture.state.showPostRecordingSheet = true
+        recording.reviewChoices = PostRecordingChoices(transcribe: true, summary: false, actionItems: true, tags: false,
+            loadCalendarParticipants: false, participants: ["Sam"], titleWasUserProvided: true)
+        let review = try #require(fixture.manager.takeReviewForNewCapture())
+        // The new capture takes the review slot before the old review is saved.
+        let next = Recording(fileURL: fixture.root.appendingPathComponent("next.caf"))
+        fixture.state.currentRecording = next
+        fixture.state.showPostRecordingSheet = false
+        await fixture.manager.queueDisplacedReview(review)
+        let marker = fixture.sidecar("queue.json")
+        let item = try QueueItem.decode(Data(contentsOf: marker), from: marker)
+        #expect(item.transcribe && !item.summary && item.actionItems && !item.tags)
+        #expect(item.selectedParticipants == ["Sam"] && item.titleWasUserProvided)
+        // The user had not chosen to process it yet, so it waits in the queue.
+        #expect(!item.autoQueued)
+        #expect(fixture.state.currentRecording === next)
+        #expect(fixture.state.durabilityNotice != nil && !fixture.state.durabilityNoticeIsWarning)
+        #expect(fixture.state.lastError == nil)
+    }
+
+    @Test func recoveredJobWithNothingLeftToSendDoesNotBlockLaterWork() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = RecordingMetadataPayload(dateISO8601: ISO8601DateFormatter().string(from: date),
+            durationSeconds: 60, meetingTitle: "Parked", masterFileName: fixture.audio.lastPathComponent,
+            segmentFileNames: [], warnings: [], participants: [])
+        try JSONEncoder().encode(payload).write(to: fixture.sidecar("json"))
+        // Launch recovery parked this job at the Markdown boundary; it had no integrations.
+        var parked = PersistedProcessingJob(id: UUID(), recordingID: UUID(), createdAt: date, updatedAt: date,
+            status: .markdownComplete,
+            request: .init(transcribe: true, summary: true, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: true),
+            source: .init(recordingDate: date, duration: 60, fileSize: 4, meetingTitle: "Parked",
+                participants: [], echoSuppressionApplied: false, finalizedAudioPath: fixture.audio.path, segmentAudioPaths: []))
+        _ = parked.markCompleted(.markdownGenerated, at: date)
+        try await fixture.jobs.save(parked)
+        try await fixture.deliveries.save(IntegrationDeliveryBatch(id: parked.id, recordingID: parked.recordingID, createdAt: date,
+            bundle: .init(title: "Parked", createdAt: date, durationSeconds: 60, audioFileURL: fixture.audio,
+                transcript: "", summary: nil, actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
+            deliveries: []))
+        let event = CalendarEvent(title: "Planning", attendees: [], body: "",
+            startDate: date, endDate: date.addingTimeInterval(60))
+        try await fixture.manager.linkCalendar(event, to: fixture.recording(), updateTitle: false, updateParticipants: false)
+        var options = ReprocessingOptions(settings: fixture.settings, operation: .transcribe)
+        options.engine = .appleSpeech
+        options.spokenLanguage = ""
+        options.vocabulary = []
+        options.regenerateAI = false
+        options.diarizationEnabled = false
+        // Keep the attempt queued behind an unrelated job so no engine runs.
+        fixture.state.processingJob = ProcessingJob(recording: Recording(fileURL: fixture.root.appendingPathComponent("other.wav")))
+        defer { fixture.state.processingJob = nil }
+        try await fixture.manager.startReprocessing(for: fixture.recording(), options: options)
+        #expect(fixture.manager.reprocessingAttempts.count == 1)
+    }
+
     @MainActor private final class Fixture {
         let root: URL
         let audio: URL

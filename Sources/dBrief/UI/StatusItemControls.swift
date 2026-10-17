@@ -71,7 +71,7 @@ final class StatusItemControls {
         menu.autoenablesItems = false
         let entries = StatusItemMenuEntry.entries(
             isRecording: state.isRecording, isPaused: state.isPaused, isIdle: state.isIdle,
-            canImport: state.isIdle && !state.showPostRecordingSheet)
+            canImport: manager.canImportAudio)
         for entry in entries {
             switch entry {
             case .separator:
@@ -146,7 +146,7 @@ final class StatusItemDropView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard audioURL(from: sender) != nil, AppContext.shared.appState.isIdle else { return [] }
+        guard audioURL(from: sender) != nil, AppContext.shared.recordingManager.canImportAudio else { return [] }
         MenuBarPanel.statusButton()?.highlight(true)
         return .copy
     }

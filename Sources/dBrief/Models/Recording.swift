@@ -1,6 +1,17 @@
 import Foundation
 import dBriefWire
 
+/// What the post-recording review form would submit right now.
+struct PostRecordingChoices: Equatable, Sendable {
+    var transcribe: Bool
+    var summary: Bool
+    var actionItems: Bool
+    var tags: Bool
+    var loadCalendarParticipants: Bool
+    var participants: [String]
+    var titleWasUserProvided: Bool
+}
+
 @MainActor
 @Observable
 final class Recording: Identifiable {
@@ -23,6 +34,9 @@ final class Recording: Identifiable {
     /// the user's title is never overwritten. Set at sheet commit; carried through the queue
     /// via `QueueItem`. Session-only otherwise.
     var titleWasUserProvided: Bool = false
+    /// The post-recording review's current choices, kept in step by the review form so a
+    /// new capture that displaces the review can queue it as the user left it. Session-only.
+    @ObservationIgnored var reviewChoices: PostRecordingChoices?
     var associatedApp: String?
     var profileSelection = RecordingProfileSelection()
     var awaitingProfileContext = false

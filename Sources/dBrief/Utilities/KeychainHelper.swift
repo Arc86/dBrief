@@ -31,7 +31,24 @@ enum KeychainError: LocalizedError, Sendable {
     }
 }
 
+/// Secrets for a test run, which must never read or write the user's real Keychain
+/// items (reading them prompts for the login password on every run).
+private final class InMemorySecrets: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    subscript(account: String) -> String? {
+        get { lock.withLock { values[account] } }
+        set { lock.withLock { values[account] = newValue } }
+    }
+}
+
 enum KeychainHelper {
+    /// The test host loads XCTest (Swift Testing runs inside it too); the app never does.
+    private static let testStore: InMemorySecrets? = NSClassFromString("XCTestCase") != nil
+        || Bundle.allBundles.contains { $0.bundleURL.pathExtension == "xctest" } ? InMemorySecrets() : nil
+
+    static var usesInMemoryStore: Bool { testStore != nil }
+
     static func set(_ value: String, for key: KeychainSecretKey) throws {
         try set(value, account: key.rawValue)
     }
@@ -57,6 +74,10 @@ enum KeychainHelper {
     }
 
     private static func set(_ value: String, account: String) throws {
+        if let testStore {
+            testStore[account] = value.isEmpty ? nil : value
+            return
+        }
         if value.isEmpty {
             try delete(account: account)
             return
@@ -85,6 +106,7 @@ enum KeychainHelper {
     }
 
     private static func get(account: String) throws -> String {
+        if let testStore { return testStore[account] ?? "" }
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -106,6 +128,10 @@ enum KeychainHelper {
     }
 
     private static func delete(account: String) throws {
+        if let testStore {
+            testStore[account] = nil
+            return
+        }
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.unexpectedStatus(status)

@@ -33,6 +33,22 @@ struct ProcessingDeliveryTests {
         #expect(await audit.events == ["park"])
     }
 
+    @Test func heldHandoffWithNothingToSendCompletesInsteadOfParking() async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        var empty = batch(root)
+        empty.deliveries = []
+        empty.processingSucceededBeforeDeliveryAt = Date(timeIntervalSince1970: 10)
+        let input = empty
+        let audit = Audit()
+        let result = try await ProcessingPipeline().finishDeliveryHandoff(input, stopBeforeIntegrations: true,
+            run: { _ in Issue.record("Nothing to send"); return input },
+            park: { Issue.record("A parked job with nothing to send can never finish") },
+            checkpoint: { await audit.add("checkpoint") })
+        #expect(!result.held && result.batch.isComplete)
+        #expect(result.completion?.completedAt == Date(timeIntervalSince1970: 10))
+        #expect(await audit.events == ["checkpoint"])
+    }
+
     @Test func completionRequiresAllDeliveriesAndAcknowledgedCheckpoint() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         var saved = batch(root)

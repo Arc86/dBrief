@@ -117,6 +117,10 @@ struct ProcessingStep: Identifiable {
         case failed(String)
     }
 
+    static func warnings(_ name: String, _ messages: [String]) -> ProcessingStep? {
+        messages.isEmpty ? nil : ProcessingStep(name: name, status: .warning(messages.joined(separator: "\n")))
+    }
+
     var warningMessage: String? {
         if case .warning(let message) = status { message } else { nil }
     }

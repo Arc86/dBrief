@@ -159,6 +159,30 @@ struct LibraryIndexTests {
         #expect(try await index.search(in: folder, text: "Zoom").isEmpty)
     }
 
+    @Test func markdownPublishedJobWithNothingLeftToSendIsDone() async throws {
+        let (root, folder, index) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let audio = folder.appendingPathComponent("parked.wav")
+        try Data([1]).write(to: audio)
+        var job = PersistedProcessingJob(id: UUID(), recordingID: UUID(), createdAt: .now, updatedAt: .now, status: .markdownComplete,
+            request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: true),
+            source: .init(recordingDate: .now, duration: 1, fileSize: 1, meetingTitle: "Parked", associatedApp: nil,
+                participants: [], calendarEvent: nil, echoSuppressionApplied: false,
+                recoveryManifestPath: nil, stagedInputPath: nil, finalizedAudioPath: audio.path, segmentAudioPaths: [], metadataPath: nil))
+        _ = job.markCompleted(.markdownGenerated, at: .now)
+        try await ProcessingJobStore(rootURL: index.jobsRoot).save(job)
+        _ = try await index.refresh(in: folder)
+        #expect(try await index.search(in: folder, status: .incomplete).count == 1)
+        try await IntegrationDeliveryStore(rootURL: index.deliveriesRoot).save(IntegrationDeliveryBatch(id: job.id,
+            recordingID: job.recordingID, createdAt: .now,
+            bundle: .init(title: "Parked", createdAt: .now, durationSeconds: 1, audioFileURL: audio, transcript: "",
+                summary: nil, actionItems: [], tags: [], sentiment: nil, markdown: nil, calendarEvent: nil),
+            deliveries: []))
+        _ = try await index.refresh(in: folder)
+        #expect(try await index.search(in: folder, status: .done).count == 1)
+        #expect(try await index.search(in: folder, status: .incomplete).isEmpty)
+    }
+
     @Test(arguments: [false, true])
     func readersSeeCompleteSnapshotDuringRebuildAndFailureRollsBack(schemaUpgrade: Bool) async throws {
         let (root, folder, index) = try fixture()

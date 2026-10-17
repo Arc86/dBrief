@@ -416,6 +416,15 @@ final class RecordingManager {
         guard !recoveryMaintenanceInProgress else {
             throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wait for recording cleanup to finish before recording."])
         }
+        // A new capture replaces the review form; queue that recording instead of dropping it.
+        let displaced = takeReviewForNewCapture()
+        defer {
+            if let displaced, appState.currentRecording !== displaced.recording {
+                Task { await self.queueDisplacedReview(displaced) }
+            }
+        }
+        // System audio capture would record anything still playing.
+        AudioPlayer.pauseAll()
         cancelPostRecordingAutomation()
         if appState.processingJob == nil, let owner = appSettings.automaticProfileRecordingID {
             appSettings.finishAutomaticRouting(for: owner)
@@ -537,6 +546,75 @@ final class RecordingManager {
             appState.recordingState = .idle
             miniPlayer?.dismiss()
         }
+    }
+
+    /// A finished capture whose review a new capture is about to replace.
+    struct DisplacedReview {
+        let recording: Recording
+        let choices: PostRecordingChoices
+        let profileID: UUID
+        let participantAdmission: CalendarParticipantAdmission
+        /// The countdown was about to process it; otherwise it waits for "Process queue".
+        let autoQueued: Bool
+    }
+
+    /// Snapshots the open review before a new capture takes the review slot, so the
+    /// recording can be queued as the user left it. Nil when no review is open or one of
+    /// its own actions (save, queue, delete) already owns it.
+    func takeReviewForNewCapture() -> DisplacedReview? {
+        guard appState.showPostRecordingSheet, !postRecordingAction.isBusy,
+              let recording = appState.currentRecording else { return nil }
+        let defaults = automaticPostRecordingRequest(for: recording)
+        let choices = recording.reviewChoices ?? PostRecordingChoices(transcribe: defaults.transcribe,
+            summary: defaults.summary, actionItems: defaults.actionItems, tags: defaults.tags,
+            loadCalendarParticipants: defaults.loadCalendarParticipants, participants: recording.participants,
+            titleWasUserProvided: recording.titleWasUserProvided)
+        let profileID = recording.profileSelection.retainedManualChoice(savedManualID: appSettings.activeProfileId)
+            ?? recording.profileSelection.appliedID ?? appSettings.activeProfile.id
+        let autoProcess = postRecordingAutomation.request.map { $0.profile.postRecordingPolicy == .process } ?? false
+        return DisplacedReview(recording: recording, choices: choices, profileID: profileID,
+            participantAdmission: calendarParticipantAdmission(for: recording,
+                requested: choices.loadCalendarParticipants, profileID: profileID),
+            autoQueued: autoProcess)
+    }
+
+    /// Finalizes and queues a review a new capture displaced. Runs beside that capture
+    /// and never touches the review slot, which now belongs to the new recording.
+    func queueDisplacedReview(_ review: DisplacedReview) async {
+        let recording = review.recording, choices = review.choices
+        recording.participants = choices.participants
+        recording.titleWasUserProvided = choices.titleWasUserProvided
+        queueEnqueueInProgress = true
+        defer { queueEnqueueInProgress = false }
+        do {
+            try await ensureRecordingFinalized(recording: recording, profileID: review.profileID)
+            let transcribe = choices.transcribe
+            try await saveQueueItem(QueueItem(
+                transcribe: transcribe,
+                summary: choices.summary && transcribe,
+                actionItems: choices.actionItems && transcribe,
+                tags: choices.tags && transcribe,
+                loadCalendarParticipants: choices.loadCalendarParticipants,
+                calendarParticipantSelection: review.participantAdmission.selection,
+                calendarParticipantConfiguration: review.participantAdmission.configuration,
+                calendarParticipantsNative: review.participantAdmission.isNative,
+                selectedCalendarEvent: recording.calendarEvent,
+                selectedParticipants: recording.participants,
+                titleWasUserProvided: recording.titleWasUserProvided,
+                autoQueued: review.autoQueued,
+                profileID: review.profileID), for: recording)
+        } catch {
+            appState.lastError = "Couldn't queue the recording you were reviewing. It will be recovered the next time dBrief opens. \(error.localizedDescription)"
+            return
+        }
+        appSettings.finishAutomaticRouting(for: recording.id)
+        appState.durabilityNoticeIsWarning = false
+        appState.durabilityNotice = review.autoQueued
+            ? "Your previous recording will be processed in the background while you record."
+            : "Your previous recording was saved to the queue so the new recording could start. Process it from Queue & Recovery."
+        queueEnqueueInProgress = false
+        await refreshWorkQueue()
+        await drainQueueIfNeeded()
     }
 
     func stopRecording() async {
@@ -806,8 +884,8 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     if let index = progress.finalizationIndex { self.markCompleted(index) }
                     let problems = recording.finalizationWarnings.filter { !FinalizationWarning.isInformational($0) }
-                    if !problems.isEmpty {
-                        self.appState.processingSteps.append(ProcessingStep(name: "Audio finalization warnings", status: .failed(problems.joined(separator: "\n"))))
+                    if let step = ProcessingStep.warnings("Audio finalization warnings", problems) {
+                        self.appState.processingSteps.append(step)
                     }
                 }, meetingContext: { @MainActor in
                     try self.requireProcessingOwnership(job)
@@ -842,8 +920,8 @@ final class RecordingManager {
                     try self.requireProcessingOwnership(job)
                     if fresh { self.appSettings.lifetimeTranscribedSeconds += recording.duration }
                     if let index = progress.transcriptionIndex { self.markCompleted(index) }
-                    if fresh, let warnings = result.warnings, !warnings.isEmpty {
-                        self.appState.processingSteps.append(ProcessingStep(name: "Transcription warnings", status: .failed(warnings.joined(separator: "\n"))))
+                    if fresh, let step = ProcessingStep.warnings("Transcription warnings", result.warnings ?? []) {
+                        self.appState.processingSteps.append(step)
                     }
                 }, speakers: { @MainActor result, perf in
                     try self.requireProcessingOwnership(job)
@@ -2154,6 +2232,9 @@ final class RecordingManager {
         [.audio, .mpeg4Audio, .wav, .mp3, .aiff] + ["ogg", "opus", "flac"].compactMap { UTType(filenameExtension: $0) }
     }
 
+    /// Whether a picked, dropped or opened audio file can start an import now.
+    var canImportAudio: Bool { recordingReviewSlot.canImport }
+
     nonisolated static func isImportableAudio(_ url: URL) -> Bool {
         guard url.isFileURL, let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return importableAudioTypes.contains { type.conforms(to: $0) }
@@ -2979,8 +3060,10 @@ final class RecordingManager {
         }
     }
 
+    /// `profileID` freezes the destination for a recording that has left the review
+    /// slot (a displaced review); otherwise the review's or the active profile applies.
     private func ensureRecordingFinalized(
-        recording: Recording,
+        recording: Recording, profileID: UUID? = nil,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws {
         let context: PrivacyTrace.Context
@@ -2991,17 +3074,17 @@ final class RecordingManager {
             if recording.finalizedAudioURL == nil {
                 try await PrivacyTrace.perform(.init(stage: .finalization, data: [.recordingAudio],
                                                      destination: .local(provider: .fileSystem))) {
-                    try await finalizeRecordingAudio(recording: recording, onProgress: onProgress)
+                    try await finalizeRecordingAudio(recording: recording, profileID: profileID, onProgress: onProgress)
                 }
             } else {
-                try await finalizeRecordingAudio(recording: recording, onProgress: onProgress)
+                try await finalizeRecordingAudio(recording: recording, profileID: profileID, onProgress: onProgress)
             }
             await recording.bindPrivacyReceipt()
         }
     }
 
     private func finalizeRecordingAudio(
-        recording: Recording,
+        recording: Recording, profileID: UUID? = nil,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws {
         let recovery = ProcessingPipeline.FinalizationRecovery.capture(id: recording.id, startedAt: recording.date,
@@ -3018,7 +3101,9 @@ final class RecordingManager {
             // Review actions can finalize alongside another worker. Freeze this
             // recording's destination without changing that worker's live settings.
             let profile: MeetingProfile
-            if appState.showPostRecordingSheet, appState.currentRecording === recording {
+            if let profileID, let frozen = appSettings.profiles.first(where: { $0.id == profileID }) {
+                profile = frozen
+            } else if appState.showPostRecordingSheet, appState.currentRecording === recording {
                 let id = recording.profileSelection.reviewProfileID(savedManualID: appSettings.activeProfileId)
                 guard let selected = appSettings.profiles.first(where: { $0.id == id }) else {
                     throw NSError(domain: "RecordingManager", code: 1,
@@ -3310,6 +3395,18 @@ final class RecordingManager {
     private static func queueURL(for recording: Recording) -> URL? {
         guard let audioURL = recording.finalizedAudioURL else { return nil }
         return audioURL.deletingPathExtension().appendingPathExtension("queue.json")
+    }
+
+    /// True while saved, unfinished work still owns `audio` (see
+    /// `PersistedProcessingJob.isFinished`). Unreadable deliveries count as owning.
+    func unfinishedJobOwns(_ audio: URL, jobs: [PersistedProcessingJob]) async -> Bool {
+        let candidates = jobs.filter {
+            $0.status != .completed && $0.dismissedFromQueue != true && $0.source.finalizedAudioPath == audio.path
+        }
+        guard !candidates.isEmpty else { return false }
+        guard let batches = try? await integrationDeliveryStore.discover() else { return true }
+        let completed = Set(batches.filter(\.isComplete).map(\.id))
+        return candidates.contains { !$0.isFinished(completedDeliveryIDs: completed) }
     }
 
     private func saveQueueItem(_ item: QueueItem, for recording: Recording) async throws {
