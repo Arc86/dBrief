@@ -8,10 +8,12 @@ Use the webhook integration to connect dBrief to any service that accepts HTTP r
 
 ## Setup
 
-1. Go to **Settings → Integrations**
-2. Enable **Webhook**
-3. Enter your webhook URL
-4. Choose which fields to include in the payload
+1. Go to **Settings → Integrations** and click **Webhook**
+2. Turn on **Send to a webhook**
+3. Enter your webhook **URL**
+4. Optionally set a **Timeout** and add headers in the **Headers** card
+5. Choose which fields to include in the **Send fields** card
+6. Optionally click **Test connection** to check that the URL is valid (no request is sent)
 
 ## Payload format
 
@@ -19,10 +21,10 @@ dBrief sends the selected fields as a JSON body or multipart/form-data (if audio
 
 ## Including the audio file
 
-Enable **Include audio** in the webhook settings to attach the recording as a file upload. The request is sent as `multipart/form-data` when audio is included.
+Turn on **Audio** in the **Send fields** card to attach the recording as a file upload. The request is sent as `multipart/form-data` when audio is included.
 
 > **Note:** Audio files can be large (tens of MB for longer recordings). Make sure your webhook endpoint can handle the payload size.
 
 ## What gets sent
 
-Choose from: transcript, summary, action items, tags, sentiment, the full Markdown export, and optionally the audio file.
+Choose from: transcript, summary, action items, tags, sentiment, the full Markdown export, meeting info from your calendar, and optionally the audio file.

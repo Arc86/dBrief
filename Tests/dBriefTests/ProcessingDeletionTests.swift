@@ -81,7 +81,7 @@ struct ProcessingDeletionTests {
         try await f.lifecycle.jobs.save(record)
         let scope = f.scope(id: record.recordingID)
         let token = await PrivacyTrace.begin(operation, in: await scope.context())
-        let suffixes = ["m4a", "md", "transcript.json", "richtranscript.json", "insights.json", "chat.json",
+        let suffixes = ["m4a", "md", "transcript.json", "richtranscript.json", "insights.json", "chat.json", "chatindex.json",
                         "spokensummary.json", "spokensummary.m4a", "json", "queue.json"]
         let owned = suffixes.map { f.audio.deletingPathExtension().appendingPathExtension($0) }
             + [f.library.appendingPathComponent("meeting_part01.flac")]

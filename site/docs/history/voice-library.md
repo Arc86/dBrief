@@ -6,7 +6,7 @@ It's fully on-device and private: each person is stored as a mathematical "voice
 
 ## Requirements
 
-The Voice Library only works when **speaker detection (diarization)** is on — turn it on in [Settings → Transcription](../transcription/transcription-overview.md). Speakers are detected on-device after transcription, and a voiceprint is extracted for each one.
+The Voice Library only works when **speaker detection (diarization)** is on — turn on **Settings → Speakers → Identify speakers**. It isn't available with Apple Speech. Speakers are detected on-device after transcription, and a voiceprint is extracted for each one.
 
 ## How recognition works
 
@@ -20,22 +20,24 @@ This conservative behaviour is deliberate: a neutral, unnamed speaker is better 
 
 ## Teaching the library
 
-You don't enrol voices manually — naming a speaker is what does it. Whenever you give a speaker a real name (in the post-recording sheet, or by [renaming a speaker](transcript-viewer.md#renaming-speakers) in the transcript viewer), dBrief saves that voiceprint under that person. The more times you confirm someone, the more reliably they're recognized — and dBrief keeps a varied set of samples per person rather than many near-duplicates.
+You don't enrol voices manually — naming a speaker is what does it. Whenever you give a speaker a real name (in the post-recording sheet, in the **Who's speaking?** review, or by [renaming a speaker](transcript-viewer.md#renaming-speakers) in the transcript viewer), dBrief saves that voiceprint under that person. The more times you confirm someone, the more reliably they're recognized — and dBrief keeps a varied set of samples per person rather than many near-duplicates.
 
-## Managing it — Settings → Voice Library
+## Managing it — Settings → Speakers
 
-The **Voice Library** tab lists everyone dBrief knows, each with how many voice samples it holds and when that person was last heard. From here you can:
+The **Known people** card on the **Speakers** settings page lists everyone dBrief knows, with their company, how many voiceprints each holds, and when that person was first and last heard. Search by name or company, sort by any column, or turn on **Group by company**. Select a person to see their voiceprints and recognition strength. From here you can:
 
-- **Rename** a person. If the new name already belongs to someone in the library, dBrief offers to **merge** the two into one person (keeping all their samples).
-- **Merge** two people you know are the same — handy if the same person was learned under two spellings.
-- **Forget a person** entirely, removing them and all their voiceprints.
-- **Forget a single voiceprint** — useful if one bad sample is causing mistaken matches.
+- **Rename…** a person. If the new name already belongs to someone in the library, dBrief offers to **Merge** the two into one person (keeping all their samples).
+- **Merge into…** another person you know is the same — handy if the same person was learned under two spellings. Select several people to merge them at once; dBrief tells you when their voices are probably the same person.
+- **Forget voice** to remove a person entirely, with all their voiceprints.
+- **Forget a single voiceprint** from a person's details — useful if one bad sample is causing mistaken matches.
+
+Right-click a person for **Rename…**, **Merge into…**, and **Forget voice**.
 
 ## Privacy
 
 - The library is a single `library.json` file under your Mac's Application Support folder, outside your recordings and transcripts.
 - It's never uploaded and isn't included in any export or integration.
-- Auto-delete ([Settings → General → Privacy](../reference/file-locations.md)) never removes it — forgetting people is always a deliberate action you take in the Voice Library tab.
+- Auto-delete (**Settings → Storage → Auto-delete**, see [File Locations](../reference/file-locations.md)) never removes it — forgetting people is always a deliberate action you take on the **Speakers** settings page.
 
 ## Related
 

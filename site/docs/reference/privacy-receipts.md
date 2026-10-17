@@ -1,6 +1,6 @@
 # Privacy Receipts
 
-Open **Privacy receipt** from a recording's menu to see evidence of the processing and delivery steps that ran for that recording.
+Open a recording in the **Recording library** and click the **Privacy receipt** button (shield icon) in its header, or **View privacy receipt** on the **Meeting Insights** tab, to see evidence of the processing and delivery steps that ran for that recording.
 
 A receipt shows the stage, provider or destination, categories of data involved, and outcome. Use it to check which transcription or AI service handled a recording and whether an integration delivery ran.
 

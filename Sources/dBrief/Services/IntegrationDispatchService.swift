@@ -12,12 +12,33 @@ actor IntegrationDispatchService {
     private let session: URLSession
     private let privacyStore: PrivacyReceiptStore
     private let privacyPendingRoot: URL
+    let available: [IntegrationDestination]
+    let tickTickClient: TickTickClient
+    let tickTickToken: @Sendable () throws -> String
+    let tickTickSessionExpired: @Sendable () -> Void
+    let todoistClient: TodoistClient
+    let todoistToken: @Sendable () throws -> String
+    let notionClient: NotionClient
+    let notionToken: @Sendable () throws -> String
 
     init(session: URLSession = .shared, privacyStore: PrivacyReceiptStore = .shared,
-         privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending")) {
+         privacyPendingRoot: URL = AppSupportPaths.subdirectory("Privacy Pending"),
+         available: [IntegrationDestination] = IntegrationDestination.available,
+         tickTickToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .tickTickAccessToken) },
+         tickTickSessionExpired: @escaping @Sendable () -> Void = { TickTickSession.markExpired() },
+         todoistToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .todoist) },
+         notionToken: @escaping @Sendable () throws -> String = { try KeychainHelper.get(for: .notion) }) {
         self.session = session
         self.privacyStore = privacyStore
         self.privacyPendingRoot = privacyPendingRoot
+        self.available = available
+        self.tickTickClient = TickTickClient(session: session)
+        self.tickTickToken = tickTickToken
+        self.tickTickSessionExpired = tickTickSessionExpired
+        self.todoistClient = TodoistClient(session: session)
+        self.todoistToken = todoistToken
+        self.notionClient = NotionClient(session: session)
+        self.notionToken = notionToken
     }
 
     /// UI-owned fields/configuration are copied before entering this actor.
@@ -27,7 +48,7 @@ actor IntegrationDispatchService {
         generatedMarkdownURL: URL?, requireTranscript: Bool = false
     ) throws -> IntegrationDeliveryBatch {
         try Task.checkCancellation()
-        let digests = try IntegrationDeliveryBatch.configurationDigests(config)
+        let digests = try IntegrationDeliveryBatch.configurationDigests(config, available: available)
         var recordingSnapshot = recording
         if !digests.isEmpty, recordingSnapshot.transcript == nil,
            let url = recordingSnapshot.transcriptURL, FileManager.default.fileExists(atPath: url.path) {
@@ -41,8 +62,13 @@ actor IntegrationDispatchService {
         try Task.checkCancellation()
         return IntegrationDeliveryBatch(
             id: jobID, recordingID: recordingSnapshot.id, createdAt: Date(), bundle: bundle,
-            deliveries: IntegrationDestination.available.compactMap { destination in
+            deliveries: available.compactMap { destination in
                 guard let digest = digests[destination] else { return nil }
+                // Not signed in: leave it out, like a disabled destination.
+                if destination == .tickTick, ((try? tickTickToken()) ?? "").isEmpty { return nil }
+                if destination == .todoist, ((try? todoistToken()) ?? "").isEmpty { return nil }
+                if destination == .notion, ((try? notionToken()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || config.notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
                 return .init(id: UUID(), destination: destination, configurationDigest: digest)
             }
         )
@@ -70,12 +96,21 @@ actor IntegrationDispatchService {
     private func sendInRecordingContext(batch: IntegrationDeliveryBatch, delivery: IntegrationDeliveryBatch.Delivery,
                                         config: IntegrationSettings) async -> IntegrationDispatchResult {
         let bundle = batch.bundle
-        if delivery.destination == .appleReminders, bundle.actionItems.allSatisfy({ $0.isEmpty }) {
+        if delivery.destination == .tickTick {
+            return await sendToTickTick(batch: batch, delivery: delivery, config: config)
+        }
+        if delivery.destination == .todoist {
+            return await sendToTodoist(batch: batch, delivery: delivery, config: config)
+        }
+        if delivery.destination == .notion {
+            return await sendToNotion(batch: batch, delivery: delivery, config: config)
+        }
+        if delivery.destination == .appleReminders, ActionItemText.deliverable(bundle.actionItems).isEmpty {
             return .init(destination: .appleReminders, status: .skipped, message: "No action items", remoteID: nil)
         }
         return await perform(delivery.destination) {
             try Task.checkCancellation()
-            guard try IntegrationDeliveryBatch.configurationDigests(config)[delivery.destination]
+            guard try IntegrationDeliveryBatch.configurationDigests(config, available: self.available)[delivery.destination]
                     == delivery.configurationDigest else {
                 throw IntegrationError.executionFailed("Integration settings changed. Restore the original destination before retrying.")
             }
@@ -94,7 +129,7 @@ actor IntegrationDispatchService {
     }
 
     func testConnection(destination: IntegrationDestination, settings: AppSettings) async throws {
-        guard IntegrationDestination.available.contains(destination) else {
+        guard available.contains(destination) else {
             throw IntegrationError.unsupported("\(destination.displayName) is not available")
         }
         let snapshot = await MainActor.run { IntegrationSettingsSnapshot(settings: settings) }
@@ -105,7 +140,9 @@ actor IntegrationDispatchService {
         case .appleReminders:
             try await assertRemindersPermission()
         case .notion:
-            try await testHTTPBearerConnection(urlString: "https://api.notion.com/v1/users/me", token: snapshot.notionToken, extraHeaders: ["Notion-Version": "2022-06-28"])
+            let token = try notionToken().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else { throw NotionError.missingToken }
+            try await notionClient.checkSecret(token: token)
         case .evernote:
             let base = snapshot.config.evernote.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             try await testHTTPBearerConnection(urlString: "\(base)/v1/user", token: snapshot.evernoteToken, extraHeaders: [:])
@@ -117,6 +154,19 @@ actor IntegrationDispatchService {
             guard URL(string: snapshot.config.webhook.url) != nil else {
                 throw IntegrationError.invalidURL(snapshot.config.webhook.url)
             }
+        case .tickTick:
+            let token = try tickTickToken()
+            guard !token.isEmpty else { throw TickTickError.notSignedIn }
+            do {
+                _ = try await tickTickClient.listProjects(token: token)
+            } catch TickTickError.unauthorized {
+                tickTickSessionExpired()
+                throw TickTickError.unauthorized
+            }
+        case .todoist:
+            let token = try todoistToken()
+            guard !token.isEmpty else { throw TodoistError.missingToken }
+            _ = try await todoistClient.listProjects(token: token)
         case .obsidian:
             break
         }
@@ -215,7 +265,7 @@ actor IntegrationDispatchService {
             }
 
             var created: [EKReminder] = []
-            for item in bundle.actionItems where !item.isEmpty {
+            for item in ActionItemText.deliverable(bundle.actionItems).map(\.title) {
                 let reminder = EKReminder(eventStore: reminderStore)
                 reminder.title = item
                 reminder.calendar = targetCalendar
@@ -225,67 +275,6 @@ actor IntegrationDispatchService {
             try reminderStore.commit()
             return created.map(\.calendarItemIdentifier).joined(separator: ",")
         }
-    }
-
-    private func sendToNotion(bundle: IntegrationContentBundle, config: NotionConfig, token: String) async throws -> String? {
-        guard !token.isEmpty else {
-            throw IntegrationError.missingConfiguration("Notion token is required")
-        }
-        guard !config.parentID.isEmpty else {
-            throw IntegrationError.missingConfiguration("Notion parent ID is required")
-        }
-
-        guard let url = URL(string: "https://api.notion.com/v1/pages") else {
-            throw IntegrationError.invalidURL("https://api.notion.com/v1/pages")
-        }
-
-        let titlePropertyName = config.titlePropertyName.isEmpty ? "Name" : config.titlePropertyName
-        let parentType = config.parentType == .dataSource ? "data_source_id" : "page_id"
-
-        let content = renderPlainContent(bundle: bundle, fields: config.fields)
-        let lines = content.split(separator: "\n").map(String.init)
-        let blocks: [[String: Any]] = lines.map { line in
-            [
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": [
-                    "rich_text": [
-                        [
-                            "type": "text",
-                            "text": ["content": line],
-                        ],
-                    ],
-                ],
-            ]
-        }
-
-        let payload: [String: Any] = [
-            "parent": [parentType: config.parentID],
-            "properties": [
-                titlePropertyName: [
-                    "title": [[
-                        "type": "text",
-                        "text": ["content": bundle.title],
-                    ]],
-                ],
-            ],
-            "children": blocks,
-        ]
-
-        let data = try await performJSONRequest(
-            url: url,
-            method: "POST",
-            payload: payload,
-            bearerToken: token,
-            additionalHeaders: ["Notion-Version": "2022-06-28"],
-            timeout: 30
-        )
-
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let id = json["id"] as? String {
-            return id
-        }
-        return nil
     }
 
     private func sendToEvernote(bundle: IntegrationContentBundle, config: EvernoteConfig, token: String) async throws -> String? {

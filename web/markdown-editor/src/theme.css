@@ -1,0 +1,102 @@
+:root {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: #31405f;
+  --crepe-color-surface: #ffffff;
+  --crepe-color-surface-low: #fbfcfe;
+  --crepe-color-on-surface: #0b1430;
+  --crepe-color-on-surface-variant: #65718a;
+  --crepe-color-outline: #e1e7f0;
+  --crepe-color-primary: #1268f5;
+  --crepe-color-secondary: #e8effc;
+  --crepe-color-on-secondary: #0b1430;
+  --crepe-color-inverse: #0b1430;
+  --crepe-color-on-inverse: #ffffff;
+  --crepe-color-inline-code: #1268f5;
+  --crepe-color-error: #d93025;
+  --crepe-color-hover: #e8effc;
+  --crepe-color-selected: #e8effc;
+  --crepe-color-inline-area: #e1e7f0;
+  --crepe-base-font-size: 16px;
+  --crepe-font-default: -apple-system, system-ui, sans-serif;
+  --crepe-font-title: -apple-system, system-ui, sans-serif;
+  --crepe-font-code: ui-monospace, Menlo, monospace;
+  --crepe-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --crepe-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --dbrief-line-height: 1.75;
+}
+
+/* The SwiftUI card draws the background; the page grows to its content and
+   never scrolls itself (the outer ScrollView does). */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#editor {
+  min-height: 160px;
+}
+
+html .milkdown {
+  background: transparent;
+}
+
+/* Crepe's default is 60px 120px; keep just enough left room for the block handle. */
+html .milkdown .ProseMirror {
+  padding: 4px 8px 12px 36px;
+  line-height: var(--dbrief-line-height);
+}
+
+/* Crepe hides the native caret and draws a 2px "virtual cursor" in the pale
+   outline color, which disappears against body text; draw it in the accent. */
+html .milkdown .ProseMirror-focused {
+  --prosemirror-virtual-cursor-color: var(--crepe-color-primary);
+}
+
+/* Drop target: Crepe's default is a half-transparent outline-colored bar. */
+html .milkdown .crepe-drop-cursor {
+  background-color: var(--crepe-color-primary);
+  opacity: 1;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--crepe-color-primary), transparent 75%);
+}
+
+/* The block picked up by its handle. */
+html .milkdown .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--crepe-color-primary), transparent 40%);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+body.dbrief-dragging .milkdown .ProseMirror .ProseMirror-selectednode {
+  opacity: 0.35;
+}
+
+/* The block that just landed. */
+@keyframes dbrief-dropped {
+  from {
+    background-color: color-mix(in srgb, var(--crepe-color-primary), transparent 80%);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+html .milkdown .ProseMirror .dbrief-dropped {
+  border-radius: 4px;
+  animation: dbrief-dropped 900ms ease-out;
+}
+
+/* The web view grows to fit an open menu (see height.ts), and its wheel events
+   scroll the surrounding page, so the slash menu must not scroll internally. */
+html .milkdown .milkdown-slash-menu .menu-groups {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html .milkdown .ProseMirror .dbrief-dropped {
+    animation: none;
+  }
+}

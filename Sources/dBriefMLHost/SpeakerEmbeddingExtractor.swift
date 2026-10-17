@@ -7,8 +7,6 @@ import dBriefWire
 /// WeSpeaker embedding model. Lazily loads the model once and reuses it. Runs
 /// inside the orchestrator's GPU mutex. Best-effort: any failure yields `[:]`.
 actor SpeakerEmbeddingExtractor {
-    static let modelTag = "fluidaudio-wespeaker-256"
-
     private var manager: DiarizerManager?
 
     private func ensureLoaded() async throws -> DiarizerManager {

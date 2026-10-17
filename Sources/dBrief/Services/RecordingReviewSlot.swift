@@ -11,7 +11,7 @@ final class RecordingReviewSlot {
     enum Failure: LocalizedError {
         case busy
         var errorDescription: String? {
-            "Wait for recording, saving or cleanup to finish before importing audio."
+            "Finish the recording you're reviewing, and wait for recording, saving or cleanup, before importing audio."
         }
     }
     private let appState: AppState
@@ -27,8 +27,10 @@ final class RecordingReviewSlot {
         self.maintenance = maintenance
     }
 
+    /// Never while a review is open: replacing it would drop the recording under review.
     var canImport: Bool {
         !captureBusy() && !action.isBusy && !maintenance() && appState.recordingState == .idle
+            && !appState.showPostRecordingSheet
     }
 
     func snapshotForImport() -> ImportSnapshot? {

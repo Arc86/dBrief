@@ -72,6 +72,7 @@ final class SpeakerReviewWindowController: NSObject, NSWindowDelegate {
         .environment(appSettings)
         .environment(recordingManager)
         .environment(audioPlayer)
+        .modifier(AppAppearanceScope(settings: appSettings))
 
         // A native sheet has no titlebar controls; the standalone window keeps
         // its standard titlebar, as the calendar-link window does.

@@ -336,8 +336,9 @@ struct MarkdownGenerator {
     }
 
     private func formatTimestamp(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%02d:%02d", mins, secs)
+        let total = max(0, Int(seconds))
+        // Hours appear past the first hour, so a long meeting reads 01:15:12, not 75:12.
+        return total >= 3600 ? String(format: "%02d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
+                             : String(format: "%02d:%02d", total / 60, total % 60)
     }
 }

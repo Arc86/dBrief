@@ -1,6 +1,17 @@
 import Foundation
 import dBriefWire
 
+/// What the post-recording review form would submit right now.
+struct PostRecordingChoices: Equatable, Sendable {
+    var transcribe: Bool
+    var summary: Bool
+    var actionItems: Bool
+    var tags: Bool
+    var loadCalendarParticipants: Bool
+    var participants: [String]
+    var titleWasUserProvided: Bool
+}
+
 @MainActor
 @Observable
 final class Recording: Identifiable {
@@ -15,12 +26,17 @@ final class Recording: Identifiable {
     var tags: [String]?
     var sentiment: String?
     var analysisModelProvenance: AnalysisModelProvenance?
+    /// Raw per-part notes from map-reduce analysis (long recordings); persisted in the insights sidecar.
+    var partNotes: [ChunkNotes]?
     var generatedTitle: String?
     /// True when the user typed/kept a custom meeting title (not the default fallback and
     /// not the matched calendar event's title). When true, AI title generation is skipped so
     /// the user's title is never overwritten. Set at sheet commit; carried through the queue
     /// via `QueueItem`. Session-only otherwise.
     var titleWasUserProvided: Bool = false
+    /// The post-recording review's current choices, kept in step by the review form so a
+    /// new capture that displaces the review can queue it as the user left it. Session-only.
+    @ObservationIgnored var reviewChoices: PostRecordingChoices?
     var associatedApp: String?
     var profileSelection = RecordingProfileSelection()
     var awaitingProfileContext = false
@@ -42,6 +58,9 @@ final class Recording: Identifiable {
     /// (especially the Outlook network round-trip) and lose calendar title/participants/AI context.
     /// Session-only; never persisted.
     @ObservationIgnored var calendarLookupTask: Task<Void, Never>?
+    /// True while `calendarLookupTask` runs, so processing can show that it is waiting
+    /// for the calendar (a Claude CLI lookup can take minutes). Session-only.
+    @ObservationIgnored var calendarLookupInFlight = false
     /// Bumped on every automatic or manual calendar selection so a late roster
     /// fetch can detect that the selection changed while it was running.
     /// Session-only; never persisted.
@@ -60,11 +79,17 @@ final class Recording: Identifiable {
     /// Pre-encoded audio (e.g. a YouTube/yt-dlp download) awaiting relocation into the
     /// recordings folder during finalization. Session-only; never persisted to disk.
     var importSourceURL: URL?
+    /// The audio dBrief owns before finalization. A picked or dropped import keeps
+    /// the user's original in `fileURL`; only the staged copy is ours to delete.
+    var ownedAudioURL: URL { importSourceURL ?? fileURL }
     var finalizedAudioURL: URL?
     var segmentAudioURLs: [URL]
     var metadataURL: URL?
     var transcriptURL: URL?
     var finalizationWarnings: [String]
+    /// Non-blocking notes from the latest processing run, such as a skipped
+    /// vocabulary correction. Session-only; reset when transcription starts.
+    var processingNotes: [String] = []
     var richTranscript: RichTranscript?
 
     init(
@@ -97,7 +122,13 @@ final class Recording: Identifiable {
 
     /// Publish successful analysis fields and their generation origin together.
     /// Failure/progress/title events cannot relabel retained analysis content.
+    /// Each analysis run is authoritative for part notes: clear stale notes before it starts so a
+    /// single-pass or other-engine re-analysis can never re-persist an earlier map-reduce's notes.
+    /// A map-reduce run sets them again through the `.partNotes` event.
+    func beginAnalysis() { partNotes = nil }
+
     func applyAnalysisField(_ event: ProcessingPipeline.AnalysisEvent, modelName: String?) {
+        if case .partNotes(let notes) = event { partNotes = notes; return }
         var provenance = analysisModelProvenance ?? .init()
         switch event {
         case .summary(let value):
@@ -115,11 +146,7 @@ final class Recording: Identifiable {
         analysisModelProvenance = provenance
     }
 
-    var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    var formattedDuration: String { duration.formattedDuration }
 
     var formattedFileSize: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
@@ -142,6 +169,11 @@ final class Recording: Identifiable {
     var chatSidecarURL: URL? {
         finalizedAudioURL?.deletingPathExtension()
             .appendingPathExtension("chat.json")
+    }
+
+    var chatIndexSidecarURL: URL? {
+        finalizedAudioURL?.deletingPathExtension()
+            .appendingPathExtension("chatindex.json")
     }
 
     var spokenSummaryScriptURL: URL? {

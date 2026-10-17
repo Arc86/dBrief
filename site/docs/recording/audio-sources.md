@@ -13,11 +13,11 @@ To capture remote participants on a Zoom, Teams, or other call, grant **Screen R
 
 ## Input device
 
-Choose which microphone dBrief records from in **Settings → Recording → Audio Input**. Leave it on **System Default** to follow your Mac's current input device, or pick a specific one. Use **Refresh device list** if you've just plugged in a new device.
+Choose which microphone dBrief records from with **Input device** in **Settings → Recording → Microphone**. Leave it on **System default** to follow your Mac's current input device, or pick a specific one. Click the refresh button next to it (**Refresh device list**) if you've just plugged in a new device.
 
 ### Switching device mid-recording
 
-You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. The **Mic** chip in the recording controls shows the microphone in use; click it and pick a different input device. dBrief switches straight away without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed). The short gap while devices change is kept as silence, so your voice stays in sync with the meeting audio.
+You can change the microphone **while a recording is in progress** — useful if you plug in headphones or a USB mic partway through. The microphone chip under the recording controls in the menu bar panel shows the microphone in use; click it and pick a different input device. dBrief switches straight away without interrupting the recording, keeping a single continuous track (it converts the new device's audio to match the recording's format when needed). The short gap while devices change is kept as silence, so your voice stays in sync with the meeting audio.
 
 ### Automatic device follow
 
@@ -27,7 +27,7 @@ dBrief also adapts on its own when your audio devices change mid-recording, so y
 - If you're on **System Default**, it follows the new default device when you connect one.
 - A microphone you've explicitly picked stays selected as long as it's still connected.
 
-When dBrief switches microphones automatically, the floating recorder shows which mic it chose (for example, "Switched to MacBook Pro Microphone"). You can also switch manually with the **Mic** chip. Both use the same recording track.
+When dBrief switches microphones automatically, the floating recorder shows which mic it chose (for example, "Switched to MacBook Pro Microphone"). You can also switch manually with the microphone chip. Both use the same recording track.
 
 ### Silent-microphone warnings
 
@@ -40,10 +40,10 @@ dBrief tells you when your voice isn't being captured, instead of quietly record
 
 ## Echo cancellation
 
-**Settings → Recording → Echo Cancellation** has a **Remove meeting audio from microphone** toggle. It's recommended when using laptop speakers: it uses the captured system audio as a reference to suppress speaker bleed picked up by your mic. When recording mic-only, it falls back to macOS real-time voice processing.
+**Settings → Recording → Microphone** has a **Reduce microphone echo** toggle. It's recommended when using laptop speakers: it uses the captured system audio as a reference to suppress speaker bleed picked up by your mic. When recording mic-only, it falls back to macOS real-time voice processing.
 
 > **Headphones & earphones:** when your audio output is headphones, earphones (including AirPods), or any non-built-in device, there's no speaker bleed to cancel, so dBrief **automatically skips** echo cancellation — even with the toggle on. This keeps the audio you hear at full volume (real-time voice processing would otherwise duck output and lower the level). dBrief re-checks the output route **continuously during recording**: switch from speakers to headphones (or back) mid-recording and echo cancellation turns off or on to match, automatically.
 
 ## Technical details
 
-Recordings are captured per track (mic and system audio separately) and mixed down to a single **M4A / AAC** file at 48 kHz stereo, with light post-processing (high-pass filtering, ducking, and loudness normalization). You can review these details under **Settings → Recording → Audio Quality** with Power User Mode enabled.
+Recordings are captured per track (mic and system audio separately) and mixed down to a single **M4A / AAC** file at 48 kHz stereo, with light post-processing (high-pass filtering, ducking, and loudness normalization). You can review these details under **Audio quality** in the collapsed **Advanced** card at the end of **Settings → Recording**.

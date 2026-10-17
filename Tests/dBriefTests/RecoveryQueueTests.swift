@@ -25,6 +25,18 @@ struct RecoveryQueueTests {
             deliveries: [.init(id: UUID(), destination: .webhook, configurationDigest: "target")])
     }
 
+    @Test func jobIsFinishedOnceCompletedOrMarkdownPublishedWithNothingLeftToSend() {
+        let audio = URL(fileURLWithPath: "/tmp/finished-definition.m4a")
+        var parked = job(audio: audio, status: .markdownComplete)
+        _ = parked.markCompleted(.markdownGenerated, at: .now)
+        #expect(!parked.isFinished(completedDeliveryIDs: []))
+        #expect(parked.isFinished(completedDeliveryIDs: [parked.id]))
+        var completed = job(audio: audio, status: .completed)
+        #expect(completed.isFinished(completedDeliveryIDs: []))
+        completed.status = .failed
+        #expect(!completed.isFinished(completedDeliveryIDs: [completed.id]))
+    }
+
     @Test func movingPreservesRelativeOrderAndHandlesBoundaries() {
         var schedule = QueueSchedule()
         schedule.move(path: "c", by: -2, currentPaths: ["a", "b", "c"])

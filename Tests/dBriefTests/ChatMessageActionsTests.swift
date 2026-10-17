@@ -16,6 +16,13 @@ import Testing
         #expect(message.speechText.isEmpty)
     }
 
+    @Test func repeatedReasoningBlocksNeverEnterTheAnswer() {
+        let message = ChatMessage(role: .assistant,
+            content: "<think>First thought</think>\nAnswer one.\n<think>Second thought</think>\nAnswer two.<think>Unfinished thought")
+        #expect(message.displayParts.answer == "Answer one.\n\nAnswer two.")
+        #expect(message.displayParts.reasoning == "First thought\n\nSecond thought\n\nUnfinished thought")
+    }
+
     @Test func userTextIsUnchanged() {
         let text = "Explain <think> tags"
         #expect(ChatMessage(role: .user, content: text).displayParts.answer == text)

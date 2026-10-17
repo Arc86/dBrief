@@ -3,7 +3,16 @@ import Foundation
 enum LibraryRecordingStatus: String, Codable, CaseIterable, Sendable {
     case queued, failed, incomplete, unprocessed, done
 
-    var title: String { rawValue.capitalized }
+    /// Shared with the menu panel's `RecordingStatus` labels.
+    var title: String {
+        switch self {
+        case .queued: "Queued"
+        case .failed: "Needs attention"
+        case .incomplete: "Incomplete"
+        case .unprocessed: "Not processed"
+        case .done: "Done"
+        }
+    }
 
     static func resolve(job: LibraryJobSummary?, queued: Bool, transcript: Bool, malformed: Bool) -> Self {
         if let job, !job.dismissed {
@@ -32,11 +41,12 @@ struct LibraryJobSummary: Codable, Sendable {
         self.init(RecoveryQueueEntry.JobFacts(job))
     }
 
-    init?(_ job: RecoveryQueueEntry.JobFacts) {
+    init?(_ job: RecoveryQueueEntry.JobFacts, deliveriesComplete: Bool = false) {
         guard let path = job.audioPath else { return nil }
         audioPath = path
         updatedAt = job.updatedAt
-        status = job.status
+        status = PersistedProcessingJob.isFinished(status: job.status, markdownGenerated: job.markdownCompleted,
+                                                   deliveriesComplete: deliveriesComplete) ? .completed : job.status
         dismissed = job.dismissedFromQueue == true
         associatedApp = job.associatedApp
     }

@@ -116,6 +116,32 @@ struct ProcessingStepProgressTests {
         #expect(state.processingSteps[0].progress == nil)
     }
 
+    @Test func longAnalysisShowsPartProgressAndNotice() {
+        let (state, _, progress) = fixture()
+        #expect(progress.applyPluginState(.analyzingPart(index: 2, total: 5)))
+        let step = state.processingSteps[0]
+        #expect(step.detail == "Part 2 of 5 · Long recordings take longer to analyze")
+        #expect(step.name.contains("5 parts"))
+        #expect(step.progress == 1.0 / 6.0)
+        #expect(progress.applyPluginState(.analyzingPart(index: 6, total: 5)))
+        #expect(state.processingSteps[0].detail == "Combining 5 parts · \(LongAnalysisNotice.text)")
+    }
+
+    @Test func longAnalysisProgressIsClampedToUnitRange() {
+        let (state, _, progress) = fixture()
+        #expect(progress.applyPluginState(.analyzingPart(index: 9, total: 5)))
+        #expect(state.processingSteps[0].progress == 1)
+        #expect(progress.applyPluginState(.analyzingPart(index: 0, total: 5)))
+        #expect(state.processingSteps[0].progress == 0)
+    }
+
+    @Test func singlePassAnalysisDoesNotShowLongAnalysisNotice() {
+        let (state, _, progress) = fixture()
+        #expect(progress.applyPluginState(.analyzing))
+        #expect(state.processingSteps[0].detail?.contains(LongAnalysisNotice.text) != true)
+        #expect(!state.processingSteps[0].name.contains("parts"))
+    }
+
     @Test func parakeetStreamPreservesLoadingAndSpeakerStates() {
         let (state, job, progress) = fixture()
         #expect(progress.applyParakeetState(.downloading(progress: 0.6, stage: .parakeetModel)))

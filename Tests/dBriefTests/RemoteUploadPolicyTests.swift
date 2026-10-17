@@ -4,9 +4,9 @@ import Testing
 
 @Suite("Hosted transcription upload limits")
 struct RemoteUploadPolicyTests {
-    @Test("Hosted OpenAI and Groq split above the direct-upload boundary", arguments: [
+    @Test("Hosted OpenAI, Groq and OpenRouter split above the direct-upload boundary", arguments: [
         "https://api.openai.com", "https://eu.api.openai.com", "https://API.OPENAI.COM./",
-        "https://api.groq.com/openai",
+        "https://api.groq.com/openai", "https://openrouter.ai/api",
     ])
     func hostedChunkBoundaries(baseURL: String) throws {
         let policy = RemoteUploadPolicy(endpoint: endpoint(baseURL), configuredMaxUploadMB: 100)

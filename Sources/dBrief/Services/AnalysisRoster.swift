@@ -11,18 +11,22 @@ enum AnalysisRoster {
     /// drops blank entries and raw diarization placeholders ("Speaker 1",
     /// "speaker_2").
     static func hint(participants: [String], attendees: [String]) -> String? {
+        let names = names(participants: participants, attendees: attendees)
+        guard !names.isEmpty else { return nil }
+        return "People likely in this meeting: \(names.joined(separator: ", "))."
+    }
+
+    /// The usable names, deduplicated case-insensitively in first-seen order.
+    static func names(participants: [String], attendees: [String]) -> [String] {
         var seen = Set<String>()
         var names: [String] = []
         for raw in participants + attendees {
             let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, !isPlaceholder(name) else { continue }
-            let key = name.lowercased()
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
+            guard seen.insert(name.lowercased()).inserted else { continue }
             names.append(name)
         }
-        guard !names.isEmpty else { return nil }
-        return "People likely in this meeting: \(names.joined(separator: ", "))."
+        return names
     }
 
     /// True for raw diarization placeholders like "Speaker 1" / "speaker_2".

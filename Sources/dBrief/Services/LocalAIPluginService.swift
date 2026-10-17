@@ -24,7 +24,7 @@ enum MLHostLocator {
 /// In-app proxy implementing the same surface as the former in-process service,
 /// forwarding every call to the crash-isolated `dBriefMLHost` helper over a
 /// supervised child process.
-final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
+final class LocalAIPluginService: Sendable {
     let connection: MLHostConnection
     private let broadcaster = StateBroadcaster()
     private let diagnostics: MLLifecycleDiagnostics?
@@ -65,25 +65,25 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         return turns
     }
 
-    /// Diarize plus a per-speaker voiceprint, for confirm-first re-diarize from the
-    /// transcript viewer (the resolver needs embeddings to match against the library).
+    /// Diarize plus a per-speaker voiceprint, for "Detect speakers again" reprocessing
+    /// (the resolver needs embeddings to match against the library).
     func diarizeWithEmbeddings(fileURL: URL) async throws -> (turns: [DiarizedTurn], embeddings: [String: [Float]]) {
         guard case let .diarizeWithEmbeddingsResult(turns, embeddings) = try await connection.call(.diarizeWithEmbeddings(path: fileURL.path)) else { return ([], [:]) }
         return (turns, embeddings)
     }
 
-    func analyzeTranscript(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
+    func analyzeTranscript(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async throws -> LocalInsightsResult {
         return try await PrivacyTrace.perform(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) {
-            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
+            guard case let .insightsResult(r) = try await connection.call(.analyze(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)) else {
                 throw WireError(kind: .generic, message: "no insights")
             }
             return r
         }
     }
 
-    func analyzeTranscriptStream(_ text: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
+    func analyzeTranscriptStream(_ text: String, context: String, outputLanguage: OutputLanguage, customVocabulary: String = "", guidance: InsightsGuidance? = nil) async -> AsyncThrowingStream<String, Error> {
         PrivacyTrace.stream(.init(stage: .analysis, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
-            await connection.stream(.analyzeStream(text: text, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
+            await connection.stream(.analyzeStream(text: text, context: context, outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance))
         }
     }
 
@@ -93,12 +93,23 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
-    func copyToClipboard(transcript: String, insights: LocalInsightsResult) async -> String {
-        // Formatting is pure + needs the AppKit pasteboard — keep it in-process.
-        let markdown = ObsidianFormatter.format(transcript: transcript, insights: insights)
-        let context = PrivacyTrace.context
-        _ = await RecordingClipboard.copy(markdown, contextProvider: { context })
-        return markdown
+    /// One Gemma chat turn on the helper's warm session (see `MLRequest.chatTurn`).
+    func chatTurn(systemPrompt: String, history: [ChatTurnMessage], question: String, retrievedContext: String, stage: PrivacyOperation.Stage = .chat) async -> AsyncThrowingStream<String, Error> {
+        PrivacyTrace.stream(.init(stage: stage, data: [.text, .metadata], destination: .local(provider: .localModel))) { [connection] in
+            await connection.stream(.chatTurn(systemPrompt: systemPrompt, history: history, question: question, retrievedContext: retrievedContext))
+        }
+    }
+
+    /// Retrieval vectors from `EmbeddingPrompt.current` (L2-normalized; width is
+    /// model-defined) for transcript chat, one per text in order. Runs on the
+    /// helper beside a warm Gemma chat.
+    func embed(_ texts: [String], role: EmbeddingRole) async throws -> [[Float]] {
+        try await PrivacyTrace.perform(.init(stage: .chat, data: [.text], destination: .local(provider: .localModel))) {
+            guard case let .embeddingsResult(vectors) = try await connection.call(.embed(texts: texts, role: role)) else {
+                throw WireError(kind: .generic, message: "no embeddings")
+            }
+            return vectors
+        }
     }
 
     /// Synthesize speech to a WAV at `outputPath` via TTSKit in the helper.
@@ -116,7 +127,6 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
         }
     }
 
-    func prepareModelsIfNeeded() async { _ = try? await connection.call(.prepareModels) }
     func downloadWhisperModel(config: WhisperRuntimeConfig) async throws { _ = try await connection.call(.downloadWhisper(config: config)) }
 
     /// Warm the Whisper model in the helper ahead of transcription. Best-effort:
@@ -135,7 +145,6 @@ final class LocalAIPluginService: LocalAIPluginProtocol, Sendable {
     }
     func purgeModels() async throws { _ = try await connection.call(.purgeModels) }
     func purgeWhisperModel() async throws { _ = try await connection.call(.purgeWhisper) }
-    func purgeSpeakerKitModel() async throws { _ = try await connection.call(.purgeSpeakerKit) }
     func purgeQwenModel() async throws { _ = try await connection.call(.purgeQwen) }
     func purgeModelsOnMemoryPressure() async { _ = try? await connection.call(.memoryPressurePurge) }
     /// Drains and unloads every engine. The helper refuses all requests after this,

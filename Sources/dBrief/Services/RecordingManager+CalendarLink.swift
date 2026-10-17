@@ -1,11 +1,6 @@
 import Foundation
 
 extension RecordingManager {
-    /// Always query the recording's original day, including when opened from history.
-    func calendarEventsForLinking(_ recording: Recording) async throws -> [CalendarEvent] {
-        try await refreshCalendarMeetingsForLinking(recording, force: false).events
-    }
-
     func cachedCalendarMeetingsForLinking(_ recording: Recording) async throws -> CalendarLinkMeetingList {
         try await calendarMeetingsForLinking(recording, refresh: false, force: false)
     }
@@ -82,18 +77,13 @@ extension RecordingManager {
     func linkCalendar(_ event: CalendarEvent, to recording: Recording,
                       updateTitle: Bool, updateParticipants: Bool) async throws {
         let audio = recording.finalizedAudioURL ?? recording.fileURL
-        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, !queueMutationInProgress,
-              !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
-              !processingCancellationInProgress, appState.pendingSpeakerReview == nil,
-              appState.processingJob == nil, !appState.showPostRecordingSheet else { throw ReprocessingError.busy }
-        guard !isReprocessing(audio) else { throw ReprocessingError.pendingAttempt }
+        // Only work on this recording conflicts: linking writes its metadata sidecar alone.
+        let live = RecordingEligibility.block(for: .linkCalendar, ownership: liveOwnership(for: audio, saved: .init()),
+                                              activity: appActivity)
+        if let live { throw RecordingBlockedError(block: live) }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
-        guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
-        let jobs = await processingJobStore.discover()
-        guard jobs.issues.isEmpty, !jobs.jobs.contains(where: {
-            $0.status != .completed && $0.dismissedFromQueue != true && $0.source.finalizedAudioPath == audio.path
-        }) else { throw ReprocessingError.busy }
+        if let saved = await savedWorkBlock(for: audio, .linkCalendar) { throw RecordingBlockedError(block: saved) }
         try await RecordingMetadataStore.shared.linkCalendar(event, audioURL: audio,
             updateTitle: updateTitle, updateParticipants: updateParticipants)
         recording.calendarEvent = event

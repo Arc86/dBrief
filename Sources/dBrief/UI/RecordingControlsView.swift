@@ -4,328 +4,175 @@ import os
 
 private let log = Logger.recording
 
+/// Capture controls for the menu panel: the Record hero and profile row when idle,
+/// the timer, level bars, Pause/Stop and audio sources while recording.
 struct RecordingControlsView: View {
     @Environment(AppState.self) private var appState
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSettings.self) private var appSettings
     @Environment(\.openWindow) private var openWindow
-
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     var body: some View {
-        @Bindable var settings = appSettings
-        VStack(spacing: 8) {
-            // Profile picker — hidden while recording
+        VStack(alignment: .leading, spacing: 10) {
             if appState.isIdle {
-                HStack {
-                    Text("Profile")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Menu {
-                        ForEach(settings.profiles) { profile in
-                            Button {
-                                settings.setActiveProfile(profile.id)
-                            } label: {
-                                if profile.id == settings.activeProfileId {
-                                    Label(profile.name, systemImage: "checkmark")
-                                } else {
-                                    Text(profile.name)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(settings.activeProfile.name)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 9)
-                        .frame(height: 24)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                        )
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .frame(width: 170)
-                    .accessibilityLabel("Profile")
-                    .accessibilityValue(settings.activeProfile.name)
-                }
+                recordButton
+                profileRow
             }
 
-            // Timer + REC/PAUSED indicator while recording
             if appState.isRecording || appState.isPaused {
                 HStack(alignment: .firstTextBaseline) {
                     Text(formattedDuration)
-                        .font(.brandMono(30, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .uiFont(.system(size: 26, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.heading.color)
                     Spacer()
-                    HStack(spacing: 7) {
-                        BrandStatusDot(
-                            color: appState.isPaused ? Brand.paused : Brand.recording,
-                            size: 8,
-                            pulse: appState.isRecording
-                        )
-                        Text(appState.isPaused ? "PAUSED" : "REC")
-                            .font(.brandMono(11, weight: .bold))
-                            .tracking(1.4)
-                            .foregroundStyle(appState.isPaused ? Brand.paused : Brand.recording)
+                    HStack(spacing: 5) {
+                        MenuPanelStatusDot(tone: appState.isPaused ? .warning : .danger, pulse: appState.isRecording, size: 6)
+                        Text(appState.isPaused ? "Paused" : "Recording")
+                            .uiFont(.system(size: 11, weight: .medium))
+                            .foregroundStyle(appState.isPaused ? status.warning.color : status.danger.color)
                     }
                 }
+                .accessibilityElement(children: .combine)
 
-                LiveWaveStrip(level: appState.peakLevel, active: appState.isRecording)
-                    .frame(height: 28)
-                    .padding(.vertical, 2)
-            }
+                MenuPanelLevelBars(level: appState.peakLevel, active: appState.isRecording, height: 30)
 
-            // Controls
-            if appState.isIdle {
-                Button {
-                    appState.lastError = nil
-                    Task {
-                        do {
-                            try await recordingManager.startRecording()
-                        } catch {
-                            appState.lastError = error.localizedDescription
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 9) {
-                        RecordGlyph(size: 18)
-                        Text("Record meeting")
-                    }
-                }
-                .buttonStyle(GradientButtonStyle())
-
-                Text("⌃ ⌥ ⌘ R")
-                    .font(.brandMono(11))
-                    .tracking(2)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-            } else {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     if appState.isRecording {
                         Button { recordingManager.pauseRecording() } label: {
-                            Label("Pause", systemImage: "pause.fill")
+                            Label("Pause", systemImage: "pause")
                         }
-                        .buttonStyle(GlassControlButtonStyle())
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
                     } else {
-                        Button { try? recordingManager.resumeRecording() } label: {
-                            Label("Resume", systemImage: "play.fill")
+                        Button { recordingManager.requestResume() } label: {
+                            Label("Resume", systemImage: "play")
                         }
-                        .buttonStyle(GlassControlButtonStyle())
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
                     }
 
                     Button { Task { await recordingManager.stopRecording() } } label: {
-                        Label("Stop", systemImage: "stop.fill")
+                        Label("Stop", systemImage: "stop")
                     }
-                    .buttonStyle(CoralControlButtonStyle())
+                    .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 32))
                 }
                 .environment(\.controlActiveState, .active)
-            }
 
-            // Audio source chips
-            if appState.isRecording || appState.isPaused {
-                HStack(spacing: 8) {
-                    MicrophoneInputMenu(
-                        selectedUID: appSettings.audioInputDeviceUID,
-                        activeName: appState.activeMicrophoneName,
-                        enabled: recordingManager.hasMicrophonePermission,
-                        select: { recordingManager.switchInputDevice(to: $0) }
-                    )
-                    .fixedSize()
-
-                    if recordingManager.hasSystemAudioPermission {
-                        Label("System Audio", systemImage: "speaker.wave.2.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
-                    Spacer()
-                    if appState.isLiveTranscribing {
-                        Button {
-                            appState.pendingLiveTranscriptSelection = true
-                            openWindow(id: "transcript")
-                            NSApp.activate(ignoringOtherApps: true)
-                        } label: {
-                            Label("Live Transcript", systemImage: "text.viewfinder")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
+                audioSources
+                // Mic switches and problems (a silent or muted mic) also show here, not
+                // only in the optional floating window.
+                if let note = appState.recordingStatusNote {
+                    Label(note, systemImage: appState.recordingStatusNoteIsProblem
+                          ? "exclamationmark.triangle.fill" : "arrow.triangle.2.circlepath")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(appState.recordingStatusNoteIsProblem ? status.warning.color : palette.secondary.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
             if (appState.isRecording || appState.isPaused),
                appSettings.obsidianEnabled,
                let recording = appState.currentRecording {
+                MenuPanelHairline()
                 ObsidianFolderPicker(
                     title: "Obsidian output folder",
                     currentRelativePath: recording.obsidianFolderRelativePath ?? appSettings.effectiveObsidianDefaultFolderRelativePath
                 ) { relativePath in
+                    // This recording only; the default lives in Settings → Integrations.
                     recording.obsidianFolderRelativePath = relativePath
-                    if appSettings.activeProfile.isProtectedDefault {
-                        appSettings.obsidianDefaultFolderRelativePath = relativePath
-                    }
                 }
             }
 
-            if let error = appState.lastError {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Label("Error", systemImage: "exclamationmark.circle.fill")
-                            .foregroundStyle(.red)
-                        Spacer()
-                        Button("Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(error, forType: .string)
-                        }
-                        .help("Copy the full error message")
-                        Button {
-                            appState.lastError = nil
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Dismiss error")
-                    }
-                    ScrollView {
-                        Text(error)
-                            .foregroundStyle(.red)
-                            .textSelection(.enabled)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(height: 110)
-                }
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            NoticeStack(notices: appState.notices.items)
+        }
+    }
 
-            if let notice = appState.durabilityNotice {
-                let noticeColor: Color = appState.durabilityNoticeIsWarning ? .orange : .green
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: appState.durabilityNoticeIsWarning
-                        ? "externaldrive.badge.exclamationmark"
-                        : "externaldrive.badge.checkmark")
-                        .foregroundStyle(noticeColor)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(notice)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if appState.durabilityNoticeIsWarning {
-                            HStack {
-                                Button("Retry Recovery") {
-                                    Task {
-                                        await recordingManager.recoverInterruptedSessions()
-                                        await recordingManager.refreshWorkQueue()
-                                    }
-                                }
-                                .disabled(!recordingManager.canPerformLibraryWork)
-                                Button("Show Files") {
-                                    NSWorkspace.shared.open(InterruptedSessionStore.defaultRootURL)
-                                }
-                            }
-                            .font(.caption)
-                        }
-                    }
-                    Spacer(minLength: 4)
+    // MARK: - Idle
+
+    private var recordButton: some View {
+        Button {
+            Task { await recordingManager.requestRecording() }
+        } label: {
+            Label("Record meeting", systemImage: "mic.fill")
+                .frame(maxWidth: .infinity)
+                // The shortcut rides inside the button it triggers, quiet and right-aligned.
+                .overlay(alignment: .trailing) {
+                    Text(appSettings.recordHotkey.displayString)
+                        .uiFont(.system(size: 11, weight: .medium))
+                        .opacity(0.55)
+                        .accessibilityHidden(true)
+                }
+        }
+        .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 40))
+        .keyboardShortcut("r", modifiers: .command)
+        .help("Start recording (\(appSettings.recordHotkey.displayString))")
+        .accessibilityHint("Shortcut \(appSettings.recordHotkey.displayString)")
+    }
+
+    private var profileRow: some View {
+        @Bindable var settings = appSettings
+        return HStack(spacing: 8) {
+            Text("Profile")
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
+            Menu {
+                ForEach(settings.profiles) { profile in
                     Button {
-                        appState.durabilityNotice = nil
-                        appState.durabilityNoticeIsWarning = false
+                        settings.setActiveProfile(profile.id)
                     } label: {
-                        Image(systemName: "xmark")
-                            .accessibilityLabel("Dismiss recovery notice")
+                        if profile.id == settings.activeProfileId {
+                            Label(profile.name, systemImage: "checkmark")
+                        } else {
+                            Text(profile.name)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(noticeColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            } label: {
+                MenuPanelSelectorLabel(text: settings.activeProfile.name)
             }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .accessibilityLabel("Profile")
+            .accessibilityValue(settings.activeProfile.name)
         }
     }
 
-    private var formattedDuration: String {
-        let total = Int(appState.recordingDuration)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
+    // MARK: - Recording
 
-/// Full-width live "waveform" for the recording state: a row of brand-gradient
-/// bars whose heights breathe with the current peak level. Purely cosmetic — a
-/// deterministic per-bar profile gives the wave shape, scaled by `level`.
-struct LiveWaveStrip: View {
-    let level: Float
-    var active: Bool
-    @Environment(\.calmAppearance) private var calm
-    private let barCount = 34
+    private var audioSources: some View {
+        HStack(spacing: 15) {
+            MicrophoneInputMenu(
+                selectedUID: appSettings.audioInputDeviceUID,
+                activeName: appState.activeMicrophoneName,
+                enabled: recordingManager.hasMicrophonePermission,
+                tint: status.success.nsColor,
+                select: { recordingManager.switchInputDevice(to: $0) }
+            )
+            .fixedSize()
 
-    var body: some View {
-        GeometryReader { geo in
-            let spacing: CGFloat = 3
-            let barWidth = max(2, (geo.size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<barCount, id: \.self) { i in
-                    Capsule()
-                        .fill(Brand.accentFill(calm: calm))
-                        .frame(width: barWidth, height: barHeight(i, maxH: geo.size.height))
-                        .opacity(active ? 1 : 0.4)
+            if recordingManager.hasSystemAudioPermission {
+                Label("System audio", systemImage: "speaker.wave.2")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(status.success.color)
+            }
+            Spacer(minLength: 0)
+            if appState.isLiveTranscribing {
+                Button {
+                    appState.pendingLiveTranscriptSelection = .capture
+                    MenuBarPanel.open("transcript", with: openWindow)
+                } label: {
+                    Label("Live", systemImage: "text.viewfinder")
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .animation(.easeOut(duration: 0.12), value: level)
-        }
-    }
-
-    private func barHeight(_ i: Int, maxH: CGFloat) -> CGFloat {
-        // A smooth standing-wave profile (two sines) so the strip has shape even
-        // at a steady level; scaled by the live peak with a small floor.
-        let phase = Double(i) / Double(barCount) * .pi * 4
-        let profile = (sin(phase) * 0.5 + 0.5) * 0.6 + (sin(phase * 0.5) * 0.5 + 0.5) * 0.4
-        let lvl = CGFloat(AudioLevelMeter.displayLevel(level))
-        let h = (0.18 + 0.82 * CGFloat(profile) * lvl) * maxH
-        return max(3, h)
-    }
-}
-
-struct LevelMeterBars: View {
-    let level: Float
-    private let barCount = 8
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(barColor(for: index))
-                    .frame(width: 3, height: barHeight(for: index))
-                    .animation(.linear(duration: 0.05), value: level)
+                .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22))
+                .help("Open the live transcript")
             }
         }
     }
 
-    private func barHeight(for index: Int) -> CGFloat {
-        let threshold = Float(index + 1) / Float(barCount)
-        let filled = level >= threshold
-        return filled ? CGFloat(4 + index * 2) : 4
-    }
+    // MARK: - Notices
 
-    private func barColor(for index: Int) -> Color {
-        let threshold = Float(index + 1) / Float(barCount)
-        if threshold > 0.85 { return .red }
-        if threshold > 0.6  { return .yellow }
-        return .green
-    }
+    private var formattedDuration: String { appState.recordingDuration.formattedDuration }
 }

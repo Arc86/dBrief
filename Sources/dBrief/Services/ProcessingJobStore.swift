@@ -19,6 +19,9 @@ actor ProcessingJobStore {
         }
 
         let kind: Kind
+        /// The job's folder, so the user can inspect it or move it aside. Nil when the
+        /// store's own folder could not be listed.
+        var directoryURL: URL? = nil
     }
 
     enum StoreError: Error, LocalizedError {
@@ -152,7 +155,7 @@ actor ProcessingJobStore {
             do {
                 data = try Data(contentsOf: url)
             } catch {
-                discovery.issues.append(Issue(kind: .corrupt))
+                discovery.issues.append(Issue(kind: .corrupt, directoryURL: directory))
                 continue
             }
 
@@ -160,26 +163,26 @@ actor ProcessingJobStore {
             do {
                 job = try decoder.decode(PersistedProcessingJob.self, from: data)
             } catch {
-                discovery.issues.append(Issue(kind: .corrupt))
+                discovery.issues.append(Issue(kind: .corrupt, directoryURL: directory))
                 continue
             }
 
             guard job.version == PersistedProcessingJob.currentVersion else {
-                discovery.issues.append(Issue(kind: .unsupportedVersion(job.version)))
+                discovery.issues.append(Issue(kind: .unsupportedVersion(job.version), directoryURL: directory))
                 continue
             }
             guard job.checkpoint.version == ProcessingCheckpoint.currentVersion else {
-                discovery.issues.append(Issue(kind: .unsupportedVersion(job.checkpoint.version)))
+                discovery.issues.append(Issue(kind: .unsupportedVersion(job.checkpoint.version), directoryURL: directory))
                 continue
             }
             guard job.id == directoryID, job.checkpoint.jobID == job.id else {
-                discovery.issues.append(Issue(kind: .mismatchedIdentifier))
+                discovery.issues.append(Issue(kind: .mismatchedIdentifier, directoryURL: directory))
                 continue
             }
             do {
                 try job.markdownExport?.validate()
             } catch {
-                discovery.issues.append(Issue(kind: .corrupt))
+                discovery.issues.append(Issue(kind: .corrupt, directoryURL: directory))
                 continue
             }
             discovery.jobs.append(job)
@@ -192,6 +195,26 @@ actor ProcessingJobStore {
             return $0.createdAt < $1.createdAt
         }
         return discovery
+    }
+
+    /// Moves an unreadable job folder into `Unreadable/` inside the store, where
+    /// discovery skips it (not a UUID name). Never moves a readable job; never deletes.
+    func moveAside(_ directory: URL) throws -> URL {
+        let directory = directory.standardizedFileURL
+        guard directory.deletingLastPathComponent().path == rootURL.standardizedFileURL.path,
+              let id = UUID(uuidString: directory.lastPathComponent),
+              fileManager.fileExists(atPath: directory.appendingPathComponent(Self.manifestFileName).path),
+              (try? load(id: id)) == nil else { throw StoreError.verificationFailed }
+        let aside = rootURL.appendingPathComponent("Unreadable", isDirectory: true)
+        try fileManager.createDirectory(at: aside, withIntermediateDirectories: true)
+        var target = aside.appendingPathComponent(directory.lastPathComponent, isDirectory: true)
+        if fileManager.fileExists(atPath: target.path) {
+            target = aside.appendingPathComponent("\(directory.lastPathComponent)-\(Int(Date().timeIntervalSince1970))",
+                                                  isDirectory: true)
+        }
+        try fileManager.moveItem(at: directory, to: target)
+        RecordingLibraryChange.notify()
+        return target
     }
 
     func remove(id: UUID) throws {

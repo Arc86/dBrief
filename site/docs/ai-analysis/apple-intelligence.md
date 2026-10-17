@@ -8,13 +8,13 @@ On-device AI analysis using Apple's Foundation Models framework.
 
 Apple Intelligence uses the language model built into macOS 26 to generate summaries, action items, tags, sentiment, and a title concept entirely on your Mac — in a single guided-generation call. No data leaves your device.
 
-dBrief uses Apple's `FoundationModels` guided generation (`@Generable`/`@Guide`) to produce all analysis fields at once, matching the same `LocalInsightsResult` shape as the Gemma and Local CLI engines. This means no separate title-generation step and a tight ~12K-character transcript budget tuned for the on-device context window.
+dBrief uses Apple's `FoundationModels` guided generation (`@Generable`/`@Guide`) to produce all analysis fields at once, matching the same `LocalInsightsResult` shape as the Gemma and Local CLI engines. This means no separate title-generation step. A long transcript that doesn't fit the on-device context window is analysed in parts, and the results are combined.
 
 ## Setup
 
-No download or configuration needed. If your Mac meets the requirements, Apple Intelligence is available immediately in **Settings → AI Analysis**.
+No download or configuration needed. Choose **Apple Intelligence** as the **Engine** in **Settings → AI analysis**. When your Mac supports it, it's marked **Recommended** in the menu.
 
-If the option is greyed out, your Mac either doesn't have Apple Silicon or isn't running macOS 26.
+If your Mac doesn't have Apple Silicon or isn't running macOS 26, choose another engine.
 
 ## Privacy
 

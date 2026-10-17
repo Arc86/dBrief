@@ -113,11 +113,14 @@ app: build
 		echo "Stripping SUFeedURL (dev channel — no auto-update to production)"; \
 		/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$(CONTENTS)/Info.plist" 2>/dev/null || true; \
 	fi
+	@python3 scripts/stamp-ticktick-credentials.py "$(CONTENTS)/Info.plist" packaging/secrets.env
 	cp Sources/dBrief/Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Sources/dBrief/Resources/Assets.car $(RESOURCES)/Assets.car
 	cp Sources/dBrief/Resources/dBrief-Icon.png $(RESOURCES)/dBrief-Icon.png
 	cp Sources/dBrief/Resources/FontAwesome6Brands-Regular.otf $(RESOURCES)/FontAwesome6Brands-Regular.otf
+	cp -R Sources/dBrief/Resources/Fonts $(RESOURCES)/Fonts
 	cp -R Sources/dBrief/Resources/3dPartyIcons $(RESOURCES)/3dPartyIcons
+	cp -R Sources/dBrief/Resources/MarkdownEditor $(RESOURCES)/MarkdownEditor
 	@set -e; \
 	LOCAL_METALLIB="$$(find .build -type f -name 'default.metallib' | head -n 1)"; \
 	if [ -n "$$LOCAL_METALLIB" ]; then \
@@ -256,18 +259,26 @@ run: app
 # Beta channel: a fully separate `dBrief-Beta.app` that coexists with the
 # installed production build without fighting over macOS permissions or data.
 # Distinct bundle id → its own TCC grants (mic, Screen Recording, Calendar…),
-# UserDefaults, Application Support, and Keychain; its own stable self-signed
-# cert means those permission grants persist across every beta rebuild. Sparkle
+# UserDefaults, Application Support, and Keychain. Signed with the Developer ID
+# certificate when one is installed (BETA_CODESIGN_IDENTITY): Keychain "Always
+# Allow" grants for a certificate without a Team ID are tied to each build's
+# code hash, so a self-signed beta re-prompts for every Keychain item on every
+# rebuild. Otherwise it falls back to its own stable self-signed cert. An explicit
+# CODESIGN_IDENTITY (e.g. `-` in CI) always wins. Sparkle
 # auto-update is disabled so the beta can't replace itself with a prod release.
 # Every assembly reserves the next tracked packaging/beta-build-number and stamps
 # CFBundleVersion before signing. About shows it separately from the app version.
+BETA_CODESIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null \
+	| sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)
+
 beta:
 	$(MAKE) app \
 		BUNDLE_DIR_NAME="dBrief-Beta" \
 		BUNDLE_ID="com.dbrief.app.beta" \
 		DISPLAY_NAME="dBrief Beta" \
 		SIGNING_CERT_NAME="dBrief Beta Self-Signed" \
-		STRIP_SU_FEED=1
+		STRIP_SU_FEED=1 \
+		$(if $(filter auto,$(CODESIGN_IDENTITY)),$(if $(BETA_CODESIGN_IDENTITY),CODESIGN_IDENTITY="$(BETA_CODESIGN_IDENTITY)"))
 	@echo "Built dBrief-Beta.app — drag to /Applications or run 'make run-beta'."
 
 run-beta: beta

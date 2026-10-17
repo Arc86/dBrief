@@ -83,45 +83,6 @@ struct ProcessingReviewTests {
         #expect(await audit.calls == ["save"])
     }
 
-    private func rediarization(mode: AppSettings.SpeakerIdMode = .confirmFirst) -> ProcessingPipeline.RediarizationReviewRequest {
-        .init(turns: [.init(speakerId: "Speaker 2", start: 0, end: 3)], embeddings: ["Speaker 2": [1, 0]],
-              transcript: rich, mode: mode, roster: ["Alice"])
-    }
-    private var library: VoiceLibrary {
-        .init(people: [.init(id: "person", name: "Alice", voiceprints: [.init(embedding: [1, 0], model: "fixture", capturedAt: Date())])])
-    }
-    @Test func rediarizationSavesResolvedNamesBeforeReturningReview() async throws {
-        let audit = Audit()
-        let result = try #require(try await ProcessingPipeline().prepareRediarizationReview(rediarization(), loadLibrary: { library }, save: {
-            await audit.publish($0)
-        }))
-        #expect(result.transcript.segments.first?.text == "Edited words")
-        #expect(result.transcript.segments.first?.speakerId == "Speaker 2")
-        #expect(result.items.first?.proposedName == "Alice" && result.items.first?.personId == "person")
-        #expect(await audit.transcript == result.transcript)
-    }
-    @Test func declinedGateDoesNotSaveOrProposeReview() async throws {
-        let result = try await ProcessingPipeline().prepareRediarizationReview(rediarization(mode: .optimistic), loadLibrary: { library }, save: { _ in
-            Issue.record("Declined gate saved a transcript")
-        })
-        #expect(result == nil)
-    }
-    @Test func rediarizationSaveFailureCannotReturnReview() async throws {
-        await #expect(throws: CocoaError.self) {
-            _ = try await ProcessingPipeline().prepareRediarizationReview(rediarization(), loadLibrary: { library }, save: { _ in
-                throw CocoaError(.fileWriteOutOfSpace)
-            })
-        }
-    }
-    @Test func rediarizationOwnershipLossAfterSaveCannotReturnReview() async throws {
-        let audit = Audit()
-        await #expect(throws: CancellationError.self) {
-            _ = try await ProcessingPipeline().prepareRediarizationReview(rediarization(), loadLibrary: { library }, save: { _ in
-                await audit.add("save")
-            }, validateOwnership: { if (await audit.calls).contains("save") { throw CancellationError() } })
-        }
-    }
-
     @Test func confirmationCarriesOriginalSnapshotAndUsesReviewedEmbeddings() async throws {
         let audit = Audit()
         let source = rich
@@ -137,17 +98,6 @@ struct ProcessingReviewTests {
         }
         try await ProcessingPipeline().confirmSpeakers(edits, transcript: source, steps: input)
         #expect(await audit.calls.last == "reviewedEmbedding")
-    }
-
-    @Test(arguments: [false, true])
-    func rediarizationCancellationNeverReturnsAReview(afterSave: Bool) async throws {
-        let task = Task {
-            try await ProcessingPipeline().prepareRediarizationReview(rediarization(), loadLibrary: {
-                if !afterSave { withUnsafeCurrentTask { $0?.cancel() } }
-                return library
-            }, save: { _ in withUnsafeCurrentTask { $0?.cancel() } })
-        }
-        await #expect(throws: CancellationError.self) { _ = try await task.value }
     }
 
     private func checkBackgroundScope(_ context: PrivacyTrace.Context) {

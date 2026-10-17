@@ -73,7 +73,7 @@ struct TitleSyncTests {
             warnings: []
         )
 
-        // Parse exactly as RecordingBrowserStore / RecordingHistoryView do.
+        // Parse exactly as LibraryDocument / RecordingHistoryView do.
         let data = try JSONEncoder().encode(payload)
         let meta = try #require(
             try JSONSerialization.jsonObject(with: data) as? [String: Any])

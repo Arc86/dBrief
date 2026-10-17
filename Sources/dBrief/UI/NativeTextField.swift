@@ -8,13 +8,12 @@ struct NativeTextView: NSViewRepresentable {
     var monospaced: Bool = false
     var accessibilityName: String = "Text editor"
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.uiTypography) private var typography
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         let textView = scrollView.documentView as! NSTextView
-        textView.font = monospaced
-            ? .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-            : .systemFont(ofSize: NSFont.smallSystemFontSize)
+        textView.font = editorFont
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -31,6 +30,7 @@ struct NativeTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         let textView = nsView.documentView as! NSTextView
+        textView.font = editorFont
         textView.setAccessibilityLabel(accessibilityName)
         textView.isEditable = isEnabled
         textView.setAccessibilityEnabled(isEnabled)
@@ -42,6 +42,11 @@ struct NativeTextView: NSViewRepresentable {
             textView.string = text
             context.coordinator.lastPushed = text
         }
+    }
+
+    private var editorFont: NSFont {
+        AppFontStyle.system(size: NSFont.smallSystemFontSize, design: monospaced ? .monospaced : .default)
+            .nsFont(using: typography)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -104,13 +109,35 @@ struct NativeTextView: NSViewRepresentable {
 }
 
 /// NSTextField wrapper that reliably accepts keyboard input in Settings windows.
-struct NativeTextField: NSViewRepresentable {
+struct NativeTextField: View {
     let placeholder: String
     @Binding var text: String
     var isSecure: Bool = false
     /// A descriptive name for VoiceOver; examples/placeholders are often ambiguous.
     var accessibilityName: String? = nil
+    @Environment(\.viewerMode) private var mode
+
+    var body: some View {
+        // A rounded bezel always fills with the neutral system text background,
+        // which clashes with the warm paper themes; draw the field plain there.
+        let field = NativeTextFieldRepresentable(placeholder: placeholder, text: $text, isSecure: isSecure,
+                                                 accessibilityName: accessibilityName, bezeled: !mode.isPaper)
+        if mode.isPaper {
+            field.settingsFieldChrome()
+        } else {
+            field
+        }
+    }
+}
+
+private struct NativeTextFieldRepresentable: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    let isSecure: Bool
+    let accessibilityName: String?
+    let bezeled: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.uiTypography) private var typography
 
     func makeNSView(context: Context) -> NSTextField {
         let field: NSTextField
@@ -120,12 +147,11 @@ struct NativeTextField: NSViewRepresentable {
             field = NSTextField()
         }
         field.placeholderString = placeholder
+        field.font = AppFontStyle.body.nsFont(using: typography)
         field.stringValue = text
         field.delegate = context.coordinator
         field.bezelStyle = .roundedBezel
-        field.isBordered = true
-        field.isBezeled = true
-        field.focusRingType = .exterior
+        applyBezel(to: field)
         field.setAccessibilityLabel(accessibilityName ?? placeholder)
         field.isEnabled = isEnabled
         return field
@@ -133,11 +159,22 @@ struct NativeTextField: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         nsView.placeholderString = placeholder
+        nsView.font = AppFontStyle.body.nsFont(using: typography)
         nsView.setAccessibilityLabel(accessibilityName ?? placeholder)
         nsView.isEnabled = isEnabled
+        applyBezel(to: nsView)
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
+    }
+
+    private func applyBezel(to field: NSTextField) {
+        // Border first: setting either clears the other, and a border with no
+        // bezel draws a plain rectangle instead of the rounded field.
+        field.isBordered = false
+        field.isBezeled = bezeled
+        field.drawsBackground = bezeled
+        field.focusRingType = bezeled ? .exterior : .none
     }
 
     func makeCoordinator() -> Coordinator {

@@ -10,6 +10,7 @@ struct SpeakerReviewItem: Identifiable, Equatable, Sendable {
     var personId: String?          // library link when the proposal came from a match
     var clusterEmbedding: [Float]  // ranks the library choices
     var snippet: (start: Double, end: Double)?  // representative audio range
+    var quote: String? = nil       // what the speaker says in that range
 
     static func == (lhs: SpeakerReviewItem, rhs: SpeakerReviewItem) -> Bool {
         lhs.id == rhs.id && lhs.proposedName == rhs.proposedName
@@ -46,15 +47,6 @@ extension TranscriptionPerf {
     }
 }
 
-/// A bump observed by an open transcript viewer so it reloads the committed
-/// transcript after a confirm-first re-diarize review resolves. `token` makes
-/// each commit distinct so repeated re-diarize of the same recording re-fires.
-struct SpeakerReviewCommit: Equatable {
-    let recordingID: UUID
-    let token: UUID
-    let offerReanalysis: Bool
-}
-
 /// The held-pipeline state for a recording paused awaiting speaker confirmation.
 /// Session-only: never persisted; cleared on confirm/cancel.
 @MainActor
@@ -63,7 +55,6 @@ final class SpeakerReviewSession: Identifiable {
     enum Origin {
         case pipeline    // fresh-transcription hold; resume runs AI → markdown → export
         case reprocessing
-        case rediarize   // transcript-viewer re-diarize; commit names only, viewer reloads
     }
 
     let id = UUID()

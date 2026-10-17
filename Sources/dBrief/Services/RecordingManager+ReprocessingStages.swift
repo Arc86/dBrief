@@ -122,7 +122,8 @@ extension RecordingManager {
             let items = rich.speakerLabels.map {
                 SpeakerReviewItem(id: $0.id, proposedName: $0.displayName, reason: .noEmbedding,
                     confidence: 0, personId: $0.personId, clusterEmbedding: [],
-                    snippet: SpeakerSnippet.representative(for: $0.id, in: rich))
+                    snippet: SpeakerSnippet.representative(for: $0.id, in: rich),
+                    quote: SpeakerSnippet.quote(for: $0.id, in: rich))
             }
             try await reprocessingStore.checkpoint(attemptID: job.id, status: .waitingForSpeakerReview)
             try requireProcessingOwnership(job)
@@ -174,7 +175,9 @@ extension RecordingManager {
                     message: error.localizedDescription)
                 guard !Task.isCancelled, !self.processingCancellationInProgress,
                       self.appState.processingJob === job else { return }
-                self.appState.lastError = error.localizedDescription
+                self.appState.post(.error, "Reprocessing didn't finish: \(error.localizedDescription) Current results were kept.",
+                                   source: .reprocessing, recordingURL: job.recording.finalizedAudioURL, actions: [.openQueue])
+                self.notify(.reprocessFailed, about: job.recording)
                 await self.endReprocessing(job)
             }
         }
@@ -290,7 +293,7 @@ extension RecordingManager {
               let actions = output.actionItems, let tags = output.tags else { throw ReprocessingError.analysisFailure(output) }
         var insights = RecordingInsights(summary: summary, actionItems: actions, tags: tags,
             sentiment: output.sentiment ?? "", generatedTitle: nil, markdownPath: nil,
-            modelProvenance: job.recording.analysisModelProvenance)
+            modelProvenance: job.recording.analysisModelProvenance, partNotes: output.partNotes)
         if let priorData = try await reprocessingStore.originalData(suffix: "insights.json", attemptID: job.id) {
             let prior = try JSONDecoder().decode(RecordingInsights.self, from: priorData)
             insights.generatedTitle = prior.generatedTitle

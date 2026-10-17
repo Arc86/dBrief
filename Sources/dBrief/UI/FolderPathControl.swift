@@ -9,6 +9,7 @@ import SwiftUI
 /// button so the security-scoped-bookmark write path in `AppSettings` is preserved.
 struct FolderPathControl: NSViewRepresentable {
     let url: URL
+    @Environment(\.uiTypography) private var typography
 
     func makeNSView(context: Context) -> NSPathControl {
         let control = NSPathControl()
@@ -16,7 +17,7 @@ struct FolderPathControl: NSViewRepresentable {
         control.isEditable = false
         control.focusRingType = .none
         control.controlSize = .small
-        control.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        control.font = AppFontStyle.system(size: NSFont.smallSystemFontSize).nsFont(using: typography)
         control.backgroundColor = .clear
 
         // Reveal the folder in Finder on double-click.
@@ -32,6 +33,7 @@ struct FolderPathControl: NSViewRepresentable {
     }
 
     func updateNSView(_ control: NSPathControl, context: Context) {
+        control.font = AppFontStyle.system(size: NSFont.smallSystemFontSize).nsFont(using: typography)
         context.coordinator.url = url
         if control.url != url {
             control.url = url

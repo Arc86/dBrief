@@ -11,8 +11,8 @@ import MLX
 
 actor MLXInsightsService {
     private static let modelID = "mlx-community/gemma-4-e4b-it-4bit"
-    // Transcript truncation budget lives in `UnifiedInsightsPrompt` (shared with
-    // the Local CLI engine).
+    // Long transcripts are never truncated here: above `singlePassTokenBudget` they
+    // go through map-reduce (`runInsights`).
 
     private let fileManager = FileManager.default
     private let fallbackStateHandler: MLProgress.Sink
@@ -46,6 +46,7 @@ actor MLXInsightsService {
 
     func analyzeTranscriptStream(
         _ text: String,
+        context: String,
         outputLanguage: OutputLanguage,
         customVocabulary: String = "",
         guidance: InsightsGuidance? = nil
@@ -58,10 +59,6 @@ actor MLXInsightsService {
             }
         }
 
-        let truncatedText = Self.truncateTranscript(text)
-        let userPrompt = buildUserPrompt(transcript: truncatedText)
-        let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
-
         return AsyncThrowingStream { continuation in
             let task = Task {
                 defer { self.generationTask = nil }
@@ -69,23 +66,10 @@ actor MLXInsightsService {
                     self.isInferencing = true
                     let container = try await self.loadModelContainerIfNeeded()
                     self.stateHandler(.analyzing)
-                    let session = ChatSession(
-                        container,
-                        instructions: systemPrompt,
-                        generateParameters: self.generationParameters()
-                    )
-
-                    var output = ""
-                    do {
-                        for try await chunk in session.streamResponse(to: userPrompt) {
-                            output += chunk
-                            continuation.yield(chunk)
-                        }
-                    } catch {
-                        await session.synchronize()
-                        throw error
-                    }
-                    await session.synchronize()
+                    let output = try await self.runInsights(
+                        container: container, transcript: text, context: context,
+                        outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance,
+                        onDelta: { continuation.yield($0) })
                     self.isInferencing = false
 
                     _ = try LocalInsightsDecoder.decodeAndNormalize(output)
@@ -111,6 +95,7 @@ actor MLXInsightsService {
 
     func analyzeTranscript(
         _ text: String,
+        context: String,
         outputLanguage: OutputLanguage,
         customVocabulary: String = "",
         guidance: InsightsGuidance? = nil
@@ -129,25 +114,10 @@ actor MLXInsightsService {
             isInferencing = true
             let container = try await loadModelContainerIfNeeded()
             stateHandler(.analyzing)
-            let systemPrompt = buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
-            let session = ChatSession(
-                container,
-                instructions: systemPrompt,
-                generateParameters: generationParameters()
-            )
-
-            let truncatedText = Self.truncateTranscript(text)
-            let userPrompt = buildUserPrompt(transcript: truncatedText)
-            var raw = ""
-            do {
-                for try await chunk in session.streamResponse(to: userPrompt) {
-                    raw += chunk
-                }
-            } catch {
-                await session.synchronize()
-                throw error
-            }
-            await session.synchronize()
+            let raw = try await runInsights(
+                container: container, transcript: text, context: context,
+                outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance,
+                onDelta: { _ in })
             isInferencing = false
             let result = try LocalInsightsDecoder.decodeAndNormalize(raw)
             #if canImport(MLX)
@@ -244,6 +214,15 @@ actor MLXInsightsService {
         #endif
     }
 
+    /// Peak MLX allocation since process start, for the eval harness.
+    static func peakMemoryBytes() -> Int {
+        #if canImport(MLX)
+        return MLX.Memory.peakMemory
+        #else
+        return 0
+        #endif
+    }
+
     func purgeModels() async throws {
         await unload()
         let base = try llmDownloadBaseURL()
@@ -305,6 +284,9 @@ actor MLXInsightsService {
             id: Self.modelID
         )
         self.modelContainer = container
+        if let status = try? await container.cacheStatus(parameters: generationParameters()) {
+            Logger.ai.info("Gemma KV plan: strategy=\(status.requestedStrategy?.description ?? "none") layers=\(status.layers.count) pending=\(status.pendingLayerCount)")
+        }
         return container
     }
 
@@ -322,9 +304,208 @@ actor MLXInsightsService {
         UnifiedInsightsPrompt.systemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
     }
 
+    /// Guided JSON first; free-text ChatSession only if guided failed before
+    /// emitting anything (so a stream never carries two JSON documents, F10).
+    private func generateInsightsJSON(
+        container: ModelContainer, system: String, user: String,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        do {
+            let output = try await GuidedJSONGenerator.generate(
+                system: system, user: user, schema: InsightsSchema.unified,
+                maxTokens: GemmaGenerationConfig.maxOutputTokens,
+                container: container, onDelta: onDelta)
+            if output.closedAtCap { Self.diagnostic("Gemma insights closed at output cap") }
+            return output.json
+        } catch let failure as GuidedJSONGenerator.FailedBeforeOutput {
+            Logger.ai.warning("Guided generation unavailable, falling back to free text: \(String(describing: failure.underlying))")
+            if Task.isCancelled { throw CancellationError() }
+            let session = ChatSession(container, instructions: system, generateParameters: generationParameters())
+            var raw = ""
+            do {
+                for try await chunk in session.streamResponse(to: user) { raw += chunk; onDelta(chunk) }
+            } catch {
+                await session.synchronize(); throw error
+            }
+            await session.synchronize()
+            return raw
+        }
+    }
+
+    /// Token-aware analysis. Within `singlePassTokenBudget`: one guided pass, streamed
+    /// live. Above it: map (notes per part) → reduce, emitted as ONE final JSON document
+    /// (F10). Nothing in the transcript is dropped on either path.
+    private func runInsights(
+        container: ModelContainer, transcript: String, context: String,
+        outputLanguage: OutputLanguage, customVocabulary: String, guidance: InsightsGuidance?,
+        onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let inputTokens = await container.perform { ctx in
+            ctx.tokenizer.encode(text: context + "\n\n" + transcript, addSpecialTokens: false).count
+        }
+        Logger.ai.info("Gemma insights input: \(inputTokens) tokens")
+        let singlePass = {
+            let user = self.buildUserPrompt(transcript: context.isEmpty ? transcript : context + "\n\n" + transcript)
+            return try await self.generateInsightsJSON(
+                container: container,
+                system: self.buildSystemPrompt(outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
+                user: user, onDelta: onDelta)
+        }
+        if inputTokens <= GemmaGenerationConfig.singlePassTokenBudget { return try await singlePass() }
+
+        let parts = await container.perform { ctx in
+            TranscriptChunkPlanner.plan(
+                transcript,
+                maxTokensPerChunk: GemmaGenerationConfig.chunkTokenBudget,
+                overlapLines: GemmaGenerationConfig.chunkOverlapLines,
+                countTokens: { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count })
+        }
+        // A large context can push a short transcript over the budget; one part gains
+        // nothing from map-reduce, so keep the single streamed pass.
+        if parts.count <= 1 { return try await singlePass() }
+        Logger.ai.info("Gemma map-reduce: \(parts.count) parts")
+        let mapSystem = UnifiedInsightsPrompt.chunkNotesSystemPrompt(
+            outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance)
+
+        var notes: [ChunkNotes] = []
+        for part in parts {
+            try Task.checkCancellation()
+            stateHandler(.analyzingPart(index: part.index, total: part.total))
+            notes.append(try await mapPart(part, system: mapSystem, context: context, container: container))
+        }
+
+        EvalNotesDump.write(notes)
+        try Task.checkCancellation()
+        stateHandler(.analyzingPart(index: parts.count + 1, total: parts.count))
+        let allNotes = notes
+        let (notesText, notesTokens) = await container.perform { ctx in
+            let count: (String) -> Int = { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count }
+            let text = ChunkNotesMerger.reduceInput(
+                allNotes, maxTokens: GemmaGenerationConfig.reduceInputTokenBudget, countTokens: count)
+            return (text, count(text))
+        }
+        if notesTokens > GemmaGenerationConfig.reduceInputTokenBudget {
+            // Decisions, action items and people are never trimmed, so they alone can exceed it.
+            Logger.ai.warning("Gemma reduce input is \(notesTokens) tokens, over the \(GemmaGenerationConfig.reduceInputTokenBudget)-token budget")
+        }
+        let reduceOutput = try await GuidedJSONGenerator.generate(
+            system: UnifiedInsightsPrompt.reduceSystemPrompt(
+                outputLanguage: outputLanguage, customVocabulary: customVocabulary, guidance: guidance),
+            user: UnifiedInsightsPrompt.reduceUserPrompt(context: context, notes: notesText),
+            schema: InsightsSchema.reduce, maxTokens: GemmaGenerationConfig.reduceMaxTokens,
+            container: container)
+        if reduceOutput.closedAtCap { Self.diagnostic("Gemma reduce closed at output cap") }
+        let reduceJSON = reduceOutput.json
+        try Task.checkCancellation()
+        let reduced = try JSONDecoder().decode(ReduceOutput.self, from: Data(reduceJSON.utf8))
+        let result = LocalInsightsResult(
+            titleConcept: reduced.titleConcept, summary: reduced.summary,
+            // Decisions are not merged deterministically: they reach the final record only via the reduce summary.
+            actionItems: ChunkNotesMerger.mergedActionItems(allNotes),
+            tags: reduced.tags, sentiment: reduced.sentiment,
+            partNotes: allNotes) // raw (deduplicated) per-part notes, for Transcript Chat
+        let json = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        onDelta(json) // single document for the app's concatenating decoder
+        return json
+    }
+
+    /// Notes for one part. On any non-cancellation failure, or a closure at the
+    /// output cap (whose later lists may be cut short), the part is re-planned into
+    /// halves (greedy decoding would make an identical retry behave identically) and
+    /// each half is mapped once. A half that closes at the cap keeps its valid notes
+    /// (no further splitting); a failing half fails the analysis loudly, so a part is
+    /// never silently omitted. A part too small to split (one piece at the 1000-token
+    /// floor) is not re-run: a capped result keeps its notes, a failure is rethrown.
+    private func mapPart(_ part: TranscriptChunk, system: String, context: String,
+                         container: ModelContainer) async throws -> ChunkNotes {
+        enum FirstPass { case capped(ChunkNotes), failed(Error) }
+        let firstPass: FirstPass
+        do {
+            let first = try await mapOnce(part, system: system, context: context, container: container)
+            guard first.closedAtCap else { return first.notes }
+            firstPass = .capped(first.notes)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            firstPass = .failed(error)
+        }
+        let text = part.text
+        let halves = await container.perform { ctx in
+            let count: (String) -> Int = { ctx.tokenizer.encode(text: $0, addSpecialTokens: false).count }
+            // Half of this part's own size, so even a short (last) part really splits.
+            let half = max(1_000, (min(count(text), GemmaGenerationConfig.chunkTokenBudget) + 1) / 2)
+            return TranscriptChunkPlanner.plan(text, maxTokensPerChunk: half, overlapLines: 0, countTokens: count)
+        }
+        switch (firstPass, halves.count > 1) {
+        // One piece: greedy decoding would repeat the identical result, so do not re-run.
+        case (.capped(let notes), false):
+            Self.diagnostic("Gemma part \(part.index) closed at output cap; too small to split, keeping its notes")
+            return notes
+        case (.failed(let error), false):
+            Self.diagnostic("Gemma part \(part.index) failed and is too small to split: \(error)")
+            throw error
+        case (.capped, true):
+            Self.diagnostic("Gemma part \(part.index) closed at output cap; splitting")
+        case (.failed(let error), true):
+            Self.diagnostic("Gemma part \(part.index) split after failure: \(error)")
+        }
+        var merged = ChunkNotes(keyPoints: [], decisions: [], actionItems: [], people: [])
+        for (offset, half) in halves.enumerated() {
+            try Task.checkCancellation()
+            let result = try await mapOnce(
+                TranscriptChunk(index: part.index, total: part.total, text: half.text),
+                system: system, context: context, container: container)
+            if result.closedAtCap {
+                Self.diagnostic("Gemma part \(part.index) half \(offset + 1)/\(halves.count) closed at output cap; keeping its notes")
+            }
+            merged.keyPoints += result.notes.keyPoints
+            merged.decisions += result.notes.decisions
+            merged.actionItems += result.notes.actionItems
+            merged.people += result.notes.people
+        }
+        return merged.deduplicated()
+    }
+
+    private func mapOnce(_ part: TranscriptChunk, system: String, context: String,
+                         container: ModelContainer) async throws -> (notes: ChunkNotes, closedAtCap: Bool) {
+        try Task.checkCancellation()
+        let output = try await GuidedJSONGenerator.generate(
+            system: system, user: UnifiedInsightsPrompt.chunkNotesUserPrompt(context: context, chunk: part),
+            schema: InsightsSchema.chunkNotes, maxTokens: GemmaGenerationConfig.chunkNotesMaxTokens,
+            container: container)
+        let notes = try JSONDecoder().decode(ChunkNotes.self, from: Data(output.json.utf8)).deduplicated()
+        return (notes, output.closedAtCap)
+    }
+
+    /// Map-reduce diagnostics: unified log plus stderr, so the eval harness sees them.
+    /// Messages carry counts and error names only, never transcript text.
+    private nonisolated static func diagnostic(_ message: String) {
+        Logger.ai.warning("\(message, privacy: .public)")
+        FileHandle.standardError.write(Data("dBriefMLHost: \(message)\n".utf8))
+    }
+
+    private struct ReduceOutput: Decodable {
+        let titleConcept: String, summary: String, tags: [String], sentiment: String
+        enum CodingKeys: String, CodingKey { case titleConcept = "title_concept", summary, tags, sentiment }
+    }
+
     private func generationParameters() -> GenerateParameters {
+        Self.sharedGenerationParameters()
+    }
+
+    /// Model container for multi-turn chat (`GemmaChatSessions`) and the chat eval
+    /// harness (`--eval-chat`). `unload()` releases it once the session is dropped.
+    func loadForChat() async throws -> ModelContainer { try await loadModelContainerIfNeeded() }
+
+    /// Identical to `generationParameters()` (same kvCache); usable off the actor.
+    nonisolated func chatGenerationParameters() -> GenerateParameters {
+        Self.sharedGenerationParameters()
+    }
+
+    private nonisolated static func sharedGenerationParameters() -> GenerateParameters {
         .init(
-            maxTokens: 8192,
+            maxTokens: GemmaGenerationConfig.maxOutputTokens,
+            kvCache: GemmaGenerationConfig.kvCache,
             temperature: 0.5,
             topP: 0.9,
             repetitionPenalty: 1.05,
@@ -339,10 +520,6 @@ actor MLXInsightsService {
     /// reference; see
     /// https://huggingface.co/mlx-community/gemma-4-31b-8bit/discussions/1
     private static let gemma4ChatTemplate = "{%- set ns = namespace(prev_message_type=None) -%}{%- set loop_messages = messages -%}{{ bos_token }}{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}{{ '<|turn>system\\n' }}{%- if enable_thinking is defined and enable_thinking -%}{{ '<|think|>' }}{%- set ns.prev_message_type = 'think' -%}{%- endif -%}{%- if messages[0]['role'] in ['system', 'developer'] -%}{{ messages[0]['content'] | trim }}{%- set loop_messages = messages[1:] -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endif %}{%- for message in loop_messages -%}{%- set ns.prev_message_type = None -%}{%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}{{ '<|turn>' + role + '\\n' }}{%- if message['content'] is string -%}{%- if role == 'model' -%}{{ message['content'] | trim }}{%- else -%}{{ message['content'] | trim }}{%- endif -%}{%- endif -%}{{ '<turn|>\\n' }}{%- endfor -%}{%- if add_generation_prompt -%}{{ '<|turn>model\\n' }}{%- endif -%}"
-
-    private static func truncateTranscript(_ transcript: String) -> String {
-        UnifiedInsightsPrompt.truncate(transcript)
-    }
 
 
     private func clearGPUCacheIfAvailable() {
@@ -390,89 +567,5 @@ actor MLXInsightsService {
         }
 
         return candidates.contains { FileManager.default.fileExists(atPath: $0.path) }
-    }
-}
-
-// MARK: - HuggingFace bridging for mlx-swift-lm 3.x Downloader/TokenizerLoader protocols
-
-private struct HubApiDownloader: Downloader {
-    let hub: HubApi
-
-    func download(
-        id: String,
-        revision: String?,
-        matching patterns: [String],
-        useLatest: Bool,
-        progressHandler: @Sendable @escaping (Progress) -> Void
-    ) async throws -> URL {
-        try await hub.snapshot(
-            from: id,
-            revision: revision ?? "main",
-            matching: patterns,
-            progressHandler: progressHandler
-        )
-    }
-}
-
-private struct TransformersTokenizerLoader: TokenizerLoader {
-    let fallbackChatTemplate: String?
-
-    func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
-        let upstream = try await AutoTokenizer.from(modelFolder: directory)
-        return TransformersTokenizerBridge(upstream, fallbackChatTemplate: fallbackChatTemplate)
-    }
-}
-
-private struct TransformersTokenizerBridge: MLXLMCommon.Tokenizer {
-    private let upstream: any Tokenizers.Tokenizer
-    private let fallbackChatTemplate: String?
-
-    init(_ upstream: any Tokenizers.Tokenizer, fallbackChatTemplate: String? = nil) {
-        self.upstream = upstream
-        self.fallbackChatTemplate = fallbackChatTemplate
-    }
-
-    func encode(text: String, addSpecialTokens: Bool) -> [Int] {
-        upstream.encode(text: text, addSpecialTokens: addSpecialTokens)
-    }
-
-    func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
-        upstream.decode(tokens: tokenIds, skipSpecialTokens: skipSpecialTokens)
-    }
-
-    func convertTokenToId(_ token: String) -> Int? {
-        upstream.convertTokenToId(token)
-    }
-
-    func convertIdToToken(_ id: Int) -> String? {
-        upstream.convertIdToToken(id)
-    }
-
-    var bosToken: String? { upstream.bosToken }
-    var eosToken: String? { upstream.eosToken }
-    var unknownToken: String? { upstream.unknownToken }
-
-    func applyChatTemplate(
-        messages: [[String: any Sendable]],
-        tools: [[String: any Sendable]]?,
-        additionalContext: [String: any Sendable]?
-    ) throws -> [Int] {
-        do {
-            return try upstream.applyChatTemplate(
-                messages: messages, tools: tools, additionalContext: additionalContext)
-        } catch Tokenizers.TokenizerError.missingChatTemplate {
-            guard let fallbackChatTemplate else {
-                throw MLXLMCommon.TokenizerError.missingChatTemplate
-            }
-            return try upstream.applyChatTemplate(
-                messages: messages,
-                chatTemplate: .literal(fallbackChatTemplate),
-                addGenerationPrompt: true,
-                truncation: false,
-                maxLength: nil,
-                tools: tools,
-                additionalContext: additionalContext
-            )
-        }
     }
 }

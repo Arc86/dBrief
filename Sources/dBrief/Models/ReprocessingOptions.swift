@@ -8,8 +8,8 @@ enum ReprocessingOperation: String, Codable, Sendable, CaseIterable {
     var title: String {
         switch self {
         case .transcribe: "Retranscribe"
-        case .analysis: "Re-run AI analysis"
-        case .speakers: "Detect speakers again"
+        case .analysis: "Re-run AI Analysis"
+        case .speakers: "Detect Speakers Again"
         }
     }
     var displayName: String { title }
@@ -78,6 +78,22 @@ struct ReprocessingOptions: Codable, Sendable {
         remoteChunkOverlapSeconds = settings.remoteChunkOverlapSeconds
         remoteChunkRetryCount = settings.remoteChunkRetryCount
         localCLIConfigurationDigest = Self.digest(settings.effectiveLocalCLIConfig)
+    }
+
+    /// Points this attempt's analysis at another engine or remote endpoint.
+    /// Vocabulary correction follows it, except Local CLI, which can't answer it.
+    @MainActor mutating func selectAnalysis(engine: AppSettings.AIEngine, endpoint: Endpoint? = nil,
+                                            settings: AppSettings) {
+        aiEngine = engine
+        if let endpoint { aiEndpoint = Self.metadata(endpoint) }
+        spellingEngine = engine == .localCLI ? settings.chatFallbackEngine : engine
+        // A previous attempt froze an older command; choosing Local CLI now means today's.
+        if engine == .localCLI { localCLIConfigurationDigest = Self.digest(settings.effectiveLocalCLIConfig) }
+    }
+
+    mutating func selectTranscriptionEndpoint(_ endpoint: Endpoint) {
+        engine = .remoteEndpoint
+        transcriptionEndpoint = Self.metadata(endpoint)
     }
 
     var requiresTranscription: Bool { operation == .transcribe }

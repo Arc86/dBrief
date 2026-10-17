@@ -17,6 +17,12 @@ struct UnifiedInsightsPromptTests {
         #expect(prompt.contains("\"sentiment\""))
     }
 
+    @Test("System prompt forbids double quotes inside JSON string values")
+    func systemPromptForbidsDoubleQuotesInValues() {
+        let prompt = UnifiedInsightsPrompt.systemPrompt(outputLanguage: .matchInput)
+        #expect(prompt.contains("never use the double-quote character"))
+    }
+
     @Test("Output-language instruction varies by selection")
     func languageInstructionVaries() {
         #expect(UnifiedInsightsPrompt.systemPrompt(outputLanguage: .english).contains("ENGLISH"))

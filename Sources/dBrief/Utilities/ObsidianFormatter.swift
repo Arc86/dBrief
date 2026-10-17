@@ -128,7 +128,8 @@ enum ObsidianFormatter {
     }
 
     private static func formatSeconds(_ seconds: Double) -> String {
-        let totalSeconds = max(0, Int(seconds.rounded()))
-        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 3600 ? String(format: "%02d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
+                             : String(format: "%02d:%02d", total / 60, total % 60)
     }
 }

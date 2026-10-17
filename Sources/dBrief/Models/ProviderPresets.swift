@@ -38,6 +38,9 @@ enum ProviderPresets {
         ProviderPreset(id: "groq-chat", name: "Groq", provider: .openAICompatible,
                        baseURL: "https://api.groq.com/openai", defaultModel: "llama-3.3-70b-versatile",
                        help: "Fast inference. API key from console.groq.com", defaultOutputTokenLimit: 16_384),
+        ProviderPreset(id: "openrouter", name: "OpenRouter", provider: .openAICompatible,
+                       baseURL: "https://openrouter.ai/api", defaultModel: "z-ai/glm-5.3-flash",
+                       help: "Hundreds of models behind one key. API key from openrouter.ai/keys", defaultOutputTokenLimit: 16_384),
         ProviderPreset(id: "ollama", name: "Ollama (local)", provider: .openAICompatible,
                        baseURL: "http://localhost:11434", defaultModel: "llama3",
                        help: "Local models, no API key needed"),
@@ -49,10 +52,6 @@ enum ProviderPresets {
     static func recommendedOutputTokens(for endpoint: Endpoint) -> Int {
         let host = URL(string: endpoint.baseURL)?.host?.lowercased()
         let model = endpoint.modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if endpoint.provider == .openAICompatible,
-           host == "openrouter.ai", model == "z-ai/glm-5.3-flash" {
-            return 16_384
-        }
         return ai.first {
             $0.provider == endpoint.provider
                 && URL(string: $0.baseURL)?.host?.lowercased() == host
@@ -74,6 +73,9 @@ enum ProviderPresets {
         ProviderPreset(id: "openai-asr", name: "OpenAI / Whisper API", provider: .openAICompatible,
                        baseURL: "https://api.openai.com", defaultModel: "whisper-1",
                        help: "OpenAI-compatible /v1/audio/transcriptions"),
+        ProviderPreset(id: "openrouter-asr", name: "OpenRouter", provider: .openAICompatible,
+                       baseURL: "https://openrouter.ai/api", defaultModel: "openai/whisper-large-v3",
+                       help: "One key for Whisper, GPT-4o Transcribe and more. API key from openrouter.ai/keys"),
     ]
 
     /// Blank custom endpoint for the "Custom…" menu option.

@@ -51,5 +51,20 @@
 	<string>6fnsC0BNteXyMAHepJ2OLtprdaRvSokq2hdXYKQjvR8=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>43200</integer>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

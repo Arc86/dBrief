@@ -9,8 +9,9 @@ dBrief can send audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoi
 ## Setting up an endpoint
 
 1. Go to **Settings → Transcription**
-2. Under the endpoint list, click the **+** menu and pick a provider preset (or **Custom…**)
-3. The preset prefills the base URL and a default model — just add your **API Key**. For a custom server, also set:
+2. Set **Where transcription runs** to **Remote service**
+3. In the **Providers** card, click **Add…** and pick a provider preset (or **Custom…**)
+4. The preset prefills the base URL and a default model — just add your **API key**. For a custom server, also set:
    - **Name** — a label for this endpoint (e.g. "Local Whisper Large")
    - **Base URL** — the server URL (e.g. `http://localhost:8080`)
    - **Model** — the model name (e.g. `whisper-1` or `large-v3`)
@@ -29,7 +30,7 @@ For Deepgram and ElevenLabs you only need a valid API key — there's no model l
 
 ## Large files
 
-For OpenAI-compatible/whisper-asr endpoints, dBrief automatically splits oversized audio into chunks and combines the results. Deepgram and ElevenLabs accept long audio directly, so chunking is skipped for them.
+For OpenAI-compatible/whisper-asr endpoints, dBrief automatically splits oversized audio into chunks and combines the results. You can turn this off or tune it with **Split large files** in the **Advanced** card at the end of **Settings → Transcription**. Deepgram and ElevenLabs accept long audio directly, so chunking is skipped for them.
 
 ## Privacy
 

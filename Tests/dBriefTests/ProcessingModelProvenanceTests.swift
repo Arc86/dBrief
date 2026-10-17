@@ -27,7 +27,7 @@ struct ProcessingModelProvenanceTests {
             options: .init(removeFillerWords: false, ignoredSegments: [], modelName: "asr-A"),
             using: { _ in transcript(model: nil) }, correct: { result in
                 // Correction is a separate model and cannot relabel the ASR pass.
-                var copy = result; copy.modelName = "speller-B"; return copy
+                var copy = result; copy.modelName = "speller-B"; return .init(result: copy, outcome: .corrected(1))
             })
         #expect(result.transcription.modelName == "asr-A")
         let raw = root.appendingPathComponent("master.transcript.json")

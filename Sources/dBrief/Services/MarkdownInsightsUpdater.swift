@@ -8,6 +8,27 @@ enum MarkdownInsightsUpdater {
     static let summaryHeader = "## 📝 Summary"
     static let actionItemsHeader = "## ✅ Action Items"
     static let tagsHeader = "## 🏷️ Tags"
+    static let askDBriefHeader = "## ✨ Ask dBrief"
+    static let transcriptHeader = "## 💬 Transcript"
+
+    /// Replaces the Ask dBrief section with `body`, or inserts it before the transcript
+    /// (or at the end when the note has no transcript).
+    static func upsertAskDBrief(markdown: String, body: String) -> String {
+        var lines = markdown.components(separatedBy: "\n")
+        let bodyLines = body.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        if lines.contains(askDBriefHeader) {
+            replaceSection(in: &lines, header: askDBriefHeader, body: bodyLines, keepsBlankLines: true)
+            return lines.joined(separator: "\n")
+        }
+        let section = [askDBriefHeader, ""] + bodyLines + [""]
+        if let transcript = lines.firstIndex(of: transcriptHeader) {
+            lines.insert(contentsOf: section, at: transcript)
+        } else {
+            while lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeLast() }
+            lines += [""] + section
+        }
+        return lines.joined(separator: "\n")
+    }
 
     static func update(markdown: String, with insights: RecordingInsights) -> String {
         var lines = markdown.components(separatedBy: "\n")
@@ -29,9 +50,10 @@ enum MarkdownInsightsUpdater {
     /// (a line starting with `## ` or a `---` line, or end-of-file) with a blank
     /// line, `body`, and a trailing blank line. No-op if the header is absent or
     /// `body` is empty.
-    private static func replaceSection(in lines: inout [String], header: String, body: [String]) {
+    private static func replaceSection(in lines: inout [String], header: String, body: [String],
+                                       keepsBlankLines: Bool = false) {
         guard let headerIndex = lines.firstIndex(of: header) else { return }
-        let nonEmptyBody = body.filter { !$0.isEmpty }
+        let nonEmptyBody = keepsBlankLines ? body : body.filter { !$0.isEmpty }
         guard !nonEmptyBody.isEmpty else { return }
 
         var end = headerIndex + 1

@@ -236,7 +236,7 @@ final class SpokenSummaryService: Identifiable {
 
         switch engine {
         case .localCLI:
-            throw SpokenSummaryError.engineUnavailable("Local CLI cannot generate a spoken summary. Choose a chat fallback engine in Settings → AI Analysis.")
+            throw SpokenSummaryError.engineUnavailable("Local CLI cannot generate a spoken summary. Choose a chat fallback engine in Settings → AI analysis.")
 
         case .qwenLocal:
             guard let plugin else { throw SpokenSummaryError.engineUnavailable("Local AI plugin not available.") }
@@ -258,7 +258,7 @@ final class SpokenSummaryService: Identifiable {
 
         case .remoteEndpoint:
             guard let endpoint = appSettings.effectiveDefaultAIEndpoint else {
-                throw SpokenSummaryError.engineUnavailable("No AI endpoint configured. Add one in Settings → AI Analysis.")
+                throw SpokenSummaryError.engineUnavailable("No AI endpoint configured. Add one in Settings → AI analysis.")
             }
             return try await collect(aiService.streamChat(systemPrompt: systemPrompt, userMessage: userMessage, endpoint: endpoint, stage: .spokenSummaryScript))
         }

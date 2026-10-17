@@ -3,6 +3,7 @@ import SwiftUI
 struct PromptImprovementPanel: View {
     @Bindable var session: PromptEditorSession
     @State private var showRequest = true
+    @Environment(\.viewerPalette) private var palette
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -11,22 +12,24 @@ struct PromptImprovementPanel: View {
                     VStack(alignment: .leading, spacing: 4) {
                         PromptEngineLabel(name: config.displayName, destination: config.destinationDescription)
                         if session.engineSelection == .configured, let note = PromptConfigurationResolver.fallbackExplanation(identity: session.identity, settings: session.store.settings) {
-                            Text(note).foregroundStyle(.secondary)
+                            Text(note).foregroundStyle(palette.secondary.color)
                         }
-                    }.font(.callout)
-                } else if let error = session.configurationError { Text(error).foregroundStyle(.secondary) }
+                    }.uiFont(.callout)
+                } else if let error = session.configurationError { Text(error).foregroundStyle(palette.secondary.color) }
                 DisclosureGroup("Improvement request", isExpanded: $showRequest) {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField("Improve clarity while preserving intent", text: $session.improvementRequest, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.plain)
-                            .padding(12).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                            .padding(12)
+                            .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(palette.divider.color, lineWidth: 1)
+                            }
                             .accessibilityLabel("What would you like to improve?")
-                        ViewThatFits(in: .horizontal) {
-                            HStack { shortcuts }
-                            VStack(alignment: .leading) { shortcuts }
-                        }.buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+                        ViewerWrapLayout(spacing: 6, lineSpacing: 6) { shortcuts }.buttonStyle(.settingsSecondary)
                         Text("Uses this prompt and your request. No recording is sent.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }.padding(.top, 8)
                 }
                 HStack {
@@ -39,26 +42,26 @@ struct PromptImprovementPanel: View {
                             .disabled(session.configuration == nil || session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                if let error = session.improvementError { Text(error).foregroundStyle(.secondary).textSelection(.enabled) }
+                if let error = session.improvementError { Text(error).foregroundStyle(palette.secondary.color).textSelection(.enabled) }
                 if let suggestion = session.suggestion {
-                    Divider()
-                    Text("Suggested prompt").font(.headline)
+                    palette.divider.color.frame(height: 1)
+                    Text("Suggested prompt").uiFont(.headline)
                     ForEach(Array(suggestion.response.changes.enumerated()), id: \.offset) { _, change in
-                        Text("• \(change)").font(.callout).foregroundStyle(.secondary)
+                        Text("• \(change)").uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }
-                    Text(suggestion.response.prompt).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                    Text(suggestion.response.prompt).uiFont(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     if !session.canApplySuggestion {
                         Text("The prompt, request, or AI configuration changed. Generate a new suggestion.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .uiFont(.callout).foregroundStyle(palette.secondary.color)
                     }
                     HStack {
                         Button("Use suggestion") { session.applySuggestion() }
                             .modifier(PromptPrimaryAction()).disabled(!session.canApplySuggestion)
-                        Button("Discard") { session.discardSuggestion() }
+                        Button("Discard") { session.discardSuggestion() }.buttonStyle(.settingsSecondary)
                     }
-                    Text("Replaces the draft. Save when you’re ready.").font(.caption).foregroundStyle(.secondary)
+                    Text("Replaces the draft. Save when you’re ready.").uiFont(.caption).foregroundStyle(palette.secondary.color)
                 }
             }.padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4).frame(maxWidth: .infinity, alignment: .leading)
         }

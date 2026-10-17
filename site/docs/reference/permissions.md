@@ -20,11 +20,11 @@ Without this permission, dBrief can still record your microphone. It falls back 
 
 ## Speech Recognition
 
-**Required for:** The Apple Speech transcription engine.
+**Required for:** The Apple Speech transcription engine and the live transcript preview.
 
 Without this permission, Apple Speech is unavailable. Local Whisper and remote endpoints don't need it.
 
-**To grant:** Open **System Settings → Privacy & Security → Speech Recognition** and enable dBrief.
+**To grant:** Open **System Settings → Privacy & Security → Speech Recognition** and enable dBrief, or use the **Request** button in **Settings → Permissions**.
 
 ## Calendar
 
@@ -42,4 +42,4 @@ Without this permission, dBrief still records normally; it just can't pull in ca
 
 ---
 
-> **Tip:** **Settings → Permissions** shows the live status of Microphone, Screen Recording, and Calendar, each with a button to request access or open the right System Settings pane. Speech Recognition and Reminders are requested on demand the first time you use the feature that needs them.
+> **Tip:** **Settings → Permissions** shows the live status of Microphone, Screen recording, Speech recognition, and Calendar, each with a button to request access or open the right System Settings pane. Reminders access is requested the first time you use the Apple Reminders integration.

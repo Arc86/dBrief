@@ -16,6 +16,9 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
     /// Set only after an observed, warning-free processing prefix. Nil on legacy
     /// or delivery-only batches; sending saved content cannot backfill that proof.
     var processingSucceededBeforeDeliveryAt: Date? = nil
+    /// The meeting profile whose integration overrides this batch was prepared
+    /// with (`AppSettings.resolvedIntegrations(for:)`). Nil on older batches.
+    var profileID: UUID? = nil
 
     var successfulWorkflowCompletion: ProcessingCompletionStamp? {
         guard let processingSucceededBeforeDeliveryAt, isComplete,
@@ -35,6 +38,9 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         var attempts = 0
         var remoteID: String?
         var updatedAt: Date?
+        /// Action-item index → remote id created so far (TickTick). Optional so
+        /// records written before this field existed still decode.
+        var createdItems: [Int: String]? = nil
 
         var isComplete: Bool { status == .succeeded || status == .skipped }
         var needsDuplicateConfirmation: Bool { status == .inFlight || status == .uncertain }
@@ -62,12 +68,14 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
 
     /// Hash only the selected destination; unrelated settings cannot invalidate a
     /// retry. Credentials are read at send time and never copied into the journal.
-    static func configurationDigests(_ settings: IntegrationSettings) throws -> [IntegrationDestination: String] {
+    static func configurationDigests(_ settings: IntegrationSettings,
+                                     available: [IntegrationDestination] = IntegrationDestination.available)
+        throws -> [IntegrationDestination: String] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         var values: [IntegrationDestination: String] = [:]
         func add<T: Encodable>(_ destination: IntegrationDestination, _ config: T, enabled: Bool) throws {
-            guard enabled, IntegrationDestination.available.contains(destination) else { return }
+            guard enabled, available.contains(destination) else { return }
             values[destination] = SHA256.hash(data: try encoder.encode(config))
                 .map { String(format: "%02x", $0) }.joined()
         }
@@ -87,7 +95,27 @@ struct IntegrationDeliveryBatch: Codable, Equatable, Sendable {
         let webhookRouting = WebhookRouting(url: settings.webhook.url.trimmingCharacters(in: .whitespacesAndNewlines),
                                             fields: settings.webhook.fields, headers: routingHeaders)
         try add(.webhook, webhookRouting, enabled: settings.webhook.enabled)
+        try add(.tickTick, TickTickRouting(projectID: settings.tickTick.projectID ?? "inbox"),
+                enabled: settings.tickTick.enabled)
+        try add(.todoist, TickTickRouting(projectID: settings.todoist.projectID ?? "inbox"),
+                enabled: settings.todoist.enabled)
+        try add(.notion, NotionRouting(parentType: settings.notion.parentType.rawValue,
+                                       parentID: settings.notion.parentID.trimmingCharacters(in: .whitespacesAndNewlines),
+                                       fields: settings.notion.fields),
+                enabled: settings.notion.enabled)
         return values
+    }
+
+    /// The list/project name is display-only; renaming it must not block a retry.
+    /// Shared by TickTick and Todoist, whose routing is just a project id.
+    private struct TickTickRouting: Encodable {
+        let projectID: String
+    }
+
+    private struct NotionRouting: Encodable {
+        let parentType: String
+        let parentID: String
+        let fields: [DeliveryField]
     }
 
     private struct WebhookRouting: Encodable {

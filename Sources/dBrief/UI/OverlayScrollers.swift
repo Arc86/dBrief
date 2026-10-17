@@ -13,11 +13,40 @@ import SwiftUI
 private struct OverlayScrollerStyler: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator {
-        /// Set once the enclosing scroll view has been styled, so the frequent
-        /// `updateNSView` passes (one per SwiftUI update of the scroll content)
-        /// don't each schedule a main-queue block.
-        var applied = false
+    @MainActor
+    final class Coordinator: NSObject {
+        /// The styled scroll view, once resolved. Weak: SwiftUI owns it.
+        weak var scrollView: NSScrollView?
+        /// Set once the main-queue lookup is scheduled, so the frequent
+        /// `updateNSView` passes don't each schedule another block.
+        var lookupScheduled = false
+
+        override init() {
+            super.init()
+            // AppKit resets every scroll view to `NSScroller.preferredScrollerStyle`
+            // when that preference changes. With "Show scroll bars: Automatically",
+            // it flips whenever a Bluetooth mouse connects or drops off (sleep, wake,
+            // switching hosts), which left legacy scrollers stuck on screen until the
+            // view was rebuilt. Selector-based observers are removed automatically.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(preferredStyleChanged),
+                name: NSScroller.preferredScrollerStyleDidChangeNotification,
+                object: nil
+            )
+        }
+
+        @objc private func preferredStyleChanged() {
+            // Re-apply after AppKit's own handler has reset the style.
+            DispatchQueue.main.async { [weak self] in self?.enforce() }
+        }
+
+        /// Cheap when already styled: two property reads.
+        func enforce() {
+            guard let scroll = scrollView else { return }
+            if scroll.scrollerStyle != .overlay { scroll.scrollerStyle = .overlay }
+            if !scroll.autohidesScrollers { scroll.autohidesScrollers = true }
+        }
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -31,13 +60,18 @@ private struct OverlayScrollerStyler: NSViewRepresentable {
     }
 
     private func apply(from view: NSView, coordinator: Coordinator) {
-        guard !coordinator.applied else { return }
+        if coordinator.scrollView != nil {
+            coordinator.enforce()
+            return
+        }
+        guard !coordinator.lookupScheduled else { return }
+        coordinator.lookupScheduled = true
         // Runs after attachment so `enclosingScrollView` is resolvable.
         DispatchQueue.main.async {
+            coordinator.lookupScheduled = false
             guard let scroll = view.enclosingScrollView else { return }
-            scroll.scrollerStyle = .overlay
-            scroll.autohidesScrollers = true
-            coordinator.applied = true
+            coordinator.scrollView = scroll
+            coordinator.enforce()
         }
     }
 }

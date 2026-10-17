@@ -10,32 +10,32 @@ The audio and its script are saved alongside the recording, so you can replay th
 
 ## Generating one
 
-Open a recording in the [transcript viewer](../history/transcript-viewer.md) and go to the **Summary** tab. If the recording has a summary, you'll see a **Generate Spoken** button.
+Open a recording in the [transcript viewer](../history/transcript-viewer.md) and go to the **Summary** tab. If the recording has a summary, the **Spoken Summary** menu is available in the header.
 
-1. Click **Generate Spoken**. dBrief rewrites the summary into a spoken script, then synthesizes it to audio. The first run also downloads the voice model, so it takes a little longer.
+1. Choose **Spoken Summary → Generate Spoken Summary**. dBrief rewrites the summary into a spoken script, then synthesizes it to audio. The first run also downloads the voice model, so it takes a little longer.
 2. A player appears with the script and playback controls. Listen to the result.
 3. Click **Save** to keep it, or **Discard** to throw it away.
 
-After you save it, the button changes to **Play Spoken**. It replays the saved audio without generating it again.
+After you save it, the menu offers **Play Spoken Summary**, which replays the saved audio without generating it again, and **Regenerate Spoken Summary** to make a new one.
 
 ## Choosing a language and voice
 
-Spoken summaries are configured in **Settings → Spoken Summary**. Pick a **voice engine** first:
+Spoken summaries are configured in **Settings → Spoken summary**. Pick a **Voice engine** first:
 
 - **Kokoro** (default) — fast and on-device. Speaks **English, Spanish, French, and Japanese**, with 28 English voices (American and British; "Heart" is the default), 3 Spanish, 1 French, and 5 Japanese.
-- **Qwen3** — speaks **10 languages** with a choice of **9 voices**, plus an editable voice-style instruction (calm, measured, etc.). The 1.7B model sounds the most natural and follows the style instruction; the 0.6B model is lighter on memory. (Qwen3 requires macOS 26 or later.)
+- **Qwen3 TTS** — speaks **10 languages** with a choice of **9 voices**, plus an editable voice-style instruction (calm, measured, etc.). The 1.7B model sounds the most natural and follows the style instruction; the 0.6B model is lighter on memory. (Qwen3 TTS requires macOS 26 or later.)
 
 Then choose a **Language**. It sets both the language the AI writes the briefing in and the language it's spoken in, whatever language the meeting was held in. The list shows the languages your voice engine speaks. If you switch to an engine that doesn't speak your chosen language, dBrief uses English and says so under the picker.
 
 With Kokoro, the voice list shows only the voices for the chosen language, and changing the language moves you to that language's default voice. English voices download the first time you use them (about 510 KB each). Japanese uses its own voice model (about 217 MB), also downloaded on first use. After that, everything works offline. British voices currently use US pronunciation rules.
 
-Use the **Preview voice** button to hear the current voice speak a short sample in the chosen language.
+Click **Play sample** in the **Preview** row to hear the current voice speak a short sample in the chosen language.
 
-Power users can also edit the prompt that writes the spoken script under **Settings → Spoken Summary**. dBrief adds the language instruction to your prompt automatically, so a custom prompt still follows the **Language** setting.
+You can also edit the prompt that writes the spoken script: open the collapsed **Advanced** card (*Script prompt, voice style*) at the end of **Settings → Spoken summary**. With Qwen3 TTS, the voice-style instruction is there too. dBrief adds the language instruction to your prompt automatically, so a custom prompt still follows the **Language** setting.
 
 ## Which AI engine writes the script
 
-The rewrite uses your currently selected [AI engine](ai-overview.md) (Apple Intelligence, Local Gemma, or a Remote Endpoint). If your engine is set to **Local CLI** — which can't generate here — dBrief falls back to your configured chat-fallback engine.
+The rewrite uses your currently selected [AI engine](ai-overview.md) (Apple Intelligence, Gemma 4 E4B Local, or a Remote Endpoint). If your engine is set to **Local CLI** — which can't generate here — dBrief uses the engine set in **Settings → AI analysis → Ask dBrief AI → Chat uses**.
 
 ## Privacy
 

@@ -35,7 +35,10 @@ struct TranscriptSpellingServiceTests {
             #expect(PrivacyTrace.context?.runID == context.runID)
             return VocabularyCorrection.apply(corrections, vocabulary: vocabulary, to: result)
         })
-        let result = await PrivacyTrace.$context.withValue(context) { await service.correct(input(), request: frozen) }
+        let correction = await PrivacyTrace.$context.withValue(context) { await service.correct(input(), request: frozen) }
+        let result = correction.result
+        #expect(correction.outcome == .corrected(2))
+        #expect(correction.outcome.warning == nil)
         #expect(result.text == "ServiceNow and ordinary words")
         #expect(result.segments.first?.text == result.text)
         #expect(result.diarizationTime == 1.5)
@@ -56,15 +59,23 @@ struct TranscriptSpellingServiceTests {
             if cancelBeforeCall { withUnsafeCurrentTask { $0?.cancel() } }
             return await service.correct(original, request: frozen)
         }
-        #expect(try bytes(await task.value) == bytes(original))
+        let correction = await task.value
+        #expect(try bytes(correction.result) == bytes(original))
+        #expect(correction.outcome == .cancelled)
+        #expect(correction.outcome.warning == nil)
     }
 
-    @Test(arguments: ["", "not JSON", "[]"]) func invalidResponsesPreserveOriginal(raw: String) async throws {
+    @Test(arguments: [("", TranscriptSpellingService.Outcome.skipped(.unreadableAnswer)),
+                      ("not JSON", .skipped(.unreadableAnswer)),
+                      ("[]", .unchanged)])
+    func invalidResponsesPreserveOriginal(raw: String, expected: TranscriptSpellingService.Outcome) async throws {
         let service = TranscriptSpellingService(backend: { _, _, _ in raw }, apply: { _, _, original in
             Issue.record("Empty correction list must not rewrite the transcript")
             return original
         })
-        #expect(try bytes(await service.correct(input(), request: request)) == bytes(input()))
+        let correction = await service.correct(input(), request: request)
+        #expect(try bytes(correction.result) == bytes(input()))
+        #expect(correction.outcome == expected)
     }
 
     @Test func noVocabularyOrBackendFailureIsBestEffort() async throws {
@@ -73,8 +84,35 @@ struct TranscriptSpellingServiceTests {
             #expect(!request.terms.isEmpty)
             throw CocoaError(.fileReadUnknown)
         })
-        #expect(try bytes(await service.correct(original, request: .init(terms: [], engine: .localCLI, endpoint: nil))) == bytes(original))
-        #expect(try bytes(await service.correct(original, request: request)) == bytes(original))
+        let noTerms = await service.correct(original, request: .init(terms: [], engine: .localCLI, endpoint: nil))
+        #expect(try bytes(noTerms.result) == bytes(original))
+        #expect(noTerms.outcome == .notNeeded)
+        #expect(noTerms.outcome.warning == nil)
+        let failed = await service.correct(original, request: request)
+        #expect(try bytes(failed.result) == bytes(original))
+        #expect(failed.outcome == .skipped(.engineFailed))
+    }
+
+    @Test(arguments: [
+        TranscriptSpellingService.Request(terms: ["ServiceNow"], engine: .localCLI, endpoint: nil),
+        TranscriptSpellingService.Request(terms: ["ServiceNow"], engine: .remoteEndpoint, endpoint: nil),
+    ])
+    func missingEngineIsReportedAsSkipped(request: TranscriptSpellingService.Request) async throws {
+        let original = input()
+        let correction = await TranscriptSpellingService().correct(original, request: request)
+        #expect(try bytes(correction.result) == bytes(original))
+        #expect(correction.outcome == .skipped(.noEngine))
+        #expect(correction.outcome.warning?.contains("no AI engine") == true)
+    }
+
+    @Test func everySkipReasonHasAWarningAndOtherOutcomesDoNot() {
+        let reasons: [TranscriptSpellingService.SkipReason] = [.noEngine, .engineFailed, .unreadableAnswer]
+        for reason in reasons {
+            let warning = TranscriptSpellingService.Outcome.skipped(reason).warning
+            #expect(warning?.hasPrefix("Vocabulary correction skipped") == true)
+        }
+        let silent: [TranscriptSpellingService.Outcome] = [.notNeeded, .unchanged, .corrected(1), .cancelled]
+        #expect(silent.allSatisfy { $0.warning == nil })
     }
 
     @Test @MainActor func transcriptionSnapshotKeepsProfileChoiceAcrossSettingsChanges() throws {

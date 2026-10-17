@@ -9,8 +9,8 @@ final class SpeakerReviewDraft {
     var selectedID: String?
     private(set) var edits: [String: ConfirmedSpeaker]
     private(set) var reviewedIDs: Set<String> = []
+    /// One field both filters the people list and supplies a new name.
     var search = ""
-    var manualName = ""
 
     init(items: [SpeakerReviewItem]) {
         self.items = items
@@ -20,7 +20,8 @@ final class SpeakerReviewDraft {
     }
 
     var selectedItem: SpeakerReviewItem? { items.first { $0.id == selectedID } }
-    var trimmedManualName: String { manualName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var trimmedSearch: String { search.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var allReviewed: Bool { !items.isEmpty && reviewedIDs.count == items.count }
 
     func selectSpeaker(_ id: String) {
         guard items.contains(where: { $0.id == id }) else { return }
@@ -28,31 +29,44 @@ final class SpeakerReviewDraft {
         clearInput()
     }
 
+    /// Moves to the previous or next speaker, stopping at either end.
+    func moveSelection(by offset: Int) {
+        guard !items.isEmpty else { return }
+        let current = items.firstIndex { $0.id == selectedID } ?? -1
+        selectSpeaker(items[min(max(current + offset, 0), items.count - 1)].id)
+    }
+
     func clearInput() {
         search = ""
-        manualName = ""
     }
 
     func assign(_ choice: SpeakerReviewCandidates.Choice) {
-        guard let selectedItem else { return }
-        edits[selectedItem.id] = ConfirmedSpeaker(name: choice.name, personId: choice.personId)
-        reviewedIDs.insert(selectedItem.id)
-        clearInput()
+        record(ConfirmedSpeaker(name: choice.name, personId: choice.personId))
     }
 
-    func useManualName() {
-        let name = trimmedManualName
-        guard !name.isEmpty, let selectedItem else { return }
+    /// Uses the typed text as a new name.
+    func useTypedName() {
+        let name = trimmedSearch
+        guard !name.isEmpty else { return }
         // A manually corrected label must not keep the suggested person's identity.
-        edits[selectedItem.id] = ConfirmedSpeaker(name: name, personId: nil)
-        reviewedIDs.insert(selectedItem.id)
-        clearInput()
+        record(ConfirmedSpeaker(name: name, personId: nil))
     }
 
     func keepUnnamed() {
         guard let selectedItem else { return }
-        edits[selectedItem.id] = ConfirmedSpeaker(name: selectedItem.id, personId: nil)
+        record(ConfirmedSpeaker(name: selectedItem.id, personId: nil))
+    }
+
+    /// Saves the answer for the selected speaker, then moves on to the next one still unreviewed.
+    private func record(_ speaker: ConfirmedSpeaker) {
+        guard let selectedItem else { return }
+        edits[selectedItem.id] = speaker
         reviewedIDs.insert(selectedItem.id)
         clearInput()
+        let index = items.firstIndex { $0.id == selectedItem.id } ?? 0
+        let ordered = items[(index + 1)...] + items[..<index]
+        if let next = ordered.first(where: { !reviewedIDs.contains($0.id) }) {
+            selectedID = next.id
+        }
     }
 }

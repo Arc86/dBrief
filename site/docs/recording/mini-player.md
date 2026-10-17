@@ -1,25 +1,23 @@
-# Mini Player
+# Floating Recording Window
 
-While you're recording, dBrief shows a small floating window with a live audio level meter.
+While you're recording, dBrief shows a small floating window with a live audio level meter and the recording controls.
 
 ## What it shows
 
-The mini player displays vertical level meter bars that move with your audio input in real time. This lets you confirm that dBrief is actually capturing sound — even if you've switched to a full-screen app.
+The window shows whether dBrief is **Recording** or **Paused**, the elapsed time, and level bars that move with your audio in real time. This lets you confirm that dBrief is actually capturing sound — even if you've switched to a full-screen app.
 
-A **REC** indicator is shown while recording is active. Audio source chips show which sources are being captured (mic, system audio, or both).
+It also has **Pause** / **Resume** and **Stop** buttons. When dBrief switches microphones on its own, a short note shows which one it chose.
 
 ## Moving it
 
-You can drag the mini player anywhere on your screen.
+Drag the top of the window to move it anywhere on your screen.
 
-## Hiding it
+## Collapsing it
 
-Click the close button on the mini player to dismiss it. Recording continues in the background.
-
-> **Note:** Hiding the mini player doesn't stop the recording.
+Click the chevron in the top-right corner to collapse the window to its header. Click it again to expand it. Recording continues either way.
 
 ## Turning it off
 
-To stop the mini player from appearing at all, open **Settings → Recording → Recording Indicators** and turn off **Show floating Mini Recording view**. Recording is unaffected.
+To stop the window from appearing at all, open **Settings → Recording → While recording** and turn off **Floating recording window**. Recording is unaffected.
 
-The same section has a **Show recording duration in the menu bar** toggle — turn it off to show only the red record indicator in the menu bar while recording, hiding the elapsed time.
+The same card has a **Duration in the menu bar** toggle — turn it off to show only the red record dot in the menu bar while recording, hiding the elapsed time.

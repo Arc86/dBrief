@@ -14,16 +14,17 @@ extension TranscriptionCardPresentation {
     static func local(_ id: String, modernApple: Bool = false) -> Self? {
         if id == LocalTranscriptionChoice.apple {
             return .init(title: "Apple Speech", language: "System-supported languages",
-                         footprint: "macOS managed",
+                         footprint: "Managed by macOS",
                          summary: modernApple
                             ? "Apple SpeechAnalyzer · provisional research-based ratings."
                             : "Apple Speech · older or unsupported-locale fallback is not rated.",
-                         accuracy: modernApple ? 4 : nil, speed: modernApple ? 4 : nil)
+                         accuracy: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.accuracy,
+                         speed: LocalTranscriptionChoice.profile(id, modernApple: modernApple)?.speed)
         }
         guard let variant = LocalTranscriptionChoice.parakeetVariant(id) else { return nil }
         let model = ParakeetModelInfo.find(variant)
         let summary = switch model.id {
-        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; ratings are family estimates."
+        case "ultra": "Parakeet Ultra / FluidAudio · v3 retrained for accuracy; fewest errors in FluidAudio's FLEURS and LibriSpeech results."
         case "redux": "Parakeet Redux / FluidAudio · ~220 MB download; first use compiles for several minutes."
         case "phonon2": "Parakeet Phonon-2 / FluidAudio · ~360 MB download; fastest English model, slightly less accurate than Ultra."
         default: "Parakeet / FluidAudio · fast transcription; ratings are family estimates."
@@ -31,12 +32,16 @@ extension TranscriptionCardPresentation {
         return .init(title: model.displayName, language: model.isEnglishOnly ? "English only" : "25 European languages",
                      footprint: String(format: "~%.1f GiB RAM", Double(model.estimatedMemoryMB) / 1024),
                      summary: summary,
-                     accuracy: 4, speed: model.id == "redux" ? 4 : 5)
+                     accuracy: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.accuracy,
+                     speed: LocalTranscriptionChoice.profile(LocalTranscriptionChoice.parakeet(model.id))?.speed)
     }
 }
 
-/// The same visual model identity in Settings and the comparison list.
+/// The same visual model identity in Settings and the comparison list. Also the
+/// shared Settings model card (Gemma uses it with a presentation).
 struct TranscriptionModelCard<Actions: View>: View {
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
     var modelID = ""
     var presentation: TranscriptionCardPresentation? = nil
     var selected = false
@@ -78,47 +83,45 @@ struct TranscriptionModelCard<Actions: View>: View {
                 HStack(alignment: .top, spacing: 12) {
                     if selected {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.accentColor).accessibilityLabel("Selected")
+                            .foregroundStyle(palette.accentText.color).accessibilityLabel("Selected")
                     }
-                    Text(title).font(.headline)
+                    Text(title).uiFont(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.heading.color)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 8)
                     actions()
                         .fixedSize(horizontal: true, vertical: false)
                 }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) { metadata; ratings }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 16) { metadata }
-                    ratings
-                }
+            // One fixed layout: ViewThatFits measures both candidates for every card in the picker.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 16) { metadata }
+                ratings
             }
-            .font(.caption).foregroundStyle(.secondary)
-            Text(summary).font(.caption).foregroundStyle(.secondary)
+            .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
+            Text(summary).uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
                 .fixedSize(horizontal: false, vertical: true)
             if let onChangeModel {
-                Divider()
+                palette.divider.color.frame(height: 1)
                 HStack {
                     Text("Current model")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .uiFont(.system(size: 11.5)).foregroundStyle(palette.secondary.color)
                     Spacer()
                     Button(action: onChangeModel) {
                         Label("Change model…", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
+                    .buttonStyle(.settingsSecondary)
                     .accessibilityHint("Opens the local transcription model picker")
                 }
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Color.accentColor.opacity(0.07) : Color(nsColor: .controlBackgroundColor),
-                    in: RoundedRectangle(cornerRadius: 14))
+        .background(selected ? palette.selected.color : palette.canvas.color,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.08),
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(selected ? palette.primary.color : palette.divider.color,
                               lineWidth: selected ? 2 : 1)
         }
         .help(modelID.isEmpty ? title : modelID)
@@ -155,8 +158,8 @@ struct TranscriptionModelCard<Actions: View>: View {
                 ForEach(1...5, id: \.self) { index in
                     Circle()
                         .fill(index <= (value ?? 0)
-                              ? ((value ?? 0) >= 4 ? Color.green : (value ?? 0) == 3 ? Color.yellow : Color.orange)
-                              : Color.secondary.opacity(0.2))
+                              ? ((value ?? 0) >= 4 ? status.success.color : status.warning.color)
+                              : palette.divider.color)
                         .frame(width: 6, height: 6)
                 }
             }

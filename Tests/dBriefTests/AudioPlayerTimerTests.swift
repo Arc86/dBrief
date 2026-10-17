@@ -12,7 +12,7 @@ struct AudioPlayerTimerTests {
         // In the app NSApplication exists and registers .eventTracking as a common mode.
         _ = NSApplication.shared
         var ticks = 0
-        let timer = AudioPlayer.scheduleTickTimer(interval: 0.05) { ticks += 1 }
+        let timer = AudioPlayer.scheduleTickTimer(interval: 0.05) { ticks += 1; return true }
         defer { timer.invalidate() }
         // Generous deadline: a loaded machine (full parallel suite) delays ticks, but
         // default-mode scheduling delivers none at all in .eventTracking.

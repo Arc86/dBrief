@@ -13,7 +13,6 @@ enum PromptKind: String, CaseIterable, Hashable, Sendable {
         case .voiceStyle: "Voice Style"
         }
     }
-    var supportsProfile: Bool { self == .summary || self == .actionItems || self == .tags }
     var outputContract: String {
         switch self {
         case .summary: "Write the meeting summary as text. Any formatting belongs within the summary text; dBrief controls the outer response structure."

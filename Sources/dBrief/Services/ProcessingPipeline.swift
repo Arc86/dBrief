@@ -22,6 +22,9 @@ actor ProcessingPipeline {
     struct TranscriptionOutput: Sendable {
         let transcription: TranscriptionResult
         let spellCorrectionTime: TimeInterval?
+        /// Set when a custom vocabulary could not be applied (no engine, failure,
+        /// unreadable answer). Kept apart from ASR `warnings`, which mark failure.
+        var vocabularyWarning: String? = nil
     }
     enum Event: Sendable, Equatable {
         case transcribingSegment(index: Int, count: Int)
@@ -48,7 +51,7 @@ actor ProcessingPipeline {
 
     func transcribe(_ input: Input, options: TranscriptionOptions,
                     using transcribeFile: @Sendable (AudioRequest) async throws -> TranscriptionResult,
-                    correct: (@Sendable (TranscriptionResult) async -> TranscriptionResult)? = nil,
+                    correct: (@Sendable (TranscriptionResult) async -> TranscriptSpellingService.Correction)? = nil,
                     onEvent: @Sendable (Event) async -> Void = { _ in }) async throws -> TranscriptionOutput {
         try Task.checkCancellation()
         let raw: TranscriptionResult
@@ -65,11 +68,13 @@ actor ProcessingPipeline {
         await onEvent(.correctingVocabulary)
         try Task.checkCancellation()
         let start = now()
-        var corrected = await correct(cleaned)
+        let correction = await correct(cleaned)
         try Task.checkCancellation()
+        var corrected = correction.result
         // Correction owns spelling only; ASR provenance belongs to the pass.
         corrected.modelName = options.modelName
-        return .init(transcription: corrected, spellCorrectionTime: now().timeIntervalSince(start))
+        return .init(transcription: corrected, spellCorrectionTime: now().timeIntervalSince(start),
+                     vocabularyWarning: correction.outcome.warning)
     }
 
     private func transcribeSegments(_ urls: [URL],

@@ -33,6 +33,22 @@ struct ProcessingDeliveryTests {
         #expect(await audit.events == ["park"])
     }
 
+    @Test func heldHandoffWithNothingToSendCompletesInsteadOfParking() async throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        var empty = batch(root)
+        empty.deliveries = []
+        empty.processingSucceededBeforeDeliveryAt = Date(timeIntervalSince1970: 10)
+        let input = empty
+        let audit = Audit()
+        let result = try await ProcessingPipeline().finishDeliveryHandoff(input, stopBeforeIntegrations: true,
+            run: { _ in Issue.record("Nothing to send"); return input },
+            park: { Issue.record("A parked job with nothing to send can never finish") },
+            checkpoint: { await audit.add("checkpoint") })
+        #expect(!result.held && result.batch.isComplete)
+        #expect(result.completion?.completedAt == Date(timeIntervalSince1970: 10))
+        #expect(await audit.events == ["checkpoint"])
+    }
+
     @Test func completionRequiresAllDeliveriesAndAcknowledgedCheckpoint() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         var saved = batch(root)
@@ -123,10 +139,13 @@ struct ProcessingDeliveryTests {
         var config = IntegrationSettings()
         config.webhook.enabled = true
         config.webhook.url = "https://synthetic.invalid"
+        let profileID = UUID()
         let request = ProcessingPipeline.DeliveryPreparation(jobID: UUID(), recording: RecordingSnapshot(recording: recording),
-            configuration: config, markdownURL: nil, requireTranscript: true, processingSucceededBeforeDeliveryAt: nil)
+            configuration: config, markdownURL: nil, requireTranscript: true, processingSucceededBeforeDeliveryAt: nil,
+            profileID: profileID)
         let result = try await ProcessingPipeline().prepareDeliveries(request, store: store, service: IntegrationDispatchService())
         #expect(try await store.load(id: request.jobID) == result)
+        #expect(result.profileID == profileID)
         #expect(result.processingSucceededBeforeDeliveryAt == nil && result.successfulWorkflowCompletion == nil)
         #expect(result.bundle.transcript == "Synthetic transcript" && result.deliveries.count == 1)
     }

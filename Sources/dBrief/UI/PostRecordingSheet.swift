@@ -4,7 +4,8 @@ struct PostRecordingSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(AppSettings.self) private var appSettings
     @Environment(RecordingManager.self) private var recordingManager
-    @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
+    @Environment(\.menuPanelPalette) private var status
 
     @State private var transcribe = true
     @State private var summary = true
@@ -27,6 +28,9 @@ struct PostRecordingSheet: View {
     @State private var editingParticipant: String?
     @FocusState private var participantFieldFocused: Bool
     @State private var confirmingDelete = false
+    @State private var showProcessingSettings = false
+    @FocusState private var titleFocused: Bool
+    @State private var titleHovered = false
     @State private var participantsBoxHeight: CGFloat = 0
 
     /// Beyond ≈4–5 pill rows the participants box caps its height and scrolls
@@ -71,46 +75,27 @@ struct PostRecordingSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Profile for this recording: \(reviewProfile.name)")
-                .font(.caption.weight(.semibold))
-            if let recording = appState.currentRecording {
-                if recording.awaitingProfileContext {
-                    Text("Checking calendar context for profile selection…")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else if recording.profileSelection.isManual {
-                    Text("Profile chosen manually for this recording")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else if let match = recording.profileSelection.match,
-                          let profile = appSettings.profiles.first(where: { $0.id == match.profileID }) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(recording.profileSelection.isDeferred
-                             ? "Suggested: \(profile.name) — waiting for the current job"
-                             : "Selected automatically: \(profile.name)")
-                            .font(.caption.weight(.semibold))
-                        Text(match.reasons.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                        if recording.profileSelection.isDeferred {
-                            Button("Keep current profile") { recordingManager.cancelPostRecordingAutomation() }
-                        }
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
             if let request = recordingManager.postRecordingAutomation.request {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(request.profile.postRecordingPolicy == .process
                              ? "Processing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds"
                              : "Queueing in \(recordingManager.postRecordingAutomation.secondsRemaining) seconds")
-                            .font(.headline).monospacedDigit()
+                            .uiFont(.system(size: 12, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(palette.heading.color)
                         Text("Choose Review instead to change this recording’s options.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
                     }
-                    Spacer()
+                    Spacer(minLength: 4)
                     Button("Review instead") { recordingManager.cancelPostRecordingAutomation() }
                         .keyboardShortcut(.cancelAction)
+                        .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 11, fillsWidth: false))
                 }
                 .padding(12)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .background(palette.selected.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             reviewContent.disabled(recordingManager.postRecordingAutomation.isPending)
         }
@@ -118,250 +103,50 @@ struct PostRecordingSheet: View {
 
     private var reviewContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Success banner
-            HStack(alignment: .top, spacing: 10) {
-                ZStack {
-                    Circle().fill(Brand.violetTint).frame(width: 30, height: 30)
-                    if recordingManager.postRecordingAction.isBusy {
-                        ProgressView().controlSize(.small)
-                            .accessibilityLabel("Saving recording")
-                    } else {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .heavy))
-                            .foregroundStyle(Brand.violet2)
-                    }
-                }
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(recordingManager.postRecordingAction.action?.title ?? "Recording complete")
-                        .font(.system(size: 15, weight: .bold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    profilePill
-                }
-                Spacer(minLength: 8)
-                if let recording = appState.currentRecording {
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Label(recording.formattedDuration, systemImage: "clock")
-                        Label(recording.formattedFileSize, systemImage: "doc")
-                    }
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.secondary)
-                    .labelStyle(.titleAndIcon)
-                    .fixedSize()
-                }
-            }
+            titleBlock
+            MenuPanelHairline()
 
-            // Meeting title
-            HStack {
-                Text("Meeting title")
-                    .font(.system(size: 12.5, weight: .semibold))
-                Spacer()
-                if appState.currentRecording?.calendarEvent != nil {
-                    Label("Calendar linked", systemImage: "calendar")
-                        .font(.brandMono(9.5))
-                        .foregroundStyle(Brand.cyan2)
-                        .padding(.horizontal, 9).padding(.vertical, 3)
-                        .background(Brand.cyanTint, in: Capsule())
-                        .labelStyle(.titleAndIcon)
-                }
-            }
-            TextField("meeting", text: $meetingTitle)
-                .textFieldStyle(.roundedBorder)
-
-            if let recording = appState.currentRecording,
-               (appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty) {
-                if appSettings.effectiveCalendarSource == .claudeCLI {
-                    HStack {
-                        Text("Today's meetings").font(.caption.weight(.semibold))
-                        Spacer()
-                        if calendarPickerRefreshing {
-                            ProgressView().controlSize(.small).accessibilityLabel("Refreshing meeting list")
-                        }
-                        Button("Refresh") { refreshCalendarPicker(for: recording, force: true) }
-                            .controlSize(.small)
-                            .disabled(calendarPickerRefreshing)
-                            .accessibilityLabel("Refresh meeting list")
-                    }
-                    calendarPickerStatus
-                }
-                Picker("Meeting", selection: calendarSelection(recording)) {
-                    Text("None").tag(String?.none)
-                    ForEach(recording.calendarCandidates) { event in
-                        Text(pickerLabel(event)).tag(Optional(event.id))
-                    }
-                }
-                .labelsHidden()
-                if appSettings.effectiveCalendarSource == .claudeCLI {
-                    calendarAttendeesBlock(for: recording)
-                } else if recording.calendarEvent != nil {
-                    Text("Calendar attendees are already included with the selected meeting.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-
-            Text("Used for file naming · YYYY-MM-DD_HHMM_[meeting-title].md")
-                .font(.brandMono(10.5))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Participants
-            if appSettings.diarizationEnabled {
-                Text("Participants")
-                    .font(.system(size: 12.5, weight: .semibold))
-                participantsField
-                Text("Type a name and press return · matched to speakers in order of first appearance")
-                    .font(.brandMono(10.5))
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Divider()
-
-            BrandKicker("Post-processing")
-
-            VStack(alignment: .leading, spacing: 2) {
-                BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)
-
-                if reviewAIEnabled {
-                    BrandCheckRow(title: "Generate summary", isOn: $summary, enabled: transcribe)
-                    BrandCheckRow(title: "Extract action items", isOn: $actionItems, enabled: transcribe)
-                    BrandCheckRow(title: "Analyze tags & sentiment", isOn: $tags, enabled: transcribe)
-                }
-            }
-
-            if reviewAIEnabled {
-                if !transcribe {
-                    Text("Transcription is required for AI analysis.")
-                        .font(.caption)
-                        .foregroundStyle(Brand.paused)
-                }
+            // Meeting details and Processing settings work as an accordion so the
+            // panel stays short: opening one folds the other into a summary row.
+            if showProcessingSettings {
+                meetingSummaryRow
             } else {
-                Text("AI processing is disabled in Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                if let recording = appState.currentRecording, showsMeetingDetails(recording) {
+                    meetingDetails(for: recording)
+                }
 
-            if reviewNeedsTranscriptionEndpoint && transcribe {
-                Text("No transcription endpoint configured. Add one in Settings.")
-                    .font(.caption)
-                    .foregroundStyle(Brand.coral)
-            }
-
-            if appSettings.obsidianEnabled, let recording = appState.currentRecording {
-                Divider()
-
-                ObsidianFolderPicker(
-                    title: "Obsidian output folder",
-                    currentRelativePath: recording.obsidianFolderRelativePath
-                        ?? reviewProfile.overrides.obsidianDefaultFolderRelativePath
-                        ?? appSettings.obsidianDefaultFolderRelativePath
-                ) { relativePath in
-                    recording.obsidianFolderRelativePath = relativePath
-                    if reviewProfile.isProtectedDefault {
-                        appSettings.obsidianDefaultFolderRelativePath = relativePath
+                if appSettings.diarizationEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(participantNames.isEmpty ? "Attendees" : "Attendees (\(participantNames.count))")
+                            .uiFont(.system(size: 12, weight: .medium))
+                            .foregroundStyle(palette.heading.color)
+                        participantsField
+                        Text("Press Return to add each name · matched to speakers in order of first appearance.")
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
 
-            if !enabledDestinationNames.isEmpty {
-                Divider()
-                VStack(alignment: .leading, spacing: 4) {
-                    BrandKicker("Auto-send destinations")
-                    Text(enabledDestinationNames.joined(separator: ", "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if appSettings.integrations.webhook.enabled {
-                        Text("Webhook fields: \(webhookFieldsDescription)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            MenuPanelHairline()
+            if profileNoticeOnSurface {
+                profileContext
             }
-
-            Divider()
+            processingSettings
+            MenuPanelHairline()
 
             postRecordingStatus
 
             if confirmingDelete {
                 deleteConfirmation
             } else {
-                HStack(spacing: 8) {
-                    // Delete — coral-outlined icon button (38×38, radius 10)
-                    Button {
-                        withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Brand.coral)
-                            .frame(width: 38, height: 38)
-                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Brand.coral.opacity(0.4), lineWidth: 1))
-                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Delete recording")
-                    .accessibilityLabel("Delete recording")
-
-                    Button("Skip") {
-                        applyFieldsToRecording()
-                        Task { await recordingManager.skipProcessing() }
-                    }
-                    .buttonStyle(SheetActionButtonStyle())
-                    .disabled(sanitizedMeetingTitle.isEmpty)
-
-                    Button("Queue") {
-                        applyFieldsToRecording()
-                        Task {
-                            await recordingManager.queueForLater(
-                                transcribe: transcribe,
-                                summary: summary && transcribe,
-                                actionItems: actionItems && transcribe,
-                                tags: tags && transcribe,
-                                loadCalendarParticipants: acceptedCalendarParticipantLoad
-                            )
-                        }
-                    }
-                    .buttonStyle(SheetActionButtonStyle())
-                    .disabled(sanitizedMeetingTitle.isEmpty)
-                    .help("Finalize audio and queue processing for later")
-
-                    Spacer(minLength: 8)
-
-                    Button {
-                        applyFieldsToRecording()
-                        recordingManager.startProcessing(
-                            transcribe: transcribe,
-                            summary: summary && transcribe,
-                            actionItems: actionItems && transcribe,
-                            tags: tags && transcribe,
-                            loadCalendarParticipants: acceptedCalendarParticipantLoad
-                        )
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
-                            Text("Process")
-                        }
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .frame(height: 38)
-                        .background(Brand.ctaFill(calm: calm), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .shadow(color: Brand.ctaGlow(calm: calm), radius: calm ? 0 : 10, y: calm ? 0 : 4)
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize()
-                    .disabled(processDisabled)
-                    .opacity(processDisabled ? 0.4 : 1)
-                }
-
-                Text("**Skip** keeps the audio and stops here · **Delete** removes the file")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                actionArea
             }
         }
         .disabled(recordingManager.postRecordingAction.isBusy)
-        .padding(.vertical, 4)
         .onAppear {
             loadProfileTaskDefaults()
             if let recording = appState.currentRecording {
@@ -405,6 +190,373 @@ struct PostRecordingSheet: View {
             guard !recordingManager.postRecordingAction.isBusy else { return }
             loadProfileTaskDefaults()
         }
+        // A new capture can replace this form; it queues the recording with these choices.
+        .onChange(of: currentChoices, initial: true) { _, choices in
+            appState.currentRecording?.reviewChoices = choices
+        }
+    }
+
+    // MARK: - Title
+
+    /// The editable meeting title, set as the screen's heading. It names the output
+    /// files, so it stays a text field; it wraps to three lines, then scrolls.
+    private var titleBlock: some View {
+        VStack(spacing: 6) {
+            if let action = recordingManager.postRecordingAction.action, recordingManager.postRecordingAction.isBusy {
+                Label(action.title, systemImage: "hourglass")
+                    .uiFont(.system(size: 11, weight: .medium))
+                    .foregroundStyle(palette.secondary.color)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                TextField("Meeting title", text: $meetingTitle, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...3)
+                    .multilineTextAlignment(.center)
+                    .uiFont(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(palette.heading.color)
+                    .focused($titleFocused)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Meeting title")
+                    .accessibilityHint("Edit to rename the recording")
+                    .onChange(of: meetingTitle) { _, title in
+                        // A title is one line; a pasted or Option-Return newline would leak into file names.
+                        if title.contains(where: \.isNewline) {
+                            meetingTitle = title.components(separatedBy: .newlines).joined(separator: " ")
+                        }
+                    }
+                Button { titleFocused = true } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(titleFocused || titleHovered ? palette.accentText.color : palette.secondary.color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rename recording")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(titleFocused ? palette.primary.color : titleHovered ? palette.divider.color : .clear, lineWidth: 1)
+            }
+            .onHover { titleHovered = $0 }
+            .help("Click to rename · used for file naming (YYYY-MM-DD_HHMM_[meeting-title].md)")
+            if let recording = appState.currentRecording {
+                HStack(spacing: 6) {
+                    Text("\(recording.formattedDuration) · \(recording.formattedFileSize)")
+                    if recording.calendarEvent != nil {
+                        Text("·")
+                        Label("Calendar linked", systemImage: "calendar")
+                    }
+                    if recordingManager.postRecordingAction.isBusy {
+                        ProgressView().controlSize(.mini).accessibilityLabel("Saving recording")
+                    }
+                }
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
+                .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Meeting details
+
+    private func showsMeetingDetails(_ recording: Recording) -> Bool {
+        appSettings.effectiveCalendarSource == .claudeCLI || !recording.calendarCandidates.isEmpty
+    }
+
+    /// Folded meeting details + participants while Processing settings is open.
+    private var meetingSummaryRow: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { showProcessingSettings = false }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Meeting details")
+                        .uiFont(.system(size: 12, weight: .medium))
+                        .foregroundStyle(palette.heading.color)
+                    Text([appState.currentRecording?.calendarEvent?.title ?? "No meeting linked",
+                          participantNames.isEmpty ? "no participants" : "\(participantNames.count) participant\(participantNames.count == 1 ? "" : "s")"]
+                        .joined(separator: " · "))
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.secondary.color)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows meeting details and participants")
+    }
+
+    @ViewBuilder
+    private func meetingDetails(for recording: Recording) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Meeting details")
+                    .uiFont(.system(size: 12, weight: .medium))
+                    .foregroundStyle(palette.heading.color)
+                Spacer()
+                if appSettings.effectiveCalendarSource == .claudeCLI {
+                    Button { refreshCalendarPicker(for: recording, force: true) } label: {
+                        HStack(spacing: 5) {
+                            if calendarPickerRefreshing {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text("Refresh")
+                        }
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 24, fontSize: 12))
+                    .disabled(calendarPickerRefreshing)
+                    .accessibilityLabel("Refresh meeting list")
+                }
+            }
+            Menu {
+                Button("None") { calendarSelection(recording).wrappedValue = nil }
+                ForEach(recording.calendarCandidates) { event in
+                    Button {
+                        calendarSelection(recording).wrappedValue = event.id
+                    } label: {
+                        if event.id == recording.calendarEvent?.id {
+                            Label(pickerLabel(event), systemImage: "checkmark")
+                        } else {
+                            Text(pickerLabel(event))
+                        }
+                    }
+                }
+            } label: {
+                MenuPanelSelectorLabel(text: recording.calendarEvent.map(pickerLabel) ?? "No meeting linked", height: 36)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .accessibilityLabel("Meeting")
+            .accessibilityValue(recording.calendarEvent.map(pickerLabel) ?? "None")
+
+            if appSettings.effectiveCalendarSource == .claudeCLI {
+                calendarPickerStatus
+                calendarAttendeesBlock(for: recording)
+            } else if recording.calendarEvent != nil {
+                Text("Calendar attendees are already included with the selected meeting.")
+                    .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+            }
+        }
+    }
+
+    // MARK: - Processing settings
+
+    private var profileNoticeOnSurface: Bool {
+        MenuPanelProgress.profileNoticeOnSurface(isDeferred: appState.currentRecording?.profileSelection.isDeferred ?? false)
+    }
+
+    private var selectedTaskCount: Int {
+        MenuPanelProgress.selectedTaskCount(transcribe: transcribe, summary: summary, actionItems: actionItems,
+                                            tags: tags, aiEnabled: reviewAIEnabled)
+    }
+
+    private var processingSettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { showProcessingSettings.toggle() }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Processing settings")
+                            .uiFont(.system(size: 12, weight: .medium))
+                            .foregroundStyle(palette.heading.color)
+                        Text("\(reviewProfile.name) profile · \(selectedTaskCount) task\(selectedTaskCount == 1 ? "" : "s") selected")
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
+                    }
+                    Spacer()
+                    Image(systemName: showProcessingSettings ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.secondary.color)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(showProcessingSettings ? "expanded" : "collapsed")
+
+            if showProcessingSettings {
+                processingSettingsDetail
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var processingSettingsDetail: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("Profile")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
+                profileMenu
+            }
+            if !profileNoticeOnSurface {
+                profileContext
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                BrandCheckRow(title: "Transcribe audio", isOn: $transcribe)
+                if reviewAIEnabled {
+                    BrandCheckRow(title: "Generate summary", isOn: $summary, enabled: transcribe)
+                    BrandCheckRow(title: "Extract action items", isOn: $actionItems, enabled: transcribe)
+                    BrandCheckRow(title: "Analyze tags & sentiment", isOn: $tags, enabled: transcribe)
+                }
+            }
+
+            if reviewAIEnabled {
+                if !transcribe {
+                    Text("Transcription is required for AI analysis.")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(status.warning.color)
+                }
+            } else {
+                Text("AI analysis is off in Settings → AI analysis.")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
+            }
+
+            if appSettings.obsidianEnabled, let recording = appState.currentRecording {
+                ObsidianFolderPicker(
+                    title: "Obsidian output folder",
+                    currentRelativePath: currentObsidianFolder(for: recording)
+                ) { relativePath in
+                    // This recording only; the default lives in Settings → Integrations.
+                    recording.obsidianFolderRelativePath = relativePath
+                }
+            }
+
+            if !enabledDestinationNames.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Auto-send destinations")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.secondary.color)
+                    Text(enabledDestinationNames.joined(separator: ", "))
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(palette.text.color)
+                    if appSettings.integrations.webhook.enabled {
+                        Text("Webhook fields: \(webhookFieldsDescription)")
+                            .uiFont(.system(size: 11))
+                            .foregroundStyle(palette.secondary.color)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Why this recording got its profile (manual, automatic match, or still deciding).
+    @ViewBuilder
+    private var profileContext: some View {
+        if let recording = appState.currentRecording {
+            if recording.awaitingProfileContext {
+                Text("Checking calendar context for profile selection…")
+                    .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+            } else if recording.profileSelection.isManual {
+                Text("Profile chosen manually for this recording")
+                    .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+            } else if let match = recording.profileSelection.match,
+                      let profile = appSettings.profiles.first(where: { $0.id == match.profileID }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(recording.profileSelection.isDeferred
+                         ? "Suggested: \(profile.name) — waiting for the current job"
+                         : "Selected automatically: \(profile.name)")
+                        .uiFont(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.text.color)
+                    Text(match.reasons.joined(separator: " · "))
+                        .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+                    if recording.profileSelection.isDeferred {
+                        Button("Keep current profile") { recordingManager.cancelPostRecordingAutomation() }
+                            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
+                    }
+                }
+            }
+        }
+    }
+
+    private func currentObsidianFolder(for recording: Recording) -> String {
+        recording.obsidianFolderRelativePath
+            ?? reviewProfile.overrides.obsidianDefaultFolderRelativePath
+            ?? appSettings.obsidianDefaultFolderRelativePath
+    }
+
+    // MARK: - Actions
+
+    private var actionArea: some View {
+        VStack(spacing: 10) {
+            Button {
+                applyFieldsToRecording()
+                recordingManager.startProcessing(
+                    transcribe: transcribe,
+                    summary: summary && transcribe,
+                    actionItems: actionItems && transcribe,
+                    tags: tags && transcribe,
+                    loadCalendarParticipants: acceptedCalendarParticipantLoad
+                )
+            } label: {
+                // While another recording processes, this one starts right after it.
+                Label(appState.processingJob == nil ? "Process recording" : "Process next", systemImage: "play")
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .hero, height: 36, fontSize: 14))
+            .disabled(processDisabled)
+            .help(appState.processingJob == nil ? "Process this recording now"
+                  : "Processes this recording as soon as the current one finishes")
+
+            if appSettings.obsidianEnabled, let recording = appState.currentRecording {
+                Text("Output folder · \(appSettings.obsidianFolderDisplayName(relativePath: currentObsidianFolder(for: recording)))")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if reviewNeedsTranscriptionEndpoint && transcribe {
+                Text("No transcription endpoint is set up. Add one in Settings → Transcription.")
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(status.danger.color)
+            }
+
+            HStack(spacing: 8) {
+                Button("Keep audio only") {
+                    applyFieldsToRecording()
+                    Task { await recordingManager.skipProcessing() }
+                }
+                .disabled(sanitizedMeetingTitle.isEmpty)
+                .help("Keep the audio and stop here")
+
+                Button(appState.processingJob == nil ? "Queue" : "Queue for later") {
+                    applyFieldsToRecording()
+                    Task {
+                        await recordingManager.queueForLater(
+                            transcribe: transcribe,
+                            summary: summary && transcribe,
+                            actionItems: actionItems && transcribe,
+                            tags: tags && transcribe,
+                            loadCalendarParticipants: acceptedCalendarParticipantLoad
+                        )
+                    }
+                }
+                .disabled(sanitizedMeetingTitle.isEmpty)
+                .help("Save the audio and wait in the queue until you choose Process Queue")
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = true }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(MenuPanelButtonStyle(kind: .danger, height: 30, fillsWidth: false))
+                .accessibilityLabel("Delete recording")
+                .help("Delete recording")
+            }
+            .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30))
+        }
     }
 
     @ViewBuilder
@@ -414,66 +566,64 @@ struct PostRecordingSheet: View {
             VStack(alignment: .leading, spacing: 5) {
                 if let progress = state.progress {
                     ProgressView(value: progress)
+                        .tint(palette.primary.color)
                         .accessibilityLabel("Audio saving progress")
                 }
                 Text(state.progress == 1
                      ? "Finishing save… Please keep dBrief open."
                      : "Preparing your audio. Longer recordings can take a few minutes. Please keep dBrief open.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .uiFont(.system(size: 11))
+                    .foregroundStyle(palette.secondary.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else if state.recordingID == appState.currentRecording?.id, let error = state.error {
             Label("Couldn’t finish: \(error) Try again, or choose another action.", systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(Brand.coral)
+                .uiFont(.system(size: 11))
+                .foregroundStyle(status.danger.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         } else if appState.processingJob != nil {
             Text("Another recording is processing. Process saves this recording and queues it to run automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.secondary.color)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// Inline delete confirmation (coral panel) shown in place of the action row.
+    /// Inline delete confirmation shown in place of the action area.
     private var deleteConfirmation: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Delete this recording?")
-                .font(.system(size: 13, weight: .semibold))
-            Text("The audio file is permanently removed from disk. This can’t be undone.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .uiFont(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.heading.color)
+            Text(appState.currentRecording?.importSourceURL != nil
+                ? "dBrief’s copy of this audio is removed. The original isn’t touched."
+                : "The audio file is permanently removed from disk. This can’t be undone.")
+                .uiFont(.system(size: 11))
+                .foregroundStyle(palette.text.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
                 Button("Cancel") {
                     withAnimation(.easeOut(duration: 0.15)) { confirmingDelete = false }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32, fillsWidth: false))
+                .keyboardShortcut(.cancelAction)
 
-                Button {
+                Button("Delete") {
                     Task { await recordingManager.discardRecording() }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(Brand.coral, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MenuPanelButtonStyle(kind: .dangerFilled, height: 32, fillsWidth: false))
             }
         }
-        .padding(13)
-        .background(Brand.coralTint, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Brand.coral.opacity(0.4), lineWidth: 1))
+        .padding(16)
+        .background(status.dangerFill.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(status.dangerBorder.color, lineWidth: 1))
     }
 
-    /// Profile switcher rendered as the design's banner pill ("PROFILE  Default ⌄").
-    private var profilePill: some View {
+    /// Profile switcher for this recording.
+    private var profileMenu: some View {
         Menu {
             ForEach(appSettings.profiles) { p in
                 Button {
@@ -487,28 +637,14 @@ struct PostRecordingSheet: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Text("Profile:")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text(reviewProfile.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Brand.violet2)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
-            .background(Brand.violetTint, in: Capsule())
-            .overlay(Capsule().strokeBorder(Brand.violet.opacity(0.35), lineWidth: 1))
-            .contentShape(Capsule())
+            MenuPanelSelectorLabel(text: reviewProfile.name)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
         .disabled(appState.processingJob != nil)
+        .accessibilityLabel("Profile for this recording")
+        .accessibilityValue(reviewProfile.name)
         .help(appState.processingJob == nil ? "Choose a profile for this recording" : "Profile changes wait for the current job to finish")
     }
 
@@ -533,17 +669,28 @@ struct PostRecordingSheet: View {
                     } else {
                         ParticipantPill(
                             name: name,
-                            color: Theme.speakerColor(for: name),
                             onRemove: { removeParticipant(name) },
                             onEdit: { editingParticipant = name })
                     }
                 }
-                TextField("Add name…", text: $participantInput)
+                TextField("Add a name", text: $participantInput)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .uiFont(.system(size: 12))
+                    .foregroundStyle(palette.heading.color)
                     .frame(minWidth: 90)
+                    .padding(.horizontal, 8)
+                    .frame(height: 30)
+                    .background(palette.surface.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
                     .focused($participantFieldFocused)
                     .onSubmit(addParticipant)
+                if !participantInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button(action: addParticipant) {
+                        Label("Add", systemImage: "plus")
+                    }
+                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fontSize: 11, fillsWidth: false))
+                    .help("Add this name (or press Return)")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -558,9 +705,9 @@ struct PostRecordingSheet: View {
         .frame(height: min(max(participantsBoxHeight, 30), Self.participantsFieldMaxHeight))
         .scrollBounceBehavior(.basedOnSize)
         .onPreferenceChange(ParticipantsHeightKey.self) { participantsBoxHeight = $0 }
-        .padding(7)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .padding(12)
+        .background(palette.canvas.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.divider.color, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture { participantFieldFocused = true }
     }
@@ -622,6 +769,13 @@ struct PostRecordingSheet: View {
         return true
     }
 
+    private var currentChoices: PostRecordingChoices {
+        PostRecordingChoices(transcribe: transcribe, summary: summary && transcribe,
+            actionItems: actionItems && transcribe, tags: tags && transcribe,
+            loadCalendarParticipants: acceptedCalendarParticipantLoad, participants: participantNames,
+            titleWasUserProvided: appState.currentRecording.map { isCustomTitle(sanitizedMeetingTitle, recording: $0) } ?? false)
+    }
+
     private func applyFieldsToRecording() {
         guard !recordingManager.postRecordingAction.isBusy else { return }
         guard let recording = appState.currentRecording else { return }
@@ -651,35 +805,35 @@ struct PostRecordingSheet: View {
     @ViewBuilder
     private var calendarPickerStatus: some View {
         if let refreshed = calendarPickerLastRefresh {
-            Text("Updated \(refreshed.formatted(date: .abbreviated, time: .shortened))")
-                .font(.caption2).foregroundStyle(.secondary)
+            Text("Updated at \(refreshed.formatted(date: .omitted, time: .shortened))")
+                .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         }
         switch calendarPickerOutcome {
         case .manualOnly:
             Text("Manual mode: press Refresh for the latest meetings.")
-                .font(.caption).foregroundStyle(.secondary)
+                .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         case .partial, .failed:
             Label(calendarPickerLastRefresh == nil
                   ? "Meeting list unavailable. Press Refresh to retry."
                   : "Showing saved meetings; refresh failed. Press Refresh to retry.",
                   systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .blocked:
             Label("Calendar access blocked. Check Claude connector approval, then press Refresh.", systemImage: "lock")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .saveFailed:
             Label("Loaded, but could not save the cache.", systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .selectionMissing:
             Label("Selected meeting changed or disappeared. Review your selection.", systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(.orange)
+                .uiFont(.system(size: 11)).foregroundStyle(status.warning.color)
         case .unconfigured:
-            Text("Add a mailbox in Calendar settings to load meetings.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("Add a mailbox in Settings → Meetings to load meetings.")
+                .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
         case .complete, .none:
             if !calendarPickerRefreshing, calendarPickerLastRefresh != nil,
                appState.currentRecording?.calendarCandidates.isEmpty == true {
-                Text("No meetings for this day.").font(.caption).foregroundStyle(.secondary)
+                Text("No meetings for this day.").uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
             }
         }
     }
@@ -713,33 +867,16 @@ struct PostRecordingSheet: View {
     private func calendarAttendeesBlock(for recording: Recording) -> some View {
         let allowed = recording.calendarEvent != nil
             && appSettings.effectiveCalendarCLIConfig.attendeePolicy == .onDemand
+        // Attendees only mean something once a meeting is linked; until then the
+        // block is all disabled controls, so leave it out.
+        if recording.calendarEvent != nil {
         VStack(alignment: .leading, spacing: 6) {
-            BrandKicker("Calendar attendees")
-            BrandCheckRow(title: "Load during processing", isOn: $loadCalendarParticipants, enabled: allowed)
-            Text("Fetch invitees during processing; you can start immediately.")
-                .font(.caption).foregroundStyle(.secondary)
-            if !allowed {
-                Text(recording.calendarEvent == nil
-                     ? "Choose a meeting to load its attendees."
-                     : "Attendee loading is set to Never in Calendar settings.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            Text("Calendar attendees")
+                .uiFont(.system(size: 12, weight: .medium))
+                .foregroundStyle(palette.heading.color)
+                .padding(.top, 6)
             HStack(spacing: 8) {
-                switch attendeeLoadState {
-                case .idle:
-                    EmptyView()
-                case .loading:
-                    ProgressView().controlSize(.small)
-                case .done(let message):
-                    Text(message).font(.brandMono(10.5)).foregroundStyle(.secondary)
-                case .omittedLarge(let count):
-                    Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
-                        .font(.brandMono(10.5)).foregroundStyle(.secondary)
-                case .unavailable:
-                    Text("Attendee roster unavailable").font(.brandMono(10.5)).foregroundStyle(.secondary)
-                case .failed:
-                    Text("Attendee load failed — try again").font(.brandMono(10.5)).foregroundStyle(.secondary)
-                }
+                BrandCheckRow(title: "Load during processing", isOn: $loadCalendarParticipants, enabled: allowed)
                 Button {
                     loadAttendees(for: recording)
                 } label: {
@@ -747,9 +884,36 @@ struct PostRecordingSheet: View {
                           : attendeeLoadState.isLoaded ? "Refresh" : "Load now",
                           systemImage: "person.2")
                 }
-                .controlSize(.small)
+                .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 30, fillsWidth: false))
                 .disabled(!allowed || attendeeLoadState == .loading)
             }
+            .help("Fetch invitees during processing; you can start immediately.")
+            if !allowed {
+                Text(recording.calendarEvent == nil
+                     ? "Choose a meeting to load its attendees."
+                     : "Attendee loading is set to Never in Settings → Meetings.")
+                    .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+            }
+            Group {
+                switch attendeeLoadState {
+                case .idle:
+                    EmptyView()
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .done(let message):
+                    Text(message)
+                case .omittedLarge(let count):
+                    Text("Attendees omitted: meeting exceeds your limit (\(count) invitees)")
+                        
+                case .unavailable:
+                    Text("Attendee roster unavailable")
+                case .failed:
+                    Text("Attendee load failed — try again")
+                }
+            }
+            .uiFont(.system(size: 11))
+            .foregroundStyle(palette.secondary.color)
+        }
         }
     }
 
@@ -850,7 +1014,7 @@ private struct ParticipantEditField: View {
     let onCommit: (String) -> Void
     let onCancel: () -> Void
 
-    @Environment(\.calmAppearance) private var calm
+    @Environment(\.viewerPalette) private var palette
     @State private var text: String
     /// Set by Escape so the focus-loss commit below doesn't undo the cancel.
     @State private var cancelled = false
@@ -866,18 +1030,14 @@ private struct ParticipantEditField: View {
     var body: some View {
         TextField("Name", text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 12.5))
+            .uiFont(.system(size: 11.5))
             .focused($focused)
             // Hug the text like the pill it replaces; FlowLayout needs a concrete width.
             .frame(width: max(80, CGFloat(text.count) * 7.2 + 20))
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(
-                    calm ? Color.primary.opacity(0.35) : Brand.violet.opacity(0.55),
-                    lineWidth: 1)
-            )
+                .background(palette.selected.color, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.primary.color.opacity(0.55), lineWidth: 1))
             .onSubmit { onCommit(text) }
             .onExitCommand {
                 cancelled = true

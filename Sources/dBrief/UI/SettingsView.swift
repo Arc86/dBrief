@@ -3,156 +3,133 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var appSettings
+    @Environment(TickTickAuthService.self) private var tickTickAuth
     @Environment(\.colorScheme) private var colorScheme
-    @State private var destination = SettingsDestination(page: .general)
+    @Environment(\.viewerPalette) private var palette
+    @State private var destination: SettingsDestination
     @State private var profileToEdit: UUID?
     @State private var searchText = ""
     @State private var selectedSearchID: String?
-    @State private var revealAdvanced = false
     @State private var searchRequest: SettingsSearchRequest?
     @State private var navigationRevision = UUID()
+    @State private var permissions = SettingsPermissionStatus()
+    /// Starts open every time, so a remembered collapsed sidebar can't hide navigation.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @FocusState private var focus: Focus?
-    private enum Focus: Hashable { case search, results }
+    @FocusState private var searchFocused: Bool
+    private enum Focus: Hashable { case results }
+    @Environment(\.viewerMode) private var viewerMode
     private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var results: [SettingsSearchEntry] { SettingsSearch.results(for: searchText) }
-    // Match the detail canvas in macOS 27 System Settings. Its window color
-    // resolves to a noticeably grayer surface in our SwiftUI settings window.
-    private var canvasColor: Color {
-        colorScheme == .dark ? Color(white: 28.0 / 255.0) : .white
+
+    init(page: SettingsPage = .general) {
+        _destination = State(initialValue: SettingsDestination(page: page))
+    }
+
+    /// The Signature workspace colour, shared with the transcript viewer.
+    private var canvasColor: Color { palette.canvas.color }
+
+    private func editProfile(_ id: UUID) {
+        profileToEdit = id
+        navigate(to: SettingsDestination(page: .profiles))
     }
 
     private func navigate(to target: SettingsDestination) {
         destination = target
         searchRequest = nil
-        revealAdvanced = false
         navigationRevision = UUID()
     }
 
     private func openResult(_ result: SettingsSearchEntry) {
         destination = result.destination
-        revealAdvanced = result.requiresAdvanced
         searchRequest = result.destination.section.map { SettingsSearchRequest(section: $0) }
         navigationRevision = UUID()
         focus = nil
+        searchFocused = false
     }
 
     private func clearSearch() {
         searchText = ""
         selectedSearchID = nil
-        revealAdvanced = false
         searchRequest = nil
-        let visible = destination.page.visibleSelection(advanced: appSettings.powerUserMode)
-        if visible != destination.page { navigate(to: SettingsDestination(page: visible)) }
-        focus = .search
+        searchFocused = true
     }
 
     private func openSelectedResult() {
         if let result = results.first(where: { $0.id == selectedSearchID }) ?? results.first { openResult(result) }
     }
 
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            TextField("Search settings", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Search settings")
-                .focused($focus, equals: .search)
-                .onSubmit { openSelectedResult() }
-                .onExitCommand { clearSearch() }
-                .onKeyPress(.downArrow) {
-                    guard !results.isEmpty else { return .ignored }
-                    selectedSearchID = results.first?.id
-                    focus = .results
-                    return .handled
-                }
-            if !searchText.isEmpty {
-                Button(action: clearSearch) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear settings search")
-            }
-        }
-        .padding(10)
-    }
-
     private var searchResults: some View {
-        List(selection: $selectedSearchID) {
-            if results.isEmpty {
-                Text("No settings found. Try another word.")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                ForEach(results) { result in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(result.title)
-                        Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
-                            .font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                if results.isEmpty {
+                    Text("No settings found. Try another word.")
+                        .uiFont(.system(size: 12))
+                        .foregroundStyle(palette.secondary.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                } else {
+                    ForEach(results) { result in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(result.title)
+                                .uiFont(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(palette.heading.color)
+                            Text(result.destination.page.title + (result.requiresAdvanced ? " · Advanced" : ""))
+                                .uiFont(.system(size: 11))
+                                .foregroundStyle(palette.secondary.color)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .settingsSelectableRow(isSelected: selectedSearchID == result.id) {
+                            selectedSearchID = result.id
+                            openResult(result)
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 3)
-                    .contentShape(Rectangle())
-                    .tag(result.id)
-                    .onTapGesture { selectedSearchID = result.id; openResult(result) }
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction { openResult(result) }
                 }
             }
+            .padding(.horizontal, 8)
+            .overlayScrollers()
         }
-        .scrollContentBackground(.hidden)
+        .focusable()
+        .focusEffectDisabled()
         .focused($focus, equals: .results)
+        .onKeyPress(.upArrow) { moveSearchSelection(by: -1) }
+        .onKeyPress(.downArrow) { moveSearchSelection(by: 1) }
         .onKeyPress(.return) { openSelectedResult(); return .handled }
         .onExitCommand { clearSearch() }
     }
 
+    private func moveSearchSelection(by step: Int) -> KeyPress.Result {
+        guard let id = SettingsListNavigation.step(step, in: results.map(\.id), from: selectedSearchID) else { return .ignored }
+        selectedSearchID = id
+        return .handled
+    }
+
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                searchField
-                if isSearching {
-                    searchResults
-                        .id(searchText)
-                } else {
-                List(selection: Binding<SettingsPage?>(
-                    get: { destination.page },
-                    set: { if let page = $0 { navigate(to: SettingsDestination(page: page)) } }
-                )) {
-                    ForEach(SettingsGroup.allCases) { group in
-                        Section(group.title) {
-                            ForEach(group.pages.filter { SettingsPage.visiblePages(advanced: appSettings.powerUserMode).contains($0) }) { page in
-                                HStack(spacing: 10) {
-                                    Image(systemName: page.icon)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 16, height: 16)
-                                        .foregroundStyle(.white)
-                                        .frame(width: 24, height: 24)
-                                        .background(page.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                    Text(page.title).font(.system(size: 14))
-                                }
-                                .padding(.vertical, 3)
-                                .tag(page)
-                            }
-                        }
-                        .collapsible(false)
-                    }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                }
-                Divider()
-                if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-                    Text("dBrief v\(version)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
-                }
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SettingsSidebar(
+                selection: destination.page,
+                badges: [.permissions: permissions.attentionCount(settings: appSettings)],
+                searchText: $searchText,
+                searchFocused: $searchFocused,
+                onSelect: { navigate(to: SettingsDestination(page: $0)) },
+                onSubmitSearch: openSelectedResult,
+                onSearchDown: {
+                    guard !results.isEmpty else { return }
+                    selectedSearchID = results.first?.id
+                    focus = .results
+                },
+                onClearSearch: clearSearch
+            ) {
+                searchResults.id(searchText)
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
-            .background {
-                // System Settings uses a subtly tinted sidebar against its
-                // white/near-black detail canvas in both appearances.
-                canvasColor
-                    .overlay(Color.primary.opacity(colorScheme == .dark ? 0.04 : 0.07))
-                    .ignoresSafeArea()
-            }
+            .frame(minWidth: 220, idealWidth: 236)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 320)
+            // Replaced by `SettingsSidebarToggle`: the system button draws a glass
+            // circle over the custom sidebar background.
+            .toolbar(removing: .sidebarToggle)
+            // Load task lists now so their pickers draw at full width when shown.
+            .task { await TaskDestinationPicker.prefetch(appSettings: appSettings, tickTickAuth: tickTickAuth) }
         } detail: {
             // Keep long grouped forms inside the window's viewport. Without
             // this boundary, the header + form stack can report the form's full
@@ -161,16 +138,10 @@ struct SettingsView: View {
                 let tab = destination.page
                 ScrollViewReader { scrollProxy in
                     VStack(spacing: 0) {
-                        if tab.editsAppDefaults {
-                            SettingsProfileScopeView(fields: tab.profileFields) { id in
-                                profileToEdit = id
-                                navigate(to: SettingsDestination(page: .profiles))
-                            }
-                            .id(tab)
-                        }
                         switch tab {
                         case .general:      SettingsGeneralTab()
-                        case .storage:      SettingsStorageTab()
+                        case .appearance:   SettingsAppearanceTab()
+                        case .storage:      SettingsStorageTab(editProfile: editProfile)
                         case .afterRecording:
                             SettingsAfterRecordingTab { id in
                                 profileToEdit = id
@@ -178,13 +149,14 @@ struct SettingsView: View {
                             }
                         case .permissions:  SettingsPermissionsTab()
                         case .recording:    SettingsRecordingTab()
-                        case .transcription: SettingsTranscriptionTab()
-                        case .ai:           SettingsAITab()
+                        case .transcription: SettingsTranscriptionTab(editProfile: editProfile)
+                        case .ai:           SettingsAITab(editProfile: editProfile)
                         case .spokenVoice:  SettingsSpokenVoiceTab()
-                        case .vocabulary:     SettingsVocabularyTab()
+                        case .vocabulary:     SettingsVocabularyTab(editProfile: editProfile)
                         case .watchedFolders: SettingsWatchedFoldersTab()
-                        case .integrations: SettingsIntegrationsTab()
-                        case .voiceLibrary: SettingsVoiceLibraryTab()
+                        case .integrations: SettingsIntegrationsTab(editProfile: editProfile)
+                        case .meetings:     SettingsMeetingsTab(editProfile: editProfile)
+                        case .speakers:     SettingsSpeakersTab()
                         case .profiles:     SettingsProfilesTab(selectedProfileId: $profileToEdit)
                         case .benchmark:    SettingsBenchmarkTab()
                         case .about:        AboutTab()
@@ -192,7 +164,6 @@ struct SettingsView: View {
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                     .id(navigationRevision)
-                    .environment(\.settingsSearchRevealAdvanced, revealAdvanced)
                     .environment(\.settingsSearchRequest, searchRequest)
                     .task(id: navigationRevision) {
                         if let section = destination.section {
@@ -208,28 +179,24 @@ struct SettingsView: View {
             .background(canvasColor.ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { focus = .search } label: { Image(systemName: "magnifyingglass") }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .accessibilityLabel("Search settings")
-            }
+        .modifier(SettingsSidebarToggle(visibility: $columnVisibility))
+        .environment(\.viewerPalette, palette.withSoftDividers(mode: viewerMode))
+        // ⌘F focuses the sidebar search field; no toolbar button duplicates it.
+        .background {
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
         .applyWindowAppearanceWhenAvailable(canvasColor)
         .onChange(of: searchText) { _, _ in
             selectedSearchID = results.first?.id
-            if !isSearching {
-                revealAdvanced = false
-                searchRequest = nil
-                let visiblePage = destination.page.visibleSelection(advanced: appSettings.powerUserMode)
-                if visiblePage != destination.page { navigate(to: SettingsDestination(page: visiblePage)) }
-            }
+            if !isSearching { searchRequest = nil }
         }
-        .onChange(of: appSettings.powerUserMode) { _, enabled in
-            let visiblePage = destination.page.visibleSelection(advanced: enabled)
-            if visiblePage != destination.page && !revealAdvanced { navigate(to: SettingsDestination(page: visiblePage)) }
-        }
+        .environment(permissions)
         .onAppear {
+            permissions.refresh()
             if !appSettings.showDockIcon {
                 NSApp.setActivationPolicy(.regular)
             }
@@ -246,10 +213,43 @@ private extension View {
     @ViewBuilder
     func applyWindowAppearanceWhenAvailable(_ color: Color) -> some View {
         if #available(macOS 15.0, *) {
+            // The sidebar already says "Settings"; drop the duplicate window title.
             toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .toolbar(removing: .title)
                 .containerBackground(color, for: .window)
         } else {
             self
+        }
+    }
+}
+
+/// Sidebar show/hide button without the toolbar's shared glass background.
+private struct SettingsSidebarToggle: ViewModifier {
+    @Binding var visibility: NavigationSplitViewVisibility
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var button: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                visibility = visibility == .detailOnly ? .all : .detailOnly
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+        }
+        .help(visibility == .detailOnly ? "Show sidebar" : "Hide sidebar")
+        .accessibilityLabel(visibility == .detailOnly ? "Show sidebar" : "Hide sidebar")
+    }
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbar {
+                ToolbarItem(placement: .navigation) { button }
+                    .sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                ToolbarItem(placement: .navigation) { button }
+            }
         }
     }
 }

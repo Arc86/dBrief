@@ -8,27 +8,40 @@ import SwiftUI
 /// `#`/`-`/`1.` syntax. This view parses the common block elements the model
 /// emits into one attributed text value, delegating inline spans to `AttributedString`.
 struct MarkdownText: View {
-    private let rendered: AttributedString
+    // Only the source is stored: `init` runs on every parent re-render (e.g. each
+    // tab switch), so parsing there re-rendered the whole summary each time. The
+    // parse happens in `body`, which SwiftUI skips while these inputs are unchanged,
+    // and goes through a cache for views that are rebuilt with the same text.
+    private let text: String
+    private let readingFont: Font?
+    /// Link `[hh:mm:ss]` citations (chat answers) so they can seek the recording.
+    private let linksTimestamps: Bool
+    @Environment(\.uiTypography) private var typography
 
-    init(_ text: String) {
-        rendered = Self.render(text)
+    init(_ text: String, readingFont: Font? = nil, linksTimestamps: Bool = false) {
+        self.text = text
+        self.readingFont = readingFont
+        self.linksTimestamps = linksTimestamps
     }
 
     var body: some View {
+        let rendered = MarkdownRenderCache.shared.rendered(text, readingFont: readingFont,
+                                                           linksTimestamps: linksTimestamps)
         // A single selectable text view avoids a nested SwiftUI layout graph for
         // every line when a streamed response becomes formatted after Stop.
-        Text(rendered)
+        Text(readingFont != nil ? rendered : Self.appHeadingFonts(in: rendered, typography: typography))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static func render(_ text: String) -> AttributedString {
+    static func render(_ text: String, readingFont: Font? = nil, linksTimestamps: Bool = false) -> AttributedString {
         var result = AttributedString()
         for (index, block) in parse(text).enumerated() {
             if index > 0 { result += AttributedString("\n") }
             switch block {
             case .heading(let level, let text):
                 var heading = inline(text)
-                heading.font = headingFont(level)
+                heading.font = readingFont.map { $0.weight(.semibold) } ?? headingFont(level)
+                heading[MarkdownHeadingLevel.self] = level
                 result += heading
             case .bullet(let text):
                 result += AttributedString("• ") + inline(text)
@@ -39,6 +52,22 @@ struct MarkdownText: View {
             case .spacer:
                 break
             }
+        }
+        return linksTimestamps ? ChatTimestampLink.linked(result) : result
+    }
+
+    /// Adjust the cached heading spans when UI preferences change without parsing again.
+    @MainActor
+    static func appHeadingFonts(in rendered: AttributedString, typography: AppTypographyPreferences) -> AttributedString {
+        var result = rendered
+        for run in rendered.runs {
+            guard let level = run[MarkdownHeadingLevel.self] else { continue }
+            let style: AppFontStyle = switch level {
+            case 1: .title3.bold()
+            case 2: .headline
+            default: .subheadline.bold()
+            }
+            result[run.range].font = style.resolve(using: typography)
         }
         return result
     }
@@ -104,5 +133,53 @@ struct MarkdownText: View {
 
             return .paragraph(text: line)
         }
+    }
+}
+
+private enum MarkdownHeadingLevel: AttributedStringKey {
+    typealias Value = Int
+    static let name = "dBrief.markdownHeadingLevel"
+}
+
+/// Parsed Markdown by source text and font, least-recently-used eviction.
+@MainActor
+final class MarkdownRenderCache {
+    static let shared = MarkdownRenderCache()
+
+    private struct Key: Hashable {
+        let text: String
+        let readingFont: Font?
+        let linksTimestamps: Bool
+    }
+
+    private var entries: [Key: AttributedString] = [:]
+    private var recency: [Key] = []
+    private let limit: Int
+    /// How many times text was actually parsed (for tests).
+    private(set) var renderCount = 0
+
+    init(limit: Int = 64) {
+        self.limit = limit
+    }
+
+    func rendered(_ text: String, readingFont: Font?, linksTimestamps: Bool = false) -> AttributedString {
+        let key = Key(text: text, readingFont: readingFont, linksTimestamps: linksTimestamps)
+        if let cached = entries[key] {
+            touch(key)
+            return cached
+        }
+        renderCount += 1
+        let result = MarkdownText.render(text, readingFont: readingFont, linksTimestamps: linksTimestamps)
+        entries[key] = result
+        touch(key)
+        while recency.count > limit {
+            entries[recency.removeFirst()] = nil
+        }
+        return result
+    }
+
+    private func touch(_ key: Key) {
+        recency.removeAll { $0 == key }
+        recency.append(key)
     }
 }

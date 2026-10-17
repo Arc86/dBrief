@@ -28,7 +28,7 @@ Pick how recordings are turned into text and summaries. Each option shows a one-
 - **Transcription** defaults to **Local Whisper** — accurate, multilingual, and fully on-device (it downloads a model the first time you transcribe).
 - **AI Analysis** defaults to the best on-device option for your Mac — **Apple Intelligence** on macOS 26+, otherwise the local **Gemma** model.
 
-Both defaults run entirely on your Mac with no account or server to set up. If you choose **Remote Endpoint** for either, the wizard reminds you to add your server URL and key in **Settings → Transcription** or **Settings → AI Analysis** before recording.
+Both defaults run entirely on your Mac with no account or server to set up. If you choose **Remote Endpoint** for either, the wizard reminds you to add your server URL and key in **Settings → Transcription** or **Settings → AI analysis** before recording.
 
 ### 4. Prepare your models
 
@@ -47,9 +47,9 @@ Tick **I understand my responsibility to use dBrief lawfully and obtain any requ
 Everything the wizard covers can be changed at any time:
 
 - **Transcription engine** — **Settings → Transcription**
-- **AI engine** — **Settings → AI Analysis**
-- **Output folders** — **Settings → General → Folders**
+- **AI engine** — **Settings → AI analysis**
+- **Output folders** — **Settings → Storage → Folders**
 
 ## Revisiting the wizard
 
-Every setting the wizard covers is also available directly in **Settings** — open Settings from the dBrief menu bar window. To see the wizard itself again, use **Reset Onboarding** in **Settings → General**, which re-shows the setup guide on next launch.
+Every setting the wizard covers is also available directly in **Settings** — open it with **Settings…** in the gear menu of the dBrief menu bar panel. To see the wizard itself again, go to **Settings → General → Setup** and click **Show again** next to **Welcome and setup guide**. The setup guide opens the next time you open the menu bar panel.

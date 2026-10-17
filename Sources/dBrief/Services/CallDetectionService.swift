@@ -223,7 +223,7 @@ final class CallDetectionService {
         if appSettings.autoRecordCalls {
             log.info("Auto-starting recording for mic activity (\(appName, privacy: .public))")
             Task {
-                try? await recordingManager?.startRecording(associatedApp: appName, callBundleId: bundleId)
+                await recordingManager?.requestRecording(associatedApp: appName, callBundleId: bundleId)
             }
         } else {
             appState.detectedCallApp = appName
@@ -292,7 +292,7 @@ final class CallDetectionService {
         if appSettings.autoRecordCalls {
             log.info("Auto-starting recording for \(appName, privacy: .public)")
             Task {
-                try? await recordingManager?.startRecording(associatedApp: appName, callBundleId: bundleId)
+                await recordingManager?.requestRecording(associatedApp: appName, callBundleId: bundleId)
             }
         } else {
             appState.detectedCallApp = appName

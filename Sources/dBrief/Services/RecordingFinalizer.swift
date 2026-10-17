@@ -149,7 +149,7 @@ actor RecordingFinalizer {
             recordingID: snapshot.id,
             dateISO8601: ISO8601DateFormatter().string(from: snapshot.date),
             durationSeconds: snapshot.duration,
-            meetingTitle: normalizedTitle,
+            meetingTitle: Self.cleanMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp),
             masterFileName: masterURL.lastPathComponent,
             segmentFileNames: segmentURLs.map(\.lastPathComponent),
             warnings: warnings,
@@ -243,7 +243,7 @@ actor RecordingFinalizer {
             recordingID: snapshot.id,
             dateISO8601: ISO8601DateFormatter().string(from: snapshot.date),
             durationSeconds: snapshot.duration,
-            meetingTitle: normalizedTitle,
+            meetingTitle: Self.cleanMeetingTitle(snapshot.meetingTitle, fallback: snapshot.associatedApp),
             masterFileName: masterURL.lastPathComponent,
             segmentFileNames: segmentURLs.map(\.lastPathComponent),
             warnings: warnings,
@@ -773,7 +773,14 @@ struct RecordingFinalizationSnapshot: Sendable {
 }
 
 extension RecordingFinalizer {
+    /// The filename slug: the clean title with spaces turned into hyphens.
     static func normalizeMeetingTitle(_ value: String, fallback associatedApp: String?) -> String {
+        cleanMeetingTitle(value, fallback: associatedApp).replacingOccurrences(of: " ", with: "-")
+    }
+
+    /// The title without characters a filename can't hold, spaces kept, for the
+    /// metadata sidecar and everything that shows it.
+    static func cleanMeetingTitle(_ value: String, fallback associatedApp: String?) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackValue = (associatedApp ?? "meeting").trimmingCharacters(in: .whitespacesAndNewlines)
         let source = trimmed.isEmpty ? (fallbackValue.isEmpty ? "meeting" : fallbackValue) : trimmed
@@ -784,8 +791,15 @@ extension RecordingFinalizer {
             .joined(separator: " ")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if collapsed.isEmpty { return "meeting" }
-        return collapsed.replacingOccurrences(of: " ", with: "-")
+        return collapsed.isEmpty ? "meeting" : collapsed
+    }
+
+    /// Sidecars written before the clean title was stored hold the filename slug
+    /// ("Team-sync-notes"). A title without spaces but with hyphens reads as words,
+    /// the same way the library shows the filename.
+    static func readableMeetingTitle(_ stored: String) -> String {
+        guard stored.contains("-"), !stored.contains(where: \.isWhitespace) else { return stored }
+        return stored.replacingOccurrences(of: "-", with: " ")
     }
 
     static func datedFolder(baseFolder: URL, date: Date, fileManager: FileManager = .default) throws -> URL {

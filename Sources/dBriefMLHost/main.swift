@@ -16,9 +16,33 @@ if let i = args.firstIndex(of: "--support-base"), i + 1 < args.count {
     exit(2)
 }
 
+// Reserve the real stdout for protocol frames (or the eval report) and send anything
+// else written to fd 1 to stderr. Libraries (e.g. mlx-swift-lm's TurboQuant warning)
+// print() to stdout; stray bytes there would corrupt the length-prefixed frame pipe
+// and hang the app. Must happen before any model or library use.
+let protocolFD = dup(STDOUT_FILENO)
+if protocolFD == -1 || dup2(STDERR_FILENO, STDOUT_FILENO) == -1 {
+    FileHandle.standardError.write(Data("dBriefMLHost: cannot reserve stdout for protocol\n".utf8))
+    exit(2)
+}
+let protocolOutput = FileHandle(fileDescriptor: protocolFD, closeOnDealloc: false)
+
+if args.contains("--eval-insights") {
+    exit(await GemmaEval.run(arguments: args, output: protocolOutput))
+}
+if args.contains("--eval-chat") {
+    exit(await GemmaEval.runChat(arguments: args, output: protocolOutput))
+}
+if args.contains("--eval-embed") {
+    exit(await GemmaEval.runEmbed(arguments: args, output: protocolOutput))
+}
+if args.contains("--eval-retrieval") {
+    exit(await GemmaEval.runRetrieval(arguments: args, output: protocolOutput))
+}
+
 // One writer shared by request replies and broadcast state events, so frames
 // never interleave on the output pipe.
-let writer = StdoutWriter(.standardOutput)
+let writer = StdoutWriter(protocolOutput)
 
 // RequestRouter supplies request-correlated progress sinks during backend work.
 // The sentinel is only for out-of-request lifecycle state (for example shutdown);

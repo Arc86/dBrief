@@ -24,6 +24,40 @@ actor TranscriptSpellingService {
         let engine: AppSettings.AIEngine
         let endpoint: Endpoint?
     }
+    /// What the correction pass did. Only `.skipped` is worth telling the user
+    /// about: the vocabulary was set but could not be applied.
+    enum Outcome: Sendable, Equatable {
+        /// No vocabulary or an empty transcript, so nothing ran.
+        case notNeeded
+        /// The engine answered and found nothing to fix.
+        case unchanged
+        case corrected(Int)
+        case cancelled
+        case skipped(SkipReason)
+
+        var warning: String? {
+            guard case .skipped(let reason) = self else { return nil }
+            return reason.message
+        }
+    }
+    enum SkipReason: Sendable, Equatable {
+        case noEngine, engineFailed, unreadableAnswer
+
+        var message: String {
+            switch self {
+            case .noEngine:
+                "Vocabulary correction skipped: no AI engine is available. Choose one in Settings → AI analysis."
+            case .engineFailed:
+                "Vocabulary correction skipped: the AI engine didn't respond. The transcript is unchanged."
+            case .unreadableAnswer:
+                "Vocabulary correction skipped: the AI engine's answer couldn't be read. The transcript is unchanged."
+            }
+        }
+    }
+    struct Correction: Sendable {
+        var result: TranscriptionResult
+        var outcome: Outcome
+    }
     typealias Backend = @Sendable (Request, _ system: String, _ user: String) async throws -> String
     typealias Apply = @Sendable ([SpellingCorrection], [String], TranscriptionResult) -> TranscriptionResult
     private let backend: Backend?
@@ -38,28 +72,37 @@ actor TranscriptSpellingService {
         self.apply = apply
     }
 
-    /// Returns a copy of `result` with vocabulary terms re-spelled. Best-effort:
-    /// on any failure (no engine, parse error, empty transcript) the input is
-    /// returned unchanged.
-    func correct(_ result: TranscriptionResult, request: Request) async -> TranscriptionResult {
-        guard !Task.isCancelled else { return result }
+    /// Returns a copy of `result` with vocabulary terms re-spelled, and what
+    /// happened. Best-effort: on any failure (no engine, parse error, empty
+    /// transcript) the input is returned unchanged with a `.skipped` outcome.
+    func correct(_ result: TranscriptionResult, request: Request) async -> Correction {
+        guard !Task.isCancelled else { return .init(result: result, outcome: .cancelled) }
         let terms = request.terms
         let transcript = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !terms.isEmpty, !transcript.isEmpty else { return result }
+        guard !terms.isEmpty, !transcript.isEmpty else { return .init(result: result, outcome: .notNeeded) }
 
         do {
             let raw = try await runEngine(transcript: transcript, request: request)
             try Task.checkCancellation()
-            let corrections = Self.parseCorrections(raw)
-            guard !corrections.isEmpty else { return result }
+            guard let corrections = Self.parseCorrectionList(raw) else {
+                Self.log.error("Vocabulary spell-fix skipped: unreadable correction list")
+                return .init(result: result, outcome: .skipped(.unreadableAnswer))
+            }
+            guard !corrections.isEmpty else { return .init(result: result, outcome: .unchanged) }
             try Task.checkCancellation()
             let corrected = apply(corrections, terms, result)
             try Task.checkCancellation()
             Self.log.info("Vocabulary spell-fix applied \(corrections.count) correction(s)")
-            return corrected
+            return .init(result: corrected, outcome: .corrected(corrections.count))
+        } catch is CancellationError {
+            return .init(result: result, outcome: .cancelled)
+        } catch SpellingError.noEngine {
+            Self.log.error("Vocabulary spell-fix skipped: no AI engine available")
+            return .init(result: result, outcome: .skipped(.noEngine))
         } catch {
+            if Task.isCancelled { return .init(result: result, outcome: .cancelled) }
             Self.log.error("Vocabulary spell-fix skipped after the correction service failed")
-            return result
+            return .init(result: result, outcome: .skipped(.engineFailed))
         }
     }
 
@@ -142,11 +185,16 @@ actor TranscriptSpellingService {
     /// Extracts the first JSON array from `raw` (tolerating prose / code fences)
     /// and decodes it into `[SpellingCorrection]`. Returns `[]` on any failure.
     static func parseCorrections(_ raw: String) -> [SpellingCorrection] {
+        parseCorrectionList(raw) ?? []
+    }
+
+    /// Like `parseCorrections`, but `nil` when `raw` holds no readable list, so a
+    /// garbled answer is told apart from a valid "nothing to fix" (`[]`).
+    static func parseCorrectionList(_ raw: String) -> [SpellingCorrection]? {
         guard let json = firstJSONArray(in: raw),
-              let data = json.data(using: .utf8),
-              let parsed = try? JSONDecoder().decode([SpellingCorrection].self, from: data)
-        else { return [] }
-        return parsed
+              let data = json.data(using: .utf8)
+        else { return nil }
+        return try? JSONDecoder().decode([SpellingCorrection].self, from: data)
     }
 
     /// Returns the substring from the first balanced top-level `[ … ]`, or nil.

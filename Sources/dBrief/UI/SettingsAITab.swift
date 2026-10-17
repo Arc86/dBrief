@@ -3,152 +3,124 @@ import dBriefWire
 
 struct SettingsAITab: View {
     @Environment(AppSettings.self) private var appSettings
-    @Environment(\.settingsSearchRevealAdvanced) private var searchAdvanced
+    @Environment(\.viewerPalette) private var palette
     @Environment(\.settingsSearchRequest) private var searchRequest
+    let editProfile: (UUID) -> Void
     @Environment(RecordingManager.self) private var recordingManager
-    @State private var selectedEndpointId: UUID?
-    @State private var isEditing = false
-    @State private var editingEndpoint = Endpoint(name: "", baseURL: "http://localhost:11434", modelName: "llama3")
-    @State private var outputTokenLimitText = ""
-    @State private var isNew = false
-    @State private var testResult: SettingsTranscriptionTab.TestResult?
-    @State private var availableModels: [String] = []
-    @State private var isLoadingModels = false
     @State private var purgeMessage: String?
     @State private var isTestingCLI = false
     @State private var cliTestSuccess: String?
     @State private var cliTestError: String?
-    @State private var cliConfigExpanded = false
 
     var body: some View {
-        if isEditing {
-            endpointEditor
-        } else {
-            @Bindable var settings = appSettings
-            Form {
-                Section {
-                    Toggle("Enable AI processing", isOn: $settings.aiProcessingEnabled)
-                } header: {
-                    SettingsSearchHeading("AI Analysis", section: .aiEnabled)
-                } footer: {
-                    Text("Controls summary, action-item, and tag analysis by default. Transcription remains available. Profiles can override this setting.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
+        @Bindable var settings = appSettings
+        SettingsPageScaffold(page: .ai, notice: {
+            SettingsProfileScopeView(fields: SettingsPage.ai.profileFields, editProfile: editProfile)
+        }) {
+            SettingsCard("Analysis", section: .aiEnabled) {
+                SettingsRow("AI analysis",
+                            caption: settings.aiProcessingEnabled
+                                ? "Summary, action items, tags and sentiment. Profiles can override this."
+                                : "Off. You can still set it up here for later or for profiles that turn it on.") {
+                    Toggle("AI analysis", isOn: $settings.aiProcessingEnabled)
                 }
-                if !settings.aiProcessingEnabled {
-                    Section {
-                        Text("AI analysis is off by default. You can configure the options below for later use or for profiles that enable AI analysis.")
-                            .foregroundStyle(.secondary)
-                    }
-                    .listRowBackground(Color.clear)
-                }
-                Section("Engine", settingsSearch: .aiEngine) {
-                    Picker("AI engine", selection: $settings.aiEngine) {
+                SettingsRow(verbatim: "Engine", caption: engineDescription(for: settings.aiEngine)) {
+                    Picker("Engine", selection: $settings.aiEngine) {
                         ForEach(AppSettings.AIEngine.allCases, id: \.self) { engine in
-                            Text(engine.isRecommended ? "\(engine.displayName)  ·  Recommended" : engine.displayName).tag(engine)
+                            Text(engine.isRecommended ? "\(engine.displayName) · Recommended" : engine.displayName).tag(engine)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text(engineDescription(for: settings.aiEngine))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if (appSettings.powerUserMode || searchAdvanced), (settings.aiEngine == .qwenLocal || (searchAdvanced && searchRequest?.section == .aiEngine)) {
-                        if settings.aiEngine != .qwenLocal {
-                            Text("These model options apply to the local Gemma engine.")
-                                .font(.caption).foregroundStyle(.secondary)
+                }
+                .id(SettingsSectionID.aiEngine)
+                if settings.aiEngine == .qwenLocal {
+                    SettingsStackedRow {
+                        TranscriptionModelCard(presentation: .init(
+                            title: "Gemma 4 E4B", language: "Multilingual", footprint: "4-bit, on this Mac",
+                            summary: "Downloaded once from Hugging Face. Runs analysis and chat on this Mac.")) {
+                            HStack(spacing: 6) {
+                                ModelDownloadButton(kind: .gemma, compact: true)
+                                ModelActionsMenu(modelName: "Gemma", message: $purgeMessage) {
+                                    try await recordingManager.purgeLocalQwenModel()
+                                }
+                            }
                         }
-                        Picker("Output language", selection: outputLanguageSelectionBinding) {
-                            Text("Match transcript").tag("matchInput")
+                    }
+                    if let purgeMessage {
+                        SettingsRow(verbatim: "Model download", caption: purgeMessage)
+                    }
+                }
+            }
+
+            if settings.aiEngine.usesResultsLanguage || searchRequest?.section == .aiResultsLanguage {
+                SettingsCard("Results language", description: "For on-device and Local CLI analysis", section: .aiResultsLanguage) {
+                    SettingsRow("Write results in") {
+                        Picker("Write results in", selection: outputLanguageSelectionBinding) {
+                            Text("Same as transcript").tag("matchInput")
                             Text("English").tag("english")
                             Text("Dutch").tag("dutch")
                             Text("Custom").tag("custom")
                         }
                         .pickerStyle(.menu)
-
-                        if case .custom(let code) = settings.outputLanguage {
-                            HStack {
-                                Text("ISO code")
-                                Spacer()
-                                TextField(
-                                    "EN",
-                                    text: Binding(
-                                        get: { code },
-                                        set: { settings.outputLanguage = .custom($0.uppercased()) }
-                                    )
-                                )
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 90)
-                            }
+                    }
+                    if case .custom(let code) = settings.outputLanguage {
+                        SettingsRow("Language code", caption: "Two letters, for example DE or FR.") {
+                            TextField("Language code", text: Binding(
+                                get: { code },
+                                set: { settings.outputLanguage = .custom($0.uppercased()) }
+                            ), prompt: Text(verbatim: "EN"))
+                            .settingsTextField()
+                            .frame(width: 80)
                         }
                     }
-                    if (appSettings.powerUserMode || searchAdvanced), (settings.aiEngine == .qwenLocal || (searchAdvanced && searchRequest?.section == .aiEngine)) {
-                        ModelDownloadButton(kind: .gemma)
-
-                        Button("Remove downloaded Gemma model") {
-                            Task {
-                                do {
-                                    try await recordingManager.purgeLocalQwenModel()
-                                    purgeMessage = "Local Gemma model cache removed."
-                                } catch {
-                                    purgeMessage = error.localizedDescription
-                                }
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        if let purgeMessage {
-                            Text(purgeMessage)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                    .listRowBackground(Color.clear)
-                if appSettings.powerUserMode || searchAdvanced {
-                    Section {
-                        PromptSettingsRow(kind: .summary)
-                        PromptSettingsRow(kind: .actionItems)
-                        PromptSettingsRow(kind: .tags)
-                    } header: {
-                        SettingsSearchHeading("Prompts", section: .aiPrompts)
-                    } footer: {
-                        if appSettings.aiEngine != .remoteEndpoint {
-                            Text("On-device and Local CLI engines merge these three prompts into a single structured call, so the model returns one JSON result. The output is always JSON regardless of any “output only…” wording — format the summary (e.g. bullets) inside its text.")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                        .listRowBackground(Color.clear)
-                }
-                if appSettings.aiEngine == .localCLI || searchRequest?.section == .aiCLI || searchRequest?.section == .aiChatFallback {
-                    Section("Local CLI", settingsSearch: .aiCLI) {
-                        if appSettings.aiEngine != .localCLI {
-                            Text("These options apply when Local CLI is selected as the AI engine.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        localCLISection
-                    }
-                        .listRowBackground(Color.clear)
-                    Section("Chat Fallback", settingsSearch: .aiChatFallback) {
-                        chatFallbackSection
-                    }
-                        .listRowBackground(Color.clear)
-                }
-                if searchRequest?.section == .aiProviders || appSettings.aiEngine == .remoteEndpoint
-                    || (appSettings.aiEngine == .localCLI && appSettings.chatFallbackEngine == .remoteEndpoint) {
-                    Section("AI providers", settingsSearch: .aiProviders) {
-                        endpointsSection
-                    }
-                        .listRowBackground(Color.clear)
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .toggleStyle(.smallSwitch)
-            .padding(.top, -20)
+
+            if settings.usesAIEngineAnywhere(.localCLI) || searchRequest?.section == .aiCLI {
+                SettingsCard("Local CLI", description: "Runs your command once per recording", section: .aiCLI) {
+                    localCLIRows
+                }
+            }
+
+            if settings.aiEngine == .localCLI || searchRequest?.section == .aiChatFallback {
+                SettingsCard("Ask dBrief AI", description: "Chat beside a transcript", section: .aiChatFallback) {
+                    SettingsRow("Chat uses",
+                                caption: settings.chatFallbackEngine == .remoteEndpoint
+                                    ? "Local CLI can't stream, so chat uses this engine with the default provider below."
+                                    : "Local CLI can't stream, so chat uses this engine.") {
+                        Picker("Chat uses", selection: $settings.chatFallbackEngine) {
+                            ForEach(AppSettings.AIEngine.allCases.filter { $0 != .localCLI }, id: \.self) { engine in
+                                Text(engine.displayName).tag(engine)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+            }
+
+            SettingsCard("Chat prompts", description: "Your own prompts in Ask dBrief AI", section: .aiChatPrompts) {
+                SettingsStackedRow {
+                    SettingsSavedChatPrompts()
+                }
+            }
+
+            if searchRequest?.section == .aiProviders || settings.usesAIEngineAnywhere(.remoteEndpoint)
+                || (settings.aiEngine == .localCLI && settings.chatFallbackEngine == .remoteEndpoint) {
+                SettingsCard("Providers", description: "For remote analysis and chat", section: .aiProviders) {
+                    SettingsProviderList(kind: .ai, endpoints: $settings.aiEndpoints, defaultID: $settings.defaultAIEndpointId)
+                }
+            }
+
+            SettingsAdvancedCard(page: .ai, summary: "Custom prompts", sections: [.aiPrompts]) {
+                SettingsCard("Prompts",
+                             description: settings.aiEngine == .remoteEndpoint ? nil
+                                : "On-device and CLI engines merge these into one JSON result",
+                             section: .aiPrompts) {
+                    PromptSettingsRow(kind: .summary)
+                    PromptSettingsRow(kind: .actionItems)
+                    PromptSettingsRow(kind: .tags)
+                }
+            }
         }
     }
 
@@ -203,145 +175,107 @@ struct SettingsAITab: View {
         )
     }
 
-    private var localCLISection: some View {
-        DisclosureGroup(isExpanded: $cliConfigExpanded) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Command")
-                    Spacer()
-                    Menu("Load Template") {
-                        ForEach(LocalCLIConfig.templates) { template in
-                            Button(template.name) {
-                                appSettings.localCLIConfig.command = template.command
-                                appSettings.localCLIConfig.effortProvider = template.effortProvider
-                                appSettings.localCLIConfig.effort = template.effort
-                                appSettings.localCLIConfig.modelID = nil
-                                cliTestSuccess = nil
-                                cliTestError = nil
-                            }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                }
-
-                NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: "Local CLI command")
-                    .frame(height: 70)
-
-                if appSettings.localCLIConfig.supportsClaudeModel {
-                    ClaudeModelPicker(modelID: Binding(
-                        get: { appSettings.localCLIConfig.modelID },
-                        set: { modelID in
-                            appSettings.localCLIConfig.modelID = modelID
-                            cliTestSuccess = nil
-                            cliTestError = nil
-                        }
-                    ))
-                    Text("An explicit --model option or inline ANTHROPIC_MODEL assignment in the command takes precedence over this picker.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Text("Timeout")
-                    Spacer()
-                    Picker("Timeout", selection: Binding(
-                        get: { appSettings.localCLIConfig.timeoutSeconds },
-                        set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
-                    )) {
-                        ForEach([15, 30, 45, 60, 90, 120, 180, 300, 600, 900, 1200, 1800, 3600], id: \.self) { secs in
-                            Text(secs >= 60 ? "\(secs / 60)m" : "\(secs)s").tag(secs)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
-                }
-
-                Picker("Effort provider", selection: Binding(
-                    get: { appSettings.localCLIConfig.effortProvider },
-                    set: { provider in
-                        appSettings.localCLIConfig.effortProvider = provider
+    @ViewBuilder
+    private var localCLIRows: some View {
+        SettingsRow("Command", caption: "Must print a JSON object (title_concept, summary, action_items, tags, sentiment). Runs with your login shell's PATH.") {
+            Menu("Load template") {
+                ForEach(LocalCLIConfig.templates) { template in
+                    Button(template.name) {
+                        appSettings.localCLIConfig.command = template.command
+                        appSettings.localCLIConfig.effortProvider = template.effortProvider
+                        appSettings.localCLIConfig.effort = template.effort
+                        appSettings.localCLIConfig.modelID = nil
                         cliTestSuccess = nil
                         cliTestError = nil
                     }
-                )) {
-                    Text("Command default").tag(CLIEffortProvider.commandDefault)
-                    Text("Claude Code").tag(CLIEffortProvider.claude)
-                }
-                .pickerStyle(.menu)
-
-                if appSettings.localCLIConfig.effortProvider == .claude {
-                    CLIReasoningEffortPicker(title: "AI analysis CLI effort", selection: Binding(
-                        get: { appSettings.localCLIConfig.effort },
-                        set: { effort in
-                            appSettings.localCLIConfig.effort = effort
-                            cliTestSuccess = nil
-                            cliTestError = nil
-                        }
-                    ), recommendation: .medium)
-                    Text("The effort setting applies to this child process. An inline environment assignment in a custom command can override it.")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text("Select Claude Code as the effort provider for a Claude wrapper command. Other commands keep their own settings.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-
-                Text("Environment variables available: DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT, DBRIEF_FULL_PROMPT. The full prompt is also written to stdin for every command. The command must print a JSON object (title_concept, summary, action_items, tags, sentiment) to stdout. The command runs with your login shell's PATH; if a tool still isn't found, use its absolute path (find it with `which <tool>` in Terminal).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    Button("Test command") { testCLICommand() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    if isTestingCLI {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-
-                if let cliTestSuccess {
-                    Text(cliTestSuccess.isEmpty ? "Command ran successfully (no output)." : "Output: \(cliTestSuccess)")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                        .lineLimit(4)
-                        .textSelection(.enabled)
-                }
-                if let cliTestError {
-                    SettingsErrorDetails(summary: "Command test failed", error: cliTestError)
                 }
             }
-            .padding(.top, 6)
-        } label: {
-            Text("CLI configuration")
+            .menuStyle(.button)
+            .fixedSize()
         }
-        .onAppear {
-            // Open by default the first time, when nothing is configured yet.
-            if searchRequest?.section == .aiCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                cliConfigExpanded = true
+        SettingsStackedRow {
+            VStack(alignment: .leading, spacing: 6) {
+                NativeTextView(text: localCLICommandBinding, monospaced: true, accessibilityName: "Local CLI command")
+                    .frame(height: 70)
+                Text("Prompts arrive as DBRIEF_SYSTEM_PROMPT, DBRIEF_USER_PROMPT and DBRIEF_FULL_PROMPT, and on stdin. If a tool isn't found, use its absolute path (`which <tool>`).")
+                    .uiFont(.system(size: 11.5))
+                    .foregroundStyle(palette.secondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private var chatFallbackSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("Chat engine", selection: Binding(
-                get: { appSettings.chatFallbackEngine },
-                set: { appSettings.chatFallbackEngine = $0 }
+        if appSettings.localCLIConfig.supportsClaudeModel {
+            ClaudeModelPicker(modelID: Binding(
+                get: { appSettings.localCLIConfig.modelID },
+                set: { modelID in
+                    appSettings.localCLIConfig.modelID = modelID
+                    cliTestSuccess = nil
+                    cliTestError = nil
+                }
+            ))
+        }
+        SettingsRow("Timeout") {
+            Picker("Timeout", selection: Binding(
+                get: { appSettings.localCLIConfig.timeoutSeconds },
+                set: { appSettings.localCLIConfig.timeoutSeconds = $0 }
             )) {
-                ForEach(AppSettings.AIEngine.allCases.filter { $0 != .localCLI }, id: \.self) { engine in
-                    Text(engine.displayName).tag(engine)
+                ForEach([15, 30, 45, 60, 90, 120, 180, 300, 600, 900, 1200, 1800, 3600], id: \.self) { secs in
+                    Text(secs >= 60 ? "\(secs / 60) min" : "\(secs) s").tag(secs)
                 }
             }
             .pickerStyle(.menu)
-            Text("The Local CLI runs once per recording and can't stream, so the transcript chat window uses this engine instead.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if appSettings.chatFallbackEngine == .remoteEndpoint {
-                Text("Chat uses the default endpoint selected below.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        }
+        SettingsRow("Effort provider",
+                    caption: appSettings.localCLIConfig.effortProvider == .claude
+                        ? nil : "Choose Claude Code for a Claude wrapper command. Other commands keep their own settings.") {
+            Picker("Effort provider", selection: Binding(
+                get: { appSettings.localCLIConfig.effortProvider },
+                set: { provider in
+                    appSettings.localCLIConfig.effortProvider = provider
+                    cliTestSuccess = nil
+                    cliTestError = nil
+                }
+            )) {
+                Text("Command default").tag(CLIEffortProvider.commandDefault)
+                Text("Claude Code").tag(CLIEffortProvider.claude)
             }
+            .pickerStyle(.menu)
+        }
+        if appSettings.localCLIConfig.effortProvider == .claude {
+            SettingsRow("Reasoning effort", caption: "Applies to this child process. An inline environment assignment can override it.") {
+                CLIReasoningEffortPicker(title: "Reasoning effort", selection: Binding(
+                    get: { appSettings.localCLIConfig.effort },
+                    set: { effort in
+                        appSettings.localCLIConfig.effort = effort
+                        cliTestSuccess = nil
+                        cliTestError = nil
+                    }
+                ), recommendation: .medium)
+            }
+        }
+        SettingsRow("Test the command") {
+            HStack(spacing: 8) {
+                if isTestingCLI { ProgressView().controlSize(.small) }
+                Button("Test command") { testCLICommand() }
+                    .buttonStyle(.settingsSecondary)
+                    .disabled(isTestingCLI || appSettings.localCLIConfig.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        if let cliTestSuccess {
+            SettingsStackedRow {
+                VStack(alignment: .leading, spacing: 4) {
+                    SettingsStatusPill("Command ran", kind: .success)
+                    if !cliTestSuccess.isEmpty {
+                        Text(cliTestSuccess)
+                            .uiFont(.system(size: 11).monospaced())
+                            .foregroundStyle(palette.text.color)
+                            .lineLimit(4)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        if let cliTestError {
+            SettingsStackedRow { SettingsErrorDetails(summary: "Command test failed", error: cliTestError) }
         }
     }
 
@@ -359,259 +293,6 @@ struct SettingsAITab: View {
                 cliTestError = error.localizedDescription
             }
             isTestingCLI = false
-        }
-    }
-
-    private var endpointsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if appSettings.aiEndpoints.isEmpty {
-                Text("No AI providers configured. Click + to add one.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(appSettings.aiEndpoints) { endpoint in
-                    endpointRow(endpoint)
-                }
-            }
-
-            HStack {
-                Menu {
-                    ForEach(ProviderPresets.ai) { preset in
-                        Button(preset.name) { beginAddEndpoint(preset.makeEndpoint()) }
-                    }
-                    Divider()
-                    Button("Custom…") { beginAddEndpoint(ProviderPresets.custom(modelPlaceholder: "llama3")) }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                Button {
-                    if let id = selectedEndpointId {
-                        appSettings.aiEndpoints.removeAll { $0.id == id }
-                        selectedEndpointId = nil
-                    }
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Set as Default") {
-                    appSettings.defaultAIEndpointId = selectedEndpointId
-                }
-                .disabled(selectedEndpointId == nil)
-                .buttonStyle(.bordered)
-            }
-        }
-    }
-
-    private func endpointRow(_ endpoint: Endpoint) -> some View {
-        let isDefault = endpoint.id == appSettings.defaultAIEndpointId
-            || (appSettings.defaultAIEndpointId == nil
-                && endpoint.id == appSettings.aiEndpoints.first?.id)
-        let isSelected = endpoint.id == selectedEndpointId
-
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(endpoint.name)
-                    .fontWeight(.medium)
-                Text("\(endpoint.baseURL) (\(endpoint.modelName))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if isDefault {
-                Text("Default")
-                    .font(.caption)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onTapGesture {
-            selectedEndpointId = endpoint.id
-        }
-        .onTapGesture(count: 2) {
-            editingEndpoint = endpoint
-            outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
-            isNew = false
-            testResult = nil
-            availableModels = []
-            isEditing = true
-        }
-    }
-
-    private func beginAddEndpoint(_ endpoint: Endpoint) {
-        editingEndpoint = endpoint
-        outputTokenLimitText = endpoint.maxOutputTokens.map { String($0) } ?? ""
-        isNew = true
-        testResult = nil
-        availableModels = []
-        isEditing = true
-    }
-
-    private var isOutputTokenLimitValid: Bool {
-        let value = outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty || (Int(value).map { $0 > 0 } ?? false)
-    }
-
-    private var endpointEditor: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Text(isNew ? "Add AI Provider" : "Edit AI Provider")
-                .font(.title3)
-                .fontWeight(.medium)
-
-            if editingEndpoint.provider == .anthropic {
-                Text("Anthropic Messages API (native). Enter your model name and API key.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Grid(alignment: .trailing, horizontalSpacing: 8, verticalSpacing: 12) {
-                GridRow {
-                    Text("Name:")
-                    NativeTextField(placeholder: "My LLM Server", text: $editingEndpoint.name, accessibilityName: "AI provider name")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Base URL:")
-                    NativeTextField(placeholder: "http://localhost:11434", text: $editingEndpoint.baseURL, accessibilityName: "AI provider base URL")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Model:")
-                    if availableModels.isEmpty {
-                        NativeTextField(placeholder: "llama3", text: $editingEndpoint.modelName, accessibilityName: "AI provider model")
-                            .frame(height: 22)
-                    } else {
-                        Picker("AI provider model", selection: $editingEndpoint.modelName) {
-                            ForEach(availableModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(height: 22)
-                    }
-                }
-                GridRow {
-                    Text("API Key (optional):")
-                    NativeTextField(placeholder: "", text: $editingEndpoint.apiKey, isSecure: true, accessibilityName: "AI provider API key (optional)")
-                        .frame(height: 22)
-                }
-                GridRow {
-                    Text("Output token limit:")
-                    NativeTextField(placeholder: "Automatic (\(editingEndpoint.recommendedMaxOutputTokens.formatted()))",
-                                    text: $outputTokenLimitText, accessibilityName: "AI provider output token limit")
-                        .frame(height: 22)
-                }
-            }
-            .frame(maxWidth: 350)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Leave blank for automatic: \(editingEndpoint.recommendedMaxOutputTokens.formatted()) tokens. Applies to analysis and chat, including reasoning. Higher limits allow longer answers and can increase cost.")
-                    .foregroundStyle(.secondary)
-                if !isOutputTokenLimitValid {
-                    Text("Enter a positive whole number, or leave blank for automatic.")
-                        .foregroundStyle(.red)
-                }
-            }
-            .font(.caption)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 350, alignment: .leading)
-
-            if isLoadingModels {
-                ProgressView("Loading models...")
-                    .controlSize(.small)
-            } else if !availableModels.isEmpty {
-                Text("Loaded \(availableModels.count) model\(availableModels.count == 1 ? "" : "s") from endpoint.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let testResult {
-                HStack {
-                    switch testResult {
-                    case .testing:
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Testing...")
-                    case .success:
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Connection successful")
-                    case .failure(let error):
-                        SettingsErrorDetails(summary: "Connection failed", error: error)
-                    }
-                }
-                .font(.callout)
-            }
-
-            HStack {
-                Button("Test Connection") {
-                    testAndLoadModels()
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Cancel") {
-                    isEditing = false
-                }
-                .buttonStyle(.bordered)
-
-                Button("Save") {
-                    guard isOutputTokenLimitValid else { return }
-                    editingEndpoint.maxOutputTokens = Int(outputTokenLimitText.trimmingCharacters(in: .whitespacesAndNewlines))
-                    if isNew {
-                        appSettings.aiEndpoints.append(editingEndpoint)
-                    } else {
-                        if let idx = appSettings.aiEndpoints.firstIndex(where: { $0.id == editingEndpoint.id }) {
-                            appSettings.aiEndpoints[idx] = editingEndpoint
-                        }
-                    }
-                    isEditing = false
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(editingEndpoint.name.isEmpty || editingEndpoint.baseURL.isEmpty || editingEndpoint.modelName.isEmpty || !isOutputTokenLimitValid)
-            }
-            .frame(maxWidth: 350)
-
-            Spacer()
-        }
-        .padding()
-    }
-
-    private func testAndLoadModels() {
-        testResult = .testing
-        isLoadingModels = true
-        Task {
-            do {
-                let service = AIService()
-                let models = try await service.fetchAvailableModels(endpoint: editingEndpoint)
-                availableModels = models
-                if !models.contains(editingEndpoint.modelName), let firstModel = models.first {
-                    editingEndpoint.modelName = firstModel
-                }
-                testResult = .success
-            } catch {
-                availableModels = []
-                testResult = .failure(error.localizedDescription)
-            }
-            isLoadingModels = false
         }
     }
 }

@@ -12,14 +12,14 @@ dBrief invokes the command **once per recording** and asks it to return the summ
 
 ## Setup
 
-1. Go to **Settings → AI Analysis**
-2. Select **Local CLI** as your AI engine
-3. Under **Local CLI**, enter your **Command**, or pick one from the **Load Template** menu:
-   - **Claude Code** — `claude -p "$DBRIEF_FULL_PROMPT"`
+1. Go to **Settings → AI analysis**
+2. Select **Local CLI** as your **Engine**
+3. In the **Local CLI** card, enter your **Command**, or pick one from the **Load template** menu:
+   - **Claude Code** — `claude -p`
    - **Gemini CLI** — `gemini -p "$DBRIEF_FULL_PROMPT"`
-   - **Codex CLI** — `codex exec "$DBRIEF_FULL_PROMPT"`
+   - **Codex CLI** — `codex exec --skip-git-repo-check --sandbox read-only -`
    - **GitHub Copilot CLI** — `copilot -p "$DBRIEF_FULL_PROMPT"`
-   - **Ollama** — `ollama run llama3`
+   - **Ollama (llama3)** — `ollama run llama3`
    - **llm CLI** — `llm "$DBRIEF_FULL_PROMPT"`
 4. Set a **Timeout** (how long to wait before giving up)
 5. Click **Test command** to confirm it runs
@@ -33,17 +33,17 @@ When dBrief runs your command it provides the prompt in two ways, so most CLI to
 | **Environment variables** | `DBRIEF_SYSTEM_PROMPT`, `DBRIEF_USER_PROMPT`, and `DBRIEF_FULL_PROMPT` are set for the command |
 | **Standard input** | The full prompt is also piped to the command's `stdin` |
 
-So a tool that reads stdin (like `ollama run llama3`) needs no placeholder, while a tool that takes the prompt as an argument can reference `"$DBRIEF_FULL_PROMPT"`.
+So a tool that reads stdin (like `ollama run llama3` or `claude -p`) needs no placeholder, while a tool that takes the prompt as an argument can reference `"$DBRIEF_FULL_PROMPT"`.
 
 The command must print a single JSON object to standard output containing `title_concept`, `summary`, `action_items`, `tags`, and `sentiment`. dBrief tells the model exactly this format in the prompt, so capable tools return it automatically. Any `<think>…</think>` reasoning before the JSON is ignored.
 
 ## Chat fallback
 
-The transcript **Chat** window streams replies as you type, but a one-shot CLI command can't stream. So when your AI engine is **Local CLI**, the chat window uses a separate **Chat fallback engine** that you choose just below the command field.
+Transcript chat (**Ask dBrief AI**) streams replies as they're written, but a one-shot CLI command can't stream. So when your AI engine is **Local CLI**, chat uses a separate engine that you choose with **Chat uses** in the **Ask dBrief AI** card, below the **Local CLI** card.
 
-By default this is set to an on-device engine that needs no extra setup — **Apple Intelligence** if your Mac supports it, otherwise **Gemma 4 E4B Local**. You can change it to a Remote Endpoint if you prefer.
+By default this is set to an on-device engine that needs no extra setup — **Apple Intelligence** if your Mac supports it, otherwise **Gemma 4 E4B Local**. You can change it to a Remote Endpoint if you prefer; the **Providers** card then appears for its settings.
 
-> Everything else — summary, action items, tags, sentiment, and title — is produced by your CLI command. The fallback only affects the interactive chat window.
+> Everything else — summary, action items, tags, sentiment, and title — is produced by your CLI command. The **Chat uses** engine only affects the interactive chat.
 
 ## Troubleshooting
 

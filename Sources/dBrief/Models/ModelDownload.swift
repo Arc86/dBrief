@@ -22,7 +22,7 @@ enum ModelDownloadPhase: Equatable, Sendable {
         switch state {
         case .downloading(let progress, let stage):
             return .downloading(progress: progress, label: stage.downloadLabel)
-        case .idle, .transcribing, .newSegments, .diarizing, .analyzing:
+        case .idle, .transcribing, .newSegments, .diarizing, .analyzing, .analyzingPart:
             return nil
         }
     }
@@ -40,31 +40,8 @@ extension DownloadStage {
             return "Loading…"
         case .speakerKitModel:
             return "Downloading speakers…"
+        case .embeddingModel:
+            return "Downloading search model…"
         }
     }
-}
-
-/// One row in the "Need some help?" engine comparison.
-struct EngineGuideEntry: Identifiable {
-    let id = UUID()
-    let title: String
-    let detail: String
-}
-
-/// Static guidance shown in the transcription settings disclosure.
-enum TranscriptionEngineGuide {
-    static let entries: [EngineGuideEntry] = [
-        EngineGuideEntry(title: "Whisper",
-                         detail: "Use Change model to compare local models by estimated accuracy, speed and memory demand."),
-        EngineGuideEntry(title: "Whisper Tiny",
-                         detail: "Low memory, runs anywhere, but less accurate."),
-        EngineGuideEntry(title: "Whisper Distil",
-                         detail: "English-only, fast, smaller download."),
-        EngineGuideEntry(title: "Parakeet",
-                         detail: "Fast local transcription. v2 supports English; v3 supports 25 European languages. Speaker identification is available separately."),
-        EngineGuideEntry(title: "Apple Speech",
-                         detail: "macOS manages language downloads. SpeechAnalyzer runs on supported macOS 26 locales; other cases use the older recognizer."),
-        EngineGuideEntry(title: "Remote",
-                         detail: "Bring your own Whisper server or API endpoint."),
-    ]
 }

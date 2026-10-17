@@ -1,15 +1,16 @@
 # Reprocessing a Recording
 
-Change a recording's transcription or analysis without recording the meeting again. Open its **Reprocess** menu in the transcript viewer or recording menu.
+Change a recording's transcription or analysis without recording the meeting again. In the [transcript viewer](transcript-viewer.md), open **Re-process**. In the menu bar's [Recent recordings](recording-history.md) list, expand the recording and open **Reprocess**.
 
 | Action | When to use it |
 |---|---|
+| **Link calendar meeting…** | Attach the matching calendar event, optionally using its title and attendees. Shown when a calendar source is set up |
 | **Retranscribe…** (or **Transcribe…**) | Use saved audio with a different transcription engine, model, or spoken language |
 | **Re-run AI analysis…** | Generate new analysis from the saved transcript |
 | **Detect speakers again…** | Redetect speakers while keeping the transcript words and timing |
 | **Restore previous results** | Restore the previous saved result set when one is available |
 
-Review the options before starting. Retranscription shows the current processing step and progress while it runs.
+Review the options, then click **Start** (or **Add to queue** while another recording is processing). Retranscription shows the current processing step and progress while it runs.
 
 ## Your existing results stay available
 
