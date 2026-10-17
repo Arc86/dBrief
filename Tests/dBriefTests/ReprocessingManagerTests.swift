@@ -189,10 +189,146 @@ struct ReprocessingManagerTests {
         #expect(request.calendarEvent == event)
         #expect(request.date == date && request.duration == 60)
         #expect(request.title == "Custom title" && request.participants == ["Alex"])
-        await #expect(throws: ReprocessingError.self) {
+        await expectBlocked(.pendingReprocess(attempt.id)) {
             try await fixture.manager.linkCalendar(event, to: reopened, updateTitle: true, updateParticipants: true)
         }
         fixture.state.processingJob = nil
+    }
+
+    private func expectBlocked(_ expected: RecordingBlock, sourceLocation: SourceLocation = #_sourceLocation,
+                               _ body: () async throws -> Void) async {
+        do {
+            try await body()
+            Issue.record("Expected the action to be blocked: \(expected)", sourceLocation: sourceLocation)
+        } catch let error as RecordingBlockedError {
+            #expect(error.block == expected, sourceLocation: sourceLocation)
+            #expect(error.localizedDescription == expected.message, sourceLocation: sourceLocation)
+        } catch {
+            Issue.record("Unexpected error: \(error)", sourceLocation: sourceLocation)
+        }
+    }
+
+    private func appleSpeechOptions(_ fixture: Fixture) -> ReprocessingOptions {
+        var options = ReprocessingOptions(settings: fixture.settings, operation: .transcribe)
+        options.engine = .appleSpeech
+        options.spokenLanguage = ""
+        options.vocabulary = []
+        options.regenerateAI = false
+        options.diarizationEnabled = false
+        return options
+    }
+
+    private func writeMetadata(_ fixture: Fixture) throws {
+        let payload = RecordingMetadataPayload(dateISO8601: ISO8601DateFormatter().string(from: .now),
+            durationSeconds: 60, meetingTitle: "Meeting", masterFileName: fixture.audio.lastPathComponent,
+            segmentFileNames: [], warnings: [], participants: [])
+        try JSONEncoder().encode(payload).write(to: fixture.sidecar("json"))
+    }
+
+    /// The reported case: Reprocess from History used to fail with a generic "busy" message.
+    @Test func reprocessAndCalendarLinkNameTheWorkThatOwnsTheRecording() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        try writeMetadata(fixture)
+        let event = CalendarEvent(title: "Planning", attendees: [], body: "", startDate: .now, endDate: .now.addingTimeInterval(60))
+        let queued = QueueItem(transcribe: true, summary: false, actionItems: false, tags: false)
+        try JSONEncoder().encode(queued).write(to: fixture.sidecar("queue.json"))
+        await expectBlocked(.queued(queued.id)) {
+            try await fixture.manager.startReprocessing(for: fixture.recording(), options: appleSpeechOptions(fixture))
+        }
+        try FileManager.default.removeItem(at: fixture.sidecar("queue.json"))
+        let failed = PersistedProcessingJob(id: UUID(), recordingID: UUID(), createdAt: .now, updatedAt: .now, status: .failed,
+            request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: true),
+            source: .init(recordingDate: .now, duration: 60, fileSize: 4, meetingTitle: "Meeting",
+                participants: [], echoSuppressionApplied: false, finalizedAudioPath: fixture.audio.path, segmentAudioPaths: []))
+        try await fixture.jobs.save(failed)
+        await expectBlocked(.unfinishedRun(failed.id)) {
+            try await fixture.manager.startReprocessing(for: fixture.recording(), options: appleSpeechOptions(fixture))
+        }
+        await expectBlocked(.unfinishedRun(failed.id)) {
+            try await fixture.manager.linkCalendar(event, to: fixture.recording(), updateTitle: false, updateParticipants: false)
+        }
+        // Every surface reads the same answer once the queue is refreshed.
+        await fixture.manager.refreshWorkQueue()
+        #expect(fixture.manager.eligibility(for: fixture.audio, .reprocess) == .unfinishedRun(failed.id))
+        #expect(fixture.manager.eligibility(for: fixture.audio, .edit) == nil)
+        #expect(fixture.manager.eligibility(for: fixture.audio, .delete) == nil)
+    }
+
+    /// "Discard Run and Retranscribe…": the one-step way out of the reported dead end,
+    /// and it works while another recording is processing.
+    @Test func discardingTheUnfinishedRunLetsRetranscribeStart() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        try writeMetadata(fixture)
+        let failed = PersistedProcessingJob(id: UUID(), recordingID: UUID(), createdAt: .now, updatedAt: .now, status: .failed,
+            request: .init(transcribe: true, summary: false, actionItems: false, tags: false, titleWasUserProvided: false, autoResume: true),
+            source: .init(recordingDate: .now, duration: 60, fileSize: 4, meetingTitle: "Meeting",
+                participants: [], echoSuppressionApplied: false, finalizedAudioPath: fixture.audio.path, segmentAudioPaths: []))
+        try await fixture.jobs.save(failed)
+        fixture.state.processingJob = ProcessingJob(recording: Recording(
+            fileURL: fixture.root.appendingPathComponent("other.wav"), meetingTitleDraft: "Weekly sync"))
+        defer { fixture.state.processingJob = nil }
+        try await fixture.manager.discardUnfinishedRun(failed.id)
+        try await fixture.manager.startReprocessing(for: fixture.recording(), options: appleSpeechOptions(fixture))
+        #expect(fixture.manager.reprocessingAttempts.count == 1)
+        #expect(fixture.manager.eligibility(for: fixture.audio, .reprocess) == .pendingReprocess(fixture.manager.reprocessingAttempts[0].id))
+    }
+
+    /// The library's Resume/Process Now were greyed out during a capture with no reason,
+    /// while the menu panel's same actions worked.
+    @Test func libraryWorkFollowsThePanelDuringACaptureAndSaysWhyWhenBlocked() {
+        let fixture = try! Fixture()
+        defer { fixture.clean() }
+        fixture.state.recordingState = .recording
+        defer { fixture.state.recordingState = .idle }
+        #expect(fixture.manager.libraryWorkBlockMessage(.recovery) == nil)
+        #expect(fixture.manager.libraryWorkBlockMessage(.queue) == nil)
+        #expect(fixture.manager.libraryWorkBlockMessage(.capture) != nil)
+        fixture.state.processingJob = ProcessingJob(recording: Recording(
+            fileURL: fixture.root.appendingPathComponent("other.wav"), meetingTitleDraft: "Weekly sync"))
+        defer { fixture.state.processingJob = nil }
+        #expect(fixture.manager.libraryWorkBlockMessage(.recovery)?.contains("“Weekly sync”") == true)
+    }
+
+    /// A parked reprocess used to stop every automatic cleanup until it was discarded.
+    @Test func pendingReprocessProtectsItsRecordingWithoutBlockingCleanup() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        let attempt = try await fixture.store.prepare(audioURL: fixture.audio, configuration: Data())
+        try await fixture.store.checkpoint(attemptID: attempt.id, status: .stopped)
+        await fixture.manager.refreshReprocessingAttempts()
+        let expired = fixture.root.appendingPathComponent("expired.m4a")
+        try Data([9]).write(to: expired)
+        // Retention only deletes audio its metadata sidecar proves is a recording.
+        for audio in [fixture.audio, expired] {
+            let payload = RecordingMetadataPayload(dateISO8601: ISO8601DateFormatter().string(from: .now),
+                durationSeconds: 1, meetingTitle: "Meeting", masterFileName: audio.lastPathComponent,
+                segmentFileNames: [], warnings: [], participants: [])
+            try JSONEncoder().encode(payload).write(to: audio.deletingPathExtension().appendingPathExtension("json"))
+        }
+        let old = Date().addingTimeInterval(-10 * 86_400)
+        for url in [fixture.audio, expired, fixture.sidecar("json"), expired.deletingPathExtension().appendingPathExtension("json")] {
+            try FileManager.default.setAttributes([.creationDate: old], ofItemAtPath: url.path)
+        }
+        _ = try await fixture.manager.runRetentionCleanup(category: .recordings, days: 1, folders: [fixture.root])
+        #expect(!FileManager.default.fileExists(atPath: expired.path))
+        #expect(FileManager.default.fileExists(atPath: fixture.audio.path))
+    }
+
+    @Test func anotherRecordingsJobOnlyBlocksDelete() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        try writeMetadata(fixture)
+        fixture.state.processingJob = ProcessingJob(recording: Recording(
+            fileURL: fixture.root.appendingPathComponent("other.wav"), meetingTitleDraft: "Weekly sync"))
+        defer { fixture.state.processingJob = nil }
+        let event = CalendarEvent(title: "Planning", attendees: [], body: "", startDate: .now, endDate: .now.addingTimeInterval(60))
+        try await fixture.manager.linkCalendar(event, to: fixture.recording(), updateTitle: false, updateParticipants: false)
+        #expect(fixture.manager.eligibility(for: fixture.audio, .reprocess) == nil)
+        #expect(fixture.manager.eligibility(for: fixture.audio, .delete) == .otherJobRunning("Weekly sync"))
+        await expectBlocked(.otherJobRunning("Weekly sync")) { try await fixture.manager.deleteRecording(fixture.audio) }
+        #expect(FileManager.default.fileExists(atPath: fixture.audio.path))
     }
 
     @Test func newCaptureQueuesTheReviewItDisplacesWithTheReviewsChoices() async throws {

@@ -17,6 +17,8 @@ struct ViewerHeader<Commands: View>: View {
     let onToggleAssistant: () -> Void
     let onPrivacyReceipt: () -> Void
     let onDelete: (() -> Void)?
+    /// Why delete is unavailable right now; the button stays visible, disabled, and says why.
+    let deleteBlock: RecordingBlock?
     let onFocusReader: (() -> Void)?
 
     @Environment(\.viewerPalette) private var palette
@@ -37,6 +39,7 @@ struct ViewerHeader<Commands: View>: View {
         onToggleAssistant: @escaping () -> Void,
         onPrivacyReceipt: @escaping () -> Void,
         onDelete: (() -> Void)?,
+        deleteBlock: RecordingBlock? = nil,
         onFocusReader: (() -> Void)? = nil,
         @ViewBuilder commands: @escaping () -> Commands
     ) {
@@ -52,6 +55,7 @@ struct ViewerHeader<Commands: View>: View {
         self.onToggleAssistant = onToggleAssistant
         self.onPrivacyReceipt = onPrivacyReceipt
         self.onDelete = onDelete
+        self.deleteBlock = deleteBlock
         self.onFocusReader = onFocusReader
         self.commands = commands
     }
@@ -183,7 +187,7 @@ struct ViewerHeader<Commands: View>: View {
             }
         }
         HeaderIconButton(symbol: "lock.shield", label: "Privacy receipt", action: onPrivacyReceipt)
-        if let onDelete { HeaderDeleteButton(action: onDelete) }
+        if let onDelete { HeaderDeleteButton(action: onDelete, block: deleteBlock) }
     }
 
     private var assistantToggle: some View {
@@ -241,6 +245,7 @@ private struct HeaderIconButton: View {
 
 private struct HeaderDeleteButton: View {
     let action: () -> Void
+    let block: RecordingBlock?
 
     @Environment(\.viewerPalette) private var palette
     @FocusState private var isFocused: Bool
@@ -255,7 +260,7 @@ private struct HeaderDeleteButton: View {
         }
         .buttonStyle(.plain)
         // Quiet like its neighbours at rest; red only once the pointer commits to it.
-        .foregroundStyle(isHovered ? Color.red : Color.primary)
+        .foregroundStyle(isHovered && block == nil ? Color.red : Color.primary)
         .onHover { isHovered = $0 }
         .focused($isFocused)
         .overlay {
@@ -265,7 +270,7 @@ private struct HeaderDeleteButton: View {
                     .allowsHitTesting(false)
             }
         }
-        .help("Delete recording")
+        .recordingBlock(block, help: "Delete recording")
         .accessibilityLabel("Delete recording")
     }
 }

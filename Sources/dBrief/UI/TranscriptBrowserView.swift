@@ -207,7 +207,8 @@ struct TranscriptBrowserView: View {
     private var mainPane: some View {
         if let work = selectedWork {
             LibraryWorkDetailView(item: work,
-                disabled: !recordingManager.canPerformLibraryWork || library.isQuerying || library.error != nil) {
+                disabledReason: recordingManager.libraryWorkBlockMessage(work.target)
+                    ?? (library.isQuerying || library.error != nil ? "The library is updating. Try again in a moment." : nil)) {
                 try await recordingManager.performLibraryWork(work)
                 if recordingManager.reprocessingRecoveryReady { library.refresh() }
             }

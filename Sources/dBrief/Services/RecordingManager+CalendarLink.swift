@@ -77,17 +77,13 @@ extension RecordingManager {
     func linkCalendar(_ event: CalendarEvent, to recording: Recording,
                       updateTitle: Bool, updateParticipants: Bool) async throws {
         let audio = recording.finalizedAudioURL ?? recording.fileURL
-        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, !queueMutationInProgress,
-              !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
-              !processingCancellationInProgress, appState.pendingSpeakerReview == nil,
-              appState.processingJob == nil, !appState.showPostRecordingSheet else { throw ReprocessingError.busy }
-        guard !isReprocessing(audio) else { throw ReprocessingError.pendingAttempt }
+        // Only work on this recording conflicts: linking writes its metadata sidecar alone.
+        let live = RecordingEligibility.block(for: .linkCalendar, ownership: liveOwnership(for: audio, saved: .init()),
+                                              activity: appActivity)
+        if let live { throw RecordingBlockedError(block: live) }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
-        guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
-        let jobs = await processingJobStore.discover()
-        guard jobs.issues.isEmpty,
-              !(await unfinishedJobOwns(audio, jobs: jobs.jobs)) else { throw ReprocessingError.busy }
+        if let saved = await savedWorkBlock(for: audio, .linkCalendar) { throw RecordingBlockedError(block: saved) }
         try await RecordingMetadataStore.shared.linkCalendar(event, audioURL: audio,
             updateTitle: updateTitle, updateParticipants: updateParticipants)
         recording.calendarEvent = event

@@ -46,6 +46,11 @@ struct MenuBarView: View {
         // The queue section can be hidden, so the panel keeps its work list fresh.
         .onChange(of: appState.processingJob?.id) { _, _ in Task { await recordingManager.refreshWorkQueue() } }
         .onChange(of: appState.queuedCount) { _, _ in Task { await recordingManager.refreshWorkQueue() } }
+        .onChange(of: appState.queueFocusRequest, initial: true) { _, request in
+            guard request != nil else { return }
+            showQueueManagement = true
+            appState.queueFocusRequest = nil
+        }
         .onChange(of: showsQueueSection) { _, shows in
             if !shows, showQueueManagement { showQueueManagement = false; showRecentRecordings = true }
         }

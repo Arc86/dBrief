@@ -155,8 +155,12 @@ struct SettingsStorageTab: View {
                 cleanupMessage[category] = result.summary
                 appSettings.lastRetentionCleanupDate = Date()
                 appSettings.lastRetentionCleanupSummary = result.summary
+            } catch let blocked as RecordingBlockedError {
+                cleanupMessage[category] = blocked.localizedDescription
             } catch {
-                cleanupMessage[category] = "Cleanup could not finish safely. Wait for processing to finish and check storage before retrying."
+                cleanupMessage[category] = recordingManager.hasUnreadableRecords
+                    ? RecordingBlock.unreadableRecords.message
+                    : "Cleanup could not finish safely. Check storage before retrying."
             }
             runningCleanup = nil
         }

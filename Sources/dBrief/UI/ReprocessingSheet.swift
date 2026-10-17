@@ -6,6 +6,8 @@ import dBriefWire
 struct ReprocessingSheet: View {
     let recording: Recording
     let operation: ReprocessingOperation
+    /// An unfinished run in Queue & Recovery to discard when Start is pressed.
+    var discardingRunID: UUID? = nil
     var dismissAction: (() -> Void)? = nil
     @Environment(AppSettings.self) private var settings
     @Environment(RecordingManager.self) private var manager
@@ -19,7 +21,7 @@ struct ReprocessingSheet: View {
             if let options {
                 ReprocessingEditor(recording: recording, initialOptions: options,
                     usingPrevious: usingPrevious, supportsCalendarReload: supportsCalendarReload,
-                    dismissAction: dismissAction)
+                    discardingRunID: discardingRunID, dismissAction: dismissAction)
             } else {
                 VStack(spacing: 16) {
                     ProgressView("Loading settings…")
@@ -53,6 +55,7 @@ private struct ReprocessingEditor: View {
     let recording: Recording
     let usingPrevious: Bool
     let supportsCalendarReload: Bool
+    let discardingRunID: UUID?
     let dismissAction: (() -> Void)?
     @State private var options: ReprocessingOptions
     @State private var isStarting = false
@@ -73,11 +76,12 @@ private struct ReprocessingEditor: View {
     }
 
     init(recording: Recording, initialOptions: ReprocessingOptions, usingPrevious: Bool,
-         supportsCalendarReload: Bool,
+         supportsCalendarReload: Bool, discardingRunID: UUID? = nil,
          dismissAction: (() -> Void)?) {
         self.recording = recording
         self.usingPrevious = usingPrevious
         self.supportsCalendarReload = supportsCalendarReload
+        self.discardingRunID = discardingRunID
         self.dismissAction = dismissAction
         _options = State(initialValue: initialOptions)
     }
@@ -120,6 +124,9 @@ private struct ReprocessingEditor: View {
                     }
                     destinationDisclosure
                     PanelNote("Current results stay readable while processing; editing is temporarily paused. Successful results replace the current set, with one previous set available to restore. Changes apply only to this attempt.")
+                    if discardingRunID != nil {
+                        PanelNote("Start also discards this recording's unfinished run in Queue & Recovery. Its saved progress can't be resumed afterwards.", tone: .warning)
+                    }
                     if let message = error ?? validationError {
                         PanelNote(message, tone: .danger).textSelection(.enabled)
                     }
@@ -372,6 +379,7 @@ private struct ReprocessingEditor: View {
         Task {
             do {
                 try options.validate()
+                if let discardingRunID { try await manager.discardUnfinishedRun(discardingRunID) }
                 try await manager.startReprocessing(for: recording, options: options)
                 close()
             } catch {

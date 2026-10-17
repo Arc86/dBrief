@@ -9,6 +9,18 @@ enum RecordingStatus {
     case analyzed
     case transcribed
     case queued
+    case processing
+    case reprocessPending
+    case needsAttention
+
+    /// Running and saved work win over what the sidecar files say.
+    static func resolve(ownership: RecordingOwnership, saved: RecordingStatus) -> RecordingStatus {
+        if ownership.isActiveJob || ownership.isCaptureOrReview { return .processing }
+        if ownership.pendingAttemptID != nil { return .reprocessPending }
+        if ownership.queueMarkerID != nil { return .queued }
+        if ownership.unfinishedJobID != nil { return .needsAttention }
+        return saved
+    }
 
     var label: String {
         switch self {
@@ -16,6 +28,9 @@ enum RecordingStatus {
         case .analyzed: "Analyzed"
         case .transcribed: "Transcribed"
         case .queued: "Queued"
+        case .processing: "Processing"
+        case .reprocessPending: "Reprocess pending"
+        case .needsAttention: "Needs attention"
         }
     }
 
@@ -25,6 +40,9 @@ enum RecordingStatus {
         switch self {
         case .analyzed: "checkmark.circle"
         case .queued: "clock"
+        case .processing: "waveform"
+        case .reprocessPending: "clock.arrow.circlepath"
+        case .needsAttention: "exclamationmark.triangle"
         case .recorded, .transcribed: nil
         }
     }
@@ -32,7 +50,8 @@ enum RecordingStatus {
     var tone: MenuPanelStatus.Tone? {
         switch self {
         case .analyzed: .success
-        case .queued: .warning
+        case .queued, .reprocessPending, .needsAttention: .warning
+        case .processing: .accent
         case .recorded, .transcribed: nil
         }
     }
@@ -198,9 +217,11 @@ struct RecordingHistoryView: View {
             HStack(spacing: 4) {
                 Text(item.formattedDate + (item.formattedDuration.isEmpty ? "" : " · \(item.formattedDuration)"))
                     .lineLimit(1)
+                let status = RecordingStatus.resolve(ownership: recordingManager.liveOwnership(for: item.url),
+                                                     saved: item.status)
                 RecordingListStatus(
-                    title: item.status.label, systemImage: item.status.systemImage,
-                    tint: item.status.tone?.color(palette: palette, status: panelStatus))
+                    title: status.label, systemImage: status.systemImage,
+                    tint: status.tone?.color(palette: palette, status: panelStatus))
             }
         } actions: {
             // Fixed 3 × 2 grid: unavailable actions stay in place, disabled, so the
@@ -240,12 +261,14 @@ struct RecordingHistoryView: View {
                         Task { await recordingManager.reviewIntegrationDeliveries(for: item.url) }
                     }
                     .disabled(appState.processingJob != nil || recordingManager.reviewingIntegrationDeliveries)
-                    .help("Review delivery status and retry an individual integration")
+                    .help(appState.processingJob != nil
+                        ? "Wait for processing to finish to review integration deliveries"
+                        : "Review delivery status and retry an individual integration")
 
                     actionTile(title: "Delete", systemImage: "trash", destructive: true) {
                         deleteItem(item)
                     }
-                    .disabled(recordingManager.isReprocessing(item.url))
+                    .recordingBlock(recordingManager.eligibility(for: item.url, .delete), help: "Delete this recording")
                 }
             }
         }
@@ -307,8 +330,11 @@ struct RecordingHistoryView: View {
                 try await recordingManager.deleteRecording(item.url)
                 recordings.removeAll { $0.id == item.id }
                 if expandedItemId == item.id { expandedItemId = nil }
+            } catch let blocked as RecordingBlockedError {
+                // Nothing was deleted: say why, not that files may remain.
+                appState.lastError = blocked.localizedDescription
             } catch {
-                appState.lastError = "Deletion could not finish. Some files may remain; wait for processing to finish and check storage before retrying."
+                appState.lastError = "Deletion could not finish. Some files may remain; check storage before retrying."
                 loadRecordings()
             }
         }

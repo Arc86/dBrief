@@ -14,14 +14,19 @@ struct ReprocessingMenu: View {
     /// Icon-over-label tile, for the menu panel's action grid.
     var stacksLabel = false
     @Environment(RecordingManager.self) private var manager
+    @Environment(AppState.self) private var appState
     @State private var showCalendarLink = false
     @Environment(AppSettings.self) private var settings
     @State private var selectedOperation: ReprocessingOperation?
+    /// An unfinished run the sheet discards when Start is pressed.
+    @State private var discardingRunID: UUID?
     @State private var canRestore = false
     @State private var isRestoring = false
     @State private var error: String?
 
-    private var locked: Bool { manager.isReprocessing(recording.finalizedAudioURL ?? recording.fileURL) }
+    private var audio: URL { recording.finalizedAudioURL ?? recording.fileURL }
+    private var block: RecordingBlock? { manager.eligibility(for: audio, .reprocess) }
+    private var locked: Bool { block != nil }
 
     private struct AvailabilityKey: Equatable {
         let revision: Int
@@ -32,15 +37,23 @@ struct ReprocessingMenu: View {
 
     var body: some View {
         Menu {
-            if settings.effectiveCalendarSource != .disabled {
-                Button("Link calendar meeting…") { presentCalendarLink() }
+            if let block, !block.resolutions.isEmpty {
+                // Explain the block and offer the way out instead of failing on Start.
+                Text(block.message)
                 Divider()
+                ForEach(block.resolutions, id: \.self) { resolution in
+                    switch resolution {
+                    case .showInQueue(let id):
+                        Button("Show in Queue & Recovery") { appState.showInQueue(id) }
+                    case .discardRunAndRetranscribe(let id):
+                        Button(hasTranscript ? "Discard Run and Retranscribe…" : "Discard Run and Transcribe…") {
+                            present(.transcribe, discardingRun: id)
+                        }
+                    }
+                }
+            } else {
+                operations
             }
-            Button(hasTranscript ? "Retranscribe…" : "Transcribe…") { present(.transcribe) }
-            Button("Re-run AI analysis…") { present(.analysis) }.disabled(!hasTranscript)
-            Button("Detect speakers again…") { present(.speakers) }.disabled(!hasTranscript)
-            Divider()
-            Button("Restore previous results") { restore() }.disabled(!canRestore)
         } label: {
             let title = label ?? (hasTranscript ? "Reprocess" : "Transcribe")
             if stacksLabel {
@@ -49,8 +62,8 @@ struct ReprocessingMenu: View {
                 Label(title, systemImage: "arrow.trianglehead.2.clockwise")
             }
         }
-        .disabled(locked || isRestoring || !manager.reprocessingRecoveryReady)
-        .help(locked ? "This recording has a pending attempt in Queue & Recovery" : "Reprocess this recording")
+        .disabled(isRestoring || (block.map { $0.resolutions.isEmpty } ?? false))
+        .help(block?.message ?? "Reprocess this recording")
         .task(id: AvailabilityKey(revision: manager.reprocessingResultsRevision, calendarRevision: manager.calendarContextRevision, locked: locked, recovered: manager.reprocessingRecoveryReady)) {
             guard manager.reprocessingRecoveryReady, !locked else { canRestore = false; return }
             let available = await manager.canRestoreReprocessingResults(for: recording)
@@ -65,7 +78,9 @@ struct ReprocessingMenu: View {
             }
         }
         .sheet(isPresented: Binding(get: { selectedOperation != nil }, set: { if !$0 { selectedOperation = nil } })) {
-            if let operation = selectedOperation { ReprocessingSheet(recording: recording, operation: operation) }
+            if let operation = selectedOperation {
+                ReprocessingSheet(recording: recording, operation: operation, discardingRunID: discardingRunID)
+            }
         }
         .sheet(isPresented: $showCalendarLink) {
             CalendarLinkSheet(recording: recording, hasTranscript: hasTranscript)
@@ -75,13 +90,29 @@ struct ReprocessingMenu: View {
         } message: { Text(error ?? "") }
     }
 
-    private func present(_ operation: ReprocessingOperation) {
+    @ViewBuilder
+    private var operations: some View {
+        if settings.effectiveCalendarSource != .disabled {
+            Button("Link calendar meeting…") { presentCalendarLink() }
+                .disabled(manager.eligibility(for: audio, .linkCalendar) != nil)
+            Divider()
+        }
+        Button(hasTranscript ? "Retranscribe…" : "Transcribe…") { present(.transcribe) }
+        Button("Re-run AI analysis…") { present(.analysis) }.disabled(!hasTranscript)
+        Button("Detect speakers again…") { present(.speakers) }.disabled(!hasTranscript)
+        Divider()
+        Button("Restore previous results") { restore() }.disabled(!canRestore)
+    }
+
+    private func present(_ operation: ReprocessingOperation, discardingRun runID: UUID? = nil) {
         if presentationStyle == .window {
             RecordingActionWindowController.shared.showReprocessing(
                 recording: recording,
-                operation: operation
+                operation: operation,
+                discardingRunID: runID
             )
         } else {
+            discardingRunID = runID
             selectedOperation = operation
         }
     }

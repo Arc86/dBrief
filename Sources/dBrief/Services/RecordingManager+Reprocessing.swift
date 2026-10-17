@@ -85,24 +85,18 @@ extension RecordingManager {
 
     func startReprocessing(for recording: Recording, options: ReprocessingOptions) async throws {
         guard let audio = recording.finalizedAudioURL else { throw ReprocessingError.missingAudio }
-        guard reprocessingRecoveryReady, !reprocessingAdmissionBusy, !queueMutationInProgress, !queueEnqueueInProgress, !queuePauseWriteInProgress, !recoveryMaintenanceInProgress,
-              !processingCancellationInProgress, appState.pendingSpeakerReview == nil else { throw ReprocessingError.busy }
-        if appState.processingJob?.recording.finalizedAudioURL?.resolvingSymlinksInPath() == audio.resolvingSymlinksInPath() {
-            throw ReprocessingError.busy
-        }
-        if appState.showPostRecordingSheet,
-           appState.currentRecording?.finalizedAudioURL?.resolvingSymlinksInPath() == audio.resolvingSymlinksInPath() {
-            throw ReprocessingError.busy
-        }
+        // Live state first (an attempt queues behind other recordings' work), then the
+        // saved work on disk while admission is held.
+        let live = RecordingEligibility.block(for: .reprocess, ownership: liveOwnership(for: audio, saved: .init()),
+                                              activity: appActivity)
+        if let live { throw RecordingBlockedError(block: live) }
         try options.validate()
         if options.requiresTranscription { _ = try options.transcriptionSettings(settings: appSettings) }
         if options.requiresAnalysis { _ = try options.analysisConfiguration(settings: appSettings) }
         reprocessingAdmissionBusy = true
         defer { reprocessingAdmissionBusy = false }
-        guard !(await queueScheduleStore.hasMarker(for: audio)) else { throw ReprocessingError.busy }
+        if let saved = await savedWorkBlock(for: audio, .reprocess) { throw RecordingBlockedError(block: saved) }
         let existingJobs = await processingJobStore.discover()
-        guard existingJobs.issues.isEmpty,
-              !(await unfinishedJobOwns(audio, jobs: existingJobs.jobs)) else { throw ReprocessingError.busy }
         try Task.checkCancellation()
         let metadata = try await RecordingMetadataStore.shared.load(audioURL: audio)
         let priorCalendar = existingJobs.jobs

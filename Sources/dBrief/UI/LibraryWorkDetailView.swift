@@ -5,7 +5,8 @@ import AppKit
 /// an explicit action, whose durable identity is revalidated by the manager.
 struct LibraryWorkDetailView: View {
     let item: LibraryWorkItem
-    let disabled: Bool
+    /// Why the action can't start now; shown under the disabled button.
+    let disabledReason: String?
     let action: @MainActor () async throws -> Void
     @State private var actionTask: Task<Void, Never>?
     @State private var error: String?
@@ -47,8 +48,11 @@ struct LibraryWorkDetailView: View {
                         }
                     }
                     .buttonStyle(.typographyProminent)
-                    .disabled(disabled || actionTask != nil)
+                    .disabled(disabledReason != nil || actionTask != nil)
                     if actionTask != nil { ProgressView().controlSize(.small) }
+                }
+                if let disabledReason, actionTask == nil {
+                    Text(disabledReason).uiFont(.callout).foregroundStyle(.secondary)
                 }
                 if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             }

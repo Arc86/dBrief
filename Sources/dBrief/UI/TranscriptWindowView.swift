@@ -177,6 +177,10 @@ struct TranscriptDetailView: View, Equatable {
         context.recordingManager.isReprocessing(recording.finalizedAudioURL ?? recording.fileURL)
     }
 
+    private func eligibility(_ action: RecordingAction) -> RecordingBlock? {
+        context.recordingManager.eligibility(for: recording.finalizedAudioURL ?? recording.fileURL, action)
+    }
+
     private var isProcessingLive: Bool {
         context.appState.processingJob?.showsTranscriptPreview(for: recording) == true
     }
@@ -280,8 +284,15 @@ struct TranscriptDetailView: View, Equatable {
                 ViewerDocumentLayout {
                     documentHeader
                     if isReprocessing {
-                        Label("Reprocessing pending — current results are read-only. Manage the attempt in Queue & Recovery.", systemImage: "clock")
-                            .uiFont(.callout).foregroundStyle(palette.secondary.color).padding(12)
+                        HStack(spacing: 10) {
+                            Label("Reprocessing pending — current results are read-only.", systemImage: "clock")
+                                .uiFont(.callout).foregroundStyle(palette.secondary.color)
+                            if case .pendingReprocess(let id) = eligibility(.edit) {
+                                Button("Show in Queue & Recovery") { context.appState.showInQueue(id) }
+                                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
+                            }
+                        }
+                        .padding(12)
                     } else if offerReanalysis { reanalysisBanner }
                     if mode != .transcript, insights?.basedOnPreviousTranscript == true {
                         Label("Based on the previous transcript", systemImage: "exclamationmark.circle")
@@ -431,7 +442,7 @@ struct TranscriptDetailView: View, Equatable {
         guard !isLive else { return nil }
         let hasTranscript = richTranscript != nil
         let audioURL = recording.finalizedAudioURL
-        let canReprocess = !isReprocessing && context.recordingManager.reprocessingRecoveryReady
+        let canReprocess = eligibility(.reprocess) == nil
         return RecordingViewerActions(
             mode: mode,
             availableModes: hasTranscript ? ViewerDocumentMode.allCases : [],
@@ -448,7 +459,7 @@ struct TranscriptDetailView: View, Equatable {
             hasTranscript: hasTranscript,
             revealInFinder: audioURL.map { url in { NSWorkspace.shared.activateFileViewerSelecting([url]) } },
             // Not while editing the summary: ⌘⌫ belongs to the editor then.
-            delete: audioURL != nil && summaryEdit == nil ? { showDeleteConfirm = true } : nil,
+            delete: audioURL != nil && summaryEdit == nil && eligibility(.delete) == nil ? { showDeleteConfirm = true } : nil,
             focusReader: { openFocusReader() }
         )
     }
@@ -514,6 +525,7 @@ struct TranscriptDetailView: View, Equatable {
             onToggleAssistant: onToggleAssistant,
             onPrivacyReceipt: { showPrivacyReceipt = true },
             onDelete: canDelete ? { showDeleteConfirm = true } : nil,
+            deleteBlock: eligibility(.delete),
             onFocusReader: canFocus ? { openFocusReader() } : nil,
             commands: commands
         )
@@ -550,7 +562,8 @@ struct TranscriptDetailView: View, Equatable {
                     analysisEditorPresented = true
                 }
             } label: { Label("Edit", systemImage: "pencil") }
-                .disabled(isReprocessing || insights == nil || (mode == .summary && summaryEdit != nil))
+                .disabled(insights == nil || (mode == .summary && summaryEdit != nil))
+                .recordingBlock(eligibility(.edit), help: "Edit")
         }
     }
 
@@ -566,7 +579,8 @@ struct TranscriptDetailView: View, Equatable {
                 }
                 Button(hasSpokenSummary ? "Regenerate Spoken Summary" : "Generate Spoken Summary") { startSpokenSummary() }
             } label: { Label("Spoken Summary", systemImage: "waveform") }
-                .disabled(isReprocessing || insights?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false)
+                .disabled(insights?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false)
+                .recordingBlock(eligibility(.edit), help: "Spoken Summary")
         }
     }
 
@@ -1575,7 +1589,9 @@ struct TranscriptDetailView: View, Equatable {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Couldn't delete the recording"
-                alert.informativeText = "Deletion could not finish. Some files may remain; wait for processing to finish and check storage before retrying."
+                // A blocked delete touched nothing; only a failed one may leave files.
+                alert.informativeText = (error as? RecordingBlockedError)?.localizedDescription
+                    ?? "Deletion could not finish. Some files may remain; check storage before retrying."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
             }

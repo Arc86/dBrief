@@ -82,6 +82,18 @@ struct ProcessingQueueView: View {
                         .uiFont(.system(size: 11)).foregroundStyle(status.danger.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                ForEach(manager.unreadableRecordFolders, id: \.self) { folder in
+                    HStack(spacing: 8) {
+                        Text(folder.lastPathComponent)
+                            .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+                        Button("Move Aside") { Task { await manager.moveUnreadableRecordAside(folder) } }
+                            .help("Move this record into an Unreadable folder next to it. Nothing is deleted.")
+                            .disabled(editing)
+                    }
+                }
                 if hasPendingWork {
                     Text("Removing keeps the recording. Deferred items wait for Process Queue; automatic items may run first.")
                         .uiFont(.system(size: 11)).foregroundStyle(palette.secondary.color)
@@ -231,10 +243,10 @@ struct ProcessingQueueView: View {
                             await manager.refreshWorkQueue()
                         }
                     }
-                    RecordingListAction(title: "Dismiss", systemImage: "minus.circle") {
+                    RecordingListAction(title: "Remove from List", systemImage: "minus.circle") {
                         Task { await manager.dismissRecoveryItem(entry.id) }
                     }
-                    .help("Hide this recovery run; keep its recording and saved progress")
+                    .help("Hides this run. The recording and its current results stay; the unfinished run can't be resumed afterwards.")
                 }
                 .disabled(editing || appState.processingJob != nil)
             }

@@ -67,6 +67,8 @@ final class AppState {
     var liveStatusMessage: String = ""
     /// When set, the transcript browser should select the in-progress live recording on open.
     var pendingLiveTranscriptSelection: Bool = false
+    /// Set to expand the menu panel's Queue & Recovery for this work item.
+    var queueFocusRequest: UUID?
     var lastError: String?
     /// Launch-time durability/recovery result shown near the recording controls.
     /// Contains no recording title or file path.
