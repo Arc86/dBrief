@@ -43,9 +43,20 @@ private final class InMemorySecrets: @unchecked Sendable {
 }
 
 enum KeychainHelper {
-    /// The test host loads XCTest (Swift Testing runs inside it too); the app never does.
-    private static let testStore: InMemorySecrets? = NSClassFromString("XCTestCase") != nil
-        || Bundle.allBundles.contains { $0.bundleURL.pathExtension == "xctest" } ? InMemorySecrets() : nil
+    /// A test host: XCTest or Swift Testing is loaded, a test bundle is, or the process
+    /// is a test runner. Hosts differ between toolchains, so check all of them; the app
+    /// itself links none of these.
+    private static let testStore: InMemorySecrets? = isTestHost ? InMemorySecrets() : nil
+
+    private static var isTestHost: Bool {
+        if NSClassFromString("XCTestCase") != nil { return true }
+        if Bundle.allBundles.contains(where: { $0.bundleURL.pathExtension == "xctest" }) { return true }
+        if Bundle.allFrameworks.contains(where: { ["XCTest", "Testing"].contains($0.bundleURL.deletingPathExtension().lastPathComponent) }) {
+            return true
+        }
+        let process = ProcessInfo.processInfo.processName
+        return process == "xctest" || process.hasPrefix("swiftpm-testing-helper") || process.hasSuffix("PackageTests")
+    }
 
     static var usesInMemoryStore: Bool { testStore != nil }
 
