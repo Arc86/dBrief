@@ -67,7 +67,15 @@ final class AppState {
     var liveStatusMessage: String = ""
     /// When set, the transcript browser should select the in-progress live recording on open.
     var pendingLiveTranscriptSelection: Bool = false
-    var lastError: String?
+    /// Every error the app shows is also spoken by VoiceOver.
+    var lastError: String? {
+        didSet {
+            guard let message = lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !message.isEmpty, lastError != oldValue else { return }
+            announcer.announce(.error(message))
+        }
+    }
+    @ObservationIgnored var announcer: AccessibilityAnnouncer = .shared
     /// Launch-time durability/recovery result shown near the recording controls.
     /// Contains no recording title or file path.
     var durabilityNotice: String?

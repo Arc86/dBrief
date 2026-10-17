@@ -458,6 +458,7 @@ final class RecordingManager {
         case .started(let request):
             guard appState.currentRecording?.id == request.id else { return }
             appState.recordingState = .recording
+            appState.announcer.announce(.started)
             if let config = request.prewarmWhisper {
                 Task { await localAIPluginService.prewarmWhisper(config: config, refresh: false) }
             }
@@ -468,9 +469,11 @@ final class RecordingManager {
         case .paused(let id):
             guard appState.currentRecording?.id == id else { return }
             appState.recordingState = .paused
+            appState.announcer.announce(.paused)
         case .resumed(let id):
             guard appState.currentRecording?.id == id else { return }
             appState.recordingState = .recording
+            appState.announcer.announce(.resumed)
         case .meter(let id, let duration, let peak):
             guard appState.currentRecording?.id == id else { return }
             appState.peakLevel = peak
@@ -521,6 +524,7 @@ final class RecordingManager {
             appState.callRecordingBundleId = nil
             miniPlayer?.dismiss()
             guard !terminating else { return }
+            appState.announcer.announce(.stopped)
             if result.fileSize == 0 {
                 appState.lastError = "No audio was written. The recovery session was kept so this failure can be investigated."
             }
@@ -545,6 +549,7 @@ final class RecordingManager {
             appState.callRecordingBundleId = nil
             appState.recordingState = .idle
             miniPlayer?.dismiss()
+            appState.announcer.announce(.failed)
         }
     }
 
@@ -1375,6 +1380,7 @@ final class RecordingManager {
             return false
         }.count
         sendCompletionNotification(fileName: job.recording.fileName, failed: failed)
+        appState.announcer.announce(.processingFinished(failedSteps: failed))
         await processingPipeline.recordProcessingDiagnostic(
             .completed(stepCount: appState.processingSteps.count, failedStepCount: failed), recordingID: job.recording.id)
     }
