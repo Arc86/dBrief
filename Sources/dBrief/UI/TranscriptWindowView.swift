@@ -294,6 +294,9 @@ struct TranscriptDetailView: View, Equatable {
                         }
                         .padding(12)
                     } else if offerReanalysis { reanalysisBanner }
+                    // Failures about this recording show where it is open, not only in the menu panel.
+                    NoticeStack(notices: context.appState.notices.items(for: recording.finalizedAudioURL ?? recording.fileURL), limit: 2)
+                        .frame(maxWidth: 920, alignment: .leading)
                     if mode != .transcript, insights?.basedOnPreviousTranscript == true {
                         Label("Based on the previous transcript", systemImage: "exclamationmark.circle")
                             .uiFont(.callout)

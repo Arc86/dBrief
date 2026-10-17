@@ -141,17 +141,16 @@ struct ReprocessingMenu: View {
 /// Reconciliation must finish before any saved result set is presented.
 struct ReprocessingRecoveryView: View {
     @Environment(RecordingManager.self) private var manager
-    @Environment(AppState.self) private var appState
     @State private var retrying = false
 
     var body: some View {
         VStack(spacing: 12) {
-            if appState.lastError == nil || retrying {
+            if manager.reprocessingRecoveryError == nil || retrying {
                 ProgressView("Checking saved recording results…")
             } else {
                 Label("Recording recovery needs attention", systemImage: "exclamationmark.triangle")
                     .uiFont(.headline)
-                Text(appState.lastError ?? "Saved results are not ready to open.")
+                Text(manager.reprocessingRecoveryError ?? "Saved results are not ready to open.")
                     .uiFont(.callout).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).textSelection(.enabled)
             }

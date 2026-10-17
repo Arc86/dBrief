@@ -69,15 +69,33 @@ final class AppState {
     var pendingLiveTranscriptSelection: Bool = false
     /// Set to expand the menu panel's Queue & Recovery for this work item.
     var queueFocusRequest: UUID?
-    var lastError: String?
-    /// Launch-time durability/recovery result shown near the recording controls.
-    /// Contains no recording title or file path.
-    var durabilityNotice: String?
-    var durabilityNoticeIsWarning = false
+    /// Errors, warnings and results the user should see, newest first.
+    var notices = NoticeList()
+
+    func post(_ notice: AppNotice) { notices.post(notice) }
+
+    func post(_ tone: AppNotice.Tone, _ message: String, source: AppNotice.Source,
+              recordingURL: URL? = nil, actions: [NoticeAction] = []) {
+        post(AppNotice(tone: tone, message: message, source: source, recordingURL: recordingURL, actions: actions))
+    }
+
+    /// Legacy single error. Setting it posts a `.general` notice; setting nil clears only
+    /// those, never typed notices from other sources. Reading returns the newest error.
+    var lastError: String? {
+        get { notices.items.first { $0.tone == .error }?.message }
+        set {
+            if let newValue { post(.init(tone: .error, message: newValue, source: .general)) }
+            else { notices.clear(source: .general) }
+        }
+    }
     /// Transient note shown during recording when dBrief auto-switches the input
     /// device or echo cancellation mid-recording (e.g. "Switched to MacBook Microphone").
     /// Auto-cleared a few seconds after it's set; nil when there's nothing to show.
-    var recordingStatusNote: String?
+    var recordingStatusNote: String? {
+        didSet { if recordingStatusNote == nil { recordingStatusNoteIsProblem = false } }
+    }
+    /// The note is a problem to act on (silent or muted mic); shown in the warning tone.
+    var recordingStatusNoteIsProblem = false
     /// Name of the microphone the current recording is capturing from. Can differ
     /// from the saved selection (a pinned device that disappeared falls back to
     /// the system default), so the recording UI shows this rather than the setting.
@@ -108,6 +126,18 @@ struct ProcessingStep: Identifiable {
     /// Optional secondary line under the step (e.g. "about 2 min left" during
     /// transcription). Nil when there's nothing to show.
     var detail: String?
+    /// What the step does, so a failed brief can offer the matching fix.
+    var kind: Kind = .other
+
+    enum Kind: Equatable { case transcription, analysis, export, delivery, other }
+
+    init(name: String, status: Status, progress: Double? = nil, detail: String? = nil, kind: Kind = .other) {
+        self.name = name
+        self.status = status
+        self.progress = progress
+        self.detail = detail
+        self.kind = kind
+    }
 
     enum Status {
         case pending

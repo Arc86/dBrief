@@ -78,15 +78,12 @@ final class StatusItemControls {
                 menu.addItem(.separator())
             case .startRecording(let enabled):
                 menu.addItem(ActionMenuItem("Record meeting", enabled: enabled) {
-                    state.lastError = nil
-                    Task {
-                        do { try await manager.startRecording() } catch { state.lastError = error.localizedDescription }
-                    }
+                    Task { await manager.requestRecording() }
                 })
             case .pauseRecording:
                 menu.addItem(ActionMenuItem("Pause recording") { manager.pauseRecording() })
             case .resumeRecording:
-                menu.addItem(ActionMenuItem("Resume recording") { try? manager.resumeRecording() })
+                menu.addItem(ActionMenuItem("Resume recording") { manager.requestResume() })
             case .stopRecording:
                 menu.addItem(ActionMenuItem("Stop recording") { Task { await manager.stopRecording() } })
             case .openLibrary:
@@ -102,7 +99,10 @@ final class StatusItemControls {
         return menu
     }
 
-    private func open(_ id: String) {
+    private func open(_ id: String) { openWindow(id) }
+
+    /// Opens a scene window from AppKit code (e.g. a clicked notification).
+    func openWindow(_ id: String) {
         guard let openWindow else { return }
         MenuBarPanel.open(id, with: openWindow)
     }

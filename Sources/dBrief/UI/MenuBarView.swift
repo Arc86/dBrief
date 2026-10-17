@@ -83,7 +83,8 @@ struct MenuBarView: View {
             isPaused: appState.isPaused,
             isProcessing: appState.isProcessing,
             showsPostRecording: appState.showPostRecordingSheet,
-            hasResults: appState.hasProcessingResults
+            hasResults: appState.hasProcessingResults,
+            hasFailures: BriefRecovery.hasFailures(appState.processingSteps)
         )
     }
 

@@ -46,7 +46,7 @@ struct RecordingControlsView: View {
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
                     } else {
-                        Button { try? recordingManager.resumeRecording() } label: {
+                        Button { recordingManager.requestResume() } label: {
                             Label("Resume", systemImage: "play")
                         }
                         .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 32))
@@ -60,6 +60,16 @@ struct RecordingControlsView: View {
                 .environment(\.controlActiveState, .active)
 
                 audioSources
+                // Mic switches and problems (a silent or muted mic) also show here, not
+                // only in the optional floating window.
+                if let note = appState.recordingStatusNote {
+                    Label(note, systemImage: appState.recordingStatusNoteIsProblem
+                          ? "exclamationmark.triangle.fill" : "arrow.triangle.2.circlepath")
+                        .uiFont(.system(size: 11))
+                        .foregroundStyle(appState.recordingStatusNoteIsProblem ? status.warning.color : palette.secondary.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
             if (appState.isRecording || appState.isPaused),
@@ -77,13 +87,7 @@ struct RecordingControlsView: View {
                 }
             }
 
-            if let error = appState.lastError {
-                errorBox(error)
-            }
-
-            if let notice = appState.durabilityNotice {
-                durabilityBanner(notice)
-            }
+            NoticeStack(notices: appState.notices.items)
         }
     }
 
@@ -91,14 +95,7 @@ struct RecordingControlsView: View {
 
     private var recordButton: some View {
         Button {
-            appState.lastError = nil
-            Task {
-                do {
-                    try await recordingManager.startRecording()
-                } catch {
-                    appState.lastError = error.localizedDescription
-                }
-            }
+            Task { await recordingManager.requestRecording() }
         } label: {
             Label("Record meeting", systemImage: "mic.fill")
                 .frame(maxWidth: .infinity)
@@ -178,84 +175,6 @@ struct RecordingControlsView: View {
     }
 
     // MARK: - Notices
-
-    private func errorBox(_ error: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label("Error", systemImage: "exclamationmark.circle.fill")
-                    .uiFont(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(status.danger.color)
-                Spacer()
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(error, forType: .string)
-                }
-                .help("Copy the full error message")
-                Button {
-                    appState.lastError = nil
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .accessibilityLabel("Dismiss error")
-            }
-            .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 22))
-            ScrollView {
-                Text(error)
-                    .uiFont(.system(size: 11))
-                    .foregroundStyle(palette.text.color)
-                    .textSelection(.enabled)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 110)
-        }
-        .padding(12)
-        .background(status.dangerFill.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(status.dangerBorder.color, lineWidth: 1))
-    }
-
-    private func durabilityBanner(_ notice: String) -> some View {
-        let warning = appState.durabilityNoticeIsWarning
-        let tint = warning ? status.warning.color : status.success.color
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: warning ? "externaldrive.badge.exclamationmark" : "externaldrive.badge.checkmark")
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(notice)
-                    .uiFont(.system(size: 11))
-                    .foregroundStyle(palette.text.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                if warning {
-                    HStack(spacing: 8) {
-                        Button("Retry recovery") {
-                            Task {
-                                await recordingManager.recoverInterruptedSessions()
-                                await recordingManager.refreshWorkQueue()
-                            }
-                        }
-                        .disabled(!recordingManager.canPerformLibraryWork)
-                        Button("Show files") {
-                            MenuBarPanel.open(InterruptedSessionStore.defaultRootURL)
-                        }
-                    }
-                    .buttonStyle(MenuPanelButtonStyle(kind: .secondary, height: 26, fontSize: 11, fillsWidth: false))
-                }
-            }
-            Spacer(minLength: 4)
-            Button {
-                appState.durabilityNotice = nil
-                appState.durabilityNoticeIsWarning = false
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(MenuPanelButtonStyle(kind: .quiet, height: 18))
-            .accessibilityLabel("Dismiss recovery notice")
-        }
-        .padding(12)
-        .background(warning ? status.warning.color.opacity(0.12) : status.successFill.color,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
 
     private var formattedDuration: String { appState.recordingDuration.formattedDuration }
 }

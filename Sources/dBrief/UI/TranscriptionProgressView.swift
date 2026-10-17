@@ -232,8 +232,8 @@ struct TranscriptionProgressView: View {
 
     private func stepMessage(_ stepStatus: ProcessingStep.Status) -> (String, Color)? {
         switch stepStatus {
-        case .warning(let message): (message, status.warning.color)
-        case .failed(let message): (message, status.danger.color)
+        case .warning(let message): (UserFacingError.text(message), status.warning.color)
+        case .failed(let message): (UserFacingError.text(message), status.danger.color)
         case .pending, .inProgress, .completed: nil
         }
     }

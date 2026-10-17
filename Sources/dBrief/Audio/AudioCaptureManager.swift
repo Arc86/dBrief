@@ -50,7 +50,9 @@ final class AudioCaptureManager {
 
     /// Invoked (on the main actor) after an automatic reconfigure with a short,
     /// user-facing note (e.g. "Switched to MacBook Microphone"). Set by `RecordingManager`.
-    var statusNoteHandler: (@MainActor (String) -> Void)?
+    /// A note for the recording UI, and whether it is a problem the user must act on
+    /// (problems stay visible until replaced).
+    var statusNoteHandler: (@MainActor (String, Bool) -> Void)?
 
     /// Invoked (on the main actor) whenever the recording's mic source changes,
     /// with the device's name (nil once capture stops). Set by `RecordingManager`.
@@ -321,7 +323,7 @@ final class AudioCaptureManager {
                     self.lastSystemCaptureFailure = failure
                     DurabilityJournal.shared.record(.init(
                         name: "system_capture_stopped_unexpectedly", outcome: .failed, failure: failure))
-                    status?("System audio capture stopped unexpectedly")
+                    status?("System audio capture stopped unexpectedly", true)
                 }
             }
             return .init(id: id, start: {
@@ -378,7 +380,7 @@ final class AudioCaptureManager {
         let decision = computeDecision(assumingPresent: selectedInputUID)
         guard decision.needsReconfigure, let plan = decision.plan else { return }
         try activateMicSource(plan)
-        if let name = activeMicrophoneName { statusNoteHandler?("Recording from \(name)") }
+        if let name = activeMicrophoneName { statusNoteHandler?("Recording from \(name)", false) }
     }
 
     /// Bridges the impure CoreAudio state into the pure `MicReconfigurePlanner`.
@@ -454,7 +456,7 @@ final class AudioCaptureManager {
                         extra: ["deviceSilenced": silenced ? 1 : 0])
         if silenced {
             log.error("Mic source device is muted or at zero input volume in macOS")
-            statusNoteHandler?("\(Self.deviceLabel(for: plan.deviceUID)) is muted in macOS — check Sound settings")
+            statusNoteHandler?("\(Self.deviceLabel(for: plan.deviceUID)) is muted in macOS — check Sound settings", true)
         }
         log.notice("Mic source: \(String(describing: plan.backend), privacy: .public) device=\(plan.deviceUID, privacy: .public) vpio=\(plan.voiceProcessing, privacy: .public)")
     }
@@ -507,10 +509,10 @@ final class AudioCaptureManager {
             failedMicPlan = plan
             do {
                 try replaceMicSource(with: fallback)
-                statusNoteHandler?("Recording from \(Self.deviceLabel(for: fallback.deviceUID))")
+                statusNoteHandler?("Recording from \(Self.deviceLabel(for: fallback.deviceUID))", false)
             } catch {
                 log.error("Mic fallback failed: \(error.localizedDescription, privacy: .public)")
-                statusNoteHandler?("Microphone isn't delivering audio — check input device")
+                statusNoteHandler?("Microphone isn't delivering audio — check input device", true)
             }
             return
         }
@@ -523,7 +525,7 @@ final class AudioCaptureManager {
             log.error("Mic rebuild failed: \(error.localizedDescription, privacy: .public)")
         }
         if micRecoveryAttempts == Self.maxMicRecoveryAttempts {
-            statusNoteHandler?("Microphone isn't delivering audio — check input device")
+            statusNoteHandler?("Microphone isn't delivering audio — check input device", true)
         }
     }
 
@@ -580,7 +582,7 @@ final class AudioCaptureManager {
                 guard self.micRecoveryAttempts < Self.maxMicRecoveryAttempts else { return }
                 self.micRecoveryAttempts += 1
                 if self.micRecoveryAttempts == Self.maxMicRecoveryAttempts {
-                    self.statusNoteHandler?("Microphone isn't delivering audio — check input device")
+                    self.statusNoteHandler?("Microphone isn't delivering audio — check input device", true)
                 }
             }
             do {
@@ -588,7 +590,7 @@ final class AudioCaptureManager {
                 self.emitStatusNote(from: previous, to: self.micSource?.plan)
             } catch {
                 log.error("Auto reconfigure failed: \(error.localizedDescription, privacy: .public)")
-                self.statusNoteHandler?("Microphone switch failed")
+                self.statusNoteHandler?("Microphone switch failed", true)
             }
         }
     }
@@ -605,7 +607,7 @@ final class AudioCaptureManager {
         } else {
             return
         }
-        statusNoteHandler?(note)
+        statusNoteHandler?(note, false)
     }
 
     /// Human label for a device UID; resolves the actual default device name when empty.

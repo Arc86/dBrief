@@ -195,13 +195,7 @@ final class AppContext {
         if appState.isRecording || appState.isPaused {
             Task { await recordingManager.stopRecording() }
         } else if appState.isIdle {
-            Task {
-                do {
-                    try await recordingManager.startRecording()
-                } catch {
-                    appState.lastError = error.localizedDescription
-                }
-            }
+            Task { await recordingManager.requestRecording() }
         }
     }
 }

@@ -332,9 +332,10 @@ struct RecordingHistoryView: View {
                 if expandedItemId == item.id { expandedItemId = nil }
             } catch let blocked as RecordingBlockedError {
                 // Nothing was deleted: say why, not that files may remain.
-                appState.lastError = blocked.localizedDescription
+                appState.post(.error, blocked.localizedDescription, source: .library)
             } catch {
-                appState.lastError = "Deletion could not finish. Some files may remain; check storage before retrying."
+                appState.post(.error, "Deletion could not finish. Some files may remain; check storage before retrying.",
+                              source: .library, recordingURL: item.url)
                 loadRecordings()
             }
         }

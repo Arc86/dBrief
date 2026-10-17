@@ -291,6 +291,41 @@ struct ReprocessingManagerTests {
         #expect(fixture.manager.libraryWorkBlockMessage(.recovery)?.contains("“Weekly sync”") == true)
     }
 
+    /// The library's "Recording recovery needs attention" used to show any unrelated
+    /// error, and spun forever once that error was dismissed.
+    @Test func reprocessingRecoveryHasItsOwnErrorSeparateFromOtherNotices() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        fixture.state.lastError = "Couldn't switch microphone."
+        #expect(fixture.manager.reprocessingRecoveryError == nil)
+        let broken = fixture.root.appendingPathComponent("attempts/\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: broken.appendingPathComponent("manifest.json"))
+        await fixture.manager.recoverReprocessingAttempts()
+        #expect(!fixture.manager.reprocessingRecoveryReady)
+        #expect(fixture.manager.reprocessingRecoveryError != nil)
+        #expect(fixture.state.notices.items.contains { $0.source == .recovery })
+        try FileManager.default.removeItem(at: broken)
+        await fixture.manager.recoverReprocessingAttempts()
+        #expect(fixture.manager.reprocessingRecoveryReady)
+        #expect(fixture.manager.reprocessingRecoveryError == nil)
+        #expect(!fixture.state.notices.items.contains { $0.source == .recovery })
+    }
+
+    /// Record buttons, call auto-record and Resume used to drop failures with `try?`,
+    /// and pressing Record cleared every error, including unrelated ones.
+    @Test func recordRequestsReportFailuresWithoutClearingOtherNotices() async {
+        let fixture = try! Fixture()
+        defer { fixture.clean() }
+        fixture.state.post(.error, "Couldn't send to Notion.", source: .integrations)
+        fixture.manager.recoveryMaintenanceInProgress = true
+        await fixture.manager.requestRecording()
+        fixture.manager.recoveryMaintenanceInProgress = false
+        let capture = fixture.state.notices.items.filter { $0.source == .capture }
+        #expect(capture.count == 1 && capture[0].message.hasPrefix("Couldn't start recording"))
+        #expect(fixture.state.notices.items.contains { $0.source == .integrations })
+    }
+
     /// A parked reprocess used to stop every automatic cleanup until it was discarded.
     @Test func pendingReprocessProtectsItsRecordingWithoutBlockingCleanup() async throws {
         let fixture = try Fixture()
@@ -353,7 +388,7 @@ struct ReprocessingManagerTests {
         // The user had not chosen to process it yet, so it waits in the queue.
         #expect(!item.autoQueued)
         #expect(fixture.state.currentRecording === next)
-        #expect(fixture.state.durabilityNotice != nil && !fixture.state.durabilityNoticeIsWarning)
+        #expect(fixture.state.notices.items.contains { $0.source == .review && $0.tone == .info && $0.actions == [.openQueue] })
         #expect(fixture.state.lastError == nil)
     }
 

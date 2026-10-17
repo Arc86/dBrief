@@ -256,8 +256,7 @@ struct TranscriptBrowserView: View {
             emptyMessage: sidebarEmptyMessage,
             isRecordEnabled: appState.isIdle,
             onRecord: {
-                appState.lastError = nil
-                Task { try? await recordingManager.startRecording() }
+                Task { await recordingManager.requestRecording() }
             },
             onRefresh: reload,
             onRebuildSearchIndex: { library.refresh(rebuild: true) },

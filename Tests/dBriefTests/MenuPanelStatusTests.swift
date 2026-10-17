@@ -2,8 +2,16 @@ import Testing
 @testable import dBrief
 
 @Suite struct MenuPanelStatusTests {
-    private func status(rec: Bool = false, paused: Bool = false, proc: Bool = false, post: Bool = false, results: Bool = false) -> MenuPanelStatus {
-        .resolve(isRecording: rec, isPaused: paused, isProcessing: proc, showsPostRecording: post, hasResults: results)
+    private func status(rec: Bool = false, paused: Bool = false, proc: Bool = false, post: Bool = false, results: Bool = false,
+                        issues: Bool = false) -> MenuPanelStatus {
+        .resolve(isRecording: rec, isPaused: paused, isProcessing: proc, showsPostRecording: post, hasResults: results,
+                 hasFailures: issues)
+    }
+
+    @Test func aBriefWithFailuresSaysSoInTheWarningTone() {
+        #expect(status(results: true, issues: true) == .finishedWithIssues)
+        #expect(MenuPanelStatus.finishedWithIssues.label == "Finished with issues")
+        #expect(MenuPanelStatus.finishedWithIssues.tone == .warning)
     }
 
     @Test func idleIsReady() { #expect(status() == .ready); #expect(status().label == "Ready") }

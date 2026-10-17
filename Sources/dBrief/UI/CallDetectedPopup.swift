@@ -19,7 +19,7 @@ struct CallDetectedPopup: View {
             Button {
                 appState.showCallDetectedPopup = false
                 Task {
-                    try? await recordingManager.startRecording(
+                    await recordingManager.requestRecording(
                         associatedApp: appState.detectedCallApp,
                         callBundleId: appState.detectedCallAppBundleId
                     )
