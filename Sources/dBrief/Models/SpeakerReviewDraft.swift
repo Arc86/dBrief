@@ -11,6 +11,8 @@ final class SpeakerReviewDraft {
     private(set) var reviewedIDs: Set<String> = []
     /// One field both filters the people list and supplies a new name.
     var search = ""
+    /// Speaks what an answer or a voice change did, since the picker is rebuilt silently.
+    @ObservationIgnored var announce: @MainActor (String) -> Void = { AccessibilityAnnouncer.shared.announce($0) }
 
     init(items: [SpeakerReviewItem]) {
         self.items = items
@@ -33,7 +35,10 @@ final class SpeakerReviewDraft {
     func moveSelection(by offset: Int) {
         guard !items.isEmpty else { return }
         let current = items.firstIndex { $0.id == selectedID } ?? -1
-        selectSpeaker(items[min(max(current + offset, 0), items.count - 1)].id)
+        let target = min(max(current + offset, 0), items.count - 1)
+        guard target != current else { return }
+        selectSpeaker(items[target].id)
+        announce("\(items[target].id), \(target + 1) of \(items.count)")
     }
 
     func clearInput() {
@@ -65,8 +70,16 @@ final class SpeakerReviewDraft {
         clearInput()
         let index = items.firstIndex { $0.id == selectedItem.id } ?? 0
         let ordered = items[(index + 1)...] + items[..<index]
-        if let next = ordered.first(where: { !reviewedIDs.contains($0.id) }) {
-            selectedID = next.id
-        }
+        let next = ordered.first(where: { !reviewedIDs.contains($0.id) })
+        if let next { selectedID = next.id }
+        announce(Self.announcement(for: selectedItem.id, answer: speaker, next: next?.id,
+                                   left: items.count - reviewedIDs.count))
+    }
+
+    /// "Speaker 1 named Alice. Now Speaker 2, 1 voice left." or "… All voices reviewed."
+    static func announcement(for speakerID: String, answer: ConfirmedSpeaker, next: String?, left: Int) -> String {
+        let done = answer.name == speakerID ? "\(speakerID) kept unnamed." : "\(speakerID) named \(answer.name)."
+        guard let next else { return "\(done) All voices reviewed. Press Return to confirm." }
+        return "\(done) Now \(next), \(left) \(left == 1 ? "voice" : "voices") left."
     }
 }

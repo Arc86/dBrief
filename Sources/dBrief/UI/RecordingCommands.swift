@@ -24,6 +24,12 @@ struct RecordingViewerActions {
     var changeTextSize: ((Int) -> Void)? = nil
     /// Review and retry this recording's integration deliveries.
     var reviewIntegrations: (() -> Void)? = nil
+    /// The speaker of the playing (or first) turn, so renaming and "This is me" work
+    /// without reaching the speaker menu inside a transcript row.
+    var currentSpeakerName: String? = nil
+    var currentSpeakerIsMe: Bool = false
+    var renameCurrentSpeaker: (() -> Void)? = nil
+    var toggleCurrentSpeakerIsMe: (() -> Void)? = nil
 }
 
 enum TextInputFocus {
@@ -120,6 +126,15 @@ struct RecordingCommands: Commands {
                 .disabled(viewer?.reprocess == nil || viewer?.hasTranscript != true)
             Button("Detect Speakers Again…") { viewer?.reprocess?(.speakers) }
                 .disabled(viewer?.reprocess == nil || viewer?.hasTranscript != true)
+            Button(viewer?.currentSpeakerName.map { "Rename “\($0)”…" } ?? "Rename Speaker…") {
+                viewer?.renameCurrentSpeaker?()
+            }
+            .disabled(viewer?.renameCurrentSpeaker == nil)
+            Button(viewer?.currentSpeakerIsMe == true ? "Clear “This Is Me”"
+                   : viewer?.currentSpeakerName.map { "“\($0)” Is Me" } ?? "This Is Me") {
+                viewer?.toggleCurrentSpeakerIsMe?()
+            }
+            .disabled(viewer?.toggleCurrentSpeakerIsMe == nil)
             Divider()
             Button("Integrations…") { viewer?.reviewIntegrations?() }
                 .disabled(viewer?.reviewIntegrations == nil)

@@ -56,6 +56,23 @@ struct SpeakerReviewDraftTests {
         #expect(draft.allReviewed)
     }
 
+    @Test("Each answer and voice change is spoken, naming what happened and what is next")
+    func announcesProgress() {
+        let draft = SpeakerReviewDraft(items: [item("Speaker 1"), item("Speaker 2")])
+        var spoken: [String] = []
+        draft.announce = { spoken.append($0) }
+        draft.assign(.init(id: "alex", name: "Alex", personId: "alex", detail: nil))
+        draft.moveSelection(by: 1) // already on the last voice: nothing to say
+        draft.moveSelection(by: -1)
+        draft.selectSpeaker("Speaker 2")
+        draft.keepUnnamed()
+        #expect(spoken == [
+            "Speaker 1 named Alex. Now Speaker 2, 1 voice left.",
+            "Speaker 1, 1 of 2",
+            "Speaker 2 kept unnamed. All voices reviewed. Press Return to confirm."
+        ])
+    }
+
     @Test("Voice scores rank attendees, and an attendee's library entry is not listed twice")
     func scoredAndCombined() {
         let library = VoiceLibrary(people: [

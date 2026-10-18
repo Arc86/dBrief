@@ -279,7 +279,8 @@ private struct SpeakerReviewPicker: View {
                       text: $draft.search)
                 .panelTextField()
                 .focused($fieldFocused)
-                .accessibilityLabel("Name or search")
+                .accessibilityLabel("Name for \(item.id)")
+                .accessibilityHint("Type to search people or enter a new name")
                 .onSubmit { choose(rows.indices.contains(highlighted) ? rows[highlighted] : nil) }
                 .onKeyPress(.downArrow) { moveHighlight(by: 1, in: rows); return .handled }
                 .onKeyPress(.upArrow) { moveHighlight(by: -1, in: rows); return .handled }
